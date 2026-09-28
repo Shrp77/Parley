@@ -216,7 +216,7 @@ public sealed class NoManifestParityTests : IDisposable
 
         Assert.Equal(78, code);
         Assert.Contains("nothing to serve", error, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
+        Assert.Contains("`parley`",error, StringComparison.Ordinal);
 
         // Nothing about a store, because there is nothing a person could do about one.
         Assert.DoesNotContain("--db", error, StringComparison.Ordinal);

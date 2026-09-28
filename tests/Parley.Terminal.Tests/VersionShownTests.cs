@@ -48,7 +48,9 @@ public sealed class VersionShownTests
         driving.App.LayoutAndDraw(true);
 
         Assert.DoesNotContain(Shell.VersionLabel, shell.Status, StringComparison.Ordinal);
-        Assert.Contains(Shell.ActionsKey.ToString(), shell.Status, StringComparison.Ordinal);
+        // What the line exists for survives: which pane has focus. It asserted `?` until 2026-09-28, when the
+        // status line stopped naming it -- the menu bar is the way to the actions now.
+        Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }
 
     private static BrokerDirectory Directory() =>

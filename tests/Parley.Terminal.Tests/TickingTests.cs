@@ -101,6 +101,117 @@ public sealed class TickingTests
     }
 
     [Fact]
+    public void Enter_pressed_on_the_screen_hands_back_what_was_ticked()
+    {
+        // **Reported by the owner: four ticked, Enter pressed, nothing happened.** The test above sends the key
+        // to the dialog itself, which is the seam and not the screen: on a screen the list has focus, and a
+        // focused view is offered a key before its dialog is -- 0.30.4's sentence. The list takes Enter for its
+        // own and the dialog never saw it. This one presses the key the way a person does.
+        using var driving = Driving.Open();
+
+        var dialog = Over("orders", "billing");
+        IReadOnlyList<Tickable>? handed = null;
+
+        dialog.Done += (_, chosen) => handed = chosen;
+
+        driving.Show(dialog);
+        dialog.Rows.SetFocus();
+
+        driving.Press(Key.Space);
+        driving.Press(Key.Enter);
+
+        Assert.NotNull(handed);
+        Assert.Equal(["orders"], handed.Where(item => item.Ticked).Select(item => item.Label));
+    }
+
+    [Fact]
+    public void A_long_list_is_shown_ten_at_a_time()
+    {
+        // The owner's call of 2026-09-27, after a long list of folders scrolled slowly.
+        using var driving = Driving.Open();
+
+        var dialog = Over([.. Enumerable.Range(1, 23).Select(n => $"repo{n:00}")]);
+
+        driving.Show(dialog);
+        dialog.Rows.SetFocus();
+
+        Assert.Equal(3, dialog.Pages);
+        Assert.Equal(TickDialog.PageSize, dialog.Rows.Source!.Count);
+        Assert.Contains("Page 1 of 3", dialog.Counted, StringComparison.Ordinal);
+
+        driving.Press(Key.PageDown);
+
+        Assert.Equal(1, dialog.Page);
+        Assert.Contains("repo11", dialog.Rows.Source.ToList()[0]?.ToString() ?? string.Empty, StringComparison.Ordinal);
+
+        driving.Press(Key.PageDown);
+
+        // The last page holds what is left, and is not padded out to ten.
+        Assert.Equal(3, dialog.Rows.Source.Count);
+
+        // And turning past the last page stays on it rather than wrapping to the first.
+        driving.Press(Key.PageDown);
+
+        Assert.Equal(2, dialog.Page);
+    }
+
+    [Fact]
+    public void A_tick_survives_turning_the_page_and_every_page_is_handed_back()
+    {
+        // The ticks belong to the rows, not to the page on screen: somebody who ticks two on the first page and
+        // one on the second has chosen three, and Enter from the second page must hand back all three.
+        using var driving = Driving.Open();
+
+        var dialog = Over([.. Enumerable.Range(1, 15).Select(n => $"repo{n:00}")]);
+        IReadOnlyList<Tickable>? handed = null;
+
+        dialog.Done += (_, chosen) => handed = chosen;
+
+        driving.Show(dialog);
+        dialog.Rows.SetFocus();
+
+        driving.Press(Key.Space);
+        driving.Press(Key.CursorDown);
+        driving.Press(Key.Space);
+        driving.Press(Key.PageDown);
+        driving.Press(Key.Space);
+        driving.Press(Key.PageUp);
+
+        Assert.Contains("[x] repo01", dialog.Rows.Source!.ToList()[0]?.ToString() ?? string.Empty, StringComparison.Ordinal);
+
+        driving.Press(Key.PageDown);
+        driving.Press(Key.Enter);
+
+        Assert.NotNull(handed);
+        Assert.Equal(["repo01", "repo02", "repo12"], handed.Where(item => item.Ticked).Select(item => item.Label));
+    }
+
+    [Fact]
+    public void Down_past_the_last_row_of_a_page_carries_on_to_the_next()
+    {
+        // So one key still walks the whole list, which is what scrolling was.
+        using var driving = Driving.Open();
+
+        var dialog = Over([.. Enumerable.Range(1, 12).Select(n => $"repo{n:00}")]);
+
+        driving.Show(dialog);
+        dialog.Rows.SetFocus();
+
+        for (var i = 0; i < TickDialog.PageSize; i++)
+        {
+            driving.Press(Key.CursorDown);
+        }
+
+        Assert.Equal(1, dialog.Page);
+        Assert.Equal(0, dialog.Rows.SelectedItem);
+
+        driving.Press(Key.CursorUp);
+
+        Assert.Equal(0, dialog.Page);
+        Assert.Equal(TickDialog.PageSize - 1, dialog.Rows.SelectedItem);
+    }
+
+    [Fact]
     public void Escape_is_not_the_same_as_ticking_nothing()
     {
         // The distinction the caller acts on: somebody who pressed Escape has not said "enrol none

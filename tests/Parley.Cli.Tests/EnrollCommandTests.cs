@@ -350,12 +350,14 @@ public sealed class EnrollCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task A_repository_registered_before_offers_its_earlier_line_as_evidence()
+    public async Task A_scan_does_not_read_a_repositorys_history()
     {
-        // The strongest row there is, and the only one that is not a suggestion: the person's own
-        // earlier sentence, recovered rather than composed. A repository whose .mcp.json was
-        // deleted still has it in history, which is the ordinary state of a deployment being
-        // reconfigured.
+        // **Inverted rather than deleted.** This asserted that an owns line committed and later
+        // removed was dug back out of `git log --all` as evidence. That was a git process per
+        // repository, one after another, and on a folder of 33 it was the whole of a three-second
+        // freeze before the enrolment picker opened -- for a line nothing showed anybody once the
+        // worksheet went in 0.32.0. The owner's call of 2026-09-27: the agent is asked what it owns.
+        // Left as a deletion, nothing would notice the lookup coming back.
         var repository = Path.Combine(Checkouts, "Acme.Orders");
 
         if (!Git(repository, "init") || !Git(repository, "config user.email a@b.c")
@@ -373,10 +375,9 @@ public sealed class EnrollCommandTests : IDisposable
         Git(repository, "commit -m registered");
         File.Delete(Path.Combine(repository, ".mcp.json"));
 
-        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence;
+        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence ?? [];
 
-        Assert.NotNull(evidence);
-        Assert.Contains(evidence, l => l.Contains("Carts and totals. No tax.", StringComparison.Ordinal));
+        Assert.DoesNotContain(evidence, l => l.Contains("Carts and totals. No tax.", StringComparison.Ordinal));
     }
 
     private static bool Git(string workspace, string arguments)

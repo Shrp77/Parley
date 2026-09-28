@@ -30,7 +30,21 @@ namespace Parley.Terminal;
 internal static class Onboarding
 {
     /// <summary>What the dialog is called.</summary>
-    internal const string Title = "Enrolment";
+    /// <remarks>
+    /// It was "Enrolment", which names the act without saying what it does. The owner went looking for a way to
+    /// scan a folder for agents and did not recognise it by that name. The words are the owner's.
+    /// </remarks>
+    internal const string Title = "Enroll agents from folders";
+
+    /// <summary>What the window listing the repositories is called.</summary>
+    /// <param name="project">The project they would join, or null when none is named.</param>
+    /// <returns>The caption.</returns>
+    /// <remarks>
+    /// The project first, the owner's call of 2026-09-27: ticking a repository makes it an agent of one
+    /// particular project, and the caption is the one thing on that window certain to be read.
+    /// </remarks>
+    internal static string Caption(ProjectSettings? project) =>
+        project is { } named ? $"{named.Name.Value}: {Title}" : Title;
 
     /// <summary>What the confirmation offers.</summary>
     internal const string Apply = "Enrol them";
@@ -45,6 +59,7 @@ internal static class Onboarding
     /// <param name="remember">Told where the person browsed, so the next run starts there.</param>
     /// <param name="queue">Runs the command, so the caller can wait for it.</param>
     /// <param name="done">Told what the command said.</param>
+    /// <param name="saying">Told, per agent, what is happening to it while the enrolment runs, or null.</param>
     /// <returns>When the first dialog is open.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     internal static Task OpenAsync(
@@ -56,7 +71,8 @@ internal static class Onboarding
         string? lastBrowsed,
         Action<string> remember,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(queue);
@@ -66,7 +82,7 @@ internal static class Onboarding
         // **A picker rather than a field**, which is the whole reason this belongs here. Enrolling
         // nineteen repositories used to mean typing an absolute path that could only be reported
         // wrong afterwards; the same argument `Adding` already records for adding one.
-        var browsing = new Browsing(Browsing.Opening(lastBrowsed, startedIn));
+        var browsing = Browsing.ForFolderOfRepositories(Browsing.Opening(lastBrowsed, startedIn));
         var token = Prompting.Open(app, browsing);
 
         browsing.Done += (_, directory) =>
@@ -80,8 +96,7 @@ internal static class Onboarding
                 return;
             }
 
-            remember(directory);
-            Offer(app, directory, project, deployment, manifestPath, queue, done);
+            Offer(app, directory, project, deployment, manifestPath, remember, queue, done, saying);
         };
 
         return Task.CompletedTask;
@@ -94,8 +109,10 @@ internal static class Onboarding
         ProjectSettings? project,
         IReadOnlyList<ProjectSettings>? deployment,
         string? manifestPath,
+        Action<string> remember,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying)
     {
         var found = EnrollCommand.Find(directory);
 
@@ -106,6 +123,11 @@ internal static class Onboarding
             return;
         }
 
+        // **A repository inside the folder is remembered, not the folder.** What is remembered is shared with
+        // adding one repository, and the next picker opens beside it -- at its parent. Remembering the folder
+        // itself put the next picker one level above where the repositories are, for both flows.
+        remember(found[0].Workspace);
+
         // **Nothing starts ticked.** `--all` on the command line is for scripts; a person looking at
         // a list of thirty has not yet said yes to any of them, and a pre-ticked list is a default
         // that enrols whatever they did not notice.
@@ -114,7 +136,7 @@ internal static class Onboarding
             .ToList();
 
         var ticking = new TickDialog(
-            Title,
+            Caption(project),
             $"{found.Count} repositories under {Safe.Text(directory)}. Tick the ones that should "
             + "become agents"
             + (project is { } named ? $" of {named.Name.Value}" : string.Empty)
@@ -147,7 +169,7 @@ internal static class Onboarding
                 return;
             }
 
-            Confirm(app, wanted, project, deployment, manifestPath, queue, done);
+            Confirm(app, wanted, project, deployment, manifestPath, queue, done, saying);
         };
     }
 
@@ -199,7 +221,8 @@ internal static class Onboarding
         IReadOnlyList<ProjectSettings>? deployment,
         string? manifestPath,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying)
     {
         // FR-044: said before anything is configured, and it names the number. "Some repositories"
         // is a sentence somebody agrees to without weighing; a count is one they can.
@@ -227,18 +250,44 @@ internal static class Onboarding
                 return;
             }
 
+            // **Every agent chosen is shown as starting the moment the person agrees**, not when the work
+            // reaches the front of the queue. What follows can take the better part of a minute -- each agent
+            // is started and waited for in turn -- and the owner's report of 2026-09-27 was exactly that:
+            // enrolled four, and nothing happened for a long time. Shown on each agent's row, on the owner's
+            // call of 2026-09-28, rather than as a sentence on the message line.
+            foreach (var entry in wanted)
+            {
+                saying?.Invoke(entry.Agent, Waiting);
+            }
+
             queue(cancellationToken =>
-                RunAsync(wanted, project, deployment, manifestPath, done, cancellationToken));
+                RunAsync(wanted, project, deployment, manifestPath, done, saying, cancellationToken));
         };
     }
 
-    /// <summary>Runs the enrolment and reports what it said, in its own words.</summary>
+    /// <summary>What an agent's row says between the person agreeing and its turn to be started.</summary>
+    internal const string Waiting = "queued";
+
+    /// <summary>Runs the enrolment and says, in one line, what came of it.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It reprinted everything the command wrote for a shell, and that was the defect.</b> The catalogue
+    /// path, the consent paragraph already agreed to on the screen before, and a line for every file in every
+    /// repository, joined into one paragraph and cut off. The owner's call of 2026-09-27: say what happened.
+    /// Which agents joined, and whether each came up; the agents pane beside it shows the rest.
+    /// </para>
+    /// <para>
+    /// A failure still says why, in the command's own words: that is the one thing a person needs when it
+    /// did not work, and a summary of it would take away which rule was broken.
+    /// </para>
+    /// </remarks>
     private static async Task RunAsync(
         IReadOnlyList<EnrollmentEntry> wanted,
         ProjectSettings? project,
         IReadOnlyList<ProjectSettings>? deployment,
         string? manifestPath,
         Func<string, Task> done,
+        Action<string, string>? saying,
         CancellationToken cancellationToken)
     {
         var said = new StringWriter();
@@ -249,7 +298,10 @@ internal static class Onboarding
         var nodeConfig = ProjectResolution.NodeConfig(
             null, Environment.GetEnvironmentVariable, manifestPath);
 
-        _ = await EnrollCommand
+        // The command says which agent it is starting and what it is waiting on, as it happens.
+        var outcome = new EnrolmentOutcome(saying);
+
+        var code = await EnrollCommand
             .EnrolAsync(
                 wanted,
                 describe: false,
@@ -259,18 +311,45 @@ internal static class Onboarding
                 project,
                 deployment,
                 manifestPath,
-                cancellationToken)
+                cancellationToken,
+                outcome)
             .ConfigureAwait(false);
 
-        var lines = (said.ToString() + complained)
+        await done(Summary(code, outcome, complained.ToString())).ConfigureAwait(false);
+    }
+
+    /// <summary>What the message line says when an enrolment is over: nothing, unless it failed.</summary>
+    /// <param name="code">The command's exit code.</param>
+    /// <param name="outcome">What it recorded.</param>
+    /// <param name="complained">What it wrote as errors.</param>
+    /// <returns>Why nothing was enrolled, or empty when something was.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A success says nothing here, on the owner's call of 2026-09-28.</b> Each agent's row showed what was
+    /// happening to it while it happened, and the list drawn afterwards shows where each one landed -- running,
+    /// or never run yet. A sentence under all of that restating it is the clutter the owner asked to be rid of.
+    /// </para>
+    /// <para>
+    /// A failure still says why, in the command's own words: nothing is on any row to say it, and a summary of
+    /// it would take away which rule was broken. Joined through <see cref="Reports.Sentences"/>, never with a
+    /// line break: the message line makes every control character visible on purpose.
+    /// </para>
+    /// </remarks>
+    internal static string Summary(int code, EnrolmentOutcome outcome, string complained)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        ArgumentNullException.ThrowIfNull(complained);
+
+        if (code == 0 && outcome.EnrolledAgents.Count > 0)
+        {
+            return string.Empty;
+        }
+
+        var why = complained
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.TrimEnd())
             .ToList();
 
-        // **Joined through `Reports.Sentences`, never `string.Join` with a line break.** The message
-        // line makes every control character visible on purpose, so a report assembled with
-        // `Environment.NewLine` draws as a row of replacement characters — which is what five
-        // screens did until 0.28.1, and what a test now reads these sources for.
-        await done(Reports.Sentences(lines)).ConfigureAwait(false);
+        return Reports.Sentences(why.Count > 0 ? [.. why, "Nothing was enrolled."] : ["Nothing was enrolled."]);
     }
 }

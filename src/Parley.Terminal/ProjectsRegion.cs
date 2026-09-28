@@ -1,4 +1,6 @@
+using System.Globalization;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
@@ -87,10 +89,12 @@ internal sealed class ProjectsRegion : FrameView
     /// Somebody who has just broken a project's configuration needs to be told; a surface that went on
     /// showing what it read a minute ago would hide the edit that caused it.
     /// </remarks>
+    /// <param name="figures">What is in each project, by name; a project absent from it is drawn without counts.</param>
     internal void Show(
         IReadOnlyList<ProjectSettings> projects,
         IReadOnlyDictionary<string, ProjectHealth> health,
-        string? manifestProblem)
+        string? manifestProblem,
+        IReadOnlyDictionary<string, ProjectFigures>? figures = null)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(health);
@@ -99,11 +103,16 @@ internal sealed class ProjectsRegion : FrameView
 
         _projects = manifestProblem is null ? [.. projects] : [];
 
+        // Names and addresses are padded to the widest of each, so the columns line up and the eye can run
+        // down one fact across every project.
+        var names = _projects.Count == 0 ? 0 : _projects.Max(project => project.Name.Value.Length);
+        var addresses = _projects.Count == 0 ? 0 : _projects.Max(project => Address(project).Length);
+
         var lines = manifestProblem is not null
             ? [$"This machine's projects could not be read. {manifestProblem}"]
             : _projects.Count == 0
                 ? new List<string> { Nothing }
-                : [.. _projects.Select(project => Line(project, health))];
+                : [.. _projects.Select(project => Line(project, health, figures, names, addresses))];
 
         var at = keep is null ? -1 : _projects.FindIndex(p => p.Name.Value == keep);
 
@@ -167,17 +176,95 @@ internal sealed class ProjectsRegion : FrameView
     /// <summary>How one project reads.</summary>
     /// <param name="project">The project.</param>
     /// <param name="health">What each broker said.</param>
-    /// <returns>Its name, whether it answers, and its description when it has one.</returns>
+    /// <param name="figures">What is in each project, or null when nothing was counted.</param>
+    /// <param name="names">The width the name column is padded to.</param>
+    /// <param name="addresses">The width the address column is padded to.</param>
+    /// <returns>Its name, where it answers, whether it does, what is in it, and its description.</returns>
+    /// <remarks>
+    /// <b>The facts a person wants are on the row, not in a message.</b> The owner's call of 2026-09-27:
+    /// creating a project printed a paragraph about ports and stores and tunnels, and the one fact worth
+    /// having -- where it answers -- scrolled away with it. The address is the project's own and is always
+    /// shown; the counts need its broker, so a project that did not answer shows none rather than zeros,
+    /// which would be a claim about a deployment nothing could ask.
+    /// </remarks>
     private static string Line(
         ProjectSettings project,
-        IReadOnlyDictionary<string, ProjectHealth> health)
+        IReadOnlyDictionary<string, ProjectHealth> health,
+        IReadOnlyDictionary<string, ProjectFigures>? figures,
+        int names,
+        int addresses)
     {
         var said = health.TryGetValue(project.Name.Value, out var found) ? found : null;
+
+        var counted = figures is not null && figures.TryGetValue(project.Name.Value, out var these)
+            ? $"  {these}"
+            : string.Empty;
 
         var description = string.IsNullOrWhiteSpace(project.Description)
             ? string.Empty
             : $"  {Safe.Text(project.Description)}";
 
-        return $"{Safe.Text(project.Name.Value)}  [{Describe(said)}]{description}";
+        return $"{Safe.Text(project.Name.Value).PadRight(names)}  {Address(project).PadRight(addresses)}"
+               + $"  [{Describe(said)}]{counted}{description}";
+    }
+
+    /// <summary>Where a project answers, as a host and port.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns><c>127.0.0.1:19100</c> for <c>http://127.0.0.1:19100</c>; the endpoint as written when it is not a URL.</returns>
+    /// <remarks>
+    /// The scheme is dropped because it is the same on every row and says nothing. What is left is the
+    /// manifest's own text, which a person may have edited by hand, so it goes through <see cref="Safe"/>.
+    /// </remarks>
+    internal static string Address(ProjectSettings project) =>
+        Safe.Text(
+            Uri.TryCreate(project.Endpoint, UriKind.Absolute, out var uri) && uri.Port > 0
+                ? $"{uri.Host}:{uri.Port.ToString(CultureInfo.InvariantCulture)}"
+                : project.Endpoint);
+}
+
+/// <summary>What is in one project, counted from its broker.</summary>
+/// <param name="Agents">Agents registered and not retired, not counting people holding a seat.</param>
+/// <param name="Running">How many of those are attached now.</param>
+/// <param name="Conversations">Conversations on the first page the broker returned, archived ones left out.</param>
+/// <param name="More">Whether the broker had more conversations than that page.</param>
+/// <param name="Open">How many of those conversations have work still open.</param>
+internal sealed record ProjectFigures(int Agents, int Running, int Conversations, bool More, int Open)
+{
+    /// <summary>Counts what a broker said about its project.</summary>
+    /// <param name="registry">Its registry.</param>
+    /// <param name="page">The first page of its conversations.</param>
+    /// <returns>The figures.</returns>
+    /// <remarks>
+    /// A seat is a person rather than an agent, and a retired agent is one somebody has said is finished,
+    /// so neither is counted: a row claiming five agents in a project that routes to three would be the
+    /// row disagreeing with the agents pane one Enter away.
+    /// </remarks>
+    internal static ProjectFigures Of(IReadOnlyList<AgentRecord> registry, ConversationPage page)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(page);
+
+        var agents = registry
+            .Where(agent => agent.Adapter != Seat.Adapter && agent.Status != AgentStatus.Retired)
+            .ToList();
+
+        return new ProjectFigures(
+            agents.Count,
+            agents.Count(agent => agent.Connected),
+            page.Items.Count,
+            page.NextPageToken is not null,
+            page.Items.Count(conversation => conversation.HasOpenExchange));
+    }
+
+    /// <summary>The figures as a row says them.</summary>
+    /// <returns>For example <c>4 agents, 3 running · 12 conversations, 2 open</c>.</returns>
+    public override string ToString()
+    {
+        var conversations = $"{Conversations.ToString(CultureInfo.InvariantCulture)}{(More ? "+" : string.Empty)}";
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Agents} {(Agents == 1 ? "agent" : "agents")}, {Running} running"
+            + $" · {conversations} {(Conversations == 1 && !More ? "conversation" : "conversations")}, {Open} open");
     }
 }

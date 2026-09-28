@@ -13,14 +13,19 @@ namespace Parley.Terminal;
 /// dictate the UI."</i> The status line, the <c>?</c> dialog and the menu bar are three readings of one
 /// list, and each ignores what it does not need.
 /// </para>
+/// <para>
+/// <b>Declared in the order the bar shows them</b>, because <c>MenuRow</c> reads that order rather than
+/// keeping a second list. Project is first on the owner's call of 2026-09-27: a person opens this surface
+/// to act on a project, so that is the menu at the left edge.
+/// </para>
 /// </remarks>
 internal enum ActionCategory
 {
-    /// <summary>The deployment as a whole: refreshing it, watching it, leaving.</summary>
-    Deployment,
-
     /// <summary>One project: naming, removing, pruning, enrolling into.</summary>
     Project,
+
+    /// <summary>The deployment as a whole: refreshing it, watching it, leaving.</summary>
+    Deployment,
 
     /// <summary>One agent, or the seat a person holds among them.</summary>
     Agent,

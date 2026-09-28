@@ -145,7 +145,7 @@ public static class AutostartCommand
         {
             await error.WriteLineAsync(
                 "This machine has no projects yet, so there is nothing for an entry to serve. Name "
-                + "one in `parley terminal`, then run this again — the entry will serve every "
+                + "one in `parley`, then run this again — the entry will serve every "
                 + "project on the machine, including any named afterwards.").ConfigureAwait(false);
 
             return Config;
@@ -255,7 +255,7 @@ public static class AutostartCommand
                 && listedProjects.Count == 0)
             {
                 await output.WriteLineAsync(
-                    "  names: no project yet. Name the first one from `parley terminal`;\n" +
+                    "  names: no project yet. Name the first one from `parley`;\n" +
                     "         it starts within seconds, and the web UI shows it.")
                     .ConfigureAwait(false);
             }

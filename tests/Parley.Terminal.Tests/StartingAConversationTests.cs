@@ -77,7 +77,7 @@ public sealed class StartingAConversationTests
         using var directory = Directory();
         using var shell = new Shell(directory);
 
-        Assert.Equal($"parley terminal {BuildIdentity.Version}", shell.Title);
+        Assert.Equal($"parley {BuildIdentity.Version}", shell.Title);
 
         using var driving = Driving.Open();
         var dialog = Prompting.Choose("What this region can do", "described", ["one"]);

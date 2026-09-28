@@ -75,7 +75,7 @@ public sealed class UnnamedMachineTests
         var offered = directory.Projects[0];
 
         Assert.Contains("Not named in a manifest", offered.Description, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", offered.Description, StringComparison.Ordinal);
+        Assert.Contains("`parley`",offered.Description, StringComparison.Ordinal);
     }
 
     [Fact]

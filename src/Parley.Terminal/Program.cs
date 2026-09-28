@@ -28,7 +28,7 @@ parley-terminal: the operator's terminal surface.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 
-Started by `parley terminal` as well, which forwards here and parses nothing.
+Started by `parley` on its own as well, which forwards here and parses nothing.
 """;
 
 var arguments = new List<string>(args);

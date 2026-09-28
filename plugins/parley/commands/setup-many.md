@@ -69,9 +69,9 @@ rather than having a person answer it from memory. Do not look for the manifest;
 usually not meant to be agents. Repositories that already have an `.mcp.json` are marked so,
 because leaving a working agent unticked is how one quietly stops being offered.
 
-**The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. `parley terminal`
-has the same picker on its projects screen, under `e`, with a folder browser in front of it - on a
-machine where the user is at a keyboard, that is the easier way in.
+**The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. `parley` has the
+same picker inside a project, as **Agent > Enroll agents from folders** (`f`), with a folder browser
+in front of it - on a machine where the user is at a keyboard, that is the easier way in.
 
 **`--describe` says what would change and changes nothing.** Read it with the user before the real
 run. Three behaviours are worth knowing so the output is not surprising:

@@ -290,7 +290,7 @@ public static class ProjectFolder
         "it is its store - neither is written here, because a name or a path recorded in two",
         "places is two places that come to disagree.",
         "",
-        "Managed from `parley terminal`. Editing by hand is fine; the same rules are",
+        "Managed from `parley`. Editing by hand is fine; the same rules are",
         "applied on read, so a mistake is refused rather than half-applied - and whatever this",
         "version does not recognise is carried across untouched, so an older Parley editing a",
         "newer one's file does not eat it.",

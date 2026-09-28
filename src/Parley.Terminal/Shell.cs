@@ -523,7 +523,10 @@ internal sealed class Shell : Window
     /// subtracted somewhere new, because this surface has been bitten three times by a row that came and
     /// went and resized every region under it.
     /// </remarks>
-    private readonly Plain _bar = new() { X = 0, Y = 0, Width = Dim.Fill(), Height = 1 };
+    private readonly MenuBarView _bar;
+
+    /// <summary>The title of the menu dropped down from the bar now, or <see langword="null"/>.</summary>
+    internal string? MenuOpen => _bar.Opened;
 
     /// <summary>
     /// Where every outcome this surface reports is written.
@@ -620,7 +623,7 @@ internal sealed class Shell : Window
 
         _directory = directory;
 
-        Title = $"parley terminal {BuildIdentity.Version}";
+        Title = $"parley {BuildIdentity.Version}";
         BorderStyle = LineStyle.None;
 
         Projects = new ProjectsRegion();
@@ -758,6 +761,7 @@ internal sealed class Shell : Window
         // reparenting on a change of view races the main loop's own walk of this list.
         // Painted like the status line, because it is the same kind of thing: furniture that has to be
         // found without being looked for. The two together bracket the screen.
+        _bar = new MenuBarView(() => MenuRow.Menus(Bar()), RunFromMenu) { X = 0, Y = 0, Width = Dim.Fill(), Height = BarRows };
         _bar.SetScheme(Colours.StatusBar());
 
         Add(_bar);
@@ -1180,7 +1184,7 @@ internal sealed class Shell : Window
         var panes = Panes;
         var region = panes[FocusedRegion];
 
-        _bar.Text = BarText();
+        _bar.Show(BarTitles());
 
         // Stacked, the line says which of how many as well as which. A person who has pulled their
         // window in can otherwise see no evidence that the surface has four regions at all, which
@@ -1223,20 +1227,17 @@ internal sealed class Shell : Window
             ? string.Empty
             : "  " + string.Join("  ", actions.Select(Caption));
 
-        var menu = $"  {ActionsKey}: actions";
-
-        // The last rung that still names the key. `Focus: Conversations (2/2, Tab)` is thirty-one
-        // columns of a forty-column terminal, which leaves nine — enough for this and not for the
-        // word "actions". Measured on the stacked project view, which is the longest focus text
-        // this surface produces.
-        var brief = $"  {ActionsKey}: more";
+        // **`?: actions` is gone from every rung, on the owner's call of 2026-09-28.** It was the line's
+        // fallback when a region's actions did not fit: one key naming a dialog that listed the rest. The
+        // menu bar is that list now, always on screen and reached with the mouse or Alt, so the fallback
+        // named a second way to something already in front of the person. The key itself still works --
+        // it is Help > Keys -- it is simply not advertised twice.
         var room = Viewport.Width > 0 ? Viewport.Width : Threshold;
 
-        // **Listed in full when they fit, and behind one key when they do not**, and then further
-        // down a ladder that ends holding the two things that matter most: which pane has focus,
-        // and that `?` exists. A status line clipped by the toolkit at whatever column the terminal
-        // ends at is the silent truncation the narrow layout exists to avoid, arrived at from the
-        // other direction.
+        // **Listed in full when they fit, and left to the menu bar when they do not**, and then further
+        // down a ladder that ends holding the thing that matters most: which pane has focus. A status
+        // line clipped by the toolkit at whatever column the terminal ends at is the silent truncation
+        // the narrow layout exists to avoid, arrived at from the other direction.
         //
         // **The ladder replaced a single either/or, which the way-back label had just broken.** At
         // forty columns `alpha / Focus: Agents  Esc: back to alpha` is over the width before an
@@ -1244,19 +1245,12 @@ internal sealed class Shell : Window
         // which has no back label, so it only failed once Ctrl+Q pushed the *top* view one column
         // over as well.
         //
-        // Dropping back and quit before the menu is deliberate rather than reluctant. `?` opens a
-        // list that holds both of them, so the short form is not a screen with no way out -- it is
-        // the same way out, one keystroke further away, which is the trade the actions themselves
-        // already make.
+        // Dropping back and quit late is deliberate rather than reluctant. The menu bar holds both, so
+        // the short form is not a screen with no way out -- it is the same way out, one menu away.
         // The message's actions sit between the ways out and the region's own, and drop off the
         // ladder before either -- the menu holds them, and unlike Escape they are about something
         // that is already on the screen in front of the person.
         //
-        // **`?` is on the full line too, which it was not.** The rung that lists everything named
-        // no menu, so on a wide terminal -- where everything fits -- the one route a pointer has
-        // to any action was on no screen at all. contracts/surface.md asks that no action exist
-        // only as a key, and a status line is not clickable. Twelve columns at the width where
-        // there is most room for them.
         // **The build, on the widest rung and nowhere below it.** Asked for by the owner, who could not tell from the
         // screen which terminal was running while a fix was being installed over it. Last on the line and first to go,
         // because on a narrow terminal the focus and `?` matter more; `?` lists it for that case, and the window title
@@ -1275,15 +1269,13 @@ internal sealed class Shell : Window
         // wider than two hundred columns, so a build said only beside all of them was said on no terminal anybody has.
         _status.Text = Fits(
             room,
-            placed + mail + back + quit + about + listed + menu + build,
-            placed + mail + back + quit + about + listed + menu,
-            placed + mail + back + quit + about + menu + build,
-            placed + mail + back + quit + about + menu,
-            placed + mail + back + quit + menu + build,
-            placed + mail + back + quit + menu,
-            placed + mail + menu,
-            focus + mail + menu,
-            focus + mail + brief,
+            placed + mail + back + quit + about + listed + build,
+            placed + mail + back + quit + about + listed,
+            placed + mail + back + quit + about + build,
+            placed + mail + back + quit + about,
+            placed + mail + back + quit + build,
+            placed + mail + back + quit,
+            placed + mail,
             focus + mail,
             focus);
     }
@@ -1470,13 +1462,14 @@ internal sealed class Shell : Window
     internal IReadOnlyList<RegionAction> Actions() =>
         [.. Offered().Select(action => action with { Category = action.Category ?? Belongs() })];
 
-    /// <summary>What the menu bar says, across the top row.</summary>
-    /// <returns>The categories that have anything under them, with the key that opens each.</returns>
+    /// <summary>The menus the bar offers, left to right.</summary>
+    /// <returns>The categories that have anything under them.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Alt and the category's first letter</b>, which is what a menu bar does everywhere else — and
+    /// <b>Alt and the title's first letter opens one</b>, which is what a menu bar does everywhere else — and
     /// it is free here, because every ordinary letter on this surface already belongs to an action or to
-    /// the text somebody is typing. A bar that bound bare letters would take them from the regions.
+    /// the text somebody is typing. A bar that bound bare letters would take them from the regions. The
+    /// letter is underlined on the bar, as it is in any other program's.
     /// </para>
     /// <para>
     /// <b>What is on it is the focused region's, plus what belongs to no region</b> (D2). It therefore
@@ -1484,10 +1477,7 @@ internal sealed class Shell : Window
     /// while the projects pane has focus would have no agent to act on.
     /// </para>
     /// </remarks>
-    internal string BarText() =>
-        string.Join(
-            "   ",
-            MenuRow.Menus(Bar()).Select(menu => $"Alt+{char.ToUpperInvariant(menu.Title[0])} {menu.Title}"));
+    internal IReadOnlyList<string> BarTitles() => [.. MenuRow.Menus(Bar()).Select(menu => menu.Title)];
 
     /// <summary>Everything the bar reads: this region's actions, the message line's, and the global.</summary>
     /// <returns>The actions, in no particular order — <c>MenuRow</c> decides the order.</returns>
@@ -1497,55 +1487,29 @@ internal sealed class Shell : Window
     /// </remarks>
     private IReadOnlyList<RegionAction> Bar() => [.. Actions(), .. Messaging(), .. Global()];
 
-    /// <summary>Opens the bar's menu for a category, if the bar is showing one.</summary>
+    /// <summary>Drops down the bar's menu for a category, if the bar is showing one.</summary>
     /// <param name="initial">The letter Alt was pressed with.</param>
     /// <returns><see langword="true"/> when a menu opened.</returns>
+    private bool OpenMenu(char initial) => _bar.Open(initial);
+
+    /// <summary>Runs what a menu line names, as the bar offers it now.</summary>
+    /// <param name="stroke">The line's key.</param>
+    /// <param name="label">The line's label, as written on the menu.</param>
     /// <remarks>
-    /// <b>Built from <see cref="MenuRow"/> and run through <see cref="Prompting.Choose"/></b>, which is
-    /// the dialog every door on this surface already uses — so the menu inherits the things that were
-    /// paid for once: it sizes its own description, it scrolls, its label survives an underscore, and a
-    /// test can drive it. A second dialog written for menus would inherit none of them.
+    /// Found again rather than carried by the line; <see cref="MenuBarView"/>'s constructor says why. A line
+    /// that no longer matches anything runs nothing — the menu was built for a screen that has since
+    /// changed, and guessing which action it meant is the one thing this must not do.
     /// </remarks>
-    private bool OpenMenu(char initial)
+    private void RunFromMenu(string stroke, string label)
     {
-        if (App is not { } app)
+        var chosen = MenuRow.Menus(Bar())
+            .SelectMany(menu => menu.Items)
+            .FirstOrDefault(item => !item.Divides && item.Stroke == stroke && item.Label == label);
+
+        if (chosen?.Action is { } action)
         {
-            return false;
+            _ = action.Run();
         }
-
-        var menus = MenuRow.Menus(Bar());
-
-        var chosen = menus.FirstOrDefault(
-            menu => char.ToUpperInvariant(menu.Title[0]) == char.ToUpperInvariant(initial));
-
-        if (chosen.Items is null)
-        {
-            return false;
-        }
-
-        // The separators are not offered: a rule is a line and never something to choose.
-        var items = chosen.Items.Where(item => !item.Divides).ToList();
-
-        var menu = Prompting.Choose(
-            chosen.Title,
-            $"{NameOf(Panes[FocusedRegion])} · {VersionLabel}",
-            [.. items.Select(item => $"{item.Stroke}: {item.Label}")]);
-
-        var open = Prompting.Open(app, menu);
-
-        menu.Done += (_, picked) =>
-        {
-            Prompting.Close(app, open);
-
-            var at = items.FindIndex(item => $"{item.Stroke}: {item.Label}" == picked);
-
-            if (at >= 0)
-            {
-                _ = items[at].Action!.Run();
-            }
-        };
-
-        return true;
     }
 
     /// <summary>What can be done wherever the cursor is, rather than to what it is on.</summary>
@@ -1650,13 +1614,20 @@ internal sealed class Shell : Window
             new RegionAction('l', Files.ProjectTitle, ShowFiles),
             new RegionAction('p', Pruning.Title, PruneSelected),
             new RegionAction('g', FollowLogTitle, FollowLog, Category: ActionCategory.Deployment),
-            new RegionAction('e', Onboarding.Title, Enrol),
+
+            // **Enrolling a folder of repositories moved to the agents pane**, on the owner's call of
+            // 2026-09-27: a project is made first and agents are enrolled into it, so the act belongs where the
+            // project is already the context rather than on a list where it has to be inferred from a cursor.
             new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
         ],
 
         AgentsRegion =>
         [
             new RegionAction('a', Adding.Title, Add),
+
+            // Beside adding one, because it is the same act for many: the two ways a project gains agents
+            // belong on one menu. `f` for the folder it asks for.
+            new RegionAction('f', Onboarding.Title, Enrol),
 
             // Offered only while there is something to start, so the line never names a key that
             // would do nothing — and, on a deployment where every agent has registered, never
@@ -1689,7 +1660,10 @@ internal sealed class Shell : Window
             .. Agents.Selected is { Seat: false } told
                 ? new[]
                 {
-                    new RegionAction('w', ToldTitle + told.Name, ShowTold),
+                    // `h`, for history. It was `w`, which is taking delivery wherever a seat is held -- so
+                    // with a seat held and an agent selected this pane named one key twice, and the key ran
+                    // whichever came first. `NoTwoActionsShareAKeyTests` holds it.
+                    new RegionAction('h', ToldTitle + told.Name, ShowTold),
                     new RegionAction('o', Instructing.Title + told.Name, InstructSelected),
 
                     // Never for a seat either, and for the same reason: an ownership line is how
@@ -1702,8 +1676,11 @@ internal sealed class Shell : Window
                     // seat is 0.28.2's recorded defect: the owner could not find how to start a
                     // conversation and reached for an instruction, which is not a message at all.
                     // So it is always here and says what is missing when it is pressed.
+                    //
+                    // `k`, as in ask. It was `a`, which is adding an agent, first in this list -- so the key
+                    // always added and the ask could be reached only from the menu.
                     new RegionAction(
-                        'a',
+                        'k',
                         Ownership.AskTitle + ": " + told.Name,
                         AskWhatItOwns,
                         Owing.Requesting),
@@ -1892,8 +1869,8 @@ internal sealed class Shell : Window
         }
 
         // The message's actions are in the menu for the reason back and quit are: no action on this
-        // surface exists only as a key, and a status line that has fallen back to `?: actions` has
-        // taken their captions off the screen.
+        // surface exists only as a key, and a status line too narrow to list them has taken their
+        // captions off the screen.
         var about = Messaging();
 
         var menu = Prompting.Choose(
@@ -2117,7 +2094,22 @@ internal sealed class Shell : Window
                 _lastAdded,
                 folder => _lastAdded = folder,
                 Queue,
-                Reporting)
+
+                // The activities come off the rows before the registry is read again, so the list drawn next
+                // says where each agent landed rather than what it was last doing.
+                async said =>
+                {
+                    Agents.ClearActivity();
+
+                    await Reporting(said).ConfigureAwait(false);
+                },
+
+                // **Shown on each agent's row while it happens**, because each agent is started and waited for
+                // in turn and a screen that says nothing for a minute is one somebody assumes has hung -- the
+                // owner's report of 2026-09-27. On the row rather than the message line, their call of
+                // 2026-09-28. The catalogue is read again each time because an agent being enrolled was not in
+                // it when the rows were last drawn.
+                (role, doing) => Agents.Activity(role, doing, Catalogue()))
             : Task.CompletedTask;
 
     /// <summary>Opens the selected project's broker log and follows it.</summary>
@@ -3684,7 +3676,13 @@ internal sealed class Shell : Window
         // **Before the regions, because Alt is nobody's letter.** A focused box wins every printable
         // key -- 0.30.4's lesson -- and that is exactly why the bar is reached with a modifier: opening
         // the Conversation menu must work while somebody is typing into the composer, where `c` is a `c`.
-        if (key.IsAlt && !key.IsCtrl && key.AsRune.Value is > 0 and < 128 && OpenMenu((char)key.AsRune.Value))
+        //
+        // **The letter is read with Alt taken off, and for 0.34.1 it was not.** `Key.AsRune` is empty for
+        // any key carrying Alt or Ctrl -- the toolkit's rule that a chord is not a character -- so this arm
+        // asked for the letter of a chord and got nothing, every time, and the bar advertised three keys
+        // that did nothing. Nothing in the suite had pressed one.
+        if (key.IsAlt && !key.IsCtrl && key.NoAlt.AsRune.Value is > 0 and < 128
+            && OpenMenu((char)key.NoAlt.AsRune.Value))
         {
             return true;
         }
@@ -3758,9 +3756,9 @@ internal sealed class Shell : Window
     internal async Task RefreshAsync(CancellationToken cancellationToken)
     {
         var projects = _directory.Projects;
-        var health = await HealthAsync(projects, cancellationToken).ConfigureAwait(false);
+        var (health, figures) = await SurveyAsync(projects, cancellationToken).ConfigureAwait(false);
 
-        Projects.Show(projects, health, _directory.ManifestProblem);
+        Projects.Show(projects, health, _directory.ManifestProblem, figures);
 
         if (Projects.Selected is { } selected)
         {
@@ -4467,26 +4465,54 @@ internal sealed class Shell : Window
             ? catalogue
             : NodeCatalogue.Empty;
 
-    /// <summary>Asks every project's broker what it speaks, all at once.</summary>
+    /// <summary>Asks every project's broker what it speaks and what it holds, all at once.</summary>
     /// <param name="projects">The projects to ask.</param>
     /// <param name="cancellationToken">Stops the reads.</param>
-    /// <returns>What each said, by project name.</returns>
-    private async Task<IReadOnlyDictionary<string, ProjectHealth>> HealthAsync(
-        IReadOnlyList<ProjectSettings> projects,
-        CancellationToken cancellationToken)
+    /// <returns>What each said, and what is in each that answered, by project name.</returns>
+    /// <remarks>
+    /// The counts are asked only of a broker that answered in this build's protocol. One that did not
+    /// could not answer the next two questions either, and asking would add two more timeouts to every
+    /// refresh of a deployment that already has something wrong with it. A count that could not be read
+    /// is left out rather than shown as zero.
+    /// </remarks>
+    private async Task<(IReadOnlyDictionary<string, ProjectHealth> Health, IReadOnlyDictionary<string, ProjectFigures> Figures)>
+        SurveyAsync(IReadOnlyList<ProjectSettings> projects, CancellationToken cancellationToken)
     {
         var asked = projects.Select(async project =>
         {
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await new BrokerClient(_directory.ClientFor(project))
-                    .ImplementsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+            var client = new BrokerClient(_directory.ClientFor(project));
 
-            return (project.Name.Value, Health: new ProjectHealth(read.Value, read.Problem));
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await client.ImplementsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+            var health = new ProjectHealth(read.Value, read.Problem);
+
+            if (!health.Agrees)
+            {
+                return (project.Name.Value, Health: health, Figures: (ProjectFigures?)null);
+            }
+
+            var registry = await BrokerDirectory.ReadAsync(async () =>
+                await client.RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+            var conversations = await BrokerDirectory.ReadAsync(async () =>
+                await client.ConversationsAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            var figures = registry.Value is { } agents && conversations.Value is { } page
+                ? ProjectFigures.Of(agents, page)
+                : null;
+
+            return (project.Name.Value, Health: health, Figures: figures);
         });
 
         var answers = await Task.WhenAll(asked).ConfigureAwait(false);
 
-        return answers.ToDictionary(a => a.Value, a => a.Health, StringComparer.Ordinal);
+        return (
+            answers.ToDictionary(a => a.Value, a => a.Health, StringComparer.Ordinal),
+            answers
+                .Where(a => a.Figures is not null)
+                .ToDictionary(a => a.Value, a => a.Figures!, StringComparer.Ordinal));
     }
 
     /// <summary>Collects an outcome per item, then sends them together as the Result.</summary>

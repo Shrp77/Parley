@@ -42,7 +42,7 @@ public sealed class MovedToTheTerminalTests
         // EX_USAGE, so a script detects it. Zero would read as "it worked and printed nothing",
         // which is the worst answer a removed command can give a pipeline.
         Assert.Equal(64, code);
-        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^\s+parley\s*$", error);
     }
 
     [Theory]

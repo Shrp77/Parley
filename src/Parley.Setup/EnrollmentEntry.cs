@@ -105,9 +105,9 @@ public sealed record EnrollmentEntry(
     /// <remarks>
     /// Condition 1 of the amendment: a suggestion travels with its evidence so that what is
     /// being approved is checkable against the material behind it rather than against nothing.
-    /// Gathered mechanically — a README line, the top-level directories, an earlier
-    /// registration in the repository's own history — and never summarised, because a summary
-    /// is one more thing to take on trust.
+    /// Gathered mechanically — a README line, the top-level directories, and the projects the
+    /// repository already answers in — and never summarised, because a summary is one more thing
+    /// to take on trust. Read off disk only: the repository's history is not consulted.
     /// </remarks>
     [JsonPropertyName("_evidence")]
     public IReadOnlyList<string>? Evidence { get; init; }

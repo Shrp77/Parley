@@ -156,9 +156,9 @@ public sealed class LayoutTests
     [Fact]
     public async Task The_narrowest_status_line_still_says_which_pane_and_how_to_see_the_rest()
     {
-        // What the ladder must never cut. Which pane has focus is the thing Tab acts on, and `?`
-        // is the way to everything the line no longer has room to name — including both ways out,
-        // which is what makes dropping them from the line something other than stranding somebody.
+        // What the ladder must never cut. Which pane has focus is the thing Tab acts on. The way to
+        // everything the line no longer has room to name -- including both ways out -- is the menu bar,
+        // which is always on screen; the line stopped naming `?` for it on 2026-09-28.
         using var driving = Driving.Open(width: 40, height: 20);
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -171,7 +171,8 @@ public sealed class LayoutTests
             shell.Lay(40);
 
             Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
-            Assert.Contains($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+            Assert.DoesNotContain($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+            Assert.NotEmpty(shell.BarTitles());
         }
     }
 

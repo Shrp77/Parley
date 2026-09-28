@@ -351,6 +351,20 @@ internal static class Driving
             Deliver(list, at, flags);
         }
 
+        /// <summary>Clicks one cell of the screen, whatever is there.</summary>
+        /// <param name="at">The cell, in screen coordinates.</param>
+        /// <remarks>
+        /// For a row that draws several things and is one view, where the middle of the view is not the
+        /// thing being aimed at: the menu bar's titles are the case that needed it.
+        /// </remarks>
+        internal void ClickAt(Point at)
+        {
+            var top = App.TopRunnableView ?? throw new InvalidOperationException("nothing is on screen");
+
+            Deliver(top, at, MouseFlags.LeftButtonClicked);
+            App.LayoutAndDraw(true);
+        }
+
         private void Click(View view, MouseFlags flags)
         {
             ArgumentNullException.ThrowIfNull(view);

@@ -105,14 +105,23 @@ public sealed class EveryKeyIsOfferedTests
     }
 
     [Fact]
-    public void The_actions_key_is_itself_named_wherever_it_is_the_only_way_on()
+    public void The_actions_key_is_offered_by_the_menu_bar_rather_than_the_status_line()
     {
-        // `?` is the key that reveals the others, so it is the one key that cannot rely on the
-        // menu to advertise it. The status line has to carry it whenever it carries nothing else.
-        Assert.Contains(
-            $"{Shell.ActionsKey}:",
-            "  " + Shell.ActionsKey + ": actions",
-            StringComparison.Ordinal);
+        // **Inverted on the owner's call of 2026-09-28.** This required the status line to name `?` whenever it
+        // named nothing else, because `?` was the only way to the actions that did not fit. The menu bar is that
+        // now, always on screen, and `?` is on its Help menu as Keys -- so the line naming it too was a second
+        // way to one thing, taking room from what the line is for.
+        using var driving = Driving.Open(width: 40, height: 20);
+        using var directory = new Parley.Client.BrokerDirectory(
+            [new Parley.Core.ProjectSettings(Parley.Core.ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
+            _ => Grpc.Net.Client.GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(40);
+
+        Assert.DoesNotContain($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+        Assert.Contains("Help", shell.BarTitles());
     }
 
     [Fact]

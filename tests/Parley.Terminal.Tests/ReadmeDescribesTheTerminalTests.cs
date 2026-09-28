@@ -43,7 +43,7 @@ public sealed class ReadmeDescribesTheTerminalTests
         var readme = Readme();
 
         Assert.Contains("### From a terminal", readme, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", readme, StringComparison.Ordinal);
+        Assert.Contains("`parley` on its own opens it", readme, StringComparison.Ordinal);
 
         foreach (var offered in new[]
                  {

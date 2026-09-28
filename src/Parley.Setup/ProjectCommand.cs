@@ -76,7 +76,7 @@ public static class ProjectCommand
             "\n" +
             "Creating a project, changing what it says and removing one are done in the terminal:\n" +
             "\n" +
-            "    parley terminal\n" +
+            "    parley\n" +
             "\n" +
             "It is the same code this command runs, on a screen that asks for what it needs -- and\n" +
             "removing a project there describes what goes with it and takes the project's own name\n" +
@@ -216,7 +216,7 @@ public static class ProjectCommand
             // where a manifest would live is more use than saying it is missing.
             await output.WriteLineAsync(
                 $"No projects configured. One would live under {ProjectFolder.ProjectsIn(root)}.\n" +
-                "Name the first one in `parley terminal`.")
+                "Name the first one in `parley`.")
                 .ConfigureAwait(false);
 
             return 0;

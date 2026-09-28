@@ -25,12 +25,20 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked)
 /// twenty-one somebody wants, which is a different question and needs a different answer.
 /// </para>
 /// <para>
-/// <b>The sizing is <see cref="ChoiceDialog"/>'s, deliberately copied rather than approximated.</b>
-/// That dialog carries two scars in its own comments: a list told it is taller than its dialog
-/// believes every row is visible and never scrolls, so the cursor walks off the bottom and the
-/// highlight goes with it; and a description sized from what the list left over drew nothing at all
-/// once there were twenty rows. Both were found against a real deployment with nineteen agents in
-/// it, which is the size this dialog is for.
+/// <b>Shown a page of ten at a time</b>, the owner's call of 2026-09-27 after scrolling a long list of
+/// folders felt slow. A page is a list short enough to take in at once, the count line says which page
+/// and how many, and the ticks belong to the rows rather than to the page, so moving between pages loses
+/// nothing. PgDn and PgUp turn a page, as do the right and left arrows; down on a page's last row and up
+/// on its first carry on into the next and the previous, so walking the whole list with one key still
+/// works.
+/// </para>
+/// <para>
+/// <b>Every key is taken on the list, before the list's own bindings see it.</b> They were taken in the
+/// dialog's own handler, and on a screen the list has focus — and a focused view is offered a key before
+/// its dialog is, 0.30.4's sentence. The list binds Enter for itself, so Enter never reached the dialog:
+/// reported by the owner as four repositories ticked and Enter doing nothing. Space and the letters only
+/// worked because the list happens not to bind them. The tests that passed throughout sent the key to the
+/// dialog directly, which is the seam and not the screen.
 /// </para>
 /// <para>
 /// <b>Space ticks, not Enter.</b> Enter is what every other dialog here finishes with, and a list
@@ -42,11 +50,17 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked)
 /// </remarks>
 internal sealed class TickDialog : Dialog
 {
+    /// <summary>How many rows a page shows.</summary>
+    internal const int PageSize = 10;
+
+    private const int Edges = 5;
+
     private readonly ListView _rows;
-    private readonly ObservableCollection<string> _drawn;
     private readonly List<Tickable> _items;
     private readonly string _described;
     private readonly Plain _count;
+    private ObservableCollection<string> _drawn = [];
+    private int _page;
 
     /// <summary>Opens a dialog over a set of rows.</summary>
     /// <param name="title">What the dialog is called.</param>
@@ -69,7 +83,7 @@ internal sealed class TickDialog : Dialog
         // One row for the running count, one for the keys, and the edges. Both are inside the
         // dialog rather than on the shell's status line, because a modal takes the screen and the
         // line underneath it is describing a surface the person cannot reach.
-        Height = Dim.Func(view => Math.Min(wants + _items.Count + Edges, Room(view)), this);
+        Height = Dim.Func(view => Math.Min(wants + Math.Min(_items.Count, PageSize) + Edges, Room(view)), this);
 
         var said = new Plain
         {
@@ -82,8 +96,6 @@ internal sealed class TickDialog : Dialog
 
         said.TextFormatter.WordWrap = true;
 
-        _drawn = new ObservableCollection<string>(_items.Select(Row));
-
         _rows = new ListView
         {
             X = 1,
@@ -91,19 +103,23 @@ internal sealed class TickDialog : Dialog
             Width = Dim.Fill(2),
 
             // Whatever is left, never one row per item: the viewport has to be true or the toolkit
-            // will not scroll, and this dialog exists for lists longer than the screen.
+            // will not scroll, and a terminal shorter than a page still has to work.
             Height = Dim.Fill(2),
         };
 
-        _rows.SetSource(_drawn);
-        _rows.SelectedItem = 0;
+        _rows.KeyDown += (_, key) =>
+        {
+            if (Handle(key))
+            {
+                key.Handled = true;
+            }
+        };
 
         _count = new Plain
         {
             X = 1,
             Y = Pos.AnchorEnd(2),
             Width = Dim.Fill(2),
-            Text = Counted,
         };
 
         var keys = new Plain
@@ -111,10 +127,84 @@ internal sealed class TickDialog : Dialog
             X = 1,
             Y = Pos.AnchorEnd(1),
             Width = Dim.Fill(2),
-            Text = "Space: tick   a: all   n: none   Enter: go   Esc: cancel",
+            Text = Pages > 1
+                ? "Space: tick   a: all   n: none   PgUp/PgDn: page   Enter: go   Esc: cancel"
+                : "Space: tick   a: all   n: none   Enter: go   Esc: cancel",
         };
 
+        ShowPage(0, 0);
+
         Add(said, _rows, _count, keys);
+    }
+
+    /// <summary>Raised when the person has chosen, or declined to.</summary>
+    /// <remarks>
+    /// Null when cancelled, which is told apart from choosing nothing: a person who pressed Escape
+    /// has not said "enrol none of them", they have said "not now".
+    /// </remarks>
+    internal event EventHandler<IReadOnlyList<Tickable>?>? Done;
+
+    /// <summary>What is being decided, as the dialog states it.</summary>
+    internal string Described => _described;
+
+    /// <summary>The rows, as they now stand, across every page.</summary>
+    internal IReadOnlyList<Tickable> Items => _items;
+
+    /// <summary>The list, so a test can move the cursor. It holds the page on screen.</summary>
+    internal ListView Rows => _rows;
+
+    /// <summary>Which page is on screen, counting from zero.</summary>
+    internal int Page => _page;
+
+    /// <summary>How many pages there are.</summary>
+    internal int Pages => Math.Max(1, (_items.Count + PageSize - 1) / PageSize);
+
+    /// <summary>What the count line says.</summary>
+    internal string Counted =>
+        $"{_items.Count(item => item.Ticked)} of {_items.Count} chosen."
+        + (Pages > 1 ? $"   Page {_page + 1} of {Pages}." : string.Empty);
+
+    /// <summary>Ticks or unticks one row.</summary>
+    /// <param name="index">Which row, counted across every page.</param>
+    internal void Toggle(int index)
+    {
+        if (index < 0 || index >= _items.Count)
+        {
+            return;
+        }
+
+        _items[index] = _items[index] with { Ticked = !_items[index].Ticked };
+
+        var onPage = index - (_page * PageSize);
+
+        if (onPage >= 0 && onPage < _drawn.Count)
+        {
+            _drawn[onPage] = Row(_items[index]);
+        }
+
+        _count.Text = Counted;
+    }
+
+    /// <summary>Ticks every row, or none of them, on every page.</summary>
+    /// <param name="ticked">Which way.</param>
+    internal void SetAll(bool ticked)
+    {
+        for (var i = 0; i < _items.Count; i++)
+        {
+            _items[i] = _items[i] with { Ticked = ticked };
+        }
+
+        ShowPage(_page, _rows.SelectedItem ?? 0);
+    }
+
+    /// <inheritdoc/>
+    protected override bool OnKeyDown(Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        // Reached when the list does not have focus. When it does, the list's own handler above has already
+        // taken the key, and it does not arrive here.
+        return Handle(key) || base.OnKeyDown(key);
     }
 
     /// <summary>Whether a key is that letter, plainly typed.</summary>
@@ -124,8 +214,6 @@ internal sealed class TickDialog : Dialog
     /// </remarks>
     private static bool Typed(Key key, char character) =>
         !key.IsCtrl && !key.IsAlt && key.AsRune == new System.Text.Rune(character);
-
-    private const int Edges = 5;
 
     private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
 
@@ -141,56 +229,12 @@ internal sealed class TickDialog : Dialog
     private static string Row(Tickable item) =>
         $"[{(item.Ticked ? 'x' : ' ')}] {item.Label}{(item.Note.Length > 0 ? $"   {item.Note}" : string.Empty)}";
 
-    private string Counted =>
-        $"{_items.Count(item => item.Ticked)} of {_items.Count} chosen.";
-
-    /// <summary>Raised when the person has chosen, or declined to.</summary>
-    /// <remarks>
-    /// Null when cancelled, which is told apart from choosing nothing: a person who pressed Escape
-    /// has not said "enrol none of them", they have said "not now".
-    /// </remarks>
-    internal event EventHandler<IReadOnlyList<Tickable>?>? Done;
-
-    /// <summary>What is being decided, as the dialog states it.</summary>
-    internal string Described => _described;
-
-    /// <summary>The rows, as they now stand.</summary>
-    internal IReadOnlyList<Tickable> Items => _items;
-
-    /// <summary>The list, so a test can move the cursor.</summary>
-    internal ListView Rows => _rows;
-
-    /// <summary>Ticks or unticks one row.</summary>
-    /// <param name="index">Which row.</param>
-    internal void Toggle(int index)
+    /// <summary>Does what a key means here.</summary>
+    /// <param name="key">The key.</param>
+    /// <returns>Whether it meant anything; a key that did not is left to the list, which moves the cursor.</returns>
+    private bool Handle(Key key)
     {
-        if (index < 0 || index >= _items.Count)
-        {
-            return;
-        }
-
-        _items[index] = _items[index] with { Ticked = !_items[index].Ticked };
-        _drawn[index] = Row(_items[index]);
-        _count.Text = Counted;
-    }
-
-    /// <summary>Ticks every row, or none of them.</summary>
-    /// <param name="ticked">Which way.</param>
-    internal void SetAll(bool ticked)
-    {
-        for (var i = 0; i < _items.Count; i++)
-        {
-            _items[i] = _items[i] with { Ticked = ticked };
-            _drawn[i] = Row(_items[i]);
-        }
-
-        _count.Text = Counted;
-    }
-
-    /// <inheritdoc/>
-    protected override bool OnKeyDown(Key key)
-    {
-        ArgumentNullException.ThrowIfNull(key);
+        var at = _rows.SelectedItem ?? 0;
 
         if (key == Key.Esc)
         {
@@ -208,7 +252,32 @@ internal sealed class TickDialog : Dialog
 
         if (key == Key.Space)
         {
-            Toggle(_rows.SelectedItem ?? -1);
+            Toggle((_page * PageSize) + at);
+
+            return true;
+        }
+
+        if (key == Key.PageDown || key == Key.CursorRight)
+        {
+            return Turn(+1, at);
+        }
+
+        if (key == Key.PageUp || key == Key.CursorLeft)
+        {
+            return Turn(-1, at);
+        }
+
+        // Carrying on past the end of a page, so one key still walks the whole list.
+        if (key == Key.CursorDown && at == _drawn.Count - 1 && _page < Pages - 1)
+        {
+            ShowPage(_page + 1, 0);
+
+            return true;
+        }
+
+        if (key == Key.CursorUp && at == 0 && _page > 0)
+        {
+            ShowPage(_page - 1, PageSize - 1);
 
             return true;
         }
@@ -230,6 +299,39 @@ internal sealed class TickDialog : Dialog
             return true;
         }
 
-        return base.OnKeyDown(key);
+        return false;
+    }
+
+    /// <summary>Turns a page, keeping the cursor on the same row of the page where it can.</summary>
+    /// <param name="by">Which way.</param>
+    /// <param name="at">The row the cursor is on.</param>
+    /// <returns>Always <see langword="true"/>: at the first or last page the key is still this dialog's.</returns>
+    private bool Turn(int by, int at)
+    {
+        var to = Math.Clamp(_page + by, 0, Pages - 1);
+
+        if (to != _page)
+        {
+            ShowPage(to, at);
+        }
+
+        return true;
+    }
+
+    /// <summary>Puts a page on screen.</summary>
+    /// <param name="page">Which page.</param>
+    /// <param name="row">The row of it to put the cursor on, clamped to what the page holds.</param>
+    private void ShowPage(int page, int row)
+    {
+        _page = Math.Clamp(page, 0, Pages - 1);
+
+        var first = _page * PageSize;
+
+        _drawn = new ObservableCollection<string>(
+            _items.Skip(first).Take(PageSize).Select(Row));
+
+        _rows.SetSource(_drawn);
+        _rows.SelectedItem = _drawn.Count > 0 ? Math.Clamp(row, 0, _drawn.Count - 1) : null;
+        _count.Text = Counted;
     }
 }

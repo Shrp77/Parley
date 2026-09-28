@@ -44,7 +44,7 @@ public sealed class ProjectIsTheTerminalsTests
 
         // EX_USAGE, so a script detects it rather than reading an empty success (FR-051).
         Assert.Equal(64, code);
-        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^\s+parley\s*$", error);
     }
 
     [Theory]
@@ -81,7 +81,7 @@ public sealed class ProjectIsTheTerminalsTests
         var (_, error) = ToolProcess.Run([], "project");
 
         Assert.Contains("parley project list", error, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", error, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^\s+parley\s*$", error);
 
         foreach (var action in new[] { "add", "set", "remove" })
         {

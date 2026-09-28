@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
@@ -56,13 +58,36 @@ public sealed class ReachabilityIsTwoFactsTests : IDisposable
         return output.ToString();
     }
 
+    /// <summary>A loopback port held and never listened on, so a connection to it is refused.</summary>
+    /// <returns>The socket holding it; the port is free again once it is disposed.</returns>
+    /// <remarks>
+    /// <b>It was the literal 19100, and that is the first port the band hands out.</b> On a machine
+    /// with a project named, a real broker is serving there, so "nothing is listening" was a guess
+    /// about the machine the suite ran on -- and it failed on the owner's the day their first project
+    /// was created. The shape the retired 51707s had. Held rather than probed for, because a port found
+    /// free and then released can be taken before the test uses it.
+    /// </remarks>
+    private static Socket Unanswered()
+    {
+        var held = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        held.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+
+        return held;
+    }
+
+    private static string Address(Socket held) =>
+        $"http://127.0.0.1:{((IPEndPoint)held.LocalEndPoint!).Port}";
+
     [Fact]
     public async Task A_loopback_endpoint_is_never_called_reachable()
     {
         // The word itself, refused. This is narrow on purpose: it is the exact spelling the spec
         // names, and a listing that reintroduced it would be the same defect however it was
         // phrased around it.
-        var said = await ListAsync("http://127.0.0.1:19100");
+        using var held = Unanswered();
+
+        var said = await ListAsync(Address(held));
 
         Assert.DoesNotContain("reachable", said, StringComparison.OrdinalIgnoreCase);
     }
@@ -73,7 +98,9 @@ public sealed class ReachabilityIsTwoFactsTests : IDisposable
         // Both facts, separately, for an endpoint nothing is listening on. The first is about the
         // broker and the second about the address, and a reader must be able to tell which is
         // which — the old single word left somebody unable to act on either.
-        var said = await ListAsync("http://127.0.0.1:19100");
+        using var held = Unanswered();
+
+        var said = await ListAsync(Address(held));
 
         Assert.Contains("not answering", said, StringComparison.Ordinal);
         Assert.Contains("only this machine can address it", said, StringComparison.Ordinal);

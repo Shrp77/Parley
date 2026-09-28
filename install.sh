@@ -849,10 +849,7 @@ done
 if [ "$replacing_broker" != "1" ]; then
     echo ""
     echo "${green}The broker was not touched, and is still serving whatever it was serving.${plain}"
-    echo ""
-    echo "That is the point of the surfaces being their own tools: SPEC.md section 12 has a node"
-    echo "stopping tell every agent it started to quit, and the process is what held everything"
-    echo "that agent had learned."
+    echo "Your agents kept running, so nothing they were working on was lost."
 
     exit 0
 fi
@@ -972,33 +969,31 @@ echo
 printf '%sThe broker is running, and starts again when you log in.%s\n' "$green" "$plain"
 echo
 
-if [ "$named" != "1" ]; then
-    # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
-    echo "No project is named yet, so nothing is being served. Name the first one:"
+# What to do next is the terminal's flow, and it used to be the plugin's: /parley:setup in each
+# repository, restart the editor, check `parley registry`. The owner's flow, 2026-09-27: make a
+# project, then enrol agents into it from inside it.
+#
+# Doing any of it needs the terminal, and on a machine without one there is no way at all:
+# `parley project add` went on 2026-09-25, and the web UI has never been able to name a project, by
+# the one-writer rule its own naming page records. Said outright rather than handing somebody steps
+# they cannot follow.
+if command -v parley-terminal >/dev/null 2>&1 || [ -x "$shims/parley-terminal" ]; then
+    echo "Next, run:  parley"
 
-    # Naming a project needs the terminal, and on a machine without one there is now no way at all:
-    # `parley project add` was the other route and it went on 2026-09-25, and the web UI has never
-    # been able to name a project by the one-writer rule its own naming page records. Said outright
-    # rather than left to be discovered as "name your first project" with nothing that can.
-    if command -v parley-terminal >/dev/null 2>&1 || [ -x "$shims/parley-terminal" ]; then
-        echo "  parley terminal                                   and create a project on its first screen"
-        echo "The broker starts it within seconds."
+    if [ "$named" = "1" ]; then
+        echo "  1. Open a project, or create a new one with c."
     else
-        echo "Naming a project is done in the terminal, and this machine has not installed one." >&2
-        echo "  ./install.sh --only parley-terminal               installs it without stopping the broker"
+        echo "  1. Create a project with c. There is none yet, so nothing is being served."
     fi
 
-    if [ -n "$web_ui" ]; then
-        echo "The web UI shows it once it is named: $web_ui"
-    fi
-
-    echo
-elif [ -n "$web_ui" ]; then
-    echo "The web UI:                                       $web_ui"
+    echo "  2. In the project, choose Agent > Enroll agents from folders (f)."
+    echo "  3. Pick the folder that holds your repositories, tick the ones you want, press Enter."
+else
+    echo "Projects and agents are set up in the terminal, and this machine has not installed it." >&2
+    echo "  ./install.sh --only parley-terminal               installs it without stopping the broker"
 fi
 
-echo "Next, in each repository you want an agent in:   /parley:setup"
-# `parley registry` refuses to choose between several projects, so the check it names says which to pass.
-project_count="$( ("$parley_command" project list 2>/dev/null || true) | grep -cE '^[a-z][a-z0-9-]*[[:space:]]+[^[:space:]]+://' || true)"
-if [ "${project_count:-0}" -gt 1 ]; then check="parley --project <name> registry"; else check="parley registry"; fi
-echo "Restart the editor there, then check it arrived:  $check"
+if [ -n "$web_ui" ]; then
+    echo
+    echo "The web UI: $web_ui"
+fi

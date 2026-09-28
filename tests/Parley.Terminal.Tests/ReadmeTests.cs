@@ -125,7 +125,7 @@ public sealed class ReadmeTests
     [Fact]
     public void The_check_is_looking_at_something()
     {
-        Assert.Contains("parley terminal", Readme(), StringComparison.Ordinal);
+        Assert.Contains("`parley` on its own opens it", Readme(), StringComparison.Ordinal);
         Assert.True(Readme().Length > 10_000);
     }
 }

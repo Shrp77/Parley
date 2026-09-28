@@ -157,9 +157,10 @@ cd Parley
 That is the whole of it. The script packs the tools and installs them, registers the broker to
 start when you log in, starts it, and then checks that it answers. It never asks where a store
 goes: that is a project's to say. The broker serves every project this machine names, and on a
-machine that names none yet it waits for the first — so the script ends by telling you to name
-one, on the first screen of `parley terminal`. The broker starts it within seconds, and the web UI
-shows it.
+machine that names none yet it waits for the first — so the script ends by telling you what to do
+next: run `parley`, create a project with `c`, then open it and choose **Agent > Enroll agents from
+folders** (`f`) to add the repositories that should answer in it. The broker starts a new project
+within seconds, and the web UI shows it.
 
 There are four tools, and which of them a machine wants is a real question:
 
@@ -240,7 +241,7 @@ run. A deployment is a **project**: a store, the address its broker listens on, 
 catalogue of agents this machine may start for it. Name one on the first screen of:
 
 ```
-parley terminal
+parley
 ```
 
 One process serves every project this machine names, each on its own store and port, and each
@@ -273,14 +274,14 @@ for people. `--web-ui <url>` moves it and `--no-web-ui` leaves it out.
 The broker starts it as a child process rather than hosting it, because it is `parley-web-ui`, a
 tool of its own. If the address is already taken, or the tool is not installed on this machine,
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
-deployment, and it names `parley terminal` in the same breath so you are never told there is no way in.
+deployment, and it names `parley` in the same breath so you are never told there is no way in.
 
 `--with-console`, `--console` and `--no-console` were the old spellings. They are **removed** as of
 0.22.0: a broker given one starts anyway and ignores it, so an autostart entry written before this
 version keeps working and quietly stops starting a web UI — `parley autostart status` says so and
 names what to re-run. `parley autostart install` writes an entry this version understands.
 
-**`parley terminal` is the same deployment without a browser**, and the broker names both when it
+**`parley` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
 a server you are in over SSH, a box in a cupboard — and on those the web UI's address is an
 instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
@@ -293,7 +294,7 @@ cost was carrying three paths on every command line. Naming a project is the who
 and it is done on the terminal's first screen:
 
 ```
-parley terminal
+parley
 parley --project acme registry
 ```
 
@@ -493,8 +494,8 @@ The line says what an agent owns **and** what it does not — the exclusion is w
 asking the wrong agent, and it is the half nobody else can supply. A repository can be read to
 find out what it contains; it cannot be read to find out what it has decided not to own.
 
-**You get that line by asking the agent, not by writing it from memory.** Press `a` on an agent
-in `parley terminal`, or use the console's own ask: the agent answers in an ordinary
+**You get that line by asking the agent, not by writing it from memory.** Press `k` on an agent
+in `parley`, or use the console's own ask: the agent answers in an ordinary
 conversation, you read the answer, you argue with it if it is wrong, and you accept what you
 agree on. What you accept is written into the launch configuration for you. Ask every agent in
 a project at once with `e`, which costs each of them one turn and says so before it spends
@@ -700,7 +701,7 @@ deployment where the two disagree is one where the adapter cannot attach at all.
 ```
 parley registry                     every agent, what it owns, and the workspace a peer
                                     never sees
-parley terminal                     everything else: retiring and purging agents,
+parley                              everything else: retiring and purging agents,
                                     exporting, archiving and destroying conversations,
                                     instructing, pruning, and the health reports. They
                                     take an identifier you have to have got from
@@ -770,19 +771,20 @@ The machine running a broker is frequently not one anybody has a browser open on
 deployment is there in a terminal:
 
 ```
-parley terminal
+parley
 ```
 
-That is `parley-terminal`, a tool of its own, and `parley terminal` forwards to it without reading
-the arguments — so `parley-terminal` works identically if you would rather type it. The two are installed
+That is `parley-terminal`, a tool of its own. `parley` on its own opens it, `parley terminal` forwards
+to it without reading the arguments, and `parley-terminal` works identically if you would rather type it. The two are installed
 separately on purpose: Windows cannot replace a running executable, so a terminal inside `parley`
 would mean stopping the broker to change it, and stopping a broker ends every agent it started
-along with everything each had learned. On a machine that does not have it, `parley terminal` says
+along with everything each had learned. On a machine that does not have it, `parley` says
 which tool provides the command and how to install it.
 
-Three views, one thing at a time. It opens on the projects this machine names, with a line beside
-the highlighted one saying what is in it — how many agents, how many are running, how many
-conversations — so which project you want is answered before anything is opened. Enter goes into a
+Three views, one thing at a time. It opens on the projects this machine names, one row each: the
+address it answers on, whether it is answering, how many agents it has and how many are running,
+and how many conversations and how many still have work open — so which project you want is
+answered before anything is opened. Enter goes into a
 project and shows its agents and its conversations; Enter again opens a conversation and reads it.
 Escape comes back, and lands on what you were looking at rather than at the top, so reading three
 conversations in turn costs three keystrokes. The status line says where you are and where Escape

@@ -134,7 +134,7 @@ serves every project this machine names, so what is usually missing is a project
 `parley project list` names none, have the user name one, on the first screen of:
 
 ```
-parley terminal
+parley
 ```
 
 That is the only place a project is created - `parley project add` was removed on 2026-09-25, so
@@ -196,7 +196,7 @@ Substitute the real values. Four notes on the shape:
   `PARLEY_OWNS` rather than guessing at it.** An empty string means the same as absent, and a
   placeholder left in by accident is a claim the user did not make -- but the reason to leave it
   out is stronger than that now: **the line is obtained by asking the agent, and a person
-  accepting the answer is what writes it.** Press `a` on an agent in `parley terminal`, or use
+  accepting the answer is what writes it.** Press `k` on an agent in `parley`, or use
   the console's ask, and the accepted line is written into this file for them. A line invented
   here would be a worksheet answer standing where a measured one belongs, and the record of who
   said it would be wrong.

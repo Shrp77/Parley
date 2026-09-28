@@ -137,7 +137,7 @@ public sealed partial class ProjectRecordTests
         var readme = Read("README.md");
 
         Assert.DoesNotContain("SPEC.md §", readme, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", readme, StringComparison.Ordinal);
+        Assert.Contains("`parley` on its own opens it", readme, StringComparison.Ordinal);
     }
 
     [Fact]

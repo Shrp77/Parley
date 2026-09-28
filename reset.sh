@@ -421,5 +421,5 @@ fi
 echo
 echo 'Done. This machine has no projects now.'
 echo
-echo '  parley terminal                  create one; it gets its own store and port'
+echo '  parley                           create one; it gets its own store and port'
 echo '  parley autostart install         serve every project at logon'

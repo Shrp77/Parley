@@ -99,6 +99,43 @@ public sealed class EnrolmentRegistersTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_node_that_has_not_read_the_new_catalogue_yet_is_asked_again()
+    {
+        // **The owner enrolled four agents and none registered.** Enrolment writes the catalogue and asks
+        // for the starts in the same breath, and the node re-reads its catalogue on a poll -- so the first
+        // ask always reached a node that did not know the role yet, which answered "not something I can
+        // start", and that was taken as final. The log showed the node rejoining with all four a moment
+        // later, and nothing ever asking again. Must fail against a start that asks once.
+        var token = TestContext.Current.CancellationToken;
+
+        var before = await NodeStub.JoinAsync(_broker.Address, ["billing"], token);
+        var heard = new List<string>();
+
+        var starting = Registering.StartAsync(
+            _broker.Address, Orders, TimeProvider.System, token, said => { lock (heard) { heard.Add(said); } });
+
+        // The node's poll catching up: it leaves and comes back knowing the new role.
+        await Task.Delay(TimeSpan.FromSeconds(1), token);
+        await before.DisposeAsync();
+
+        await using var after = await NodeStub.JoinAsync(_broker.Address, ["orders"], token);
+
+        var command = await after.NextAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders.Value, command.Start.Agent);
+
+        await using var attached = await AttachedStub.AttachAsync(_broker.Address, Orders, token);
+
+        var outcome = await starting;
+
+        Assert.True(outcome.Registered, outcome.Says);
+
+        // And it said so while it waited, which is what a person watching the screen has to go on.
+        Assert.Contains(Registering.WaitingForNode, heard);
+    }
+
+    [Fact]
     public async Task A_broker_that_is_not_there_is_reported_rather_than_thrown()
     {
         // The two files are already written when this runs, so an unreachable broker must not take

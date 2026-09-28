@@ -103,6 +103,41 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task An_enrolment_says_what_it_is_waiting_on_while_it_waits()
+    {
+        // **The owner's report of 2026-09-27: enrolled four, and nothing happened for a long time.** Each agent
+        // is started and waited for in turn, and a screen that says nothing for a minute reads as hung. This
+        // broker has no node, so the start is never taken and the whole catch-up is spent -- which is the case
+        // where a person most needs to see what is being waited on. Must fail against an enrolment that says
+        // nothing until it is done.
+        var heard = new List<(string Role, string Activity)>();
+
+        var chosen = new EnrollmentEntry(
+            Workspace.Replace(Path.DirectorySeparatorChar, '/'), "orders", string.Empty, true)
+        {
+            Enroll = true,
+        };
+
+        var code = await EnrollCommand.EnrolAsync(
+            [chosen],
+            describe: false,
+            new Resolved(Catalogue, ValueSource.Argument),
+            new StringWriter(),
+            new StringWriter(),
+            _alpha.Settings,
+            [_alpha.Settings],
+            ManifestPath,
+            TestContext.Current.CancellationToken,
+            new EnrolmentOutcome((role, activity) => { lock (heard) { heard.Add((role, activity)); } }));
+
+        // Per agent, so a surface can put it on the agent's own row -- the owner's call of 2026-09-28.
+        Assert.Equal(0, code);
+        Assert.Contains(("orders", EnrolmentOutcome.Starting), heard);
+        Assert.Contains(("orders", Registering.WaitingForNode), heard);
+        Assert.Equal(("orders", EnrolmentOutcome.NotYet), heard[^1]);
+    }
+
+    [Fact]
     public async Task A_named_project_whose_entry_names_this_catalogue_needs_only_the_entry()
     {
         var said = await ApplyAsync(Catalogue, unattended: true, _alpha.Settings);
@@ -162,7 +197,7 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
         // terminal's on 2026-09-25, so a step telling an operator to run one would be telling them
         // to run something the tool refuses — the exact fault this comment was written about,
         // arrived at a second time by a different route.
-        Assert.Contains("parley terminal", said, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^\s+parley\s*$", said);
         Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", said, StringComparison.Ordinal);

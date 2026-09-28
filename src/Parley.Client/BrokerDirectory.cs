@@ -257,7 +257,7 @@ public sealed class BrokerDirectory : IDisposable
             string.Empty,
             endpoint,
             "Not named in a manifest. This is the broker this machine's commands talk to; "
-            + "naming a project in `parley terminal` gives it a name.");
+            + "naming a project in `parley` gives it a name.");
 
     /// <summary>Opens a channel with the console's own connect policy.</summary>
     /// <param name="endpoint">Where that project's broker listens.</param>

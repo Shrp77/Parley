@@ -905,10 +905,7 @@ foreach ($says in $reported) {
 if (-not $replacingBroker) {
     Write-Host ''
     Write-Host 'The broker was not touched, and is still serving whatever it was serving.' -ForegroundColor Green
-    Write-Host ''
-    Write-Host 'That is the point of the surfaces being their own tools: SPEC.md section 12 has a'
-    Write-Host 'node stopping tell every agent it started to quit, and the process is what held'
-    Write-Host 'everything that agent had learned.'
+    Write-Host 'Your agents kept running, so nothing they were working on was lost.'
 
     exit 0
 }
@@ -1017,36 +1014,34 @@ Write-Host ''
 Write-Host 'The broker is running, and starts again when you log in.' -ForegroundColor Green
 Write-Host ''
 
-if (-not $named) {
-    # The first thing a person does on a machine just installed, said as the next step rather than left to be found.
-    Write-Host 'No project is named yet, so nothing is being served. Name the first one:' -ForegroundColor White
+# **What to do next is the terminal's flow, and it used to be the plugin's.** This ended by sending
+# people to run /parley:setup in each repository, restart the editor there and check `parley
+# registry` -- one repository at a time, from the era before a project could enrol a folder of them.
+# The owner's flow, 2026-09-27: make a project, then enrol agents into it from inside it.
+#
+# **Doing any of it needs the terminal, and on a machine without one there is no way at all.**
+# `parley project add` went on 2026-09-25, and the web UI has never been able to name a project, by
+# the one-writer rule its own naming page records. So a machine without the terminal is told
+# outright rather than handed steps it cannot follow.
+if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
+    Write-Host 'Next, run:  parley' -ForegroundColor White
 
-    # **Naming a project needs the terminal, and on a machine without one there is now no way at
-    # all.** `parley project add` was the other route and it went on 2026-09-25; the web UI has
-    # never been able to name a project, by the one-writer rule its own naming page records. So a
-    # broker-only or web-UI-only machine is told outright rather than left to discover it -- the
-    # symptom otherwise is a person reading "name your first project" with nothing that can.
-    if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
-        Write-Host '  parley terminal                                   and create a project on its first screen' -ForegroundColor White
-        Write-Host 'The broker starts it within seconds.' -ForegroundColor White
+    if ($named) {
+        Write-Host '  1. Open a project, or create a new one with c.' -ForegroundColor White
     }
     else {
-        Write-Warning 'Naming a project is done in the terminal, and this machine has not installed one.'
-        Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+        Write-Host '  1. Create a project with c. There is none yet, so nothing is being served.' -ForegroundColor White
     }
 
-    if ($webUi) {
-        Write-Host "The web UI shows it once it is named: $webUi" -ForegroundColor White
-    }
+    Write-Host '  2. In the project, choose Agent > Enroll agents from folders (f).' -ForegroundColor White
+    Write-Host '  3. Pick the folder that holds your repositories, tick the ones you want, press Enter.' -ForegroundColor White
+}
+else {
+    Write-Warning 'Projects and agents are set up in the terminal, and this machine has not installed it.'
+    Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+}
 
+if ($webUi) {
     Write-Host ''
+    Write-Host "The web UI: $webUi" -ForegroundColor White
 }
-elseif ($webUi) {
-    Write-Host "The web UI:                                       $webUi" -ForegroundColor White
-}
-
-Write-Host 'Next, in each repository you want an agent in:   /parley:setup' -ForegroundColor White
-# `parley registry` refuses to choose between several projects, so the check it names says which to pass.
-$projectCount = @(& $parley project list 2>$null | Where-Object { "$_" -match '^[a-z][a-z0-9-]*\s+\S+://' }).Count
-$check = if ($projectCount -gt 1) { 'parley --project <name> registry' } else { 'parley registry' }
-Write-Host "Restart the editor there, then check it arrived:  $check" -ForegroundColor White

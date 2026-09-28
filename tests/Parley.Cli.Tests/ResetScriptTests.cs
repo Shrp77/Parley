@@ -126,7 +126,7 @@ public sealed class ResetScriptTests
         // told, so a script ending with a command the tool refuses is the worst place for one.
         var text = RepositoryFile.Read("reset.sh");
 
-        Assert.Contains("parley terminal", text, StringComparison.Ordinal);
+        Assert.Matches(@"(?m)^echo '  parley\s+create one", text);
         Assert.DoesNotContain("parley project add", text, StringComparison.Ordinal);
     }
 }

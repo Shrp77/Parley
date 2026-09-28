@@ -86,7 +86,9 @@ public sealed class MessagesAreShownTests
         var drawn = driving.Text();
 
         Assert.Contains("something happened", drawn, StringComparison.Ordinal);
-        Assert.Contains(Shell.ActionsKey.ToString(), shell.Status, StringComparison.Ordinal);
+        // The status line is still there beside it. This read `?` off it until 2026-09-28, when the line stopped
+        // naming `?` -- the focus is the one thing every rung keeps.
+        Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }
 
     private static BrokerDirectory Directory() =>

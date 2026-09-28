@@ -218,7 +218,7 @@ public sealed class StartupBannerTests
         // after deciding the deployment had no way in.
         var block = ConsoleAnnouncement(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
-        Assert.Contains("parley terminal", block, StringComparison.Ordinal);
+        Assert.Contains("Terminal: parley", block, StringComparison.Ordinal);
         Assert.Contains("no browser needed", block, StringComparison.Ordinal);
     }
 
@@ -231,7 +231,9 @@ public sealed class StartupBannerTests
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
         Assert.Contains("start.Environment[ProjectManifest.PathVariable] = manifestPath;", program, StringComparison.Ordinal);
-        Assert.Contains("Terminal: parley terminal{(configPath is null ? string.Empty : $\" --config", program, StringComparison.Ordinal);
+        // Bare `parley` when this machine's own manifest is served, which is what a person types; spelled out as
+        // `parley terminal --config` when another is, so the arguments reach the terminal tool.
+        Assert.Contains("Terminal: parley{(configPath is null ? string.Empty : $\" terminal --config", program, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -253,7 +255,7 @@ public sealed class StartupBannerTests
         // Non-vacuous first: a capture that missed the block would make every assertion below it
         // true of an empty list.
         Assert.Equal(2, rules.Count);
-        Assert.Contains(content, line => line.Contains("parley terminal", StringComparison.Ordinal));
+        Assert.Contains(content, line => line.Contains("Terminal: parley", StringComparison.Ordinal));
 
         var widest = content.Max(line => line.TrimEnd().Length);
 

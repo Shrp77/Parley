@@ -415,7 +415,8 @@ internal static class Adding
                 : (_, token) => registered(project, added, token),
             Starting.Patience,
             TimeProvider.System,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            catchUp: Starting.CatchUp).ConfigureAwait(false);
 
         var through = $"'{role}'";
 

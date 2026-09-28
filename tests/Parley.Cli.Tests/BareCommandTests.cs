@@ -33,7 +33,7 @@ public sealed class BareCommandTests
         Assert.Contains("parley serve", output + error, StringComparison.Ordinal);
         // The way on is the terminal now, not a command in this list: `project add` was removed on
         // 2026-09-25 and the help stopped offering it with the tool.
-        Assert.Contains("parley terminal", output + error, StringComparison.Ordinal);
+        Assert.Contains("`parley`",output + error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,6 +72,6 @@ public sealed class BareCommandTests
         // and nothing saying where they went is how a person concludes the tool lost them.
         var (_, output, error) = ToolProcess.RunFully([]);
 
-        Assert.Contains("parley terminal", output + error, StringComparison.Ordinal);
+        Assert.Contains("`parley`",output + error, StringComparison.Ordinal);
     }
 }

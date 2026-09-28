@@ -247,10 +247,17 @@ public sealed class InstallScriptTests
         // Installing the tools is not the end of setting Parley up, and a script that stopped
         // there would leave somebody with two commands on PATH and nothing working -- which is
         // the state a broker being a separate process creates and the one worth naming.
+        //
+        // What to do next is the terminal's flow since 2026-09-27: make a project, then enrol agents into it
+        // from a folder. It was /parley:setup in each repository and `parley registry` to check -- and this
+        // test required exactly that, so it held the outdated steps in place until the owner read them.
         foreach (var script in new[] { Windows, Unix })
         {
-            Assert.Contains("/parley:setup", script, StringComparison.Ordinal);
-            Assert.Contains("parley registry", script, StringComparison.Ordinal);
+            var code = Code(script);
+
+            Assert.Contains("Next, run:  parley", code, StringComparison.Ordinal);
+            Assert.Contains("Enroll agents from folders", code, StringComparison.Ordinal);
+            Assert.DoesNotContain("/parley:setup", code, StringComparison.Ordinal);
         }
     }
 
@@ -303,7 +310,15 @@ public sealed class InstallScriptTests
         // 2026-09-25, so a script still offering it would be handing somebody a command the tool
         // refuses, at the one moment they have nothing else to go on.
         Assert.Contains("No projects configured", code, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", code, StringComparison.Ordinal);
+
+        // **And the steps are the terminal's flow, spelled the way it is typed.** The owner caught both
+        // halves on 2026-09-27: the script ended by sending people to /parley:setup in each repository and
+        // to `parley registry`, which is the flow from before a project could enrol a folder -- and it named
+        // the terminal `parley terminal`, which is not what anybody types.
+        Assert.Contains("Next, run:  parley", code, StringComparison.Ordinal);
+        Assert.Contains("Enroll agents from folders", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("/parley:setup", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley terminal", code, StringComparison.Ordinal);
         Assert.DoesNotContain("parley project add", code, StringComparison.Ordinal);
     }
 
@@ -324,10 +339,14 @@ public sealed class InstallScriptTests
     {
         // The same distinction as checking the version on PATH: "the entry was created" and "an
         // agent can attach" are different claims, and only the second is the one being made.
-        // `parley registry` is a client, so it can only succeed against a broker that is up.
+        // What proves it is the poll that reads `project list` for a broker answering.
+        //
+        // **This used to find the last `registry` in the script**, which was a line telling the person to
+        // run `parley registry` -- advice, not the check. When that advice went the test failed while the
+        // real check stood untouched, which is the proxy measuring the wrong thing from the other side.
         var code = Code(RepositoryFile.Read(script));
         var registers = code.IndexOf("autostart install", StringComparison.Ordinal);
-        var proves = code.LastIndexOf("registry", StringComparison.Ordinal);
+        var proves = code.LastIndexOf("answering", StringComparison.Ordinal);
 
         Assert.True(
             registers < proves,

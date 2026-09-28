@@ -83,7 +83,7 @@ public sealed class ServeSelectionTests : IDisposable
 
             Assert.Equal(64, code);
             Assert.Contains(attempt[1], error, StringComparison.Ordinal);
-            Assert.Contains("parley terminal", error, StringComparison.Ordinal);
+            Assert.Contains("`parley`",error, StringComparison.Ordinal);
         }
 
         // And the variable that used to replace a manifest is simply not read: the root still decides.

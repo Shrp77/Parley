@@ -1,6 +1,5 @@
 using Parley.Configuration;
 using Parley.Setup;
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -12,9 +11,9 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// A fix is a claim about every caller, and 1.1 and 1.2 were each applied to the callers the probe
-/// that found them happened to run. This asks after the ones it did not: the reader that goes through
-/// <c>git show</c> rather than the working tree, and the bulk writer that has its own write path
-/// rather than sharing the one that was made exclusive.
+/// that found them happened to run. This asks after the ones it did not: the bulk writer that has its
+/// own write path rather than sharing the one that was made exclusive. It also probed a reader that went
+/// through <c>git show</c>, which the scan no longer has.
 /// </para>
 /// <para>
 /// The pattern is worth naming because this repository has met it before — a rule applied to half the
@@ -41,41 +40,10 @@ public sealed class ProbeSixTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private const string Duplicated = """
-        {"mcpServers":{
-          "parley":{"command":"parley-mcp","env":{"PARLEY_AGENT":"orders","PARLEY_OWNS":"Carts."}},
-          "parley":{"command":"parley-mcp","env":{"PARLEY_AGENT":"orders","PARLEY_OWNS":"Carts."}}
-        }}
-        """;
-
-    [Fact]
-    public async Task A_repository_whose_history_holds_a_duplicated_member_does_not_end_the_scan()
-    {
-        // **Where 1.1's fix did not reach.** The working-tree reader learned to handle the refusal;
-        // the reader that recovers an earlier `owns` line through `git show` has its own catch list,
-        // and a repository whose *history* holds a duplicated member is exactly as likely as one
-        // whose working tree does — more so, since the history is where the careless merge landed.
-        var repository = Path.Combine(Checkouts, "orders");
-
-        Directory.CreateDirectory(repository);
-
-        if (!Git(repository, "init") || !Git(repository, "config user.email a@b.c")
-            || !Git(repository, "config user.name Test"))
-        {
-            return; // No usable git on this machine; the evidence this reads is optional by design.
-        }
-
-        await File.WriteAllTextAsync(
-            Path.Combine(repository, ".mcp.json"), Duplicated, TestContext.Current.CancellationToken);
-
-        Git(repository, "add .mcp.json");
-        Git(repository, "commit -m registered");
-        File.Delete(Path.Combine(repository, ".mcp.json"));
-
-        // The row coming back at all is the finish: the history is read while the row is built, so a
-        // refusal thrown out of `git show` would arrive before anything was returned.
-        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "orders");
-    }
+    // **A probe of the history reader stood here and was removed with it.** It checked that a
+    // duplicated member in a committed .mcp.json could not end the scan through `git show`. The scan
+    // no longer reads history at all -- the owner's call of 2026-09-27 -- so the probe had no subject,
+    // and a probe that cannot fail is worse than none.
 
     [Fact]
     public async Task Six_bulk_runs_sharing_one_catalogue_lose_none_of_their_agents()
@@ -153,33 +121,6 @@ public sealed class ProbeSixTests : IDisposable
                 listed?.ContainsKey(declared.Identity.ToString()) == true,
                 $"'{agent}' was told its enrolment succeeded and is not in the catalogue "
                 + $"({listed?.Count ?? 0} of {accepted.Length} accepted are there)");
-        }
-    }
-
-    private static bool Git(string workspace, string arguments)
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo("git", arguments)
-            {
-                WorkingDirectory = workspace,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            });
-
-            if (process is null)
-            {
-                return false;
-            }
-
-            process.WaitForExit(20_000);
-
-            return process.HasExited && process.ExitCode == 0;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return false;
         }
     }
 }

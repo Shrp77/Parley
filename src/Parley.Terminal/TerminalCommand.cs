@@ -84,7 +84,7 @@ public static class TerminalCommand
         // a driven session writes nothing to standard output, and a title is written there on every platform but Windows.
         try
         {
-            Console.Title = $"parley terminal {BuildIdentity.Version}";
+            Console.Title = $"parley {BuildIdentity.Version}";
         }
         catch (Exception unsettable) when (unsettable is IOException or PlatformNotSupportedException)
         {
@@ -227,7 +227,7 @@ public static class TerminalCommand
     /// commands below are what this surface is a nicer front for, and they all work in a pipe.
     /// </remarks>
     private const string Redirected =
-        "parley terminal draws a full screen, and this terminal is redirected — nothing here "
+        "parley draws a full screen, and this terminal is redirected — nothing here "
         + "would be readable and the frames would fill the log. For the same facts in a pipe, "
         + "use `parley project list`, `parley registry` and `parley export <conversation>`. "
         + "For a browser instead, `parley web-ui`.";

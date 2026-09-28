@@ -138,7 +138,7 @@ public sealed class ArgumentsSurviveTests
 
         Assert.Equal(0, help);
         Assert.Contains("--config", manual, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", manual, StringComparison.Ordinal);
+        Assert.Contains("`parley`", manual, StringComparison.Ordinal);
     }
 
     [Fact]

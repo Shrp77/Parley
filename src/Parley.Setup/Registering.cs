@@ -48,6 +48,43 @@ internal static class Registering
     /// </remarks>
     internal static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
+    /// <summary>How long to keep asking a node that does not yet know the agent.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Enrolment writes the catalogue and asks for the start in the same breath, and the node reads
+    /// its catalogue on a poll.</b> So the first ask reliably reaches a node that has not read the new
+    /// entry yet and answers that it cannot start the role. That answer was taken as final, and the owner
+    /// enrolled four agents of which none registered -- while the broker's log showed the node rejoining
+    /// with all four a moment later, with nothing left that would ask again.
+    /// </para>
+    /// <para>
+    /// The node polls every two seconds and then rejoins, so fifteen is several of its cycles: long enough
+    /// that a machine under load still catches up, short enough that a role no node will ever start is
+    /// reported within the run. Only the first agent of a batch pays for it; by the second the node knows
+    /// them all.
+    /// </para>
+    /// </remarks>
+    internal static readonly TimeSpan CatchUp = TimeSpan.FromSeconds(15);
+
+    /// <summary>What is said of an agent while the node has not yet taken its start.</summary>
+    /// <remarks>
+    /// Short, because it is drawn beside the agent's name in a pane half a screen wide, on the owner's call of
+    /// 2026-09-28 that progress belongs on the agent's row rather than on a status line.
+    /// </remarks>
+    internal const string WaitingForNode = "waiting for the node";
+
+    /// <summary>What is said of an agent that has been started and has not registered yet.</summary>
+    /// <param name="waited">How many seconds it has been waited for.</param>
+    /// <returns>For example <c>registering (7s of 30s)</c>.</returns>
+    /// <remarks>
+    /// The seconds are what make it a status rather than a message: a line that changes is a process that is
+    /// alive, and one that sits unchanged for thirty seconds is indistinguishable from a hang.
+    /// </remarks>
+    internal static string WaitingToRegister(int waited) =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"registering ({waited}s of {(int)Patience.TotalSeconds}s)");
+
     /// <summary>How often to look while waiting.</summary>
     private static readonly TimeSpan Glance = TimeSpan.FromMilliseconds(500);
 
@@ -141,13 +178,15 @@ internal static class Registering
     /// <param name="agent">The agent to start.</param>
     /// <param name="clock">Measures the wait.</param>
     /// <param name="cancellationToken">Stops the wait.</param>
+    /// <param name="saying">Told what it is waiting on and for how long, or null.</param>
     /// <returns>Whether it registered, and what to say about it.</returns>
     /// <exception cref="ArgumentException">The endpoint is blank.</exception>
     internal static async Task<Registration> StartAsync(
         string endpoint,
         AgentName agent,
         TimeProvider clock,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<string>? saying = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(endpoint);
         ArgumentNullException.ThrowIfNull(clock);
@@ -155,16 +194,32 @@ internal static class Registering
         using var channel = GrpcChannel.ForAddress(endpoint);
         var operators = new Wire.Operators.OperatorsClient(channel);
 
-        try
-        {
-            var asked = await operators.StartAsync(
-                new Wire.StartRequest { Agent = agent.Value, Because = "it was just enrolled" },
-                deadline: DateTime.UtcNow.Add(Reach),
-                cancellationToken: cancellationToken);
+        // Asked again until the node has had time to read the catalogue this run just wrote -- see
+        // `CatchUp` for why the first answer cannot be trusted.
+        var giveUp = clock.GetUtcNow() + CatchUp;
 
-            if (!asked.Changed)
+        while (true)
+        {
+            try
             {
-                // The node holds this machine but does not name the role among what it can launch,
+                var asked = await operators.StartAsync(
+                    new Wire.StartRequest { Agent = agent.Value, Because = "it was just enrolled" },
+                    deadline: DateTime.UtcNow.Add(Reach),
+                    cancellationToken: cancellationToken);
+
+                if (asked.Changed)
+                {
+                    break;
+                }
+            }
+            catch (RpcException failure)
+            {
+                return new Registration(false, $"written, but the broker refused the start: {failure.Status.Detail}");
+            }
+
+            if (clock.GetUtcNow() >= giveUp)
+            {
+                // The node holds this machine but still does not name the role among what it can launch,
                 // or there is no node at all. Both mean nothing here will run it, and both are worth
                 // saying plainly rather than as a failure: the two files are written and correct.
                 return new Registration(
@@ -172,13 +227,13 @@ internal static class Registering
                     "written, but this machine's node did not start it. Nothing will register it "
                     + "until its repository is opened.");
             }
-        }
-        catch (RpcException failure)
-        {
-            return new Registration(false, $"written, but the broker refused the start: {failure.Status.Detail}");
+
+            saying?.Invoke(WaitingForNode);
+
+            await Task.Delay(Glance, cancellationToken).ConfigureAwait(false);
         }
 
-        return await WaitAsync(operators, agent, clock, cancellationToken).ConfigureAwait(false);
+        return await WaitAsync(operators, agent, clock, cancellationToken, saying).ConfigureAwait(false);
     }
 
     /// <summary>Looks until the agent is in the registry, or until patience runs out.</summary>
@@ -186,6 +241,7 @@ internal static class Registering
     /// <param name="agent">Who to look for.</param>
     /// <param name="clock">Measures the wait.</param>
     /// <param name="cancellationToken">Stops the wait.</param>
+    /// <param name="saying">Told how long it has been waiting, or null.</param>
     /// <returns>Whether it appeared.</returns>
     /// <remarks>
     /// Polled rather than awaited on an event, because there is no event: registration happens
@@ -196,9 +252,11 @@ internal static class Registering
         Wire.Operators.OperatorsClient operators,
         AgentName agent,
         TimeProvider clock,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? saying)
     {
-        var deadline = clock.GetUtcNow() + Patience;
+        var began = clock.GetUtcNow();
+        var deadline = began + Patience;
 
         while (true)
         {
@@ -227,6 +285,8 @@ internal static class Registering
             {
                 return new Registration(false, NotSeen);
             }
+
+            saying?.Invoke(WaitingToRegister((int)(clock.GetUtcNow() - began).TotalSeconds));
 
             await Task.Delay(Glance, cancellationToken).ConfigureAwait(false);
         }

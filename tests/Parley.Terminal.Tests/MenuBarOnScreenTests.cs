@@ -1,6 +1,7 @@
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Core;
+using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -46,7 +47,8 @@ public sealed class MenuBarOnScreenTests
         var screen = driving.Text().ReplaceLineEndings("\n").Split('\n');
 
         Assert.NotEmpty(screen);
-        Assert.Contains("Alt+", screen[0], StringComparison.Ordinal);
+        Assert.Contains("Project", screen[0], StringComparison.Ordinal);
+        Assert.Contains("Help", screen[0], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,15 +61,15 @@ public sealed class MenuBarOnScreenTests
         driving.Show(shell);
         shell.Lay(120);
 
-        var said = shell.BarText();
+        var said = shell.BarTitles();
 
         // The projects view's own actions are the project's, and health and the web UI are the
         // deployment's however they are reached.
-        Assert.Contains("Project", said, StringComparison.Ordinal);
-        Assert.Contains("Deployment", said, StringComparison.Ordinal);
+        Assert.Contains("Project", said);
+        Assert.Contains("Deployment", said);
 
         // And Help, which belongs to no region at all.
-        Assert.Contains("Help", said, StringComparison.Ordinal);
+        Assert.Contains("Help", said);
     }
 
     [Fact]
@@ -116,16 +118,23 @@ public sealed class MenuBarOnScreenTests
         shell.Focus(0);
         shell.Lay(120);
 
-        var onAgents = shell.BarText();
+        var onAgents = shell.BarTitles();
 
         shell.Focus(1);
         shell.Lay(120);
 
-        Assert.NotEqual(onAgents, shell.BarText());
+        Assert.NotEqual(onAgents, shell.BarTitles());
 
         // And the two name the categories their own regions have: agents against conversations.
-        Assert.Contains("Agent", onAgents, StringComparison.Ordinal);
-        Assert.Contains("Conversation", shell.BarText(), StringComparison.Ordinal);
+        Assert.Contains("Agent", onAgents);
+        Assert.Contains("Conversation", shell.BarTitles());
+
+        // **And the drawn row follows, which is the half a list cannot show.** The bar is rebuilt at the
+        // next layout rather than when it is told, so a bar that was told and never redrawn would pass
+        // everything above.
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("Conversation", driving.Text().ReplaceLineEndings("\n").Split('\n')[0], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -142,7 +151,172 @@ public sealed class MenuBarOnScreenTests
         shell.Lay(40);
 
         Assert.True(shell.Status.Length <= 40, $"the status line is {shell.Status.Length} columns");
-        Assert.Contains($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+
+        // And no longer names `?` as the way to the rest: the bar is that, on the owner's call of 2026-09-28.
+        Assert.DoesNotContain($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData('P', "Project")]
+    [InlineData('D', "Deployment")]
+    [InlineData('H', "Help")]
+    [InlineData('p', "Project")]
+    public void Alt_and_a_menus_letter_opens_that_menu(char letter, string title)
+    {
+        // **The key pressed, not the seam.** Every test of the bar read its text and none pressed the
+        // chord it advertises, so the chord did nothing on a real terminal and the suite was green:
+        // `Key.AsRune` is empty for any key carrying Alt, which is the very thing that makes it a chord.
+        // CLAUDE.md has the sentence already -- a key tested only through its own seam is a key nobody
+        // has pressed. Lowercase too, because that is what a terminal sends when Shift is not held.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+
+        driving.Press(new Key(letter).WithAlt);
+
+        Assert.Equal(title, shell.MenuOpen);
+    }
+
+    [Fact]
+    public void A_menu_drops_down_under_the_bar_rather_than_opening_a_dialog()
+    {
+        // **The owner's call on 2026-09-27: a menu should be a menu.** 021 opened each one as a dialog in
+        // the middle of the screen. Must fail against that: a dialog is a session on top of the shell, and
+        // what drops down from a bar is drawn on the rows directly beneath it.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+
+        driving.Press(Key.H.WithAlt);
+
+        Assert.Same(shell, driving.App.TopRunnableView);
+
+        var screen = driving.Text().ReplaceLineEndings("\n").Split('\n');
+
+        Assert.Contains(Shell.KeysTitle, screen[1], StringComparison.Ordinal);
+        Assert.Contains(Shell.AboutTitle, screen[2], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Choosing_a_line_runs_its_action_and_closes_the_menu()
+    {
+        // The whole path a person takes: Alt, a letter, an arrow, Enter. Down once is About, which opens a
+        // dialog of its own -- so its title on screen is the action having run, not the menu still showing.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+
+        driving.Press(Key.H.WithAlt);
+        driving.Press(Key.CursorDown);
+        driving.Enter();
+
+        Assert.Null(shell.MenuOpen);
+        Assert.True(driving.Has(Shell.AboutTitle), "choosing About did not open it");
+    }
+
+    [Fact]
+    public async Task Escape_closes_a_menu_without_going_back()
+    {
+        // Escape means "back" everywhere on this surface, and a menu is on top of the view. Closing the menu
+        // must be all it does -- leaving the project somebody was in because they dismissed a menu would be a
+        // key doing two things at once.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        await Walking.GoAsync(shell, Parley.Client.Views.Viewing.Project);
+        shell.Lay(120);
+
+        var before = shell.Place;
+
+        // Help rather than Project: the bar is the focused region's, and in a project the agents pane has
+        // focus and no project actions. Help is on every screen.
+        driving.Press(Key.H.WithAlt);
+        Assert.Equal("Help", shell.MenuOpen);
+
+        driving.Escape();
+
+        Assert.Null(shell.MenuOpen);
+        Assert.Equal(before, shell.Place);
+    }
+
+    [Fact]
+    public void Clicking_a_title_drops_its_menu_down()
+    {
+        // The mouse is the other half of what makes a bar a bar. The cell clicked is found by reading the
+        // drawn row, not by repeating the arithmetic that placed the title there.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+        driving.App.LayoutAndDraw(true);
+
+        var top = driving.Text().ReplaceLineEndings("\n").Split('\n')[0];
+        var column = top.IndexOf("Help", StringComparison.Ordinal);
+
+        Assert.True(column >= 0, $"the top row reads: {top}");
+
+        driving.ClickAt(new System.Drawing.Point(column + 1, 0));
+
+        Assert.Equal("Help", shell.MenuOpen);
+    }
+
+    [Fact]
+    public void Opening_menus_again_and_again_keeps_one_registered()
+    {
+        // Every open builds a new dropdown and registers it with the toolkit. Must fail against a bar that
+        // forgets the last one: the toolkit would then hold a menu per keystroke for the life of the program,
+        // each one offered every key somebody presses.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+
+        for (var i = 0; i < 20; i++)
+        {
+            driving.Press(Key.H.WithAlt);
+            driving.Escape();
+        }
+
+        Assert.True(
+            driving.App.Popovers!.Popovers.Count <= 1,
+            $"{driving.App.Popovers.Popovers.Count} menus are registered after twenty opens");
+    }
+
+    [Fact]
+    public void Project_is_the_leftmost_menu()
+    {
+        // The owner's call on 2026-09-27: a person opens this surface to act on a project, so that is
+        // the first thing the bar offers -- in the list and on the drawn row both.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Equal("Project", shell.BarTitles()[0]);
+
+        var top = driving.Text().ReplaceLineEndings("\n").Split('\n')[0];
+
+        Assert.True(
+            top.IndexOf("Project", StringComparison.Ordinal) < top.IndexOf("Deployment", StringComparison.Ordinal),
+            $"the top row reads: {top}");
     }
 
     [Fact]
@@ -159,10 +333,10 @@ public sealed class MenuBarOnScreenTests
         shell.Lay(40);
         driving.App.LayoutAndDraw(true);
 
-        Assert.NotEmpty(shell.BarText());
+        Assert.NotEmpty(shell.BarTitles());
 
         var screen = driving.Text().ReplaceLineEndings("\n").Split('\n');
 
-        Assert.Contains("Alt+", screen[0], StringComparison.Ordinal);
+        Assert.Contains("Project", screen[0], StringComparison.Ordinal);
     }
 }

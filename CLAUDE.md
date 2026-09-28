@@ -43,7 +43,8 @@ src/Parley.Configuration The project manifest of SPEC.md §4.1: where it lives, 
                     holds, what it refuses. A project of its own because two programs
                     read it and cannot otherwise share one reader — Parley.Cli pulls in
                     the broker and the store, Parley.Mcp deliberately pulls in neither,
-                    and Parley.Core has no I/O. Read by both; written only by Parley.Cli.
+                    and Parley.Core has no I/O. Read by both; written only through
+                    Parley.Setup's ProjectCommand, which `parley` and the terminal both run.
                     Nothing here knows what a broker is.
 src/Parley.Client    What a client of a broker needs in order to show a deployment to a person
                     and to seat one. References Transport and Configuration and nothing else.
@@ -617,6 +618,15 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
+- **Next plan**: `specs/022-parley-facilitator/` — **planned, not started; on `019-layout` with 019–021, and
+  the combined review gate now covers all four** (the owner's call of 2026-09-28). Parley becomes a participant
+  the broker provides in every project, asks each attached agent what it owns once with nobody asking, and — with
+  the project's Auto Accept switch, on by default — makes the answer the agent's line and refreshes the agent when
+  it is idle. **Research found SPEC.md and the constitution both saying the broker is not a participant**, so the
+  constitution's 4.0.0 amendment is T001 and lands on its own before any code (Governance), and SPEC.md follows.
+  Read `research.md` first: its fifteen findings are what shaped the design, including one likely existing defect
+  (an accepted line's conversation has no cascade on destroy or purge).
+
 - **Current plan**: `specs/019-one-way-in/` — **0.32.0. The layout, the port claim, naming a project,
   and the removal of `--db`, `-d`, `PARLEY_DB`, `--listen` and `-l` from every command. 46 of 111 tasks,
   every suite green, nothing pushed.**
@@ -1089,6 +1099,34 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   `specs/021-terminal-menu-bar/` is **built, and shipped as 0.34.0; the walk of 020 below took it to 0.34.1** — a minor because that is what each feature
   on this branch has taken (019 was 0.32.0, 020 is 0.33.0), and nothing here is breaking. Every action was
   behind `?`, and `?` was behind knowing about `?`; there is a bar on the top row now, always visible.
+
+  **0.34.2 is the owner's first use of 0.34.1, and most of it is things the suite could not see.** The Alt
+  keys the bar advertised did nothing (`Key.AsRune` is empty for a key carrying Alt, and no test had pressed
+  one). A menu is now a real dropdown rather than a dialog. The toolkit's own `MenuBar` was tried first and
+  made `RefillRaceTests` fail one run in three against ten clean runs on `HEAD`, because its titles are views
+  in the shell's tree; `MenuBarView` draws its own row and drops a `PopoverMenu`, which lives outside that
+  tree. Project is the leftmost menu. Enrolling a folder moved into the project, as
+  **Enroll agents from folders** (`f`), and its picker can now choose a folder that holds repositories rather
+  than only one that is one. The tick list pages ten at a time, and Enter works on a screen, where the list
+  had been taking it before the dialog saw it. Two keys in the agents pane were doubled (`a`, `w`);
+  `NoTwoActionsShareAKeyTests` holds that. The scan no longer reads git history: it was the whole of a
+  three-second freeze on a folder of 33, for a line nothing showed. The installers end with the terminal's
+  flow, and every sentence that sent people to `parley terminal` now says `parley`, which is what is typed.
+
+  **0.34.3: the owner enrolled four agents and none registered, and the cause was a race nothing had
+  tested.** Enrolment writes the catalogue and asks for each start in the same breath; the node re-reads
+  its catalogue on a two-second poll. So the first ask reliably reached a node that did not know the role
+  yet, it answered "not something I can start", and that was taken as final -- while the broker's log
+  showed the node rejoining with all four a moment later and nothing left that would ask again. Both
+  starters now keep asking for fifteen seconds (`Registering.CatchUp`, `Starting.CatchUp`), and the fix was
+  confirmed against the live broker: one agent started and registered in 1.6 seconds. And an enrolment now
+  says what it is doing while it does it -- which agent of how many, and whether it is waiting for the node
+  or for the registration, with the seconds counting -- because the owner's next report was that after
+  confirming, nothing happened for a long time. **That progress is on each agent's own row**, on the owner's
+  call of 2026-09-28 (`AgentsRegion.Activity`), and the message line is left for what went wrong; and the
+  status line no longer names `?: actions`, because the menu bar is that list now. Actions report in one
+  line now, and the facts moved onto the projects rows -- address, answering, agents running, conversations
+  open -- where they stay rather than scrolling away.
 
   **The action carries metadata and does not carry the UI**, which is the owner's D1 in their own words.
   `RegionAction` gained `Category`, `Group` and `Order`, and `MenuRow` turns those into menus — sorted by

@@ -63,7 +63,7 @@ are derived and claimed rather than supplied. Once it exists, commands stop bein
 flag at a time:
 
 ```
-parley terminal
+parley
 parley --project orders registry
 ```
 
@@ -94,7 +94,7 @@ and lists the repositories that were agents in it, whose launch configuration st
 broker it does not own - one started by hand - is reported and left running. Destroying takes the
 project's own name typed back, which is the door a command line could not offer.
 
-**Retiring and purging an agent can also be done from `parley terminal`, since 2026-09-05.** The rule
+**Retiring and purging an agent can also be done from `parley`, since 2026-09-05.** The rule
 that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
 describing it first; what the rule asks for is a description and a deliberate act, and the terminal
 now gives both. It describes the agent — what it is, where it runs, what it owns, and any answer it
@@ -135,8 +135,9 @@ parley autostart status               say whether it is set up, and what it serv
 parley up                             run this machine's node, so its agents can be started
 parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
-parley terminal                       the same deployment in this terminal; needs a real one
-                                      (its own tool: parley-terminal, installed separately)
+parley                                the same deployment in this terminal; needs a real one
+                                      (its own tool: parley-terminal, installed separately;
+                                      parley terminal is the same thing, spelled out)
 
 parley project list                   what this machine is configured for
                                       (creating, changing and removing one are in the terminal)

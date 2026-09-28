@@ -243,6 +243,10 @@ public static class EnrollCommand
     /// <param name="deployment">Every project this machine describes.</param>
     /// <param name="manifestPath">Where that lives, so the gate is held across the run.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="outcome">
+    /// Filled in with who was enrolled and who registered, for a surface that says so in its own words
+    /// rather than reprinting <paramref name="output"/>. Null when the caller wants only the text.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <remarks>
     /// The other half of <see cref="Find"/>: a surface that drew its own picker hands the rows back
@@ -259,7 +263,8 @@ public static class EnrollCommand
         ProjectSettings? project = null,
         IReadOnlyList<ProjectSettings>? deployment = null,
         string? manifestPath = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        EnrolmentOutcome? outcome = null)
     {
         ArgumentNullException.ThrowIfNull(chosen);
         ArgumentNullException.ThrowIfNull(nodeConfig);
@@ -282,7 +287,8 @@ public static class EnrollCommand
             project,
             deployment,
             manifestPath,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            outcome).ConfigureAwait(false);
     }
 
     /// <summary>The git repositories directly under a directory, as enrolment rows.</summary>
@@ -456,7 +462,14 @@ public static class EnrollCommand
     /// <para>
     /// <b>Quoted, never summarised.</b> A summary is one more thing to take on trust, and the
     /// point of this list is to be the part that does not have to be. Everything here is read
-    /// off disk or out of the repository's own history.
+    /// off disk.
+    /// </para>
+    /// <para>
+    /// <b>The repository's history is not read, and it was.</b> An <c>owns</c> line the repository had been
+    /// registered with before was dug out of <c>git log --all</c> for every repository under the folder —
+    /// a process per repository, one after another, before the picker could open. On a folder of 33 it was
+    /// the whole of a three-second freeze, and what it recovered went into a worksheet 0.32.0 removed. The
+    /// owner's call of 2026-09-27: the agent is asked what it owns, and an agent that already knows says so.
     /// </para>
     /// </remarks>
     private static IReadOnlyList<string>? Evidence(string workspace)
@@ -523,10 +536,8 @@ public static class EnrollCommand
         {
         }
 
-        // FR-012. Said before the git history is consulted, because what a repository answers in
-        // *now* outranks what it once answered in — and because a repository already in one project
-        // is the one somebody is most likely to enrol into a second by accident, having seen no sign
-        // of the first.
+        // FR-012. A repository already in one project is the one somebody is most likely to enrol
+        // into a second by accident, having seen no sign of the first.
         switch (Existing(workspace))
         {
             case null:
@@ -544,110 +555,7 @@ public static class EnrollCommand
                 break;
         }
 
-        if (PriorRegistration(workspace) is { } prior)
-        {
-            found.Add(prior);
-        }
-
         return found.Count > 0 ? found : null;
-    }
-
-    /// <summary>
-    /// Finds an <c>owns</c> line this repository was registered with before.
-    /// </summary>
-    /// <remarks>
-    /// The strongest evidence there is, and the only kind that is not a suggestion at all: it is
-    /// the person's own earlier sentence, recovered rather than composed. A repository whose
-    /// <c>.mcp.json</c> was deleted still has it in history, which is the common state of a
-    /// deployment being reconfigured.
-    /// </remarks>
-    private static string? PriorRegistration(string workspace)
-    {
-        try
-        {
-            var commit = Git(workspace, "log --format=%H --all -- .mcp.json")?
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-
-            if (commit is null)
-            {
-                return null;
-            }
-
-            var text = Git(workspace, $"show {commit}:.mcp.json");
-
-            if (text is null)
-            {
-                return null;
-            }
-
-            var entry = LaunchEntries
-                .Read(JsonNode.Parse(text)?["mcpServers"] as JsonObject)
-                .FirstOrDefault(found => found.Owns is { Length: > 0 });
-
-            return entry is not null
-                ? $"registered before ({commit[..7]}) as `{entry.Agent}` — \"{Present(entry.Owns!)}\""
-                : null;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
-                                       or FormatException or ArgumentException
-                                       or InvalidDataException)
-        {
-            // InvalidDataException is a committed file naming one server twice. It belongs here for
-            // the reason the rest do: this only ever gathers evidence, so a repository it cannot make
-            // sense of produces a shorter list rather than ending the scan. **Missed when the working
-            // tree's reader was fixed** -- a rule applied to half the callers, which this codebase
-            // has met before and which is what run 6 went looking for.
-            return null;
-        }
-    }
-
-    /// <summary>Runs a read-only git command, or returns null if git cannot answer.</summary>
-    /// <remarks>
-    /// Silent on failure, and safely so: this only ever gathers evidence, so a machine without
-    /// git produces a shorter list rather than a wrong one. That is the opposite of how the node
-    /// catalogue is read, where an unreadable file must stop the run.
-    /// </remarks>
-    private static string? Git(string workspace, string arguments)
-    {
-        try
-        {
-            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "git",
-                Arguments = $"-C \"{workspace}\" {arguments}",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-
-            if (process is null)
-            {
-                return null;
-            }
-
-            // Both streams are drained, and started before waiting. Reading one to the end while
-            // the other is redirected and unread deadlocks the moment the unread pipe fills: the
-            // child blocks writing, the parent blocks reading, and neither timeout applies
-            // because nothing has exited. git writes to stderr routinely here — "not a git
-            // repository" is the ordinary answer for a directory that is not one.
-            var output = process.StandardOutput.ReadToEndAsync();
-            var errors = process.StandardError.ReadToEndAsync();
-
-            if (!process.WaitForExit(5000))
-            {
-                process.Kill(entireProcessTree: true);
-                return null;
-            }
-
-            Task.WaitAll([output, errors], TimeSpan.FromSeconds(5));
-
-            return process.ExitCode == 0 && output.IsCompletedSuccessfully ? output.Result : null;
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return null;
-        }
     }
 
     /// <summary>
@@ -786,6 +694,7 @@ public static class EnrollCommand
     /// <param name="project">The project just enrolled into, or null when none was resolved.</param>
     /// <param name="enrolled">The roles written, in the order they were written.</param>
     /// <param name="output">Where to report.</param>
+    /// <param name="recorded">Where to record who registered, or null.</param>
     /// <param name="cancellationToken">Stops the starts.</param>
     /// <returns>How many were seen to register.</returns>
     /// <remarks>
@@ -805,8 +714,14 @@ public static class EnrollCommand
         ProjectSettings? project,
         IReadOnlyList<string> enrolled,
         TextWriter output,
+        EnrolmentOutcome? recorded,
         CancellationToken cancellationToken)
     {
+        foreach (var role in enrolled)
+        {
+            recorded?.Enrolled(role);
+        }
+
         if (enrolled.Count == 0)
         {
             return 0;
@@ -818,6 +733,11 @@ public static class EnrollCommand
                 "\nNo broker was named, so nothing was started. These repositories are enrolled and "
                 + "cannot be addressed until each has run once.").ConfigureAwait(false);
 
+            foreach (var role in enrolled)
+            {
+                recorded?.NotRegistered(role, "nothing was started, because no broker was named");
+            }
+
             return 0;
         }
 
@@ -827,20 +747,36 @@ public static class EnrollCommand
 
         foreach (var role in enrolled)
         {
+            recorded?.Say(role, EnrolmentOutcome.Starting);
+
             if (!AgentName.TryCreate($"{role}@{MachineName.Current}", out var agent))
             {
-                await output.WriteLineAsync($"  {role}: written, but is not a name an agent can have.")
-                    .ConfigureAwait(false);
+                const string NotAName = "written, but is not a name an agent can have.";
+
+                await output.WriteLineAsync($"  {role}: {NotAName}").ConfigureAwait(false);
+                recorded?.NotRegistered(role, NotAName);
+                recorded?.Say(role, "not a name an agent can have");
 
                 continue;
             }
 
             var outcome = await Registering.StartAsync(
-                project.Endpoint, agent, TimeProvider.System, cancellationToken).ConfigureAwait(false);
+                project.Endpoint,
+                agent,
+                TimeProvider.System,
+                cancellationToken,
+                recorded is null ? null : detail => recorded.Say(role, detail)).ConfigureAwait(false);
 
             if (outcome.Registered)
             {
                 registered++;
+                recorded?.Registered(role);
+                recorded?.Say(role, EnrolmentOutcome.Running);
+            }
+            else
+            {
+                recorded?.NotRegistered(role, outcome.Says);
+                recorded?.Say(role, EnrolmentOutcome.NotYet);
             }
 
             await output.WriteLineAsync($"  {role}: {outcome.Says}").ConfigureAwait(false);
@@ -878,6 +814,7 @@ public static class EnrollCommand
     /// <param name="deployment">Every project this machine describes.</param>
     /// <param name="projectManifest">Where that lives, so the gate can be held across the run.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="outcome">Filled in with who was enrolled and who registered, or null.</param>
     /// <returns>The exit code.</returns>
     /// <remarks>
     /// <para>
@@ -908,7 +845,8 @@ public static class EnrollCommand
         ProjectSettings? project,
         IReadOnlyList<ProjectSettings>? deployment,
         string? projectManifest,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        EnrolmentOutcome? outcome = null)
     {
         // Held for the whole run rather than around the check alone. Validation and writing are far
         // apart here by design -- everything is refused before anything is written -- so a gate that
@@ -1343,7 +1281,7 @@ public static class EnrollCommand
         // Last, after both files and the catalogue: a start asks the broker to launch a role, and
         // the node cannot launch what its catalogue does not yet name.
         var registered = await SettleAsync(
-            project, enrolled, output, cancellationToken).ConfigureAwait(false);
+            project, enrolled, output, outcome, cancellationToken).ConfigureAwait(false);
 
         // Step 1 names the node as well as the broker, and only when this run recorded consent
         // for one. A run that wrote `unattended` into the catalogue and then said "start a
@@ -1378,7 +1316,7 @@ public static class EnrollCommand
         // were left in it, which is what a sweep by grep for one spelling does.
         var start = named is null
             ? "  1. Name the project these repositories answer in, on the first screen of:\n" +
-              "       parley terminal\n" +
+              "       parley\n" +
               Serve
             : $"  1. A broker{(nodeChanged ? " and this machine's node" : string.Empty)} for {named}.\n" + Serve;
 

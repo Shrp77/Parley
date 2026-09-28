@@ -204,7 +204,13 @@ internal static class Removing
         };
     }
 
-    /// <summary>Runs the command, and reports what it said in its own words.</summary>
+    /// <summary>Runs the command, and says in one line what came of it.</summary>
+    /// <remarks>
+    /// <b>One sentence on success, the command's own words on failure</b> -- the owner's call of 2026-09-27,
+    /// made about creating a project and applied to removing one for the same reason. This reprinted what the
+    /// command writes for a shell: where the store remains, the flag that would delete it, and which
+    /// repositories still name the project. The list the person returns to already says the project is gone.
+    /// </remarks>
     private static async Task Apply(
         string manifestPath,
         ProjectSettings project,
@@ -223,16 +229,25 @@ internal static class Removing
             destroy,
             CancellationToken.None).ConfigureAwait(false);
 
-        var lines = (said.ToString() + complained)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd());
-
         // The command's exit code is the answer. Destroying that removed the entry and could not
         // delete a file reports a failure, and the project is nonetheless gone from the list --
-        // which is what the command said, line by line.
+        // so a failure says why in the command's own words, whatever became of the entry.
         var gone = code == 0 || !StillNamed(manifestPath, project.Name.Value);
 
-        await done(Reports.Sentences(lines), gone).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var why = complained.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.TrimEnd());
+
+            await done(Reports.Sentences(why), gone).ConfigureAwait(false);
+
+            return;
+        }
+
+        await done(
+            destroy ? $"Destroyed '{project.Name.Value}'." : $"Forgot '{project.Name.Value}'. Nothing was deleted.",
+            gone).ConfigureAwait(false);
     }
 
     private static bool StillNamed(string manifestPath, string name) =>

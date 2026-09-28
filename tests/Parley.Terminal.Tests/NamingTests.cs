@@ -102,11 +102,20 @@ public sealed class NamingTests : IDisposable
         Assert.Equal(ProjectFolder.StoreFor(Root, named.Name), named.Store);
         Assert.InRange(new Uri(named.Endpoint).Port, 19100, 19355);
 
-        Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
+        Assert.Contains(Naming.Created("alpha"), shell.Said, StringComparison.Ordinal);
 
         // Nothing starts it, and the form says so rather than leaving the first person to use it
         // assuming a broker was spawned.
         Assert.Contains("Nothing starts it yet", shell.Said, StringComparison.Ordinal);
+
+        // **And that is all it says.** The owner's call of 2026-09-27: this printed the command's whole
+        // report for a shell -- the port, the folder, a paragraph about tunnels -- and nobody read it. Where
+        // the project answers is on its row in the list now. Must fail against the old report, which carried
+        // every one of these.
+        Assert.DoesNotContain("serving on", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("files in", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("tunnel", shell.Said, StringComparison.Ordinal);
+        Assert.Contains(ProjectsRegion.Address(named), Drawn.Rows(shell.Projects.List)[0], StringComparison.Ordinal);
 
         // The description is on the list it returns to.
         Assert.Contains(

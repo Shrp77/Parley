@@ -108,8 +108,8 @@ public sealed class WayBackTests
     [Fact]
     public async Task It_survives_the_status_line_running_out_of_room_for_the_actions()
     {
-        // The actions collapse to "?: actions" when they do not fit, and back outlives them by a
-        // rung: a person short of width is more likely to be lost than to want the sixth action.
+        // The actions drop off the line when they do not fit -- the menu bar holds them -- and back
+        // outlives them: a person short of width is more likely to be lost than to want the sixth action.
         using var driving = Driving.Open(width: Shell.Threshold, height: 30);
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -118,7 +118,7 @@ public sealed class WayBackTests
         shell.Lay(Shell.Threshold);
         await Walking.GoAsync(shell, Viewing.Project);
 
-        Assert.Contains($"{Shell.ActionsKey}: actions", shell.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
         Assert.Contains(Shell.BackStroke, shell.Status, StringComparison.Ordinal);
     }
 
@@ -140,7 +140,7 @@ public sealed class WayBackTests
 
         Assert.True(shell.Stacked, "the surface should have stacked below the threshold");
         Assert.DoesNotContain(Shell.BackStroke, shell.Status, StringComparison.Ordinal);
-        Assert.Contains($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain($"{Shell.ActionsKey}:", shell.Status, StringComparison.Ordinal);
 
         // And the menu it points at still has it, which is the half that makes the omission safe.
         await shell.Offer();

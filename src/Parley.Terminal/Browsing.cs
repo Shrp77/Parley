@@ -27,14 +27,27 @@ namespace Parley.Terminal;
 /// that field stays typed into and pasted into — somebody at the end of an SSH connection who
 /// knows the path should not have to walk to it.
 /// </para>
+/// <para>
+/// <b>It looks for one of two things</b>: a repository, when one is being added, or a folder that holds
+/// repositories, when a folder of them is being enrolled. Enrolment borrowed this dialog as it stood, and
+/// it would only take a folder that was itself a repository — so the folder enrolment is for, the one
+/// holding the checkouts, was the one folder it could never choose. Reported by the owner trying to enrol
+/// from the folder every one of their repositories sits in.
+/// </para>
 /// </remarks>
 internal sealed class Browsing : Dialog
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Name = "Find the repository";
 
+    /// <summary>What the dialog is called when it is looking for a folder of repositories.</summary>
+    internal const string FolderName = "Find the folder of repositories";
+
     /// <summary>The row that takes the folder currently open.</summary>
     internal const string Use = "[ add this repository ]";
+
+    /// <summary>The row that takes the folder currently open, when it holds repositories.</summary>
+    internal const string UseFolder = "[ enrol the repositories in this folder ]";
 
     /// <summary>The row that goes up one.</summary>
     internal const string Up = "[ up one folder ]";
@@ -69,15 +82,24 @@ internal sealed class Browsing : Dialog
     private readonly Label _where;
     private readonly Label _said;
     private readonly List<Step> _steps = [];
+    private readonly bool _ofRepositories;
 
     /// <summary>One row, and what pressing it does.</summary>
     /// <param name="Row">What it reads.</param>
     /// <param name="Goes">Where it goes, or null when it takes the folder that is open.</param>
     private sealed record Step(string Row, string? Goes);
 
+    /// <summary>Opens a picker that looks for one repository.</summary>
+    /// <param name="opening">Where to start.</param>
     internal Browsing(string opening)
+        : this(opening, ofRepositories: false)
     {
-        Title = Name;
+    }
+
+    private Browsing(string opening, bool ofRepositories)
+    {
+        _ofRepositories = ofRepositories;
+        Title = ofRepositories ? FolderName : Name;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
@@ -116,7 +138,12 @@ internal sealed class Browsing : Dialog
         }
     }
 
-    /// <summary>Raised with the repository chosen, or null when nothing was.</summary>
+    /// <summary>Opens a picker that looks for a folder holding repositories, for enrolling them.</summary>
+    /// <param name="opening">Where to start.</param>
+    /// <returns>The dialog.</returns>
+    internal static Browsing ForFolderOfRepositories(string opening) => new(opening, ofRepositories: true);
+
+    /// <summary>Raised with the folder chosen, or null when nothing was.</summary>
     internal event EventHandler<string?>? Done;
 
     /// <summary>The folder currently open.</summary>
@@ -219,9 +246,18 @@ internal sealed class Browsing : Dialog
         _said.Text = string.Empty;
         _steps.Clear();
 
-        if (IsRepository(full))
+        var children = inside
+            .Where(child => !Hidden(child))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .Select(child => (Path: child, IsRepository: IsRepository(child)))
+            .ToList();
+
+        // **Offered only where choosing it would find something**, so the row never names an act that does
+        // nothing. For a folder of repositories that means one directly inside it, which is where enrolment
+        // looks and no deeper -- the rows marked below are exactly what it will offer next.
+        if (_ofRepositories ? children.Any(child => child.IsRepository) : IsRepository(full))
         {
-            _steps.Add(new Step(Use, null));
+            _steps.Add(new Step(_ofRepositories ? UseFolder : Use, null));
         }
 
         if (Path.GetDirectoryName(full) is { Length: > 0 } above)
@@ -229,17 +265,11 @@ internal sealed class Browsing : Dialog
             _steps.Add(new Step(Up, above));
         }
 
-        foreach (var child in inside.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        foreach (var (child, repository) in children)
         {
-            if (Hidden(child))
-            {
-                continue;
-            }
-
             var name = Path.GetFileName(child);
 
-            _steps.Add(new Step(
-                Indent + (IsRepository(child) ? Repository : Plain) + Safe.Text(name), child));
+            _steps.Add(new Step(Indent + (repository ? Repository : Plain) + Safe.Text(name), child));
         }
 
         _list.Replace([.. _steps.Select(step => step.Row)], _steps.Count > 0 ? 0 : null);

@@ -61,6 +61,15 @@ internal static class Starting
     /// </remarks>
     internal static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
 
+    /// <summary>How long to keep asking a node that does not know an agent it was just handed.</summary>
+    /// <remarks>
+    /// <c>Registering.CatchUp</c>'s figure and its reasoning: the catalogue is written and the start asked
+    /// in the same breath, while the node reads its catalogue on a poll, so the first answer is reliably
+    /// "not something I can start". The owner enrolled four agents and none registered for exactly that.
+    /// One claim about how long a node takes to notice, so the same length.
+    /// </remarks>
+    internal static readonly TimeSpan CatchUp = TimeSpan.FromSeconds(15);
+
     /// <summary>What is said when the start took and the registration followed.</summary>
     internal const string Registered = "registered";
 
@@ -82,6 +91,11 @@ internal static class Starting
     /// <param name="patience">How long to keep looking. Zero looks exactly once.</param>
     /// <param name="clock">Measures the wait, so a test does not have to spend it.</param>
     /// <param name="cancellationToken">Stops the wait.</param>
+    /// <param name="catchUp">
+    /// How long to keep asking a node that says it cannot start the agent. Zero asks once. A caller
+    /// that has just written the agent into the catalogue passes <see cref="CatchUp"/>, because the node
+    /// has not read it yet.
+    /// </param>
     /// <returns>Whether it registered, and what to say about it.</returns>
     /// <remarks>
     /// Polled rather than awaited, for the reason <c>Registering.WaitAsync</c> gives: registration
@@ -93,22 +107,35 @@ internal static class Starting
         Func<AgentName, CancellationToken, Task<ProjectRead<bool>>> registered,
         TimeSpan patience,
         TimeProvider clock,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan catchUp = default)
     {
         ArgumentNullException.ThrowIfNull(start);
         ArgumentNullException.ThrowIfNull(registered);
         ArgumentNullException.ThrowIfNull(clock);
 
-        var asked = await start(agent, cancellationToken).ConfigureAwait(false);
+        var giveUp = clock.GetUtcNow() + catchUp;
 
-        if (!asked.Reachable)
+        while (true)
         {
-            return new Started(false, false, asked.Problem ?? NotStarted);
-        }
+            var asked = await start(agent, cancellationToken).ConfigureAwait(false);
 
-        if (!asked.Value)
-        {
-            return new Started(false, false, NotStarted);
+            if (!asked.Reachable)
+            {
+                return new Started(false, false, asked.Problem ?? NotStarted);
+            }
+
+            if (asked.Value)
+            {
+                break;
+            }
+
+            if (clock.GetUtcNow() >= giveUp)
+            {
+                return new Started(false, false, NotStarted);
+            }
+
+            await Task.Delay(Glance, cancellationToken).ConfigureAwait(false);
         }
 
         var deadline = clock.GetUtcNow() + patience;
@@ -283,7 +310,7 @@ internal static class Starting
     /// <summary>Some of a list of names, and a count of whatever is left.</summary>
     /// <param name="names">The names.</param>
     /// <returns>The phrase.</returns>
-    private static string Some(IReadOnlyList<string> names) =>
+    internal static string Some(IReadOnlyList<string> names) =>
         names.Count <= Named
             ? string.Join(", ", names)
             : string.Join(", ", names.Take(Named)) + $" and {names.Count - Named} more";

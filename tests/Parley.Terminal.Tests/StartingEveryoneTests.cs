@@ -165,6 +165,28 @@ public sealed class StartingEveryoneTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_node_that_has_not_read_the_catalogue_yet_is_asked_again()
+    {
+        // **Why the owner's four enrolled agents never registered.** Adding writes the catalogue and asks
+        // for the start in the same breath, and the node reads its catalogue on a poll -- so the first
+        // answer is "not something I can start", and taking it as final started nothing at all. This node
+        // says no twice and then catches up. Must fail against a start that asks once.
+        var asks = 0;
+
+        var reported = await Starting.OnceAsync(
+            Orders,
+            (_, _) => Task.FromResult(ProjectRead<bool>.Read(++asks > 2)),
+            (_, _) => Task.FromResult(ProjectRead<bool>.Read(true)),
+            TimeSpan.Zero,
+            TimeProvider.System,
+            TestContext.Current.CancellationToken,
+            catchUp: TimeSpan.FromSeconds(10));
+
+        Assert.Equal(3, asks);
+        Assert.True(reported.Registered, reported.Says);
+    }
+
+    [Fact]
     public async Task A_registration_that_arrives_is_reported_as_registered()
     {
         var looks = 0;

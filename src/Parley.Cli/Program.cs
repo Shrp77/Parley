@@ -33,7 +33,7 @@ using Wire = Parley.Transport;
 
 const string Help = """
     parley — the broker, this machine's node, and what brings a machine up.
-    Reading and changing a deployment is `parley terminal`, or `parley` on its own.
+    Reading and changing a deployment is `parley` on its own.
 
       parley serve [--log <path>] [--with-node]        run the broker: the one process that
                    [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
@@ -44,13 +44,14 @@ const string Help = """
                                                        --with-web-ui starts the web UI beside it.
                                                        --project serves one alone, for testing
 
-      parley terminal                                  a deployment from this terminal: the
+      parley                                           a deployment from this terminal: the
                                                        projects, who is in each, and their
                                                        conversations as transcripts. Needs a
                                                        terminal, not a browser. Provided by
                                                        the parley-terminal tool, installed
                                                        separately so that changing it does
-                                                       not stop the broker
+                                                       not stop the broker. parley terminal
+                                                       is the same thing, spelled out
 
       parley web-ui [<url>]                            the operator's web UI in a browser:
                                                        every project, the agents in each, and
@@ -310,7 +311,7 @@ if (!forwarding
 {
     await Console.Error.WriteLineAsync(
         $"'{removed}' was removed: a project's store and endpoint are its own, and nothing outside it "
-        + "names either. Creating a project is `parley terminal`, where naming it derives its store "
+        + "names either. Creating a project is `parley`, where naming it derives its store "
         + "and claims its port; `parley serve` serves every project on this machine. To work on one "
         + "alone, name it with --project.").ConfigureAwait(false);
 
@@ -510,7 +511,7 @@ if (Moved.Contains(verb, StringComparer.Ordinal))
     await Console.Error.WriteLineAsync(
         $"'{verb}' is not a command here any more. Reading and changing a deployment happens in the "
         + "terminal, which has the lists these used to take an identifier for:"
-        + $"{Environment.NewLine}{Environment.NewLine}    parley terminal{Environment.NewLine}"
+        + $"{Environment.NewLine}{Environment.NewLine}    parley{Environment.NewLine}"
         + $"{Environment.NewLine}A machine with no terminal reaches the web UI over an SSH tunnel; "
         + "the README has the recipe.").ConfigureAwait(false);
 
@@ -556,7 +557,7 @@ if (verb == "project" && rest.Length > 0 && MovedProjectActions.Contains(rest[0]
         $"'project {rest[0]}' is not a command here any more. A project is created, changed and "
         + "removed in the terminal, where naming one is the whole of it and everything it needs is "
         + $"asked for on the same screen:{Environment.NewLine}{Environment.NewLine}"
-        + $"    parley terminal{Environment.NewLine}{Environment.NewLine}"
+        + $"    parley{Environment.NewLine}{Environment.NewLine}"
         + "What this machine is configured for is still `project list`, which reads nothing else "
         + "and changes nothing.").ConfigureAwait(false);
 
@@ -879,7 +880,7 @@ if (verb == "serve" && rest.Length == 0)
             var body =
                 opening + Environment.NewLine
                 + Environment.NewLine
-                + $"   Terminal: parley terminal{(configPath is null ? string.Empty : $" --config \"{manifestPath}\"")}{Environment.NewLine}"
+                + $"   Terminal: parley{(configPath is null ? string.Empty : $" terminal --config \"{manifestPath}\"")}{Environment.NewLine}"
                 + "   The same deployment, from here, and no browser needed.";
 
             // Sized to the widest line between the rules. It was the address plus twelve, which
@@ -1003,7 +1004,7 @@ if (verb == "serve" && rest.Length == 0)
         {
             Console.Error.WriteLine(
                 "No projects on this machine, so there is nothing to serve. They live under "
-                + $"{ProjectFolder.ProjectsIn(manifestPath)}; create one in `parley terminal` and "
+                + $"{ProjectFolder.ProjectsIn(manifestPath)}; create one in `parley` and "
                 + "it gets its own store and its own port. `parley autostart install` then serves "
                 + "every project at logon, including any named afterwards.");
 

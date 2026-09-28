@@ -251,7 +251,7 @@ public sealed class RemovingTests : IDisposable
 
             await shell.Settled;
 
-            Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
+            Assert.Contains(Naming.Created("billing"), shell.Said, StringComparison.Ordinal);
 
             Assert.True(ProjectManifest.TryRead(Root, out var named, out var unreadable), unreadable);
 

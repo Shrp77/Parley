@@ -47,7 +47,9 @@ internal static class Naming
     internal const string NothingWritten = "Nothing was written.";
 
     /// <summary>What is said when it did not.</summary>
-    internal const string Named = "Named. It is on the project list now.";
+    /// <param name="name">The project's name.</param>
+    /// <returns>One short sentence.</returns>
+    internal static string Created(string name) => $"Created '{name}'.";
 
     /// <summary>Opens the form that creates a project that does not exist yet.</summary>
     /// <param name="app">The application the form opens in.</param>
@@ -194,17 +196,22 @@ internal static class Naming
         return Task.CompletedTask;
     }
 
-    /// <summary>Runs the command and reports what it said, in its own words.</summary>
+    /// <summary>Runs the command and says, in one line, what came of it.</summary>
     /// <remarks>
     /// <para>
-    /// A refusal comes back from the command's own validation and is shown as it was written. A
-    /// surface that summarised it to "invalid" would take away the one thing that says which rule
-    /// was broken.
+    /// <b>A success is one sentence, and the facts are on the projects list.</b> This used to print
+    /// everything the command wrote for a shell -- the port, the folder, a paragraph about tunnels -- and
+    /// then two sentences of its own. The owner's call of 2026-09-27: nobody reads that, and the one fact
+    /// worth having is where the project answers, which the list now shows on its row.
     /// </para>
     /// <para>
-    /// What happens next is said every time, because naming a project writes a file and starts
-    /// nothing, and the first person to use this form assumed the opposite. Which sentence is said
-    /// depends on the entry: none, one serving a single store, or one serving the manifest.
+    /// A refusal still comes back in the command's own words. A surface that summarised it to "invalid"
+    /// would take away the one thing that says which rule was broken.
+    /// </para>
+    /// <para>
+    /// What happens next is said only when it is not the ordinary thing. With an entry serving the
+    /// manifest the project simply starts, and the list shows it answering; with no entry, or one
+    /// narrowed to a single project, nothing will, and that is worth one more short sentence.
     /// </para>
     /// </remarks>
     private static async Task WriteAsync(
@@ -224,37 +231,34 @@ internal static class Naming
             complained,
             cancellationToken: CancellationToken.None).ConfigureAwait(false);
 
-        var lines = (said.ToString() + complained)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd())
-            .ToList();
-
-        lines.Add(code != 0 ? NothingWritten : Named);
-
-        if (code == 0)
+        if (code != 0)
         {
-            lines.Add(entry switch
-            {
-                null =>
-                    "Nothing starts it yet. `parley autostart install` registers an entry that "
-                    + "serves every project named here, and starts it now.",
+            var refused = complained.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.TrimEnd())
+                .Append(NothingWritten)
+                .ToList();
 
-                // **`--db` is what used to narrow an entry to one store, and it has not existed
-                // since 019.** Telling somebody to re-run "with no --db" names a flag the tool now
-                // refuses, so the remedy read as a typo. What narrows an entry today is `--project`,
-                // and leaving it out is what makes the entry serve everything.
-                { ServesManifest: false } =>
-                    "The autostart entry serves one project and will not start this one. Re-run "
-                    + "`parley autostart install` with no --project to have it serve every project "
-                    + "on this machine.",
+            await done(Reports.Sentences(refused)).ConfigureAwait(false);
 
-                _ =>
-                    "The broker serving the manifest starts it within a few seconds; the list "
-                    + "will show it answering.",
-            });
+            return;
         }
 
-        await done(Reports.Sentences(lines)).ConfigureAwait(false);
+        var outcome = entry switch
+        {
+            null => $"{Created(values[0])} Nothing starts it yet: run `parley autostart install`.",
+
+            // **`--db` is what used to narrow an entry to one store, and it has not existed since 019.**
+            // What narrows an entry today is `--project`, and leaving it out is what makes the entry serve
+            // everything.
+            { ServesManifest: false } =>
+                $"{Created(values[0])} The autostart entry serves one project only; re-run "
+                + "`parley autostart install` without --project to start this one.",
+
+            _ => Created(values[0]),
+        };
+
+        await done(outcome).ConfigureAwait(false);
     }
 
 }

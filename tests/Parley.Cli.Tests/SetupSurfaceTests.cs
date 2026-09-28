@@ -80,8 +80,18 @@ public sealed class SetupSurfaceTests
                 // time.
                 "EnrolmentConsent",
 
+                // **What an enrolment did, as facts, and what it is doing while it does it.** The
+                // terminal reprinted everything the command wrote for a shell into a one-row message
+                // line, and said nothing at all while each agent was started and waited for -- both the
+                // owner's reports of 2026-09-27. Public because `Parley.Terminal` builds its one-line
+                // summary and its progress line from these rather than parsing the command's prose.
+                "EnrolmentOutcome",
+
                 "InstalledEntry",
                 "InterruptedEnrolment",
+
+                // One agent that was enrolled and did not register, with why. `EnrolmentOutcome` lists them.
+                "NotStarted",
 
                 // **The only thing that makes an accepted ownership line reach anybody.** The
                 // registry's `owns` is filled from the launch environment on attach and no operation

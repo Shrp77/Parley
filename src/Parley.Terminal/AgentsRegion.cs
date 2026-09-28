@@ -135,6 +135,19 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private List<Color?> _tone = [];
 
+    /// <summary>What is happening to each agent right now, by role, while something is working on it.</summary>
+    /// <remarks>
+    /// <b>On the agent's own row, which is the owner's call of 2026-09-28.</b> Enrolling four agents starts and
+    /// waits for each in turn, and that progress was said on the message line under everything else -- one
+    /// sentence at a time, about one agent at a time, below a list that went on showing all four as never
+    /// run. The row is where somebody is already looking for an agent's state, so that is where it goes, and
+    /// the message line is left for what went wrong.
+    /// </remarks>
+    private readonly Dictionary<string, string> _activity = new(StringComparer.Ordinal);
+    private readonly Lock _activityGate = new();
+    private string? _problem;
+    private string? _project;
+
     internal AgentsRegion()
     {
         Title = RegionTitle;
@@ -174,6 +187,55 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>The list, so a test can pick a row by its text.</summary>
     internal ListView List => _list;
+
+    /// <summary>Shows what is happening to one agent, on its row, and redraws.</summary>
+    /// <param name="role">The agent's role.</param>
+    /// <param name="activity">A few words, or null to take it off the row.</param>
+    /// <param name="catalogue">What this machine can start now, read again because an agent being enrolled was
+    /// not in it when the rows were last drawn.</param>
+    internal void Activity(string role, string? activity, NodeCatalogue catalogue)
+    {
+        ArgumentNullException.ThrowIfNull(role);
+        ArgumentNullException.ThrowIfNull(catalogue);
+
+        lock (_activityGate)
+        {
+            if (activity is null)
+            {
+                _ = _activity.Remove(role);
+            }
+            else
+            {
+                _activity[role] = activity;
+            }
+        }
+
+        Show(Registry, catalogue, _problem, _project);
+    }
+
+    /// <summary>Takes every activity off the rows, once whatever was working has finished.</summary>
+    /// <remarks>
+    /// Not redrawn here: the caller reads the registry again next, and that draw is the one that says where
+    /// each agent now stands.
+    /// </remarks>
+    internal void ClearActivity()
+    {
+        lock (_activityGate)
+        {
+            _activity.Clear();
+        }
+    }
+
+    /// <summary>What is happening to an agent now, or null.</summary>
+    /// <param name="role">The agent's role.</param>
+    /// <returns>The words on its row.</returns>
+    private string? ActivityOf(string role)
+    {
+        lock (_activityGate)
+        {
+            return _activity.TryGetValue(role, out var doing) ? doing : null;
+        }
+    }
 
     /// <summary>
     /// Joins a registry to a catalogue, keyed by agent name.
@@ -279,6 +341,8 @@ internal sealed class AgentsRegion : FrameView
         var rows = Join(registry, catalogue, project);
 
         Registry = registry ?? [];
+        _problem = problem;
+        _project = project;
 
         var standing = Standing.Join(
             registry,
@@ -319,7 +383,7 @@ internal sealed class AgentsRegion : FrameView
 
                 foreach (var row in group.Rows)
                 {
-                    lines.Add(Line(row));
+                    lines.Add(Line(row) + Doing(row));
                     map.Add(row);
                     tone.Add(null);
                 }
@@ -621,6 +685,22 @@ internal sealed class AgentsRegion : FrameView
     /// </para>
     /// </remarks>
     private static string Line(AgentRow row) => "  " + row.Name;
+
+    /// <summary>What is happening to a row's agent, as it is appended to the row, or nothing.</summary>
+    /// <param name="row">The row.</param>
+    /// <returns><c>  — registering (7s of 30s)</c>, or empty.</returns>
+    /// <remarks>
+    /// Keyed by role, because an agent being enrolled is a catalogue row named by its role and an agent that
+    /// has registered is a registry row named <c>role@machine</c> -- and it moves from one to the other in the
+    /// middle of being watched.
+    /// </remarks>
+    private string Doing(AgentRow row)
+    {
+        var at = row.Name.IndexOf('@', StringComparison.Ordinal);
+        var role = at < 0 ? row.Name : row.Name[..at];
+
+        return ActivityOf(role) is { } doing ? $"  — {Safe.Text(doing)}" : string.Empty;
+    }
 
     /// <summary>What colour a row earns from where its agent stands.</summary>
     /// <param name="row">Which row.</param>

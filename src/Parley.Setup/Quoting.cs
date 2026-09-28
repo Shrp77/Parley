@@ -9,7 +9,7 @@ namespace Parley.Setup;
 /// <remarks>
 /// <para>
 /// <b>Every value this quotes came out of a file somebody edited</b> — a catalogue's role, a
-/// manifest's path, an <c>owns</c> line recovered from a repository's history — and every line it
+/// manifest's path, a line of a repository's README — and every line it
 /// builds is read in a terminal. A value able to move the cursor or reverse the reading direction can
 /// imitate the lines around it, which is worth more here than anywhere: the lines around it are
 /// refusals, and a refusal is what somebody reads before deciding a file is safe to point a tool at.
