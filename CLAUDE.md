@@ -236,10 +236,19 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     The seat is an ordinary attachment, which is the part worth not losing.
                     §4.0 makes an open connection the evidence an agent is reachable, so
                     joining and leaving are the same events every other agent's arrival and
-                    departure are — not a session flag the console keeps to itself. It
-                    follows that a seat must not outlive the person: a tab left open is not
-                    somebody at a desk, so `SeatBook.IdleAfter` releases one that nothing has
-                    touched, and the frame touches it on every page render.
+                    departure are — not a session flag the console keeps to itself.
+
+                    **A seat outlives the person's presence; the claim that they are present
+                    does not** (constitution 5.0.0, for specs/023). This paragraph used to say
+                    a seat must not outlive the person, and that ran two things together:
+                    *having* a seat, which is being addressable and having mail wait, and
+                    *being in* it, which is somebody at a screen. Releasing the first because
+                    the second stopped left every agent waiting on a person's decision with
+                    nobody to ask. From 023 the broker provides `human-user@<project>` in every
+                    project and never releases it; what `SeatBook.IdleAfter` still does is drop
+                    the connection of a tab nothing has touched, because a tab left open is not
+                    somebody at a desk, and that connection is now the evidence of *here*
+                    rather than of the seat.
 
                     Without a seat the console has no agent identity at all and the composer
                     sends instructions, which is what it did before any of this.

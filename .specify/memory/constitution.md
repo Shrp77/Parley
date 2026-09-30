@@ -1,4 +1,29 @@
 <!--
+Sync Impact Report — 2026-09-30
+Version change: 4.0.0 → 5.0.0 (MAJOR)
+  One redefinition for specs/023 (the person always has a seat), amended BEFORE any of its code, as
+  governance requires. research.md R9 found that 023 changes what Principle III permits.
+  - Principle III. The facilitator was "the one identity that no launch fixes". A second is added: the
+    person seat, `human-user@<project>`, which the broker provides in every project it serves and
+    never releases. Every surface that reaches the broker speaks as it; nothing launches it. Both
+    broker-provided identities are named for their project and have no machine. The role is reserved
+    in storage, and the limit of that is stated in the principle rather than left to be discovered:
+    an attach under the existing row writes no new row, so the guard against a claimant is code that
+    trusts the adapter the caller reports, as SPEC.md §16 already concedes of every name.
+  MAJOR by this file's own rule: it changes what the principle permits.
+Modified principles: III, as above.
+Modified sections: none beyond that principle. Added sections: none. Removed sections: none.
+Templates and dependent documents:
+  ✅ CLAUDE.md — the Parley.Web seat paragraph: "a seat must not outlive the person" becomes "a seat
+     outlives the person's presence; the claim that they are present does not", in the same commit
+  ⚠️ specs/023-always-a-seat/plan.md — its Constitution Check is re-run against 5.0.0 (T002)
+  ⚠️ SPEC.md principle 2.6, §3, §4.0, §4.1.1, §5, §8 rule 10, §9.2, §10.1, §10.2, §12.3, §14, §17 q2,
+     §18 — NOT yet amended. They are 023's T003–T007 and come before any code (Principle I)
+  ✅ .specify/templates/ — no principle-driven sections affected
+Deferred TODOs: SPEC.md, as above. It is the feature's own task, not this amendment's.
+-->
+
+<!--
 Sync Impact Report — 2026-09-28
 Version change: 3.0.0 → 4.0.0 (MAJOR)
   Three redefinitions for specs/022 (Parley as facilitator), amended BEFORE any of its code, as
@@ -150,6 +175,20 @@ own store. It is a reserved role that storage refuses to every other adapter, an
 seat and enrolment refuses it too. So the guarantee still holds in both directions: no agent can
 become the facilitator, and the facilitator cannot become an agent.
 
+**The person seat is the second identity no launch fixes** (from specs/023). A person is not
+launched either. The broker provides `human-user@<project>` in every project it serves, never
+releases it, and every surface that reaches the broker speaks as it. Both identities the broker
+provides are named for their project rather than a machine, because neither is hosted on one, and
+storage records no machine for either. The role is reserved as the facilitator's is: enrolment,
+attaching as an agent and storage all refuse it.
+
+**The limit is stated here rather than left to be found.** The person seat exists before anything
+attaches, so an attach under its name writes no new row and no storage rule sees it. What refuses a
+claimant is code that trusts the adapter the caller reports. That is SPEC.md §16's concession,
+that anything able to reach a broker can claim any name, applied to this one; it is not a new
+weakness, and it is not a guarantee this principle makes. What storage does guarantee, whoever
+attaches, is that the person seat carries no ownership line.
+
 ### IV. Terseness is a security control
 
 The message cap is a context-poisoning defence, not a style preference, and it lives in the
@@ -293,4 +332,4 @@ removed or redefined, MINOR for one added or materially expanded, PATCH for word
 amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
 0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
 
-**Version**: 4.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-28
+**Version**: 5.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-30
