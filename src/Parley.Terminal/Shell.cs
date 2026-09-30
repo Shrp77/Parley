@@ -182,13 +182,21 @@ internal sealed class Shell : Window
     /// </remarks>
     private Task SendLine()
     {
-        if (Held is not { } hold || Drafting is not { } draft || _place.Title is not { } conversation)
+        if (_place.Title is not { } conversation || Current is not { } place)
         {
-            // **Three different absences, and only one of them is the stream.** A draft or a conversation that is
-            // missing is this surface's own fault and is worth saying so; 0.29.1 records what the collapsed version
-            // costs. And the stream missing is never "your seat was released" any more (specs/023): the seat is the
-            // broker's and is never released, so what is missing is only this terminal's connection to it.
-            Said = Held is null ? NotConnected : SeatWithoutProject;
+            Said = SeatWithoutProject;
+
+            return Task.CompletedTask;
+        }
+
+        if (Drafting is not { } draft)
+        {
+            // **Not the project, and not the seat.** Who a line goes to is read from the conversation, and until that
+            // read lands there is no plan to send by. This was folded into the message above, which is how the owner
+            // was told on 0.36.0 that a project they were looking at did not resolve. The read is asked for here, so
+            // "in a moment" is true rather than hopeful.
+            Said = NotReadYet;
+            Queue(token => OpenAsync(place, conversation, token));
 
             return Task.CompletedTask;
         }
@@ -213,11 +221,18 @@ internal sealed class Shell : Window
 
         Queue(async token =>
         {
-            if (Voice() is not { } voice)
+            // **Enter is a key, so a person who was away is back** (specs/023). The idle sweep dropped only the stream;
+            // the seat is the broker's and was never released, so refusing with "not connected" would make somebody
+            // press Enter twice to send once. Taken back here, in the queue, rather than trusted to `Touched` having
+            // finished first.
+            if (Held is null)
             {
-                // `hold` is non-null by the guard above, so the seat is not what is missing here and
-                // saying it was released would be provably false at the moment it is printed.
-                Said = SeatWithoutProject;
+                await EnsureSeatAsync(place, null, token).ConfigureAwait(false);
+            }
+
+            if (Held is not { } hold || Voice() is not { } voice)
+            {
+                Said = NotConnected;
 
                 return;
             }
@@ -237,10 +252,9 @@ internal sealed class Shell : Window
 
             Line.Written = string.Empty;
 
-            if (Projects.Selected is { } project)
-            {
-                await OpenAsync(project, conversation, token).ConfigureAwait(false);
-            }
+            // The view's project, not the list's selection: the two are different accessors for one question, which is
+            // this repository's most-repeated defect.
+            await OpenAsync(place, conversation, token).ConfigureAwait(false);
         });
 
         return Task.CompletedTask;
@@ -2189,10 +2203,13 @@ internal sealed class Shell : Window
         {
             field = value;
 
+            // **The draft is kept.** It is who a line goes to in this conversation, read from the conversation, and the
+            // seat it is drafted as is the broker's and outlives a dropped stream (specs/023). Dropping it here was right
+            // while a seat went with its stream; after that it left a person back from the idle window holding a seat and
+            // no draft, and their first Enter refused (the owner's report of 0.36.0, `SendAfterIdleTests`).
             if (value is null)
             {
                 Mail = null;
-                Drafting = null;
             }
 
             // The line says what it needs the moment the seat changes, rather than at the next read. A person
@@ -2306,6 +2323,13 @@ internal sealed class Shell : Window
     /// </remarks>
     internal const string NotConnected =
         "Not connected to this project as you just now, so nothing was sent. It is reconnecting; try again in a moment.";
+
+    /// <summary>Said when Enter is pressed before the conversation has been read, so there is nobody to send to yet.</summary>
+    /// <remarks>
+    /// The send asks for the read as it says this, so the sentence is a promise the surface is keeping, not a guess.
+    /// </remarks>
+    private const string NotReadYet =
+        "This conversation is still being read, so nothing was sent. Press Enter again in a moment.";
 
     /// <summary>The last reason a seat could not be taken, so the same one is not said again on every refresh.</summary>
     private string? _seatProblem;

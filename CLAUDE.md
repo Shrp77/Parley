@@ -658,6 +658,16 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   name fires no storage rule and the guard is code trusting the caller's adapter, as §16 concedes of every name.
   **Principle III is amended to 5.0.0 first**, in its own commit. `research.md` R1–R11 carries the decisions.
 
+  **0.36.1: the owner could not send a question into a conversation after leaving the agents to work.** The terminal
+  said *"Your seat is held, but this view resolves no project to speak into … That should not be possible"*. The
+  project was fine; the draft was gone. Going idle drops the stream, and `Held`'s setter threw the draft away with it —
+  right while a seat went with its stream, wrong once 023 made only the connection go. The next key took the stream
+  back and nothing rebuilt the draft, and `SendLine`'s first guard folded no seat, no draft and no conversation into
+  one sentence that blamed the project. The draft is kept now, a missing draft says so and asks for the read, and
+  Enter while away takes the stream back and sends rather than refusing. `SendAfterIdleTests` fails against 0.36.0 in
+  both orders. **The sixth appearance of `Projects.Selected` standing in for `Current`** was beside it, in the reread
+  after a send.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —
