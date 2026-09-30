@@ -1,4 +1,5 @@
-﻿using Parley.Setup;
+﻿using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -57,6 +58,19 @@ public sealed class EnrollmentPlanTests
             });
 
         Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void The_facilitators_role_is_refused_and_parley_is_not()
+    {
+        // Refused here with a sentence, before storage refuses the registration and the agent never appears with
+        // nothing said about why. `parley` is an ordinary role: this repository registers as its own agent under it,
+        // and a folder called Parley enrols as it (SPEC.md §12.3).
+        Assert.Contains(
+            Validate(new EnrollmentEntry(Workspace, Facilitation.Role, "", false)),
+            p => p.Contains(Facilitation.Reserved, StringComparison.Ordinal));
+
+        Assert.Empty(Validate(new EnrollmentEntry(Workspace, "parley", "", false)));
     }
 
     [Fact]

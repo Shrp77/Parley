@@ -1,7 +1,6 @@
 using Grpc.Net.Client;
 using Parley.Cli.Tests;
 using Parley.Client;
-using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Configuration;
 using Parley.Core;
@@ -106,39 +105,11 @@ public sealed class AskingWhatItOwnsTests
     }
 
     [Fact]
-    public async Task Asking_with_no_seat_says_a_seat_is_needed_and_how_to_take_one()
+    public async Task Asking_needs_no_seat_because_Parley_asks()
     {
-        // Must fail against a silent refusal, and against "your seat was released" -- 0.29.1 records
-        // that sentence being the defect when the seat was never held in the first place.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var shell = new Shell(directory);
-
-        driving.Show(shell);
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        shell.Agents.Show([Agent("orders@test")], NodeCatalogue.Empty, null);
-        shell.Focus(2);
-
-        var said = string.Empty;
-
-        await Ownership.AskAsync(driving.App, null, Orders, When, _ => { }, reported =>
-        {
-            said = reported;
-
-            return Task.CompletedTask;
-        });
-
-        Assert.Equal(Ownership.NoSeat, said);
-        Assert.Contains("'j'", said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Nothing_is_sent_when_there_is_no_seat_to_send_it_from()
-    {
-        // The refusal must also not queue work. Must fail against a version that says a seat is
-        // needed and then sends anyway, which is the shape of every half-applied guard in this file's
-        // neighbours.
+        // **022's correction, and the refusal the owner met.** 020 sent the ask as the person's own Request, so it
+        // refused without a seat; Parley asks now, so the ask goes ahead with nobody seated. Must fail against the seat
+        // refusal coming back.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -147,25 +118,33 @@ public sealed class AskingWhatItOwnsTests
         await Walking.GoAsync(shell, Viewing.Project);
 
         var queued = 0;
+        var said = string.Empty;
 
         await Ownership.AskAsync(
-            driving.App, null, Orders, When, _ => queued++, _ => Task.CompletedTask);
+            driving.App,
+            new BrokerClient(directory.ClientFor(directory.Projects[0])),
+            Orders,
+            _ => queued++,
+            reported =>
+            {
+                said = reported;
 
-        Assert.Equal(0, queued);
+                return Task.CompletedTask;
+            });
+
+        Assert.Null(shell.Held);
+        Assert.Equal(1, queued);
+        Assert.DoesNotContain("seat", said, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void What_the_agent_will_be_told_is_on_the_screen_before_it_is_sent()
     {
-        // **FR-003 is a promise about what the agent was told**, so a surface that summarised the ask
-        // would be the one place the promise could quietly stop being true. Must fail against a
-        // description that paraphrases rather than shows.
-        // **Compared on the words rather than on the layout.** A first version of this asserted
-        // "Nothing is routed by it automatically" and failed: the constant wraps between "Nothing is"
-        // and "routed", so the substring existed in the prose and not in the string. Re-wrapping the
-        // ask is not a change to what the agent is told, and a test that broke on it would be
-        // measuring the margin. Changing the promise still fails this.
-        var asked = Words(Ownership.Asked(Orders, OwnershipAsk.Conversation(Orders, When)));
+        // **FR-003 is a promise about what the agent was told**, so a surface that summarised the ask would be the one
+        // place the promise could quietly stop being true. Must fail against a description that paraphrases rather than
+        // shows. Compared on the words rather than on the layout, because re-wrapping is not a change to what the agent
+        // is told.
+        var asked = Words(Ownership.Asked(Orders, autoAccept: false));
 
         Assert.Contains("What do you own in this deployment", asked, StringComparison.Ordinal);
         Assert.Contains("it costs each of them context every time", asked, StringComparison.Ordinal);
@@ -173,19 +152,38 @@ public sealed class AskingWhatItOwnsTests
         Assert.Contains("what you do not own", asked, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void The_words_shown_are_the_words_the_switch_will_send()
+    {
+        // With Auto Accept on, 020's closing promise -- a person reads the answer before anything is written -- is
+        // untrue, so the question says what will actually happen instead (research finding 10). The person is shown
+        // whichever the agent will get.
+        Assert.Contains(
+            "Your answer becomes your ownership line as you write it",
+            Words(Ownership.Asked(Orders, autoAccept: true)),
+            StringComparison.Ordinal);
+
+        Assert.Contains(
+            "A person will read your answer",
+            Words(Ownership.Asked(Orders, autoAccept: false)),
+            StringComparison.Ordinal);
+    }
+
     /// <summary>One line of words, so an assertion is about prose and not about wrapping.</summary>
     private static string Words(string text) =>
         string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     [Fact]
-    public void What_the_person_reads_first_says_the_ask_costs_a_turn_and_writes_nothing()
+    public void What_the_person_reads_first_says_the_ask_costs_a_turn_and_what_becomes_of_the_answer()
     {
-        // The cost is named before it is spent, and the harmlessness is named too: a person who
-        // believed asking wrote something would not ask.
-        var asked = Ownership.Asked(Orders, OwnershipAsk.Conversation(Orders, When));
+        // The cost is named before it is spent, and so is where the answer goes: with the switch on it can become the
+        // line with nobody reading it, which a person deciding to ask has to know.
+        var on = Ownership.Asked(Orders, autoAccept: true);
+        var off = Ownership.Asked(Orders, autoAccept: false);
 
-        Assert.Contains("one turn", asked, StringComparison.Ordinal);
-        Assert.Contains("Nothing is written by asking", asked, StringComparison.Ordinal);
+        Assert.Contains("one turn", on, StringComparison.Ordinal);
+        Assert.Contains("Auto Accept is on", on, StringComparison.Ordinal);
+        Assert.Contains("Auto Accept is off", off, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -321,13 +319,13 @@ public sealed class AskingWhatItOwnsTests
     public async Task An_ask_that_has_not_been_answered_says_so_over_a_real_broker()
     {
         // **End to end over a socket, and the whole of what it proves is the order of two checks.**
-        // The ask is sent from a seat, so the discussion holds exactly one message -- the person's,
-        // addressed to the agent. Reading it back must therefore find the agent as the *recipient*
-        // and then find that it has said nothing.
+        // Parley asks, so the discussion holds exactly one message -- Parley's, addressed to the agent. Reading
+        // it back must therefore find the agent as the *recipient* of Parley's Request and then find that it
+        // has said nothing.
         //
-        // Must fail two ways. Against `Subject` reading senders alone, this says "which single agent"
-        // -- the surface unable to name an agent it had just asked. And against a review that opens a
-        // dialog regardless, it offers an empty line for acceptance and then writes it.
+        // Must fail two ways. Against `Subject` reading senders alone, this says "which single agent" -- the
+        // surface unable to name an agent it had just asked. And against a review that opens a dialog regardless,
+        // it offers an empty line for acceptance and then writes it. No seat anywhere: since 022 Parley asks.
         var ct = TestContext.Current.CancellationToken;
 
         using var connection = ParleyDatabase.OpenInMemory();
@@ -339,15 +337,13 @@ public sealed class AskingWhatItOwnsTests
         await using var broker = LoopbackOperator.Start(connection);
         using var driving = Driving.Open();
         using var directory = Wired(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
 
-        var discussion = OwnershipAsk.Conversation(Orders, When);
+        Assert.True((await broker.Operators.AskAgainAsync(
+            new Parley.Transport.AgentRequest { Agent = Orders.Value }, cancellationToken: ct)).Done);
 
-        var sent = await new SeatVoice(directory.AgentsFor(directory.Projects[0]), shell.Held!.Seat)
-            .RequestAsync(Orders, OwnershipAsk.Text, discussion, ct);
-
-        Assert.Contains("Sent.", sent, StringComparison.Ordinal);
+        var discussion = Assert.Single(
+            (await broker.Operators.FacilitationAsync(new Parley.Transport.Empty(), cancellationToken: ct)).Questions)
+            .ConversationId;
 
         var said = string.Empty;
 
@@ -373,30 +369,6 @@ public sealed class AskingWhatItOwnsTests
         new(
             [new ProjectSettings(ProjectName.Create("alpha"), "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
-
-    private static async Task<Shell> SeatedAsync(
-        Driving.Session driving, BrokerDirectory directory, SeatBook seats)
-    {
-        var shell = new Shell(directory) { Seats = seats };
-
-        driving.Show(shell);
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
-
-        await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.NotNull(shell.Held);
-
-        return shell;
-    }
 
     [Fact]
     public void Accepting_it_unchanged_is_recorded_as_the_agents_words()

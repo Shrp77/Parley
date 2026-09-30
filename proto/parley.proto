@@ -501,7 +501,18 @@ message NodeCommand {
     // that there is mail; this carries text a person wrote and must be given to the agent as what it is
     // (section 11.5).
     DeliverInstruction instruct = 5;
+
+    // Restart an agent this node started, once its current turn is over, so it reads its launch configuration afresh.
+    // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
+    // node did not start. A node that does not know this command ignores it, as it ignores every unknown command, and
+    // the line stays pending until the agent restarts on its own.
+    RefreshAgent refresh = 6;
   }
+}
+
+message RefreshAgent {
+  string agent = 1;
+  string because = 2;            // for the operator's benefit, never the agent's
 }
 
 message Joined {
@@ -570,6 +581,15 @@ service Operators {
   // It does NOT write the registry's `owns`: that is filled from the launch environment when the agent
   // attaches (section 12.3), so the reply carries what peers read now beside what was accepted.
   rpc RecordOwnership(RecordOwnershipRequest) returns (RecordOwnershipReply);
+
+  // Parley's questions (section 10.2, specs/022). Every one is the person's view of what the facilitator did or a
+  // decision about an answer it read back; none lets anybody speak as the facilitator except through
+  // ReplyToAskedBack, whose words are recorded as the person's (`parley:person`), never as Parley's.
+  rpc Facilitation(Empty) returns (FacilitationReply);
+  rpc SetAutoAccept(SetAutoAcceptRequest) returns (SetAutoAcceptReply);
+  rpc AskAgain(AgentRequest) returns (FacilitationActionReply);
+  rpc ReplyToAskedBack(ReplyToAskedBackRequest) returns (FacilitationActionReply);
+  rpc DiscardAnswer(AgentRequest) returns (FacilitationActionReply);
 
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
@@ -682,6 +702,13 @@ message RegistryRow {
   // Both halves travel rather than a `pending` flag, so a surface can show the two lines side by side
   // and say which is which. A flag would carry the comparison and lose the thing being compared.
   string owns_accepted = 10;
+  // How that accepted line was arrived at, so a surface can show a line accepted automatically apart from one a
+  // person decided (section 10.2, specs/022). UNSPECIFIED when nobody has accepted a line.
+  //
+  // There is no `facilitator` field beside it on purpose. The facilitator's row is the one whose adapter is
+  // `parley-facilitator`, and storage ties that adapter to the reserved role in both directions -- so a flag would be
+  // a second statement of one fact, free to disagree with the first.
+  OwnershipSource owns_source = 11;
 }
 
 message RefusalsReply {
@@ -859,6 +886,51 @@ message RecordOwnershipReply {
   bool pending = 4;
 }
 
+message FacilitationReply {
+  bool auto_accept = 1;
+  repeated OwnershipQuestion questions = 2;   // each agent's latest question, if it was ever asked
+}
+
+message OwnershipQuestion {
+  string agent = 1;
+  string conversation_id = 2;
+  int64 exchange_id = 3;
+  QuestionState state = 4;
+  string answer = 5;                  // the agent's words as written; empty until it answers
+  string flattened = 6;               // the same words on one line; empty until it answers
+  string waiting_because = 7;         // why it waits for a person; empty unless waiting
+  string asked_utc = 8;
+  string settled_utc = 9;             // empty until accepted or discarded
+}
+
+enum QuestionState {
+  QUESTION_STATE_UNSPECIFIED = 0;
+  QUESTION_STATE_ASKED = 1;
+  QUESTION_STATE_ASKED_BACK = 2;
+  QUESTION_STATE_ANSWERED = 3;
+  QUESTION_STATE_WAITING = 4;
+  QUESTION_STATE_ACCEPTED = 5;
+  QUESTION_STATE_DISCARDED = 6;
+}
+
+message SetAutoAcceptRequest {
+  bool on = 1;
+}
+
+message SetAutoAcceptReply {
+  bool on = 1;                        // as now set
+}
+
+message ReplyToAskedBackRequest {
+  string agent = 1;
+  string text = 2;                    // the person's words, held to the message cap
+}
+
+message FacilitationActionReply {
+  bool done = 1;
+  string problem = 2;                 // empty when it was done
+}
+
 message InstructRequest {
   string agent = 1;
   string text = 2;
@@ -942,6 +1014,7 @@ enum RequestRejection {
   REQUEST_REJECTION_CONVERSATION_CLOSED = 7;
   REQUEST_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 8;
   REQUEST_REJECTION_NO_SUCH_ROLE = 9;
+  REQUEST_REJECTION_RECEIVER_IS_THE_FACILITATOR = 10;  // the facilitator receives nobody's work (section 10.1)
 }
 
 enum TransitionError {
@@ -989,6 +1062,7 @@ enum OwnershipSource {
   OWNERSHIP_SOURCE_PROPOSED = 1;      // the agent's own words, untouched
   OWNERSHIP_SOURCE_EDITED = 2;        // the agent's proposal, changed by the person
   OWNERSHIP_SOURCE_COMPOSED = 3;      // written by the person, with no ask at all
+  OWNERSHIP_SOURCE_AUTOMATIC = 4;     // the agent's own words, made its line by Auto Accept; never sent by a client
 }
 
 enum InstructionOutcome {

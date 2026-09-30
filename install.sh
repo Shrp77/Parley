@@ -54,6 +54,15 @@
 #                                of it and everything it would have said is in the log
 #                                named below. Opt-in, so a machine installed without it
 #                                behaves at logon exactly as it did before.
+#   ./install.sh --reset         wipe this machine's Parley first, by running
+#                                reset.sh --everything --force, then install. Every project,
+#                                store, conversation, port and node.json goes, and nothing
+#                                asks: passing --reset is the decision. It runs after the
+#                                build and pack succeed, so a failed build leaves the machine
+#                                as it was. Refused with --uninstall and with --only.
+#   ./install.sh --reset --repositories <dir>
+#                                also take the Parley entries out of every checkout's
+#                                .mcp.json under <dir>, as reset.sh --repositories does.
 #
 # --force ends a broker somebody started by hand and the parley-mcp adapter of every editor
 # session with Parley configured. Those sessions keep running and lose Parley until the editor
@@ -86,6 +95,8 @@ force=0
 hidden=0
 surfaces=""
 only=""
+reset=0
+repositories=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -96,6 +107,9 @@ while [ $# -gt 0 ]; do
         --surfaces=*) surfaces="${1#--surfaces=}"; shift ;;
         --force) force=1; shift ;;
         --hidden) hidden=1; shift ;;
+        --reset) reset=1; shift ;;
+        --repositories) repositories="${2:-}"; shift 2 ;;
+        --repositories=*) repositories="${1#--repositories=}"; shift ;;
         # **Every comment line after the shebang, not a line range.** This was `sed -n '2,25p'`,
         # and the usage list starts at line 27 -- so `--help` printed the explanation and stopped
         # immediately before the only part anybody asks for, showing not one of --uninstall,
@@ -107,11 +121,27 @@ while [ $# -gt 0 ]; do
         -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
-            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden]" >&2
+            echo "Usage: ./install.sh [--surfaces terminal|web-ui|both|none] [--only <command>] [--uninstall] [--force] [--hidden] [--reset [--repositories <dir>]]" >&2
             exit 64
             ;;
     esac
 done
+
+# Checked before anything is stopped or built, so a combination that makes no sense costs nothing.
+if [ "$reset" = "1" ] && [ "$uninstall" = "1" ]; then
+    echo "--reset and --uninstall together make no sense: --uninstall removes what was installed and installs nothing." >&2
+    exit 64
+fi
+
+if [ "$reset" = "1" ] && [ -n "$only" ]; then
+    echo "--reset wipes the whole deployment and stops the broker, and --only exists to leave the broker running. Use one or the other." >&2
+    exit 64
+fi
+
+if [ -n "$repositories" ] && [ "$reset" = "0" ]; then
+    echo "--repositories is only used with --reset." >&2
+    exit 64
+fi
 
 # A fourth array rather than three. `surface_of` says which of the two operator surfaces a tool
 # is, and empty means it is not one: the broker and the agent adapter are what Parley is, and
@@ -487,6 +517,22 @@ built=$(find "$root/src/Parley.Cli/bin/Release" -maxdepth 1 -name 'Parley.Cli.*.
 if [ -z "$built" ]; then
     echo "Nothing was packed. The build produced no package." >&2
     exit 1
+fi
+
+# ------------------------------------------------------------------- reset ---
+
+# Here rather than first, so a build that fails leaves the machine as it was. reset.sh stops the
+# broker and its children and removes the autostart entry itself; the steps below then find
+# nothing to stop, which they already handle. Run through bash rather than executed, so a
+# checkout that lost the file's executable bit still resets.
+if [ "$reset" = "1" ]; then
+    step "Resetting this machine (--reset)"
+
+    if [ -n "$repositories" ]; then
+        bash "$root/reset.sh" --everything --force --repositories "$repositories"
+    else
+        bash "$root/reset.sh" --everything --force
+    fi
 fi
 
 # ----------------------------------------------------------------- install ---

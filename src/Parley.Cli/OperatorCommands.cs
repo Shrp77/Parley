@@ -52,9 +52,14 @@ public sealed class OperatorCommands
         // listing showing the live line with nothing said about a line already accepted, which FR-020
         // forbids of any surface showing the line — and this is the listing somebody runs to check that
         // an acceptance worked.
-        var agents = await new Parley.Client.BrokerClient(_console)
+        // Parley is left out: it is the project's own participant rather than an agent, owns nothing and is started by
+        // nothing, so a row for it here would read as an agent nobody can reach (SPEC.md §14). Every store holds it, so
+        // counting it would also make "no agents registered" impossible to say.
+        var agents = (await new Parley.Client.BrokerClient(_console)
             .RegistryAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .ConfigureAwait(false))
+            .Where(a => !a.Facilitator)
+            .ToList();
 
         if (agents.Count == 0)
         {

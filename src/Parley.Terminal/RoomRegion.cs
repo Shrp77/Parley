@@ -211,6 +211,15 @@ internal sealed class RoomRegion : FrameView
 
         foreach (var pair in pairs)
         {
+            // Parley is named as Parley rather than by its registry name, and is not a row a person can address: it
+            // receives nobody's work, and ticking it would put a recipient on a message the broker refuses.
+            if (Facilitation.Is(pair.Peer))
+            {
+                rows.Add(new Row("  " + Facilitation.DisplayName + " -- this project's facilitator", null, null, null));
+
+                continue;
+            }
+
             rows.Add(new Row(
                 Mark(pair.Peer) + Safe.Text(pair.Peer.Value) + Standing(pair),
                 null,

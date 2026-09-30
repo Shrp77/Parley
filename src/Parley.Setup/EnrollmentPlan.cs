@@ -261,6 +261,12 @@ public static class EnrollmentPlan
                     $"{where}: agent '{entry.Agent}' must be lowercase letters, digits and hyphens, " +
                     $"starting with a letter, at most {NameLimit} characters");
             }
+            else if (Facilitation.IsReserved(entry.Agent))
+            {
+                // Refused here, with a sentence, before storage refuses the registration and the agent never appears
+                // with nothing said about why. `parley` alone is not reserved: a folder called Parley enrols as it.
+                problems.Add($"{where}: {Facilitation.Reserved}");
+            }
             else if (claimed.TryGetValue(entry.Agent, out var first))
             {
                 // Not tidiness. Identity is the one thing Parley makes unforgeable, and it does

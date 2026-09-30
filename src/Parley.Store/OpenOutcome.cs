@@ -48,7 +48,14 @@ public enum RequestRejection
     ConversationNotAssignable,
 
     /// <summary>A Request addressed a role nothing is registered under (§5.5).</summary>
-    NoSuchRole
+    NoSuchRole,
+
+    /// <summary>The Request was addressed to the facilitator, which receives nobody's work (§10.1).</summary>
+    /// <remarks>
+    /// Leaving it off <c>agents()</c> does not stop an agent naming it, and a Request it will never answer would sit
+    /// flagged for ever. The facilitator asks; it does not do work (SPEC.md principle 2.11).
+    /// </remarks>
+    ReceiverIsTheFacilitator
 }
 
 /// <summary>
@@ -149,7 +156,8 @@ public sealed record OpenOutcome
     public static OpenOutcome Refused(RequestRejection rejection) => rejection switch
     {
         RequestRejection.ReceiverNotRegistered or RequestRejection.ReceiverRetired or
-            RequestRejection.SenderRetired or RequestRejection.NoSuchRole =>
+            RequestRejection.SenderRetired or RequestRejection.NoSuchRole or
+            RequestRejection.ReceiverIsTheFacilitator =>
             new(null, rejection, [], [], [], null),
         _ => throw new ArgumentException(
             $"{rejection} carries what the sender can act on; use its own factory.", nameof(rejection))

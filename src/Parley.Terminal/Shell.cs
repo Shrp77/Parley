@@ -696,8 +696,12 @@ internal sealed class Shell : Window
             }
         };
         Line = new LineRegion();
+        Configuration = new ConfigurationRegion();
 
-        _regions = [Projects, Agents, Conversations, Transcript];
+        // Every region, because this is the list the arrangement hides from. The room and the line were left off it
+        // when 017 added them, so after a conversation had given them a size, going back left both drawn over the
+        // project view. `LeavingTheRoomTests` asks the regions themselves rather than this list.
+        _regions = [Projects, Agents, Conversations, Transcript, Room, Line, Configuration];
 
         // Choosing and opening are things a person did, whether by key or by pointer, so both
         // count as being here. A mouse-only session would otherwise be swept mid-use.
@@ -773,6 +777,7 @@ internal sealed class Shell : Window
         Add(Transcript);
         Add(Room);
         Add(Line);
+        Add(Configuration);
 
         // Enter in the box sends, and the preview follows what is written. Subscribed here rather than in the
         // region, which knows nothing about seats or brokers.
@@ -812,6 +817,9 @@ internal sealed class Shell : Window
 
     /// <summary>The one line a person speaks from.</summary>
     internal LineRegion Line { get; }
+
+    /// <summary>One project's settings, each with what it means.</summary>
+    internal ConfigurationRegion Configuration { get; }
 
     /// <summary>What is written and not yet sent, or null when there is no seat to send it under.</summary>
     /// <remarks>
@@ -853,6 +861,7 @@ internal sealed class Shell : Window
         // reflow, copying, the refill race. Every one of those was found the hard way and several by probe, so
         // they keep passing by construction rather than by care.
         Viewing.Conversation => [Room, Transcript, Line],
+        Viewing.Configuration => [Configuration],
         _ => [Projects],
     };
 
@@ -1440,7 +1449,63 @@ internal sealed class Shell : Window
         {
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
         }
+
+        // The same rule for settings: the view is never on screen showing values it has not read.
+        if (place.Viewing == Viewing.Configuration)
+        {
+            await ReadConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
+
+    /// <summary>What the menu calls the way into a project's settings.</summary>
+    internal const string ConfigurationTitle = "Configuration";
+
+    /// <summary>The chord that opens a project's settings.</summary>
+    internal static Key ConfigurationKey => Key.F3;
+
+    /// <summary>Opens the settings of the project in view, or of the one selected in the list.</summary>
+    /// <returns>When the view is on screen and read.</returns>
+    private Task OpenConfiguration() =>
+        (Current ?? Projects.Selected) is { } project
+            ? GoAsync(ViewPlace.Configure(project.Name))
+            : Task.CompletedTask;
+
+    /// <summary>Reads the project's settings into the configuration view.</summary>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>When the view shows what the broker said.</returns>
+    /// <remarks>
+    /// One read per setting's source. There is one today, the facilitation report, which carries Auto Accept; a
+    /// setting added later adds its row here, and the view needs nothing else.
+    /// </remarks>
+    private async Task ReadConfigurationAsync(CancellationToken cancellationToken)
+    {
+        if (Current is not { } project)
+        {
+            return;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        var read = await BrokerDirectory.ReadAsync(
+            async () => await client.FacilitationAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (!read.Reachable)
+        {
+            Configuration.Unreadable(Safe.Text(read.Problem!));
+
+            return;
+        }
+
+        Configuration.Show([AutoAccepting.AsSetting(read.Value!.AutoAccept)]);
+    }
+
+    /// <summary>Changes the setting under the cursor, through the door that setting has.</summary>
+    /// <returns>When the door is open.</returns>
+    private Task ChangeSetting() => Configuration.Selected?.Name switch
+    {
+        AutoAccepting.Title => AutoAccept(),
+        _ => Task.CompletedTask,
+    };
 
     /// <summary>Which pane a view opens focused on.</summary>
     /// <param name="place">The view being arrived at.</param>
@@ -1551,6 +1616,24 @@ internal sealed class Shell : Window
             }
             : Array.Empty<RegionAction>(),
 
+        // **The way into a project's settings, from wherever a project is in view.** Global rather than a region's,
+        // because inside a project the focused pane is the agents or the conversations, and a setting of the project
+        // is neither. A chord rather than a letter, because a global letter is shadowed by whichever pane already
+        // uses it -- named on the menu and dead under the cursor.
+        .. _place.Viewing is not Viewing.Configuration and not Viewing.Conversation
+           && (Current ?? Projects.Selected) is not null
+            ? new[]
+            {
+                new RegionAction(
+                    default,
+                    ConfigurationTitle,
+                    OpenConfiguration,
+                    Category: ActionCategory.Project,
+                    Chord: ConfigurationKey,
+                    Order: 100),
+            }
+            : Array.Empty<RegionAction>(),
+
         new RegionAction(
             ActionsKey, KeysTitle, Offer, Category: ActionCategory.Help, Order: 1),
 
@@ -1582,6 +1665,7 @@ internal sealed class Shell : Window
         TranscriptRegion => ActionCategory.Conversation,
         RoomRegion => ActionCategory.Conversation,
         LineRegion => ActionCategory.Conversation,
+        ConfigurationRegion => ActionCategory.Project,
         _ => ActionCategory.View,
     };
 
@@ -1619,6 +1703,11 @@ internal sealed class Shell : Window
             // 2026-09-27: a project is made first and agents are enrolled into it, so the act belongs where the
             // project is already the context rather than on a list where it has to be inferred from a cursor.
             new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
+
+            // **Auto Accept was here, as a bare `a`, and the owner read it as "Auto-Accept what??"** A switch named
+            // with no subject, beside creating and removing projects. It lives in the configuration view now, which
+            // says what it decides before anybody changes it; that view is reached from `Global()`, so the Project
+            // menu offers it from inside a project as well as from this list.
         ],
 
         AgentsRegion =>
@@ -1699,6 +1788,12 @@ internal sealed class Shell : Window
                         Ownership.AskEveryTitle,
                         AskEveryoneWhatTheyOwn,
                         Owing.Requesting),
+
+                    // **The review is what makes Auto Accept safe to leave on** (the owner's D3): every line, where it
+                    // came from, and whatever Parley is waiting on, with the decisions about each. `v`, as in review;
+                    // offered whenever there is anybody to review and needing no seat, because nothing in it speaks as
+                    // the person.
+                    new RegionAction('v', OwnershipReview.Title, ReviewOwnership),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -1737,6 +1832,15 @@ internal sealed class Shell : Window
 
             .. Drafting is { } drafted && drafted.Plan().Any(a => a.Choosable)
                 ? new[] { new RegionAction('a', OtherTitle, FlipOne) }
+                : Array.Empty<RegionAction>(),
+        ],
+
+        // Offered only on a row, so the key is never named where it would change nothing. Enter does the same, taken
+        // in `OnKeyDown`, because Enter on a setting is what somebody presses first.
+        ConfigurationRegion =>
+        [
+            .. Configuration.Selected is not null
+                ? new[] { new RegionAction('c', ConfigurationRegion.ChangeTitle, ChangeSetting) }
                 : Array.Empty<RegionAction>(),
         ],
 
@@ -3642,6 +3746,14 @@ internal sealed class Shell : Window
             return true;
         }
 
+        // Enter on a setting changes it, which is the one thing a row in that list is for.
+        if (key == Key.Enter && Panes[FocusedRegion] is ConfigurationRegion && Configuration.Selected is not null)
+        {
+            _ = ChangeSetting();
+
+            return true;
+        }
+
         // **A box somebody types into wins every printable key, and that is not a nicety.**
         //
         // Every action on this surface is a letter, and this handler takes a region's letter before the focused
@@ -4046,19 +4158,43 @@ internal sealed class Shell : Window
     /// </remarks>
     private Task AskEveryoneWhatTheyOwn()
     {
-        if (App is not { } app)
+        if (App is not { } app || Current is not { } project)
         {
             return Task.CompletedTask;
         }
 
+        // Parley is excluded as well as the seats: it asks, it is never asked.
         var asking = Agents.Registry
             .Where(record => record.Status != AgentStatus.Retired)
             .Where(record => !string.Equals(record.Adapter, Seat.Adapter, StringComparison.Ordinal))
+            .Where(record => !record.Facilitator)
             .Select(record => record.Name)
             .ToList();
 
         return Ownership.AskEveryAsync(
-            app, Voice(), Held, asking, DateTimeOffset.UtcNow, Queue, said =>
+            app, new BrokerClient(_directory.ClientFor(project)), asking, Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Opens the ownership review for this project.</summary>
+    /// <returns>When the review has been queued.</returns>
+    /// <remarks>
+    /// Handed the registry this surface last read, which is what the rows are built from; the question each agent is on
+    /// is read afresh inside, because that is the half that moves while a person is looking.
+    /// </remarks>
+    private Task ReviewOwnership()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        return OwnershipReview.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), Agents.Registry, project.Name.Value, Queue, said =>
             {
                 Said = said;
 
@@ -4077,6 +4213,7 @@ internal sealed class Shell : Window
     private Task AskWhatItOwns()
     {
         if (App is not { } app
+            || Current is not { } project
             || Agents.Selected is not { Seat: false } row
             || !AgentName.TryCreate(row.Name, out var agent))
         {
@@ -4084,7 +4221,7 @@ internal sealed class Shell : Window
         }
 
         return Ownership.AskAsync(
-            app, Voice(), agent, DateTimeOffset.UtcNow, Queue, said =>
+            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
             {
                 Said = said;
 
@@ -4178,8 +4315,31 @@ internal sealed class Shell : Window
         return Settled;
     }
 
-    /// <summary>Opens the dialogs that apply the retention policy of the selected project now.</summary>
-    /// <returns>When the first dialog is open.</returns>
+    /// <summary>Opens the Auto Accept switch for the project in view, and reads the settings again afterwards.</summary>
+    /// <returns>When the read that opens the dialog has been queued.</returns>
+    /// <remarks>
+    /// Read again whatever was chosen, so the row always says what the broker holds rather than what this surface
+    /// believes it asked for.
+    /// </remarks>
+    private Task AutoAccept()
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        return AutoAccepting.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), project, Queue, async said =>
+            {
+                Said = said;
+
+                if (_place.Viewing == Viewing.Configuration)
+                {
+                    await ReadConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            });
+    }
+
     private Task PruneSelected()
     {
         if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
@@ -4361,7 +4521,9 @@ internal sealed class Shell : Window
         // person had already made about peers that are still in the same state.
         var was = Drafting;
 
-        Drafting = new Draft(pairs) { Text = Line.Written };
+        // Parley is never a recipient: it receives nobody's work, and a line addressed to it would be refused by the
+        // broker (SPEC.md §10.1). It stays in the room column, named, because it is in the conversation.
+        Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.Written };
 
         if (was is not null)
         {

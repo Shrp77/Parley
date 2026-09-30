@@ -17,6 +17,14 @@ public enum Viewing
 
     /// <summary>One conversation, read.</summary>
     Conversation = 2,
+
+    /// <summary>One project's settings, each with what it means.</summary>
+    /// <remarks>
+    /// A level under the project rather than beside it, because every setting on it is the project's. Added
+    /// for Auto Accept, which had been a bare entry on the Project menu: a switch named with no subject,
+    /// read by the owner as "Auto-Accept what??". A setting needs somewhere that says what it is.
+    /// </remarks>
+    Configuration = 3,
 }
 
 /// <summary>
@@ -56,6 +64,11 @@ public sealed record ViewPlace(
     /// <returns>The place inside it.</returns>
     public static ViewPlace Into(ProjectName project) => new(Views.Viewing.Project, project);
 
+    /// <summary>Opens a project's configuration.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>The place showing its settings.</returns>
+    public static ViewPlace Configure(ProjectName project) => new(Views.Viewing.Configuration, project);
+
     /// <summary>Opens a conversation within the project this place is already about.</summary>
     /// <param name="conversation">The conversation's identifier, which is its name.</param>
     /// <returns>The place inside it.</returns>
@@ -83,6 +96,7 @@ public sealed record ViewPlace(
     public ViewPlace Back() => Viewing switch
     {
         Views.Viewing.Conversation when Project is { } project => Into(project),
+        Views.Viewing.Configuration when Project is { } project => Into(project),
         Views.Viewing.Project => Top,
         _ => this,
     };
@@ -95,6 +109,7 @@ public sealed record ViewPlace(
     {
         Views.Viewing.Project => Project?.Value ?? "Project",
         Views.Viewing.Conversation => Conversation ?? "Conversation",
+        Views.Viewing.Configuration => Project is { } project ? $"{project.Value} configuration" : "Configuration",
         _ => "Projects",
     };
 }

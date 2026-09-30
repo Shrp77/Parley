@@ -244,8 +244,9 @@ internal sealed record ProjectFigures(int Agents, int Running, int Conversations
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(page);
 
+        // Parley is left out too: every project has it, so counting it would make a project with no agents say one.
         var agents = registry
-            .Where(agent => agent.Adapter != Seat.Adapter && agent.Status != AgentStatus.Retired)
+            .Where(agent => agent.Adapter != Seat.Adapter && agent.Status != AgentStatus.Retired && !agent.Facilitator)
             .ToList();
 
         return new ProjectFigures(

@@ -129,6 +129,13 @@ public sealed class SeatBook : IDisposable
 
         var name = seat.Name;
 
+        // Before the registry check, which would refuse it on the broker's own machine with a sentence about an agent,
+        // and would not see it at all on another machine. The facilitator is nobody's seat (SPEC.md §17 question 2).
+        if (Facilitation.Is(name))
+        {
+            return new SeatOutcome(null, Facilitation.Reserved);
+        }
+
         if (registry.FirstOrDefault(row => row.Name == name) is { } taken
             && !string.Equals(taken.Adapter, Seat.Adapter, StringComparison.Ordinal))
         {

@@ -63,6 +63,11 @@ namespace Parley.Core;
 /// constructing a record in order to save it is stating what the agent said about itself, and
 /// what a person agreed to is somebody else's fact, written by a different operation.
 /// </param>
+/// <param name="OwnsSource">
+/// How the accepted line was arrived at, or null when nobody has accepted one (SPEC.md §10.2 <c>registry()</c>).
+/// Travels so a surface can show a line accepted automatically apart from one a person decided: the review's
+/// whole worth is that a person can tell the two apart at a glance.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. This record is
 /// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
@@ -84,8 +89,17 @@ public sealed record AgentRecord(
     AgentStatus Status,
     string? Owns = null,
     AgentPresence Presence = AgentPresence.Stranded,
-    string? OwnsAccepted = null)
+    string? OwnsAccepted = null,
+    OwnershipSource? OwnsSource = null)
 {
+    /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
+    /// <remarks>
+    /// Derived from the adapter rather than carried as a field, because storage ties that adapter to the reserved
+    /// role in both directions — so there is one fact, and a flag beside it would be a second one to disagree.
+    /// A surface shows such a row as Parley and offers nothing on it.
+    /// </remarks>
+    public bool Facilitator => string.Equals(Adapter, Facilitation.Adapter, StringComparison.Ordinal);
+
     /// <summary>Whether a person has accepted a line that peers do not read yet.</summary>
     /// <value><see langword="true"/> while the accepted line and the live one differ.</value>
     /// <remarks>

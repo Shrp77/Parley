@@ -349,6 +349,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         Wire.RequestRejection.ReceiverRetired => "it has been retired. Reinstate it, or ask whoever owns its work now.",
 
+        Wire.RequestRejection.ReceiverIsTheFacilitator =>
+            "that is Parley, which asks agents questions and does no work itself. Ask an agent instead.",
+
         Wire.RequestRejection.Saturated =>
             "you already have as many requests open with it as this deployment allows.",
 
@@ -995,6 +998,8 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.RequestRejection.ReceiverNotRegistered =>
             $"Nothing has registered as {to.Value} yet. Starting it once is what registers it.",
         Wire.RequestRejection.ReceiverRetired => $"{to.Value} has been retired.",
+        Wire.RequestRejection.ReceiverIsTheFacilitator =>
+            "That is Parley, which asks agents questions and does no work itself. Ask an agent instead.",
         Wire.RequestRejection.ConversationClosed => "That conversation is closed, so nothing can be added to it.",
         Wire.RequestRejection.ConversationNotAssignable => "That conversation cannot take a request from this seat.",
         Wire.RequestRejection.SenderRetired => "Your seat has been retired. Reinstate it to send.",

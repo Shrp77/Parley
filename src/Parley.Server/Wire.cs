@@ -1,4 +1,5 @@
-﻿using Parley.Core;
+﻿using System.Globalization;
+using Parley.Core;
 using Parley.Store;
 using Wire = Parley.Transport;
 
@@ -166,6 +167,7 @@ internal static class Conversions
         OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
         OwnershipSource.Edited => Wire.OwnershipSource.Edited,
         OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        OwnershipSource.Automatic => Wire.OwnershipSource.Automatic,
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
     };
 
@@ -182,6 +184,7 @@ internal static class Conversions
         Wire.OwnershipSource.Proposed => OwnershipSource.Proposed,
         Wire.OwnershipSource.Edited => OwnershipSource.Edited,
         Wire.OwnershipSource.Composed => OwnershipSource.Composed,
+        Wire.OwnershipSource.Automatic => OwnershipSource.Automatic,
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
     };
 
@@ -251,6 +254,7 @@ internal static class Conversions
         RequestRejection.ConversationClosed => Wire.RequestRejection.ConversationClosed,
         RequestRejection.ConversationNotAssignable => Wire.RequestRejection.ConversationNotAssignable,
         RequestRejection.NoSuchRole => Wire.RequestRejection.NoSuchRole,
+        RequestRejection.ReceiverIsTheFacilitator => Wire.RequestRejection.ReceiverIsTheFacilitator,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined rejection.")
     };
 
@@ -455,6 +459,37 @@ internal static class Conversions
         };
     }
 
+    /// <summary>Converts one of Parley's questions for the wire (§10.2 <c>facilitation</c>).</summary>
+    /// <param name="question">The question.</param>
+    /// <returns>The wire question.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="question"/> is null.</exception>
+    public static Wire.OwnershipQuestion Out(OwnershipQuestion question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+
+        return new Wire.OwnershipQuestion
+        {
+            Agent = question.Agent.Value,
+            ConversationId = question.Conversation,
+            ExchangeId = question.Exchange,
+            State = question.State switch
+            {
+                QuestionState.Asked => Wire.QuestionState.Asked,
+                QuestionState.AskedBack => Wire.QuestionState.AskedBack,
+                QuestionState.Answered => Wire.QuestionState.Answered,
+                QuestionState.Waiting => Wire.QuestionState.Waiting,
+                QuestionState.Accepted => Wire.QuestionState.Accepted,
+                QuestionState.Discarded => Wire.QuestionState.Discarded,
+                _ => throw new ArgumentOutOfRangeException(nameof(question), question.State, "Not a defined state.")
+            },
+            Answer = question.Answer ?? string.Empty,
+            Flattened = question.Flattened ?? string.Empty,
+            WaitingBecause = question.WaitingBecause ?? string.Empty,
+            AskedUtc = question.AskedUtc.ToString("O", CultureInfo.InvariantCulture),
+            SettledUtc = question.SettledUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
+        };
+    }
+
     /// <summary>Converts a registry row for the wire.</summary>
     /// <param name="record">The registration.</param>
     /// <returns>The wire row.</returns>
@@ -483,7 +518,8 @@ internal static class Conversions
             // by comparing what a person accepted with what peers read, so it can also show the two
             // side by side and say which is which -- a flag would carry the comparison and lose the
             // thing being compared.
-            OwnsAccepted = record.OwnsAccepted ?? string.Empty
+            OwnsAccepted = record.OwnsAccepted ?? string.Empty,
+            OwnsSource = record.OwnsSource is { } source ? Out(source) : Wire.OwnershipSource.Unspecified
         };
     }
 

@@ -246,4 +246,66 @@ public sealed class SurfaceBoundaryTests
 
         Assert.Empty(leaked);
     }
+
+    /// <summary>
+    /// The facilitator's surface, fixed as the other two are (SPEC.md principle 2.11).
+    /// </summary>
+    /// <remarks>
+    /// A third list rather than an addition to either, because the facilitator is neither: it may ask, send a person's
+    /// reply and agree its own conversation is done, and the constitution names those as all it may do. Growing this
+    /// list is therefore a constitutional question before it is a code one, and this test is where that surfaces.
+    /// </remarks>
+    [Fact]
+    public void The_facilitator_exposes_no_operation_it_has_not_declared()
+    {
+        string[] declared =
+        [
+            nameof(Facilitator.AskDueAsync),
+            nameof(Facilitator.AskAsync),
+            nameof(Facilitator.ReadBackAsync),
+            nameof(Facilitator.AcceptAutomaticallyAsync),
+            nameof(Facilitator.HoldAsync),
+            nameof(Facilitator.SettledByPersonAsync),
+            nameof(Facilitator.AutoAcceptAsync),
+            nameof(Facilitator.RefreshDueAsync),
+            nameof(Facilitator.RefreshSentAsync),
+
+            // The person's side (§10.2): what they read, the switch, and the three decisions about a question. Asking
+            // again is asking; the reply is a person's words sent through Parley; a discard settles its own question.
+            nameof(Facilitator.ReportAsync),
+            nameof(Facilitator.SetAutoAcceptAsync),
+            nameof(Facilitator.AskAgainAsync),
+            nameof(Facilitator.ReplyAsync),
+            nameof(Facilitator.DiscardAsync)
+        ];
+
+        var unexpected = PublicMethodsOf(typeof(Facilitator)).Where(n => !declared.Contains(n));
+
+        Assert.Empty(unexpected);
+    }
+
+    [Fact]
+    public void Neither_other_surface_gained_a_facilitator_operation()
+    {
+        // Broker is what an attached agent is handed and OperatorConsole what the operator is; a facilitator operation
+        // on either would hand one of them the facilitator's voice.
+        var facilitator = PublicMethodsOf(typeof(Facilitator)).ToHashSet();
+
+        Assert.DoesNotContain(PublicMethodsOf(typeof(Broker)), facilitator.Contains);
+        Assert.DoesNotContain(PublicMethodsOf(typeof(OperatorConsole)), facilitator.Contains);
+    }
+
+    [Fact]
+    public void The_facilitator_has_none_of_the_operations_it_may_never_have()
+    {
+        // It never sends a Result (so `closed` stays the only outcome the broker writes), never votes on anybody's
+        // conversation but its own through a caller's say-so, and holds no operator operation.
+        var forbidden = PublicMethodsOf(typeof(Facilitator))
+            .Where(n => n is nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync) or nameof(Broker.RequestAsync)
+                          or nameof(OperatorConsole.ForceConcludeAsync) or nameof(OperatorConsole.RetireAsync)
+                          or nameof(OperatorConsole.PurgeAsync) or nameof(OperatorConsole.RecordInstructionAsync)
+                          or nameof(OperatorConsole.DestroyConversationAsync));
+
+        Assert.Empty(forbidden);
+    }
 }

@@ -71,8 +71,13 @@ public sealed record OwnershipAcceptance(
                     : null;
         }
 
-        return Conversation is null
-            ? "a line the agent proposed was agreed somewhere, so the conversation must be named."
+        if (Conversation is null)
+        {
+            return "a line the agent proposed was agreed somewhere, so the conversation must be named.";
+        }
+
+        return Source == OwnershipSource.Automatic && ProposedLength is null
+            ? "a line accepted automatically is the agent's own answer, so the length it wrote is known."
             : null;
     }
 }

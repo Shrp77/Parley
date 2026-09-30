@@ -494,12 +494,22 @@ The line says what an agent owns **and** what it does not — the exclusion is w
 asking the wrong agent, and it is the half nobody else can supply. A repository can be read to
 find out what it contains; it cannot be read to find out what it has decided not to own.
 
-**You get that line by asking the agent, not by writing it from memory.** Press `k` on an agent
-in `parley`, or use the console's own ask: the agent answers in an ordinary
-conversation, you read the answer, you argue with it if it is wrong, and you accept what you
-agree on. What you accept is written into the launch configuration for you. Ask every agent in
-a project at once with `e`, which costs each of them one turn and says so before it spends
-them.
+**Parley asks each agent for that line, and nobody has to.** Every project has Parley, a
+participant the broker provides. When an agent first attaches with no line, Parley asks it what it
+owns and what it does not, once. That costs the agent one turn, the first time only; an agent
+that already has a line is never asked again.
+
+**With the project's Auto Accept switch on, which it is by default, the answer becomes the line.**
+Parley writes it into the launch configuration, marks it as accepted automatically, and restarts
+the agent once it is idle so its peers read it. Nothing is restarted mid-turn. An answer that
+cannot be a line as written, or from an agent on another machine, waits for a person instead.
+
+**Every line can be checked and corrected in the ownership review** — `v` on the agents pane in
+`parley`, or *Review ownership* on a project's page in the web UI. It shows each agent's line,
+whether a person or nobody read it, and any answer waiting. From there you accept, edit or
+discard an answer, write a line yourself, reply to an agent that asked Parley something back, or
+have Parley ask again (`k` for one agent, `e` for all). None of it needs a seat. Turn Auto Accept
+off (`a` on the projects pane) and every answer waits for you.
 
 **There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
 versions capped it at a hundred characters, measured: a roster entry costs about seventy-five

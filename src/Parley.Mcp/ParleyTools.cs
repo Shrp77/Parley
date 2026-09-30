@@ -1592,6 +1592,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 Wire.RequestRejection.ReceiverRetired =>
                     "The person running the deployment retired that agent. Call parley_agents to find who owns " +
                     "this work now.",
+                Wire.RequestRejection.ReceiverIsTheFacilitator =>
+                    "That is Parley, which asks agents questions and does no work itself. Call parley_agents to " +
+                    "find who owns this work.",
                 Wire.RequestRejection.SenderRetired =>
                     "Your own registration has been retired, so you cannot send new requests. Tell the person " +
                     "you work for.",

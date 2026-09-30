@@ -182,6 +182,38 @@ public interface IParleyBrokerClient
     Task<OwnershipRecord> RecordOwnershipAsync(
         AgentName agent, OwnershipAcceptance acceptance, CancellationToken cancellationToken = default);
 
+    /// <summary>The Auto Accept switch, and every agent's latest question from Parley (§10.2 <c>facilitation</c>).</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What a person reviews ownership from.</returns>
+    Task<FacilitationReport> FacilitationAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Turn the project's Auto Accept switch on or off (§10.2 <c>set_auto_accept</c>).</summary>
+    /// <param name="on">Whether answers become lines with no person involved.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The switch as now set.</returns>
+    Task<bool> SetAutoAcceptAsync(bool on, CancellationToken cancellationToken = default);
+
+    /// <summary>Have Parley ask an agent what it owns, as a new question (§10.2 <c>ask_again</c>).</summary>
+    /// <param name="agent">Who to ask.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was asked, and why not.</returns>
+    /// <remarks>Needs no seat: Parley sends it, not the person.</remarks>
+    Task<FacilitationAction> AskAgainAsync(AgentName agent, CancellationToken cancellationToken = default);
+
+    /// <summary>Send a person's reply to an agent that asked Parley something back (§10.2 <c>reply_to_asked_back</c>).</summary>
+    /// <param name="agent">The agent that asked back.</param>
+    /// <param name="text">The person's words, recorded as theirs.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was sent, and why not.</returns>
+    Task<FacilitationAction> ReplyToAskedBackAsync(
+        AgentName agent, string text, CancellationToken cancellationToken = default);
+
+    /// <summary>Discard an answer waiting for a person (§10.2 <c>discard_answer</c>).</summary>
+    /// <param name="agent">Whose answer.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was discarded, and why not.</returns>
+    Task<FacilitationAction> DiscardAnswerAsync(AgentName agent, CancellationToken cancellationToken = default);
+
     /// <summary>Delete an agent and every conversation it was party to.</summary>
     /// <param name="agent">Who to purge.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

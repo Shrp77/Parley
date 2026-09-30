@@ -46,8 +46,25 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Status(row.Status),
             string.IsNullOrEmpty(row.Owns) ? null : row.Owns,
             Presence(row.Presence),
-            string.IsNullOrEmpty(row.OwnsAccepted) ? null : row.OwnsAccepted))];
+            string.IsNullOrEmpty(row.OwnsAccepted) ? null : row.OwnsAccepted,
+            AcceptedBy(row.OwnsSource)))];
     }
+
+    /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
+    /// <param name="source">The wire value.</param>
+    /// <returns>The source, or <see langword="null"/> when nobody has accepted a line.</returns>
+    /// <remarks>
+    /// Unset is an answer here rather than a fault, unlike on a call that records one: most agents have no accepted
+    /// line, and a row with none is the ordinary case.
+    /// </remarks>
+    private static OwnershipSource? AcceptedBy(Wire.OwnershipSource source) => source switch
+    {
+        Wire.OwnershipSource.Proposed => OwnershipSource.Proposed,
+        Wire.OwnershipSource.Edited => OwnershipSource.Edited,
+        Wire.OwnershipSource.Composed => OwnershipSource.Composed,
+        Wire.OwnershipSource.Automatic => OwnershipSource.Automatic,
+        _ => null
+    };
 
     /// <inheritdoc/>
     public async Task<ConversationPage> ConversationsAsync(
@@ -321,6 +338,63 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<FacilitationReport> FacilitationAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.FacilitationAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return new FacilitationReport(reply.AutoAccept, [.. reply.Questions.Select(Question)]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> SetAutoAcceptAsync(bool on, CancellationToken cancellationToken = default) =>
+        (await _operators.SetAutoAcceptAsync(new Wire.SetAutoAcceptRequest { On = on }, cancellationToken: cancellationToken)).On;
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> AskAgainAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        Action(await _operators.AskAgainAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken));
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> ReplyToAskedBackAsync(
+        AgentName agent, string text, CancellationToken cancellationToken = default) =>
+        Action(await _operators.ReplyToAskedBackAsync(
+            new Wire.ReplyToAskedBackRequest { Agent = agent.Value, Text = text ?? string.Empty },
+            cancellationToken: cancellationToken));
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> DiscardAnswerAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        Action(await _operators.DiscardAnswerAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken));
+
+    private static FacilitationAction Action(Wire.FacilitationActionReply reply) =>
+        reply.Done ? FacilitationAction.Did : FacilitationAction.Not(
+            string.IsNullOrEmpty(reply.Problem) ? "the broker did not say why." : reply.Problem);
+
+    /// <summary>Reads one of Parley's questions off the wire.</summary>
+    /// <remarks>
+    /// A state this client does not know is read as asked rather than refused: the review should still list the agent,
+    /// and asked is the one state that promises nothing about an answer.
+    /// </remarks>
+    private static OwnershipQuestion Question(Wire.OwnershipQuestion question) => new(
+        AgentName.Create(question.Agent),
+        question.ConversationId,
+        question.ExchangeId,
+        question.State switch
+        {
+            Wire.QuestionState.AskedBack => QuestionState.AskedBack,
+            Wire.QuestionState.Answered => QuestionState.Answered,
+            Wire.QuestionState.Waiting => QuestionState.Waiting,
+            Wire.QuestionState.Accepted => QuestionState.Accepted,
+            Wire.QuestionState.Discarded => QuestionState.Discarded,
+            _ => QuestionState.Asked
+        },
+        string.IsNullOrEmpty(question.Answer) ? null : question.Answer,
+        string.IsNullOrEmpty(question.Flattened) ? null : question.Flattened,
+        string.IsNullOrEmpty(question.WaitingBecause) ? null : question.WaitingBecause,
+        DateTimeOffset.Parse(question.AskedUtc, System.Globalization.CultureInfo.InvariantCulture),
+        string.IsNullOrEmpty(question.SettledUtc)
+            ? null
+            : DateTimeOffset.Parse(question.SettledUtc, System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <inheritdoc/>
     public async Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ReinstateAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
@@ -536,6 +610,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
         OwnershipSource.Edited => Wire.OwnershipSource.Edited,
         OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        OwnershipSource.Automatic => Wire.OwnershipSource.Automatic,
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
     };
 

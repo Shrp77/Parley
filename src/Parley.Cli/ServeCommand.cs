@@ -2,6 +2,7 @@
 using Parley.Broker;
 using Parley.Core;
 using Parley.Server;
+using Parley.Setup;
 using Parley.Store;
 
 namespace Parley.Cli;
@@ -205,6 +206,7 @@ public static class ServeCommand
             // The sweep and, where there is one, the node, each contained on its own so that one
             // project's node failing leaves the others hosted.
             hosted.Tasks.Add(Quietly(SweepAsync(runtime, output, hosted.Stopping.Token)));
+            hosted.Tasks.Add(Quietly(FacilitateAsync(runtime, project.Name.Value, output, hosted.Stopping.Token)));
 
             if (nodeFor is not null)
             {
@@ -840,6 +842,159 @@ public static class ServeCommand
         {
             // Ctrl+C, which is how this command is meant to end.
         }
+    }
+
+    /// <summary>
+    /// Parley's own loop for one project (SPEC.md principle 2.11): asks every attached agent that is due what it owns,
+    /// decides what becomes of each answer, and refreshes an agent whose first line was accepted automatically.
+    /// </summary>
+    /// <param name="runtime">The project's broker.</param>
+    /// <param name="project">The project's name, which is the launch configuration's key.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the loop.</param>
+    /// <returns>A task that completes when it stops.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Here because this is the one host that can do both halves</b> (research finding 12): drive the broker, and write
+    /// a repository's launch configuration through <see cref="OwnershipLine"/>. <c>Parley.Server</c> may not reach
+    /// <c>Parley.Setup</c>, and <c>Parley.Setup</c> may not reach a store.
+    /// </para>
+    /// <para>
+    /// On the sweep's interval and contained like it: a failing pass is reported and the next one runs, because the
+    /// failures worth surviving are the transient ones a busy file produces, and a facilitator that stopped on the first
+    /// would leave every later agent unasked for as long as the broker ran.
+    /// </para>
+    /// </remarks>
+    private static async Task FacilitateAsync(
+        BrokerRuntime runtime,
+        string project,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(Interval());
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    await FacilitateOnceAsync(runtime, project, output, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await output.WriteLineAsync($"{project}: Parley could not finish a pass: {exception.Message}")
+                        .ConfigureAwait(false);
+                }
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException)
+        {
+            // The project is being stopped, which is how this loop is meant to end.
+        }
+    }
+
+    /// <summary>One facilitation pass. See <see cref="FacilitateAsync"/>.</summary>
+    /// <param name="runtime">The project's broker.</param>
+    /// <param name="project">The project's name.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>A task that completes when the pass is done.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The switch is read as each answer arrives, not when the question was asked</b> (FR-015): turning Auto Accept
+    /// off stops answers still to come from becoming lines, and turning it on leaves waiting answers waiting.
+    /// </para>
+    /// <para>
+    /// <b>The file first, then the record</b> (FR-014, 020's order). A file with no record is repaired by the next
+    /// acceptance; a record with no file would claim a line the agent will never carry. A write that fails is not an
+    /// error: the answer waits, with the write's own sentence as the reason, which is what the review shows.
+    /// </para>
+    /// </remarks>
+    internal static async Task FacilitateOnceAsync(
+        BrokerRuntime runtime,
+        string project,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(output);
+
+        var answers = await runtime.FacilitateAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var answer in answers)
+        {
+            var autoAccept = await runtime.AutoAcceptAsync(cancellationToken).ConfigureAwait(false);
+            var because = await WhyNotAutomaticallyAsync(runtime, project, answer, autoAccept, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (because is null && await runtime.AcceptAutomaticallyAsync(answer, cancellationToken).ConfigureAwait(false))
+            {
+                await output.WriteLineAsync(
+                    $"{project}: {answer.Agent.Value} answered Parley, and its answer is now its ownership line.")
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
+            because ??= "the line could not be recorded, so it waits for a person.";
+
+            _ = await runtime.HoldAsync(answer, because, cancellationToken).ConfigureAwait(false);
+
+            await output.WriteLineAsync(
+                $"{project}: {answer.Agent.Value} answered Parley; its answer waits for a person: {because}")
+                .ConfigureAwait(false);
+        }
+
+        foreach (var refreshed in await runtime.RefreshAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await output.WriteLineAsync(
+                $"{project}: asked {refreshed.Machine}'s node to restart {refreshed.Value} once it is idle, so its peers " +
+                "read its new ownership line.").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Why an answer cannot become the agent's line with no person involved, writing it to the launch configuration
+    /// when it can.
+    /// </summary>
+    /// <returns>Null when the file was written and the line should be recorded; otherwise the reason it waits.</returns>
+    private static async Task<string?> WhyNotAutomaticallyAsync(
+        BrokerRuntime runtime,
+        string project,
+        Parley.Broker.FacilitatorAnswer answer,
+        bool autoAccept,
+        CancellationToken cancellationToken)
+    {
+        if (!autoAccept)
+        {
+            return "Auto Accept is off for this project.";
+        }
+
+        if (answer.Blocked)
+        {
+            return "the agent said it was blocked rather than answering.";
+        }
+
+        if (answer.Line.Length == 0)
+        {
+            return "the agent's answer was empty.";
+        }
+
+        if (!OwnershipStatement.IsValid(answer.Line, out var wrong))
+        {
+            return $"it cannot be a line as written: {wrong}";
+        }
+
+        var workspace = await runtime.UseConnectionAsync(
+            (connection, _, ct) => new AgentRepository(connection).WorkspaceOfAsync(answer.Agent, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        // OwnershipLine applies the machine rule itself — no surface writes for an agent whose machine is not this one —
+        // and names the machine in its refusal, so an agent elsewhere waits with the sentence that says where to go.
+        return await OwnershipLine.WriteAsync(workspace, project, answer.Agent, answer.Line, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>How often to sweep.</summary>

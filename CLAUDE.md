@@ -633,14 +633,57 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Next plan**: `specs/022-parley-facilitator/` — **planned, not started; on `019-layout` with 019–021, and
-  the combined review gate now covers all four** (the owner's call of 2026-09-28). Parley becomes a participant
-  the broker provides in every project, asks each attached agent what it owns once with nobody asking, and — with
-  the project's Auto Accept switch, on by default — makes the answer the agent's line and refreshes the agent when
-  it is idle. **Research found SPEC.md and the constitution both saying the broker is not a participant**, so the
-  constitution's 4.0.0 amendment is T001 and lands on its own before any code (Governance), and SPEC.md follows.
-  Read `research.md` first: its fifteen findings are what shaped the design, including one likely existing defect
-  (an accepted line's conversation has no cascade on destroy or purge).
+- **Latest plan**: `specs/023-always-a-seat/` — **planned, not built; on `019-layout`.** The person always has a
+  seat. The broker provides `human-user@<project>` in every project it serves, as it provides the facilitator
+  (the owner's answer of 2026-09-29), and it is never retired, purged or released. **The facilitator is renamed
+  `parley-facilitator@<project>` by the same rule, and neither has a machine**: `agents.machine` is NULL for the two,
+  because a person and the facilitator are not hosted anywhere (the owner's calls in `/speckit-analyze`, 2026-09-30).
+  **Having a seat and being in it are separate**: presence is still a connection — a surface drops its stream after
+  20 idle minutes and takes it back on the next keystroke — but the seat no longer depends on it, and a message to
+  an away person is answered `WITH_THE_PERSON`, never Unreachable. No join step on either surface. `human-user` is
+  reserved, **with a limit recorded rather than hidden**: the row exists before any attach, so an attach under its
+  name fires no storage rule and the guard is code trusting the caller's adapter, as §16 concedes of every name.
+  **Principle III is amended to 5.0.0 first**, in its own commit. `research.md` R1–R11 carries the decisions.
+
+- **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
+  019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
+  the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —
+  with the project's Auto Accept switch, on by default — makes the answer the agent's line and has its node restart
+  it once it is idle so peers read it. A review on both surfaces (`v` in the terminal, *Review ownership* on the web)
+  shows every line and whether a person or nobody read it. **The constitution went to 4.0.0 in its own commit
+  first** (b4cd0e6), then SPEC.md, then the code. `research.md`'s fifteen findings shaped the design; read it first.
+  `quickstart.md` was walked on 2026-09-28 (`walk.ps1`), every check passing against packed tools with real
+  `parley-mcp` agents answering over their own stdio. **The combined 019–022 review gate (T051) has not been run.**
+
+  **What building it found that the plan did not know, each caught by a test or by reading the code:**
+
+  - **A person's close was read as the agent's answer.** Force-closing a conversation writes a `closed` Result under
+    the *receiver's* name, attributed to the broker, so the read-back took a sentence nobody wrote for the agent's line.
+    It reads only the agent's own attributions now.
+  - **Parley never collects its mail**, because nothing attaches as it. Every answer it received would have said "not
+    collected yet" in every transcript for ever, and retention never removes an uncollected message. The read-back is
+    its inbox now and records the collection.
+  - **A question sent to a node would come back unreachable.** An agent asking Parley something back is mail for
+    Parley, and the wake path asked a node to start `parley-facilitator`, which none can — telling the sender nothing
+    could see its message. Parley's mail is `AlreadyComing`: the next sweep reads it.
+  - **The question's text depended on the checkout.** A raw string literal takes its line breaks from the file, and a
+    Windows checkout with `core.autocrlf` turns them into CRLF — so the words an agent received, and their hash, would
+    have differed by machine. **020's `OwnershipAsk.Text` had the same latent defect**, masked because its working copy
+    happened to be LF. Both are normalised in code now.
+  - **The `owns-<role>-<stamp>` identifier collides** when two agents of one role on two machines are asked in the same
+    second, which the sweep makes likely. Numbered when taken.
+  - **Every decision about a waiting answer failed at the constraint.** Settling one kept its reason, and storage
+    refuses a reason on anything but a waiting answer — so accepting and discarding could never have worked. Found by
+    the first test to settle one.
+  - **A person accepting before Parley's next pass failed too.** Settling marked the question accepted with no answer
+    read yet, which storage refuses, so the person's own record raised an error. The line overtook the question; it is
+    discarded now, and the agent still holding it is not polled for a vote.
+  - **A reply to an agent that asked back was refused until the next pass**, because it read the question's recorded
+    state rather than whose turn the exchange says it is.
+  - **Removing a rule is how a test is checked, and three first drafts could not fail**: a store test passed against a
+    schema with no table, because inserting into a missing table also throws; a mutation left an unbalanced bracket and
+    broke the whole migration; and the refresh test's ten-second grace let a stopped agent finish its turn anyway, so a
+    refresh that ignored the turn passed. Each was rewritten until removing the rule failed it.
 
 - **Current plan**: `specs/019-one-way-in/` — **0.32.0. The layout, the port claim, naming a project,
   and the removal of `--db`, `-d`, `PARLEY_DB`, `--listen` and `-l` from every command. 46 of 111 tasks,

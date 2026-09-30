@@ -17,7 +17,7 @@ All are operator operations: available to the person running the deployment, nev
 loop may record**: an operator call passing it is refused, because a person's decision is never recorded as the
 machine's.
 
-`registry()` gains two fields per row: `facilitator` and `owns_source` (data-model.md).
+`registry()` gains `owns_source` per row. The facilitator's row is the one whose adapter is `parley-facilitator`; storage ties that adapter to the reserved role, so no separate flag states it.
 
 ## §10.1 agent operations
 

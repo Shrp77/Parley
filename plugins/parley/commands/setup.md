@@ -195,9 +195,10 @@ Substitute the real values. Four notes on the shape:
   every machine, because they name what this repository is rather than where it lives. **Omit
   `PARLEY_OWNS` rather than guessing at it.** An empty string means the same as absent, and a
   placeholder left in by accident is a claim the user did not make -- but the reason to leave it
-  out is stronger than that now: **the line is obtained by asking the agent, and a person
-  accepting the answer is what writes it.** Press `k` on an agent in `parley`, or use
-  the console's ask, and the accepted line is written into this file for them. A line invented
+  out is stronger than that now: **the line is obtained by asking the agent, and Parley does the
+  asking.** Once this repository's agent attaches, Parley asks it what it owns; with the project's
+  Auto Accept switch on (the default) the answer is written into this file for them, and with it
+  off a person accepts it from the ownership review. A line invented
   here would be a worksheet answer standing where a measured one belongs, and the record of who
   said it would be wrong.
 - `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley registry`

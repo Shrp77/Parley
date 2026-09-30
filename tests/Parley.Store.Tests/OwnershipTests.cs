@@ -407,7 +407,7 @@ public sealed class OwnershipTests : IDisposable
             Billing,
             new OwnershipAcceptance("Invoicing and tax.", OwnershipSource.Composed, null, null),
             DateTimeOffset.UnixEpoch,
-            Ct);
+            cancellationToken: Ct);
 
         var loaded = await Load(Billing);
 
@@ -442,7 +442,7 @@ public sealed class OwnershipTests : IDisposable
             Orders,
             new OwnershipAcceptance("Orders and invoicing.", OwnershipSource.Composed, null, null),
             DateTimeOffset.UnixEpoch,
-            Ct);
+            cancellationToken: Ct);
 
         Assert.True((await Load(Orders)).OwnsPending);
 

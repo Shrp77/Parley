@@ -197,6 +197,16 @@ public sealed class OwnershipRefusalsTests
             Path.Combine("src", "Parley.Client", "OwnershipAsk.cs"),
             Path.Combine("src", "Parley.Client", "OwnershipProposal.cs"),
             Path.Combine("src", "Parley.Terminal", "Ownership.cs"),
+
+            // 022's: the facilitator's words, the review's words and the switch's, on both surfaces.
+            Path.Combine("src", "Parley.Core", "Facilitation.cs"),
+            Path.Combine("src", "Parley.Broker", "Facilitator.cs"),
+            Path.Combine("src", "Parley.Client", "Provenance.cs"),
+            Path.Combine("src", "Parley.Client", "Rendering", "Speaker.cs"),
+            Path.Combine("src", "Parley.Terminal", "OwnershipReview.cs"),
+            Path.Combine("src", "Parley.Terminal", "AutoAccepting.cs"),
+            Path.Combine("src", "Parley.Web", "Pages", "Projects", "Ownership.cshtml"),
+            Path.Combine("src", "Parley.Web", "Pages", "Projects", "Ownership.cshtml.cs"),
         ];
 
         var root = new DirectoryInfo(AppContext.BaseDirectory);

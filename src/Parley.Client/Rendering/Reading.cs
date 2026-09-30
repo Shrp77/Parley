@@ -181,7 +181,7 @@ public static class Reading
     /// message is addressed to is the one thing a reader cannot work out from the words.
     /// </remarks>
     private static string Header(Message message, TimeZoneInfo? zone) =>
-        $"{LocalTime.Write(message.CreatedUtc, zone)}  {message.From.Value} -> {message.To.Value}";
+        $"{LocalTime.Write(message.CreatedUtc, zone)}  {Speaker.From(message)} -> {Speaker.To(message)}";
 
     /// <summary>The words of a message, broken as its author wrote them.</summary>
     /// <param name="payloadJson">The payload, as the store holds it.</param>

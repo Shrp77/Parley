@@ -89,8 +89,8 @@ no agent can write either.
 
 ## Registry reads (§10.2 `registry()`)
 
-Each row gains:
-- `facilitator` (bool): show as Parley, not as an agent or seat.
-- `owns_source`: the provenance of the accepted line, previously stored and never returned.
+Each row gains `owns_source`: the provenance of the accepted line, previously stored and never returned. The
+facilitator is the row whose adapter is `parley-facilitator` — a surface shows it as Parley, not as an agent or seat.
+No separate flag, because storage already ties that adapter to the reserved role and a flag would be a second fact.
 
 `agents()` (§10.1) omits the facilitator entirely.

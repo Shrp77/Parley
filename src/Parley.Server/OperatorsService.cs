@@ -186,7 +186,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Subject(request.Agent);
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
             .ConfigureAwait(false);
@@ -208,7 +208,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Subject(request.Agent);
         var changed = await Console((console, _, ct) => console.RetireAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -221,7 +221,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Subject(request.Agent);
 
         // Zero and empty are how proto3 spells "not set", and both mean something here: a composed
         // line has no proposal to have a length and no conversation to name. Mapping them to null
@@ -237,6 +237,16 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
             context).ConfigureAwait(false);
 
+        // A person's line answers whatever Parley was still waiting on for this agent, so the question settles and its
+        // conversation closes. Left alone it would stay waiting beside a line that already answers it, and the agent
+        // could never be asked again.
+        if (record.Recorded)
+        {
+            _ = await _runtime.UseFacilitatorAsync(
+                (facilitator, parley, now, ct) => facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct),
+                context.CancellationToken).ConfigureAwait(false);
+        }
+
         return new Wire.RecordOwnershipReply
         {
             Recorded = record.Recorded,
@@ -247,12 +257,101 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.DidItReply> Reinstate(Wire.AgentRequest request, ServerCallContext context)
+    public override async Task<Wire.FacilitationReply> Facilitation(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var report = await _runtime.UseFacilitatorAsync(
+            (facilitator, _, _, ct) => facilitator.ReportAsync(ct), context.CancellationToken).ConfigureAwait(false);
+
+        var reply = new Wire.FacilitationReply { AutoAccept = report.AutoAccept };
+        reply.Questions.AddRange(report.Questions.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.SetAutoAcceptReply> SetAutoAccept(
+        Wire.SetAutoAcceptRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var on = await _runtime.UseFacilitatorAsync(
+            (facilitator, _, now, ct) => facilitator.SetAutoAcceptAsync(request.On, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        return new Wire.SetAutoAcceptReply { On = on };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> AskAgain(Wire.AgentRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
         var agent = Name(request.Agent);
+
+        var outcome = await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.AskAgainAsync(parley, agent, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        // Woken exactly as any Request's recipient is, through the same bounded path.
+        if (outcome.Done)
+        {
+            await _runtime.NudgeAsync(agent, context.CancellationToken).ConfigureAwait(false);
+            _ = _runtime.RequestAttentionForMail(agent, "a person asked Parley to ask it what it owns");
+        }
+
+        return Out(outcome);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> ReplyToAskedBack(
+        Wire.ReplyToAskedBackRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        var outcome = await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.ReplyAsync(parley, agent, request.Text, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        if (outcome.Done)
+        {
+            await _runtime.NudgeAsync(agent, context.CancellationToken).ConfigureAwait(false);
+            _ = _runtime.RequestAttentionForMail(agent, "a person replied to what it asked Parley");
+        }
+
+        return Out(outcome);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> DiscardAnswer(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        return Out(await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.DiscardAsync(parley, agent, now, ct),
+            context.CancellationToken).ConfigureAwait(false));
+    }
+
+    private static Wire.FacilitationActionReply Out(FacilitationAction outcome) =>
+        new() { Done = outcome.Done, Problem = outcome.Problem ?? string.Empty };
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> Reinstate(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Subject(request.Agent);
         var changed = await Console((console, _, ct) => console.ReinstateAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -264,7 +363,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Subject(request.Agent);
 
         // Every conversation it took part in goes, and placing a file made it a participant, so its files go too
         // (SPEC.md §14). The folders are read before the purge, because afterwards nothing names them.
@@ -491,6 +590,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         if (!AgentName.TryCreate(request.Agent, out var agent))
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
+        }
+
+        if (Parley.Core.Facilitation.Is(agent))
+        {
+            throw NotAnAgent();
         }
 
         if (request.Text.Length > MessageLimits.MaxPayloadCharacters)
@@ -767,4 +871,27 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             : throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 $"'{value}' is not an agent name. Names are role@machine (SPEC.md §4.1.1)."));
+
+    /// <summary>Reads the agent an operator operation acts on, refusing the facilitator.</summary>
+    /// <param name="value">The name given.</param>
+    /// <returns>The name.</returns>
+    /// <remarks>
+    /// Retiring, reinstating, purging, starting, instructing and accepting a line for the facilitator are each
+    /// meaningless or harmful: it is never withdrawn, runs on no node, takes no turn and owns nothing (SPEC.md §14).
+    /// Storage refuses the withdrawals too, but as a constraint rather than a sentence a person can read.
+    /// </remarks>
+    private static AgentName Subject(string value)
+    {
+        var agent = Name(value);
+
+        return Parley.Core.Facilitation.Is(agent) ? throw NotAnAgent() : agent;
+    }
+
+    /// <summary>What an operator operation on an agent says when it is given the facilitator.</summary>
+    /// <returns>The refusal.</returns>
+    private static RpcException NotAnAgent() =>
+        new(new Status(
+            StatusCode.FailedPrecondition,
+            "That is Parley, the project's own participant. It is not an agent: it runs nowhere, is never retired or " +
+            "purged, and owns nothing, so there is nothing to do to it."));
 }

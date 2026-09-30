@@ -41,6 +41,25 @@ else
             </p>
         }
 
+        @if (string.Equals(Model.Action, "acceptanswer", StringComparison.OrdinalIgnoreCase) && Model.Proposed is { } proposed)
+        {
+            @* The one box on this page that opens holding somebody else's words, and it says whose. Unchanged, they are
+               recorded as the agent's; changed, as your edit. The comparison is made again at the POST against what the
+               agent actually said, so nothing in this form decides it. *@
+            <p>
+                <label for="text">The agent's own words, on one line. Edit them if they are wrong:</label><br />
+                <textarea id="text" name="text" rows="4" cols="70">@proposed</textarea>
+            </p>
+        }
+
+        @if (string.Equals(Model.Action, "replyaskedback", StringComparison.OrdinalIgnoreCase))
+        {
+            <p>
+                <label for="text">Your reply, sent through Parley as your words:</label><br />
+                <textarea id="text" name="text" rows="4" cols="70" required></textarea>
+            </p>
+        }
+
         @if (string.Equals(Model.Action, "forceconclude", StringComparison.OrdinalIgnoreCase))
         {
             <p>

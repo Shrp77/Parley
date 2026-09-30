@@ -98,7 +98,7 @@ public sealed class OwnershipListingTests : IAsyncDisposable
             Billing,
             new OwnershipAcceptance("Invoicing, tax and refunds.", OwnershipSource.Composed, null, null),
             DateTimeOffset.UtcNow,
-            Ct);
+            cancellationToken: Ct);
 
         Assert.True(recorded);
 
@@ -133,7 +133,7 @@ public sealed class OwnershipListingTests : IAsyncDisposable
             Orders,
             new OwnershipAcceptance("Orders and refunds.", OwnershipSource.Composed, null, null),
             DateTimeOffset.UtcNow,
-            Ct);
+            cancellationToken: Ct);
 
         Assert.True(recorded);
 

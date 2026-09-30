@@ -125,13 +125,25 @@ public sealed class OperatorConsole
     {
         ArgumentNullException.ThrowIfNull(acceptance);
 
+        // A person's call never records the machine's decision (SPEC.md §10.2): the facilitator records
+        // `automatic` itself, below this surface, and a surface that could send it would let a person's edit
+        // read as the agent's untouched words.
+        if (acceptance.Source == OwnershipSource.Automatic)
+        {
+            return new OwnershipRecord(
+                Recorded: false,
+                "a line is recorded as accepted automatically only by the broker itself. A person accepting " +
+                "the agent's words records them as proposed.",
+                LiveStatement: null);
+        }
+
         if (acceptance.Problem() is { } wrong)
         {
             return new OwnershipRecord(Recorded: false, wrong, LiveStatement: null);
         }
 
         var (recorded, live) = await _agents
-            .RecordOwnershipAsync(agent, acceptance, nowUtc, cancellationToken)
+            .RecordOwnershipAsync(agent, acceptance, nowUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!recorded)

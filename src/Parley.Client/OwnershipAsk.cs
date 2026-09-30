@@ -54,30 +54,13 @@ public static class OwnershipAsk
     /// <b>Long for an ask, and still one ask.</b> Rule 8.1 wants one thing asked plainly with what it
     /// is for; this asks for a description of a boundary, in two halves that are one question.
     /// </para>
+    /// <para>
+    /// <b>The words live in <see cref="Facilitation"/></b>, because since 022 the facilitator sends them from the
+    /// broker, which cannot reference this assembly. This is 020's text, true when a person decides; the facilitator
+    /// sends <see cref="Facilitation.AcceptedAsWritten"/> instead while Auto Accept is on.
+    /// </para>
     /// </remarks>
-    public const string Text = """
-        What do you own in this deployment, and what do you not?
-
-        I am asking because your answer becomes one line in the registry. Every agent in this
-        deployment reads that line whenever anybody lists the roster, and it costs each of them
-        context every time - so it is read far more often than it is written. It is what a peer
-        uses to decide whether to send a piece of work to you or to somebody else. Nothing is
-        routed by it automatically and nothing is refused because of it; it is advice to whoever
-        is choosing who to ask.
-
-        Please answer in two parts:
-
-        1. What you own - the areas of work that are yours, in as few words as carry the meaning.
-        2. What you do not own, especially anything a peer might reasonably assume is yours. If
-           you believe another agent owns it, name the agent.
-
-        The second part is the half nobody else can supply. A repository can be read to find out
-        what it contains; it cannot be read to find out what it has decided not to own, and a
-        person guessing is no better placed than a tool guessing.
-
-        A person will read your answer, may disagree with it, and may argue about it with you
-        before anything is written. Nothing you say here changes any configuration by itself.
-        """;
+    public static string Text { get; } = Facilitation.ReadByAPerson;
 
     /// <summary>What to say before asking more than one agent (FR-007).</summary>
     /// <param name="agents">How many will be asked.</param>

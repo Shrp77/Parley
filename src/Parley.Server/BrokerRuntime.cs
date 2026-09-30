@@ -184,11 +184,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
+        // The facilitator's row (SPEC.md §12.3), before anything could want to send as it. The broker writes it for its
+        // own store, which makes it the one identity no launch fixes (constitution, Principle III).
+        Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(MachineName.Current).GetAwaiter().GetResult();
+
         // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
         // write, and changes made while no broker was running are found before anybody asks.
         Watcher = new FolderWatcher(this);
         Watcher.Start();
     }
+
+    /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
+    public AgentName Facilitator { get; }
 
     /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
     internal FolderWatcher Watcher { get; }
@@ -879,6 +886,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     public WakeOutcome RequestAttentionForMail(AgentName agent, string because)
     {
+        // Mail for the facilitator is an agent answering it or asking it something back, and the facilitation sweep is
+        // what reads it (FacilitateAsync). No node runs the facilitator, so asking one would come back unreachable and
+        // tell the sender nothing can see its message, which is untrue: the next sweep will.
+        if (Facilitation.Is(agent))
+        {
+            return WakeOutcome.AlreadyComing;
+        }
+
         // **Claimed before asking, not checked before asking.** Reading the mark and then acting on
         // it is two operations, and the flood this bound exists for is precisely the case where
         // sixty of them interleave: every one would read "nothing pending" and every one would ask.
@@ -1181,6 +1196,173 @@ public sealed class BrokerRuntime : IAsyncDisposable
         UseConnectionAsync(
             (_, now, ct) => _house.TickAsync(now, ct),
             cancellationToken);
+
+    /// <summary>
+    /// The facilitator's pass (SPEC.md principle 2.11, §10.2): asks every attached agent that is due, wakes each, and
+    /// reads back what agents have answered since the last pass.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>The answers that arrived, each recorded and waiting on a decision.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>On the sweep rather than on an event</b> (research R4). There is no attach event to hook, and a pass over the
+    /// store is also what makes a broker restart harmless: nothing is remembered in memory that the store does not say,
+    /// so an agent that was running before the broker started is asked on the first pass after it.
+    /// </para>
+    /// <para>
+    /// <b>The decision about each answer is not made here.</b> Accepting one writes the agent's launch configuration,
+    /// which this project cannot reach (research finding 12); the host that can, decides and calls back into
+    /// <see cref="AcceptAutomaticallyAsync"/> or <see cref="HoldAsync"/>.
+    /// </para>
+    /// <para>
+    /// Each agent asked is woken exactly as a Request from an agent wakes it, through the same bounded path, so the
+    /// facilitator buys no turn an ordinary message would not have.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Parley.Broker.FacilitatorAnswer>> FacilitateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var attached = _attached.Keys.ToArray();
+
+        var (asked, answers) = await UseConnectionAsync(
+            async (connection, now, ct) =>
+            {
+                var facilitator = new Parley.Broker.Facilitator(connection, _options);
+
+                var asked = await facilitator.AskDueAsync(Facilitator, attached, now, ct).ConfigureAwait(false);
+                var answers = await facilitator.ReadBackAsync(Facilitator, now, ct).ConfigureAwait(false);
+
+                return (asked, answers);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var agent in asked)
+        {
+            await NudgeAsync(agent, cancellationToken).ConfigureAwait(false);
+            _ = RequestAttentionForMail(agent, "Parley asked what it owns");
+        }
+
+        return answers;
+    }
+
+    /// <summary>Runs one unit of the facilitator's work, alone, under the store's gate.</summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="work">The work, given the facilitator, its name in this store and the instant to stamp it with.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned.</returns>
+    /// <remarks>
+    /// For the operator's operations on Parley's questions (§10.2), which act through the facilitator rather than
+    /// through <see cref="Parley.Broker.OperatorConsole"/>: that type may not send a Request, and asking again is one.
+    /// </remarks>
+    public Task<T> UseFacilitatorAsync<T>(
+        Func<Parley.Broker.Facilitator, AgentName, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        return UseConnectionAsync(
+            (connection, now, ct) => work(new Parley.Broker.Facilitator(connection, _options), Facilitator, now, ct),
+            cancellationToken);
+    }
+
+    /// <summary>Makes an answer the agent's line, once its launch configuration has been written.</summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was recorded.</returns>
+    public Task<bool> AcceptAutomaticallyAsync(
+        Parley.Broker.FacilitatorAnswer answer,
+        CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, now, ct) => new Parley.Broker.Facilitator(connection, _options)
+                .AcceptAutomaticallyAsync(Facilitator, answer, now, ct),
+            cancellationToken);
+
+    /// <summary>Holds an answer for a person, saying why.</summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="because">Why it was not accepted automatically.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it is now waiting.</returns>
+    public Task<bool> HoldAsync(
+        Parley.Broker.FacilitatorAnswer answer,
+        string because,
+        CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).HoldAsync(answer, because, ct),
+            cancellationToken);
+
+    /// <summary>The project's Auto Accept switch.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether it is on.</returns>
+    public Task<bool> AutoAcceptAsync(CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).AutoAcceptAsync(ct),
+            cancellationToken);
+
+    /// <summary>
+    /// Asks each agent's node to refresh it, once, after its first line was accepted automatically, when it owes nothing
+    /// (SPEC.md §11.1).
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>The agents a refresh was sent for.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only when the agent owes no open exchange and no turn is on its way to it.</b> The broker cannot see a turn in
+    /// progress (research finding 7), so it sends only when it has no reason to think one is coming, and the node — which
+    /// can see — waits for the turn lock before stopping anything. An agent that is never idle is never refreshed, and
+    /// its line stays pending, visibly.
+    /// </para>
+    /// <para>
+    /// <b>Recorded as sent only once a node took it</b>, so an agent whose node has not joined yet is refreshed when it
+    /// does, rather than never. Once recorded it is never sent again, whatever the node did with it.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentName>> RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var due = await UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var candidates = await new Parley.Broker.Facilitator(connection, _options).RefreshDueAsync(ct)
+                    .ConfigureAwait(false);
+
+                var idle = new List<(long Question, AgentName Agent)>();
+
+                foreach (var candidate in candidates)
+                {
+                    if (await new ExchangeRepository(connection).CountOwedByAsync(candidate.Agent, ct)
+                            .ConfigureAwait(false) == 0)
+                    {
+                        idle.Add(candidate);
+                    }
+                }
+
+                return idle;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var sent = new List<AgentName>();
+
+        foreach (var (question, agent) in due)
+        {
+            if (_pending.TryGetValue(agent.Value, out var claimed) && Live(Clock.GetUtcNow() - claimed))
+            {
+                continue;
+            }
+
+            if (!_nodes.TryGetValue(agent.Machine, out var node)
+                || !node.RequestRefresh(agent, "its first ownership line was accepted automatically"))
+            {
+                continue;
+            }
+
+            await UseConnectionAsync(
+                (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).RefreshSentAsync(question, ct),
+                cancellationToken).ConfigureAwait(false);
+
+            sent.Add(agent);
+        }
+
+        return sent;
+    }
 
     /// <summary>
     /// Tells an agent that something is waiting, if it is attached.

@@ -62,9 +62,9 @@ else
 
                 <div class="bubble">
                     <p class="attribution">
-                        <strong>@message.From.Value</strong>
+                        <strong>@Speaker.From(message)</strong>
                         <span class="arrow">to</span>
-                        <strong>@message.To.Value</strong>
+                        <strong>@Speaker.To(message)</strong>
                         @* The reader's own clock. What is stored stays UTC, and the export
                            still says so -- a file read by somebody else, somewhere else, needs the
                            Z that a screen does not. *@

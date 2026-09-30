@@ -362,6 +362,41 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
+    /// between the two (SPEC.md §11.1's fourth way a resident ends).
+    /// </summary>
+    /// <param name="grace">How long to allow it to exit once told, before killing it.</param>
+    /// <param name="cancellationToken">Cancels the wait for the turn, which leaves the agent running.</param>
+    /// <returns><see langword="true"/> if it exited on its own.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The opposite choice to <see cref="ShutdownAsync"/>, and for the opposite reason.</b> That method refuses to
+    /// wait on a turn, because stopping a fleet must not be held up by one wedged agent. A refresh is not a fleet stopping:
+    /// it is one agent being restarted so it reads its launch configuration afresh, and doing that mid-turn would discard
+    /// the work in flight for the sake of one sentence. So this waits, for as long as the turn takes — an agent that is
+    /// never idle is never refreshed, and its line stays pending, which is the documented cost.
+    /// </para>
+    /// <para>
+    /// <b>The turn is held across the stop.</b> Waiting for the lock and then releasing it before stopping would leave a
+    /// window in which a queued turn starts and is then killed. A turn queued behind this finds the process gone and
+    /// reports it, as any turn given to a departed resident does; the mail it was for waits for the next wake.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> ShutdownWhenIdleAsync(TimeSpan grace, CancellationToken cancellationToken = default)
+    {
+        await _turnLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await ShutdownAsync(grace, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _turnLock.Release();
+        }
+    }
+
     /// <summary>Stops the agent and releases the process.</summary>
     /// <returns>A task that completes when it has stopped.</returns>
     public async ValueTask DisposeAsync()

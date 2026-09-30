@@ -51,6 +51,8 @@ public sealed class ScriptParityTests
                      ("-Only", "--only"),
                      ("-Uninstall", "--uninstall"),
                      ("-Force", "--force"),
+                     ("-Reset", "--reset"),
+                     ("-Repositories", "--repositories"),
                  })
         {
             Assert.Contains(windows, Windows, StringComparison.Ordinal);

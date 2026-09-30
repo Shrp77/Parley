@@ -48,17 +48,16 @@ public sealed class AskingWhatItOwnsTests
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Contains("costs it a turn", body, StringComparison.Ordinal);
-        Assert.Contains("Nothing is written by", body, StringComparison.Ordinal);
+        Assert.Contains("No seat is needed", body, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Asking_with_no_seat_says_a_seat_is_needed_rather_than_instructing_instead()
+    public async Task Asking_needs_no_seat_because_Parley_asks()
     {
-        // **The defect this forbids is the console quietly using the operator's voice.** §13 rests on
-        // a receiver being able to tell who spoke: an instruction in place of a message would put the
-        // question in front of the agent with nothing in the transcript and nothing owed back. Must
-        // fail against falling through to `InstructAsync`, which against a dead broker would report a
-        // transport failure instead of this sentence.
+        // **022's correction.** 020 sent the ask as the person's own Request and refused without a seat, which is the
+        // refusal the owner met. Parley asks now, so with no seat the console goes to the broker -- which is dead here, so
+        // what comes back is that it could not be reached, never a sentence about a seat. Must fail against the seat
+        // refusal coming back.
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
@@ -70,8 +69,7 @@ public sealed class AskingWhatItOwnsTests
 
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        Assert.Contains("no seat", body, StringComparison.Ordinal);
-        Assert.Contains("Nothing was asked", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("no seat is held", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -115,16 +113,15 @@ public sealed class AskingWhatItOwnsTests
             TestContext.Current.CancellationToken);
 
         Assert.Contains("costs each", body, StringComparison.Ordinal);
-        Assert.Contains("conversation of its own", body, StringComparison.Ordinal);
-        Assert.Contains("Nothing is written by asking", body, StringComparison.Ordinal);
+        Assert.Contains("its own question", body, StringComparison.Ordinal);
+        Assert.Contains("No seat is needed", body, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task The_bulk_ask_with_no_seat_sends_nothing_and_says_why()
+    public async Task The_bulk_ask_needs_no_seat_either()
     {
-        // The same guard as the single ask, and it must be applied before the roster is even read: with
-        // no broker listening, a version that read the registry first would report a transport failure
-        // instead of the sentence a person can act on.
+        // As the single ask: Parley asks, so no seat is needed and none is asked for. The broker is dead here, so what
+        // comes back is that it could not be reached, never a sentence about a seat.
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
@@ -136,8 +133,7 @@ public sealed class AskingWhatItOwnsTests
 
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        Assert.Contains("Nothing was asked", body, StringComparison.Ordinal);
-        Assert.Contains("no seat", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("no seat is held", body, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<HttpResponseMessage> PostAsync(

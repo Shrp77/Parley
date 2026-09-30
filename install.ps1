@@ -90,8 +90,26 @@
     but changing what an existing machine does at logon is not this script's decision to make
     quietly.
 
+.PARAMETER Reset
+    Wipes this machine's Parley first, by running reset.ps1 -Everything -Force, and then installs.
+    Every project, store, conversation, port and node.json goes, and nothing asks before it does:
+    passing -Reset is the decision.
+
+    It runs after the build and pack succeed and before anything is installed. A build that fails
+    leaves the machine as it was, rather than wiped with nothing to replace it.
+
+    Refused with -Uninstall, which already removes what it installed, and with -Only, whose point
+    is leaving the broker running.
+
+.PARAMETER Repositories
+    With -Reset only: a directory of checkouts whose .mcp.json files lose their Parley entries,
+    passed to reset.ps1 as its own -Repositories.
+
 .EXAMPLE
     .\install.ps1
+
+.EXAMPLE
+    .\install.ps1 -Reset -Repositories C:\DevHell\Github
 
 .EXAMPLE
     .\install.ps1 -Force
@@ -109,7 +127,9 @@ param(
     [switch] $Force,
     [switch] $Hidden,
     [string] $Surfaces,
-    [string[]] $Only
+    [string[]] $Only,
+    [switch] $Reset,
+    [string] $Repositories
 )
 
 $ErrorActionPreference = 'Stop'
@@ -372,6 +392,19 @@ function Remove-Holders([object[]] $running) {
     return @(Get-Process -Name $names -ErrorAction SilentlyContinue)
 }
 
+# Checked before anything is stopped or built, so a combination that makes no sense costs nothing.
+if ($Reset -and $Uninstall) {
+    Write-Error '-Reset and -Uninstall together make no sense: -Uninstall removes what was installed and installs nothing.'
+}
+
+if ($Reset -and $Only) {
+    Write-Error '-Reset wipes the whole deployment and stops the broker, and -Only exists to leave the broker running. Use one or the other.'
+}
+
+if ($Repositories -and -not $Reset) {
+    Write-Error '-Repositories is only used with -Reset.'
+}
+
 # ---------------------------------------------------------------- uninstall --
 
 if ($Uninstall) {
@@ -517,6 +550,21 @@ $built = Get-ChildItem -Path $root -Filter "$($first.Package).*.nupkg" -Recurse 
     Select-Object -First 1
 
 if (-not $built) { Write-Error 'Nothing was packed. The build produced no package.' }
+
+# ------------------------------------------------------------------- reset ---
+
+# Here rather than first, so a build that fails leaves the machine as it was. reset.ps1 stops the
+# broker and its children and removes the autostart entry itself; the steps below then find
+# nothing to stop, which they already handle.
+if ($Reset) {
+    Write-Step 'Resetting this machine (-Reset)'
+
+    $resetArguments = @{ Everything = $true; Force = $true }
+
+    if ($Repositories) { $resetArguments.Repositories = $Repositories }
+
+    & (Join-Path $root 'reset.ps1') @resetArguments
+}
 
 # ----------------------------------------------------------------- install ---
 

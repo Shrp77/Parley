@@ -28,5 +28,16 @@ public enum OwnershipSource
     Edited = 1,
 
     /// <summary>Written by the person, with no ask at all. There is no proposal and no discussion.</summary>
-    Composed = 2
+    Composed = 2,
+
+    /// <summary>
+    /// The agent's own words, made its line by the project's Auto Accept switch with no person involved
+    /// (SPEC.md §10.2, specs/022). Only runs of whitespace were collapsed.
+    /// </summary>
+    /// <remarks>
+    /// <b>Recorded only by the broker itself, and refused from any operator call.</b> The three routes above
+    /// are a person's acts; this one is the absence of one, and a person's decision recorded as the
+    /// machine's — or the machine's as a person's — would make provenance the one thing it exists not to be.
+    /// </remarks>
+    Automatic = 3
 }

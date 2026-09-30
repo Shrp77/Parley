@@ -4,7 +4,6 @@ using Parley.Core;
 using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Setup;
-using Parley.Web.Seating;
 
 namespace Parley.Web.Pages.Projects;
 
@@ -24,12 +23,11 @@ namespace Parley.Web.Pages.Projects;
 /// it to work around the agent rather than ask why.
 /// </para>
 /// </remarks>
-/// <param name="directory">The projects and their brokers.</param>
-/// <param name="seats">
-/// The seats people hold, because asking an agent what it owns is a message and a message is sent as
-/// somebody. Every other action on this page is an operator operation and needs no seat.
+/// <param name="directory">
+/// The projects and their brokers. No seat book any more: asking an agent what it owns was the one action here that was a
+/// person's message and needed a seat, and since 022 Parley asks.
 /// </param>
-public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageModel
+public sealed class ActModel(BrokerDirectory directory) : PageModel
 {
     /// <summary>Which project.</summary>
     [BindProperty(SupportsGet = true)]
@@ -77,13 +75,36 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
     /// <summary>What happened, once it has.</summary>
     public string? Outcome { get; private set; }
 
+    /// <summary>The agent's answer to Parley, on one line, when the action is accepting it.</summary>
+    /// <remarks>
+    /// The one box on this page that opens holding somebody else's words, and it says whose. Leaving it unchanged records
+    /// the agent's words as the agent's; changing a letter records a person's edit. That is a comparison made at the
+    /// POST, never a flag, and it is the distinction the <c>ownership</c> action's empty box exists to keep.
+    /// </remarks>
+    public string? Proposed { get; private set; }
+
     /// <summary>Describes what is about to happen. Nothing is done here.</summary>
     /// <returns>The confirmation page.</returns>
-    public IActionResult OnGet()
+    public async Task<IActionResult> OnGetAsync()
     {
-        if (directory.Find(Project) is null || string.IsNullOrWhiteSpace(Subject))
+        var project = directory.Find(Project);
+
+        if (project is null || string.IsNullOrWhiteSpace(Subject))
         {
             return RedirectToPage("/Index");
+        }
+
+        // The one description that needs the broker: accepting an answer shows the answer. Read here so the box can hold
+        // the agent's words, and so a person is told plainly when there is nothing waiting rather than shown an empty box.
+        if (string.Equals(Action, "acceptanswer", StringComparison.OrdinalIgnoreCase)
+            && AgentName.TryCreate(Subject, out var answering))
+        {
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project)).FacilitationAsync(HttpContext.RequestAborted)
+                    .ConfigureAwait(false)).ConfigureAwait(false);
+
+            Proposed = read.Value?.Questions
+                .FirstOrDefault(q => q.Agent == answering && q.State == QuestionState.Waiting)?.Flattened;
         }
 
         (Warning, Destroys) = Action?.ToLowerInvariant() switch
@@ -109,17 +130,45 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
             // The project-level form, which follows `prune` in taking its subject from whatever made the
             // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
             // and a person cannot un-spend a turn per agent.
-            "askeveryownership" => ("Every registered agent in this project will be asked what it owns, "
-                                  + "as one ordinary request each from your seat, and answering costs each "
-                                  + "of them a turn. Each answer arrives in a conversation of its own, "
-                                  + "named for the agent it is about. Nothing is written by asking.", false),
+            "askeveryownership" => ("Parley will ask every agent in this project again what it owns, each as "
+                                  + "its own question, and answering costs each of them a turn. Parley already "
+                                  + "asks every new agent on its own, so this is for asking again. An agent whose "
+                                  + "answer is still being decided is left alone. No seat is needed: Parley "
+                                  + "asks, not you.", false),
 
-            // Named as a cost rather than as a risk. Nothing is destroyed and nothing is written, so
-            // `Destroys` stays false -- but a turn is spent on the agent's side and a person cannot
-            // un-spend it, which is the whole of what they are deciding.
-            "askownership" => ($"'{Subject}' will be asked what it owns, as one ordinary request from "
-                             + "your seat, and answering costs it a turn. Nothing is written by "
-                             + "asking: its answer is a message, and you accept it or you do not.", false),
+            // Named as a cost rather than as a risk. Nothing is destroyed, so `Destroys` stays false -- but a turn is
+            // spent on the agent's side and a person cannot un-spend it, which is the whole of what they are deciding.
+            "askownership" => ($"Parley will ask '{Subject}' again what it owns, and answering costs it a turn. "
+                             + "What becomes of the answer depends on this project's Auto Accept switch, and it "
+                             + "shows in the ownership review either way. No seat is needed: Parley asks, "
+                             + "not you.", false),
+
+            // The agent's own words, which a person may leave as they are or edit. Not destructive: it replaces one line
+            // in one launch entry, and peers go on reading the old one until the agent next starts.
+            "acceptanswer" => Proposed is null
+                ? ($"Nothing from '{Subject}' is waiting to be accepted.", false)
+                : ($"'{Subject}'s answer to Parley, below in its own words, becomes its line and is written into its "
+                   + "launch configuration on this machine. Leave it as it is and it is recorded as the agent's "
+                   + "words; change anything and it is recorded as your edit. Peers read the new line when the "
+                   + "agent next starts.", false),
+
+            "discardanswer" => ($"'{Subject}'s answer to Parley is discarded. Nothing is written, it keeps whatever "
+                              + "line it had, and it is not asked again unless a person asks.", false),
+
+            // A person's words, sent through Parley because only the question's requester may reply on its exchange
+            // (§5.2), and recorded as the person's -- never as Parley's.
+            "replyaskedback" => ($"'{Subject}' asked Parley something back instead of answering. What you write is "
+                               + "sent through Parley and recorded as your words, never as Parley's, and it "
+                               + "costs the agent a turn to read.", false),
+
+            // Acts on the project, so its subject is the switch's new position rather than an agent.
+            "autoaccept" => (string.Equals(Subject, "on", StringComparison.OrdinalIgnoreCase)
+                ? $"Auto Accept will be ON for '{Project}': an agent's answer to Parley becomes its line with no "
+                  + "person reading it, unless it cannot be one. Each such line is marked as accepted "
+                  + "automatically and can be corrected in the ownership review. Answers already waiting stay "
+                  + "waiting."
+                : $"Auto Accept will be OFF for '{Project}': every answer to Parley waits in the ownership review "
+                  + "for a person. Answers already waiting stay waiting.", false),
 
             // Described here as well as done below, because an action with an arm in the POST and none
             // here reached a person as "this is not something the console does" above a button that did
@@ -179,7 +228,12 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
                 // agent the registry holds, so the subject in the URL is what made the link and not
                 // something to validate. Putting it below would refuse the whole project because one
                 // incidental subject was not a name.
-                "askeveryownership" => AskEveryOwnership(project, broker, token),
+                "askeveryownership" => AskEveryOwnership(broker, token),
+
+                // Above the name guard for the same reason: its subject is the switch's new position, not an agent.
+                "autoaccept" => DescribeAutoAccept(
+                    broker.SetAutoAcceptAsync(string.Equals(Subject, "on", StringComparison.OrdinalIgnoreCase), token),
+                    project),
 
                 _ when !named => Task.FromResult(
                     $"'{Subject}' is not a name an agent can have, so there is nothing to act on."),
@@ -198,13 +252,23 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
                 // through the conversation it was agreed in and is accepted from that conversation,
                 // carrying it -- which is why `source` exists at all rather than every acceptance
                 // being one thing.
-                "ownership" => AcceptOwnership(project, broker, agent, Text ?? string.Empty, token),
+                "ownership" => AcceptOwnership(
+                    project, broker, agent,
+                    new OwnershipAcceptance((Text ?? string.Empty).Trim(), OwnershipSource.Composed, null, null),
+                    token),
 
-                // The one action on this page that is a message rather than an operator operation, so
-                // the one that needs a seat. It adds nothing to the protocol: an ordinary Request,
-                // opening an ordinary exchange, in a conversation named so that a surface can find the
-                // discussion again without a marker in anybody's payload (§13).
-                "askownership" => AskOwnership(project, agent, token),
+                // Parley asks, so no seat: 020 sent this as the person's own Request and refused without a seat, which
+                // is the refusal the owner met on the one action they reached for (022).
+                "askownership" => DescribeAction(broker.AskAgainAsync(agent, token),
+                    $"Parley asked '{agent.Value}' what it owns. Its answer shows in the ownership review."),
+
+                "acceptanswer" => AcceptAnswer(project, broker, agent, Text ?? string.Empty, token),
+
+                "discardanswer" => DescribeAction(broker.DiscardAnswerAsync(agent, token),
+                    "Discarded. Nothing was written, and it keeps whatever line it had."),
+
+                "replyaskedback" => DescribeAction(broker.ReplyToAskedBackAsync(agent, Text ?? string.Empty, token),
+                    "Sent through Parley as your words. Its answer shows in the ownership review when it comes."),
 
                 _ => Task.FromResult("This is not something the console does.")
             }).ConfigureAwait(false)).ConfigureAwait(false);
@@ -226,7 +290,9 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
     /// </param>
     /// <param name="broker">This project's broker.</param>
     /// <param name="agent">Whose line it is.</param>
-    /// <param name="statement">What the person typed. Their own words, so recorded as composed.</param>
+    /// <param name="acceptance">
+    /// What was agreed and how: a person's own line as composed, or an agent's answer as proposed or edited.
+    /// </param>
     /// <param name="token">Cancels the calls.</param>
     /// <returns>What to put in front of the person.</returns>
     /// <remarks>
@@ -246,9 +312,14 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
         ProjectSettings project,
         BrokerClient broker,
         AgentName agent,
-        string statement,
+        OwnershipAcceptance acceptance,
         CancellationToken token)
     {
+        if (acceptance.Problem() is { } unacceptable)
+        {
+            return $"Not recorded: {unacceptable}";
+        }
+
         if (OwnershipLine.NotHere(agent) is { } elsewhere)
         {
             return $"Not recorded: {elsewhere}";
@@ -264,7 +335,7 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
         }
 
         var wrong = await OwnershipLine
-            .WriteAsync(known.Workspace, project.Name.Value, agent, statement, token)
+            .WriteAsync(known.Workspace, project.Name.Value, agent, acceptance.Statement, token)
             .ConfigureAwait(false);
 
         if (wrong is not null)
@@ -272,89 +343,79 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
             return $"Not recorded: {wrong}";
         }
 
-        return await DescribeOwnership(
-            broker.RecordOwnershipAsync(
-                agent,
-                new OwnershipAcceptance(statement, OwnershipSource.Composed, null, null),
-                token)).ConfigureAwait(false);
+        return await DescribeOwnership(broker.RecordOwnershipAsync(agent, acceptance, token)).ConfigureAwait(false);
     }
 
-    /// <summary>Asks an agent what it owns, from the seat the person holds.</summary>
-    /// <param name="project">Which project's broker to ask through.</param>
-    /// <param name="agent">Who to ask.</param>
-    /// <param name="token">Cancels the send.</param>
+    /// <summary>Accepts an agent's waiting answer to Parley, as it wrote it or as a person edited it.</summary>
+    /// <param name="project">The project whose launch entry to write.</param>
+    /// <param name="broker">This project's broker.</param>
+    /// <param name="agent">Whose answer.</param>
+    /// <param name="typed">What the box held when the person confirmed.</param>
+    /// <param name="token">Cancels the calls.</param>
     /// <returns>What to put in front of the person.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A seat is required and its absence is said plainly</b>, because §13 rests on a receiver
-    /// being able to tell who spoke: an operator instruction in place of a message would put the
-    /// question in front of the agent with nothing in the transcript and nothing owed back.
+    /// <b>The answer is read again at the POST rather than trusted from the form</b>: the form is somebody's browser, and
+    /// what decides whether the words are the agent's is a comparison with what the agent actually said, made here.
+    /// Unchanged is <c>proposed</c>; anything else is <c>edited</c> — and surrounding whitespace is the form's, not a
+    /// person's edit.
     /// </para>
     /// <para>
-    /// <b>The machine rule deliberately does not apply here.</b> <c>OwnershipLine.NotHere</c> guards a
-    /// write to a file on the agent's machine, and asking is not that — a broker reaches agents on
-    /// machines this console will never touch, and refusing to ask them would withhold the operation
-    /// from exactly the deployment it is worth most in.
+    /// The length recorded is the agent's own message, never the accepted line (FR-026's evidence is what agents write).
+    /// Accepting settles Parley's question and closes its conversation, which the broker does as it records the line.
     /// </para>
     /// </remarks>
-    private async Task<string> AskOwnership(
-        ProjectSettings project, AgentName agent, CancellationToken token)
+    private static async Task<string> AcceptAnswer(
+        ProjectSettings project, BrokerClient broker, AgentName agent, string typed, CancellationToken token)
     {
-        var here = SeatCookie.Read(Request);
-        var seated = here is null ? null : seats.Held(project.Name.Value, here);
+        var report = await broker.FacilitationAsync(token).ConfigureAwait(false);
 
-        if (seated is null)
+        if (report.Questions.FirstOrDefault(q => q.Agent == agent && q.State == QuestionState.Waiting)
+            is not { Flattened: { } line, Answer: { } said } question)
         {
-            return "Nothing was asked. An ask is a message, so it is sent as somebody, and no seat "
-                 + "is held here: take one on the inbox page and ask again. The agent's answer then "
-                 + "comes back to that name.";
+            return $"Nothing from '{agent.Value}' is waiting to be accepted.";
         }
 
-        var conversation = OwnershipAsk.Conversation(agent, DateTimeOffset.UtcNow);
+        var statement = typed.Trim();
 
-        var said = await new SeatVoice(directory.AgentsFor(project), seated.Seat)
-            .RequestAsync(agent, OwnershipAsk.Text, conversation, token)
-            .ConfigureAwait(false);
+        if (statement.Length == 0)
+        {
+            statement = line;
+        }
 
-        return said + " Its answer arrives in conversation " + conversation
-             + ", which is where it is read and accepted.";
+        var source = string.Equals(statement, line, StringComparison.Ordinal)
+            ? OwnershipSource.Proposed
+            : OwnershipSource.Edited;
+
+        return await AcceptOwnership(
+            project, broker, agent,
+            new OwnershipAcceptance(statement, source, said.Length, question.Conversation),
+            token).ConfigureAwait(false);
     }
 
-    /// <summary>Asks every registered agent in a project what it owns (FR-006).</summary>
-    /// <param name="project">Which project's agents.</param>
-    /// <param name="broker">That project's broker, for the roster.</param>
-    /// <param name="token">Cancels the reads and the sends.</param>
+    /// <summary>Has Parley ask every agent in a project again what it owns.</summary>
+    /// <param name="broker">That project's broker, for the roster and the asks.</param>
+    /// <param name="token">Cancels the reads and the asks.</param>
     /// <returns>What to put in front of the person.</returns>
     /// <remarks>
     /// <para>
-    /// <b>N ordinary Requests, each in its own conversation</b>, because a discussion is about one agent
-    /// and its identifier carries that agent's role. One shared conversation would put every argument in
-    /// one transcript and leave nothing able to find the one it wanted.
+    /// <b>Parley asks, so no seat is needed</b> (022). 020 sent these as the person's own Requests and refused without a
+    /// seat.
     /// </para>
     /// <para>
-    /// <b>Seats and retired agents are left out.</b> A seat is a person, and an ownership line is how
-    /// peers choose which <em>agent</em> to send work to; a retired agent is not routed to at all
-    /// (§10.2), so what it owns is no longer a question anybody acts on. Asking either would spend a
-    /// turn on a question that cannot apply.
+    /// <b>Seats, retired agents and Parley itself are left out.</b> A seat is a person, a retired agent is not routed to,
+    /// and Parley asks rather than being asked. An agent whose answer is still being decided is refused by the broker and
+    /// named here, because asking again then would lose an answer nobody has looked at.
     /// </para>
     /// </remarks>
-    private async Task<string> AskEveryOwnership(
-        ProjectSettings project, BrokerClient broker, CancellationToken token)
+    private static async Task<string> AskEveryOwnership(BrokerClient broker, CancellationToken token)
     {
-        var here = SeatCookie.Read(Request);
-        var seated = here is null ? null : seats.Held(project.Name.Value, here);
-
-        if (seated is null)
-        {
-            return "Nothing was asked. An ask is a message, so it is sent as somebody, and no seat is "
-                 + "held here: take one on the inbox page and ask again.";
-        }
-
         var registry = await broker.RegistryAsync(token).ConfigureAwait(false);
 
         var asking = registry
             .Where(record => record.Status != AgentStatus.Retired)
             .Where(record => !string.Equals(record.Adapter, Seat.Adapter, StringComparison.Ordinal))
+            .Where(record => !record.Facilitator)
             .Select(record => record.Name)
             .ToList();
 
@@ -364,19 +425,44 @@ public sealed class ActModel(BrokerDirectory directory, SeatBook seats) : PageMo
                  + "registered, which is its own act as it starts.";
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var asked = 0;
+        var refused = new List<string>();
 
-        var said = await new SeatVoice(directory.AgentsFor(project), seated.Seat)
-            .RequestEachAsync(
-                seated,
-                asking,
-                OwnershipAsk.Text,
-                agent => OwnershipAsk.Conversation(agent, now),
-                token)
-            .ConfigureAwait(false);
+        foreach (var agent in asking)
+        {
+            if ((await broker.AskAgainAsync(agent, token).ConfigureAwait(false)).Done)
+            {
+                asked++;
+            }
+            else
+            {
+                refused.Add(agent.Value);
+            }
+        }
 
-        return said + " Each answer arrives in its own conversation, named for the agent it is about.";
+        return refused.Count == 0
+            ? $"Parley asked {asked} agent(s) what they own. Their answers show in the ownership review."
+            : $"Parley asked {asked} agent(s). Not asked, because an answer is still being decided: "
+              + string.Join(", ", refused) + ".";
     }
+
+    /// <summary>Says what became of an action on one of Parley's questions.</summary>
+    /// <param name="action">The call.</param>
+    /// <param name="done">What to say when it was done.</param>
+    /// <returns>What to put in front of the person.</returns>
+    private static async Task<string> DescribeAction(Task<FacilitationAction> action, string done)
+    {
+        var outcome = await action.ConfigureAwait(false);
+
+        return outcome.Done ? done : $"Nothing was done: {outcome.Problem}";
+    }
+
+    /// <summary>Says what the Auto Accept switch now is.</summary>
+    /// <param name="action">The call.</param>
+    /// <param name="project">The project it belongs to.</param>
+    /// <returns>What to put in front of the person.</returns>
+    private static async Task<string> DescribeAutoAccept(Task<bool> action, ProjectSettings project) =>
+        $"Auto Accept is {(await action.ConfigureAwait(false) ? "on" : "off")} for {project.Name.Value}.";
 
     /// <summary>Says what became of an accepted ownership line.</summary>
     /// <param name="action">The call.</param>

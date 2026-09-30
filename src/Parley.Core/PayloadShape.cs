@@ -23,6 +23,68 @@ public static class PayloadShape
     /// <remarks>A Result must carry at least one outcome, so such a Request is answered as a whole.</remarks>
     public const string WholeRequest = "request";
 
+    /// <summary>What a 0.7 message says, in the words its sender wrote.</summary>
+    /// <param name="payloadJson">A Request, Clarify or Result payload, or <see langword="null"/>.</param>
+    /// <returns>The words, trimmed; empty when there are none or the payload cannot be read.</returns>
+    /// <remarks>
+    /// <para>
+    /// A Request carries its words in <c>ask</c> and a Clarify in <c>text</c>; a Result carries them against its
+    /// outcomes, joined here with a space in the order written. The facilitator reads an agent's answer with this, and
+    /// every question it asks is a 0.7 Request, so the shapes earlier versions stored are not read here — the
+    /// transcript's reader in <c>Parley.Client</c> does that, for what a person reads.
+    /// </para>
+    /// <para>
+    /// <b>In Core because the broker is what reads it.</b> What an agent said decides whether its answer becomes a line,
+    /// and a broker that parsed it differently from the surface a person reviews it on would accept one thing and show
+    /// another.
+    /// </para>
+    /// </remarks>
+    public static string Spoken(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return string.Empty;
+            }
+
+            foreach (var field in (ReadOnlySpan<string>)["ask", "text"])
+            {
+                if (root.TryGetProperty(field, out var said) && said.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(said.GetString()))
+                {
+                    return said.GetString()!.Trim();
+                }
+            }
+
+            if (!root.TryGetProperty("outcomes", out var outcomes) || outcomes.ValueKind != JsonValueKind.Array)
+            {
+                return string.Empty;
+            }
+
+            var words = outcomes.EnumerateArray()
+                .Where(o => o.ValueKind == JsonValueKind.Object)
+                .Select(o => o.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String
+                    ? text.GetString()
+                    : null)
+                .Where(text => !string.IsNullOrWhiteSpace(text));
+
+            return string.Join(" ", words).Trim();
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
     /// <summary>The item identifiers a Request carried that a Result can answer, in order.</summary>
     /// <param name="requestJson">The Request payload, or <see langword="null"/>.</param>
     /// <returns>The identifiers; empty when there are none or the payload cannot be read.</returns>

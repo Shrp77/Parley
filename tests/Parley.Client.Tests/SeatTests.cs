@@ -223,6 +223,23 @@ public sealed class SeatTests
         Assert.DoesNotContain("parley:", Seated("parley").Responder, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Nobody_takes_a_seat_as_the_facilitator()
+    {
+        // Refused before the registry is consulted, and with nothing put on the wire. The registry check alone would
+        // refuse it only on the broker's own machine, with a sentence about an agent; from any other machine the name
+        // is not in the registry at all (SPEC.md §17 question 2: the facilitator is not a seat).
+        var agents = new StubAgents();
+        using var book = new SeatBook(_ => agents);
+
+        var outcome = await book.TakeAsync(
+            Alpha, Seated(Facilitation.Role), [], TestContext.Current.CancellationToken);
+
+        Assert.False(outcome.Seated);
+        Assert.Equal(Facilitation.Reserved, outcome.Problem);
+        Assert.Equal(0, agents.Attaches);
+    }
+
     /// <summary>A seat for a person, with the name read the way the form reads it.</summary>
     /// <param name="person">What they typed.</param>
     /// <returns>The seat.</returns>

@@ -61,7 +61,11 @@ public sealed class HealthReadTests
 
         var operators = broker.ConnectAsOperator();
 
-        Assert.Empty((await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows);
+        // Empty of agents: the one row an empty store holds is the facilitator's, which the broker writes itself
+        // (SPEC.md §12.3) and which the adapter marks as Parley rather than an agent.
+        Assert.Equal(
+            Parley.Core.Facilitation.Adapter,
+            Assert.Single((await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows).Adapter);
         Assert.Empty((await operators.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: token)).Conversations);
     }
 }

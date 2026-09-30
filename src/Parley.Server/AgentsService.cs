@@ -48,7 +48,14 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
-        var name = Name(request.Agent);
+        var name = Caller(request.Agent);
+
+        // The other half of the reservation: a row carrying the facilitator's adapter under any role would read as
+        // Parley on every surface. Storage refuses it too, but as a constraint rather than a sentence.
+        if (string.Equals(request.Adapter, Facilitation.Adapter, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(StatusCode.PermissionDenied, Facilitation.Reserved));
+        }
 
         RequireTheSameProtocol(request.ProtocolVersion);
 
@@ -115,7 +122,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
         var conversation = Blank(request.ConversationId);
 
         // A bare role reaches every participant registered under it (§5.5); a whole name reaches one.
@@ -152,7 +159,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         var outcome = await Run(
             from,
@@ -171,7 +178,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         var outcome = await Run(
             from,
@@ -196,7 +203,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         Vote vote;
 
@@ -239,7 +246,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var asking = Name(request.AskingAs);
+        var asking = Caller(request.AskingAs);
 
         var agents = await Run(asking, (broker, _, ct) => broker.ListAgentsAsync(ct), context).ConfigureAwait(false);
 
@@ -255,7 +262,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // The single place a collection is observable, which is why the wake bound keys on it: an agent that
         // attached and has not collected has read nothing. Collected rather than run, so the bound is freed before
@@ -299,7 +306,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // Not routed through an attachment: asked by things that hold no stream.
         return await _runtime.UseConnectionAsync(
@@ -321,7 +328,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // Best effort, and silent when it fails: the adapter has already told the model its message was
         // too long, and that must not depend on the bookkeeping behind it.
@@ -537,6 +544,30 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 StatusCode.InvalidArgument,
                 $"'{value}' is not an agent name. Names are role@machine, lower case, and the machine half " +
                 "is detected rather than configured (SPEC.md §4.1.1)."));
+
+    /// <summary>Reads the name a call is made as, refusing the facilitator's.</summary>
+    /// <param name="value">The name the caller claims.</param>
+    /// <returns>The name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Every operation here that names its caller goes through this, not only attaching.</b> §16 concedes that
+    /// anything able to reach a broker can claim to be any agent, and the facilitator is the one name that claim must
+    /// not reach: its questions are the ones every agent is asked without having asked for anything, so a caller able
+    /// to act under it could put words in the system's mouth (SPEC.md principle 2.11).
+    /// </para>
+    /// <para>
+    /// Refused here, with a sentence, before storage refuses the row. The facilitator itself never calls this service:
+    /// it writes through the broker's own process.
+    /// </para>
+    /// </remarks>
+    private static AgentName Caller(string value)
+    {
+        var name = Name(value);
+
+        return Facilitation.Is(name)
+            ? throw new RpcException(new Status(StatusCode.PermissionDenied, Facilitation.Reserved))
+            : name;
+    }
 
     private static string? Blank(string value) => string.IsNullOrEmpty(value) ? null : value;
 }

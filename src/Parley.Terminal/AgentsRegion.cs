@@ -340,6 +340,13 @@ internal sealed class AgentsRegion : FrameView
         // belonging to the previous read, which in this region is what a purge acts on.
         var rows = Join(registry, catalogue, project);
 
+        // **Parley is not an agent, so it is not on this pane** (SPEC.md principle 2.11, FR-005). Left out here, once,
+        // rather than at each reader: the rows, the standings, the names offered as recipients and every action on a
+        // row are all built from this, and a row for Parley would offer it retire, purge, instruct and "ask what it
+        // owns" — each of which the broker refuses. It is shown where it acts: as the sender of its questions, and in
+        // the ownership review.
+        registry = registry?.Where(record => !record.Facilitator).ToList();
+
         Registry = registry ?? [];
         _problem = problem;
         _project = project;

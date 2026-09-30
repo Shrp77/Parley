@@ -68,7 +68,7 @@ public static class Transcript
                 .Append(
                     CultureInfo.InvariantCulture,
                     $"[{message.CreatedUtc.ToString("u", CultureInfo.InvariantCulture)}] ")
-                .Append(CultureInfo.InvariantCulture, $"{message.From.Value} -> {message.To.Value} ")
+                .Append(CultureInfo.InvariantCulture, $"{Speaker.From(message)} -> {Speaker.To(message)} ")
                 .Append(
                     CultureInfo.InvariantCulture,
                     $"({message.Type}, answered by {message.ResponderModel}, "

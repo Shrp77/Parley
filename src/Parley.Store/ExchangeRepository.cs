@@ -166,15 +166,38 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         return [.. rows.Select(r => r.ToDomain())];
     }
 
+    /// <summary>How many open exchanges hold their next move with an agent.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The count.</returns>
+    /// <remarks>
+    /// Whether an agent owes anything right now, which is the broker's half of "idle" before the facilitator asks its
+    /// node to refresh it (SPEC.md §11.1). The node's half — no turn in progress — only the node can see.
+    /// </remarks>
+    public async Task<int> CountOwedByAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                "SELECT count(*) FROM exchanges WHERE state = 'OPEN' AND owed_by = @Agent;",
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
     /// <summary>The conversations a participant holds a Request in: received and not yet answered with a Result.</summary>
     /// <param name="agent">The participant.</param>
     /// <param name="transaction">The transaction to read within.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The conversation identifiers, in order.</returns>
     /// <remarks>
+    /// <para>
     /// The fact §5.0 assigns a conversation from. Held means received: an exchange the participant is
     /// waiting on as requester is a line of work somebody else is carrying, and what the participant does
     /// meanwhile is not part of it.
+    /// </para>
+    /// <para>
+    /// <b>The facilitator's question is not held</b> (SPEC.md principle 2.10). Counted, an open question — and one
+    /// asked back can stay open indefinitely — would pull the agent's own work into its <c>owns-</c> conversation,
+    /// or make it name a conversation it would otherwise not have to: the facilitator deciding where work goes, which
+    /// principle 2.11 forbids.
+    /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<string>> GetHeldConversationsAsync(
         AgentName agent,
@@ -187,9 +210,10 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                 SELECT DISTINCT conversation_id
                   FROM exchanges
                  WHERE state = 'OPEN' AND receiver = @Agent
+                   AND requester NOT IN (SELECT name FROM agents WHERE adapter = @Facilitator)
                  ORDER BY conversation_id;
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Facilitator = Facilitation.Adapter },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -340,6 +364,16 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         if (!await agents.IsRegisteredAsync(receiver, scope.Transaction, cancellationToken).ConfigureAwait(false))
         {
             return OpenOutcome.Refused(RequestRejection.ReceiverNotRegistered);
+        }
+
+        // Here rather than in the broker's admission alone, because every exchange is opened through this method —
+        // including the facilitator's own, where it is the requester and never the receiver.
+        if (string.Equals(
+                await agents.AdapterOfAsync(receiver, scope.Transaction, cancellationToken).ConfigureAwait(false),
+                Facilitation.Adapter,
+                StringComparison.Ordinal))
+        {
+            return OpenOutcome.Refused(RequestRejection.ReceiverIsTheFacilitator);
         }
 
         if (await agents.IsRetiredAsync(receiver, scope.Transaction, cancellationToken).ConfigureAwait(false))

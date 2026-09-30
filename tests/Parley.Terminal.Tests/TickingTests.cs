@@ -266,4 +266,36 @@ public sealed class TickingTests
 
         Assert.Contains("owns: carts and totals", drawn, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Notes_and_owns_lines_start_at_one_column_on_every_row_and_every_page()
+    {
+        // Reported by the owner: "already an agent" sat wherever the name before it ended. The widest
+        // name is on the second page, so a width measured from the page on screen would fail here.
+        var items = Enumerable.Range(0, TickDialog.PageSize)
+            .Select(i => new Tickable($"a{i}", i % 2 == 0 ? "already an agent" : string.Empty, false, $"owns {i}"))
+            .Append(new Tickable("a-much-longer-agent-name", "has an .mcp.json", false, "owns last"))
+            .ToList();
+
+        var dialog = new TickDialog("Enrolment", "Tick the ones that should become agents.", items);
+
+        var first = dialog.Rows.Source!.ToList().Cast<object?>().Select(row => row?.ToString() ?? string.Empty).ToList();
+
+        dialog.NewKeyDownEvent(Key.PageDown);
+
+        var second = dialog.Rows.Source!.ToList().Cast<object?>().Select(row => row?.ToString() ?? string.Empty).ToList();
+
+        var noteAt = dialog.Heading.IndexOf("Note", StringComparison.Ordinal);
+        var ownsAt = dialog.Heading.IndexOf("Owns", StringComparison.Ordinal);
+
+        Assert.Equal(noteAt, first[0].IndexOf("already an agent", StringComparison.Ordinal));
+        Assert.Equal(noteAt, second[0].IndexOf("has an .mcp.json", StringComparison.Ordinal));
+
+        foreach (var (row, i) in first.Select((row, i) => (row, i)))
+        {
+            Assert.Equal(ownsAt, row.IndexOf($"owns {i}", StringComparison.Ordinal));
+        }
+
+        Assert.Equal(ownsAt, second[0].IndexOf("owns last", StringComparison.Ordinal));
+    }
 }

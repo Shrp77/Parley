@@ -174,6 +174,51 @@ public static class OwnershipStatement
         return true;
     }
 
+    /// <summary>
+    /// An answer as a line: every run of whitespace, line breaks included, becomes one space, and the ends are
+    /// trimmed (SPEC.md §10.2).
+    /// </summary>
+    /// <param name="answer">What the agent wrote.</param>
+    /// <returns>The same words on one line.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why there is a flatten at all.</b> A model answers in paragraphs, and a statement refuses a line break
+    /// (<see cref="IsValid"/>). Without this, Auto Accept would almost never accept anything (research finding 9).
+    /// </para>
+    /// <para>
+    /// <b>It changes no word, and that is the whole of what keeps <see cref="OwnershipSource.Automatic"/>
+    /// truthful.</b> Only whitespace moves. A format or control character that is not whitespace is left exactly
+    /// where it was, so <see cref="IsValid"/> still refuses it and the answer waits for a person — anything that
+    /// would change what the agent said is a person's decision, recorded as edited.
+    /// </para>
+    /// </remarks>
+    public static string Flatten(string answer)
+    {
+        ArgumentNullException.ThrowIfNull(answer);
+
+        var line = new StringBuilder(answer.Length);
+        var space = false;
+
+        foreach (var rune in answer.EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune))
+            {
+                space = line.Length > 0;
+                continue;
+            }
+
+            if (space)
+            {
+                line.Append(' ');
+                space = false;
+            }
+
+            line.Append(rune.ToString());
+        }
+
+        return line.ToString();
+    }
+
     /// <summary>Whether a category may not appear in a statement.</summary>
     /// <param name="category">The category of one character.</param>
     /// <returns><see langword="true"/> if it must be refused.</returns>

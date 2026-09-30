@@ -272,20 +272,24 @@ CREATE TABLE agent_ownership_accepted (
   -- Which of the three routes FR-015 admits. A person's characters are never attributed to a
   -- model: 0.29.0's second review finding was a retry writing a length no agent composed into
   -- size_refusals, which is the table §17 question 16 reads.
-  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed')),
+  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed', 'automatic')),
   -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is
   -- FR-026's evidence, and the reason the bound above could be switched off at all: the
   -- number that replaces it has to be chosen from what agents actually propose, the way the
   -- message cap's 8,000 was chosen from `parley refusals`.
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
   -- The discussion, so FR-011 is answerable from the agent rather than from somebody's memory.
-  conversation_id  TEXT             REFERENCES conversations(id),
+  -- Cleared, not refused, when that conversation is destroyed: the line is what peers route by and the
+  -- conversation is evidence of how it was reached (research finding 14 of specs/022).
+  conversation_id  TEXT             REFERENCES conversations(id) ON DELETE SET NULL,
   accepted_utc     TEXT    NOT NULL,
 
   CHECK (length(statement) >= 1),
-  -- A composed line had no proposal and no discussion; anything else had both.
+  -- A composed line had no proposal; a line accepted automatically always had one, and its length is the
+  -- evidence a bound would be chosen from. That every route but a composed one names its discussion is
+  -- tr_accepted_line_names_its_discussion, below, rather than a CHECK here.
   CHECK (source <> 'composed' OR proposed_length IS NULL),
-  CHECK (source =  'composed' OR conversation_id IS NOT NULL)
+  CHECK (source <> 'automatic' OR proposed_length IS NOT NULL)
 ) STRICT;
 
 CREATE TABLE agent_credentials (
@@ -791,4 +795,167 @@ BEGIN
                      char(9, 10, 11, 12, 13, 32, 133, 160, 5760,
                           8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
                           8232, 8233, 8239, 8287, 12288))) = 0;
+END;
+
+-- The facilitator (principle 2.11) is a registry row the broker writes itself (§12.3), because every
+-- sender is a row: messages, exchanges and participants all reference agents(name). Its role is
+-- reserved, and the reservation is held here rather than at the doors that refuse it first, because a
+-- door written next year would pass -- and what it would forge is the one sender every agent is asked
+-- by without having asked for anything.
+--
+-- The role and the adapter are tied in both directions. A row with the role and another adapter is an
+-- agent claiming to be Parley; a row with the adapter and another role is something every surface would
+-- show as Parley. `parley` alone is NOT reserved: it is an ordinary role, which a repository called
+-- Parley is enrolled under.
+--
+-- The role is recomputed from NEW.name because a generated column is not guaranteed in a BEFORE trigger
+-- (see tr_agent_declares_its_machine). Update is covered as well as insert, because registration
+-- updates an agent's configuration on every launch.
+CREATE TRIGGER tr_facilitator_role_is_reserved
+BEFORE INSERT ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'parley-facilitator')
+     <> (NEW.adapter = 'parley-facilitator')
+BEGIN
+  SELECT RAISE(ABORT, 'the role parley-facilitator and its adapter belong to the facilitator alone');
+END;
+
+CREATE TRIGGER tr_facilitator_role_is_reserved_on_update
+BEFORE UPDATE OF name, adapter ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'parley-facilitator')
+     <> (NEW.adapter = 'parley-facilitator')
+BEGIN
+  SELECT RAISE(ABORT, 'the role parley-facilitator and its adapter belong to the facilitator alone');
+END;
+
+-- Never retired and never deleted (§14). A facilitator that could be withdrawn would leave every
+-- question it asked with a sender that no longer exists, and a project nobody is asking.
+CREATE TRIGGER tr_facilitator_is_never_retired
+BEFORE UPDATE OF status ON agents
+WHEN NEW.adapter = 'parley-facilitator' AND NEW.status <> 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'the facilitator cannot be retired');
+END;
+
+CREATE TRIGGER tr_facilitator_is_never_purged
+BEFORE DELETE ON agents
+WHEN OLD.adapter = 'parley-facilitator'
+BEGIN
+  SELECT RAISE(ABORT, 'the facilitator cannot be purged');
+END;
+
+-- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
+-- current question; earlier rows are history, kept so asking again does not erase what was said.
+--
+-- The states nothing else records: an answer WAITING for a person, a question ASKED BACK that a
+-- person must reply to, an answer DISCARDED. The exchange alone cannot say any of those.
+--
+-- It goes with its conversation, on a destroy or a purge (§14): a question about a discussion that no
+-- longer exists is a row pointing at nothing. The exchange is keyed with its conversation, as a message's
+-- is, so the two cannot disagree -- and with no action on delete, so a path that removed the exchange
+-- alone would fail at its commit rather than leave a question about nothing.
+CREATE TABLE ownership_questions (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  conversation_id  TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  exchange_id      INTEGER NOT NULL,
+  state            TEXT    NOT NULL
+                   CHECK (state IN ('asked', 'asked_back', 'answered', 'waiting', 'accepted', 'discarded')),
+  -- The agent's words as written, and with runs of whitespace collapsed (§10.2). Bounded by rule 8.4's
+  -- cap because they are copies of a message that already was.
+  answer           TEXT    CHECK (answer IS NULL OR length(answer) <= 8000),
+  flattened        TEXT    CHECK (flattened IS NULL OR length(flattened) <= 8000),
+  -- Why an answer was not accepted automatically, for the person reviewing it.
+  waiting_because  TEXT    CHECK (waiting_because IS NULL OR length(waiting_because) BETWEEN 1 AND 500),
+  asked_utc        TEXT    NOT NULL,
+  settled_utc      TEXT,
+  -- Whether the agent's node was asked to refresh it once its first line was accepted automatically
+  -- (§11.1). At most one row per agent ever says so, below.
+  restart_sent     INTEGER NOT NULL DEFAULT 0 CHECK (restart_sent IN (0, 1)),
+
+  FOREIGN KEY (exchange_id, conversation_id)
+    REFERENCES exchanges(id, conversation_id),
+
+  -- An answer exists from the moment the agent gave one, and not before. A discarded question may have none: a
+  -- person who closed its conversation before the agent answered has settled it unanswered.
+  CHECK (state NOT IN ('asked', 'asked_back') OR answer IS NULL),
+  CHECK (state NOT IN ('answered', 'waiting', 'accepted') OR answer IS NOT NULL),
+  CHECK ((answer IS NULL) = (flattened IS NULL)),
+  -- A waiting answer says why, and nothing else carries a reason that is no longer true.
+  CHECK ((state = 'waiting') = (waiting_because IS NOT NULL)),
+  CHECK ((state IN ('accepted', 'discarded')) = (settled_utc IS NOT NULL)),
+  CHECK (restart_sent = 0 OR state = 'accepted')
+) STRICT;
+
+-- Never asked twice (§10.2): at most one live question per agent. A check in the code that asks would be
+-- right until a broker restarted between its read and its write; this is right regardless.
+CREATE UNIQUE INDEX ux_one_live_question ON ownership_questions(agent)
+WHERE state IN ('asked', 'asked_back', 'answered', 'waiting');
+
+-- Refreshed once, ever (§11.1).
+CREATE UNIQUE INDEX ux_one_refresh ON ownership_questions(agent) WHERE restart_sent = 1;
+
+-- A question is the facilitator's own Request to the agent it names, and starts asked. Research finding
+-- 11: an agent can open an `owns-` conversation itself, so recognising a question by its conversation's
+-- name would let an agent answer itself and have the answer accepted with nobody looking. Neither the
+-- facilitator nor a seat is asked: one owns nothing and the other is a person.
+CREATE TRIGGER tr_question_is_the_facilitators
+BEFORE INSERT ON ownership_questions
+WHEN NEW.state <> 'asked'
+  OR NOT EXISTS (SELECT 1
+                   FROM exchanges e JOIN agents f ON f.name = e.requester
+                  WHERE e.id = NEW.exchange_id
+                    AND e.receiver = NEW.agent
+                    AND f.adapter = 'parley-facilitator')
+  OR EXISTS (SELECT 1 FROM agents a
+              WHERE a.name = NEW.agent
+                AND a.adapter IN ('parley-facilitator', 'parley-console'))
+BEGIN
+  SELECT RAISE(ABORT, 'a question is the facilitator''s own Request to an agent, and starts asked');
+END;
+
+-- Accepted only once a line is recorded, so a question can never claim an acceptance nothing holds.
+CREATE TRIGGER tr_question_accepted_only_with_a_line
+BEFORE UPDATE OF state ON ownership_questions
+WHEN NEW.state = 'accepted'
+ AND NOT EXISTS (SELECT 1 FROM agent_ownership_accepted WHERE agent = NEW.agent)
+BEGIN
+  SELECT RAISE(ABORT, 'a question is accepted only once its line is recorded');
+END;
+
+-- Settled stays settled. Reopening a discarded answer would put it in front of a person, or make it a
+-- line, with nobody having asked.
+CREATE TRIGGER tr_settled_question_stays_settled
+BEFORE UPDATE OF state ON ownership_questions
+WHEN OLD.state IN ('accepted', 'discarded') AND NEW.state <> OLD.state
+BEGIN
+  SELECT RAISE(ABORT, 'a settled question stays settled');
+END;
+
+-- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
+-- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
+-- row reads as on: a project created before this switch existed behaves as a new one does.
+CREATE TABLE facilitation (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  auto_accept  INTEGER NOT NULL DEFAULT 1 CHECK (auto_accept IN (0, 1)),
+  changed_utc  TEXT    NOT NULL
+) STRICT;
+
+-- Every route but a composed line names the discussion it came from. This was a CHECK on
+-- agent_ownership_accepted, and it moved here because that column is now cleared when the conversation is
+-- destroyed (research finding 14): a CHECK applies to that clearing too and would refuse the destroy. A
+-- line agreed in a conversation that was later destroyed keeps the line and loses only the link.
+--
+-- Checked on insert, and on an update that changes the route. Clearing the link alone is not a new route.
+CREATE TRIGGER tr_accepted_line_names_its_discussion
+BEFORE INSERT ON agent_ownership_accepted
+WHEN NEW.source <> 'composed' AND NEW.conversation_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an accepted line names the conversation it was agreed in');
+END;
+
+CREATE TRIGGER tr_accepted_line_names_its_discussion_on_update
+BEFORE UPDATE OF source ON agent_ownership_accepted
+WHEN NEW.source <> 'composed' AND NEW.conversation_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an accepted line names the conversation it was agreed in');
 END;

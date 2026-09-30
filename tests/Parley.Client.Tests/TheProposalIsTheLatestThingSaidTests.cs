@@ -20,14 +20,17 @@ public sealed class TheProposalIsTheLatestThingSaidTests
 
     private static readonly DateTimeOffset T0 = new(2026, 9, 27, 9, 0, 0, TimeSpan.Zero);
 
+    private static readonly AgentName Parley = Facilitation.On("test");
+
     private static Message Said(
-        AgentName from, string payload, int minute, long id, MessageType type = MessageType.Result) =>
+        AgentName from, string payload, int minute, long id, MessageType type = MessageType.Result,
+        AgentName? to = null) =>
         new(
             id,
             1,
             type,
             from,
-            from == Orders ? Person : Orders,
+            to ?? (from == Orders ? Person : Orders),
             "some-model-9",
             payload,
             "owns-orders-20260927-090000",
@@ -155,92 +158,65 @@ public sealed class TheProposalIsTheLatestThingSaidTests
     }
 
     [Fact]
-    public void Whose_line_a_discussion_is_about_comes_out_of_the_discussion()
+    public void Whose_line_a_discussion_is_about_is_whoever_Parley_asked_in_it()
     {
-        // **Must fail against parsing the identifier back into a name.** It carries a role and
-        // deliberately no machine, so `owns-orders-...` alone cannot say which `orders` was asked --
-        // and a surface that guessed `orders@<this machine>` would write a file for an agent at
-        // another desk, which is 0.20.2's recorded defect.
-        var transcript = new[] { Said(Orders, Answer("Orders and invoicing."), minute: 1, id: 2) };
+        // **Must fail against parsing the identifier back into a name.** It carries a role and deliberately no machine,
+        // so `owns-orders-...` alone cannot say which `orders` was asked. The Request's recipient is a whole name.
+        var transcript = new[]
+        {
+            Said(Parley, Asked(OwnershipAsk.Text), minute: 0, id: 1, MessageType.Request, to: Orders),
+            Said(Orders, Answer("Orders and invoicing."), minute: 1, id: 2, to: Parley),
+        };
 
-        Assert.Equal(Orders, OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+        Assert.Equal(Orders, OwnershipProposal.Subject(transcript));
     }
 
     [Fact]
-    public void An_agent_addressed_but_silent_is_still_the_subject()
+    public void An_agent_asked_but_silent_is_still_the_subject()
     {
-        // The person has asked and nothing has come back, which is the ordinary state for the first
-        // minutes of every discussion. Must fail against reading senders alone: the surface has to be
-        // able to say "not answered yet" about a named agent rather than about nobody.
-        var asked = new[]
-        {
-            Said(Person, Asked("What do you own?"), minute: 0, id: 1, MessageType.Request),
-        };
+        // The ordinary state for the first minutes of every question. The surface has to be able to say "not answered
+        // yet" about a named agent rather than about nobody.
+        var asked = new[] { Said(Parley, Asked(OwnershipAsk.Text), minute: 0, id: 1, MessageType.Request, to: Orders) };
 
-        Assert.Equal(Orders, OwnershipProposal.Subject(asked, "owns-orders-20260927-090000"));
+        Assert.Equal(Orders, OwnershipProposal.Subject(asked));
         Assert.Null(OwnershipProposal.Latest(asked, Orders));
     }
 
     [Fact]
-    public void A_conversation_that_is_not_an_ownership_discussion_has_no_subject()
+    public void An_agents_own_owns_conversation_is_not_a_question()
     {
-        // Must fail against matching any conversation at all, which would offer to accept an
-        // ownership line out of an ordinary piece of work.
-        var transcript = new[] { Said(Orders, Answer("Orders and invoicing."), minute: 1, id: 2) };
+        // Research finding 11, and must fail against recognising the prefix: this conversation carries the identifier
+        // Parley would have used, and an agent — not Parley — asked in it. Accepting from it would make a line out of an
+        // answer to a question nobody asked.
+        var transcript = new[]
+        {
+            Said(Person, Asked("What do you own?"), minute: 0, id: 1, MessageType.Request, to: Orders),
+            Said(Orders, Answer("Everything."), minute: 1, id: 2, to: Person),
+        };
 
-        Assert.Null(OwnershipProposal.Subject(transcript, "the-build-is-broken"));
-        Assert.Null(OwnershipProposal.Subject(transcript, null));
+        Assert.Null(OwnershipProposal.Subject(transcript));
     }
 
     [Fact]
-    public void A_discussion_naming_two_agents_of_one_role_has_no_subject()
+    public void A_transcript_in_which_Parley_asked_two_agents_has_no_subject()
     {
-        // **Two machines running one role is an ordinary deployment**, and what follows an acceptance
-        // is a write to somebody's launch configuration. Must fail against returning the first match,
-        // which would make the surface choose whose file to edit.
+        // Parley never does. What follows an acceptance is a write to somebody's launch configuration, so a transcript
+        // saying otherwise must not have one chosen from it.
         var elsewhere = AgentName.Create("orders@other");
 
         var transcript = new[]
         {
-            Said(Orders, Answer("Orders here."), minute: 1, id: 2),
-            new Message(
-                3,
-                1,
-                MessageType.Result,
-                elsewhere,
-                Person,
-                "some-model-9",
-                Answer("Orders there."),
-                "owns-orders-20260927-090000",
-                T0.AddMinutes(2),
-                null),
+            Said(Parley, Asked(OwnershipAsk.Text), minute: 0, id: 1, MessageType.Request, to: Orders),
+            Said(Parley, Asked(OwnershipAsk.Text), minute: 0, id: 2, MessageType.Request, to: elsewhere),
         };
 
-        Assert.Null(OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+        Assert.Null(OwnershipProposal.Subject(transcript));
     }
 
     [Fact]
-    public void A_discussion_about_another_role_is_not_this_agents()
+    public void Nothing_is_a_subject_of_an_empty_or_absent_transcript()
     {
-        // The role in the identifier is what chooses, so a message from somebody else in a
-        // discussion named for `orders` does not make them its subject.
-        var billing = AgentName.Create("billing@test");
-
-        var transcript = new[]
-        {
-            new Message(
-                2,
-                1,
-                MessageType.Result,
-                billing,
-                Person,
-                "some-model-9",
-                Answer("Billing."),
-                "owns-orders-20260927-090000",
-                T0.AddMinutes(1),
-                null),
-        };
-
-        Assert.Null(OwnershipProposal.Subject(transcript, "owns-orders-20260927-090000"));
+        Assert.Null(OwnershipProposal.Subject(null));
+        Assert.Null(OwnershipProposal.Subject([]));
     }
 }

@@ -12,7 +12,8 @@ namespace Parley.Terminal;
 /// somewhere. Empty when there is nothing to say.
 /// </param>
 /// <param name="Ticked">Whether it starts ticked.</param>
-internal readonly record struct Tickable(string Label, string Note, bool Ticked);
+/// <param name="Owns">What it says it owns, or empty. A column of its own rather than part of the note.</param>
+internal readonly record struct Tickable(string Label, string Note, bool Ticked, string Owns = "");
 
 /// <summary>
 /// A list where several rows are chosen rather than one.
@@ -47,6 +48,12 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked)
 /// letters <see cref="Parley.Setup.RepositorySelection"/> uses for the same job on the command
 /// line, so a person who knows one knows the other.
 /// </para>
+/// <para>
+/// <b>The rows are a grid</b>, the owner's call of 2026-09-29. A note used to follow its name, so it began
+/// wherever the name happened to end and "already an agent" sat at a different column on every row. Each
+/// column is as wide as its widest cell across <i>every</i> page, not the one on screen, so turning a page
+/// does not move the columns under the reader.
+/// </para>
 /// </remarks>
 internal sealed class TickDialog : Dialog
 {
@@ -55,7 +62,16 @@ internal sealed class TickDialog : Dialog
 
     private const int Edges = 5;
 
+    /// <summary>The space between two columns.</summary>
+    private const string Gutter = "   ";
+
+    /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
+    private const string Box = "[ ] ";
+
     private readonly ListView _rows;
+    private readonly int _labelWidth;
+    private readonly int _noteWidth;
+    private readonly bool _hasOwns;
     private readonly List<Tickable> _items;
     private readonly string _described;
     private readonly Plain _count;
@@ -77,13 +93,27 @@ internal sealed class TickDialog : Dialog
 
         _items = [.. items];
         _described = description;
+        // A column is at least as wide as its heading, or a short column would push the next heading
+        // out of line with what is under it. A column nobody has anything in is left out entirely.
+        var notes = _items.Max(item => (int?)item.Note.Length) ?? 0;
+
+        _labelWidth = Math.Max(_items.Max(item => (int?)item.Label.Length) ?? 0, "Agent".Length);
+        _noteWidth = notes > 0 ? Math.Max(notes, "Note".Length) : 0;
+        _hasOwns = _items.Any(item => item.Owns.Length > 0);
 
         var wants = Prompting.Rows(description);
+
+        // A heading only when there is more than one column: over a list of bare names it would say
+        // nothing the names do not.
+        var hasColumns = _noteWidth > 0 || _hasOwns;
+        var headed = hasColumns ? 1 : 0;
 
         // One row for the running count, one for the keys, and the edges. Both are inside the
         // dialog rather than on the shell's status line, because a modal takes the screen and the
         // line underneath it is describing a surface the person cannot reach.
-        Height = Dim.Func(view => Math.Min(wants + Math.Min(_items.Count, PageSize) + Edges, Room(view)), this);
+        Height = Dim.Func(
+            view => Math.Min(wants + headed + Math.Min(_items.Count, PageSize) + Edges, Room(view)),
+            this);
 
         var said = new Plain
         {
@@ -96,10 +126,20 @@ internal sealed class TickDialog : Dialog
 
         said.TextFormatter.WordWrap = true;
 
-        _rows = new ListView
+        var heading = new Plain
         {
             X = 1,
             Y = Pos.Bottom(said),
+            Width = Dim.Fill(2),
+            Height = headed,
+            Text = hasColumns ? Heading : string.Empty,
+            Visible = hasColumns,
+        };
+
+        _rows = new ListView
+        {
+            X = 1,
+            Y = Pos.Bottom(heading),
             Width = Dim.Fill(2),
 
             // Whatever is left, never one row per item: the viewport has to be true or the toolkit
@@ -134,7 +174,7 @@ internal sealed class TickDialog : Dialog
 
         ShowPage(0, 0);
 
-        Add(said, _rows, _count, keys);
+        Add(said, heading, _rows, _count, keys);
     }
 
     /// <summary>Raised when the person has chosen, or declined to.</summary>
@@ -158,6 +198,9 @@ internal sealed class TickDialog : Dialog
 
     /// <summary>How many pages there are.</summary>
     internal int Pages => Math.Max(1, (_items.Count + PageSize - 1) / PageSize);
+
+    /// <summary>The row naming the columns, laid out as the rows under it are.</summary>
+    internal string Heading => Cells(new string(' ', Box.Length), "Agent", "Note", "Owns");
 
     /// <summary>What the count line says.</summary>
     internal string Counted =>
@@ -226,8 +269,31 @@ internal sealed class TickDialog : Dialog
     /// tests read the screen with attributes stripped, and a state that exists only as a colour is
     /// one nothing can assert and a colour-blind reader cannot see.
     /// </remarks>
-    private static string Row(Tickable item) =>
-        $"[{(item.Ticked ? 'x' : ' ')}] {item.Label}{(item.Note.Length > 0 ? $"   {item.Note}" : string.Empty)}";
+    private string Row(Tickable item) =>
+        Cells($"[{(item.Ticked ? 'x' : ' ')}] ", item.Label, item.Note, item.Owns);
+
+    /// <summary>Lays one row out in the grid's columns.</summary>
+    /// <remarks>
+    /// Padded, never cut: a column is as wide as its widest cell, and the last one runs on, so nothing a
+    /// person decides on is hidden to make a row fit. The trailing space is trimmed so an empty last column
+    /// leaves no padding behind.
+    /// </remarks>
+    private string Cells(string tick, string label, string note, string owns)
+    {
+        var line = tick + label.PadRight(_labelWidth);
+
+        if (_noteWidth > 0)
+        {
+            line += Gutter + note.PadRight(_noteWidth);
+        }
+
+        if (_hasOwns && owns.Length > 0)
+        {
+            line += Gutter + owns;
+        }
+
+        return line.TrimEnd();
+    }
 
     /// <summary>Does what a key means here.</summary>
     /// <param name="key">The key.</param>

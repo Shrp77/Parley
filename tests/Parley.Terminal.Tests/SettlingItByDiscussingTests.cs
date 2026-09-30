@@ -3,8 +3,6 @@ using System.Text.Json.Nodes;
 using Grpc.Net.Client;
 using Parley.Cli.Tests;
 using Parley.Client;
-using Parley.Client.Seating;
-using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -19,8 +17,9 @@ namespace Parley.Terminal.Tests;
 /// <para>
 /// <b>The whole act, over a socket and onto a real file.</b> Everything else about this feature is
 /// tested a piece at a time; this is the one that would notice the pieces being wired together wrongly.
-/// A person asks from their seat, the agent proposes, the person disagrees, the agent revises, and what
-/// reaches the repository's launch configuration is the revision.
+/// Parley asks, the agent proposes too much, the person disagrees through Parley, the agent revises, and what
+/// reaches the repository's launch configuration is the revision. No seat anywhere: since 022 Parley asks, and
+/// a person's reply goes through Parley recorded as theirs.
 /// </para>
 /// <para>
 /// <b>Must fail against taking the first proposal</b>, which is the tempting implementation and the one
@@ -109,12 +108,8 @@ public sealed class SettlingItByDiscussingTests : IDisposable
         await using var broker = LoopbackOperator.Start(connection);
         using var driving = Driving.Open();
         using var directory = Wired(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
 
         var project = directory.Projects[0];
-        var discussion = OwnershipAsk.Conversation(Orders, new DateTimeOffset(2026, 9, 27, 9, 0, 0, TimeSpan.Zero));
-        var voice = new SeatVoice(directory.AgentsFor(project), shell.Held!.Seat);
 
         // The agent has to be attached to answer, which is also true of the deployment: §4.0 makes an
         // open connection the evidence it is reachable.
@@ -131,8 +126,8 @@ public sealed class SettlingItByDiscussingTests : IDisposable
 
         Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
 
-        // 1. The person asks.
-        Assert.Contains("Sent.", await voice.RequestAsync(Orders, OwnershipAsk.Text, discussion, Ct), StringComparison.Ordinal);
+        // 1. Parley asks.
+        var discussion = await ParleyAsksAsync(broker);
 
         var asked = Assert.Single((await broker.Operators.DescribeWaitingAsync(
             new Wire.Empty(), cancellationToken: Ct)).Edges, e => e.WaitedOn == Orders.Value);
@@ -149,8 +144,10 @@ public sealed class SettlingItByDiscussingTests : IDisposable
             },
             cancellationToken: Ct);
 
-        // 3. The person disagrees, in the same conversation and as an ordinary message.
-        await voice.ClarifyAsync(asked.ExchangeId, "You do not own stock. Inventory does.", Ct);
+        // 3. The person disagrees, through Parley and recorded as the person's words.
+        Assert.True((await broker.Operators.ReplyToAskedBackAsync(
+            new Wire.ReplyToAskedBackRequest { Agent = Orders.Value, Text = "You do not own stock. Inventory does." },
+            cancellationToken: Ct)).Done);
 
         // 4. The agent revises. This is what must be written.
         await broker.Agents.ResultAsync(
@@ -222,11 +219,8 @@ public sealed class SettlingItByDiscussingTests : IDisposable
         await using var broker = LoopbackOperator.Start(connection);
         using var driving = Driving.Open();
         using var directory = Wired(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
 
         var project = directory.Projects[0];
-        var discussion = OwnershipAsk.Conversation(Orders, new DateTimeOffset(2026, 9, 27, 9, 0, 0, TimeSpan.Zero));
         var abandoned = new List<Task>();
 
         using var attached = broker.Agents.Attach(
@@ -242,9 +236,7 @@ public sealed class SettlingItByDiscussingTests : IDisposable
 
         Assert.True(await attached.ResponseStream.MoveNext(Ct), "the attach stream said nothing");
 
-        var voice = new SeatVoice(directory.AgentsFor(project), shell.Held!.Seat);
-
-        await voice.RequestAsync(Orders, OwnershipAsk.Text, discussion, Ct);
+        var discussion = await ParleyAsksAsync(broker);
 
         var asked = Assert.Single((await broker.Operators.DescribeWaitingAsync(
             new Wire.Empty(), cancellationToken: Ct)).Edges, e => e.WaitedOn == Orders.Value);
@@ -293,27 +285,14 @@ public sealed class SettlingItByDiscussingTests : IDisposable
             [new ProjectSettings(ProjectName.Create("alpha"), "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
-    private static async Task<Shell> SeatedAsync(
-        Driving.Session driving, BrokerDirectory directory, SeatBook seats)
+    /// <summary>Has Parley ask orders what it owns, and returns the conversation it asked in.</summary>
+    private static async Task<string> ParleyAsksAsync(LoopbackOperator broker)
     {
-        var shell = new Shell(directory) { Seats = seats };
+        Assert.True((await broker.Operators.AskAgainAsync(
+            new Wire.AgentRequest { Agent = Orders.Value }, cancellationToken: Ct)).Done);
 
-        driving.Show(shell);
-        await shell.RefreshAsync(Ct);
-        await shell.Settled;
-
-        await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.NotNull(shell.Held);
-
-        return shell;
+        return Assert.Single(
+            (await broker.Operators.FacilitationAsync(new Wire.Empty(), cancellationToken: Ct)).Questions)
+            .ConversationId;
     }
 }

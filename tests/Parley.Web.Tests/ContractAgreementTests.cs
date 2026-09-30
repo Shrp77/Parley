@@ -41,7 +41,7 @@ public sealed class ContractAgreementTests
         Root(), "specs", "006-three-view-operator", "contracts", "views.md"));
 
     [Fact]
-    public void The_contract_names_exactly_the_three_views_that_exist()
+    public void The_contract_names_exactly_the_views_that_exist()
     {
         var contract = Views();
 
@@ -50,7 +50,8 @@ public sealed class ContractAgreementTests
             Assert.Contains(named, contract, StringComparison.OrdinalIgnoreCase);
         }
 
-        Assert.Equal(3, Enum.GetValues<Viewing>().Length);
+        // Four since 0.35.2, when a project's settings became a view of their own.
+        Assert.Equal(4, Enum.GetValues<Viewing>().Length);
     }
 
     [Fact]

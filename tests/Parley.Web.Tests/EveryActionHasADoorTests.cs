@@ -127,7 +127,8 @@ public sealed class EveryActionHasADoorTests
         // does it anyway. That is what the acceptance did at 0.34.0.
         var model = Model();
 
-        var get = model[model.IndexOf("public IActionResult OnGet()", StringComparison.Ordinal)..
+        // `OnGetAsync` since 022, because accepting an agent's answer shows the answer and that is a read.
+        var get = model[model.IndexOf("public async Task<IActionResult> OnGetAsync()", StringComparison.Ordinal)..
                         model.IndexOf("public async Task<IActionResult> OnPostAsync()", StringComparison.Ordinal)];
 
         var post = model[model.IndexOf("public async Task<IActionResult> OnPostAsync()", StringComparison.Ordinal)..];

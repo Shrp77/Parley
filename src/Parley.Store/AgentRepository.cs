@@ -75,7 +75,8 @@ public sealed class AgentRepository(SqliteConnection connection)
                        a.connected      AS Connected,
                        COALESCE(n.connected, 0) AS NodeConnected,
                        a.status         AS Status,
-                       o.statement      AS OwnsAccepted
+                       o.statement      AS OwnsAccepted,
+                       o.source         AS OwnsSource
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
                 -- **Left joined, because most agents have no accepted line and that is not a
@@ -246,6 +247,9 @@ public sealed class AgentRepository(SqliteConnection connection)
                   FROM agents AS a
                   LEFT JOIN nodes AS n ON n.machine = a.machine
                  WHERE a.status <> 'retired'
+                   -- The facilitator owns nothing and does no work, so an agent that saw it here would be
+                   -- offered a peer to send work to that never answers (SPEC.md §10.1).
+                   AND a.adapter <> 'parley-facilitator'
                  ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -614,6 +618,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="name">Whose line it is.</param>
     /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
     /// <param name="nowUtc">When it was accepted.</param>
+    /// <param name="transaction">
+    /// A transaction to write within, or <see langword="null"/>. The facilitator records an automatic line in the same
+    /// transaction that settles its question, so the two cannot disagree.
+    /// </param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>
     /// Whether it was recorded, and the line the registry holds — which is what peers read, and is
@@ -642,11 +650,12 @@ public sealed class AgentRepository(SqliteConnection connection)
         AgentName name,
         OwnershipAcceptance acceptance,
         DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(acceptance);
 
-        using var scope = WriteScope.Begin(_connection, ambient: null);
+        using var scope = WriteScope.Begin(_connection, transaction);
 
         var live = await _connection.QuerySingleOrDefaultAsync<LiveOwnership>(
             new CommandDefinition(
@@ -690,6 +699,69 @@ public sealed class AgentRepository(SqliteConnection connection)
         return (true, live.Owns);
     }
 
+    /// <summary>
+    /// The facilitator's name in this store, writing its row first if there is none (SPEC.md §12.3).
+    /// </summary>
+    /// <param name="machine">The broker's machine, used only when the row does not exist yet.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The facilitator's name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The one row the broker writes itself, and not a registration of an agent.</b> Every sender is a row,
+    /// because a message's sender names one; the facilitator sends, so it has one. What the row states is that the
+    /// broker's own participant exists — the same kind of fact as a <c>closed</c> result being the broker's.
+    /// </para>
+    /// <para>
+    /// <b>Found by its adapter, never by its name</b>, so a machine renamed since the row was written keeps using the
+    /// row it has rather than making a second facilitator. Storage ties the adapter to the reserved role in both
+    /// directions, so there is nothing else a row with that adapter could be.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentName> EnsureFacilitatorAsync(
+        string machine,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        if (await FacilitatorAsync(scope.Transaction, cancellationToken).ConfigureAwait(false) is { } existing)
+        {
+            scope.Complete();
+            return existing;
+        }
+
+        var name = Facilitation.On(machine);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "INSERT INTO agents (name, adapter, tier, status) VALUES (@Name, @Adapter, 'pull', 'active');",
+                new { Name = name.Value, Adapter = Facilitation.Adapter },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return name;
+    }
+
+    /// <summary>The facilitator's name in this store, or <see langword="null"/> if it has none yet.</summary>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The name.</returns>
+    public async Task<AgentName?> FacilitatorAsync(
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var name = await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT name FROM agents WHERE adapter = @Adapter ORDER BY name LIMIT 1;",
+                new { Adapter = Facilitation.Adapter },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return name is null ? null : AgentName.Create(name);
+    }
+
     /// <summary>How a source is spelled in storage.</summary>
     /// <param name="source">The source.</param>
     /// <returns>The stored spelling.</returns>
@@ -702,6 +774,7 @@ public sealed class AgentRepository(SqliteConnection connection)
         OwnershipSource.Proposed => "proposed",
         OwnershipSource.Edited => "edited",
         OwnershipSource.Composed => "composed",
+        OwnershipSource.Automatic => "automatic",
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
     };
 
@@ -1294,6 +1367,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// <summary>What a person accepted, or null when nobody has.</summary>
         public string? OwnsAccepted { get; init; }
 
+        /// <summary>How that line was arrived at, as stored, or null when nobody has accepted one.</summary>
+        public string? OwnsSource { get; init; }
+
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
         /// <returns>The corresponding tier.</returns>
@@ -1345,6 +1421,20 @@ public sealed class AgentRepository(SqliteConnection connection)
             ParseStatus(Status),
             Owns,
             AgentLiveness.Read(NodeConnected != 0, Connected != 0),
-            OwnsAccepted);
+            OwnsAccepted,
+            OwnsSource is null ? null : ParseSource(OwnsSource));
+
+        /// <summary>Parses a stored ownership source.</summary>
+        /// <param name="value">The token read from storage.</param>
+        /// <returns>The source.</returns>
+        /// <exception cref="InvalidOperationException">The token is not one the schema admits.</exception>
+        public static OwnershipSource ParseSource(string value) => value switch
+        {
+            "proposed" => OwnershipSource.Proposed,
+            "edited" => OwnershipSource.Edited,
+            "composed" => OwnershipSource.Composed,
+            "automatic" => OwnershipSource.Automatic,
+            _ => throw new InvalidOperationException($"Unrecognised ownership source '{value}'.")
+        };
     }
 }

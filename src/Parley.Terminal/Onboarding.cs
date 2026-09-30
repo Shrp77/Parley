@@ -132,7 +132,7 @@ internal static class Onboarding
         // a list of thirty has not yet said yes to any of them, and a pre-ticked list is a default
         // that enrols whatever they did not notice.
         var rows = found
-            .Select(entry => new Tickable(entry.Agent, Note(entry), Ticked: false))
+            .Select(entry => new Tickable(entry.Agent, Note(entry), Ticked: false, Owns(entry)))
             .ToList();
 
         var ticking = new TickDialog(
@@ -199,18 +199,24 @@ internal static class Onboarding
         // at another path, whose `.mcp.json` is a tracked file — was called out on the command line
         // and offered silently here, which is the surface people enrol from.
         //
-        // Not neutralised: it is one of three fixed phrases this program chooses. The owns line is,
-        // because that is the repository's own text.
-        var both = entry.Owns is { Length: > 0 } owns
-            ? Safe.Text($"owns: {owns}")
-            : string.Empty;
+        // Not neutralised: it is one of three fixed phrases this program chooses. The owns line is its
+        // own column now, in `Owns`, so this column holds only those phrases and lines up.
+        ArgumentNullException.ThrowIfNull(entry);
 
-        return (entry.Note, both) switch
-        {
-            ("", var said) => said,
-            (var note, "") => note,
-            (var note, var said) => $"{note} · {said}",
-        };
+        return entry.Note;
+    }
+
+    /// <summary>What a repository says it owns, for its own column, or empty.</summary>
+    /// <remarks>
+    /// Neutralised, because it is the repository's own text: <see cref="Safe"/> exists because a control
+    /// character in somebody else's file can otherwise draw whatever it likes on this screen. It was
+    /// joined onto the note, which put it at a different column on every row; the grid gives it its own.
+    /// </remarks>
+    internal static string Owns(EnrollmentEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return entry.Owns is { Length: > 0 } owns ? Safe.Text(owns) : string.Empty;
     }
 
     /// <summary>States what enrolling costs, then does it.</summary>

@@ -123,7 +123,29 @@ neutralises control characters, and the new rendering — which introduces real 
 were none — must not become a route around it. A payload cannot open a paragraph the surface treats
 as its own.
 
-## Across all three
+## View 4 — Configuration
+
+**Added on 2026-09-29 (0.35.2), on the owner's call, and the title of this file is left as it was.** 022's
+Auto Accept switch shipped as a bare entry on the terminal's Project menu, beside creating and removing projects,
+and the owner read it as *"Auto-Accept what??"* A setting named with no subject needs a place that says what it
+decides before anybody changes it. It sits under a project, reached from the Project menu (`F3`) wherever a
+project is in view, and back leads to that project.
+
+| Shows | From |
+|---|---|
+| Every setting of the project, with its value | one read per setting's source; Auto Accept from `Facilitation` |
+| What the highlighted setting decides, in full | the same text the dialog that changes it shows |
+| That the settings could not be read, when the broker did not answer | the read that failed, said as such |
+
+| Can do | Door |
+|---|---|
+| Change the highlighted setting (Enter) | that setting's own dialog, which says what it is now |
+| Open in the console (F8) | the console's ownership page, which carries Auto Accept |
+
+The terminal builds this view; the console keeps Auto Accept at the top of its ownership page, where it is
+stated with what it means beside the lines it decides about.
+
+## Across all views
 
 - **One keystroke, `F8`, opens the console on the thing being looked at.** Not its front page. Built
   from one place so a route the console renames cannot leave the terminal deep-linking to a 404.

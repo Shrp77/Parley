@@ -327,6 +327,34 @@ public sealed class JoinedNode : IAsyncDisposable
         });
     }
 
+    /// <summary>Asks the node to restart an agent it started, once its turn is over (SPEC.md §11.1).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="because">Why, for the operator's benefit.</param>
+    /// <returns><see langword="true"/> if the command was queued.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The node decides when, because only the node knows whether a turn is in progress</b> (research finding 7).
+    /// The broker has no turn state and must not grow one; it sends this when the agent owes nothing, and the node
+    /// waits for the turn lock before stopping anything.
+    /// </para>
+    /// <para>
+    /// Only for a role the node said it can launch, as a start is: a node cannot restart what it could not have
+    /// started, and an agent attached from somebody's editor window is refreshed by nothing.
+    /// </para>
+    /// </remarks>
+    internal bool RequestRefresh(AgentName agent, string because)
+    {
+        if (!Startable.Contains(agent.Role))
+        {
+            return false;
+        }
+
+        return _commands.Writer.TryWrite(new Wire.NodeCommand
+        {
+            Refresh = new Wire.RefreshAgent { Agent = agent.Value, Because = because }
+        });
+    }
+
     /// <summary>Ends the stream without touching the registry.</summary>
     internal void Close() => _ = _commands.Writer.TryComplete();
 

@@ -1,7 +1,6 @@
 ﻿using System.Globalization;
 using Parley.Client;
 using Parley.Client.Rendering;
-using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.App;
@@ -47,17 +46,6 @@ internal static class Ownership
 
     /// <summary>The door asking an agent passes through.</summary>
     internal const string AskTitle = "Ask what this agent owns";
-
-    /// <summary>Said when there is no seat to ask from.</summary>
-    /// <remarks>
-    /// <b>Offered without a seat rather than hidden, and 0.28.2 is why.</b> Starting a conversation
-    /// was hidden while no seat was held and nothing said a seat was needed, so the owner reached
-    /// for an instruction instead — which is not a message and never becomes one. An action a
-    /// person cannot find is indistinguishable from one that does not exist.
-    /// </remarks>
-    internal const string NoSeat =
-        "An ask is a message, so it is sent as somebody, and no seat is held here. Take one with "
-        + "'j' in this pane and ask again -- the agent's answer then comes back to that name.";
 
     /// <summary>The choice that asks, which is never the one under the cursor.</summary>
     internal const string Ask = "Ask it, and spend the turn";
@@ -125,129 +113,121 @@ internal static class Ownership
         "This conversation does not say which single agent it is about, so nothing can be accepted "
         + "from it. Say the line from the agents pane instead, where the agent is the row.";
 
-    /// <summary>Asks the agent what it owns, as one ordinary Request.</summary>
+    /// <summary>Has Parley ask the agent what it owns again (§10.2 <c>ask_again</c>).</summary>
     /// <param name="app">The application the dialog opens in.</param>
-    /// <param name="voice">The seat to ask from, or null when none is held.</param>
+    /// <param name="client">The operator's client for this project.</param>
     /// <param name="agent">Who to ask.</param>
-    /// <param name="now">When the ask is being made, which names the conversation.</param>
-    /// <param name="queue">Runs the send, so the caller can wait for it.</param>
+    /// <param name="queue">Runs the read and the ask, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
-    /// <returns>When the dialog is open.</returns>
+    /// <returns>When the read has been queued.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The machine rule of <see cref="OwnershipLine.NotHere"/> deliberately does not apply
-    /// here.</b> That rule is about writing a file on the agent's machine, and asking an agent a
-    /// question is not that: a broker reaches agents on machines this surface will never touch, and
-    /// refusing to ask them would withhold the operation from exactly the deployment it is worth
-    /// most in. The refusal belongs at the accept, which writes, and it is applied there.
+    /// <b>No seat, because Parley asks</b> (022). 020 sent this as the person's own Request, so it needed a seat, and
+    /// the owner met "an ask is a message, so it is sent as somebody, and no seat is held here" on the one action they
+    /// reached for. The facilitator is the somebody now.
     /// </para>
     /// <para>
-    /// <b>The person is shown the words before they are sent</b> (FR-003). The ask makes a promise
-    /// about what the agent was told, and a promise nobody can read before it is made is not one
-    /// somebody can be held to.
+    /// <b>The words are shown before the turn is spent</b> (FR-003), and they are the words Parley will send: the
+    /// switch is read first, because the question tells the agent what becomes of its answer and that differs with it.
+    /// </para>
+    /// <para>
+    /// The machine rule of <see cref="OwnershipLine.NotHere"/> deliberately does not apply: asking is not writing a
+    /// file, and a broker reaches agents on machines this surface never touches.
     /// </para>
     /// </remarks>
     internal static Task AskAsync(
         IApplication app,
-        SeatVoice? voice,
+        BrokerClient client,
         AgentName agent,
-        DateTimeOffset now,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
         ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
 
-        if (voice is null)
+        queue(async t =>
         {
-            _ = done(NoSeat);
+            var read = await BrokerDirectory.ReadAsync(
+                async () => await client.FacilitationAsync(t).ConfigureAwait(false)).ConfigureAwait(false);
 
-            return Task.CompletedTask;
-        }
-
-        var conversation = OwnershipAsk.Conversation(agent, now);
-        var asking = Prompting.Choose(AskTitle, Asked(agent, conversation), [Leave, Ask]);
-        var open = Prompting.Open(app, asking);
-
-        asking.Done += (_, chosen) =>
-        {
-            Prompting.Close(app, open);
-
-            if (!string.Equals(chosen, Ask, StringComparison.Ordinal))
+            if (!read.Reachable)
             {
-                _ = done(Left);
+                await done($"Nothing was asked: {Safe.Text(read.Problem!)}").ConfigureAwait(false);
 
                 return;
             }
 
-            queue(async t =>
-            {
-                var said = await voice
-                    .RequestAsync(agent, OwnershipAsk.Text, conversation, t)
-                    .ConfigureAwait(false);
+            var asking = Prompting.Choose(AskTitle, Asked(agent, read.Value!.AutoAccept), [Leave, Ask]);
+            var open = Prompting.Open(app, asking);
 
-                await done(Reports.Sentences([
-                    Safe.Text(said),
-                    $"Its answer arrives in conversation {Safe.Text(conversation)}, which is where "
-                    + "it is read and accepted.",
-                ])).ConfigureAwait(false);
-            });
-        };
+            asking.Done += (_, chosen) =>
+            {
+                Prompting.Close(app, open);
+
+                if (!string.Equals(chosen, Ask, StringComparison.Ordinal))
+                {
+                    _ = done(Left);
+
+                    return;
+                }
+
+                queue(async sending =>
+                {
+                    var asked = await BrokerDirectory.ReadAsync(
+                        async () => await client.AskAgainAsync(agent, sending).ConfigureAwait(false))
+                        .ConfigureAwait(false);
+
+                    await done(AskedOrNot(agent, asked)).ConfigureAwait(false);
+                });
+            };
+        });
 
         return Task.CompletedTask;
     }
 
-    /// <summary>Asks every agent in the project what it owns, each in its own discussion.</summary>
+    /// <summary>What to say once Parley was asked to ask.</summary>
+    /// <param name="agent">Who was to be asked.</param>
+    /// <param name="asked">What came back.</param>
+    /// <returns>One line, safe to draw.</returns>
+    private static string AskedOrNot(AgentName agent, ProjectRead<FacilitationAction> asked) =>
+        !asked.Reachable
+            ? $"Nothing was asked: {Safe.Text(asked.Problem!)}"
+            : asked.Value!.Done
+                ? $"Parley asked {Safe.Text(agent.Value)} what it owns. Its answer shows in the ownership review."
+                : $"Nothing was asked: {Safe.Text(asked.Value.Problem!)}";
+
+    /// <summary>Has Parley ask every agent in the project what it owns again.</summary>
     /// <param name="app">The application the dialog opens in.</param>
-    /// <param name="voice">The seat to ask from, or null when none is held.</param>
-    /// <param name="hold">The seat itself, re-read before every send.</param>
+    /// <param name="client">The operator's client for this project.</param>
     /// <param name="agents">Who to ask.</param>
-    /// <param name="now">When the asks are being made, which names each conversation.</param>
-    /// <param name="queue">Runs the sends, so the caller can wait for them.</param>
+    /// <param name="queue">Runs the asks, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
     /// <returns>When the dialog is open, or the refusal has been said.</returns>
     /// <remarks>
     /// <para>
-    /// <b>N ordinary Requests and no new operation</b> (FR-006), which is §5.5's shape — and each one is
-    /// its own conversation rather than one shared, because a discussion is about one agent and its
-    /// identifier carries that agent's role. Nineteen arguments in one transcript would leave no surface
-    /// able to find the one it wanted.
+    /// <b>The cost is stated and answered before the first question is sent</b> (FR-007): a turn per agent cannot be
+    /// un-spent. Parley already asks every new agent on its own, so this is for asking again, and says so.
     /// </para>
     /// <para>
-    /// <b>The cost is stated and answered before the first Request is sent</b> (FR-007). A turn per agent
-    /// cannot be un-spent, so a person who would have said no has to be able to say it while it is still
-    /// worth saying.
-    /// </para>
-    /// <para>
-    /// <b>Nothing is waited on per agent, which is what 0.25.1's rule asks for here.</b> That rule was
-    /// written about starting processes, where thirty seconds each over nineteen agents is nine and a
-    /// half minutes on a serialised queue. An ask has no wait at all — a send is one round trip and the
-    /// answers arrive later as ordinary messages — so the rule is satisfied by there being nothing to
-    /// defer, rather than by deferring it. A version that waited for each answer before asking the next
-    /// would be the defect, and it would turn one keystroke into an afternoon.
+    /// An agent whose answer is still being decided is refused and named rather than asked over: asking again then
+    /// would lose an answer nobody has looked at. Nothing is waited on per agent — each ask is one round trip and the
+    /// answers arrive later — which is 0.25.1's rule satisfied by there being nothing to defer.
     /// </para>
     /// </remarks>
     internal static Task AskEveryAsync(
         IApplication app,
-        SeatVoice? voice,
-        SeatHold? hold,
+        BrokerClient client,
         IReadOnlyList<AgentName> agents,
-        DateTimeOffset now,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
         ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(agents);
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
-
-        if (voice is null || hold is null)
-        {
-            _ = done(NoSeat);
-
-            return Task.CompletedTask;
-        }
 
         if (agents.Count == 0)
         {
@@ -272,21 +252,47 @@ internal static class Ownership
 
             queue(async t =>
             {
-                var said = await voice.RequestEachAsync(
-                    hold,
-                    agents,
-                    OwnershipAsk.Text,
-                    agent => OwnershipAsk.Conversation(agent, now),
-                    t).ConfigureAwait(false);
+                var asked = 0;
+                var refused = new List<string>();
 
-                await done(Reports.Sentences([
-                    Safe.Text(said),
-                    "Each answer arrives in its own conversation, named for the agent it is about.",
-                ])).ConfigureAwait(false);
+                foreach (var agent in agents)
+                {
+                    var outcome = await BrokerDirectory.ReadAsync(
+                        async () => await client.AskAgainAsync(agent, t).ConfigureAwait(false)).ConfigureAwait(false);
+
+                    if (outcome is { Reachable: true, Value.Done: true })
+                    {
+                        asked++;
+                    }
+                    else
+                    {
+                        refused.Add(agent.Value);
+                    }
+                }
+
+                await done(AskedEvery(asked, refused)).ConfigureAwait(false);
             });
         };
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>What to say once Parley was asked to ask each of them.</summary>
+    /// <param name="asked">How many were asked.</param>
+    /// <param name="refused">Who was not.</param>
+    /// <returns>One line, safe to draw.</returns>
+    private static string AskedEvery(int asked, IReadOnlyList<string> refused)
+    {
+        if (refused.Count == 0)
+        {
+            return $"Parley asked {asked} agent(s) what they own. Their answers show in the ownership review.";
+        }
+
+        var named = string.Join(", ", refused.Take(Named).Select(Safe.Text));
+        var more = refused.Count > Named ? $" and {refused.Count - Named} more" : string.Empty;
+
+        return $"Parley asked {asked} agent(s). Not asked: {named}{more} -- each has an answer still being " +
+               "decided, or could not be reached.";
     }
 
     /// <summary>What the person reads before spending a turn on each of them.</summary>
@@ -313,8 +319,9 @@ internal static class Ownership
 
                 {Safe.Lines(OwnershipAsk.Costs(agents.Count))}
 
-                Each is asked separately, in a conversation of its own named for that agent, and each
-                answer comes back for you to accept or argue with. Nothing is written by asking.
+                Parley asks each of them again, separately and in a conversation of its own. What becomes
+                of each answer depends on this project's Auto Accept switch, and every answer shows in the
+                ownership review either way.
                 """;
     }
 
@@ -326,27 +333,32 @@ internal static class Ownership
     /// </remarks>
     private const int Named = 4;
 
-    /// <summary>What the person reads before the ask is sent.</summary>
+    /// <summary>What the person reads before Parley asks.</summary>
     /// <param name="agent">Who will be asked.</param>
-    /// <param name="conversation">The conversation it will open.</param>
+    /// <param name="autoAccept">The project's Auto Accept switch, which chooses the words.</param>
     /// <returns>The description.</returns>
     /// <remarks>
-    /// Shows the ask itself rather than describing it. The whole of FR-003 is that the agent is told
-    /// what its answer is for, and a surface summarising those words would be the one place the
-    /// promise could quietly stop being true.
+    /// Shows the question itself rather than describing it. The whole of FR-003 is that the agent is told what its
+    /// answer is for, and a surface summarising those words would be the one place the promise could quietly stop
+    /// being true.
     /// </remarks>
-    internal static string Asked(AgentName agent, string conversation) =>
-        $"""
-         {Safe.Text(agent.Value)}
+    internal static string Asked(AgentName agent, bool autoAccept)
+    {
+        var becomes = autoAccept
+            ? "Auto Accept is on, so its answer becomes its line unless it cannot be one."
+            : "Auto Accept is off, so its answer waits for a person in the ownership review.";
 
-         This costs {Safe.Text(agent.Role)} one turn, and opens conversation
-         {Safe.Text(conversation)}. Nothing is written by asking: the answer is a message, and a
-         person accepts it or does not.
+        return $"""
+                {Safe.Text(agent.Value)}
 
-         It will be sent these words:
+                Parley will ask it again. This costs {Safe.Text(agent.Role)} one turn, and opens a
+                conversation of its own. {becomes}
 
-         {Safe.Lines(OwnershipAsk.Text)}
-         """;
+                It will be sent these words:
+
+                {Safe.Lines(Facilitation.Question(autoAccept))}
+                """;
+    }
 
     /// <summary>Opens the dialogs that record an ownership line.</summary>
     /// <param name="app">The application the dialogs open in.</param>
@@ -500,7 +512,7 @@ internal static class Ownership
             return;
         }
 
-        if (OwnershipProposal.Subject(read.Value!.Messages, conversationId) is not { } agent)
+        if (OwnershipProposal.Subject(read.Value!.Messages) is not { } agent)
         {
             await done(NoSubject).ConfigureAwait(false);
 
@@ -686,7 +698,7 @@ internal static class Ownership
     /// its way to peers and only the provenance is missing.
     /// </para>
     /// </remarks>
-    private static async Task AcceptAsync(
+    internal static async Task AcceptAsync(
         IApplication app,
         BrokerClient client,
         AgentName agent,

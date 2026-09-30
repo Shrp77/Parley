@@ -71,7 +71,8 @@ language they are written in.
    says exactly what that blocker is. A blocker is not a place to stop:
    - **Missing information.** The agent works out who can provide it and asks them. If no
      agent in the project can, it asks the person seated in the deployment. If nobody is
-     seated, the need goes back to the originator of the request, who must ask.
+     seated, the need goes back to the originator of the request, who must ask. The facilitator
+     (principle 2.11) is never the person seated, and never receives such a need.
    - **A conflict.** The agent resolves it, which may mean asking other agents to do work
      that unblocks it.
 
@@ -99,6 +100,20 @@ language they are written in.
     - Only a person, or an agent holding no request at all, starts a new conversation. An
       agent partway through a request that finds unrelated work raises it inside that
       conversation, or finishes first.
+    - The facilitator (§3) is the third starter, and starts only the one kind of conversation it
+      exists for: asking an agent what it owns (§10.2). **An exchange the facilitator opened never
+      counts as a request the agent holds for the rules above**, so a question from it cannot
+      decide which conversation the agent's own work goes into. Otherwise an open question, and
+      one asked back can stay open indefinitely, would pull the agent's work into the question's
+      conversation. That is the facilitator steering work, which principle 2.11 forbids.
+11. **The facilitator asks, and does nothing else.** Every project has a facilitator, a
+    participant the broker provides so that questions nobody would remember to ask get asked. It
+    is neither an agent nor a person. It may ask a question, send a reply that a person wrote
+    (recorded as that person's words, §9.2), and propose and agree that its own conversation is
+    done (principle 2.8 needs every participant's agreement, and a participant that never agreed
+    would hold its conversations open for ever). It holds no operator operation. It is never the
+    person seated (principle 2.6), never receives anybody's work, and never assigns, directs,
+    prioritises, closes or overrides work. It adds *who* asks, never what asking can do.
 
 ## 3. Terminology
 
@@ -107,6 +122,7 @@ language they are written in.
 | **Agent** | A named participant that owns a bounded domain and does work in it. Usually an AI coding agent scoped to one repository, but see §11. |
 | **Person** | A human taking part in a deployment: seated as a participant in its conversations, or running it as its operator (§10.2). |
 | **Broker** | The single long-lived process that owns routing, state, locking, and lifecycle. |
+| **Facilitator** | Parley's own participant in a project, provided by the broker and shown as **Parley**. Neither an agent nor a person, and not a seat. Asks each agent what it owns, and nothing else (principle 2.11). Its identity is the reserved role `parley-facilitator`, which no agent, seat or enrolment may take (§12.3). |
 | **Adapter** | The vendor-specific glue that attaches an agent to the broker. |
 | **Responder** | Whatever produced the text of one message — a model, a script, or a person. An agent has a responder; a responder need not have an agent. See §11.2. |
 | **Request** | A message asking an agent to do something: work in its repository, or information it holds. |
@@ -114,7 +130,7 @@ language they are written in.
 | **Exchange** | One request and its result, including every clarification between them. |
 | **Originator** | The participant whose request began a line of work. A need no agent can meet comes back to them. |
 | **Blocker** | Something that stops an agent completing a request: missing information, a conflict, or a permission it does not have. Something to resolve (principle 2.6), not a reason to stop. |
-| **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, or by an agent holding no request (principle 2.10). See §5.0. |
+| **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, by an agent holding no request, or by the facilitator (principle 2.10). See §5.0. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
 | **Shared file** | A `.md` or `.txt` file in a conversation's folder: placed by an agent, which alone may replace or remove it, or put there by the person. Fetched onto disk, never into a model's context. |
@@ -401,6 +417,18 @@ that an answer will never come (§14).
 running the deployment closes a conversation, the broker records a `closed` result on every
 exchange still open in it, attributed to the broker and naming the person (§5.3). An outcome
 is a participant's judgement about its own work, and only the participant can make it.
+
+**The facilitator's messages are not that exception, because the facilitator is a participant**
+(principle 2.11). They are written under its own registered name and carry one of two reserved
+attributions, so a reader can always tell whose words they are:
+
+- `parley:facilitator` — the facilitator's own question;
+- `parley:person` — a reply that a person wrote to an agent that asked the facilitator something
+  back, sent on the facilitator's exchange because only its requester may answer there (§5.2).
+  These are a person's words, and every surface shows them as a person's, never as Parley's.
+
+Neither attribution is ever an outcome. The facilitator never sends a Result, so `closed` stays
+the only outcome the broker writes.
 
 **Files are not messages.** An agent may place a file in its conversation's folder of the file
 location, and any agent may fetch it onto disk in its own repository (§9.5). What crosses about a file
@@ -1170,20 +1198,24 @@ CREATE TABLE agent_ownership_accepted (
   -- Which of the three routes produced it. A person's characters are never attributed to a
   -- model: 'proposed' is the agent's words untouched, 'edited' is its proposal changed by the
   -- person, 'composed' is a line written with no ask at all.
-  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed')),
+  source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed', 'automatic')),
   -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is the
   -- evidence the removed bound on agents.owns has to be chosen against, the way rule 8.4's
   -- 8,000 was chosen from size_refusals.
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
   -- The discussion, so how a line was arrived at is answerable from the agent rather than from
   -- somebody's memory.
-  conversation_id  TEXT             REFERENCES conversations(id),
+  -- Cleared, not refused, when that conversation is destroyed: the line is what peers route by and the
+  -- conversation is evidence of how it was reached (research finding 14 of specs/022).
+  conversation_id  TEXT             REFERENCES conversations(id) ON DELETE SET NULL,
   accepted_utc     TEXT    NOT NULL,
 
   CHECK (length(statement) >= 1),
-  -- A composed line had no proposal and no discussion; anything else had both.
+  -- A composed line had no proposal; a line accepted automatically always had one, and its length is the
+  -- evidence a bound would be chosen from. That every route but a composed one names its discussion is
+  -- tr_accepted_line_names_its_discussion, below, rather than a CHECK here.
   CHECK (source <> 'composed' OR proposed_length IS NULL),
-  CHECK (source =  'composed' OR conversation_id IS NOT NULL)
+  CHECK (source <> 'automatic' OR proposed_length IS NOT NULL)
 ) STRICT;
 
 CREATE TABLE agent_credentials (
@@ -1910,6 +1942,177 @@ CREATE TABLE file_placements (
 ) STRICT;
 ```
 
+**The facilitator and its questions** (principle 2.11, §10.2). The facilitator is a row the broker
+writes itself (§12.3), its role reserved here rather than only at the doors that refuse it first. Each
+question it asks is a row of its own, because *waiting*, *asked back* and *discarded* are states no
+exchange records. The Auto Accept switch is a row in the project's own store, and a store with none
+reads as on.
+
+```sql
+-- The facilitator (principle 2.11) is a registry row the broker writes itself (§12.3), because every
+-- sender is a row: messages, exchanges and participants all reference agents(name). Its role is
+-- reserved, and the reservation is held here rather than at the doors that refuse it first, because a
+-- door written next year would pass -- and what it would forge is the one sender every agent is asked
+-- by without having asked for anything.
+--
+-- The role and the adapter are tied in both directions. A row with the role and another adapter is an
+-- agent claiming to be Parley; a row with the adapter and another role is something every surface would
+-- show as Parley. `parley` alone is NOT reserved: it is an ordinary role, which a repository called
+-- Parley is enrolled under.
+--
+-- The role is recomputed from NEW.name because a generated column is not guaranteed in a BEFORE trigger
+-- (see tr_agent_declares_its_machine). Update is covered as well as insert, because registration
+-- updates an agent's configuration on every launch.
+CREATE TRIGGER tr_facilitator_role_is_reserved
+BEFORE INSERT ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'parley-facilitator')
+     <> (NEW.adapter = 'parley-facilitator')
+BEGIN
+  SELECT RAISE(ABORT, 'the role parley-facilitator and its adapter belong to the facilitator alone');
+END;
+
+CREATE TRIGGER tr_facilitator_role_is_reserved_on_update
+BEFORE UPDATE OF name, adapter ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'parley-facilitator')
+     <> (NEW.adapter = 'parley-facilitator')
+BEGIN
+  SELECT RAISE(ABORT, 'the role parley-facilitator and its adapter belong to the facilitator alone');
+END;
+
+-- Never retired and never deleted (§14). A facilitator that could be withdrawn would leave every
+-- question it asked with a sender that no longer exists, and a project nobody is asking.
+CREATE TRIGGER tr_facilitator_is_never_retired
+BEFORE UPDATE OF status ON agents
+WHEN NEW.adapter = 'parley-facilitator' AND NEW.status <> 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'the facilitator cannot be retired');
+END;
+
+CREATE TRIGGER tr_facilitator_is_never_purged
+BEFORE DELETE ON agents
+WHEN OLD.adapter = 'parley-facilitator'
+BEGIN
+  SELECT RAISE(ABORT, 'the facilitator cannot be purged');
+END;
+
+-- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
+-- current question; earlier rows are history, kept so asking again does not erase what was said.
+--
+-- The states nothing else records: an answer WAITING for a person, a question ASKED BACK that a
+-- person must reply to, an answer DISCARDED. The exchange alone cannot say any of those.
+--
+-- It goes with its conversation, on a destroy or a purge (§14): a question about a discussion that no
+-- longer exists is a row pointing at nothing. The exchange is keyed with its conversation, as a message's
+-- is, so the two cannot disagree -- and with no action on delete, so a path that removed the exchange
+-- alone would fail at its commit rather than leave a question about nothing.
+CREATE TABLE ownership_questions (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  conversation_id  TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  exchange_id      INTEGER NOT NULL,
+  state            TEXT    NOT NULL
+                   CHECK (state IN ('asked', 'asked_back', 'answered', 'waiting', 'accepted', 'discarded')),
+  -- The agent's words as written, and with runs of whitespace collapsed (§10.2). Bounded by rule 8.4's
+  -- cap because they are copies of a message that already was.
+  answer           TEXT    CHECK (answer IS NULL OR length(answer) <= 8000),
+  flattened        TEXT    CHECK (flattened IS NULL OR length(flattened) <= 8000),
+  -- Why an answer was not accepted automatically, for the person reviewing it.
+  waiting_because  TEXT    CHECK (waiting_because IS NULL OR length(waiting_because) BETWEEN 1 AND 500),
+  asked_utc        TEXT    NOT NULL,
+  settled_utc      TEXT,
+  -- Whether the agent's node was asked to refresh it once its first line was accepted automatically
+  -- (§11.1). At most one row per agent ever says so, below.
+  restart_sent     INTEGER NOT NULL DEFAULT 0 CHECK (restart_sent IN (0, 1)),
+
+  FOREIGN KEY (exchange_id, conversation_id)
+    REFERENCES exchanges(id, conversation_id),
+
+  -- An answer exists from the moment the agent gave one, and not before. A discarded question may have none: a
+  -- person who closed its conversation before the agent answered has settled it unanswered.
+  CHECK (state NOT IN ('asked', 'asked_back') OR answer IS NULL),
+  CHECK (state NOT IN ('answered', 'waiting', 'accepted') OR answer IS NOT NULL),
+  CHECK ((answer IS NULL) = (flattened IS NULL)),
+  -- A waiting answer says why, and nothing else carries a reason that is no longer true.
+  CHECK ((state = 'waiting') = (waiting_because IS NOT NULL)),
+  CHECK ((state IN ('accepted', 'discarded')) = (settled_utc IS NOT NULL)),
+  CHECK (restart_sent = 0 OR state = 'accepted')
+) STRICT;
+
+-- Never asked twice (§10.2): at most one live question per agent. A check in the code that asks would be
+-- right until a broker restarted between its read and its write; this is right regardless.
+CREATE UNIQUE INDEX ux_one_live_question ON ownership_questions(agent)
+WHERE state IN ('asked', 'asked_back', 'answered', 'waiting');
+
+-- Refreshed once, ever (§11.1).
+CREATE UNIQUE INDEX ux_one_refresh ON ownership_questions(agent) WHERE restart_sent = 1;
+
+-- A question is the facilitator's own Request to the agent it names, and starts asked. Research finding
+-- 11: an agent can open an `owns-` conversation itself, so recognising a question by its conversation's
+-- name would let an agent answer itself and have the answer accepted with nobody looking. Neither the
+-- facilitator nor a seat is asked: one owns nothing and the other is a person.
+CREATE TRIGGER tr_question_is_the_facilitators
+BEFORE INSERT ON ownership_questions
+WHEN NEW.state <> 'asked'
+  OR NOT EXISTS (SELECT 1
+                   FROM exchanges e JOIN agents f ON f.name = e.requester
+                  WHERE e.id = NEW.exchange_id
+                    AND e.receiver = NEW.agent
+                    AND f.adapter = 'parley-facilitator')
+  OR EXISTS (SELECT 1 FROM agents a
+              WHERE a.name = NEW.agent
+                AND a.adapter IN ('parley-facilitator', 'parley-console'))
+BEGIN
+  SELECT RAISE(ABORT, 'a question is the facilitator''s own Request to an agent, and starts asked');
+END;
+
+-- Accepted only once a line is recorded, so a question can never claim an acceptance nothing holds.
+CREATE TRIGGER tr_question_accepted_only_with_a_line
+BEFORE UPDATE OF state ON ownership_questions
+WHEN NEW.state = 'accepted'
+ AND NOT EXISTS (SELECT 1 FROM agent_ownership_accepted WHERE agent = NEW.agent)
+BEGIN
+  SELECT RAISE(ABORT, 'a question is accepted only once its line is recorded');
+END;
+
+-- Settled stays settled. Reopening a discarded answer would put it in front of a person, or make it a
+-- line, with nobody having asked.
+CREATE TRIGGER tr_settled_question_stays_settled
+BEFORE UPDATE OF state ON ownership_questions
+WHEN OLD.state IN ('accepted', 'discarded') AND NEW.state <> OLD.state
+BEGIN
+  SELECT RAISE(ABORT, 'a settled question stays settled');
+END;
+
+-- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
+-- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
+-- row reads as on: a project created before this switch existed behaves as a new one does.
+CREATE TABLE facilitation (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  auto_accept  INTEGER NOT NULL DEFAULT 1 CHECK (auto_accept IN (0, 1)),
+  changed_utc  TEXT    NOT NULL
+) STRICT;
+
+-- Every route but a composed line names the discussion it came from. This was a CHECK on
+-- agent_ownership_accepted, and it moved here because that column is now cleared when the conversation is
+-- destroyed (research finding 14): a CHECK applies to that clearing too and would refuse the destroy. A
+-- line agreed in a conversation that was later destroyed keeps the line and loses only the link.
+--
+-- Checked on insert, and on an update that changes the route. Clearing the link alone is not a new route.
+CREATE TRIGGER tr_accepted_line_names_its_discussion
+BEFORE INSERT ON agent_ownership_accepted
+WHEN NEW.source <> 'composed' AND NEW.conversation_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an accepted line names the conversation it was agreed in');
+END;
+
+CREATE TRIGGER tr_accepted_line_names_its_discussion_on_update
+BEFORE UPDATE OF source ON agent_ownership_accepted
+WHEN NEW.source <> 'composed' AND NEW.conversation_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'an accepted line names the conversation it was agreed in');
+END;
+```
+
 ### 9.3 Invariants enforced by storage
 
 Rules that application code could otherwise route around live in the schema, so correctness
@@ -1929,12 +2132,27 @@ that needed it; an enumeration written as prose has already decayed.
 - **A source names a registered participant, never the sender.** The same trigger. §5.3 has a
   Result name whose Result it relied on so a person can see whose claim each part is, and a name
   can be looked up; a Result citing itself as its own source says nothing.
-- **`closed` is the broker's, and the broker writes nothing else.** The same trigger. A close the
+- **`closed` is the broker's, and the broker writes no other outcome.** The same trigger. A close the
   person never made, written under a participant's name, would make abandoned work read as
-  deliberately ended. The other half of the forgery — an adapter claiming the reserved
+  deliberately ended. The facilitator's Requests and Clarifies (§5) are not outcomes and are written
+  under its own registered name, so this rule is untouched by them. The other half of the forgery — an adapter claiming the reserved
   `parley:` responder prefix — cannot be refused here, because every row is written by the
   broker and no `CHECK` can see who supplied a value (§11.3). Enforce what is enforceable and be
   explicit about the remainder.
+- **The facilitator's role is its alone, and it is never withdrawn.** `tr_facilitator_role_is_reserved` and its
+  update twin tie the role `parley-facilitator` to the adapter of the same name in both directions;
+  `tr_facilitator_is_never_retired` and `tr_facilitator_is_never_purged` keep its row. Every door refuses the role
+  first, with a sentence (§12.3), and storage is what holds when a door written later forgets.
+- **Parley asks an agent once, and only Parley's own Request is a question.** `ux_one_live_question` allows one
+  live question per agent, so a broker restarting between a read and a write cannot ask twice.
+  `tr_question_is_the_facilitators` refuses a question whose exchange Parley did not open — an agent that opened an
+  `owns-` conversation itself has asked nobody anything — and refuses a seat or Parley as the one asked.
+  `tr_question_accepted_only_with_a_line` and `tr_settled_question_stays_settled` keep a question from claiming an
+  acceptance nothing holds, or reopening an answer somebody discarded. `ux_one_refresh` sends a refresh at most
+  once per agent, ever (§11.1).
+- **An accepted line names the discussion it came from, and outlives it.** `tr_accepted_line_names_its_discussion`
+  holds what a CHECK held before 022: every route but a composed line names its conversation. It moved to a trigger
+  because destroying that conversation now clears the link rather than being refused by it.
 - **An exchange closes only on a Result.** `tr_an_outcome_has_its_result`. An exchange closed
   with no Result written tells the requester its work is settled and leaves it no way to find
   out how (§10.1).
@@ -2226,6 +2444,14 @@ A closure poll is surfaced through `inbox()` rather than as a message, because �
 message types and no others. A fourth carrying the broker's questions would make the broker a
 participant that others address, which it is not.
 
+**The facilitator is a participant, and it still adds nothing to this section.** It is a registered
+row that sends ordinary Requests (principle 2.11), so what an agent receives from it arrives through
+`inbox()` like any other message, and the agent answers with `clarify` and `result` like any other.
+No operation here names it, and `agents()` never lists it: it owns nothing, so a roster that listed
+it would offer every agent a peer to send work to that does no work. **A Request addressed to the
+facilitator, and a Clarify on an exchange it did not open, are refused.** Leaving it off the roster
+does not stop an agent naming it, and a Request it will never answer would sit flagged for ever.
+
 **A Request takes a role or a name, and the difference is only in how many exchanges it opens.** A
 bare role opens one per registered agent under it and returns all their identifiers with a group
 identifier binding them; a full name opens one. Everything downstream is identical, because §5.5
@@ -2296,7 +2522,7 @@ other could.
 
 | Operation | Description |
 |---|---|
-| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
+| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
@@ -2311,7 +2537,12 @@ other could.
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `purge(agent)` | Delete an agent and every conversation it was party to, with those conversations' files, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. |
-| `record_ownership(agent, statement, source, proposed_length?, conversation_id?)` | Record that a person accepted a statement of what an agent owns: the statement, which of three ways it was arrived at — the agent's own words, its words edited, or a line composed with no ask — how long the agent's own proposal was, and the conversation it was agreed in. **It does not write `owns`.** What peers read is still filled from the launch environment when the agent attaches (§12.3), so a line takes effect on the agent's next start and this operation returns what peers read *now* beside what was accepted, which is how a surface says the two differ. Named `record_ownership` rather than `accept_ownership` for the reason `registry` is not `agents`: the person did the accepting, and a name claiming this operation did it would describe the wrong actor. See §17 question 10. |
+| `record_ownership(agent, statement, source, proposed_length?, conversation_id?)` | Record that a person accepted a statement of what an agent owns: the statement, which of three ways it was arrived at — the agent's own words, its words edited, or a line composed with no ask — how long the agent's own proposal was, and the conversation it was agreed in. **It does not write `owns`.** What peers read is still filled from the launch environment when the agent attaches (§12.3), so a line takes effect on the agent's next start and this operation returns what peers read *now* beside what was accepted, which is how a surface says the two differ. Named `record_ownership` rather than `accept_ownership` for the reason `registry` is not `agents`: the person did the accepting, and a name claiming this operation did it would describe the wrong actor. **A fourth source, `automatic`, is recorded only by the broker itself** when Auto Accept makes an answer a line (below), and a call passing it is refused: a person's decision is never recorded as the machine's. See §17 question 10. |
+| `facilitation()` | The project's Auto Accept switch, and every agent's current ownership question from the facilitator: its state — asked, asked back, answered, waiting, accepted or discarded — the answer as the agent wrote it, the answer with its whitespace collapsed, and why it is waiting when it is. What a surface reviews ownership from. |
+| `set_auto_accept(on)` | Turn the project's Auto Accept switch on or off, and return it as now set. Governs answers that arrive afterwards; answers already waiting stay waiting. |
+| `ask_again(agent)` | Have the facilitator ask an agent what it owns, as a new question. Needs no seat, because the facilitator sends it. Refused for the facilitator, a seat, a retired agent, or an agent whose question is asked, asked back, answered or waiting — asking again then would lose an answer nobody has decided on. |
+| `reply_to_asked_back(agent, text)` | Send a person's reply to an agent that asked the facilitator a question back instead of answering. Sent on the facilitator's exchange, attributed `parley:person` (§5), and held to rule 8.4's cap. Refused when that agent's question is not asked back. |
+| `discard_answer(agent)` | Discard an answer that is waiting. Nothing is written, and the agent keeps whatever line it had. The agent is not asked again unless a person asks. |
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
@@ -2403,6 +2634,31 @@ having any the moment a person's words appear under an agent's name.
 
 Neither operation reaches into an agent's context, so neither weakens §16.
 
+**The facilitator's operations are the person's view of what the facilitator did.** The facilitator
+asks each agent that is attached, not retired, not a seat, has no accepted line and **has never been
+asked** — checked when the agent registers, when it reattaches, and when the broker starts serving
+the project. It never starts an agent in order to ask it. Having been asked at all, whatever became of
+the question, stops it asking again; only `ask_again` asks again, so no agent is asked twice unless a
+person chooses to spend its turn.
+
+**Auto Accept is per project, held in the project's store, and on by default.** A store that has
+never been set reads as on. With it on, an answer whose collapsed whitespace leaves a valid ownership
+line, from an agent on the broker's own machine, becomes that agent's line with the source
+`automatic`: the launch configuration is written first and the record second, as for every other
+route, so a record never claims a line the agent will not carry. Otherwise the answer waits, with its
+reason, for a person to accept, edit or discard it from `facilitation()`. An agent on another machine
+always waits: its launch configuration is a file on that machine, and nothing here may write it.
+
+**Collapsing whitespace is the only change made to an answer.** A model answers in paragraphs, and an
+ownership line refuses a line break (§12.3), so runs of whitespace become one space and the ends are
+trimmed. No word changes, which is why `automatic` is still a truthful statement that the words are
+the agent's. Anything that would change a word is a person's decision, and is recorded as `edited`.
+
+**After an agent's first line is accepted automatically, its node restarts it once it is idle** —
+no open exchange it owes work on and no turn in progress — so peers read the line. It is the fourth
+thing that may end a resident agent (§11.1). Later changes to a line wait for the agent's next start
+on its own.
+
 **The file operations here are the person's, and each exists because an agent's cannot be.**
 `remove_files` and `prune_files` remove files other agents placed, which no agent may do (§9.5).
 `describe_file_location` says where a file is so a person can open it: a surface running on the broker's
@@ -2492,12 +2748,24 @@ the sender's. The bound is one wasted turn per new message, the evidence is the 
 §10.2 already keeps, and an agent that keeps leaving work untouched is flagged to the person running
 the deployment (§6) rather than retried for ever.
 
-Three things end a resident agent, and nothing else may:
+Four things end a resident agent, and nothing else may:
 
 1. **The node stops**, and tells every agent it started to quit.
 2. **The node is told to stop one agent**, because its operator retired it (§14) or removed
    it from that machine's configuration.
 3. **The agent's own process ends**, which the node observes directly and does not fight.
+4. **The node is told to refresh one agent**, once, because that agent's first ownership line was
+   just accepted automatically (§10.2) and peers read a line only from the launch environment. The
+   node waits until no turn is in progress, then stops the agent and starts it again with its launch
+   configuration read afresh. It refreshes only an agent it started itself; an agent attached from
+   somebody's editor window is never refreshed, and its line waits for its next start.
+
+The fourth is argued rather than slipped in, because the paragraph below is the reason this list is
+short. The process holds what the agent has learned. The question is asked just after the agent first
+attaches, when it has learned almost nothing, so a restart then costs little. Leaving peers without
+the line would cost the whole point of asking. So it happens once, for the first line only, and never
+mid-turn. The broker sends it only when the agent owes no open exchange. Every later change of line
+waits for a natural restart, when throwing away what the agent has learned would be the wrong trade.
 
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
@@ -2563,11 +2831,13 @@ assuming a model name:
 |---|---|
 | a bare model identifier | the model that produced the text |
 | `parley:broker` | the broker itself, for a `closed` result written when the person closes a conversation (§5.3) |
+| `parley:facilitator` | the facilitator's own question (§5, principle 2.11) |
+| `parley:person` | a reply a person wrote, sent through the facilitator to an agent that asked it something back (§5). A person's words, shown as a person's |
 | `script:<name>` | a deterministic responder |
 | `human:<name>` | a person taking part directly |
 
-**The `parley:` prefix is reserved, and the broker MUST refuse an adapter that claims it.** An
-adapter reporting its responder as `parley:broker` would forge a close the person running the
+**The `parley:` prefix is reserved, and the broker MUST refuse an adapter that claims it** — all
+three forms, not only the first. An adapter reporting its responder as `parley:broker` would forge a close the person running the
 deployment never made — work that looks deliberately ended when it was abandoned, or ended by a
 person when it was ended by an agent. Responder identity is what the whole of §11.3 rests on, and a
 namespace anyone may claim identifies nobody.
@@ -2808,6 +3078,21 @@ The two paths are complementary rather than alternatives, and a deployment may u
 self-registration bootstraps the agents that come to the broker, the manifest describes the
 ones the broker goes to.
 
+**The one row the broker writes itself is the facilitator's, and it is not a registration of an
+agent.** Every sender is a registry row, because a message's sender and recipient name one (§9.2).
+The facilitator (principle 2.11) sends, so it has a row. That row is the broker's statement that its
+own participant exists, the same kind of fact as a `closed` result being the broker's (§5), and not
+a claim that an agent exists and has spoken. It is written when the broker opens a store, if absent,
+under the role `parley-facilitator` and the adapter of the same name. It is found by its adapter,
+never by its name, so a machine renamed does not make a second one.
+
+**The role is reserved, in storage and at every door.** Storage refuses a row under that role with
+any other adapter, and that adapter under any other role, so no route writes one without the other.
+An attach, a seat and an enrolment each refuse the role before storage does, with a sentence.
+`parley` itself is **not** reserved: it is an ordinary role, which a repository called `Parley` is
+enrolled under. Every legal role is some folder's name, so no choice makes a clash impossible, and
+this one makes it unlikely.
+
 ## 13. Trust boundary
 
 An incoming message is **a Request, Clarify or Result from another participant** — not an instruction
@@ -2992,6 +3277,12 @@ connections, and both are things some process knows for certain rather than infe
 
 Only `retired` is a column. The others are read from `nodes.connected` and `agents.connected`,
 which are written when a connection opens and when it closes, and by nothing else.
+
+**The facilitator is none of these, and has no lifecycle an operator can touch.** It is present
+whenever its project is served and absent otherwise, so it is never spawned, never retired, never
+purged, never started, never instructed and never routed to. `agents()` does not list it (§10.1),
+and every operator operation that takes an agent refuses it. Its question to an agent is ordinary
+open work: flagged like any other when the agent goes quiet (§6), and never timed out.
 
 This replaced two designs, and both failures are worth keeping.
 
@@ -3493,6 +3784,15 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    check because the broker writes every row itself. It is recorded here and not adopted —
    reserving a second namespace is a protocol change, and the question of whether peers should
    rely on this at all is still open above it.
+
+   **The facilitator is not a seat, and a seat is still a person** (principle 2.11, from 0.7's
+   second amendment). A seat exists so a person can hold a position across turns and speak as
+   somebody. The facilitator is neither a person nor an agent. It holds no position and speaks
+   only its own question. So it is not the person seated that principle 2.6 sends needs to, and a
+   deployment with nobody seated is still one with nobody seated, however many facilitators its
+   projects have. When a person does speak through it — replying to an agent that asked it back —
+   the reply carries `parley:person` rather than `parley:facilitator`, so the one thing a seat
+   exists to guard, whose words these are, is not lost on the way through.
 3. *(Closed.)* What promotes a decision, and who is entitled to declare one? **Nothing promotes one;
    the agent that owns it writes it down.** A decision about a repository goes into that repository
    (rule 8.7), where the next agent to work there reads it with everything else it knows, and Parley
@@ -3636,6 +3936,45 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     survivable because a wrong guess is cheap — the agent asked finds the owner and asks it, inside
     the same conversation — but it is still one copy of the same
     ownership map per repository, drifting independently.
+
+    **Amended, 2026-09-26 (0.7, specs/020): the agent is asked, and a person accepts.** Two things
+    above stopped being true, and this amendment was owed by 020 and made by 022. The line is no
+    longer capped at 100 by default: the bound stands down at the top of its range, the character
+    class stays, and the constitution records that as a reduction in a control. And the line is no
+    longer drafted from evidence and affirmed. **The agent is asked what it owns and what it does
+    not**, the answer is discussed to agreement, and a person accepts it with `record_ownership`
+    (§10.2), which records which of three routes produced it — the agent's words, its words edited,
+    or a line composed with no ask — and the conversation it was agreed in. The file is written
+    before the record, so a record never claims a line peers will not read.
+
+    That turns *not self-declared* into something narrower, and the cost is written down rather than
+    hidden. The words are now usually the agent's own. What stayed true is condition 2: nothing
+    reached a launch configuration without a person's recorded act. Condition 3 is kept by asking
+    for the exclusion half rather than inventing it, which is the half only the agent can supply.
+    Anchoring gets worse, not better: a person shown an agent's confident sentence agrees more
+    readily than one shown a draft beside its evidence.
+
+    **Amended, 2026-09-28 (0.7, specs/022): Auto Accept removes the person from that loop, and is
+    a reduction in this control.** Every project has a facilitator (principle 2.11) that asks each
+    agent what it owns, once, with nobody asking. With the project's Auto Accept switch on, which
+    it is by default, the answer becomes the agent's line with no person involved, recorded with
+    the source `automatic`. **So condition 2 above no longer holds when the switch is on**, and the
+    registry may carry a line nobody affirmed. That is the owner's decision, taken because a line
+    nobody gets round to accepting routes nothing — the blank-field argument this question's first
+    amendment made, one step further.
+
+    What stands in the person's place is recorded in the terms this document uses for its other
+    reductions: evidence and correction rather than a gate. **Provenance is truthful**: `automatic`
+    is a route of its own, never recorded by a person's call, and a surface shows it apart from the
+    three a person takes. **Every line can be reviewed and corrected at any time**, from every
+    surface (§10.2 `facilitation`). And the words are the agent's own: only whitespace is collapsed,
+    an answer that breaks the character class waits for a person whatever the switch says, and an
+    agent on another machine always waits, because nothing here may write a file there. A project
+    that wants every line affirmed turns the switch off, and the conditions above hold again.
+
+    It stays advisory, and the facilitator's asking changes nothing about that: a line accepted
+    automatically is routed by exactly as much, and refused on exactly as little, as one a person
+    wrote.
 
 11. Should a Clarify say what turns on it? A Request used to be made to say what done looks like — a
     `done_when`, removed at 0.7 (§18) — on the ground that a receiver who knows what the work is for
@@ -3989,7 +4328,7 @@ above:
   **The character rule is unchanged**: a statement that could break, hide or reorder its own roster
   row is still refused. §17 question 10 carries the argument and the cost, and the bound is off so
   that an agent *asked* what it owns can answer in two halves and name a peer.
-- **One new operator operation**, `accept_ownership` (§10.2). It records that a person accepted a
+- **One new operator operation**, `record_ownership` (§10.2). It records that a person accepted a
   statement, which conversation it came from, and how long the agent's own proposal was. **It does
   not write `owns`**: the registry is still filled from the launch environment on attach (§12.3),
   so what peers read still comes from a launch configuration and no operation accepts a line from
@@ -4006,6 +4345,38 @@ above:
   did to the schema at the time, and those numbers no longer name anything a build can reach: there
   is one schema and it is 1. They are left as written because this section is a record of how the
   protocol got here, and rewriting them would make it a record of something that did not happen.
+
+#### Amended, 2026-09-28: the facilitator
+
+**Still unreleased, so still 0.7**, on the practice of the amendment above. A second implementation
+can observe the broker sending a Request, which is why this is recorded here rather than left to the
+code. What it will observe, in addition to the above:
+
+- **Every project has a facilitator** (principle 2.11, §3): a participant the broker provides, with
+  a registry row the broker writes itself under the reserved role `parley-facilitator` (§12.3).
+  Storage refuses that role with any other adapter, and every attach, seat and enrolment refuses it
+  before storage does. `agents()` never lists it. It is never retired, purged, started, instructed
+  or routed to, and a Request addressed to it is refused (§10.1, §14).
+- **It asks each attached agent what it owns, once, with nobody asking.** An agent is asked when it
+  is attached, not retired, not a seat, has no accepted line and has never been asked. It is never
+  started just to be asked. Its question does not count as a request the agent holds when the broker
+  assigns the agent's own Requests to a conversation (principle 2.10).
+- **Two reserved attributions** join `parley:broker` (§11.3): `parley:facilitator` for its question,
+  and `parley:person` for a reply a person wrote, which every surface shows as a person's words.
+- **Auto Accept**, per project, held in the project's store and on by default. With it on, an answer
+  whose collapsed whitespace is a valid ownership line, from an agent on the broker's own machine,
+  becomes the agent's line with the new source `automatic` (§10.2, §17 question 10). Otherwise it
+  waits for a person.
+- **Five new operator operations** (§10.2): `facilitation`, `set_auto_accept`, `ask_again`,
+  `reply_to_asked_back` and `discard_answer`. `registry()` rows gain the source of the accepted line;
+  the facilitator's row is the one whose adapter is `parley-facilitator`. `record_ownership` refuses `automatic`. Nothing is added to
+  §10.1.
+- **A fourth thing may end a resident agent** (§11.1): the node refreshes an agent, once, when its
+  first line was accepted automatically, after its turn ends and only if the node started it.
+- **Two new tables and one changed** (§9.2): `ownership_questions` holds each question and its
+  state, with at most one live question per agent enforced by an index; `facilitation` holds the
+  switch; and `agent_ownership_accepted` admits `automatic`, and keeps a line when the conversation
+  it was agreed in is destroyed.
 
 ### 0.6 — files cross between repositories
 

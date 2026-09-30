@@ -22,41 +22,42 @@ namespace Parley.Client;
 /// </remarks>
 public sealed record OwnershipProposal(Message Message, string Statement)
 {
-    /// <summary>Whose line a discussion is about, read out of the discussion itself.</summary>
+    /// <summary>Whose line a discussion is about: the agent Parley asked in it.</summary>
     /// <param name="transcript">The conversation, in any order.</param>
-    /// <param name="conversationId">The identifier the discussion carries.</param>
-    /// <returns>The agent, or null when nobody in it matches the identifier.</returns>
+    /// <returns>The agent, or null when Parley asked nobody in it, or asked more than one.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The identifier is matched, never parsed back into a name.</b> It carries a role and
-    /// deliberately not a machine (<see cref="OwnershipAsk.Conversation"/>), so it cannot be turned
-    /// into an <see cref="AgentName"/> on its own — and a surface that guessed the machine half
-    /// would name an agent at a different desk, which is 0.20.2's recorded defect from the other
-    /// side. So the candidates come from the messages, which are facts, and the identifier only
-    /// chooses between them.
+    /// <b>Recognised by the facilitator's own Request, never by the conversation's identifier</b> (SPEC.md §10.2,
+    /// research finding 11). An agent can open a conversation under the <c>owns-</c> prefix itself; with an answer
+    /// able to become a line, reading its prefix as a question would let an agent put a sentence in front of a person
+    /// dressed as an answer to a question nobody asked. The identifier is kept for a person scanning a list and chooses
+    /// nothing here.
     /// </para>
     /// <para>
-    /// <b>Null rather than a guess when two agents in one discussion share a role.</b> Two machines
-    /// running the same role is an ordinary deployment, so a surface asking whose line this is must
-    /// be told it cannot know rather than shown one of them: what follows the answer is a write to
-    /// somebody's launch configuration.
+    /// <b>The subject is the Request's recipient, which is a whole name.</b> Nothing is parsed back out of an
+    /// identifier, so two agents of one role on two machines are never confused — 0.20.2's recorded defect of naming
+    /// an agent at another desk cannot arise from a name that was never guessed.
+    /// </para>
+    /// <para>
+    /// <b>Null rather than a guess when Parley asked two agents in one conversation.</b> It never does, and a
+    /// transcript that says otherwise is not one a surface should write somebody's launch configuration from.
     /// </para>
     /// </remarks>
-    public static AgentName? Subject(IEnumerable<Message>? transcript, string? conversationId)
+    public static AgentName? Subject(IEnumerable<Message>? transcript)
     {
-        if (transcript is null || !OwnershipAsk.Recognises(conversationId))
+        if (transcript is null)
         {
             return null;
         }
 
-        var named = transcript
-            .SelectMany(message => new[] { message.From, message.To })
-            .Where(agent => OwnershipAsk.Recognises(conversationId, agent))
+        var asked = transcript
+            .Where(message => message.Type == MessageType.Request && Facilitation.Is(message.From))
+            .Select(message => message.To)
             .Distinct()
             .Take(2)
             .ToList();
 
-        return named.Count == 1 ? named[0] : null;
+        return asked.Count == 1 ? asked[0] : null;
     }
 
     /// <summary>The proposal a person should be shown, or null when the agent has said nothing.</summary>

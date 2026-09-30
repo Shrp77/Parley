@@ -41,6 +41,13 @@ public static class Deep
     /// <summary>The page showing one conversation.</summary>
     public const string Conversation = "/Conversations/Detail";
 
+    /// <summary>The page holding a project's ownership review and its Auto Accept switch.</summary>
+    /// <remarks>
+    /// Where the terminal's configuration view leads, because it is the web UI's one page carrying a project
+    /// setting — Auto Accept, stated with what it means, beside the lines it decides about.
+    /// </remarks>
+    public const string Ownership = "/Projects/Ownership";
+
     /// <summary>Builds the address for wherever a person currently is.</summary>
     /// <param name="host">Where the console listens, without a trailing slash.</param>
     /// <param name="place">What the person is looking at.</param>
@@ -63,6 +70,8 @@ public static class Deep
                 $"{root}{Conversation}?project={Escape(project.Value)}&id={Escape(id)}",
             Viewing.Project when place.Project is { } project =>
                 $"{root}{Agents}?project={Escape(project.Value)}",
+            Viewing.Configuration when place.Project is { } project =>
+                $"{root}{Ownership}?project={Escape(project.Value)}",
             _ => $"{root}{Home}",
         };
     }

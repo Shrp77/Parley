@@ -47,6 +47,14 @@ agent-facing operation may mention ownership; no agent is restarted mid-turn
 | **Boundaries — Core has no I/O** | Pass | New Core types are records and rules only. |
 | **Quality gates** | Owed | One combined gate for 019–022 (the owner's call); 022's T-last is that gate. |
 
+**Re-check against 4.0.0 (T052, 2026-09-28, after commit b4cd0e6)**: II — **Pass**: the principle now names the
+facilitator and its three permitted acts; the design gives it exactly those (`AskAsync`, the `parley:person`
+reply, `AgreeDoneAsync`), and T053/T055 close the two routes `/speckit-analyze` found by which it would receive
+work or steer it. III — **Pass**: the reserved role `parley-facilitator`, refused in storage to any other adapter
+and at attach, seat and enrolment. IV — **Pass, finding recorded**: the constitution now records Auto Accept as a
+reduction with `automatic` provenance and the review in its place; the design keeps the character class and holds
+an answer that breaks it as waiting. No new conflict.
+
 **Gate result**: proceed to design **on condition** that the constitution amendment (4.0.0, MAJOR) is its own
 change and lands before implementation — Governance: "A principle changes in its own amendment, never inside a
 feature's implementation." That is task T001; nothing else starts before it.
