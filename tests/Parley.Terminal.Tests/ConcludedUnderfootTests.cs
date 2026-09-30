@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
+using Parley.Client;
 using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Store;
@@ -117,18 +118,18 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
     /// <returns>The voice.</returns>
     private async Task<SeatVoice> SeatedAsync(CancellationToken cancellationToken)
     {
-        Assert.True(Seat.TryRead("arvind", out var me, out _));
+        // The person seat the broker provides (specs/023), read from its registry as a surface reads it. The book is a
+        // field rather than a local: disposing it here would drop the attachment before anything was sent.
+        var registry = await new BrokerClient(_broker.Operators).RegistryAsync(cancellationToken);
 
         var taken = await _seats.TakeAsync(
-            new ProjectSettings(
-                ProjectName.Create("alpha"), string.Empty, _broker.Address, null),
-            me,
-            [],
+            new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null),
+            registry,
             cancellationToken);
 
-        Assert.True(taken.Seated);
+        Assert.True(taken.Seated, taken.Problem);
 
-        return new SeatVoice(_broker.Agents, me);
+        return new SeatVoice(_broker.Agents, taken.Hold!.Seat);
     }
 
     /// <summary>Runs one statement against the store behind the broker.</summary>

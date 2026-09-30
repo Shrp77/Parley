@@ -81,13 +81,9 @@ public sealed class ContractTests
         Assert.Equal("Focus: ", Shell.FocusPrefix);
     }
 
-    [Fact]
-    public void The_seat_release_sentence_is_the_contracts()
-    {
-        // Written out in the contract in full, because it is what somebody reads when they come
-        // back to a terminal that has quietly stopped being them.
-        Assert.Contains(Shell.Released, Contract(), StringComparison.Ordinal);
-    }
+    // `The_seat_release_sentence_is_the_contracts` was here. The sentence — "your seat was released" — went in specs/023,
+    // because the seat is the broker's and is never released; the contract that quotes it is a record of what the
+    // terminal said then, and is left as written.
 
     [Fact]
     public void The_operations_contract_still_forbids_what_it_says_it_forbids()

@@ -75,16 +75,8 @@ public sealed class GuardOwnershipTests
         Assert.Null(Participation.ResultProblem("because the totals are computed downstream"));
     }
 
-    [Fact]
-    public void A_seat_name_is_checked_by_the_grammar_that_makes_agent_names()
-    {
-        // Not a pattern written here. A name this accepted and the registry did not would be a
-        // join that failed at the broker, and one the registry accepted that this refused would be
-        // a person unable to sit down for no stated reason.
-        Assert.Null(AgentsRegion.NameProblem("arvind"));
-        Assert.NotNull(AgentsRegion.NameProblem("Arvind Knudsen"));
-        Assert.NotNull(AgentsRegion.NameProblem(string.Empty));
-    }
+    // `A_seat_name_is_checked_by_the_grammar_that_makes_agent_names` was here. There is no seat name to type since
+    // specs/023: the broker provides the person seat.
 
     [Fact]
     public void A_role_is_checked_by_the_same_rule_the_enrolment_command_applies()

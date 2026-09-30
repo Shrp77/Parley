@@ -174,17 +174,16 @@
 
 @if (Model.Projects.Count == 0)
 {
-    @* **This said "you are seated nowhere, so nothing can be waiting", and that was false.** A seat
-       is how mail is collected, not where it waits: messages queue against the name in the broker's
-       store, so a released seat leaves them exactly where they were. The owner met the proof --
-       four requests sent, two answered, and this page reporting that nothing could be. *@
+    @* **Not connected, never "not joined"** (specs/023). There is nothing to join: the broker provides the person seat
+       and this console takes it on every page. What this branch means now is that no project's broker could be reached
+       as the person just then — down, or older than 0.36.0 — and the next page load tries again. Mail waits against the
+       name regardless, which is why the count below is still asked for. *@
     @if (Model.Away is { Certain: true, Waiting: > 0 })
     {
         <p class="unreachable">
-            You are seated nowhere, and @Model.Away.Waiting
-            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for
-            <strong>@Model.Me!.Person</strong>. <a href="/Join">Join</a> to collect
-            @(Model.Away.Waiting == 1 ? "it" : "them").
+            Not connected as you just now, and @Model.Away.Waiting
+            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for you. Load this page again in a
+            moment to collect @(Model.Away.Waiting == 1 ? "it" : "them").
         </p>
     }
     else if (!Model.Away.Certain)
@@ -192,15 +191,14 @@
         @* "Nothing waiting" and "could not ask" are different facts, and only one of them means
            stop looking -- the same rule the frame's count is held to. *@
         <p class="unreachable">
-            You are seated nowhere, and the brokers could not be asked what is waiting for
-            <strong>@Model.Me!.Person</strong>. <a href="/Join">Join</a> to look.
+            Not connected as you just now, and the brokers could not be asked what is waiting for you. Load this page
+            again in a moment.
         </p>
     }
     else
     {
         <p class="unreachable">
-            You are seated nowhere, and nothing is waiting for <strong>@Model.Me!.Person</strong>.
-            <a href="/Join">Join</a> to take part.
+            Not connected as you just now, and nothing is waiting for you.
         </p>
     }
 }

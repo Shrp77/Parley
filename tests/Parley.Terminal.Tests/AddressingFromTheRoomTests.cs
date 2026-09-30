@@ -34,27 +34,6 @@ public sealed class AddressingFromTheRoomTests
     }
 
     [Fact]
-    public async Task Taking_a_seat_is_offered_in_the_room_and_not_in_the_box()
-    {
-        // **The owner's report, and my own defect from the night before.** A box with focus wins every
-        // printable key, so the one place Join was offered was the one place its key could not arrive.
-        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
-
-        await seated.Shell.LeaveSeat();
-        await seated.Shell.Settled;
-
-        Assert.Null(seated.Shell.Held);
-
-        seated.Focus<LineRegion>();
-
-        Assert.DoesNotContain(seated.Shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-
-        seated.Focus<RoomRegion>();
-
-        Assert.Contains(seated.Shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-    }
-
-    [Fact]
     public async Task Every_participant_starts_ticked_because_typing_goes_to_the_room()
     {
         await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);

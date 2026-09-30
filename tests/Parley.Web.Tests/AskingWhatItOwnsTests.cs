@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Text.RegularExpressions;
-using Parley.Web.Seating;
 using Xunit;
 
 namespace Parley.Web.Tests;
@@ -139,17 +138,11 @@ public sealed class AskingWhatItOwnsTests
     private static async Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
-        Dictionary<string, string> fields,
-        string? seat = null)
+        Dictionary<string, string> fields)
     {
         var token = TestContext.Current.CancellationToken;
 
         using var opening = new HttpRequestMessage(HttpMethod.Get, path);
-
-        if (seat is not null)
-        {
-            opening.Headers.Add("Cookie", $"{SeatCookie.Key}={seat}");
-        }
 
         using var page = await client.SendAsync(opening, token);
 
@@ -173,11 +166,6 @@ public sealed class AskingWhatItOwnsTests
         var carried = page.Headers.TryGetValues("Set-Cookie", out var cookies)
             ? cookies.Select(c => c.Split(';')[0]).ToList()
             : [];
-
-        if (seat is not null)
-        {
-            carried.Add($"{SeatCookie.Key}={seat}");
-        }
 
         if (carried.Count > 0)
         {

@@ -128,7 +128,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         using var book = new SeatBook(_ => new SeatDoubles.Stubborn(StatusCode.PermissionDenied));
-        var taken = await book.TakeAsync(Alpha, Seated("arvind"), [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
@@ -155,7 +155,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(
             Hold(), Peers, new string('x', MessageLimits.MaxPayloadCharacters + 100), "c1", token);
@@ -171,7 +171,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, "   ", "c1", token);
 
@@ -185,7 +185,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), [], Ask, "c1", token);
 
@@ -205,7 +205,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, ask, "c1", token);
 
@@ -221,7 +221,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, Ask, "c1", token);
 
@@ -236,15 +236,15 @@ public sealed class BroadcastGuardTests
         }
     }
 
-    /// <summary>A seat, read the way the surfaces read one.</summary>
-    /// <param name="person">The person's name.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
+    /// <summary>The project's person seat, as the broker names it (specs/023).</summary>
+    private static Seat Seated() => new(PersonSeat.On(Alpha.Name));
 
-        return seat;
-    }
+    /// <summary>The project's registry, holding only its person seat.</summary>
+    private static IReadOnlyList<AgentRecord> Person { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 
     /// <summary>A hold nothing has taken away, for the cases that are not about the seat.</summary>
     /// <returns>The hold.</returns>
@@ -254,8 +254,7 @@ public sealed class BroadcastGuardTests
 
         return book.TakeAsync(
             Alpha,
-            Seated("arvind"),
-            [],
+            Person,
             TestContext.Current.CancellationToken).GetAwaiter().GetResult().Hold!;
     }
 }

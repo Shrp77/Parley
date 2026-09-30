@@ -41,8 +41,9 @@ internal sealed class LineRegion : FrameView
     /// <summary>What the preview says where there is nobody to send to.</summary>
     internal const string Nobody = "nobody is in this conversation yet";
 
-    /// <summary>What the preview says before a seat has been taken.</summary>
-    internal const string NoSeat = "take a seat to say something here";
+    /// <summary>What the preview says while this terminal is not connected to the project as the person.</summary>
+    /// <remarks>Not "take a seat" (specs/023): there is no seat to take, only a connection coming back.</remarks>
+    internal const string NoSeat = "not connected as you just now; it is reconnecting";
 
     /// <summary>What the preview says with an empty line.</summary>
     internal const string Empty = "type to say something";

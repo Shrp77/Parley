@@ -356,13 +356,8 @@ public sealed class CompletingTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         // Seeded from a peer, because membership is derived: a conversation with no traffic has no participants.

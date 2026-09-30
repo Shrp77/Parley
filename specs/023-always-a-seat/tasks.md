@@ -174,44 +174,95 @@ join step, as `human-user@alpha` and `human-user@beta`; with `PARLEY_MACHINE=lap
 **T022 to T031 land as one commit** (`/speckit-analyze` issue 6). T022 and T023 remove API the terminal and the web
 UI call until T026–T031 change them, so the build is expected to be red between them. No temporary bridge.
 
-- [ ] T022 [US2] Change `Seat` to hold the `AgentName` read from the registry's person row, keeping `Adapter` and
+- [X] T022 [US2] Change `Seat` to hold the `AgentName` read from the registry's person row, keeping `Adapter` and
   giving `Responder = human:human-user`; delete `TryRead`, `Correct`, `Rule`, `Pattern`, `Longest`, `Allowed`, in
   `src/Parley.Client/Seating/Seat.cs`
-- [ ] T023 [US2] Change `SeatBook.TakeAsync(project, registry)` to find the person row (`PersonSeat.Is`) and attach
+- [X] T023 [US2] Change `SeatBook.TakeAsync(project, registry)` to find the person row (`PersonSeat.Is`) and attach
   as it; refuse with a plain sentence when the registry is null or holds no person row; delete `Leave`; key holds
   by project alone, in `src/Parley.Client/Seating/SeatBook.cs`
-- [ ] T024 [US2] Client tests: the seat's name comes from the registry and not `MachineName.Current` (fail against
+- [X] T024 [US2] Client tests: the seat's name comes from the registry and not `MachineName.Current` (fail against
   `Seat.Name` as it is today) — this is FR-017's evidence (`/speckit-analyze` issue 10); no person row refuses; unreadable registry refuses; two surfaces holding one
   project's seat are one name, in `tests/Parley.Client.Tests/SeatFromTheRegistryTests.cs`
-- [ ] T025 [US2] **Convert the terminal's `Seated` fixture** to the person seat before any terminal code changes,
+  — *Built in `tests/Parley.Client.Tests/SeatTests.cs` instead, which was rewritten for 023 and already held the seat's
+  tests; a second file for the same type would split them.*
+- [X] T025 [US2] **Convert the terminal's `Seated` fixture** to the person seat before any terminal code changes,
   and record in this file, per file, which of the 37 terminal test files that rest on it were kept, replaced or
   deleted, and why, in `tests/Parley.Terminal.Tests/Seated.cs`
-- [ ] T026 [US2] Take the person seat in every project when the terminal opens and when a project appears;
+- [X] T026 [US2] Take the person seat in every project when the terminal opens and when a project appears;
   remove `Join`, `Join(then)`, `LeaveSeat`, `StartSeatFirst`, `SeatSelected`, `Mine`, `Person`, the "Join as"
   dialog, the `j`/`l`/`t` actions, and the "seats — withdrawn" group (`RetiredSeats`, `/speckit-analyze` issue 13),
   in `src/Parley.Terminal/Shell.cs` and `src/Parley.Terminal/AgentsRegion.cs`
-- [ ] T027 [US2] Remove the retired-seat reinstate path (`Withdrawing.ReinstateSeatAsync` and its dialog),
+- [X] T027 [US2] Remove the retired-seat reinstate path (`Withdrawing.ReinstateSeatAsync` and its dialog),
   leaving `Withdrawing.cs` the one file `SurfaceTests` allows `Reinstate` in, with its typed-name prompt intact,
   in `src/Parley.Terminal/Withdrawing.cs`
-- [ ] T028 [US2] Remove every "take a seat to…" prompt and the `Released` / `Left` / `SeatWithoutProject`
+- [X] T028 [US2] Remove every "take a seat to…" prompt and the `Released` / `Left` / `SeatWithoutProject`
   sentences that described a released seat; `Voice()` returns the person seat whenever the project is known, in
   `src/Parley.Terminal/RoomRegion.cs`, `LineRegion.cs`, `Participation.cs`, `Shell.cs`
-- [ ] T029 [US2] Terminal tests, driven over a socket: open with two projects and send in each with no key
+- [X] T029 [US2] Terminal tests, driven over a socket: open with two projects and send in each with no key
   before the message; the sender is the registry's person row; no action named join or leave is offered
   (`DeadSurfaceTests` and `NoTwoActionsShareAKeyTests` stay green), in
   `tests/Parley.Terminal.Tests/NoJoinTests.cs`
-- [ ] T030 [US2] Web UI: take the person seat in every project in the frame; delete `Pages/Join.*`,
+  — *The two-project send is `NoJoinTests`, checked by removing the seating of unselected projects (it fails); "no
+  join or leave offered" is `SeatingRegionTests.Nothing_anywhere_offers_to_join_or_leave`, which walks every pane.*
+- [X] T030 [US2] Web UI: take the person seat in every project in the frame; delete `Pages/Join.*`,
   `Pages/Leave.*` and `Seating/SeatCookie.cs`; remove the Join and Leave links from `Shared/_Layout.cshtml`,
   in `src/Parley.Web`
-- [ ] T031 [US2] Web UI: `Conversations/Detail` always speaks as the person seat and never falls back to an
+- [X] T031 [US2] Web UI: `Conversations/Detail` always speaks as the person seat and never falls back to an
   instruction; `Inbox` reads the person seat's mail with no redirect to `/Join`, in
   `src/Parley.Web/Pages/Conversations/Detail.cshtml(.cs)` and `src/Parley.Web/Pages/Inbox.cshtml(.cs)`
-- [ ] T032 [US2] Web tests: a message posted from a conversation is the person's, not an instruction (fail
+- [X] T032 [US2] Web tests: a message posted from a conversation is the person's, not an instruction (fail
   against today's unseated fallback); `/Join` and `/Leave` are gone; the inbox needs no cookie, in
   `tests/Parley.Web.Tests/NoJoinOnTheWebTests.cs`; sort the 7 web test files that rest on joining as T025 does
-- [ ] T033 [P] [US2] Sort the 9 client test files that rest on typed seats (kept, replaced or deleted, with why),
+- [X] T033 [P] [US2] Sort the 9 client test files that rest on typed seats (kept, replaced or deleted, with why),
   recorded in this file. **`TwoSurfaceDeliveryTests` is kept and converted**, not deleted: it is the evidence for
   the spec's "mail is collected once across two surfaces" (`/speckit-analyze` issue 12)
+
+**The sort, recorded as T025, T032 and T033 require (2026-09-30).** Every test file that seated somebody under a typed
+name, and what became of it. *Kept* means the property survives and the test was converted to the person seat;
+*replaced* means the file now tests the new design; *deleted* means the property belonged to the removed design, with
+where its replacement lives when there is one.
+
+Terminal (T025):
+
+| File | What happened | Why |
+|---|---|---|
+| `Seated.cs` (fixture) | kept | Seated by opening the project; asserts the seat is the person's, which is FR-014 itself |
+| `JoinGuardTests.cs` → `UnreachableBrokerSeatsNobodyTests.cs` | kept, renamed | An unreachable registry must arrive as null, not empty — matters more with nothing typed. Its grammar test deleted with the typed name |
+| `SeatLookalikeTests.cs` | deleted | Every case was a typed name looking like another; there is no typed name |
+| `SeatOnEnterTests.cs` | deleted | Enter took a seat; a retired seat's dialog; a take-this-seat action — all removed. Enter's new meaning is `RowMenuTests` (T065) |
+| `IdleSeatTests.cs` | replaced | Idle now drops the stream, says nothing, keeps the seat known; the next key takes it back |
+| `SeatLifetimeTests.cs` | replaced | Same properties against the book directly (`AgentsRegion.Refresh` went), plus the seat staying known after a drop |
+| `SeatingRegionTests.cs` | replaced | Opening a project seats the person; nothing anywhere offers join or leave |
+| `SeatUnderneathTests.cs` | kept | A sweep still removes the speaking actions; the second join became the next key's retake; nothing says "released" |
+| `StartingAConversationTests.cs` | kept, strengthened | Start is offered with no seat step and no "takes a seat first" — the owner's report. "Asks for a name" deleted |
+| `DialogStackTests.cs` | kept | All four properties, pointed at the create-project dialog since the Join dialog went |
+| `LineTests.cs` | kept | "No seat" became "not connected"; its Join-in-the-room half deleted |
+| `ASeatSpeaksFromTheViewsProjectTests.cs` | kept | Asserts against `NotConnected` rather than the removed `Released` |
+| `BrokerRestartTests.cs`, `ConcludedUnderfootTests.cs`, `MessageCapTests.cs`, `TwiceTests.cs` | kept | Seated from a registry person row; `TwiceTests`' "leaving twice" deleted with Leave |
+| `ParticipationTests.cs` | kept | "A name an agent holds is refused" deleted (storage refuses it now); the other guards converted |
+| `CompletingTests.cs`, `FollowingOverTheWireTests.cs`, `TellingEverybodyTests.cs`, `VerbatimTests.cs` | kept | Join setup removed; the seat is taken when the project opens |
+| `WaitingOnScreenTests.cs` | kept | "The count goes when the seat does" deleted: T041 inverts it — the count must survive being away |
+| `AddressingFromTheRoomTests.cs` | kept | "Taking a seat is offered in the room" deleted |
+| `ActionShapeTests.cs`, `ReadmeDescribesTheTerminalTests.cs` | kept | The Join title left their lists; the README's seat section is T051 |
+| `ContractTests.cs` | kept | "The seat-release sentence is the contract's" deleted — the sentence went; the old contract stays as written |
+| `ViewLifetimeTests.cs` | kept | "Moving between views counts as being here" deleted: it had no seat book, so it could never fail |
+| `FieldsCorrectAsTypedTests.cs`, `GuardOwnershipTests.cs` | kept | Their Join-field and seat-grammar tests deleted |
+| `GroupedAgentsTests.cs` | kept | The withdrawn-seats group test deleted with the group (issue 13) |
+
+Web (T032): `JoiningTests.cs` → `NoJoinOnTheWebTests.cs` (replaced: no Join, no Leave, the inbox needs no name, and the
+composer never instructs); `StaleSeatTests.cs` kept (the frame never marks the person here when nothing is held);
+`FieldsCarryTheirRuleTests.cs` kept, its Join-field test deleted; `AskingWhatItOwnsTests.cs` kept, its helper's seat
+cookie removed.
+
+Client (T033): `SeatTests.cs` replaced — it is T024's tests (the name comes from the registry and not this machine; no
+person row and an unreadable registry refuse; an old typed row is not adopted; one seat per project; idle drops and
+keeps the seat known). `DoubleSeatTests.cs`, `LostSeatTests.cs` kept and converted; `SeatBookConcurrencyTests.cs` kept,
+racing projects where it raced people; **`TwoSurfaceDeliveryTests.cs` kept and converted**, as issue 12 required;
+`BroadcastGuardTests.cs`, `AskShapeTests.cs`, `SeatFileNoticeTests.cs` kept and converted.
+
+Recorded low, not acted on: `Prompting.Text`'s correct-as-typed parameter has no caller since the Join dialog went. It
+works and costs nothing; removing it is not this feature's business.
+
 
 **Checkpoint**: SC-001 holds. No fixture seats anybody under a typed name.
 
@@ -225,25 +276,25 @@ UI call until T026–T031 change them, so the build is expected to be red betwee
 **Independent test**: Enter on the person's row, an agent's row and a startable agent's row each open the menu the
 spec names; "conversations it is in" filters the list, says so, and Esc clears it.
 
-- [ ] T061 [US6] Change the "start a conversation" label and its cost clause (FR-021): no mention of a seat, and the
+- [X] T061 [US6] Change the "start a conversation" label and its cost clause (FR-021): no mention of a seat, and the
   cost in plain words ("they'll owe you an answer"), in `src/Parley.Client/Rendering/Owing.cs`; delete
   `StartSeatFirstTitle` and its sentence with the rest of the typed-seat code, in `src/Parley.Terminal/Participation.cs`.
   `Owing` is read by both surfaces, so the web UI's label changes with it — say so in the commit
-- [ ] T062 [US6] A row menu: Enter on an agents-list row opens `Prompting.Choose` over the actions that apply to that
+- [X] T062 [US6] A row menu: Enter on an agents-list row opens `Prompting.Choose` over the actions that apply to that
   row, built from the existing action table (`RegionAction`) rather than a list of its own, so a label or key cannot
   differ between the menu, the status line and `?`. Actions that do not apply now are left out (FR-018, AS4), in
   `src/Parley.Terminal/Shell.cs` and `src/Parley.Terminal/AgentsRegion.cs`
-- [ ] T063 [US6] Retire, reinstate and purge are never in the row menu (FR-019), and `SurfaceTests`' one-file rules
+- [X] T063 [US6] Retire, reinstate and purge are never in the row menu (FR-019), and `SurfaceTests`' one-file rules
   stay true: the row menu offers actions and never calls `RetireAsync`/`PurgeAsync` itself, in `src/Parley.Terminal/Shell.cs`
-- [ ] T064 [US6] Filter the conversations list to one agent: a filter held on the view, named on screen, cleared by Esc,
+- [X] T064 [US6] Filter the conversations list to one agent: a filter held on the view, named on screen, cleared by Esc,
   and applied to what the list already reads, not a new broker call, in `src/Parley.Terminal/ConversationsRegion.cs`
   and `src/Parley.Terminal/Shell.cs`
-- [ ] T065 [US6] Terminal tests, pressing the real keys (`Lists`' rule: a key tested only through its seam is a key
+- [X] T065 [US6] Terminal tests, pressing the real keys (`Lists`' rule: a key tested only through its seam is a key
   nobody has pressed): Enter on the person's row, an agent's row and a running agent's row each offer the spec's
   actions and no others; no row offers retire or purge; choosing "conversations it is in" filters and Esc clears;
   choosing "start a conversation" on an agent's row addresses it. **Watch each fail against today's Enter**, in
   `tests/Parley.Terminal.Tests/RowMenuTests.cs`
-- [ ] T066 [US6] `NoTwoActionsShareAKeyTests`, `EveryKeyIsOfferedTests` and `DeadSurfaceTests` stay green; add Enter's
+- [X] T066 [US6] `NoTwoActionsShareAKeyTests`, `EveryKeyIsOfferedTests` and `DeadSurfaceTests` stay green; add Enter's
   new meaning to the status line and the Keys menu, since a key the surface does not name is one nobody finds
 
 ---

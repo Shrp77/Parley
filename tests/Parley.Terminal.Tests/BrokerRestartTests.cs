@@ -54,8 +54,7 @@ public sealed class BrokerRestartTests
 
         using var seats = new SeatBook(_ => refusing);
 
-        Assert.True(Seat.TryRead("arvind", out var me, out _));
-        var taken = await seats.TakeAsync(Alpha, me, [], ct);
+        var taken = await seats.TakeAsync(Alpha, Walking.PersonOnly, ct);
 
         Assert.True(taken.Seated);
 
@@ -71,9 +70,12 @@ public sealed class BrokerRestartTests
         driving.Show(shell);
         await Walking.GoAsync(shell, Viewing.Project);
 
-        Assert.Empty(seats.Seats(me));
+        Assert.Empty(seats.Seats());
         Assert.Null(shell.Held);
-        Assert.Contains(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
+
+        // Since specs/023 there is no Join to offer instead; what must not be offered is anything that speaks as the
+        // person, which is what a seat is for.
+        Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.DeliveryTitle);
     }
 
     [Fact]
@@ -90,8 +92,7 @@ public sealed class BrokerRestartTests
 
         using var seats = new SeatBook(_ => refusing);
 
-        Assert.True(Seat.TryRead("arvind", out var me, out _));
-        Assert.True((await seats.TakeAsync(Alpha, me, [], ct)).Seated);
+        Assert.True((await seats.TakeAsync(Alpha, Walking.PersonOnly, ct)).Seated);
 
         using var driving = Driving.Open();
         using var shell = new Shell(directory) { Seats = seats };
@@ -108,7 +109,7 @@ public sealed class BrokerRestartTests
 
         // Said, not thrown. And the seat is left alone: this screen's last exception is not what
         // decides whether an attachment survived, and the hold behind this one is still open.
-        Assert.Single(seats.Seats(me));
+        Assert.Single(seats.Seats());
     }
 
 

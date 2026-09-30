@@ -67,8 +67,9 @@ internal sealed class RoomRegion : FrameView
     /// <summary>What is said where nothing is owed, so an empty list is never mistaken for a list that failed.</summary>
     internal const string NothingOwed = "nothing owed by you";
 
-    /// <summary>What is said before a seat has been taken.</summary>
-    internal const string NoSeat = "take a seat to take part";
+    /// <summary>What is said while this terminal is not connected to the project as the person.</summary>
+    /// <remarks>Not "take a seat" (specs/023): there is no seat to take, only a connection coming back.</remarks>
+    internal const string NoSeat = "not connected as you just now";
 
     /// <summary>What is said when somebody tries to exclude the last recipient left.</summary>
     internal const string LastOne =

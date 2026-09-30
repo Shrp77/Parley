@@ -1,5 +1,4 @@
 using Parley.Client;
-using Parley.Client.Seating;
 using Xunit;
 
 namespace Parley.Web.Tests;
@@ -53,26 +52,8 @@ public sealed class FieldsCarryTheirRuleTests
         Assert.DoesNotContain("placeholder=\"what it is about\"", body, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Joining_says_what_may_name_a_person()
-    {
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        var body = await client.GetStringAsync(
-            new Uri("/Join", UriKind.Relative), TestContext.Current.CancellationToken);
-
-        Assert.Contains("id=\"person\"", body, StringComparison.Ordinal);
-        Assert.Contains(Seat.Pattern, body, StringComparison.Ordinal);
-        Assert.Contains($"data-correct=\"{Seat.Allowed}\"", body, StringComparison.Ordinal);
-
-        // Case is folded rather than refused, and the field has to know that: `Arvind` is not a
-        // mistake anybody should be told about, but the seat really is called `arvind` and the
-        // person should watch it being made.
-        Assert.Contains("data-lower", body, StringComparison.Ordinal);
-        Assert.Contains(
-            Seat.Rule, System.Net.WebUtility.HtmlDecode(body), StringComparison.Ordinal);
-    }
+    // `Joining_says_what_may_name_a_person` was here. The Join page and its name field went in specs/023: the broker
+    // provides the person seat, so no name is typed.
 
     [Fact]
     public async Task The_composer_says_what_a_request_costs_the_peer()
@@ -123,8 +104,10 @@ public sealed class FieldsCarryTheirRuleTests
         using var client = console.CreateStubbornClient();
 
         var body = await client.GetStringAsync(
-            new Uri("/Join", UriKind.Relative), TestContext.Current.CancellationToken);
+            new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
 
+        // Read from the projects page since specs/023 removed the Join page this used to read: the script is the frame's,
+        // so every page carries it.
         Assert.Contains("querySelectorAll('[data-correct]')", body, StringComparison.Ordinal);
 
         // A space becomes the separator the rule allows rather than being dropped, which is the

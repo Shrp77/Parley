@@ -35,7 +35,7 @@ public sealed class OwingIsSaidTests
     {
         // Pinned because both wrong answers are tempting and one of them was proposed. "Fire and forget"
         // is true of every send, since nobody waits (§4.2); what a Request adds is a Result owed.
-        Assert.Contains("owe a result", Owing.Requesting, StringComparison.Ordinal);
+        Assert.Contains("owe you an answer", Owing.Requesting, StringComparison.Ordinal);
         Assert.DoesNotContain("fire and forget", Owing.Requesting, StringComparison.OrdinalIgnoreCase);
     }
 

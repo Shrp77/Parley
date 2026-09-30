@@ -123,12 +123,15 @@ public sealed class AskShapeTests
                 .ToArray());
     }
 
-    private static Seat Seated()
-    {
-        Assert.True(Seat.TryRead("arvind", out var seat, out _));
+    /// <summary>The project's person seat, as the broker names it (specs/023).</summary>
+    private static Seat Seated() => new(PersonSeat.On(Alpha.Name));
 
-        return seat;
-    }
+    /// <summary>The project's registry, holding only its person seat.</summary>
+    private static IReadOnlyList<AgentRecord> Person { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 
     /// <summary>A client that accepts everything and keeps what it was given.</summary>
     /// <remarks>

@@ -259,7 +259,7 @@ public sealed class LineTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task With_no_seat_the_line_asks_for_one_rather_than_hiding()
+    public async Task With_no_connection_the_line_says_so_rather_than_hiding()
     {
         // 0.28.2 records what hiding a thing from a seatless person costs: the owner reached for Instruct,
         // which is not a message and never becomes a conversation.
@@ -276,16 +276,9 @@ public sealed class LineTests : IAsyncDisposable
         // this surface says, which ends a sentence with a full stop.
         Assert.Contains(LineRegion.NoSeat, shell.Line.Preview, StringComparison.Ordinal);
 
-        // **And the seat is offered in the room rather than here**, which is where its key can actually
-        // arrive: a focused box wins every printable key, so `j` in this pane types a `j`. 0.28.2's rule is
-        // what still holds -- never hide a thing from a seatless person -- and only the pane changed.
-        shell.Focus(shell.Panes.ToList().FindIndex(p => p is LineRegion));
-
-        Assert.DoesNotContain(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-
-        shell.Focus(shell.Panes.ToList().FindIndex(p => p is RoomRegion));
-
-        Assert.Contains(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
+        // It went on to assert that a Join was offered in the room. There is no Join since specs/023 — the terminal
+        // takes the person seat on its own — so what is left of 0.28.2's rule is the half above: the box says why it
+        // cannot send rather than hiding itself.
     }
 
     private BrokerDirectory Directory() =>
@@ -307,13 +300,8 @@ public sealed class LineTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);

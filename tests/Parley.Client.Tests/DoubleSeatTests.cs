@@ -44,11 +44,10 @@ public sealed class DoubleSeatTests
         var terminal = new StubAgents();
         using var browser = new SeatBook(_ => console);
         using var screen = new SeatBook(_ => terminal);
-        var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
-        var first = await browser.TakeAsync(Alpha, seat, [], token);
-        var second = await screen.TakeAsync(Alpha, seat, [], token);
+        var first = await browser.TakeAsync(Alpha, [Person], token);
+        var second = await screen.TakeAsync(Alpha, [Person], token);
 
         Assert.True(first.Seated);
         Assert.True(second.Seated);
@@ -66,17 +65,18 @@ public sealed class DoubleSeatTests
         var terminal = new StubAgents();
         using var browser = new SeatBook(_ => console);
         using var screen = new SeatBook(_ => terminal);
-        var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
-        await browser.TakeAsync(Alpha, seat, [], token);
-        await screen.TakeAsync(Alpha, seat, [], token);
+        await browser.TakeAsync(Alpha, [Person], token);
+        await screen.TakeAsync(Alpha, [Person], token);
 
-        Assert.Equal(1, browser.Leave(seat));
+        // The browser's person walks away: its hold is dropped after the idle window. There is no Leave since
+        // specs/023, so this is how one surface stops being here while another goes on.
+        Assert.Equal(1, browser.Sweep(DateTimeOffset.UtcNow + SeatBook.IdleAfter + TimeSpan.FromMinutes(1)));
 
-        Assert.Empty(browser.Seats(seat));
-        Assert.Single(screen.Seats(seat));
-        Assert.NotNull(screen.Held(Alpha.Name.Value, seat));
+        Assert.Empty(browser.Seats());
+        Assert.Single(screen.Seats());
+        Assert.NotNull(screen.Held(Alpha.Name.Value));
     }
 
     [Fact]
@@ -87,16 +87,15 @@ public sealed class DoubleSeatTests
         // announced for somebody who never left, and the count of them is what the broker reads.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
-        var first = await book.TakeAsync(Alpha, seat, [], token);
-        var second = await book.TakeAsync(Alpha, seat, [], token);
+        var first = await book.TakeAsync(Alpha, [Person], token);
+        var second = await book.TakeAsync(Alpha, [Person], token);
 
         Assert.True(second.Seated);
         Assert.Same(first.Hold, second.Hold);
         Assert.Equal(1, agents.Attaches);
-        Assert.Single(book.Seats(seat));
+        Assert.Single(book.Seats());
     }
 
     [Fact]
@@ -111,37 +110,16 @@ public sealed class DoubleSeatTests
 
         var outcome = await screen.TakeAsync(
             Alpha,
-            Seated("arvind"),
-            [Registered("arvind", adapter: Seat.Adapter)],
+            [Person with { Connected = true }],
             TestContext.Current.CancellationToken);
 
         Assert.True(outcome.Seated);
         Assert.Null(outcome.Problem);
     }
 
-    /// <summary>A person's seat, by the name they typed.</summary>
-    /// <param name="person">What they typed.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
-
-        return seat;
-    }
-
-    /// <summary>A registry row for a name on this machine.</summary>
-    /// <param name="role">The role half.</param>
-    /// <param name="adapter">What the registry says is running under it.</param>
-    /// <returns>The row.</returns>
-    private static AgentRecord Registered(string role, string adapter) =>
-        new(AgentName.Create($"{role}@{MachineName.Current}"),
-            adapter,
-            AgentTier.Pull,
-            null,
-            null,
-            null,
-            Connected: true,
-            AgentStatus.Active);
+    /// <summary>The person seat the broker writes for this project (specs/023).</summary>
+    private static AgentRecord Person { get; } =
+        new(PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active);
 
     /// <summary>An Agents client that counts what was actually put on the wire.</summary>
     private sealed class StubAgents : Wire.Agents.AgentsClient

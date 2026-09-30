@@ -18,8 +18,15 @@ public static class Owing
 {
     /// <summary>What a Request costs the participant it is sent to, in the fewest words that are true.</summary>
     /// <remarks>
-    /// "Owe" rather than "should": the exchange stays open until they send a Result, and work left
-    /// untouched is shown to the person running the deployment (§6).
+    /// <para>
+    /// "Owe" rather than "should": the exchange stays open until they answer, and work left untouched is shown to the
+    /// person running the deployment (§6).
+    /// </para>
+    /// <para>
+    /// <b>Plain words since specs/023, on the owner's report.</b> It read "opens an exchange they owe a result on",
+    /// which says the same thing in the protocol's vocabulary — exchange, Result — to a person who is not reading the
+    /// protocol. The cost is unchanged; only the words a person has to translate went.
+    /// </para>
     /// </remarks>
-    public const string Requesting = "opens an exchange they owe a result on";
+    public const string Requesting = "they'll owe you an answer";
 }

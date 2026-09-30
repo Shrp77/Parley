@@ -184,11 +184,11 @@ internal sealed class Shell : Window
     {
         if (Held is not { } hold || Drafting is not { } draft || _place.Title is not { } conversation)
         {
-            // **Three different absences, and only one of them is the seat.** This said `Released`
-            // for all three, which is a statement about the seat — and told somebody holding one that
-            // it had gone. A draft or a conversation that is missing is this surface's own fault and
-            // is worth saying so; 0.29.1 records what the collapsed version costs.
-            Said = Held is null ? Released : SeatWithoutProject;
+            // **Three different absences, and only one of them is the stream.** A draft or a conversation that is
+            // missing is this surface's own fault and is worth saying so; 0.29.1 records what the collapsed version
+            // costs. And the stream missing is never "your seat was released" any more (specs/023): the seat is the
+            // broker's and is never released, so what is missing is only this terminal's connection to it.
+            Said = Held is null ? NotConnected : SeatWithoutProject;
 
             return Task.CompletedTask;
         }
@@ -1405,8 +1405,49 @@ internal sealed class Shell : Window
     /// selection by name across a redraw. Reading three conversations in turn should cost three
     /// keystrokes, not three descents from the top.
     /// </remarks>
-    internal Task BackAsync() =>
-        _place.CanGoBack ? GoAsync(_place.Back()) : Task.CompletedTask;
+    internal Task BackAsync()
+    {
+        // **A filter is cleared before anything is left** (specs/023 User Story 6, FR-020): Esc on a list showing only one
+        // agent's conversations shows them all again, which is what the note under the list promises. Going back a view
+        // with the filter still set would bring somebody back to a list quietly missing most of its rows.
+        if (ConversationsOf is not null)
+        {
+            ConversationsOf = null;
+
+            Queue(token => Current is { } project ? SelectAsync(project, token) : Task.CompletedTask);
+
+            return Settled;
+        }
+
+        return _place.CanGoBack ? GoAsync(_place.Back()) : Task.CompletedTask;
+    }
+
+    /// <summary>The agent the conversations list is filtered to, or null when it shows every conversation.</summary>
+    internal AgentName? ConversationsOf { get; private set; }
+
+    /// <summary>Shows only the conversations one agent is part of, in the project on screen.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>When the list has been redrawn.</returns>
+    /// <remarks>
+    /// A filter on what the list already reads rather than a new broker call: a conversation's participants come with
+    /// the page, so asking again for a narrower page would be a second answer to one question.
+    /// </remarks>
+    private Task ShowConversationsOf(AgentName agent)
+    {
+        ConversationsOf = agent;
+
+        Queue(async token =>
+        {
+            if (Current is { } project)
+            {
+                await SelectAsync(project, token).ConfigureAwait(false);
+            }
+
+            Focus(Panes.ToList().IndexOf(Conversations));
+        });
+
+        return Settled;
+    }
 
     /// <summary>Moves to a view and lays it out.</summary>
     /// <param name="place">Where to go.</param>
@@ -1712,6 +1753,12 @@ internal sealed class Shell : Window
 
         AgentsRegion =>
         [
+            // Enter's meaning here, named where the others are (specs/023 T066): a key the surface takes and does not
+            // name is one nobody finds. Offered only on a row, since that is what it acts on.
+            .. Agents.Selected is not null
+                ? new[] { new RegionAction(default, RowMenuTitle, RowMenu, Chord: Key.Enter) }
+                : Array.Empty<RegionAction>(),
+
             new RegionAction('a', Adding.Title, Add),
 
             // Beside adding one, because it is the same act for many: the two ways a project gains agents
@@ -1734,14 +1781,6 @@ internal sealed class Shell : Window
                 ? chosen.State.Contains("retired", StringComparison.Ordinal)
                     ? [new RegionAction('i', Withdrawing.ReinstateTitle, Reinstate)]
                     : new[] { new RegionAction('r', Withdrawing.Title, Withdraw) }
-                : Array.Empty<RegionAction>(),
-
-            // Taking the seat under the cursor, offered rather than left as a bare Enter. The
-            // surface's rule is that no action exists only as a key, and a row carrying somebody's
-            // own name is exactly where they will press Enter before reading anything.
-            .. Seats is not null && Held is null && Agents.Selected is { Seat: true } mine
-                && Mine(mine.Name)
-                ? new[] { new RegionAction('t', TakeThisSeat + mine.Name, SeatSelected) }
                 : Array.Empty<RegionAction>(),
 
             // What the operator told this agent, and what it said back. Never for a seat: a seat
@@ -1797,11 +1836,8 @@ internal sealed class Shell : Window
                 }
                 : Array.Empty<RegionAction>(),
 
-            .. Seats is null
-                ? Array.Empty<RegionAction>()
-                : Held is null
-                    ? [new RegionAction('j', AgentsRegion.JoinTitle, Join)]
-                    : new[] { new RegionAction('l', LeaveSeatTitle, LeaveSeat) },
+            // **No join and no leave** (specs/023). The broker provides the person's seat in every project and this
+            // terminal takes it on its own; there is nothing to join, and closing the terminal is how a person leaves.
 
             // **Taking delivery lives here as well as in a transcript, and that is the correction.** It
             // was offered only inside a conversation, so collecting what you had been sent meant opening
@@ -1817,13 +1853,6 @@ internal sealed class Shell : Window
         // is not, since every letter there belongs to the text. No action on this surface exists only as a key.
         RoomRegion =>
         [
-            // **Taking a seat lives here, and that is a correction.** It was offered on the line pane alone,
-            // where every letter belongs to the text -- so pressing `j` to join typed a `j` into the message.
-            // This pane is a list, so a letter means what it says, and it is also where the seat is drawn.
-            .. Held is null
-                ? new[] { new RegionAction('j', AgentsRegion.JoinTitle, Join) }
-                : Array.Empty<RegionAction>(),
-
             // Offered only on a row that is a participant, because that is the only row it would do anything
             // to -- and a key named where it does nothing is the fault this surface keeps a rule about.
             .. Held is not null && Room.SelectedPeer is not null
@@ -1869,17 +1898,12 @@ internal sealed class Shell : Window
             new RegionAction('s', SortTitle, SortConversations),
             new RegionAction('v', _showArchived ? HideArchivedTitle : ShowArchivedTitle, ToggleArchived),
 
-            // Starting one belongs here rather than in a transcript of a different one, which is
-            // this method's own rule read straight. Needs a seat for the reason every other way of
-            // speaking does: without one there is no identity to speak as.
-            .. Held is not null
-                ? new[]
-                {
-                    new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting),
-                }
-                : Seats is not null
-                    ? new[] { new RegionAction('k', Participation.StartSeatFirstTitle, StartSeatFirst, Owing.Requesting) }
-                    : Array.Empty<RegionAction>(),
+            // Starting one belongs here rather than in a transcript of a different one, which is this method's own
+            // rule read straight. **Offered whenever this terminal can speak as the person at all** (specs/023): there
+            // is no seat to take first any more, so there is no second spelling of this action that says so.
+            .. Seats is not null
+                ? new[] { new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting) }
+                : Array.Empty<RegionAction>(),
 
             .. Conversations.Selected is { } chosen
                 ? new[]
@@ -1951,6 +1975,139 @@ internal sealed class Shell : Window
 
         _ => [],
     };
+
+    /// <summary>What Enter on an agents-list row is called, on the status line and in the menu.</summary>
+    internal const string RowMenuTitle = "What can be done with this row";
+
+    /// <summary>What the row menu offers on the person's own row to see their conversations.</summary>
+    internal const string YourConversationsTitle = "Your conversations";
+
+    /// <summary>What the row menu offers on an agent's row to start a conversation with it, before the name.</summary>
+    internal const string StartWithTitle = "Start a conversation with ";
+
+    /// <summary>What the row menu offers on an agent's row to see its conversations.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The label.</returns>
+    internal static string ConversationsOfTitle(string agent) => $"Conversations {agent} is in";
+
+    /// <summary>What the row menu offers on an agent that is not running, before the name.</summary>
+    private const string StartThisTitle = "Start ";
+
+    /// <summary>
+    /// Opens what can be done with the row under the cursor in the agents list (specs/023 User Story 6).
+    /// </summary>
+    /// <returns>When the menu is open.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The owner's report of 0.36.0</b>: "it felt more natural to be in the agents section and hit enter on my user in
+    /// order to start a conversation." Enter on a seat row used to <i>take that seat</i>, which went with the typed name,
+    /// so the key needed a meaning anyway — and a row is where somebody already is when they want to act on it.
+    /// </para>
+    /// <para>
+    /// <b>Built from the action table rather than a list of its own</b>, where an action already exists: a label written
+    /// twice is one that can differ between this menu, the status line and <c>?</c>. Two entries are new because nothing
+    /// offered them — a conversation with this agent, and the list filtered to its conversations.
+    /// </para>
+    /// <para>
+    /// <b>Retire, reinstate and purge are never here</b> (FR-019), on the owner's call: they stay in the Agent menu and on
+    /// their own keys, behind the typed name, so a row menu opened by the most ordinary key there is can never be one
+    /// arrow away from withdrawing anybody. Anything that cannot be done right now is left out rather than offered and
+    /// then refused (User Story 6, scenario 4).
+    /// </para>
+    /// </remarks>
+    private Task RowMenu()
+    {
+        if (App is not { } app || Agents.Selected is not { } row || !AgentName.TryCreate(row.Name, out var name))
+        {
+            return Task.CompletedTask;
+        }
+
+        var entries = new List<(string Label, Func<Task> Run)>();
+
+        if (PersonSeat.Is(name))
+        {
+            if (Seats is not null)
+            {
+                entries.Add((Participation.StartTitle, Start));
+            }
+
+            entries.Add((YourConversationsTitle, () => ShowConversationsOf(name)));
+
+            if (Held is not null)
+            {
+                entries.Add((Participation.DeliveryTitle, TakeDelivery));
+            }
+        }
+        else if (!row.Seat)
+        {
+            if (Seats is not null)
+            {
+                entries.Add((StartWithTitle + name.Value, () => Compose(inConversation: null, to: name)));
+            }
+
+            entries.Add((ConversationsOfTitle(name.Value), () => ShowConversationsOf(name)));
+
+            // The agent's own actions as the table already offers them — ask what it owns, review its line, instruct
+            // it, what it was told — and nothing that withdraws it.
+            entries.AddRange(Offered()
+                .Where(action => action.Key is 'k' or 'n' or 'o' or 'h')
+                .Select(action => (action.Label, action.Run)));
+
+            if (Agents.SelectedStanding is { Running: false, Retired: false, StartableHere: true })
+            {
+                entries.Add((StartThisTitle + name.Value, StartSelected));
+            }
+        }
+
+        if (entries.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var menu = Prompting.Choose(row.Name, "What to do with this row.", [.. entries.Select(e => e.Label)]);
+        var token = Prompting.Open(app, menu);
+
+        menu.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, token);
+
+            if (entries.FirstOrDefault(e => e.Label == chosen) is { Run: { } run })
+            {
+                _ = run();
+            }
+        };
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Asks this agent's machine to start it, from its row.</summary>
+    /// <returns>When the request has been made and its outcome said.</returns>
+    /// <remarks>
+    /// The same operator operation the add screen and "start every agent" use (§10.2 <c>start</c>). It says what was
+    /// asked for rather than claiming the agent is running: whether it then attaches is a different question, and 0.25.2
+    /// records a screen predicting a registration instead of checking one.
+    /// </remarks>
+    private Task StartSelected()
+    {
+        if (Current is not { } project || Agents.Selected is not { } row || !AgentName.TryCreate(row.Name, out var agent))
+        {
+            return Task.CompletedTask;
+        }
+
+        Queue(async token =>
+        {
+            var started = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project))
+                    .StartAsync(agent, "a person started it from its row", token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            Said = started.Problem ?? $"Asked {agent.Value}'s machine to start it.";
+
+            await SelectAsync(project, token).ConfigureAwait(false);
+        });
+
+        return Settled;
+    }
 
     /// <summary>Opens the menu of what the focused region can do.</summary>
     /// <returns>When the menu is open.</returns>
@@ -2045,70 +2202,116 @@ internal sealed class Shell : Window
     }
 
     /// <summary>
-    /// Who this person is, which is not the same question as whether they are seated here.
-    /// </summary>
-    /// <remarks>
-    /// Kept apart from <see cref="Held"/> deliberately, and 004 learned this the hard way: taking
-    /// "no seat in this project" as the answer to "who are you" meant walking into a project you
-    /// were not seated in forgot you, so coming back to the one you <i>were</i> seated in offered
-    /// a join while the book still held the seat and the registry still had you present. Only
-    /// leaving clears a person.
-    /// </remarks>
-    internal Seat? Me { get; private set; }
-
-    /// <summary>What is said when a seat is released for want of anybody at the terminal.</summary>
-    internal static string Released { get; } =
-        $"Your seat was released: nothing touched it for {SeatBook.IdleAfter.TotalMinutes:0} minutes.";
-
-    /// <summary>
-    /// Keeps this person's seat alive because they are here, and releases the ones nobody is at.
+    /// Keeps the person marked here while somebody is at the terminal, and lets the broker read them as away when
+    /// nobody has been.
     /// </summary>
     /// <param name="now">The current instant.</param>
     /// <remarks>
     /// <para>
-    /// <b>Called on every draw, and that is what makes the idle rule apply at all.</b> 004 swept on
-    /// every visit to its menu; this surface has no menu to visit, so without a hook the seat would
-    /// be released only when the process ended — and a terminal left open overnight holding
-    /// somebody present in the registry is the exact failure <c>SeatBook.IdleAfter</c> exists to
-    /// prevent, reached by a different kind of window than the browser tab it was written for.
+    /// <b>Called on every draw, and that is what makes the idle rule apply at all.</b> Without a hook the stream
+    /// would be dropped only when the process ended, and a terminal left open overnight would mark the person here
+    /// all night — the false presence <c>SeatBook.IdleAfter</c> exists to prevent.
     /// </para>
     /// <para>
-    /// Being drawn is being here. The sweep therefore cannot take the seat of the person watching
-    /// it, only the seats of people who are not — which is the same rule the console applies from
-    /// its frame.
+    /// <b>Nothing is said when the stream is dropped, because nothing was taken from the person</b> (specs/023). This
+    /// used to announce "your seat was released" and forget who the person was, since the seat went with the stream.
+    /// The broker never releases the seat now: an agent that asks meanwhile is told the person has it, the mail waits,
+    /// and the next key takes the stream back (<see cref="Touched"/>).
+    /// </para>
+    /// <para>
+    /// The touch is dated from the last key or click, not from the draw: a terminal redraws whether or not anybody is
+    /// at it, and a touch taken at the moment of drawing would keep an abandoned terminal here for ever.
     /// </para>
     /// </remarks>
     internal void Tick(DateTimeOffset now)
     {
-        // **`Current` rather than `Projects.Selected`, for the reason `Voice` now uses it too.** This is
-        // what touches a held seat, so a view where the list's selection was absent would neither keep
-        // the seat alive nor release it — frozen rather than merely unreadable. Two readers of "which
-        // project is this" on different accessors is how they come to disagree, which is this
-        // repository's most-repeated defect and the whole argument for `Current` existing.
+        // **`Current` rather than `Projects.Selected`.** Two readers of "which project is this" on different
+        // accessors is how they come to disagree, which is this repository's most-repeated defect and the whole
+        // argument for `Current` existing.
         if (Seats is null || Current is not { } project)
         {
             return;
         }
 
-        var held = AgentsRegion.Refresh(Seats, Me, project, _touched, now);
-
-        if (Me is not null && Held is not null && held is null)
-        {
-            // Said rather than left to be noticed. A person who came back to a surface that had
-            // quietly stopped being them would ask a question as nobody.
-            Said = Released;
-            Me = null;
-        }
+        Seats.Touch(_touched);
+        Seats.Sweep(now);
 
         var was = Held;
-        Held = held;
+        Held = Seats.Held(project.Name.Value);
 
         // The count belongs to the seat, so the watch starts with one; setting Held drops it again.
-        if (held is not null && was is null)
+        if (Held is not null && was is null)
         {
             WatchMail();
         }
     }
+
+    /// <summary>
+    /// Takes the person's seat in a project if nothing holds it now, and says why when it cannot be taken.
+    /// </summary>
+    /// <param name="project">The project.</param>
+    /// <param name="registry">Its registry, when it has just been read; null to read it.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>When the seat is held, or its absence has been said.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>No name is asked for and none is typed</b> (specs/023). The broker provides the person seat in every project
+    /// it serves, and this attaches as the row its registry names. It runs when the terminal opens, for every project,
+    /// and again on the next key after an idle drop.
+    /// </para>
+    /// <para>
+    /// <b>A broker that did not answer is not reported here</b>: the agents region already says so, and saying it twice
+    /// on every refresh would bury whatever the person did say. What is reported is the one case nothing else shows —
+    /// a broker that answered and has no seat for a person, which is one older than 0.36.0 — and only when it changes.
+    /// </para>
+    /// </remarks>
+    private async Task EnsureSeatAsync(
+        ProjectSettings project, IReadOnlyList<AgentRecord>? registry, CancellationToken cancellationToken)
+    {
+        if (Seats is null)
+        {
+            return;
+        }
+
+        var outcome = await Seats.EnsureAsync(
+            project,
+            async token => registry ?? (await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project))
+                    .RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false)).Value,
+            cancellationToken).ConfigureAwait(false);
+
+        if (outcome.Problem is { } problem && outcome.Problem != _seatProblem && registry is not null)
+        {
+            Said = problem;
+        }
+
+        _seatProblem = outcome.Problem;
+
+        if (Current is { } current && current.Name == project.Name)
+        {
+            var was = Held;
+            Held = outcome.Hold;
+
+            if (Held is not null && was is null)
+            {
+                WatchMail();
+            }
+        }
+    }
+
+    /// <summary>What is said when something would be sent and this terminal is not connected as the person.</summary>
+    /// <remarks>
+    /// The key that asked has already started reconnecting (<see cref="Touched"/>), so the sentence can promise that a
+    /// moment will do. When the broker is down or too old, the agents region and the message line say why.
+    /// </remarks>
+    internal const string NotConnected =
+        "Not connected to this project as you just now, so nothing was sent. It is reconnecting; try again in a moment.";
+
+    /// <summary>The last reason a seat could not be taken, so the same one is not said again on every refresh.</summary>
+    private string? _seatProblem;
+
+    /// <summary>Whether a seat is already being taken again after an idle drop, so a burst of keys asks once.</summary>
+    private int _retaking;
 
     /// <summary>Where seats are held, or null when this surface cannot seat anybody.</summary>
     internal SeatBook? Seats { get; init; }
@@ -2392,9 +2595,6 @@ internal sealed class Shell : Window
     /// because from here it succeeded.
     /// </remarks>
     private const string ConsoleAddress = WebUiAddress.Loopback;
-
-    /// <summary>What leaving a seat is called.</summary>
-    private const string LeaveSeatTitle = "Leave your seat";
 
     /// <summary>What following the broker's log is called.</summary>
     private const string FollowLogTitle = "Follow the broker log";
@@ -3137,9 +3337,6 @@ internal sealed class Shell : Window
                 Reported(project))
             : Task.CompletedTask;
 
-    /// <summary>What taking the seat under the cursor is called, before the name.</summary>
-    internal const string TakeThisSeat = "Take the seat: ";
-
     /// <summary>What showing an agent's instructions is called, before the name.</summary>
     internal const string ToldTitle = "What you have told ";
 
@@ -3192,204 +3389,6 @@ internal sealed class Shell : Window
         return Settled;
     }
 
-    /// <summary>What a retired seat's dialog is called.</summary>
-    internal const string RetiredSeatTitle = "That seat is retired";
-
-    /// <summary>Taking a retired seat back.</summary>
-    internal const string ReinstateAndSit = "Reinstate it and take it";
-
-    /// <summary>Leaving a retired seat alone.</summary>
-    internal const string LeaveRetired = "Leave it retired";
-
-    /// <summary>
-    /// Takes the seat the person is standing on.
-    /// </summary>
-    /// <returns>When the seat has been taken, or the dialog that has to come first is open.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Enter on a seat takes it, which is what somebody expects of a row with their own name on
-    /// it.</b> Before this, the only way in was `j` and typing the name back — which works, and
-    /// which nobody guesses when the name is already on the screen under the cursor.
-    /// </para>
-    /// <para>
-    /// <b>A retired seat asks first, and the asking is the point.</b> The broker refuses a retired
-    /// agent's attach outright, so Enter would otherwise be a keystroke that reports a failure and
-    /// leaves the person to find `i`. Reinstating is an operator operation (§10.2) and this surface
-    /// does not take one silently — but a seat is the person's own name rather than another agent's,
-    /// so what it needs is a sentence and a deliberate answer, not a name typed back. That is the
-    /// same distinction the withdrawal doors already draw between describing and destroying.
-    /// </para>
-    /// </remarks>
-    internal Task SeatSelected()
-    {
-        // `Current` rather than `Projects.Selected`, which is the fourth time that distinction has
-        // mattered here. The projects region is off screen in a project view and its selection is
-        // null in any fixture that never filled it, so a seat taken through it would be a seat
-        // taken in no project at all.
-        if (App is not { } app
-            || Seats is null
-            || Held is not null
-            || Current is not { } project
-            || Agents.Selected is not { Seat: true } row
-            || !Mine(row.Name))
-        {
-            return Task.CompletedTask;
-        }
-
-        if (Agents.SelectedStanding is { Retired: true })
-        {
-            var dialog = Prompting.Choose(
-                RetiredSeatTitle,
-                $"'{row.Name}' is a seat an operator withdrew, so the broker will refuse it as it "
-                + "stands. Reinstating puts the name back in the registry and then seats you in it; "
-                + "nothing else about the deployment changes.",
-                [LeaveRetired, ReinstateAndSit]);
-
-            var token = Prompting.Open(app, dialog);
-
-            dialog.Done += (_, chosen) =>
-            {
-                Prompting.Close(app, token);
-
-                if (chosen != ReinstateAndSit)
-                {
-                    return;
-                }
-
-                Queue(async cancellationToken =>
-                {
-                    // Through Withdrawing, which is the one file an operator operation is reached
-                    // from. SurfaceTests holds that, and it is the check rather than a convention.
-                    await Withdrawing.ReinstateSeatAsync(
-                        new BrokerClient(_directory.ClientFor(project)), row.Name, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    await TakeSeatAsync(project, Person(row.Name), cancellationToken)
-                        .ConfigureAwait(false);
-                });
-            };
-
-            return Task.CompletedTask;
-        }
-
-        Queue(cancellationToken => TakeSeatAsync(project, Person(row.Name), cancellationToken));
-
-        return Task.CompletedTask;
-    }
-
-    /// <summary>The person's half of a seat's name.</summary>
-    /// <param name="seat">The agent name a seat row carries.</param>
-    /// <returns>The role, which is what a person types when they join.</returns>
-    /// <remarks>
-    /// <b>A seat is named by the person and the machine is added.</b> <c>Seat.TryRead</c> takes
-    /// <c>arvind</c> and makes <c>arvind@this-machine</c>; handing it <c>arvind@test</c> whole is
-    /// refused as not a name. The row carries the whole thing, so the halves have to be separated
-    /// here — a first draft passed the row's name straight through and every Enter reported that
-    /// the name on the screen was not a name.
-    /// </remarks>
-    private static string Person(string seat) =>
-        AgentName.TryCreate(seat, out var name) ? name.Role : seat;
-
-    /// <summary>Whether a seat on this row would be seated under the name it shows.</summary>
-    /// <param name="seat">The agent name a seat row carries.</param>
-    /// <returns>Whether its machine is this one.</returns>
-    /// <remarks>
-    /// <b>A seat names a machine, and taking one only ever seats you on yours.</b> Pressing Enter
-    /// on <c>arvind@somewhere-else</c> would seat <c>arvind@here</c> — a different agent from the
-    /// row under the cursor, appearing somewhere else in the list, while the row pressed carried on
-    /// belonging to somebody at another desk. Offering nothing is the honest answer: that seat is
-    /// not this person's to take.
-    /// </remarks>
-    private static bool Mine(string seat) =>
-        AgentName.TryCreate(seat, out var name)
-        && string.Equals(name.Machine, MachineName.Current, StringComparison.Ordinal);
-
-    /// <summary>Seats the person under one name and says what happened.</summary>
-    /// <param name="project">The project to sit in.</param>
-    /// <param name="name">The seat's name.</param>
-    /// <param name="cancellationToken">Cancels the attach.</param>
-    /// <returns>When the seat is taken or refused.</returns>
-    /// <remarks>
-    /// Shared by the key and by the dialog that types a name, so both report the same way and both
-    /// go through <c>SeatBook</c>'s guard. A second path that seated somebody without it is how the
-    /// one thing this surface actually protects would be lost.
-    /// </remarks>
-    private async Task TakeSeatAsync(
-        ProjectSettings project, string name, CancellationToken cancellationToken)
-    {
-        var registry = await BrokerDirectory.ReadAsync(async () =>
-            await new BrokerClient(_directory.ClientFor(project))
-                .RegistryAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
-
-        var (hold, said) = await AgentsRegion.JoinAsync(
-            Seats!, project, registry.Value, name, cancellationToken).ConfigureAwait(false);
-
-        var first = Held is null && hold is not null;
-
-        Held = hold ?? Held;
-        Me = hold?.Seat ?? Me;
-        Said = said;
-
-        if (first)
-        {
-            WatchMail();
-        }
-
-        await SelectAsync(project, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>Opens the dialog that takes a seat.</summary>
-    /// <returns>When the dialog has been opened.</returns>
-    internal Task Join() => Join(then: null);
-
-    /// <summary>Asks for a name and takes a seat under it, then does something with the seat.</summary>
-    /// <param name="then">What to do once seated, or null for nothing; not done when the seat was refused.</param>
-    /// <returns>When the dialog is open.</returns>
-    private Task Join(Func<Task>? then)
-    {
-        if (App is not { } app || Seats is null || Projects.Selected is not { } project)
-        {
-            return Task.CompletedTask;
-        }
-
-        var dialog = Prompting.Text(
-            AgentsRegion.JoinTitle,
-            AgentsRegion.JoinQuestion,
-            problem: AgentsRegion.NameProblem,
-
-            // The correction is `Seat`'s own, not this surface's: it is the same rule `TryRead`
-            // applies a moment later, and the console's join form applies it too. A copy here
-            // would be a third opinion about what a person may call themselves.
-            correct: Seat.Correct,
-            corrected: Seat.WasCorrected);
-
-        var token = Prompting.Open(app, dialog);
-
-        dialog.Done += (_, typed) =>
-        {
-            Prompting.Close(app, token);
-
-            if (typed is null)
-            {
-                return;
-            }
-
-            // The same path the key takes, so a name typed and a row chosen are seated alike and
-            // reported alike.
-            Queue(async cancellationToken =>
-            {
-                await TakeSeatAsync(project, typed, cancellationToken).ConfigureAwait(false);
-
-                if (then is not null && Held is not null)
-                {
-                    await then().ConfigureAwait(false);
-                }
-            });
-        };
-
-        return Task.CompletedTask;
-    }
-
     /// <summary>The person's own agent operations, for the project on screen.</summary>
     /// <returns>The voice, or null when they hold no seat here.</returns>
     /// <remarks>
@@ -3409,7 +3408,7 @@ internal sealed class Shell : Window
     /// <remarks>
     /// <para>
     /// <b>It exists because the alternative was a lie.</b> Every path that speaks checks
-    /// <see cref="Voice"/> and, finding nothing, said <see cref="Released"/> — *"Your seat was
+    /// <see cref="Voice"/> and, finding nothing, said <c>Released</c> — *"Your seat was
     /// released"* — which is a statement about the seat, and the seat is right there. 0.29.1 records
     /// exactly that sentence being the defect: a console told somebody they were seated nowhere while
     /// two Results waited for the name whose seat they held.
@@ -3562,41 +3561,6 @@ internal sealed class Shell : Window
     /// </remarks>
     internal Task Start() => Compose(inConversation: null);
 
-    /// <summary>Takes a seat, and then starts a conversation from it.</summary>
-    /// <returns>When the seat dialog is open.</returns>
-    internal Task StartSeatFirst()
-    {
-        Said = Participation.SeatFirst;
-
-        return Join(then: Start);
-    }
-
-    /// <summary>Releases this person's seat, in every project at once.</summary>
-    /// <returns>When it has been released.</returns>
-    internal Task LeaveSeat()
-    {
-        if (Seats is null || Held is null)
-        {
-            return Task.CompletedTask;
-        }
-
-        Said = AgentsRegion.Leave(Seats, Held.Seat);
-        Held = null;
-        Me = null;
-
-        // Redrawn here rather than left to the next thing that happens. Clearing the count is not enough on its
-        // own: the status line is only rebuilt when something asks it to, so leaving a seat on a surface with no
-        // project selected left the number on screen under a seat that had gone.
-        Relay();
-
-        if (Projects.Selected is { } project)
-        {
-            Queue(token => SelectAsync(project, token));
-        }
-
-        return Task.CompletedTask;
-    }
-
     /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
@@ -3614,8 +3578,34 @@ internal sealed class Shell : Window
     /// an abandoned terminal goes on drawing, and a touch taken from a draw would keep its seat
     /// alive for ever. The instant is a parameter for the same reason <see cref="Tick"/>'s is —
     /// a test moves twenty minutes rather than waiting them.
+    /// <para>
+    /// <b>It is also what brings the person back</b> (specs/023). An idle drop lets the broker read them as away; the
+    /// first key afterwards takes the stream again, silently, because nothing was taken from them. Only one retake is
+    /// queued however many keys arrive while it runs.
+    /// </para>
     /// </remarks>
-    internal void Touched(DateTimeOffset? at = null) => _touched = at ?? DateTimeOffset.UtcNow;
+    internal void Touched(DateTimeOffset? at = null)
+    {
+        _touched = at ?? DateTimeOffset.UtcNow;
+
+        if (Seats is null || Held is not null || Current is not { } project
+            || Interlocked.CompareExchange(ref _retaking, 1, 0) != 0)
+        {
+            return;
+        }
+
+        Queue(async token =>
+        {
+            try
+            {
+                await EnsureSeatAsync(project, null, token).ConfigureAwait(false);
+            }
+            finally
+            {
+                Volatile.Write(ref _retaking, 0);
+            }
+        });
+    }
 
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
@@ -3731,25 +3721,20 @@ internal sealed class Shell : Window
             return true;
         }
 
-        // **Enter on a seat takes it**, which is what somebody expects of a row carrying their own
-        // name. The agents list raises no `Accepting` of its own, so there is nothing here to
-        // preempt -- the reason the projects view is singled out above does not apply to it.
-        //
-        // Only a seat. Enter on an agent is left alone: there is no one obvious thing it should do
-        // to a peer, and guessing would be a key that does something different from what the
-        // status line says it does.
-        if (key == Key.Enter && Panes[FocusedRegion] is AgentsRegion
-            && Agents.Selected is { Seat: true })
-        {
-            _ = SeatSelected();
-
-            return true;
-        }
 
         // Enter on a setting changes it, which is the one thing a row in that list is for.
         if (key == Key.Enter && Panes[FocusedRegion] is ConfigurationRegion && Configuration.Selected is not null)
         {
             _ = ChangeSetting();
+
+            return true;
+        }
+
+        // **Enter on an agents-list row opens what can be done with it** (specs/023 User Story 6). It took a seat until
+        // then, which went with the typed name. The agents list raises no `Accepting` of its own, so nothing is preempted.
+        if (key == Key.Enter && Panes[FocusedRegion] is AgentsRegion && Agents.Selected is not null)
+        {
+            _ = RowMenu();
 
             return true;
         }
@@ -3876,6 +3861,13 @@ internal sealed class Shell : Window
         {
             await SelectAsync(selected, cancellationToken).ConfigureAwait(false);
         }
+
+        // **In every project, not only the one selected** (FR-014): the person is here in every project this terminal
+        // shows, so an agent in any of them reads them as here. The selected one was taken just now with its registry.
+        foreach (var project in projects.Where(p => Projects.Selected is not { } s || s.Name != p.Name))
+        {
+            await EnsureSeatAsync(project, null, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Reads one project and draws its agents and conversations.</summary>
@@ -3912,8 +3904,16 @@ internal sealed class Shell : Window
 
         Agents.Show(registry.Value, Catalogue(), registry.Problem);
         Conversations.Show(
-            Ordered(conversations.Value?.Items), conversations.Problem, _archivedOmitted, _showArchived);
+            Ordered(conversations.Value?.Items)?.Where(c => ConversationsOf is not { } only || c.Participants.Contains(only))
+                .ToList(),
+            conversations.Problem,
+            _archivedOmitted,
+            _showArchived,
+            ConversationsOf);
         Transcript.Clear();
+
+        // The person's seat, from the registry just read (specs/023). No name is asked for: the broker provides it.
+        await EnsureSeatAsync(project, registry.Value, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Puts a page of conversations in the order the person asked for.</summary>
@@ -4776,6 +4776,10 @@ internal sealed class Shell : Window
     /// The conversation to continue, or null to suggest a new one. **This is the whole difference between
     /// starting and continuing.**
     /// </param>
+    /// <param name="to">
+    /// The agent the Request is for, when the person already chose it on its row, or null to ask. Asking again for
+    /// an agent somebody has just picked is the picker contradicting the row (specs/023 FR-018).
+    /// </param>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
     /// <para>
@@ -4786,10 +4790,19 @@ internal sealed class Shell : Window
     /// The fields are collected in the order §5.1 puts them — why, then what, then what counts as finished.
     /// </para>
     /// </remarks>
-    private Task Compose(string? inConversation)
+    private Task Compose(string? inConversation, AgentName? to = null)
     {
         if (App is not { } app || Voice() is not { } voice || Projects.Selected is not { } project)
         {
+            return Task.CompletedTask;
+        }
+
+        // **Already chosen, from the row it was started on** (specs/023 User Story 6): Enter on an agent's row offers to
+        // start a conversation with that agent, and asking which peer again would be asking a question just answered.
+        if (to is { } chosenAlready)
+        {
+            Open(chosenAlready, null);
+
             return Task.CompletedTask;
         }
 
@@ -4945,7 +4958,8 @@ internal sealed class Shell : Window
     /// <summary>Everyone in this project a person could speak to.</summary>
     /// <returns>Their rows' names, in the order the roster shows them.</returns>
     /// <remarks>
-    /// Their own seat is left out because nobody asks themselves; every other row is offered,
+    /// The person is left out because nobody asks themselves — recognised by role, since the person seat is the one
+    /// row a surface speaks as (specs/023), whichever machine this terminal is on. Every other row is offered,
     /// including one that has never run — §12.3 routes spawn-on-demand through the catalogue, so a
     /// never-run-but-startable row is a legitimate thing to ask, and leaving it out would hide the
     /// agents a person most needs to wake.
@@ -4953,7 +4967,7 @@ internal sealed class Shell : Window
     private IReadOnlyList<string> Peers() =>
     [
         .. Agents.Standings
-            .Where(row => !(row.Seat && Mine(row.Name)))
+            .Where(row => !(AgentName.TryCreate(row.Name, out var name) && PersonSeat.Is(name)))
             .Select(row => row.Name)
             .OrderBy(name => name, StringComparer.Ordinal),
     ];

@@ -32,8 +32,12 @@ internal sealed class Seated : IAsyncDisposable
     /// <summary>The conversation the fixture opens.</summary>
     internal const string Conversation = "room";
 
-    /// <summary>The name the person is seated under.</summary>
-    internal const string Me = "arvind";
+    /// <summary>Who the person is: the role of the seat the broker provides (specs/023).</summary>
+    /// <remarks>
+    /// It was <c>arvind</c>, typed into the Join dialog. There is no dialog now and no name to type: the broker writes
+    /// <c>human-user@&lt;project&gt;</c> and the shell attaches as it when the project opens.
+    /// </remarks>
+    internal const string Me = PersonSeat.Role;
 
     /// <summary>A peer that is in the conversation and waiting on this person.</summary>
     internal static AgentName Orders { get; } = AgentName.Create("orders@test");
@@ -119,16 +123,13 @@ internal sealed class Seated : IAsyncDisposable
         await shell.Settled.ConfigureAwait(false);
 
         await Walking.GoAsync(shell, Viewing.Project).ConfigureAwait(false);
-        await shell.Join().ConfigureAwait(false);
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type(Me);
-        dialog.Finish(taken: true);
-
         await shell.Settled.ConfigureAwait(false);
 
+        // **Seated by opening the project, with no key pressed** (specs/023): the broker provides the person seat and
+        // the shell takes it. This fixture typed a name into a Join dialog until then; that the seat is here without one
+        // is itself the property FR-014 asks for.
         Assert.NotNull(shell.Held);
+        Assert.True(PersonSeat.Is(shell.Held!.Seat.Name), $"seated as '{shell.Held.Seat.Name}'");
 
         var speaking = new Broker.Broker(connection, Parley.Broker.BrokerOptions.Default);
 

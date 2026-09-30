@@ -50,7 +50,6 @@ public sealed class ReadmeDescribesTheTerminalTests
                      ("create a new project", Naming.CreateTitle),
                      ("a project can be removed", Removing.Title),
                      ("typed back", Removing.Destroy),
-                     ("a seat", AgentsRegion.JoinTitle),
 
                      // 005 added the two the README had no reason to describe before, and each
                      // is the half of "who is in a project" the terminal could not touch.

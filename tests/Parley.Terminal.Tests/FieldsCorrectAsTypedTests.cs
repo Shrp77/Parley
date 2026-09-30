@@ -1,5 +1,4 @@
 using Parley.Client;
-using Parley.Client.Seating;
 using Parley.Core;
 using Parley.Setup;
 using Terminal.Gui.Input;
@@ -121,64 +120,9 @@ public sealed class FieldsCorrectAsTypedTests
         Assert.Null(Adding.RoleProblem(form.Values[0]));
     }
 
-    [Fact]
-    public async Task A_seat_name_is_corrected_in_the_dialog_that_takes_it()
-    {
-        // `TextDialog` had no correction at all, and this is the field where the omission was
-        // quietest: `Arvind Kumar` was lowered and refused for its space once the dialog had
-        // closed, and a name that is accepted is the name every message is recorded under.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
-
-        driving.Show(shell);
-
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
-
-        driving.Tab();
-
-        _ = shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        Type(driving, "Arvind Kumar");
-
-        Assert.Equal("arvind-kumar", dialog.Typed);
-
-        // The note says what it did, and the button is not refusing a name it just made.
-        Assert.Equal(Seat.WasCorrected, dialog.Problem);
-        Assert.False(dialog.Wrong);
-    }
-
-    [Fact]
-    public async Task A_name_the_correction_cannot_save_still_refuses_the_button()
-    {
-        // Correcting and reporting are both there and neither replaces the other. A leading digit
-        // survives every correction, and inventing a letter in front of it would be this field
-        // choosing somebody's name for them.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
-
-        driving.Show(shell);
-
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
-
-        driving.Tab();
-
-        _ = shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        Type(driving, "9lives");
-
-        Assert.Equal("9lives", dialog.Typed);
-        Assert.True(dialog.Wrong);
-    }
+    // Two tests of the seat's Join field were here — a name corrected as typed, and one the correction cannot save.
+    // specs/023 removed the field: nothing is typed to take a seat. The correction machinery in `Prompting.Text` has no
+    // caller now either; it is left in place and recorded in tasks.md rather than removed inside this change.
 
     private static BrokerDirectory Directory() =>
         new(

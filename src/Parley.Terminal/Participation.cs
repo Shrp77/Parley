@@ -37,9 +37,14 @@ internal static class Participation
         "Taking delivery marks these messages collected. Anything you are asked to do then counts as picked up, "
         + "and is shown to the person running the deployment if it goes untouched. It is not a look at the inbox.";
 
-    /// <summary>What is said when the seat went while somebody was still writing.</summary>
+    /// <summary>What is said when the connection went while somebody was still writing.</summary>
+    /// <remarks>
+    /// Not "your seat was released" (specs/023): the seat is the broker's and is never released. What went is this
+    /// terminal's stream, and the key that asked has already started taking it back.
+    /// </remarks>
     internal const string Gone =
-        "Your seat was released while you were writing, so nothing was sent. Take a seat again to send it.";
+        "Not connected to this project as you just now, so nothing was sent. It is reconnecting; send it again in a " +
+        "moment.";
 
     /// <summary>What the dialog offering delivery is called.</summary>
     internal const string DeliveryTitle = "Take delivery";
@@ -78,19 +83,6 @@ internal static class Participation
     /// screen; from the list it starts one.
     /// </remarks>
     internal const string StartTitle = "Start a conversation with a request";
-
-    /// <summary>The same action before a seat is held, which takes one first.</summary>
-    /// <remarks>
-    /// <b>Offered rather than hidden.</b> The owner opened this menu to start a conversation, found no such action, and
-    /// reached for Instruct instead — which is not a message and never appears as a conversation. The action was hidden
-    /// because a request needs somebody to speak as; hiding it said nothing about why, so this names the step and takes it.
-    /// </remarks>
-    internal const string StartSeatFirstTitle = "Start a conversation (takes a seat first)";
-
-    /// <summary>What is said when the seat is being taken so that a conversation can be started.</summary>
-    internal const string SeatFirst =
-        "A request is sent as somebody, so starting a conversation takes a seat first: name yourself, and the request " +
-        "opens once you are seated.";
 
     /// <summary>What the dialog sending a Result is called.</summary>
     internal const string ResultTitle = "Send the result of something you were asked";

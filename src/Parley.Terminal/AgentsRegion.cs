@@ -62,31 +62,11 @@ internal sealed class AgentsRegion : FrameView
     /// surface writing one as a literal, and it does not read a comment differently from code —
     /// which is what makes it a check rather than a habit.
     /// </remarks>
-    internal const string Seats = "seats — people, not agents";
+    internal const string Seats = "you — the person, not an agent";
 
-    /// <summary>The heading a withdrawn seat is grouped under.</summary>
-    /// <remarks>
-    /// <b>Apart from the live ones, and the owner's own deployment is why.</b> Both seats on it
-    /// were retired, and filing them with the takeable ones made a seat that the broker will refuse
-    /// look exactly like one it will not. Enter still explains it, but a list that has to be acted
-    /// on to be understood is a list that has not said what it knows.
-    /// </remarks>
-    internal const string RetiredSeats = "seats — withdrawn, take one to put it back";
-
-    /// <summary>What the dialog asking for a seat is called.</summary>
-    internal const string JoinTitle = "Take a seat";
-
-    /// <summary>What it says above the field.</summary>
-    internal const string JoinQuestion = "Join as:";
-
-    /// <summary>What is said when a seat has been taken.</summary>
-    internal const string Took = "Seated as ";
-
-    /// <summary>What is said when the person leaves and was not seated anywhere.</summary>
-    private const string NotSeated = "You were not seated anywhere.";
-
-    /// <summary>What is said when a seat is released.</summary>
-    internal const string Left = "Left. ";
+    // **There was a second group, "seats — withdrawn, take one to put it back"**, for seats an operator had retired.
+    // From specs/023 the person seat cannot be retired — storage refuses it — so the group could never hold anything,
+    // and a heading that is always empty is a promise of something the surface cannot show.
 
     /// <summary>What is shown before anything has been read.</summary>
     internal const string Nothing =
@@ -480,7 +460,7 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private static string Heading(AgentRow row, AgentStanding? standing) =>
         row.Seat
-            ? standing is { Retired: true } ? RetiredSeats : Seats
+            ? Seats
             : standing?.Standing ?? row.State;
 
     /// <summary>What colour a group's heading earns from the state it names.</summary>
@@ -516,7 +496,6 @@ internal sealed class AgentsRegion : FrameView
     private static int Rank(string heading) => heading switch
     {
         Seats => 0,
-        RetiredSeats => 1,
         Standing.Running => 2,
         Standing.NeverRun => 3,
         Standing.Idle => 4,
@@ -526,154 +505,6 @@ internal sealed class AgentsRegion : FrameView
         Standing.Retired => 10,
         _ => 5,
     };
-
-    /// <summary>
-    /// Opens the dialog that seats a person, and seats them if they name themselves acceptably.
-    /// </summary>
-    /// <param name="seats">The book that holds seats.</param>
-    /// <param name="project">The project to sit in.</param>
-    /// <param name="registry">What the broker's registry holds, or null when it could not be read.</param>
-    /// <param name="typed">The name the person gave.</param>
-    /// <param name="cancellationToken">Cancels the attach.</param>
-    /// <returns>The seat taken, and what to say about it.</returns>
-    /// <remarks>
-    /// <para>
-    /// A seat is the one thing this surface has that no operator operation grants. §10.2 lets an
-    /// operator retire, purge and force-conclude anybody, so a console has never been short of
-    /// power — what it could not do is <i>speak as</i> somebody, and a transcript recording words
-    /// an agent never said is a different kind of wrong from an operator visibly instructing it.
-    /// </para>
-    /// <para>
-    /// So that is the one thing guarded, and the guard is <c>SeatBook</c>'s rather than a copy of
-    /// it: it refuses a name the registry holds for anything whose adapter is not a seat, and
-    /// refuses outright when the registry could not be read. A guard that skipped the check on an
-    /// unreachable broker would pass hardest exactly when the deployment is least well known,
-    /// which is why the registry is passed in rather than shrugged off.
-    /// </para>
-    /// </remarks>
-    internal static async Task<(SeatHold? Hold, string Said)> JoinAsync(
-        SeatBook seats,
-        ProjectSettings project,
-        IReadOnlyList<AgentRecord>? registry,
-        string typed,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-
-        if (!Seat.TryRead(typed, out var seat, out var why))
-        {
-            return (null, why ?? "That is not a name.");
-        }
-
-        var outcome = await seats
-            .TakeAsync(project, seat, registry, cancellationToken)
-            .ConfigureAwait(false);
-
-        return outcome.Seated
-            ? (outcome.Hold, Took + seat.Name.Value + ".")
-            : (null, outcome.Problem ?? "Not seated.");
-    }
-
-    /// <summary>Releases a person's seat in every project at once.</summary>
-    /// <param name="seats">The book holding it.</param>
-    /// <param name="seat">Whose seat.</param>
-    /// <returns>What to say about it.</returns>
-    /// <remarks>
-    /// Every project, not the one on screen. A person leaves a surface rather than a view, and
-    /// releasing only the project they happened to be looking at would leave them present in the
-    /// others with nothing anywhere saying so.
-    /// </remarks>
-    internal static string Leave(SeatBook seats, Seat seat)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-
-        var released = seats.Leave(seat);
-
-        return released == 0 ? NotSeated : $"{Left}{released} seat(s) released.";
-    }
-
-    /// <summary>
-    /// Keeps a seat alive because somebody is looking at the surface, and releases the ones nobody
-    /// is.
-    /// </summary>
-    /// <param name="seats">The book.</param>
-    /// <param name="me">The name last seated, if any.</param>
-    /// <param name="project">The project on screen.</param>
-    /// <param name="now">The current instant.</param>
-    /// <returns>The seat still held here, or null when there is none.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Touch first, then sweep, and the order is the whole of it.</b> Swept first, a person who
-    /// spent longer than <see cref="SeatBook.IdleAfter"/> on one screen comes back to find their
-    /// seat gone — and the screen they were on is the one where they read a question and write an
-    /// answer, which is the slowest and most valuable thing this surface is for. Being unseated
-    /// for thinking about the question is the exact opposite of what an idle timeout is for.
-    /// </para>
-    /// <para>
-    /// Sweeping at all is what stops a terminal left open overnight holding somebody present in
-    /// the registry, which is the failure <c>IdleAfter</c> exists to prevent — reached by a
-    /// different kind of window than the browser tab it was written for. Both halves are needed
-    /// and only in this order.
-    /// </para>
-    /// <para>
-    /// The seat is then <i>asked for</i> rather than assumed: whether the name still holds one is
-    /// the book's answer, including after the sweep has just taken it. And <paramref name="me"/> is
-    /// never overwritten from the result — who somebody is and whether they are seated <i>here</i>
-    /// are different questions, and forgetting the first on visiting a project they are not seated
-    /// in is a defect this had once already.
-    /// </para>
-    /// </remarks>
-    internal static SeatHold? Refresh(
-        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now) =>
-        Refresh(seats, me, project, now, now);
-
-    /// <summary>
-    /// The same, with the moment somebody last used the surface told apart from the moment now.
-    /// </summary>
-    /// <param name="seats">The book.</param>
-    /// <param name="me">The name last seated, if any.</param>
-    /// <param name="project">The project on screen.</param>
-    /// <param name="touched">When somebody last pressed a key or clicked.</param>
-    /// <param name="now">The current instant.</param>
-    /// <returns>The seat still held here, or null when there is none.</returns>
-    /// <remarks>
-    /// <b>The two are not the same instant, and treating them as one is how the idle rule stops
-    /// applying.</b> A terminal redraws itself whether or not anybody is at it, so a touch taken at
-    /// the moment of drawing means the seat of an abandoned terminal is refreshed for ever — which
-    /// is the failure <see cref="SeatBook.IdleAfter"/> exists to prevent, and which this surface
-    /// had until a probe went looking for it. What the specification asks for is twenty minutes
-    /// <i>without touching it</i>, so the touch is dated from the last key or click.
-    /// </remarks>
-    internal static SeatHold? Refresh(
-        SeatBook seats,
-        Seat? me,
-        ProjectSettings project,
-        DateTimeOffset touched,
-        DateTimeOffset now)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-        ArgumentNullException.ThrowIfNull(project);
-
-        if (me is not null)
-        {
-            seats.Touch(me, touched);
-        }
-
-        seats.Sweep(now);
-
-        return me is null ? null : seats.Held(project.Name.Value, me);
-    }
-
-    /// <summary>What is wrong with a name somebody has typed, as they type it.</summary>
-    /// <param name="typed">What is in the field.</param>
-    /// <returns>The reason, or null when there is none.</returns>
-    /// <remarks>
-    /// Only the shape is checked here. Whether the registry already holds the name for a real
-    /// agent is a question for the broker and is asked by <c>SeatBook</c> when the seat is taken;
-    /// checking it on every keystroke would be a call per character.
-    /// </remarks>
-    internal static string? NameProblem(string typed) =>
-        Seat.TryRead(typed, out _, out var why) ? null : why ?? "not a name";
 
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>

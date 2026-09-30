@@ -89,12 +89,13 @@ else
     }
     else
     {
+        @* **Not an instruction any more** (specs/023). With no seat this composer used to send an operator's
+           instruction instead — a different kind of thing, absent from the transcript. The seat is the broker's now
+           and is taken on every page, so the only way to be here is that this project's broker could not be reached
+           as the person just then; sending tries again and says why if it still cannot. *@
         <p class="composer-note">
-            This reaches each agent as an instruction from you and is recorded as yours. It does
-            <strong>not</strong> appear in the transcript above — if an agent then says something
-            to a peer, that message is theirs and shows up here as theirs.
-            <a href="/Join?Then=@Uri.EscapeDataString($"/Conversations/Detail?project={Model.Project}&id={Model.Id}")">Join
-            as yourself</a> to take part instead of instructing.
+            Not connected to this project as you just now. What you send is still yours and appears in the transcript;
+            sending reconnects first, and says so if it cannot.
         </p>
     }
 

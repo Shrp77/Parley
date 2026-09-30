@@ -81,13 +81,8 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);

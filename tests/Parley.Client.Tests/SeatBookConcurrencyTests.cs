@@ -41,14 +41,13 @@ public sealed class SeatBookConcurrencyTests
         var token = TestContext.Current.CancellationToken;
         var agents = new CountingAgents();
         using var book = new SeatBook(_ => agents);
-        var me = Seated("arvind");
 
         var outcomes = await Task.WhenAll(
             Enumerable.Range(0, Crowd).Select(_ =>
-                Task.Run(async () => await book.TakeAsync(Alpha, me, [], token), token)));
+                Task.Run(async () => await book.TakeAsync(Alpha, Person, token), token)));
 
         Assert.All(outcomes, outcome => Assert.True(outcome.Seated));
-        Assert.Single(book.Seats(me));
+        Assert.Single(book.Seats());
         Assert.Equal(1, agents.Live);
     }
 
@@ -62,20 +61,19 @@ public sealed class SeatBookConcurrencyTests
         var agents = new CountingAgents();
         var book = new SeatBook(_ => agents);
 
-        var people = Enumerable.Range(0, 12).Select(Person).ToArray();
+        // Twelve projects rather than twelve people: since specs/023 a book holds one person seat per project.
+        var projects = Enumerable.Range(0, 12).Select(Project).ToArray();
 
-        await Task.WhenAll(people.Select(person => Task.Run(async () =>
+        await Task.WhenAll(projects.Select(project => Task.Run(async () =>
         {
             for (var round = 0; round < 8; round++)
             {
-                await book.TakeAsync(Alpha, person, [], token);
+                await book.TakeAsync(project, Registry(project), token);
 
                 // An hour into the future, so it releases whatever it can see -- including seats
                 // another thread took a microsecond ago. That is the point: the sweep is a timer
                 // and does not wait its turn.
                 book.Sweep(DateTimeOffset.UtcNow.AddHours(1));
-
-                book.Leave(person);
             }
         }, token)));
 
@@ -94,9 +92,8 @@ public sealed class SeatBookConcurrencyTests
         var token = TestContext.Current.CancellationToken;
         var agents = new CountingAgents(refuseAfter: 1);
         using var book = new SeatBook(_ => agents);
-        var me = Seated("arvind");
 
-        var first = await book.TakeAsync(Alpha, me, [], token);
+        var first = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(first.Seated);
 
@@ -109,13 +106,13 @@ public sealed class SeatBookConcurrencyTests
 
         var outcomes = await Task.WhenAll(
             Enumerable.Range(0, Crowd).Select(_ =>
-                Task.Run(async () => await book.TakeAsync(Alpha, me, [], token), token)));
+                Task.Run(async () => await book.TakeAsync(Alpha, Person, token), token)));
 
         // Some of the crowd legitimately lose: TakeAsync says so rather than handing back a hold
         // it did not manage to seat, and "try once more" is an honest answer to a race. What is
         // not allowed is a stream nobody closed.
         Assert.Contains(outcomes, outcome => outcome.Seated);
-        Assert.Equal(book.Seats(me).Count, agents.Live);
+        Assert.Equal(book.Seats().Count, agents.Live);
         Assert.True(agents.Live <= 1, $"{agents.Live} attachments for one seat");
     }
 
@@ -133,7 +130,7 @@ public sealed class SeatBookConcurrencyTests
         {
             try
             {
-                await book.TakeAsync(Alpha, Person(index), [], token);
+                await book.TakeAsync(Project(index), Registry(Project(index)), token);
             }
             catch (ObjectDisposedException)
             {
@@ -154,20 +151,19 @@ public sealed class SeatBookConcurrencyTests
     }
 
 
-    /// <summary>One of the crowd, by index.</summary>
-    /// <param name="index">Which one.</param>
-    /// <returns>Their seat.</returns>
-    private static Seat Person(int index) => Seated($"person{(char)('a' + index)}");
+    /// <summary>The person seat the broker writes for the one project most of these use (specs/023).</summary>
+    private static IReadOnlyList<AgentRecord> Person => Registry(Alpha);
 
-    /// <summary>A person's seat, by the name they typed.</summary>
-    /// <param name="person">What they typed.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
+    /// <summary>One of the crowd of projects, by index.</summary>
+    private static ProjectSettings Project(int index) =>
+        new(ProjectName.Create($"project{(char)('a' + index)}"), string.Empty, Alpha.Endpoint, null);
 
-        return seat;
-    }
+    /// <summary>A project's registry, holding only its person seat.</summary>
+    private static IReadOnlyList<AgentRecord> Registry(ProjectSettings project) =>
+    [
+        new AgentRecord(
+            PersonSeat.On(project.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 
     /// <summary>An Agents client that counts the streams it hands out and the ones given back.</summary>
     /// <param name="refuseAfter">

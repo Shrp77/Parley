@@ -29,9 +29,14 @@ public sealed class SeatFileNoticeTests
         var agents = new NoticesAndOneMessage();
         using var book = new SeatBook(_ => agents);
 
-        Assert.True(Seat.TryRead("arvind", out var me, out _));
+        var taken = await book.TakeAsync(
+            Alpha,
+            [new AgentRecord(
+                PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false,
+                AgentStatus.Active)],
+            token);
 
-        var taken = await book.TakeAsync(Alpha, me, [], token);
+        var me = taken.Hold!.Seat;
 
         Assert.True(taken.Seated);
 

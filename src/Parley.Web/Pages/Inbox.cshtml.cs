@@ -81,15 +81,16 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     public string? Clarification { get; set; }
 
     /// <summary>Shows what is waiting, and whatever has already been taken.</summary>
-    /// <returns>The page, or the join page when nobody is seated.</returns>
+    /// <returns>The page.</returns>
+    /// <remarks>
+    /// It redirected to a Join page when nobody had typed a name. Since specs/023 the seats are taken on every render
+    /// (<see cref="PersonSeats"/>), so there is always somebody this page is about.
+    /// </remarks>
     public async Task<IActionResult> OnGetAsync()
     {
-        Me = SeatCookie.Read(Request);
+        await PersonSeats.EnsureAsync(seats, directory, HttpContext.RequestAborted).ConfigureAwait(false);
 
-        if (Me is null)
-        {
-            return RedirectToPage("/Join");
-        }
+        Me = seats.Seats().FirstOrDefault()?.Seat;
 
         await LoadAsync().ConfigureAwait(false);
 
@@ -104,7 +105,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            return RedirectToPage("/Join");
+            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            return RedirectToPage("/Inbox");
         }
 
         var (messages, polls) = await voice
@@ -129,7 +131,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null)
         {
-            return RedirectToPage("/Join");
+            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            return RedirectToPage("/Inbox");
         }
 
         var dropped = hold.DismissRead();
@@ -153,7 +156,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            return RedirectToPage("/Join");
+            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            return RedirectToPage("/Inbox");
         }
 
         // Zipped rather than trusted to arrive in matching lengths: these are three parallel form
@@ -192,7 +196,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            return RedirectToPage("/Join");
+            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            return RedirectToPage("/Inbox");
         }
 
         var sent = await voice
@@ -212,14 +217,12 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <returns>The seat, the hold and a voice, or nulls when there is none.</returns>
     private (Seat? Seat, SeatHold? Hold, SeatVoice? Voice) Seated()
     {
-        if (SeatCookie.Read(Request) is not { } seat
-            || directory.Find(For) is not { } project
-            || seats.Held(project.Name.Value, seat) is not { } hold)
+        if (directory.Find(For) is not { } project || seats.Held(project.Name.Value) is not { } hold)
         {
             return (null, null, null);
         }
 
-        return (seat, hold, new SeatVoice(directory.AgentsFor(project), seat));
+        return (hold.Seat, hold, new SeatVoice(directory.AgentsFor(project), hold.Seat));
     }
 
     /// <summary>Reads what is waiting in every project this person is seated in.</summary>
@@ -234,7 +237,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
         var pending = new List<Pending>();
         var token = HttpContext.RequestAborted;
 
-        foreach (var hold in seats.Seats(Me!))
+        foreach (var hold in seats.Seats())
         {
             var project = directory.Find(hold.Project);
 
@@ -261,7 +264,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (pending.Count == 0)
         {
-            Away = await seats.WaitingUnseatedAsync(Me!, directory.Projects, token).ConfigureAwait(false);
+            // Counted from the seats this console knows whether or not any is held: mail waits against the name.
+            Away = await seats.WaitingAsync(directory.Projects, token).ConfigureAwait(false);
         }
     }
 }

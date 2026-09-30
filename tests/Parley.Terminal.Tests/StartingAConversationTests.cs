@@ -36,24 +36,15 @@ public sealed class StartingAConversationTests
 
         var start = Assert.Single(shell.Actions(), action => action.Key == 'k');
 
-        Assert.Equal(Participation.StartSeatFirstTitle, start.Label);
+        // **The owner's report of 0.36.0**: this said "Start a conversation (takes a seat first)" beside a seat they
+        // already had. Since specs/023 there is no seat to take first, so there is one spelling of the action, and it
+        // says nothing about a seat whether or not the terminal is connected yet.
+        Assert.Equal(Participation.StartTitle, start.Label);
+        Assert.DoesNotContain("seat", start.Label, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("exchange", start.Costs ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Choosing_it_without_a_seat_says_why_and_asks_for_a_name()
-    {
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
-
-        driving.Show(shell);
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        await shell.StartSeatFirst();
-
-        Assert.Equal(Participation.SeatFirst, shell.Said);
-    }
+    // `Choosing_it_without_a_seat_says_why_and_asks_for_a_name` was here. There is no name to ask for since specs/023.
 
     [Fact]
     public void Every_row_of_the_empty_list_fits_the_narrowest_pane()

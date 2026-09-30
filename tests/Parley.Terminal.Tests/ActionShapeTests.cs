@@ -108,7 +108,6 @@ public sealed class ActionShapeTests
         {
             Adding.Title,
             Adding.ConfirmTitle,
-            AgentsRegion.JoinTitle,
             Browsing.Name,
             Browsing.FolderName,
             Naming.CreateTitle,
@@ -145,7 +144,6 @@ public sealed class ActionShapeTests
         var dialogs = new[]
         {
             Adding.Title,
-            AgentsRegion.JoinTitle,
             Naming.CreateTitle,
             Onboarding.Title,
             Removing.Title,

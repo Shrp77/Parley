@@ -24,6 +24,17 @@ internal static class Walking
     /// <summary>A project name every fixture can use.</summary>
     internal static ProjectName Alpha { get; } = ProjectName.Create("alpha");
 
+    /// <summary>A registry holding only the person seat, as a broker from 0.36.0 on reports it (specs/023).</summary>
+    /// <remarks>
+    /// For a test that takes a seat through the book without a broker behind it. One definition, because a fixture per
+    /// file is how two of them come to seat somebody differently.
+    /// </remarks>
+    internal static IReadOnlyList<AgentRecord> PersonOnly { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
+
     /// <summary>Puts the surface on a view and waits for its reads.</summary>
     /// <param name="shell">The surface.</param>
     /// <param name="viewing">Which view.</param>

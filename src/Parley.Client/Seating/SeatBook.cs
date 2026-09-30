@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
 using Grpc.Core;
 using Parley.Core;
 using Wire = Parley.Transport;
@@ -16,44 +15,42 @@ public sealed record SeatOutcome(SeatHold? Hold, string? Problem)
 }
 
 /// <summary>
-/// Every seat this console is holding, and the only place one is taken or released.
+/// The person's seat in every project this surface shows, and the only place one is taken or let go.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A singleton because a seat outlives the request that took it: SPEC.md §4.0 makes the open
-/// stream the evidence of presence, so something has to hold that stream between page loads.
-/// This is that something, and it is deliberately the only one — a seat opened by a page and
-/// forgotten would be a person the deployment believes is present for as long as the console
-/// runs.
+/// <b>Having a seat and being in it are separate</b> (specs/023). The broker provides the person seat in every project
+/// and never releases it, so a surface never has to ask for one: it attaches as the seat the registry names. What this
+/// book holds is the other half — whether somebody is at this screen now. A hold is the open stream, and SPEC.md §4.0
+/// makes that stream the evidence of <c>here</c>; after <see cref="IdleAfter"/> with nothing touched it is dropped, the
+/// broker reads <c>away</c>, and the next touch takes it back through <see cref="EnsureAsync"/> without a word to the
+/// person, because nothing was taken from them.
 /// </para>
 /// <para>
-/// <b>The name is checked against the registry before anything is attached.</b> Attaching
-/// registers a name that is absent (the broker's <c>RegisterIfAbsent</c>), so a person typing
-/// <c>orders</c> would otherwise take over the orders agent's identity and speak in its voice,
-/// with the transcript recording words that agent never said. That is the one genuinely new
-/// power a seat adds over what §10.2 already grants a console — an operator can instruct, retire
-/// and purge any agent, but has never been able to put words in one's mouth — so it is the one
-/// thing guarded here.
+/// <b>The seat each project named is remembered after its hold is dropped.</b> Mail waits against the name, not the
+/// stream, so the count of what is waiting must work while the person is away — which is exactly when it matters:
+/// somebody coming back after an hour is the person the count exists for.
 /// </para>
 /// <para>
-/// The guard is a console-side check against data the broker supplied, and is not claimed as
-/// more than that. §16 already concedes that anything able to reach a broker can claim to be any
-/// agent, so this stops an honest collision rather than an attacker — which is what the risk
-/// actually is on a loopback console whose operator can already purge the registry.
+/// <b>The registry is read before anything is attached, and one that could not be read refuses.</b> A guard that
+/// skipped its check on an unreachable broker would pass hardest exactly when the deployment is least well known. A
+/// registry with no person row is a broker older than 0.36.0; that is said rather than papered over with a name this
+/// surface made up, which is the failure 023 exists to end.
 /// </para>
 /// </remarks>
 public sealed class SeatBook : IDisposable
 {
-    /// <summary>How long a seat survives with nobody using the console.</summary>
+    /// <summary>How long a hold survives with nobody using this surface.</summary>
     /// <remarks>
-    /// A tab left open is not a person at a desk. Without this the roster would show somebody
-    /// present until the console was restarted, which is the false presence §14 removed the
-    /// sweep's heartbeat to stop manufacturing — and it would be worse here, because nobody
-    /// restarts a person.
+    /// A tab left open is not a person at a desk. Past this the stream is dropped and the broker reads the person as
+    /// away; the seat itself is untouched, and the next touch takes the stream back.
     /// </remarks>
     public static readonly TimeSpan IdleAfter = TimeSpan.FromMinutes(20);
 
     private readonly ConcurrentDictionary<string, SeatHold> _held = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (ProjectSettings Project, Seat Seat)> _known =
+        new(StringComparer.Ordinal);
+
     private readonly Func<ProjectSettings, Wire.Agents.AgentsClient> _agents;
     private readonly Timer _sweep;
     private volatile bool _disposed;
@@ -73,32 +70,28 @@ public sealed class SeatBook : IDisposable
             TimeSpan.FromMinutes(1));
     }
 
-    /// <summary>Takes a seat for one person in one project, or says why it could not.</summary>
-    /// <param name="project">The project to be seated in.</param>
-    /// <param name="seat">Who is sitting down.</param>
+    /// <summary>What a surface says when a project's broker provides no person seat.</summary>
+    public const string NoPersonSeat =
+        "This project's broker has no seat for a person, so it is older than 0.36.0 and nothing here can speak in it. "
+        + "Upgrade it (install with -Reset), and the seat is there when it next starts.";
+
+    /// <summary>Takes the person's seat in a project, as its registry names it, or says why it could not.</summary>
+    /// <param name="project">The project.</param>
     /// <param name="registry">
-    /// That project's registry as the broker reported it, or <see langword="null"/> when it could
-    /// not be read.
+    /// That project's registry as the broker reported it, or <see langword="null"/> when it could not be read.
     /// </param>
     /// <param name="cancellationToken">Cancels the attach.</param>
     /// <returns>The seat, or the reason there is none.</returns>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// A registry that could not be read refuses the seat rather than skipping the check. The
-    /// alternative is a guard that passes hardest exactly when the broker is least well known,
-    /// which is the shape of every check that has ever been found to be testing nothing.
-    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="project"/> is <see langword="null"/>.</exception>
     public async Task<SeatOutcome> TakeAsync(
         ProjectSettings project,
-        Seat seat,
         IReadOnlyList<AgentRecord>? registry,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
-        ArgumentNullException.ThrowIfNull(seat);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var key = Key(project.Name.Value, seat);
+        var key = project.Name.Value;
 
         if (_held.TryGetValue(key, out var already))
         {
@@ -109,10 +102,8 @@ public sealed class SeatBook : IDisposable
                 return new SeatOutcome(already, null);
             }
 
-            // Cleared out of the way rather than handed back. A lost hold is a dead attachment,
-            // and returning it here would tell somebody rejoining that they were already seated
-            // -- which is the seat-outliving-its-evidence failure reached through the one door
-            // that is meant to fix it.
+            // A lost hold is a dead attachment. Handing it back would tell somebody they were seated on a stream that
+            // has ended; it is cleared and the seat taken again.
             if (_held.TryRemove(key, out var dead))
             {
                 dead.Dispose();
@@ -123,37 +114,22 @@ public sealed class SeatBook : IDisposable
         {
             return new SeatOutcome(
                 null,
-                "This project's broker did not answer, so the name could not be checked against "
-                + "its registry. Nothing was joined.");
+                "This project's broker did not answer, so its seat for the person could not be found. Nothing was "
+                + "taken; it is tried again the next time you do anything here.");
         }
 
-        var name = seat.Name;
-
-        // Before the registry check, which would refuse it on the broker's own machine with a sentence about an agent,
-        // and would not see it at all on another machine. The facilitator is nobody's seat (SPEC.md §17 question 2).
-        if (Facilitation.Is(name))
+        if (Seat.In(registry) is not { } seat)
         {
-            return new SeatOutcome(null, Facilitation.Reserved);
-        }
-
-        if (registry.FirstOrDefault(row => row.Name == name) is { } taken
-            && !string.Equals(taken.Adapter, Seat.Adapter, StringComparison.Ordinal))
-        {
-            return new SeatOutcome(
-                null,
-                $"'{name.Value}' is already registered here as an agent, running "
-                + $"'{taken.Adapter}'. Joining under that name would let you speak as it, and "
-                + "the transcript would record words it never said. Pick another name.");
+            return new SeatOutcome(null, NoPersonSeat);
         }
 
         var request = new Wire.AttachRequest
         {
-            Agent = name.Value,
+            Agent = seat.Name.Value,
             Adapter = Seat.Adapter,
 
-            // Pull, of the three §11.2 offers. A person has no turn to interrupt, which rules out
-            // Full, and holds a position across turns, which is exactly what Headless cannot do.
-            // What they do is see what is waiting when they look, which is what Pull describes.
+            // Pull, of the three §11.2 offers. A person has no turn to interrupt, which rules out Full, and holds a
+            // position across turns, which is exactly what Headless cannot do.
             Tier = Wire.AgentTier.Pull,
             Workspace = string.Empty,
             SessionRef = string.Empty,
@@ -170,8 +146,8 @@ public sealed class SeatBook : IDisposable
 
             stream = agents.Attach(request, cancellationToken: cancellationToken);
 
-            // Awaited here so that a refusal is a failed join rather than a seat that looks taken
-            // and fails on the first thing said from it.
+            // Awaited here so that a refusal is a failed seat rather than one that looks taken and fails on the first
+            // thing said from it.
             if (!await stream.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false)
                 || stream.ResponseStream.Current.EventCase != Wire.Event.EventOneofCase.Attached)
             {
@@ -179,31 +155,27 @@ public sealed class SeatBook : IDisposable
 
                 return new SeatOutcome(
                     null,
-                    "This project's broker did not acknowledge the join, which means it is "
-                    + "speaking a different version of the protocol than this console.");
+                    "This project's broker did not acknowledge the seat, which means it is speaking a different "
+                    + "version of the protocol than this surface.");
             }
 
-            var hold = new SeatHold(
-                project, seat, agents, request, stream, DateTimeOffset.UtcNow);
+            var hold = new SeatHold(project, seat, agents, request, stream, DateTimeOffset.UtcNow);
 
             if (!_held.TryAdd(key, hold))
             {
-                // Another request seated the same person first. Theirs is as good as this one,
-                // and two streams for one seat is two arrivals in the registry.
+                // Another caller took it first. Theirs is as good as this one, and two streams from one surface is two
+                // arrivals in the registry for one person.
                 hold.Dispose();
 
-                // Read back rather than indexed: the winner can have been released between the
-                // add failing and the read, and an indexer would throw on a web request for what
-                // is an ordinary outcome. Lost counts as released — a hold with no attachment
-                // behind it is not a seat to hand somebody, whichever door they arrived at.
                 return _held.TryGetValue(key, out var theirs) && !theirs.Lost
                     ? new SeatOutcome(theirs, null)
-                    : new SeatOutcome(null, "The seat was taken and released again. Try once more.");
+                    : new SeatOutcome(null, "The seat was taken and let go again. Try once more.");
             }
 
-            // Disposal can have run between the check at the top of this method and here, and it
-            // drains what it can see. A hold added after that drain is a person the deployment
-            // believes is present with nothing left that could release them.
+            _known[key] = (project, seat);
+
+            // Disposal can have run between the check at the top of this method and here, and it drains what it can
+            // see. A hold added after that drain would be a person marked here with nothing left to let them go.
             if (_disposed)
             {
                 if (_held.TryRemove(key, out var orphan))
@@ -211,10 +183,7 @@ public sealed class SeatBook : IDisposable
                     orphan.Dispose();
                 }
 
-                // Refused whether or not this removed it. Losing the race means disposal got
-                // there first, so the hold is already dead — and handing back a dead seat is
-                // worse than saying so, because a page would render somebody as present.
-                return new SeatOutcome(null, "The console is shutting down.");
+                return new SeatOutcome(null, "This surface is shutting down.");
             }
 
             return new SeatOutcome(hold, null);
@@ -223,143 +192,99 @@ public sealed class SeatBook : IDisposable
         {
             stream?.Dispose();
 
-            return new SeatOutcome(
-                null, "This project's broker is not answering, so nobody was joined to it.");
+            return new SeatOutcome(null, "This project's broker is not answering, so its seat was not taken.");
         }
         catch (RpcException failure)
         {
             stream?.Dispose();
 
-            return new SeatOutcome(null, $"The broker refused the join: {failure.Status.Detail}");
+            return new SeatOutcome(null, $"The broker refused the seat: {failure.Status.Detail}");
         }
         catch (Exception failure) when (failure is UriFormatException or InvalidOperationException)
         {
             stream?.Dispose();
 
-            return new SeatOutcome(
-                null, $"This project's endpoint cannot be reached as written: {failure.Message}");
+            return new SeatOutcome(null, $"This project's endpoint cannot be reached as written: {failure.Message}");
         }
     }
 
-    /// <summary>The seat this person holds in a project, if they hold one.</summary>
+    /// <summary>The person's seat in a project, taking it again first if nothing holds it now.</summary>
     /// <param name="project">The project.</param>
-    /// <param name="seat">Who to look for.</param>
-    /// <returns>The seat, or <see langword="null"/>.</returns>
+    /// <param name="registry">Reads that project's registry, asked only when the seat has to be taken.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The seat, or the reason there is none.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
-    /// A hold whose attachment has ended for good is not a seat. Reported as absent the moment it
-    /// is asked for rather than waiting for the next sweep, because the question a surface is
-    /// asking here is whether to draw somebody as present — and a minute of drawing them as
-    /// present is a minute of the console being the only thing that believes it.
+    /// <b>What a surface calls whenever the person does something</b>: on opening, and after an idle drop on the next
+    /// keystroke or page. The registry is read only when there is no live hold, so the ordinary case costs nothing.
     /// </remarks>
-    public SeatHold? Held(string project, Seat seat)
+    public async Task<SeatOutcome> EnsureAsync(
+        ProjectSettings project,
+        Func<CancellationToken, Task<IReadOnlyList<AgentRecord>?>> registry,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(seat);
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(registry);
 
-        var held = _held.GetValueOrDefault(Key(project, seat));
+        if (Held(project.Name.Value) is { } held)
+        {
+            held.Touch(DateTimeOffset.UtcNow);
+
+            return new SeatOutcome(held, null);
+        }
+
+        return await TakeAsync(project, await registry(cancellationToken).ConfigureAwait(false), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>The person's seat in a project while somebody is at this surface, or <see langword="null"/>.</summary>
+    /// <param name="project">The project's name.</param>
+    /// <returns>The seat.</returns>
+    /// <remarks>
+    /// A hold whose attachment has ended for good is not a seat, and is reported absent the moment it is asked for:
+    /// the question a surface is asking is whether to act as the person now.
+    /// </remarks>
+    public SeatHold? Held(string project)
+    {
+        var held = _held.GetValueOrDefault(project);
 
         return held is null || held.Lost ? null : held;
     }
 
-    /// <summary>Every seat this person is holding, in whatever project.</summary>
-    /// <param name="seat">Who to look for.</param>
-    /// <returns>Their seats, ordered by project.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="seat"/> is <see langword="null"/>.</exception>
-    public IReadOnlyList<SeatHold> Seats(Seat seat)
-    {
-        ArgumentNullException.ThrowIfNull(seat);
+    /// <summary>The person seat a project named, whether or not anything holds it now.</summary>
+    /// <param name="project">The project's name.</param>
+    /// <returns>The seat, or <see langword="null"/> if this surface has never taken it.</returns>
+    public Seat? Known(string project) => _known.TryGetValue(project, out var known) ? known.Seat : null;
 
-        return [.. _held.Values
-            .Where(held => !held.Lost
-                && string.Equals(held.Seat.Person, seat.Person, StringComparison.Ordinal))
-            .OrderBy(held => held.Project, StringComparer.Ordinal)];
-    }
+    /// <summary>Every seat held now, ordered by project.</summary>
+    /// <returns>The holds.</returns>
+    public IReadOnlyList<SeatHold> Seats() =>
+        [.. _held.Values.Where(held => !held.Lost).OrderBy(held => held.Project, StringComparer.Ordinal)];
 
-    /// <summary>How much is waiting for this person, across every seat they hold.</summary>
-    /// <param name="seat">Who to count for.</param>
+    /// <summary>How much is waiting for the person, in every project given.</summary>
+    /// <param name="projects">The projects to count in; each is asked independently.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
     /// <returns>
-    /// The total, and whether every project answered. A total of zero that nobody could confirm
-    /// is not the same fact as a total of zero that was measured.
+    /// The total, and whether every project answered. A total of zero nobody could confirm is not the same fact as a
+    /// total of zero that was measured.
     /// </returns>
-    /// <exception cref="ArgumentNullException"><paramref name="seat"/> is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// <para>
-    /// Asked of the broker rather than remembered. There was a cached count here, taken from the
-    /// notices the attach stream pushes, and it was wrong in one direction only: a notice is sent
-    /// when something arrives and never again when something leaves, so after this console
-    /// drained its own inbox the number stayed up. The frame said one message was waiting beside
-    /// a page that correctly said none.
-    /// </para>
-    /// <para>
-    /// That is the shape of the fault rather than the detail of it — there were two answers to
-    /// one question, and the fix is that there is now one. It matches how the rest of this
-    /// console treats the broker: reachability is not held either, it is observed per call,
-    /// because a fact that was true when a page was built says nothing about now.
-    /// </para>
-    /// <para>
-    /// <see cref="SeatVoice.WaitingAsync"/> and not a drain. It marks nothing delivered and
-    /// starts no working window, which is what makes it safe to call while rendering a frame
-    /// that every page carries.
-    /// </para>
-    /// </remarks>
-    public async Task<(int Waiting, bool Certain)> WaitingAsync(
-        Seat seat, CancellationToken cancellationToken = default)
-    {
-        var total = 0;
-        var certain = true;
-
-        foreach (var held in Seats(seat))
-        {
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await new SeatVoice(_agents(held.Settings), held.Seat)
-                    .WaitingAsync(cancellationToken).ConfigureAwait(false))
-                .ConfigureAwait(false);
-
-            if (read.Problem is null)
-            {
-                total += read.Value.Messages;
-            }
-            else
-            {
-                certain = false;
-            }
-        }
-
-        return (total, certain);
-    }
-
-    /// <summary>How much is waiting for a name nobody is currently seated under.</summary>
-    /// <param name="seat">The name, as the person last used it.</param>
-    /// <param name="projects">The projects to ask. Each is asked independently.</param>
-    /// <param name="cancellationToken">Cancels the reads.</param>
-    /// <returns>How many messages are waiting, and whether every project could be asked.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="projects"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// <para>
-    /// <b>A seat is how mail is collected, not where it waits.</b> Messages queue against the agent name in the
-    /// broker's store, so a name with no attachment can have plenty waiting — which is exactly the state somebody
-    /// is in when they come back: the idle sweep released their seat twenty minutes after they walked away, or the
-    /// broker restarted under an upgrade and took every attachment with it.
+    /// <b>Counted whether or not anything is held</b>, so it works while the person is away — mail waits against the
+    /// name, and somebody coming back is who the count is for. The name is the seat this surface took when it has taken
+    /// one, and otherwise the one SPEC.md §12.3 says the broker provides, <c>human-user@&lt;project&gt;</c>: a broker
+    /// whose registry could not be read may still answer how much is waiting, and "nothing" said because no seat had
+    /// been taken yet would be 0.29.1's false sentence again.
     /// </para>
     /// <para>
-    /// <b>Reported by the owner, who sent four requests, got two answers, and was told nothing.</b> The console
-    /// could only count while a seat was held, so the one moment the count exists to serve — having been away
-    /// while something arrived — was the one moment it was suppressed. The inbox went further and said "you are
-    /// seated nowhere, so nothing can be waiting", which is not a missing feature but a false sentence: it reads
-    /// the absence of a collector as the absence of mail.
-    /// </para>
-    /// <para>
-    /// <see cref="Wire.Agents.AgentsClient"/>'s <c>Waiting</c> is built for precisely this caller — the proto
-    /// describes it as being for one that holds no stream — and it marks nothing delivered, starts no working
-    /// window and opens no attachment. So this counts without making the person present, which is the line the
-    /// frame must not cross: a count is a reason to come back, never a claim that somebody already has.
+    /// Asked of the broker rather than remembered: a notice arrives when something lands and never when something is
+    /// collected, so a count kept from the stream only ever climbs. <see cref="SeatVoice.WaitingAsync"/> marks nothing
+    /// delivered and opens nothing, which is what makes it safe to call while drawing a frame.
     /// </para>
     /// </remarks>
-    public async Task<(int Waiting, bool Certain)> WaitingUnseatedAsync(
-        Seat seat,
-        IReadOnlyList<ProjectSettings> projects,
-        CancellationToken cancellationToken = default)
+    public async Task<(int Waiting, bool Certain)> WaitingAsync(
+        IEnumerable<ProjectSettings> projects, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
 
@@ -368,6 +293,8 @@ public sealed class SeatBook : IDisposable
 
         foreach (var project in projects)
         {
+            var seat = Known(project.Name.Value) ?? new Seat(PersonSeat.On(project.Name));
+
             var read = await BrokerDirectory.ReadAsync(async () =>
                 await new SeatVoice(_agents(project), seat)
                     .WaitingAsync(cancellationToken).ConfigureAwait(false))
@@ -386,56 +313,29 @@ public sealed class SeatBook : IDisposable
         return (total, certain);
     }
 
-    /// <summary>Records that this person is still at the console.</summary>
-    /// <param name="seat">Who was seen.</param>
+    /// <summary>Records that the person is still at this surface.</summary>
     /// <param name="now">The current instant.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="seat"/> is <see langword="null"/>.</exception>
-    public void Touch(Seat seat, DateTimeOffset now)
+    public void Touch(DateTimeOffset now)
     {
-        foreach (var held in Seats(seat))
+        foreach (var held in Seats())
         {
             held.Touch(now);
         }
     }
 
-    /// <summary>Releases every seat this person holds.</summary>
-    /// <param name="seat">Who is leaving.</param>
-    /// <returns>How many seats were given up.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="seat"/> is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// Every project at once, because a person leaves the console rather than leaving a page. A
-    /// logout that released only the seat they happened to be looking at would leave them present
-    /// in the others with no surface anywhere saying so.
-    /// </remarks>
-    public int Leave(Seat seat)
-    {
-        var released = 0;
-
-        foreach (var held in Seats(seat))
-        {
-            if (_held.TryRemove(Key(held.Project, seat), out var gone))
-            {
-                gone.Dispose();
-                released++;
-            }
-        }
-
-        return released;
-    }
-
-    /// <summary>Releases seats nobody has used for <see cref="IdleAfter"/>.</summary>
+    /// <summary>Drops the hold of any seat nobody has touched for <see cref="IdleAfter"/>, and any that was lost.</summary>
     /// <param name="now">The current instant.</param>
-    /// <returns>How many seats were released.</returns>
+    /// <returns>How many holds were dropped.</returns>
+    /// <remarks>
+    /// The seat is not released — the broker never releases it — only this surface's stream, so the broker reads the
+    /// person as away. What the seat was is kept in <see cref="Known"/>.
+    /// </remarks>
     public int Sweep(DateTimeOffset now)
     {
-        var released = 0;
+        var dropped = 0;
 
         foreach (var (key, held) in _held)
         {
-            // A hold that has given up goes whatever its age. Waiting out the idle window would
-            // keep a dead attachment in the book for twenty minutes, and the surfaces already
-            // stopped reporting it the moment it was lost -- so the only thing that wait buys is
-            // a dictionary entry nothing can reach.
             if (!held.Lost && now - held.TouchedUtc < IdleAfter)
             {
                 continue;
@@ -444,14 +344,14 @@ public sealed class SeatBook : IDisposable
             if (_held.TryRemove(key, out var gone))
             {
                 gone.Dispose();
-                released++;
+                dropped++;
             }
         }
 
-        return released;
+        return dropped;
     }
 
-    /// <summary>Releases every seat, which is what a console shutting down owes the registry.</summary>
+    /// <summary>Drops every hold, which is what a surface closing owes the registry: the person is away.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -470,15 +370,4 @@ public sealed class SeatBook : IDisposable
             }
         }
     }
-
-    /// <summary>One seat's key: a person in a project.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="seat">The person.</param>
-    /// <returns>A key that cannot be produced by a different pair.</returns>
-    /// <remarks>
-    /// Separated by a character neither half can contain, so <c>a</c> in <c>b-c</c> and
-    /// <c>a-b</c> in <c>c</c> are two keys rather than one.
-    /// </remarks>
-    private static string Key(string project, Seat seat) =>
-        string.Create(CultureInfo.InvariantCulture, $"{project}\u0000{seat.Person}");
 }

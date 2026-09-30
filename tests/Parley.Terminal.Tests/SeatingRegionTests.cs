@@ -1,9 +1,8 @@
-﻿using Grpc.Net.Client;
+using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
 using Parley.Client.Seating;
-using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -11,21 +10,19 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That a person takes a seat from the agents region, is present in the registry within seconds,
-/// and is refused a name that belongs to a real agent.
+/// That opening a project seats the person with nothing typed, as the broker names them, and that nothing offers a
+/// seat to take or give back.
 /// </summary>
 /// <remarks>
 /// <para>
-/// User Story 2's first scenario. The guard is <c>SeatBook</c>'s and is not re-implemented here:
-/// what a seat adds that no operator operation grants is the ability to <i>speak as</i> somebody,
-/// and a transcript recording words an agent never said is a different kind of wrong from an
-/// operator visibly instructing it.
+/// <b>Rewritten for specs/023.</b> This file tested taking a seat from the agents region by typing a name, a name held
+/// by a real agent being refused, leaving, and a malformed name refused as it was typed. All of that was a person
+/// choosing who they were; the broker decides now, providing <c>human-user@&lt;project&gt;</c>, and a surface on any
+/// machine attaches as the row its registry names. What survives is the property the first test was for — the
+/// registry shows the person, verified through the broker rather than read off the screen — and it now needs no key.
 /// </para>
 /// <para>
-/// The registry is read before the seat is taken and the read is <b>not</b> contained into a
-/// shrug. Everywhere else on this surface an unreachable broker leaves one project unusable and
-/// the rest fine; here it has to stop the join, because the check that makes seating safe is a
-/// question asked of that broker.
+/// The refusal of a name an agent holds lives in storage now: the seat's adapter is refused under any other role.
 /// </para>
 /// </remarks>
 public sealed class SeatingRegionTests : IAsyncDisposable
@@ -54,7 +51,7 @@ public sealed class SeatingRegionTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task A_person_takes_a_seat_and_the_registry_shows_them_present()
+    public async Task Opening_a_project_seats_the_person_and_the_registry_shows_them_connected()
     {
         using var driving = Driving.Open();
         using var directory = Directory();
@@ -65,26 +62,26 @@ public sealed class SeatingRegionTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Tab();
-
-        var dialog = await OpenJoinAsync(driving, shell, "arvind");
-
-        Assert.Equal(string.Empty, dialog.Problem);
-        Assert.Contains(AgentsRegion.Took, shell.Said, StringComparison.Ordinal);
         Assert.NotNull(shell.Held);
+        Assert.True(PersonSeat.Is(shell.Held!.Seat.Name), $"seated as '{shell.Held.Seat.Name}'");
 
-        // Verified through the broker rather than by reading the screen, which is what SC-002 asks
-        // of every journey: the registry is the fact, the row is a rendering of it.
-        var registry = await new BrokerClient(directory.ClientFor(Project()))
-            .RegistryAsync(TestContext.Current.CancellationToken);
+        // Verified through the broker rather than by reading the screen, which is what SC-002 asks of every journey:
+        // the registry is the fact, the row is a rendering of it.
+        var client = new BrokerClient(directory.ClientFor(Project()));
 
-        Assert.Contains(registry, agent => agent.Name.Role == "arvind" && agent.Adapter == Seat.Adapter);
-        Assert.Contains(shell.Agents.Rows, row => row.Seat && row.State == AgentsRegion.Seated);
+        await Eventually.UntilAsync(
+            () => client.RegistryAsync(TestContext.Current.CancellationToken).GetAwaiter().GetResult()
+                .Any(agent => PersonSeat.Is(agent.Name) && agent.Adapter == Seat.Adapter && agent.Connected),
+            "the person was never connected in the registry",
+            TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public async Task A_name_the_registry_holds_for_a_real_agent_is_refused_with_the_reason()
+    public async Task Nothing_anywhere_offers_to_join_or_leave()
     {
+        // The actions that existed only because the seat did not: taking one, taking one first, taking the one under
+        // the cursor, and giving one back. Asserted by walking every pane of every view, so a leftover in a pane nobody
+        // thought to check is still found.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -94,91 +91,17 @@ public sealed class SeatingRegionTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Tab();
-        await OpenJoinAsync(driving, shell, "orders");
-
-        Assert.Null(shell.Held);
-        Assert.DoesNotContain(AgentsRegion.Took, shell.Said, StringComparison.Ordinal);
-        Assert.Contains("orders", shell.Said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Leaving_releases_the_seat_and_says_so()
-    {
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = new Shell(directory) { Seats = seats };
-
-        driving.Show(shell);
-        await shell.RefreshAsync(TestContext.Current.CancellationToken);
-        await shell.Settled;
-
-        driving.Tab();
-        await OpenJoinAsync(driving, shell, "arvind");
-
-        await shell.LeaveSeat();
-        await shell.Settled;
-
-        Assert.Null(shell.Held);
-        Assert.Contains(AgentsRegion.Left, shell.Said, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_malformed_name_is_refused_while_it_is_being_typed()
-    {
-        // Checked as it is typed rather than on submission, which is what 004's forms did and what
-        // use added to them after its plan. A dialog that only refused at the end would be a step
-        // backwards wearing a new toolkit.
-        Assert.NotNull(AgentsRegion.NameProblem("not a name at all!"));
-        Assert.Null(AgentsRegion.NameProblem("arvind"));
-    }
-
-    [Fact]
-    public async Task The_status_line_offers_the_seat_from_the_agents_region_and_nowhere_else()
-    {
-        // Actions belong to the region that shows the thing acted on (User Story 2). Offering the
-        // seat from the projects view would be the menu this replaced, wearing a status line.
-        //
-        // 006 moved the agents region inside a project rather than beside the projects list, so
-        // reaching it is one step in rather than one Tab across. The property is unchanged.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = new Shell(directory) { Seats = seats };
-
-        driving.Show(shell);
-
-        Assert.DoesNotContain(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        Assert.Contains(shell.Actions(), action => action.Label == AgentsRegion.JoinTitle);
-        Assert.Contains(AgentsRegion.JoinTitle, shell.Status, StringComparison.Ordinal);
-    }
-
-    /// <summary>Opens the join dialog, types a name, and accepts it.</summary>
-    /// <param name="driving">The application.</param>
-    /// <param name="shell">The surface.</param>
-    /// <param name="name">What to type.</param>
-    /// <returns>The dialog, after it has been answered.</returns>
-    private static async Task<TextDialog> OpenJoinAsync(
-        Driving.Session driving, Shell shell, string name)
-    {
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type(name);
-        dialog.Finish(taken: true);
-
-        await shell.Settled;
-
-        return dialog;
+        await foreach (var _ in Walking.EveryPaneAsync(shell))
+        {
+            Assert.DoesNotContain(
+                shell.Actions(),
+                action => action.Label.Contains("seat", StringComparison.OrdinalIgnoreCase)
+                    || action.Label.Contains("join", StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
+        new(Walking.Alpha, string.Empty, _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

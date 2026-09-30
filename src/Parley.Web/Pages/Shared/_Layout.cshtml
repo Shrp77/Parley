@@ -8,62 +8,21 @@
 @inject Parley.Client.Seating.SeatBook Seats
 @inject Parley.Client.BrokerDirectory Directory
 @{
-    // Read here rather than passed in by every page, because the frame is the one thing every
-    // page has and a seat shown on some pages and not others is worse than one shown on none.
-    var named = SeatCookie.Read(Context.Request);
+    // **The person's seat in every project, taken here with nothing typed** (specs/023). The broker provides the seat
+    // and never releases it; what this does is attach as it, if nothing holds it now, and mark the person here. It
+    // replaced a Join page and a cookie remembering a typed name, which parted company from the seat on every broker
+    // restart and twenty minutes after anybody walked away — and a frame that had to reconcile the two.
+    //
+    // A page render is evidence the person is at the console, and that is the whole of what keeps them marked here:
+    // SPEC.md §4.0 has no heartbeat. Doing it in the frame means every page counts, including ones nobody instrumented.
+    await PersonSeats.EnsureAsync(Seats, Directory, Context.RequestAborted);
 
-    // And then asked of the seat book, because the cookie is not the seat. A seat is an open
-    // attachment held in this process (SPEC.md §4.0); the cookie is a note in somebody's browser
-    // saying which name they were using. The two part company whenever the broker restarts —
-    // an upgrade, a reboot, `autostart` doing its job — and they part company again twenty
-    // minutes after somebody walks away, when SeatBook.IdleAfter releases a seat a tab left open
-    // cannot keep.
-    //
-    // Believing the cookie put a person's name in the frame with a live mark beside it while the
-    // inbox one click away said "You are seated nowhere, so nothing can be waiting". The comment
-    // below already records this lesson being learned about the *count* on the same afternoon;
-    // it was not applied to the seat the count was being counted for.
-    //
-    // Nothing is re-seated automatically. Joining opens an attachment and puts a name in the
-    // registry, and doing that because a browser still had a cookie would be the console
-    // deciding somebody is present when all it knows is that they once were.
-    var here = named is not null && Seats.Seats(named).Count > 0 ? named : null;
+    var here = Seats.Seats();
 
-    // A page render is evidence that the person is still at the console, which is the whole of
-    // what keeps their seat: SPEC.md §4.0 has no heartbeat, so somebody who has gone home has to
-    // stop being present some other way, and this is it. Doing it in the frame means every page
-    // counts, including the ones nobody thought to instrument.
-    if (here is not null)
-    {
-        Seats.Touch(here, DateTimeOffset.UtcNow);
-    }
-
-    // Asked, not remembered. This was a sum over counts pushed on the attach streams, and a
-    // notice is only ever sent when something arrives — so the number went up and never came
-    // back down, and the frame contradicted the inbox page standing right underneath it.
-    //
-    // A count nobody could confirm shows nothing at all rather than a zero, because "no messages"
-    // and "could not ask" are different things and only one of them means stop looking.
-    // **Asked whether or not a seat is held, and that is the correction.** A seat is how mail is
-    // collected; it is not where mail waits. Messages queue against the agent name in the store, so
-    // the count is suppressed by having no seat only if you believe the two are the same thing.
-    //
-    // Reported by the owner: four requests sent, two answered, and a console that said nothing --
-    // because the broker had restarted under an upgrade and taken the attachment with it, which is
-    // one of the two ordinary ways to be holding no seat. The other is walking away for twenty
-    // minutes. Both are exactly when somebody needs telling that an answer came back.
-    //
-    // The seat mark above still depends on a live attachment and must: putting a dot beside a name
-    // because a browser remembered one would be the console deciding somebody is present. A count
-    // beside Join claims nothing about presence -- it is the reason to come back.
-    var waiting = here is not null
-        ? await Seats.WaitingAsync(here, Context.RequestAborted)
-        : named is not null
-            ? await Seats.WaitingUnseatedAsync(named, Directory.Projects, Context.RequestAborted)
-            : (Waiting: 0, Certain: false);
-
-    var joinLink = "/Join?Then="
-        + Uri.EscapeDataString(Context.Request.Path + Context.Request.QueryString);
+    // Asked, not remembered, and **counted from every seat this console knows, held or not**. Mail waits against the
+    // name, not the stream, so the count must work while the person is away — which is exactly when it matters. A count
+    // nobody could confirm shows nothing rather than a zero: "no messages" and "could not ask" are different things.
+    var waiting = await Seats.WaitingAsync(Directory.Projects, Context.RequestAborted);
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -1177,40 +1136,32 @@
         </a>
         <nav aria-label="Console">
             <a href="/">Projects</a>
-            @if (here is null)
+            @if (here.Count > 0)
             {
-                @* The count rides on Join because Join is what makes it collectable. It says whose
-                   mail it is: somebody coming back to a shared machine must not read a number and
-                   assume it is theirs. *@
-                <a class="seat-join" href="@joinLink">
-                    Join
-                    @if (named is not null && waiting is { Certain: true, Waiting: > 0 })
-                    {
-                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
-                            messages waiting for @named.Person</span></span>
-                    }
-                </a>
-            }
-            else
-            {
-                @* The count goes to the inbox and not to the seat. It said how much was waiting
-                   and led to a page about where you were sitting, which is the most direct way
-                   to promise something and not deliver it. *@
+                @* The count goes to the inbox, where what is waiting can be collected. There is no Leave beside it any
+                   more (specs/023): the seat is the broker's and is never given back, and closing the console is how a
+                   person stops being here. *@
                 <a class="seat-who" href="/Inbox" title="Your messages">
-                    <span class="seat-dot" aria-hidden="true"></span>@here.Person
+                    <span class="seat-dot" aria-hidden="true"></span>@here[0].Seat.Person
                     @if (waiting is { Certain: true, Waiting: > 0 })
                     {
                         <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
                             messages waiting for you</span></span>
                     }
                 </a>
-                @* A form rather than a link. Leaving drops the attachment, and SPEC.md §4.0
-                   makes dropping one a departure — something a page-crawler must not be able
-                   to do to a person by following what looks like navigation. *@
-                <form class="seat-leave" method="post" action="/Leave">
-                    @Html.AntiForgeryToken()
-                    <button type="submit">Leave</button>
-                </form>
+            }
+            else
+            {
+                @* No broker answered, or none has a seat for a person. Nothing to take and nothing to type: the count,
+                   if any could be read, still says there is something to come back for. *@
+                <a class="seat-who" href="/Inbox" title="Your messages">
+                    not connected
+                    @if (waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
+                            messages waiting for you</span></span>
+                    }
+                </a>
             }
         </nav>
     </header>
@@ -1260,12 +1211,12 @@
         // The owner named a broadcast `tell everybody test` in the terminal, wrote the whole
         // message, sent it, and got the rule back with their words gone. This console's
         // "Start a conversation called" field had the identical defect and a placeholder that
-        // invited prose into it, and its Join field had the quieter half: a capital was lowered
-        // after the form closed, with nothing on screen having said so.
+        // invited prose into it, and the Join field it had until specs/023 had the quieter half: a
+        // capital was lowered after the form closed, with nothing on screen having said so.
         //
         // Every rule here is written once, in C#, and reaches this page as the attributes a field
-        // carries: `data-correct` is the character class `ConversationName.Correct` and
-        // `Seat.Correct` keep, and `data-lower` says the rule folds case as `Seat` does. So the
+        // carries: `data-correct` is the character class `ConversationName.Correct` keeps, and
+        // `data-lower` says the rule folds case, as a role's grammar does. So the
         // console and the terminal cannot come to hold two spellings of one rule -- and the
         // `pattern` attribute beside them, from the same constants, is what a browser with no
         // scripts enforces.

@@ -131,23 +131,8 @@ public sealed class TwiceTests : IAsyncDisposable
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
     }
 
-    [Fact]
-    public async Task Leaving_a_seat_twice_is_not_an_error_and_leaves_it_gone()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-
-        var (seated, _) = await AskedAsync(directory, seats, ct);
-
-        var left = seats.Leave(seated.Seat);
-        var again = seats.Leave(seated.Seat);
-
-        Assert.Equal(1, left);
-        Assert.Equal(0, again);
-
-        Assert.Empty(seats.Seats(seated.Seat));
-    }
+    // `Leaving_a_seat_twice_is_not_an_error_and_leaves_it_gone` was here. There is no leaving since specs/023: the broker
+    // provides the seat and never releases it.
 
     /// <summary>A seat with one question waiting on it, and the voice to answer through.</summary>
     private async Task<(SeatHold Seated, SeatVoice Voice)> AskedAsync(
@@ -156,9 +141,7 @@ public sealed class TwiceTests : IAsyncDisposable
         var project = Project();
         var registry = await new BrokerClient(_broker.Operators).RegistryAsync(cancellationToken);
 
-        Assert.True(Seat.TryRead("arvind", out var seat, out _));
-
-        var outcome = await seats.TakeAsync(project, seat, registry, cancellationToken);
+        var outcome = await seats.TakeAsync(project, registry, cancellationToken);
 
         Assert.True(outcome.Seated, outcome.Problem);
 

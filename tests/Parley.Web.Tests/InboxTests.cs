@@ -1,4 +1,3 @@
-using System.Net;
 using Parley.Core;
 using Parley.Client.Seating;
 using Xunit;
@@ -55,20 +54,8 @@ public sealed class InboxTests
         Assert.Contains("cannot put them back", Page, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task The_inbox_sends_nobody_who_has_not_joined()
-    {
-        // There is no inbox without a seat: the messages are addressed to an agent, and somebody
-        // who has not joined is not one.
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        using var response = await client.GetAsync(
-            new Uri("/Inbox", UriKind.Relative), TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Contains("/Join", response.Headers.Location?.ToString()!, StringComparison.Ordinal);
-    }
+    // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. Since specs/023 there is no
+    // Join and the inbox is always about the person — `NoJoinOnTheWebTests` asserts the page answers with no name.
 
     [Fact]
     public void Work_owed_cannot_be_dismissed_and_a_result_can()
@@ -195,7 +182,7 @@ public sealed class InboxTests
         var layout = File.ReadAllText(
             RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
 
-        Assert.Contains("Seats.WaitingAsync(here", layout, StringComparison.Ordinal);
+        Assert.Contains("Seats.WaitingAsync(Directory.Projects, Context.RequestAborted)", layout, StringComparison.Ordinal);
 
         // And nowhere else renders one, so a third source cannot appear by being added.
         var pages = Directory.GetFiles(

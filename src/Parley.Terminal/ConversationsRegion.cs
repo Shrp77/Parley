@@ -87,16 +87,24 @@ internal sealed class ConversationsRegion : FrameView
     /// <summary>The list, so a test can pick a row by its text.</summary>
     internal ListView List => _list;
 
+    /// <summary>The note under a list filtered to one agent's conversations.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The note, naming the agent and how to see the rest.</returns>
+    internal static string FilteredTo(AgentName agent) =>
+        $"  Only conversations {Safe.Text(agent.Value)} is in. Esc shows them all.";
+
     /// <summary>Draws a project's conversations.</summary>
     /// <param name="conversations">What the broker said, or null when it could not be asked.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
     /// <param name="archivedOmitted">How many archived conversations were left out.</param>
     /// <param name="showingArchived">Whether the archived ones were asked for.</param>
+    /// <param name="only">The agent the list is filtered to, or null when it is not filtered.</param>
     internal void Show(
         IReadOnlyList<ConversationSummary>? conversations,
         string? problem,
         int archivedOmitted = 0,
-        bool showingArchived = false)
+        bool showingArchived = false,
+        AgentName? only = null)
     {
         var keep = Selected?.Id;
 
@@ -120,6 +128,15 @@ internal sealed class ConversationsRegion : FrameView
         {
             lines.Add(string.Empty);
             lines.Add(hidden);
+        }
+
+        // **A filter is said on screen whenever one is on** (FR-020), for the reason the archived line above is: rows left
+        // out with nothing saying so are indistinguishable from rows that do not exist. After the rows, like that line,
+        // so a row's index is still its conversation's.
+        if (only is { } agent && problem is null)
+        {
+            lines.Add(string.Empty);
+            lines.Add(FilteredTo(agent));
         }
 
         var at = keep is null ? -1 : summaries.FindIndex(c => c.Id == keep);

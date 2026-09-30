@@ -1,6 +1,5 @@
 using Grpc.Net.Client;
 using Parley.Client;
-using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
 using Xunit;
@@ -30,29 +29,9 @@ public sealed class ViewLifetimeTests
             [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
-    [Fact]
-    public async Task Moving_between_views_counts_as_being_here()
-    {
-        // Somebody walking through a deployment is somebody at the terminal. A view change that did
-        // not touch the seat would let the idle rule release it while they were using it.
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var shell = new Shell(directory);
-
-        driving.Show(shell);
-
-        var start = DateTimeOffset.UtcNow;
-
-        shell.Touched(start);
-
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        // Swept from just after the original touch. If the navigation registered, the seat is not
-        // idle and nothing is released.
-        shell.Tick(start + SeatBook.IdleAfter - TimeSpan.FromMinutes(1));
-
-        Assert.NotEqual(Shell.Released, shell.Said);
-    }
+    // `Moving_between_views_counts_as_being_here` was here until specs/023. It built a shell with no seat book, so the
+    // "seat released" sentence it asserted against could never have been said and the test could not fail; that
+    // sentence is gone now too. `IdleSeatTests` holds the idle rule with a real seat.
 
     [Fact]
     public async Task Disposal_is_still_idempotent_from_any_view()

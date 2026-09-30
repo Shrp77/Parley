@@ -354,32 +354,22 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         var token = HttpContext.RequestAborted;
         var sent = new List<(string, string)>();
 
-        // Which voice this is, decided once rather than per recipient. A composer that spoke as
-        // the person to one agent and as the operator to another would put two different kinds of
-        // thing in one row of outcomes, and only one of them lands in the transcript.
-        var here = SeatCookie.Read(Request);
-        var seated = here is null ? null : seats.Held(project.Name.Value, here);
+        // **Always the person's voice, never the operator's** (specs/023). Until then a composer with no seat behind it
+        // fell back to sending an instruction — a different kind of thing, reported differently, and absent from the
+        // transcript — so what a person wrote here depended on whether they had remembered to join. The broker provides
+        // the seat now and this takes it; when it cannot be taken, nothing is sent and the reason is said.
+        var seated = await PersonSeats.EnsureAsync(seats, directory, project, token).ConfigureAwait(false);
 
-        // A seat that lapsed between rendering this page and posting it. The composer said "you
-        // are in this conversation as X"; falling through to the operator's voice would send an
-        // instruction instead, report a different kind of outcome, and put nothing in the
-        // transcript — having told somebody the opposite a moment earlier.
-        if (here is not null && seated is null)
+        if (seated.Hold is not { } hold)
         {
-            SendProblem =
-                $"Your seat in {project.Name.Value} is no longer held, so nothing was sent. "
-                + "Join again and it will be taken back.";
+            SendProblem = $"Nothing was sent: {seated.Problem}";
 
             await OnGetAsync().ConfigureAwait(false);
 
             return Page();
         }
 
-        var voice = seated is null
-            ? null
-            : new SeatVoice(directory.AgentsFor(project), seated.Seat);
-
-        var broker = seated is null ? new BrokerClient(directory.ClientFor(project)) : null;
+        var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
         foreach (var target in Targets)
         {
@@ -389,20 +379,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
                 continue;
             }
 
-            if (voice is not null)
-            {
-                sent.Add((target, await voice
-                    .RequestAsync(agent, Says, Id, token)
-                    .ConfigureAwait(false)));
-
-                continue;
-            }
-
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await broker!.InstructAsync(agent, Compose(), token).ConfigureAwait(false))
-                .ConfigureAwait(false);
-
-            sent.Add((target, read.Value is { } result ? Describe(result) : read.Problem!));
+            sent.Add((target, await voice
+                .RequestAsync(agent, Says, Id, token)
+                .ConfigureAwait(false)));
         }
 
         Sent = sent;
@@ -463,7 +442,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             return RedirectToPage("/Index");
         }
 
-        Seat = SeatCookie.Read(Request) is { } who ? seats.Held(project.Name.Value, who) : null;
+        // The frame has already taken the seat on this render (PersonSeats); this looks it up for the composer.
+        Seat = seats.Held(project.Name.Value);
 
         await ReadAsync(project, Id).ConfigureAwait(false);
 

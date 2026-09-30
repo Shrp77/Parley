@@ -37,15 +37,14 @@ public sealed class TwoSurfaceDeliveryTests
         var agents = new OneQuestion();
         using var console = new SeatBook(_ => agents);
         using var terminal = new SeatBook(_ => agents);
-        var me = Seated("arvind");
 
-        var inBrowser = await console.TakeAsync(Alpha, me, [], token);
-        var inTerminal = await terminal.TakeAsync(Alpha, me, [], token);
+        var inBrowser = await console.TakeAsync(Alpha, Person, token);
+        var inTerminal = await terminal.TakeAsync(Alpha, Person, token);
 
         Assert.True(inBrowser.Seated);
         Assert.True(inTerminal.Seated);
 
-        await new SeatVoice(agents, me).TakeDeliveryAsync(inTerminal.Hold!, token);
+        await new SeatVoice(agents, Seated()).TakeDeliveryAsync(inTerminal.Hold!, token);
 
         Assert.Single(inTerminal.Hold!.Delivered);
         Assert.Empty(inBrowser.Hold!.Delivered);
@@ -60,14 +59,13 @@ public sealed class TwoSurfaceDeliveryTests
         var token = TestContext.Current.CancellationToken;
         var agents = new OneQuestion(refuseDrain: true);
         using var book = new SeatBook(_ => agents);
-        var me = Seated("arvind");
 
-        var taken = await book.TakeAsync(Alpha, me, [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
         await Assert.ThrowsAsync<RpcException>(
-            async () => await new SeatVoice(agents, me).TakeDeliveryAsync(taken.Hold!, token));
+            async () => await new SeatVoice(agents, Seated()).TakeDeliveryAsync(taken.Hold!, token));
 
         Assert.Empty(taken.Hold!.Delivered);
     }
@@ -80,10 +78,9 @@ public sealed class TwoSurfaceDeliveryTests
         var token = TestContext.Current.CancellationToken;
         var agents = new OneQuestion();
         using var book = new SeatBook(_ => agents);
-        var me = Seated("arvind");
-        var voice = new SeatVoice(agents, me);
+        var voice = new SeatVoice(agents, Seated());
 
-        var taken = await book.TakeAsync(Alpha, me, [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
@@ -102,15 +99,15 @@ public sealed class TwoSurfaceDeliveryTests
         Assert.Equal(12, hold.Delivered.Count);
     }
 
-    /// <summary>A person's seat, by the name they typed.</summary>
-    /// <param name="person">What they typed.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
+    /// <summary>The project's person seat, as the broker names it (specs/023).</summary>
+    private static Seat Seated() => new(PersonSeat.On(Alpha.Name));
 
-        return seat;
-    }
+    /// <summary>The project's registry, holding only its person seat.</summary>
+    private static IReadOnlyList<AgentRecord> Person { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 
     /// <summary>An Agents client holding a seat, with one question waiting behind it.</summary>
     /// <param name="refuseDrain">Whether the drain refuses instead of answering.</param>

@@ -127,33 +127,9 @@ public sealed class WaitingOnScreenTests : IDisposable
             action => action.Label == Participation.DeliveryTitle);
     }
 
-    [Fact]
-    public async Task The_count_goes_when_the_seat_does()
-    {
-        // A number left on the line under nobody's name is somebody else's mail. The seat owns it.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open(width: 160, height: 40);
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await SendAsync(shell, ct);
-
-        await Eventually.UntilAsync(
-            () => shell.Mail is { Certain: true, Waiting: > 0 }, "nothing was ever counted", ct);
-
-        await shell.LeaveSeat();
-        await shell.Settled;
-
-        Assert.Null(shell.Held);
-        Assert.Null(shell.Mail);
-
-        driving.App.LayoutAndDraw(true);
-
-        Assert.DoesNotContain("waiting (", driving.Text(), StringComparison.Ordinal);
-    }
+    // `The_count_goes_when_the_seat_does` was here, and specs/023 turns it round. It left the seat and expected the
+    // count to go with it, because mail under nobody's name was somebody else's. Now the seat is never left — the broker
+    // provides it — and the count must survive the person being away, which is exactly when it matters (T041).
 
     [Fact]
     public async Task Nothing_waiting_puts_nothing_on_the_line()
@@ -213,13 +189,8 @@ public sealed class WaitingOnScreenTests : IDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);
