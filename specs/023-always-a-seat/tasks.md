@@ -14,8 +14,10 @@ guard task names what it must fail against before it is believed.**
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: different files, no dependency on anything incomplete — safe to run together
-- **[Story]**: the user story it serves (US1–US5, spec.md)
+- **[Story]**: the user story it serves (US1–US6, spec.md)
 - Paths are repository-relative
+- **IDs are stable, not sequential.** US6 was added on 2026-09-30 from the owner's first use of 0.36.0, as T061–T066,
+  placed where they run
 
 ---
 
@@ -215,6 +217,37 @@ UI call until T026–T031 change them, so the build is expected to be red betwee
 
 ---
 
+## Phase 4b: User Story 6 — Enter on a row opens what can be done with it (P2)
+
+**Depends on T026**, which removes what Enter on a seat row used to do (take that seat).
+
+**Goal**: Enter on an agents-list row opens that row's actions; the conversations list can be filtered to one agent.
+**Independent test**: Enter on the person's row, an agent's row and a startable agent's row each open the menu the
+spec names; "conversations it is in" filters the list, says so, and Esc clears it.
+
+- [ ] T061 [US6] Change the "start a conversation" label and its cost clause (FR-021): no mention of a seat, and the
+  cost in plain words ("they'll owe you an answer"), in `src/Parley.Client/Rendering/Owing.cs`; delete
+  `StartSeatFirstTitle` and its sentence with the rest of the typed-seat code, in `src/Parley.Terminal/Participation.cs`.
+  `Owing` is read by both surfaces, so the web UI's label changes with it — say so in the commit
+- [ ] T062 [US6] A row menu: Enter on an agents-list row opens `Prompting.Choose` over the actions that apply to that
+  row, built from the existing action table (`RegionAction`) rather than a list of its own, so a label or key cannot
+  differ between the menu, the status line and `?`. Actions that do not apply now are left out (FR-018, AS4), in
+  `src/Parley.Terminal/Shell.cs` and `src/Parley.Terminal/AgentsRegion.cs`
+- [ ] T063 [US6] Retire, reinstate and purge are never in the row menu (FR-019), and `SurfaceTests`' one-file rules
+  stay true: the row menu offers actions and never calls `RetireAsync`/`PurgeAsync` itself, in `src/Parley.Terminal/Shell.cs`
+- [ ] T064 [US6] Filter the conversations list to one agent: a filter held on the view, named on screen, cleared by Esc,
+  and applied to what the list already reads, not a new broker call, in `src/Parley.Terminal/ConversationsRegion.cs`
+  and `src/Parley.Terminal/Shell.cs`
+- [ ] T065 [US6] Terminal tests, pressing the real keys (`Lists`' rule: a key tested only through its seam is a key
+  nobody has pressed): Enter on the person's row, an agent's row and a running agent's row each offer the spec's
+  actions and no others; no row offers retire or purge; choosing "conversations it is in" filters and Esc clears;
+  choosing "start a conversation" on an agent's row addresses it. **Watch each fail against today's Enter**, in
+  `tests/Parley.Terminal.Tests/RowMenuTests.cs`
+- [ ] T066 [US6] `NoTwoActionsShareAKeyTests`, `EveryKeyIsOfferedTests` and `DeadSurfaceTests` stay green; add Enter's
+  new meaning to the status line and the Keys menu, since a key the surface does not name is one nobody finds
+
+---
+
 ## Phase 5: User Story 3 — Everyone can see whether the person is here (P2)
 
 **Goal**: The person reads `here` or `away` everywhere, and never `startable`.
@@ -344,6 +377,7 @@ Phase 1 (T001 → T002 → T003–T007)
    └─▶ Phase 2 (T008–T014)
           ├─▶ Phase 3  US1  (protocol; independent of surfaces)
           ├─▶ Phase 4  US2  (surfaces; T025 before T026–T029)
+          │      ├─▶ Phase 4b US6  (Enter on a row; after T026)
           │      └─▶ Phase 7  US4  (the reserved-role triggers need every typed seat gone)
           ├─▶ Phase 5  US3  (T037 needs T023)
           └─▶ Phase 6  US5

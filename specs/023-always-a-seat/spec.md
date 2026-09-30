@@ -115,6 +115,9 @@ Whether peers should be able to rely on "a person wrote this" stays open in §17
   2.6's hand-it-back branch no longer arises in a served project.
 - Q (from `/speckit-analyze`): What is the part after `@`? → A: **The project**, for both the person seat and the
   facilitator (D2, D7).
+- Q (from the owner's first use, 2026-09-30): What does Enter on an agents-list row do? → A: Opens that row's
+  actions (User Story 6). Retire and purge stay out of it; "conversations it is in" is included, which needs a
+  filter the conversations list does not have yet.
 - Q (from `/speckit-analyze`): Does the person's mail expire? → A: **Normal rules, no special promise.** The
   person's mail follows the same retention as everybody's. `prune` never deletes a message in open work, and
   removes old uncollected mail from finished work like anyone else's.
@@ -241,6 +244,38 @@ each surface.
 
 ---
 
+### User Story 6 - Enter on a row opens what can be done with it (Priority: P2)
+
+Added 2026-09-30 from the owner's first use of 0.36.0: *"it felt more natural to be in the agents section and hit
+enter on my user in order to start a conversation. I think the enter key should pop open the popup with the commands
+that are relevant to the agent you're on."*
+
+In the terminal's agents list, Enter on a row opens a short menu of what can be done with that row, and nothing
+else. On the person's own row: start a conversation, their conversations, and collect what is waiting. On an agent's
+row: start a conversation with it, the conversations it is in, ask again what it owns, review its ownership line,
+start it when it is not running, and instruct it. Retiring and purging are **not** offered there: they stay in the
+Agent menu and on their own keys, behind the typed name.
+
+**Why this priority**: Enter on a seat row used to *take that seat*, which this feature removes, so the key needs a
+new meaning anyway; and it is where the owner reached first.
+
+**Independent Test**: In a project with the person and two agents, press Enter on each row and read the menu; choose
+"conversations it is in" on an agent and see only that agent's conversations, with the filter named and Esc clearing
+it.
+
+**Acceptance Scenarios**:
+
+1. **Given** the cursor is on the person's row, **When** Enter is pressed, **Then** a menu offers start a
+   conversation, your conversations, and collect what is waiting.
+2. **Given** the cursor is on an agent's row, **When** Enter is pressed, **Then** a menu offers that agent's
+   everyday actions, and neither retire nor purge.
+3. **Given** "conversations it is in" is chosen for `orders`, **When** the conversations list opens, **Then** it
+   shows only conversations `orders` is part of, says so, and Esc shows them all again.
+4. **Given** an action in the menu cannot be done right now (the agent is already running, say), **When** the menu
+   opens, **Then** that action is not offered, rather than offered and then refused.
+
+---
+
 ### Edge Cases
 
 - **Two machines, one project.** A person using a surface on another machine, through a tunnel, speaks as the
@@ -325,6 +360,16 @@ each surface.
   starting them.
 - **FR-016**: The person's words MUST continue to be recorded as a person's (§11.3 `human:` responder), under
   the `human-user` name.
+
+**Enter on a row** (User Story 6)
+
+- **FR-018**: Enter on a row of the terminal's agents list MUST open a menu of the actions that apply to that row,
+  and MUST NOT act by itself.
+- **FR-019**: The menu MUST NOT offer retire, reinstate or purge. Those stay where they are, behind the typed name.
+- **FR-020**: The conversations list MUST be able to show only the conversations one agent is part of, MUST say on
+  screen which agent it is filtered to, and MUST return to every conversation on Esc.
+- **FR-021**: The label for starting a conversation MUST NOT mention taking a seat, and MUST say what it costs in
+  plain words — the other side will owe an answer — rather than "opens an exchange they owe a result".
 
 **Not ruling out later surfaces**
 
