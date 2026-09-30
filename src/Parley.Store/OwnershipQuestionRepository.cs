@@ -66,7 +66,7 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
                    AND NOT EXISTS (SELECT 1 FROM ownership_questions q WHERE q.agent = a.name)
                  ORDER BY a.name;
                 """,
-                new { Attached = attached.ToArray(), Facilitator = Facilitation.Adapter, Seat = Seats.Adapter },
+                new { Attached = attached.ToArray(), Facilitator = Facilitation.Adapter, Seat = PersonSeat.Adapter },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 

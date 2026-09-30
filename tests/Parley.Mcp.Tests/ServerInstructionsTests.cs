@@ -50,6 +50,7 @@ public sealed class ServerInstructionsTests : IDisposable
     private JsonNode Initialize()
     {
         var runtime = Parley.Server.BrokerRuntime.Open(
+            Parley.Core.ProjectName.Create("test"),
             Path.Combine(_directory, "parley.db"),
             Parley.Broker.BrokerOptions.Default,
             TimeProvider.System);

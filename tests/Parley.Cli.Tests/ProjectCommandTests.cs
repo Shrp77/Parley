@@ -404,7 +404,7 @@ public sealed class ProjectCommandTests : IDisposable
         var endpoint = Assert.Single(named).Endpoint;
 
         var runtime = BrokerRuntime.Open(
-            Store("orders"), BrokerOptions.Default, TimeProvider.System);
+            ProjectName.Create("orders"), Store("orders"), BrokerOptions.Default, TimeProvider.System);
 
         await using var server = await ParleyServer.StartAsync(
             runtime, endpoint, TestContext.Current.CancellationToken);

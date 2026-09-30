@@ -61,5 +61,23 @@ public enum WakeOutcome
     /// Said out loud because the alternative is what was reported — a send that looked identical
     /// to one that had reached somebody.
     /// </remarks>
-    Unreachable = 3
+    Unreachable = 3,
+
+    /// <summary>
+    /// The recipient is the person (SPEC.md §12.3): they have it and will answer, here or away.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not <see cref="AlreadyComing"/>, though that is the nearest.</b> Nothing is coming by itself: a person has to
+    /// decide, and an agent told a turn is on its way would wait for something no machine will do. And never
+    /// <see cref="Unreachable"/>, which is what the person seat was told before specs/023 — every wake asked a node to
+    /// start the person, no node can, and an agent told "unreachable" behaves as if its question will never be read,
+    /// when it waits in the person's mail for as long as it takes.
+    /// </para>
+    /// <para>
+    /// The same whether the person is here or away (FR-007). What changes with presence is only whether a surface is
+    /// told something arrived, which is the ordinary notice every attached adapter gets.
+    /// </para>
+    /// </remarks>
+    WithThePerson = 4
 }

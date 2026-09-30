@@ -38,7 +38,7 @@ public sealed class ParleyIsShownApartTests
             source is null ? null : "the thing",
             source);
 
-    private static AgentRecord Parley => Agent(Facilitation.On("test").Value, Facilitation.Adapter);
+    private static AgentRecord Parley => Agent(Facilitation.On(ProjectName.Create("test")).Value, Facilitation.Adapter);
 
     [Fact]
     public async Task Parley_is_not_a_row_on_the_agents_pane()
@@ -168,7 +168,7 @@ public sealed class ParleyIsShownApartTests
         var retired = Agent("inventory@test") with { Status = AgentStatus.Retired };
 
         var listed = OwnershipReview.Reviewable(
-            [Agent("orders@test"), Agent("arvind@test", Seats.Adapter), Parley, retired]);
+            [Agent("orders@test"), Agent("arvind@test", PersonSeat.Adapter), Parley, retired]);
 
         Assert.Equal(["orders@test"], listed.Select(a => a.Name.Value));
     }

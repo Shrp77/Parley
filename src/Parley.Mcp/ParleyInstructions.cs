@@ -41,8 +41,9 @@ public static class ParleyInstructions
         - If you cannot tell what a request is for, or how far it goes, ask with parley_clarify rather
           than guessing. You may ask other agents too. Guessing at scope is how work is done twice.
         - Resolve blockers by talking: ask the agent that can provide what you need; if none can, ask the
-          person seated in the deployment; if nobody is seated, report blocked to your requester, naming
-          exactly what is needed.
+          person - the participant whose role is human-user, listed by parley_agents. They may be away.
+          Your message waits for them, and waiting for their decision is correct; it is not a reason to
+          report blocked.
         - Every message is answered. Sending never blocks — carry on with what does not depend on it.
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never

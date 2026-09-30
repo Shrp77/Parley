@@ -230,13 +230,18 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <param name="workspace">Where it is launching from, or null.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
     /// <param name="owns">What the launch environment says this agent owns, or null for nothing.</param>
+    /// <param name="adapter">
+    /// The adapter it attaches through. <c>test</c> unless a test is attaching as the person, whose seat adapter is
+    /// what a surface reports (specs/023).
+    /// </param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
         string name,
         string? workspace = null,
         CancellationToken cancellationToken = default,
-        string? owns = null)
+        string? owns = null,
+        string adapter = "test")
     {
         var client = broker.Connect();
 
@@ -244,7 +249,7 @@ internal sealed class AttachedClient : IAsyncDisposable
             new Wire.AttachRequest
             {
                 Agent = name,
-                Adapter = "test",
+                Adapter = adapter,
                 Tier = Wire.AgentTier.Pull,
                 Workspace = workspace ?? string.Empty,
 

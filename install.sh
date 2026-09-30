@@ -827,6 +827,25 @@ if [ -n "$skew" ]; then
     echo "    bring it up, or with --uninstall to remove everything." >&2
 fi
 
+# 0.36.0 edited the store's schema in place without moving its number (specs/023), because nothing
+# had been released. So a store made by an older broker is opened without complaint and keeps its
+# old shape. Nothing in the broker says so -- the owner's call was to say it here rather than
+# refuse the store -- which makes this the only warning there is. Said only when an older broker was
+# replaced and --reset was not passed. Compared with awk rather than `sort -V`, which not every
+# platform this runs on has; a pre-release suffix is dropped first.
+broker_before="$(printf '%s\n' "$listed_before" \
+    | awk 'tolower($1) == "parley.cli" { print $2; exit }' | cut -d- -f1)"
+
+if [ "$reset" != "1" ] && [ -n "$broker_before" ]; then
+    older="$(awk -v v="$broker_before" 'BEGIN { split(v, p, "."); print ((p[1] + 0 == 0 && p[2] + 0 < 36) ? 1 : 0) }')"
+
+    if [ "$older" = "1" ]; then
+        echo "==> This upgraded Parley from $broker_before. Stores made before 0.36.0 keep their old" >&2
+        echo "    shape with no warning: the person seat is not protected and each project is recorded" >&2
+        echo "    as a machine. Run this again with --reset to start clean. Nothing in them is kept." >&2
+    fi
+fi
+
 # ------------------------------------------------------------------ verify ---
 
 step "Checking what is actually on PATH"

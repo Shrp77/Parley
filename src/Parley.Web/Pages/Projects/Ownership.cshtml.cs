@@ -70,7 +70,7 @@ public sealed class OwnershipModel(BrokerDirectory directory) : PageModel
         // anything.
         Rows = [.. registry
             .Where(r => r.Status == AgentStatus.Active && !r.Facilitator)
-            .Where(r => !string.Equals(r.Adapter, Seats.Adapter, StringComparison.Ordinal))
+            .Where(r => !string.Equals(r.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
             .OrderBy(r => r.Name.Value, StringComparer.Ordinal)
             .Select(r => (r, report.Questions.FirstOrDefault(q => q.Agent == r.Name)))];
 

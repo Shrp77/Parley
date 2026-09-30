@@ -234,8 +234,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         Before reporting blocked, pursue it. If another agent owns part of the work or holds what you
         need, send it a parley_request in this conversation and use its Result. If no agent can, ask the
-        person seated in the deployment. If nobody is seated, report blocked with missing_information
-        naming exactly what is needed, so your requester can pursue it in turn. A conflict: resolve it,
+        person - the participant whose role is human-user - and wait for their answer. They may be away;
+        waiting for their decision is correct and is not a reason to report blocked. A conflict: resolve it,
         including by asking other agents to do work that unblocks you. A missing permission: name it and
         who could grant it. "Too big", "someone else should decide" and "I was not told I could" are not
         blockers.
@@ -1553,6 +1553,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         Wire.WakeOutcome.Unreachable =>
             "not reachable right now; it gets the request when it comes back, and the person running the " +
             "deployment is shown that it is waiting",
+
+        // The one outcome an agent must not read as "nobody will see this" (SPEC.md principle 2.6): a person away for
+        // hours has still been asked, and waiting for their decision is the right thing to do.
+        Wire.WakeOutcome.WithThePerson =>
+            "with the person: they have it and will answer. They may be away; waiting for their decision is correct",
         _ => "unknown"
     };
 

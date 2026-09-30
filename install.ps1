@@ -270,6 +270,26 @@ function Installed {
 
 <#
 .SYNOPSIS
+    The version of one of this repository's tools installed globally, or $null if it is not.
+.DESCRIPTION
+    Read before anything is replaced, so the end of the run can say what an upgrade crossed. A
+    pre-release suffix is dropped, because [version] cannot parse one and the comparison this
+    serves is about which release a store was made by.
+#>
+function InstalledVersion([string] $package) {
+    $line = (& dotnet tool list -g 2>$null) |
+        Where-Object { $_ -match ('^' + [regex]::Escape($package.ToLowerInvariant()) + '\s+(\S+)') } |
+        Select-Object -First 1
+
+    if (-not $line -or $line -notmatch ('^' + [regex]::Escape($package.ToLowerInvariant()) + '\s+(\S+)')) {
+        return $null
+    }
+
+    return ($Matches[1] -split '-')[0]
+}
+
+<#
+.SYNOPSIS
     Stops the broker the autostart entry started, and waits for it to go.
 .DESCRIPTION
     Needed by both paths, for the same reason: Windows will not unlink a binary that is mapped
@@ -838,6 +858,7 @@ Write-Step "Installing version $built"
 # quietly is how a machine ends up running a terminal three versions behind its broker.
 $outcomes = @()
 $listedBefore = Installed
+$brokerBefore = InstalledVersion 'Parley.Cli'
 
 foreach ($tool in $tools) {
     if (-not (Wanted $tool)) {
@@ -891,6 +912,20 @@ $stale = @($outcomes | Where-Object { $_.Said -like 'left as it was*' })
 
 if ($stale.Count -gt 0) {
     Write-Warning "$(($stale | ForEach-Object { $_.Command }) -join ', ') is installed and was not updated to $built. Re-run with -Surfaces both to bring it up, or with -Uninstall to remove everything."
+}
+
+# 0.36.0 edited the store's schema in place without moving its number (specs/023), because nothing
+# had been released. So a store made by an older broker is opened without complaint and keeps its
+# old shape: no person seat rules, and a machine recorded for each project. Nothing in the broker
+# says so -- the owner's call was to say it here rather than refuse the store -- which makes this
+# line the only warning there is. Said only when an older broker was actually replaced and -Reset
+# was not passed, because on a fresh machine or after a reset there is nothing old to keep.
+if (-not $Reset -and $brokerBefore) {
+    $before = $null
+
+    if ([version]::TryParse($brokerBefore, [ref] $before) -and $before -lt [version] '0.36.0') {
+        Write-Warning "This upgraded Parley from $brokerBefore. Stores made before 0.36.0 keep their old shape with no warning: the person seat is not protected and each project is recorded as a machine. Run this again with -Reset to start clean. Nothing in them is kept."
+    }
 }
 
 # ------------------------------------------------------------------ verify ---

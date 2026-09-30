@@ -45,7 +45,7 @@ public sealed class ParleyChoosesNoConversationTests : IDisposable
     [Fact]
     public async Task A_question_asked_back_does_not_pull_the_agents_own_work_into_it()
     {
-        var parley = await new AgentRepository(_connection).EnsureFacilitatorAsync("test", cancellationToken: Ct);
+        var parley = await new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test"), cancellationToken: Ct);
         var agents = new Broker(_connection, BrokerOptions.Default);
         agents.ServeFrom(T0);
 

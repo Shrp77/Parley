@@ -70,9 +70,12 @@ language they are written in.
    resolves what stops it. It declines only for a concrete blocker it could not resolve, and
    says exactly what that blocker is. A blocker is not a place to stop:
    - **Missing information.** The agent works out who can provide it and asks them. If no
-     agent in the project can, it asks the person seated in the deployment. If nobody is
-     seated, the need goes back to the originator of the request, who must ask. The facilitator
-     (principle 2.11) is never the person seated, and never receives such a need.
+     agent in the project can, it asks the person: the project's person seat (§12.3), which
+     every served project has whether or not anybody is at a screen. The person may be away;
+     the message waits for them, and waiting for their decision is correct rather than a reason
+     to give up. Only an implementation that provides no person seat sends the need back to the
+     originator of the request, who must ask. The facilitator (principle 2.11) is never the
+     person, and never receives such a need.
    - **A conflict.** The agent resolves it, which may mean asking other agents to do work
      that unblocks it.
 
@@ -112,7 +115,7 @@ language they are written in.
     (recorded as that person's words, §9.2), and propose and agree that its own conversation is
     done (principle 2.8 needs every participant's agreement, and a participant that never agreed
     would hold its conversations open for ever). It holds no operator operation. It is never the
-    person seated (principle 2.6), never receives anybody's work, and never assigns, directs,
+    person (principle 2.6, §12.3), never receives anybody's work, and never assigns, directs,
     prioritises, closes or overrides work. It adds *who* asks, never what asking can do.
 
 ## 3. Terminology
@@ -120,9 +123,10 @@ language they are written in.
 | Term | Meaning |
 |---|---|
 | **Agent** | A named participant that owns a bounded domain and does work in it. Usually an AI coding agent scoped to one repository, but see §11. |
-| **Person** | A human taking part in a deployment: seated as a participant in its conversations, or running it as its operator (§10.2). |
+| **Person** | A human taking part in a deployment: a participant in its conversations through the project's person seat, or running it as its operator (§10.2). |
+| **Person seat** | The project's one participant that is a person, provided by the broker in every project it serves and shown as the person, never as an agent. Named `human-user@<project>`; never retired, purged or released. *Having* the seat is being addressable and having mail wait; *being in* it is somebody at a screen, reported as `here` or `away` (§14). Its role is reserved, and what that does and does not guarantee is in §12.3. |
 | **Broker** | The single long-lived process that owns routing, state, locking, and lifecycle. |
-| **Facilitator** | Parley's own participant in a project, provided by the broker and shown as **Parley**. Neither an agent nor a person, and not a seat. Asks each agent what it owns, and nothing else (principle 2.11). Its identity is the reserved role `parley-facilitator`, which no agent, seat or enrolment may take (§12.3). |
+| **Facilitator** | Parley's own participant in a project, provided by the broker and shown as **Parley**. Neither an agent nor a person, and not a seat. Asks each agent what it owns, and nothing else (principle 2.11). Its identity is the reserved role `parley-facilitator`, which no agent, seat or enrolment may take (§12.3), and its name is `parley-facilitator@<project>`. |
 | **Adapter** | The vendor-specific glue that attaches an agent to the broker. |
 | **Responder** | Whatever produced the text of one message — a model, a script, or a person. An agent has a responder; a responder need not have an agent. See §11.2. |
 | **Request** | A message asking an agent to do something: work in its repository, or information it holds. |
@@ -211,6 +215,13 @@ running or it is not. Both are things the node knows for certain and can say. Th
 alternative — and what this document specified until it was tried — is to write a timestamp
 down and have every reader guess how stale is too stale, which produces a registry that
 reports a session killed on Tuesday as healthy on Friday.
+
+**For the person, a connection is evidence of presence, not of reachability.** The person seat
+(§12.3) is reachable whenever its project is served: a message to it is accepted and waits,
+whether or not anything is connected. What a surface's connection says is whether somebody is at
+a screen — `here` or `away` (§14). It is the one participant whose reachability is not a fact
+about a socket, and that is deliberate: a person who has stepped away is still the one an agent
+needs to ask.
 
 **A held connection lets the broker speak first.** Without one, an adapter can only ask
 whether anything has arrived, so the whole protocol is shaped around polling on a timer.
@@ -313,6 +324,14 @@ cross-platform parity.
 
 An agent is named `role@machine`. `docs@server-a`, `infra@server-b`,
 `infra@server-c`.
+
+**The two participants the broker provides are named for their project instead**:
+`human-user@alpha` and `parley-facilitator@alpha`. Neither is hosted on a machine — a person is
+not, and the facilitator runs inside the broker — so a machine after the `@` would say
+something untrue, and a machine that never connects would be recorded for it. For these two the
+part after `@` is a project name (§4.1), storage records no machine at all (§9.2), and nothing
+routes on it: nothing is ever asked to start either (§12.3). A machine that happens to share a
+project's name shares only the spelling.
 
 The role names what the agent is for and is chosen by whoever configures the repository. The
 machine is detected by the node, never configured, because a machine that can be told what it
@@ -571,7 +590,7 @@ guesses instead is acting in a world it invented, which is the failure §5.1's r
 reaching for and never fixed.
 
 **A Clarify is for the requester; anyone else gets a Request.** When what the receiver needs is
-held by a third participant — another agent, or the person seated in the deployment — it sends
+held by a third participant — another agent, or the person (§12.3) — it sends
 that participant a Request in the same conversation (§5.0) and carries on with its own exchange
 still open. Clarify exists so that asking the requester back does not open a second exchange
 waiting on the first: one edge flips instead of two pointing at each other, and the person
@@ -633,10 +652,11 @@ lose. A source must name a registered participant, and the schema enforces it (�
 concrete blocker it could not resolve, and it must say what the blocker is and what it tried:
 
 - **Missing information** — it asked every participant that could provide it. If no agent in
-  the project could, it asked the person seated in the deployment. If nobody is seated, it
-  sends `blocked` to its requester naming exactly what is needed, and that need becomes the
-  requester's own missing information: the requester pursues it the same way, and so on back to
-  the originator, who must ask a person.
+  the project could, it asked the person seat (§12.3) and is waiting for the person's answer,
+  which is not a blocker: a person who is away has still been asked. Only where an
+  implementation provides no person seat does it send `blocked` to its requester naming exactly
+  what is needed, and that need becomes the requester's own missing information: the requester
+  pursues it the same way, and so on back to the originator, who must ask a person.
 - **A conflict** — it tried to resolve it, including by asking other agents to do work that
   would unblock it, and says what stands in the way.
 - **A permission it does not have** — it names the permission and who could grant it.
@@ -659,9 +679,15 @@ it, which a message expecting nothing back never told anybody (principle 2.7).
 **A Request wakes its receiver.** An agent that is not running is started and one that is
 running is given a turn, by the machine that holds it (§4). What the sender is told alongside
 the exchange identifier is what became of the receiver: started, already running, already being
-seen to, or not reachable from here. **None of these is a refusal.** The Request is stored
-before any of it is decided, and an unreachable receiver is flagged to the person running the
-deployment rather than written off (principle 2.8).
+seen to, not reachable from here, or **with the person**. **None of these is a refusal.** The
+Request is stored before any of it is decided, and an unreachable receiver is flagged to the person
+running the deployment rather than written off (principle 2.8).
+
+**A Request to the person is with the person, whether they are here or away.** Nothing starts a
+person, so no machine is ever asked to, and the sender is never told the person is unreachable:
+it is told the person has it and will answer. A person who is away has still been asked, and
+waiting for their decision is the correct thing to do (principle 2.6). A surface the person has
+open is told something arrived, as any attached adapter is (§4.0).
 
 **Attention is asked for once per receiver until that receiver collects its messages.** A
 broker MUST NOT ask again while an earlier asking is outstanding, and the asking is satisfied
@@ -754,7 +780,9 @@ tracks both:
 
 Crossing a threshold changes nothing about the exchange. It puts the exchange in front of the
 person (§10.2), naming the stage and the participant it is waiting on, and the person decides
-what happens next: start the agent (§10.2), take a seat and ask it, or close the conversation.
+what happens next: start the agent (§10.2), ask it, or close the conversation. When the participant
+it is waiting on is the person themselves, the flag is the person's own to-do and says so — *waiting
+on you*, naming who asked — and never suggests starting anybody, because nothing starts a person.
 Collection is already recorded — collecting marks a message delivered — so this needs no
 acknowledgement message and no heartbeat.
 
@@ -1002,9 +1030,11 @@ and five of the ten are held by storage, the API or the broker rather than reque
     refuses a Request that tries to start or name another (§5.0) — so this is a rule an agent
     cannot break rather than one it must remember.
 10. **Resolve blockers by talking to whoever can resolve them.** Missing information: work out
-    who can provide it and ask them; if no agent in the project can, ask the person seated in
-    the deployment; if nobody is seated, send `blocked` to your requester naming exactly what is
-    needed, so it can pursue it in turn. A conflict: resolve it, including by asking other agents
+    who can provide it and ask them; if no agent in the project can, ask the person — the
+    participant whose role is `human-user` — and wait for their answer, however long they are
+    away; waiting for the person is not a reason to send `blocked`. Only where there is no person
+    seat, send `blocked` to your requester naming exactly what is needed, so it can pursue it in
+    turn. A conflict: resolve it, including by asking other agents
     to do work that unblocks you. A permission you lack: name it and who could grant it. The
     work stops only when the participants agree it cannot be done.
 
@@ -1081,8 +1111,20 @@ CREATE TABLE agents (
                   GENERATED ALWAYS AS (substr(name, 1, instr(name, '@') - 1)) STORED,
   -- The node that reported this agent. Detected there and never configured, so two machines
   -- cannot both claim to be server-b -- see §4.1.1.
-  machine         TEXT    NOT NULL
-                  GENERATED ALWAYS AS (substr(name, instr(name, '@') + 1)) STORED
+  --
+  -- NULL for the two participants the broker provides, the person seat and the facilitator
+  -- (§12.3). Neither is hosted on a machine: the part after '@' in their names says what this
+  -- store serves (§4.1.1), not where anything runs. A machine entry could not simply be left out:
+  -- the key below would refuse the row. A NULL machine is allowed by the key and says what is
+  -- true. The checks after the columns hold that only these two may have none, and hold their
+  -- second half to the grammar §4.1.1 gives it.
+  machine         TEXT
+                  GENERATED ALWAYS AS (
+                    CASE WHEN substr(name, 1, instr(name, '@') - 1)
+                              IN ('human-user', 'parley-facilitator')
+                         THEN NULL
+                         ELSE substr(name, instr(name, '@') + 1)
+                    END) STORED
                   REFERENCES nodes(machine),
   adapter         TEXT    NOT NULL,
   tier            TEXT    NOT NULL CHECK (tier IN ('full', 'pull', 'headless')),
@@ -1111,6 +1153,22 @@ CREATE TABLE agents (
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
+
+  -- Only the two participants the broker provides have no machine (§4.1.1).
+  CHECK (machine IS NOT NULL OR role IN ('human-user', 'parley-facilitator')),
+
+  -- Their second half is not a machine, so it is held to the grammar §4.1.1 gives it instead. The
+  -- machine CHECK passes on NULL, so without this the part after '@' would be checked by nothing.
+  CHECK (machine IS NOT NULL
+         OR (length(substr(name, instr(name, '@') + 1)) BETWEEN 1 AND 32
+             AND substr(name, instr(name, '@') + 1) GLOB '[a-z]*'
+             AND substr(name, instr(name, '@') + 1) NOT GLOB '*[^a-z0-9-]*')),
+
+  -- Neither owns a repository, so neither has an ownership line. Here rather than in code
+  -- because every attach refreshes `owns` from the launch, and something attaching under the
+  -- person's name would otherwise put its own line in every agent's roster as the person's
+  -- (§12.3). This one holds whoever attaches.
+  CHECK (owns IS NULL OR role NOT IN ('human-user', 'parley-facilitator')),
 
   -- What this agent owns, in one line, written by whoever configured its launch.
   --
@@ -1291,6 +1349,7 @@ CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
 -- stored-liveness mistake of section 14 arriving through a side door.
 CREATE TRIGGER tr_agent_declares_its_machine
 BEFORE INSERT ON agents
+WHEN substr(NEW.name, 1, instr(NEW.name, '@') - 1) NOT IN ('human-user', 'parley-facilitator')
 BEGIN
   INSERT INTO nodes (machine, connected, first_seen_utc)
   VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -1995,6 +2054,26 @@ BEGIN
   SELECT RAISE(ABORT, 'the facilitator cannot be purged');
 END;
 
+-- The person seat (§12.3): `human-user@...`, which the broker writes when it opens a store and
+-- never releases. Keyed on the role rather than the seat adapter, because a seat taken under a
+-- typed name carried that adapter too; the role is the one fact only the person seat has.
+CREATE TRIGGER tr_person_is_never_retired
+BEFORE UPDATE OF status ON agents
+WHEN substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user' AND NEW.status <> 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'the person seat cannot be retired');
+END;
+
+CREATE TRIGGER tr_person_is_never_purged
+BEFORE DELETE ON agents
+WHEN substr(OLD.name, 1, instr(OLD.name, '@') - 1) = 'human-user'
+BEGIN
+  SELECT RAISE(ABORT, 'the person seat cannot be purged');
+END;
+
+-- One person per store. However the row came to be written, a second is refused.
+CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
+
 -- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
 -- current question; earlier rows are history, kept so asking again does not erase what was said.
 --
@@ -2424,7 +2503,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 
 | Operation | Description |
 |---|---|
-| `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. |
+| `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. The project's person seat (§12.3) is listed too, as the person rather than as an agent, with `here` or `away` in place of liveness (§14), so an agent can find who to ask when no agent can help (principle 2.6). |
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). |
 | `result(exchange_id, outcome)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. |
@@ -2526,7 +2605,7 @@ other could.
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
-| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns an identifier, what became of it — taken, declined, undeliverable, failed or still running — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. A turn may outlast any wait a caller can reasonably be held for, so *still running* is an ordinary answer rather than a fault, and `instructions()` is how the rest of it is collected. |
+| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns an identifier, what became of it — taken, declined, undeliverable, failed or still running — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. A turn may outlast any wait a caller can reasonably be held for, so *still running* is an ordinary answer rather than a fault, and `instructions()` is how the rest of it is collected. Refused for the person seat: a person is asked, never instructed. |
 | `instructions(agent?, id?, page)` | What became of the instructions this operator gave, most recent first: the agent, the instruction's own words, the outcome, whatever the agent said, when it was issued and when it settled. Narrowable to one agent or one instruction. Paged, and the broker bounds the page whatever is asked for. The reply is disclosed to the operator who asked for it, which needs no argument — but the *text* is disclosed too, and that is deliberate: they are a person's own words to their own agent, on a surface no agent can reach, and a reply with no question beside it is half a transcript. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
@@ -2534,9 +2613,9 @@ other could.
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
-| `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. |
+| `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. Refused for the person seat, which is never retired (§12.3). |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
-| `purge(agent)` | Delete an agent and every conversation it was party to, with those conversations' files, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. |
+| `purge(agent)` | Delete an agent and every conversation it was party to, with those conversations' files, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. Refused for the person seat: the broker would write it again on its next start, so a purge could only cut the person's words out of every transcript. |
 | `record_ownership(agent, statement, source, proposed_length?, conversation_id?)` | Record that a person accepted a statement of what an agent owns: the statement, which of three ways it was arrived at — the agent's own words, its words edited, or a line composed with no ask — how long the agent's own proposal was, and the conversation it was agreed in. **It does not write `owns`.** What peers read is still filled from the launch environment when the agent attaches (§12.3), so a line takes effect on the agent's next start and this operation returns what peers read *now* beside what was accepted, which is how a surface says the two differ. Named `record_ownership` rather than `accept_ownership` for the reason `registry` is not `agents`: the person did the accepting, and a name claiming this operation did it would describe the wrong actor. **A fourth source, `automatic`, is recorded only by the broker itself** when Auto Accept makes an answer a line (below), and a call passing it is refused: a person's decision is never recorded as the machine's. See §17 question 10. |
 | `facilitation()` | The project's Auto Accept switch, and every agent's current ownership question from the facilitator: its state — asked, asked back, answered, waiting, accepted or discarded — the answer as the agent wrote it, the answer with its whitespace collapsed, and why it is waiting when it is. What a surface reviews ownership from. |
 | `set_auto_accept(on)` | Turn the project's Auto Accept switch on or off, and return it as now set. Governs answers that arrive afterwards; answers already waiting stay waiting. |
@@ -2547,7 +2626,7 @@ other could.
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
-| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. |
+| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because their names break §9.5's rules. Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
@@ -3083,8 +3162,17 @@ agent.** Every sender is a registry row, because a message's sender and recipien
 The facilitator (principle 2.11) sends, so it has a row. That row is the broker's statement that its
 own participant exists, the same kind of fact as a `closed` result being the broker's (§5), and not
 a claim that an agent exists and has spoken. It is written when the broker opens a store, if absent,
-under the role `parley-facilitator` and the adapter of the same name. It is found by its adapter,
-never by its name, so a machine renamed does not make a second one.
+as `parley-facilitator@<project>` under the adapter of the same name. It is found by its adapter,
+never by its name, so a row written under an earlier name is reused rather than doubled.
+
+**The broker writes one more: the person seat.** A person is not launched either, and every project
+needs a person that agents can ask (principle 2.6) from the moment it is served, before anybody has
+opened a screen. So the broker writes `human-user@<project>`, under the seat adapter
+`parley-console`, when it opens a store, if absent, found by its role. It is never retired, purged
+or released: the broker would write it again on its next start, so removing it could only cut the
+person's words out of every transcript. Every surface that reaches the broker speaks as it, and no
+surface registers a person of its own. Neither the person seat nor the facilitator has a machine
+(§4.1.1), and neither is ever asked to start (§14): a message to the person waits for them.
 
 **The role is reserved, in storage and at every door.** Storage refuses a row under that role with
 any other adapter, and that adapter under any other role, so no route writes one without the other.
@@ -3092,6 +3180,20 @@ An attach, a seat and an enrolment each refuse the role before storage does, wit
 `parley` itself is **not** reserved: it is an ordinary role, which a repository called `Parley` is
 enrolled under. Every legal role is some folder's name, so no choice makes a clash impossible, and
 this one makes it unlikely.
+
+**`human-user` is reserved the same way, and what that guarantees is narrower than it sounds.**
+Storage refuses the role under any adapter but the seat's, and the seat's adapter under any other
+role; enrolment refuses a repository under it; attaching as an agent under it is refused with a
+sentence. `user` was not chosen because an agent may legitimately be called that.
+
+The limit belongs here rather than in a footnote. The person seat exists before anything attaches,
+so an attach under its name writes no new row and **no storage rule sees it**. What refuses a
+claimant is code comparing the adapter the caller reports, and a caller that reports the seat's
+adapter is admitted as the person. That is §16's concession — anything able to reach a broker can
+claim any name — applied to this one, and §17 question 2 carries whether peers should rely on "a
+person wrote this" at all. What storage does guarantee, whoever attaches, is that neither the person
+seat nor the facilitator carries an ownership line, so no claimant can put its own line in every
+agent's roster as the person's.
 
 ## 13. Trust boundary
 
@@ -3274,12 +3376,24 @@ connections, and both are things some process knows for certain rather than infe
 | `startable` | yes | no | nobody has it open; the node can start it when needed |
 | `stranded` | no | — | the machine is unreachable; nothing can start it |
 | `retired` | — | — | a person's word; stored, and outranks the rest |
+| `here` | — | yes | the person seat only: a surface is open and in use |
+| `away` | — | no | the person seat only: nobody is at a screen; the seat is still there and still asked |
 
-Only `retired` is a column. The others are read from `nodes.connected` and `agents.connected`,
+Only `retired` is a column.
+
+**The person seat reads `here` or `away`, never anything else.** A person has no machine and is never
+started, so the rows above it would each say something false: `startable` would tell a peer that an
+absent person can be woken, and `stranded` that one cannot be reached. The person is reachable
+whenever the project is served (§12.3), and whether they are at a screen is the only thing a
+connection says about them. A surface drops its connection when nobody has touched it for a while
+and takes it back on the next keystroke, so `here` means in use, not merely left open — a tab
+nobody is looking at is not somebody at a desk. Neither value gates routing, and neither changes
+what a sender is told. The others are read from `nodes.connected` and `agents.connected`,
 which are written when a connection opens and when it closes, and by nothing else.
 
 **The facilitator is none of these, and has no lifecycle an operator can touch.** It is present
-whenever its project is served and absent otherwise, so it is never spawned, never retired, never
+whenever its project is served and absent otherwise — reported as `running` wherever a presence is
+returned for it, since it has no machine to be connected or not — so it is never spawned, never retired, never
 purged, never started, never instructed and never routed to. `agents()` does not list it (§10.1),
 and every operator operation that takes an agent refuses it. Its question to an agent is ordinary
 open work: flagged like any other when the agent goes quiet (§6), and never timed out.
@@ -3736,11 +3850,22 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    position across turns, which is what Headless cannot do. What remains open is what a flag means
    when the receiver is asleep — §6's clock does not know the difference between a participant that
    is working and one that has gone home, and flags the second on the same schedule as the first. A
-   seat also makes `startable` read oddly: presence is derived from
-   whether a node is connected (§4), and nothing can start a person, so a peer is told an
-   absent human can be woken. Both are unresolved and neither is invented by the seat — the
-   second is how presence has always been derived, and the seat is the first agent to make it
-   visibly wrong.
+   seat also made `startable` read oddly: presence was derived from whether a node is connected
+   (§4), and nothing can start a person, so a peer was told an absent human could be woken.
+
+   **The second of those is closed, by separating having a seat from being in it** (0.7's third
+   amendment, specs/023). The owner's words: *"There is a difference between having a seat and
+   being in a seat … The seat is still there for a reason — agents may actually need the person to
+   arbitrate or make a decision and they are stalled until that decision is made."* A seat that was
+   released after twenty idle minutes took the first away because the second had stopped, and
+   every agent waiting on a person's decision was left with nobody to ask — principle 2.6 sent the
+   need back to its originator instead. So the broker now provides the person seat in every project
+   (§12.3), `human-user@<project>`, and never releases it; presence is `here` or `away` (§14), and a
+   message to the person is answered *with the person*, never unreachable. Everyone using a project
+   is the one `human-user` — a deliberate choice for a protocol used by one person running many
+   agents, not an oversight. **The first is still open**: a flag waiting on an away person now reads
+   as the person's own to-do (§6), but §6's clock still does not know whether a participant is
+   working or has gone home.
 
    **Evidence, from asking a peer through the seat rather than reasoning about it.** A first
    seated question asked whether a person's message is distinguishable from an agent's. Two
@@ -3783,14 +3908,17 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    registry can express, unlike the `parley:` prefix, which §11.3 explains cannot be a schema
    check because the broker writes every row itself. It is recorded here and not adopted —
    reserving a second namespace is a protocol change, and the question of whether peers should
-   rely on this at all is still open above it.
+   rely on this at all is still open above it. The reserved role `human-user` (§12.3) now gives the
+   registry the fact that check would read — which row is the person — so adopting it later is a
+   rule rather than a redesign. It is still not adopted: an attach that reports the seat's adapter
+   is admitted as the person, so the check would move the trust rather than remove it.
 
    **The facilitator is not a seat, and a seat is still a person** (principle 2.11, from 0.7's
    second amendment). A seat exists so a person can hold a position across turns and speak as
    somebody. The facilitator is neither a person nor an agent. It holds no position and speaks
-   only its own question. So it is not the person seated that principle 2.6 sends needs to, and a
-   deployment with nobody seated is still one with nobody seated, however many facilitators its
-   projects have. When a person does speak through it — replying to an agent that asked it back —
+   only its own question. So it is not the person that principle 2.6 sends needs to, and storage
+   now says so too: the two roles are reserved to different adapters, so neither row can become
+   the other. When a person does speak through it — replying to an agent that asked it back —
    the reply carries `parley:person` rather than `parley:facilitator`, so the one thing a seat
    exists to guard, whose words these are, is not lost on the way through.
 3. *(Closed.)* What promotes a decision, and who is entitled to declare one? **Nothing promotes one;
@@ -4377,6 +4505,27 @@ code. What it will observe, in addition to the above:
   state, with at most one live question per agent enforced by an index; `facilitation` holds the
   switch; and `agent_ownership_accepted` admits `automatic`, and keeps a line when the conversation
   it was agreed in is destroyed.
+
+#### Amended, 2026-09-30: the person always has a seat
+
+**Still unreleased, so still 0.7.** A second implementation can observe every item below, which is
+why it is recorded here:
+
+- **Every project has a person seat** (§3, §12.3): `human-user@<project>`, a registry row the broker
+  writes when it opens a store, under the seat adapter `parley-console`. It is never retired, purged
+  or released, and no surface registers a person of its own. The role `human-user` is reserved as
+  `parley-facilitator` is, with the limit §12.3 states.
+- **The facilitator is renamed `parley-facilitator@<project>`.** Neither broker-provided participant
+  has a machine: for both, the part after `@` is the project (§4.1.1), and `agents.machine` is NULL
+  (§9.2). Neither may carry an ownership line.
+- **Two presence values**, `here` and `away`, for the person seat only (§14). The facilitator reports
+  `running` wherever its presence is returned. `agents()` lists the person (§10.1).
+- **A fifth wake outcome, `with the person`** (§5): a Request to the person is never answered
+  *unreachable*, and no machine is ever asked to start the person.
+- **Principle 2.6 changes meaning.** "The person seated" is the person seat whether or not anybody is
+  at a screen, and waiting for the person's decision is correct; the hand-it-back branch applies only
+  where an implementation provides no person seat (§5 *Blocked*, §8 rule 10).
+- **Operator operations refuse the person** (§10.2): `retire`, `purge`, `start` and `instruct`.
 
 ### 0.6 — files cross between repositories
 

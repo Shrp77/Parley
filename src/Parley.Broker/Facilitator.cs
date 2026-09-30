@@ -395,7 +395,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
             return FacilitationAction.Not("Parley does not ask itself.");
         }
 
-        if (string.Equals(adapter, Seats.Adapter, StringComparison.Ordinal))
+        if (string.Equals(adapter, PersonSeat.Adapter, StringComparison.Ordinal))
         {
             return FacilitationAction.Not(
                 $"'{agent.Value}' is a person's seat, and a person owns no repository to describe.");

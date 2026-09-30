@@ -29,6 +29,8 @@ public sealed class SecondBrokerTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@probe");
 
+    private static readonly ProjectName Probe = ProjectName.Create("probe");
+
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "parley-second-" + Guid.NewGuid().ToString("N"));
 
@@ -53,7 +55,7 @@ public sealed class SecondBrokerTests : IDisposable
     {
         var token = TestContext.Current.CancellationToken;
 
-        var live = BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System);
+        var live = BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System);
 
         try
         {
@@ -71,7 +73,7 @@ public sealed class SecondBrokerTests : IDisposable
             Assert.Equal(AgentPresence.Startable, await PresenceAsync(live, Orders, token));
 
             _ = Assert.Throws<StoreHeldException>(
-                () => BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System));
+                () => BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System));
 
             // The whole defect: this read Stranded.
             Assert.Equal(AgentPresence.Startable, await PresenceAsync(live, Orders, token));
@@ -87,11 +89,11 @@ public sealed class SecondBrokerTests : IDisposable
     {
         // A broker restarted after the previous one stopped. Disposal has to release the claim, or
         // the restart is refused over a store nobody is serving.
-        var first = BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System);
+        var first = BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System);
 
         await first.DisposeAsync();
 
-        await using var second = BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System);
+        await using var second = BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System);
 
         Assert.NotNull(second);
     }
@@ -99,10 +101,10 @@ public sealed class SecondBrokerTests : IDisposable
     [Fact]
     public async Task The_refused_broker_is_told_which_process_is_serving()
     {
-        await using var live = BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System);
+        await using var live = BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System);
 
         var refused = Assert.Throws<StoreHeldException>(
-            () => BrokerRuntime.Open(Store, BrokerOptions.Default, TimeProvider.System));
+            () => BrokerRuntime.Open(Probe, Store, BrokerOptions.Default, TimeProvider.System));
 
         Assert.Equal(Environment.ProcessId, refused.Owner?.ProcessId);
     }

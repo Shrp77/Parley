@@ -15,7 +15,7 @@ namespace Parley.Client.Tests;
 /// </remarks>
 public sealed class ParleyIsNamedForWhatItIsTests
 {
-    private static readonly AgentName Parley = Facilitation.On("test");
+    private static readonly AgentName Parley = Facilitation.On(ProjectName.Create("test"));
     private static readonly AgentName Orders = AgentName.Create("orders@test");
 
     private static Message From(AgentName from, AgentName to, string responder) =>

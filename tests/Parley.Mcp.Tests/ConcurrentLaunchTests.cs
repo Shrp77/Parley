@@ -54,7 +54,7 @@ public sealed class ConcurrentLaunchTests : IDisposable
     private static async Task<Parley.Server.ParleyServer> BrokerAsync(string databasePath)
     {
         var runtime = Parley.Server.BrokerRuntime.Open(
-            databasePath, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
+            Parley.Core.ProjectName.Create("test"), databasePath, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
 
         return await Parley.Server.ParleyServer.StartAsync(runtime, "http://127.0.0.1:0");
     }

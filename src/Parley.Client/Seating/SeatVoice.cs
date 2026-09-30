@@ -487,6 +487,10 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.WakeOutcome.Unreachable =>
             $"Nothing can start {to.Value} right now; it collects this when it next runs, and you will see it " +
             "flagged if that takes too long.",
+
+        // Only reachable if the person is ever the recipient of their own seat's send, which no surface offers — so this
+        // is here so the switch never says "not reported" about a fact the broker did report.
+        Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
         _ => $"What became of {to.Value} was not reported.",
     };
 

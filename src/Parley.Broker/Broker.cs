@@ -325,7 +325,7 @@ public sealed class Broker
         return await _exchanges.AssignConversationAsync(
             from,
             conversationId,
-            senderIsPerson: string.Equals(adapter, Seats.Adapter, StringComparison.Ordinal),
+            senderIsPerson: string.Equals(adapter, PersonSeat.Adapter, StringComparison.Ordinal),
             transaction,
             cancellationToken).ConfigureAwait(false);
     }

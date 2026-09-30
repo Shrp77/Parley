@@ -74,7 +74,7 @@ internal static class Requests
     /// <summary>Registers one participant under a given adapter.</summary>
     /// <param name="connection">The store.</param>
     /// <param name="name">The participant.</param>
-    /// <param name="adapter">Its adapter; <see cref="Seats.Adapter"/> makes it a person.</param>
+    /// <param name="adapter">Its adapter; <see cref="PersonSeat.Adapter"/> makes it a person.</param>
     public static void Register(SqliteConnection connection, AgentName name, string adapter) =>
         new AgentRepository(connection).UpsertAsync(
             new AgentRecord(name, adapter, AgentTier.Full, null, null, null, false, AgentStatus.Active),

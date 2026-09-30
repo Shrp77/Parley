@@ -642,7 +642,11 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Latest plan**: `specs/023-always-a-seat/` — **planned, not built; on `019-layout`.** The person always has a
+- **Latest plan**: `specs/023-always-a-seat/` — **0.36.0, being built; on `019-layout`.** **Upgrading to 0.36.0
+  needs a reset** (`install.ps1 -Reset`, `install.sh --reset`): schema 1 was edited in place and its number did not
+  move, so a store made by an older broker opens without complaint and keeps its old shape — no person-seat rules,
+  and each project recorded as a machine. The owner's call was to say so rather than have the broker refuse such a
+  store; both installers warn when they replace an older broker. The person always has a
   seat. The broker provides `human-user@<project>` in every project it serves, as it provides the facilitator
   (the owner's answer of 2026-09-29), and it is never retired, purged or released. **The facilitator is renamed
   `parley-facilitator@<project>` by the same rule, and neither has a machine**: `agents.machine` is NULL for the two,

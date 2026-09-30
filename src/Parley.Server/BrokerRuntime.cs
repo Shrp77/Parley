@@ -157,6 +157,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly StoreLock? _storeLock;
 
     private BrokerRuntime(
+        ProjectName project,
         SqliteConnection connection,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
@@ -184,9 +185,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
-        // The facilitator's row (SPEC.md §12.3), before anything could want to send as it. The broker writes it for its
-        // own store, which makes it the one identity no launch fixes (constitution, Principle III).
-        Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(MachineName.Current).GetAwaiter().GetResult();
+        // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
+        // the facilitator, and the person seat an agent asks when no agent can help (principle 2.6). Nothing launches
+        // either, which makes them the two identities no launch fixes (constitution, Principle III). Both are named for
+        // the project, not a machine, because neither is hosted on one (§4.1.1).
+        Project = project;
+        Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(project).GetAwaiter().GetResult();
+        Person = new AgentRepository(connection).EnsurePersonAsync(project).GetAwaiter().GetResult();
 
         // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
         // write, and changes made while no broker was running are found before anybody asks.
@@ -196,6 +201,12 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
     public AgentName Facilitator { get; }
+
+    /// <summary>Gets the person seat's name in this store (SPEC.md §12.3).</summary>
+    public AgentName Person { get; }
+
+    /// <summary>Gets the project this store serves, which both broker-provided participants are named for.</summary>
+    public ProjectName Project { get; }
 
     /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
     internal FolderWatcher Watcher { get; }
@@ -285,6 +296,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>
     /// Opens a database and prepares it to be served.
     /// </summary>
+    /// <param name="project">
+    /// The project this store serves, which the broker names its two own participants for (SPEC.md §4.1.1, §12.3).
+    /// </param>
     /// <param name="databasePath">The store, on this machine.</param>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
@@ -313,6 +327,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// </remarks>
     public static BrokerRuntime Open(
+        ProjectName project,
         string databasePath,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
@@ -345,7 +360,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             files.Prepare();
 
             return new BrokerRuntime(
-                connection, options, clock,
+                project, connection, options, clock,
                 retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable),
                 files,
                 storeLock: held);
@@ -367,6 +382,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
+    /// <param name="project">The project it serves, or <see langword="null"/> for <c>test</c>.</param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -378,7 +394,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy? retention = null,
-        string? filesRoot = null)
+        string? filesRoot = null,
+        ProjectName? project = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
@@ -388,7 +405,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot));
+                project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+                FilesAt(filesRoot));
         }
         catch
         {
@@ -460,6 +478,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
+    /// <param name="project">The project it serves, or <see langword="null"/> for <c>test</c>.</param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -479,15 +498,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy? retention = null,
-        string? filesRoot = null)
+        string? filesRoot = null,
+        ProjectName? project = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot), ownsConnection: false);
+            project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+            FilesAt(filesRoot), ownsConnection: false);
     }
+
+    /// <summary>The project a runtime opened for a test serves, when the test does not name one.</summary>
+    /// <remarks>
+    /// Only <see cref="OpenInMemory"/> and <see cref="Over"/> default it, and nothing but tests calls either. A runtime
+    /// over a real store must be told its project (<see cref="Open"/>), because the name is written into the two rows
+    /// the broker provides and cannot be corrected later. <c>test</c> is what 022's tests already named the
+    /// facilitator's second half, so they read the same.
+    /// </remarks>
+    private static readonly ProjectName TestProject = ProjectName.Create("test");
 
     /// <summary>A file location for a runtime that has no store path to put one beside.</summary>
     /// <param name="root">The directory asked for, or <see langword="null"/> for a temporary one.</param>
@@ -680,6 +710,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 var agents = (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
                     .Where(a => a.Status == AgentStatus.Active && a.Name.Machine == machine)
+                    // The two broker-provided participants are hosted on no machine; their second half is the project,
+                    // so a node that happens to share a project's name must not be taken to host them (T013a).
+                    .Where(a => !PersonSeat.Is(a.Name) && !Facilitation.Is(a.Name))
                     .Select(a => a.Name)
                     .ToList();
 
@@ -892,6 +925,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
         if (Facilitation.Is(agent))
         {
             return WakeOutcome.AlreadyComing;
+        }
+
+        // Mail for the person waits for the person (SPEC.md §5, §12.3), here or away. Nothing starts a person, so no node is
+        // asked — asking one is what used to come back unreachable and tell an agent its question would never be read. A
+        // surface the person has open has already been told something arrived: the nudge runs before this, for every
+        // recipient. Not claimed either, because a claim bounds turns and a person takes none.
+        if (PersonSeat.Is(agent))
+        {
+            return WakeOutcome.WithThePerson;
         }
 
         // **Claimed before asking, not checked before asking.** Reading the mark and then acting on

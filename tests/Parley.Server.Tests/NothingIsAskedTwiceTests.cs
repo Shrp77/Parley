@@ -57,7 +57,8 @@ public sealed class NothingIsAskedTwiceTests
             for (var run = 0; run < 2; run++)
             {
                 var server = await ParleyServer.StartAsync(
-                    BrokerRuntime.Open(store, Parley.Broker.BrokerOptions.Default, TimeProvider.System),
+                    BrokerRuntime.Open(
+                        ProjectName.Create("test"), store, Parley.Broker.BrokerOptions.Default, TimeProvider.System),
                     "http://127.0.0.1:0",
                     token);
 

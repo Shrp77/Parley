@@ -20,7 +20,7 @@ public sealed class TheProposalIsTheLatestThingSaidTests
 
     private static readonly DateTimeOffset T0 = new(2026, 9, 27, 9, 0, 0, TimeSpan.Zero);
 
-    private static readonly AgentName Parley = Facilitation.On("test");
+    private static readonly AgentName Parley = Facilitation.On(ProjectName.Create("test"));
 
     private static Message Said(
         AgentName from, string payload, int minute, long id, MessageType type = MessageType.Result,

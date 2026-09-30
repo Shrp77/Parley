@@ -128,7 +128,7 @@ internal static class OwnershipReview
         [.. registry
             .Where(r => r.Status == AgentStatus.Active)
             .Where(r => !r.Facilitator)
-            .Where(r => !string.Equals(r.Adapter, Seats.Adapter, StringComparison.Ordinal))
+            .Where(r => !string.Equals(r.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
             .OrderBy(r => r.Name.Value, StringComparer.Ordinal)];
 
     /// <summary>One agent's row: its name, where its line came from, and what Parley is waiting on.</summary>

@@ -61,13 +61,14 @@ public sealed class OperatorCommands
             .Where(a => !a.Facilitator)
             .ToList();
 
-        if (agents.Count == 0)
+        // The person seat is listed (FR-006: every listing shows the person) but is not an agent, so it does not count
+        // towards "no agents registered" — every store holds one from the moment it is served (specs/023), and counting it
+        // would make that sentence impossible to say, exactly as counting Parley would.
+        if (!agents.Any(a => !PersonSeat.Is(a.Name)))
         {
             await _output.WriteLineAsync(
                 "No agents registered. One appears the first time its server starts.")
                 .ConfigureAwait(false);
-
-            return 0;
         }
 
         foreach (var agent in agents.OrderBy(a => a.Name.Value, StringComparer.Ordinal))
@@ -93,6 +94,14 @@ public sealed class OperatorCommands
             // The mark is `Roster.PendingMark`, which is the one sentence the other two surfaces
             // append, rather than a wording of its own: three spellings of one state is three
             // chances for a reader to think they mean different things.
+            //
+            // Not for the person, who owns no repository and whom storage refuses a line (specs/023): telling somebody
+            // to set PARLEY_OWNS for themselves would send them to do something that cannot be done.
+            if (PersonSeat.Is(agent.Name))
+            {
+                continue;
+            }
+
             await _output.WriteLineAsync(
                 $"  owns: {(agent.Owns is { Length: > 0 } owns ? owns : $"(unset — set {DeploymentEnvironment.OwnsVariable} where that agent's server is launched)")}"
                 + Parley.Client.Rendering.Roster.PendingMark(agent))

@@ -52,8 +52,11 @@ public sealed class TwoServersTests
         var listed = (await orders.AgentsAsync(ct))["agents"]!.AsArray();
 
         // Billing, and not orders itself: an agent cannot send itself a request, and listing it
-        // invites the attempt.
-        Assert.Equal(["billing@test"], listed.Select(a => a!["name"]!.GetValue<string>()));
+        // invites the attempt. And the person, whom the broker provides in every project (specs/023)
+        // so an agent always has somebody to ask when no agent can help.
+        Assert.Equal(
+            ["billing@test", "human-user@test"],
+            listed.Select(a => a!["name"]!.GetValue<string>()).Order(StringComparer.Ordinal));
     }
 
     [Fact]

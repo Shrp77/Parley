@@ -54,12 +54,17 @@ public static class Facilitation
     /// <summary>How the timestamp half of a question's conversation is spelled.</summary>
     public const string Stamp = "yyyyMMdd-HHmmss";
 
-    /// <summary>The facilitator's name in a store the broker runs on <paramref name="machine"/>.</summary>
-    /// <param name="machine">The broker's machine, as <see cref="MachineName.Current"/> spells it.</param>
-    /// <returns><c>parley-facilitator@machine</c>.</returns>
-    public static AgentName On(string machine) => AgentName.Create(Role + "@" + machine);
+    /// <summary>The facilitator's name in <paramref name="project"/>.</summary>
+    /// <param name="project">The project the broker serves.</param>
+    /// <returns><c>parley-facilitator@project</c>.</returns>
+    /// <remarks>
+    /// Named for the project rather than a machine since specs/023, the same rule as <see cref="PersonSeat"/>: the
+    /// facilitator runs inside the broker and is hosted on nothing, so a machine after the <c>@</c> said something
+    /// untrue, and storage recorded a machine that never connects.
+    /// </remarks>
+    public static AgentName On(ProjectName project) => AgentName.Create(Role + "@" + project.Value);
 
-    /// <summary>Whether a name is the facilitator's, on any machine.</summary>
+    /// <summary>Whether a name is the facilitator's, in any project.</summary>
     /// <param name="agent">The name.</param>
     /// <returns>Whether its role is the reserved one.</returns>
     public static bool Is(AgentName agent) => string.Equals(agent.Role, Role, StringComparison.Ordinal);

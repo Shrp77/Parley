@@ -344,7 +344,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The adapter, or <see langword="null"/> if the agent is not registered.</returns>
     /// <remarks>
-    /// Read at admission for one purpose: a person seated through <see cref="Seats.Adapter"/> may always
+    /// Read at admission for one purpose: a person seated through <see cref="PersonSeat.Adapter"/> may always
     /// start a new conversation (SPEC.md principle 2.10), where an agent holding a Request may not.
     /// </remarks>
     public async Task<string?> AdapterOfAsync(
@@ -458,7 +458,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO nodes (machine, connected, first_seen_utc)
-                VALUES (@Machine, 0, @Now)
+                SELECT @Machine, 0, @Now WHERE @Hosted
                 ON CONFLICT(machine) DO NOTHING;
 
                 INSERT INTO agents (name, adapter, tier, workspace, session_ref,
@@ -476,6 +476,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 {
                     Name = agent.Name.Value,
                     agent.Machine,
+                    Hosted = HostedOnAMachine(agent.Name),
                     agent.Adapter,
                     Tier = FormatTier(agent.Tier),
                     agent.Workspace,
@@ -533,7 +534,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO nodes (machine, connected, first_seen_utc)
-                VALUES (@Machine, 0, @Now)
+                SELECT @Machine, 0, @Now WHERE @Hosted
                 ON CONFLICT(machine) DO NOTHING;
 
                 INSERT INTO agents (name, adapter, tier, workspace, session_ref,
@@ -552,6 +553,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                     agent.AdapterConfig,
                     agent.Owns,
                     agent.Machine,
+                    Hosted = HostedOnAMachine(agent.Name),
                     Connected = agent.Connected ? 1 : 0,
                     Now = ExchangeRow.FormatTimestamp(DateTimeOffset.UtcNow),
                     Status = FormatStatus(agent.Status)
@@ -702,24 +704,25 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <summary>
     /// The facilitator's name in this store, writing its row first if there is none (SPEC.md §12.3).
     /// </summary>
-    /// <param name="machine">The broker's machine, used only when the row does not exist yet.</param>
+    /// <param name="project">The project this store serves, used only when the row does not exist yet.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
     /// <returns>The facilitator's name.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The one row the broker writes itself, and not a registration of an agent.</b> Every sender is a row,
-    /// because a message's sender names one; the facilitator sends, so it has one. What the row states is that the
-    /// broker's own participant exists — the same kind of fact as a <c>closed</c> result being the broker's.
+    /// <b>One of the two rows the broker writes itself, and not a registration of an agent.</b> Every sender is a
+    /// row, because a message's sender names one; the facilitator sends, so it has one. What the row states is that
+    /// the broker's own participant exists — the same kind of fact as a <c>closed</c> result being the broker's. The
+    /// other is the person seat (<see cref="EnsurePersonAsync"/>).
     /// </para>
     /// <para>
-    /// <b>Found by its adapter, never by its name</b>, so a machine renamed since the row was written keeps using the
-    /// row it has rather than making a second facilitator. Storage ties the adapter to the reserved role in both
-    /// directions, so there is nothing else a row with that adapter could be.
+    /// <b>Found by its adapter, never by its name</b>, so a row written under an earlier name — a machine's, before
+    /// specs/023 named it for the project — is reused rather than doubled. Storage ties the adapter to the reserved role
+    /// in both directions, so there is nothing else a row with that adapter could be.
     /// </para>
     /// </remarks>
     public async Task<AgentName> EnsureFacilitatorAsync(
-        string machine,
+        ProjectName project,
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
@@ -731,7 +734,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             return existing;
         }
 
-        var name = Facilitation.On(machine);
+        var name = Facilitation.On(project);
 
         await _connection.ExecuteAsync(
             new CommandDefinition(
@@ -756,6 +759,81 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 "SELECT name FROM agents WHERE adapter = @Adapter ORDER BY name LIMIT 1;",
                 new { Adapter = Facilitation.Adapter },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return name is null ? null : AgentName.Create(name);
+    }
+
+    /// <summary>Whether an agent's name ends in a machine it runs on, and so declares a node.</summary>
+    /// <param name="name">The name.</param>
+    /// <returns>False for the two participants the broker provides, whose second half is their project.</returns>
+    /// <remarks>
+    /// <b>The same rule as <c>tr_agent_declares_its_machine</c>, stated once more here because these writes declare a
+    /// node themselves.</b> Found by T013a's audit rather than by a failing test: the trigger had been taught to skip
+    /// the person and the facilitator, but registration wrote the node row on its own first, so a surface attaching as
+    /// <c>human-user@alpha</c> would have recorded a machine called <c>alpha</c> that never connects — the machine
+    /// the owner declined (SPEC.md §4.1.1).
+    /// </remarks>
+    private static bool HostedOnAMachine(AgentName name) => !PersonSeat.Is(name) && !Facilitation.Is(name);
+
+    /// <summary>
+    /// The person seat's name in this store, writing its row first if there is none (SPEC.md §12.3).
+    /// </summary>
+    /// <param name="project">The project this store serves, used only when the row does not exist yet.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The person seat's name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Written by the broker because nothing launches a person</b>, and because an agent that needs a person's
+    /// decision must have somebody to ask from the moment the project is served, before anybody has opened a screen
+    /// (principle 2.6). It is never retired, purged or released; storage refuses the first two.
+    /// </para>
+    /// <para>
+    /// <b>Found by its role, never by its adapter.</b> A seat taken under a typed name before specs/023 carried the
+    /// same adapter, so finding by adapter could adopt somebody's old typed seat as the person. The role is the one
+    /// fact only the person seat has, and <c>ux_one_person</c> holds that there is at most one.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentName> EnsurePersonAsync(
+        ProjectName project,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        if (await PersonAsync(scope.Transaction, cancellationToken).ConfigureAwait(false) is { } existing)
+        {
+            scope.Complete();
+            return existing;
+        }
+
+        var name = PersonSeat.On(project);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "INSERT INTO agents (name, adapter, tier, status) VALUES (@Name, @Adapter, 'pull', 'active');",
+                new { Name = name.Value, Adapter = PersonSeat.Adapter },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return name;
+    }
+
+    /// <summary>The person seat's name in this store, or <see langword="null"/> if it has none yet.</summary>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The name.</returns>
+    public async Task<AgentName?> PersonAsync(
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var name = await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT name FROM agents WHERE role = @Role LIMIT 1;",
+                new { Role = PersonSeat.Role },
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 

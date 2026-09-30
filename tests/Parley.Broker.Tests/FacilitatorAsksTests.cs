@@ -46,7 +46,7 @@ public sealed class FacilitatorAsksTests : IDisposable
                 ('orders@other', 'claude-code', 'full', 'active');
             """);
 
-        _parley = new AgentRepository(_connection).EnsureFacilitatorAsync("test").GetAwaiter().GetResult();
+        _parley = new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test")).GetAwaiter().GetResult();
         _facilitator = new Facilitator(_connection, BrokerOptions.Default);
         _agents = new Broker(_connection, BrokerOptions.Default);
         _agents.ServeFrom(T0);

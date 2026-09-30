@@ -42,30 +42,30 @@ guard task names what it must fail against before it is believed.**
 
 ## Phase 1: Setup — the documents first (blocks everything)
 
-- [ ] T001 Amend `.specify/memory/constitution.md` to **5.0.0 (MAJOR)** in its own commit, with a Sync Impact
+- [X] T001 Amend `.specify/memory/constitution.md` to **5.0.0 (MAJOR)** in its own commit, with a Sync Impact
   Report: Principle III names the person seat as a second identity the broker fixes rather than a launch, beside
   the facilitator — `human-user@<project>`, reserved in storage in both directions, spoken as by every
   surface that reaches the broker, which §17 question 2 already concedes of any seat. Both broker-provided
   identities are named for their project and have no machine. Make the matching change to
   CLAUDE.md's seat paragraphs in the same commit (replace "a seat must not outlive the person" with "a seat
   outlives the person's presence; the claim that they are present does not"). Cite research.md R9
-- [ ] T002 Re-run plan.md's Constitution Check against 5.0.0 and record the result in
+- [X] T002 Re-run plan.md's Constitution Check against 5.0.0 and record the result in
   `specs/023-always-a-seat/plan.md`. Before T003
-- [ ] T003 Amend SPEC.md principle 2.6, §5 *Blocked* and §8 rule 10: "the person seated" means the project's
+- [X] T003 Amend SPEC.md principle 2.6, §5 *Blocked* and §8 rule 10: "the person seated" means the project's
   person seat whether or not the person is here; the hand-it-back branch applies only to an implementation that
   provides no person seat; waiting for the person's decision is correct, in `SPEC.md`
-- [ ] T004 Amend SPEC.md §3 (Terminology: *Person*, and a *Person seat* row beside *Facilitator*), §4.1.1 (for the
+- [X] T004 Amend SPEC.md §3 (Terminology: *Person*, and a *Person seat* row beside *Facilitator*), §4.1.1 (for the
   two broker-provided participants the part after `@` is the project and they have no machine), §12.3 (a second
   broker-written row, reserved role `human-user`; the facilitator renamed `parley-facilitator@<project>`), §10.1 `agents()` (lists the person with here/away) and §10.2
   (retire, reinstate, purge, start, instruct and ask_again refuse the person), in `SPEC.md`
-- [ ] T005 Amend SPEC.md §4.0 and §14: for the person, a connection is evidence of presence, not of reachability;
+- [X] T005 Amend SPEC.md §4.0 and §14: for the person, a connection is evidence of presence, not of reachability;
   §14's table gains `here` and `away`; a message to the person is `with the person`, never unreachable; §5's wake
   outcomes list gains it, in `SPEC.md`
-- [ ] T006 Amend SPEC.md §17 question 2: close the open problem that a seat "makes `startable` read oddly"; record
+- [X] T006 Amend SPEC.md §17 question 2: close the open problem that a seat "makes `startable` read oddly"; record
   having a seat versus being in it, the owner's answer A, and that everyone using one project is one `human-user`
   (spec D4); keep the `human:` attestation question open, now noting that the reserved role would let a broker
   refuse `human:` from anything but the person seat, in `SPEC.md`
-- [ ] T007 Add to SPEC.md §9.2 as schema fragments **only what lands in Phase 2**: the `agents.machine` column and
+- [X] T007 Add to SPEC.md §9.2 as schema fragments **only what lands in Phase 2**: the `agents.machine` column and
   its two checks, the check that the two broker-provided participants have no `owns` line, the
   `tr_agent_declares_its_machine` guard, `tr_person_is_never_retired`, `tr_person_is_never_purged` and
   `ux_one_person`. **Not** the role-to-adapter pair, which T045 adds to SPEC.md and
@@ -78,37 +78,52 @@ guard task names what it must fail against before it is believed.**
 
 ## Phase 2: Foundational — the seat exists (blocks every story)
 
-- [ ] T008 [P] Change `Facilitation.On` to take a `ProjectName`, in `src/Parley.Core/Facilitation.cs`. Add
+- [X] T008 [P] Change `Facilitation.On` to take a `ProjectName`, in `src/Parley.Core/Facilitation.cs`. Add
   `PersonSeat` (Role `human-user`, Adapter `parley-console`, `On(ProjectName)`, `Is(AgentName)`,
   `IsReserved(role)`, the refusal sentence) with `<remarks>` saying why it mirrors `Facilitation`, in
   `src/Parley.Core/PersonSeat.cs`; fold `Seats.Adapter` into it, in `src/Parley.Core/Seats.cs`
-- [ ] T009 [P] Add `PersonSeatTests` for `Is`/`IsReserved`/`On`, in `tests/Parley.Core.Tests/PersonSeatTests.cs`
-- [ ] T010 In `src/Parley.Store/Migrations/001_initial.sql`: make `agents.machine` NULL for the two reserved roles
+- [X] T009 [P] Add `PersonSeatTests` for `Is`/`IsReserved`/`On`, in `tests/Parley.Core.Tests/PersonSeatTests.cs`
+- [X] T010 In `src/Parley.Store/Migrations/001_initial.sql`: make `agents.machine` NULL for the two reserved roles
   and add its two checks; add the check that neither has an `owns` line (the second `/speckit-analyze`, issue 3); add the `WHEN` guard to `tr_agent_declares_its_machine`; add `tr_person_is_never_retired`,
   `tr_person_is_never_purged` and `ux_one_person` (all per data-model.md). Confirm the SQLite bundled with
   Microsoft.Data.Sqlite is 3.31 or later, since generated columns need it. The person rules are **keyed on the role
   `human-user`, never on the adapter** —
   typed seats still carry `parley-console` until Phase 4, and an adapter key would collide the broker's own row
   with the first of them (data-model.md). The reserved-role pair waits for T045, rule 6 above. Same commit as T007
-- [ ] T011 Add `AgentRepository.EnsurePersonAsync(project)` and `PersonAsync()`, finding the row by role and
+- [X] T011 Add `AgentRepository.EnsurePersonAsync(project)` and `PersonAsync()`, finding the row by role and
   inserting `human-user@<project>`, `parley-console`, `pull`, `active` only if absent; change
   `EnsureFacilitatorAsync` to take the project, in `src/Parley.Store/AgentRepository.cs`
-- [ ] T012 Store tests: ensure is idempotent across two calls; both rows have a NULL machine and no `nodes` row is
+- [X] T012 Store tests: ensure is idempotent across two calls; both rows have a NULL machine and no `nodes` row is
   written for the project; an agent still declares its machine; a malformed project half
   (`parley-facilitator@Alpha!`, `@a.b`, empty) is refused; an `owns` line on either participant is refused, by
   insert and by `RefreshOwnershipAsync`; retire and purge refused; a second person refused by `ux_one_person`. **Remove each rule in turn and watch its test fail**, in
   `tests/Parley.Store.Tests/PersonSeatStoreTests.cs`
-- [ ] T013 `BrokerRuntime.Open` takes a required `ProjectName`, passed by `src/Parley.Cli/ServeCommand.cs` and the
+- [X] T013 `BrokerRuntime.Open` takes a required `ProjectName`, passed by `src/Parley.Cli/ServeCommand.cs` and the
   14 real-store call sites; `OpenInMemory`, test-only, takes an optional one defaulting to `test`. The constructor
   calls `EnsurePersonAsync(project)` and `EnsureFacilitatorAsync(project)`, and exposes `Person { get; }`, in
   `src/Parley.Server/BrokerRuntime.cs`. **Bump `VersionPrefix` to 0.36.0 in this commit**, the first to change
   `src` (`/speckit-analyze` issue 5; CLAUDE.md *Versioning*), in `Directory.Build.props`. **In the same commit,
   the reset note of T052a for the installers and CLAUDE.md**, so the first build that says 0.36.0 is also the
   first to say an older store must be reset (the third `/speckit-analyze`, issue 1)
-- [ ] T013a Audit every C# read of `AgentName.Machine`, and every comparison of an agent's machine to this one's,
+- [X] T013a Audit every C# read of `AgentName.Machine`, and every comparison of an agent's machine to this one's,
   for a path that can meet `human-user@<project>` or `parley-facilitator@<project>`; each is either unreachable for
   them (say why in a remark) or changed. Record the list in this file
-- [ ] T014 Server test: a fresh broker for project `alpha` holds exactly one `human-user@alpha` and one
+
+  **T013a's audit, 2026-09-30** — every `.Machine` read on an agent's name in `src`:
+  - **Changed**: `AgentRepository.UpsertAsync` and `RegisterIfAbsentAsync` wrote the `nodes` row themselves, before
+    the trigger — so a surface attaching as the person would have recorded a machine called after the project. Both
+    now skip the two roles (`HostedOnAMachine`), and `PersonSeatStoreTests` holds it. **The one real finding.**
+  - **Unreachable for them**: `BrokerRuntime.Ask` (1111) — the facilitator returns before it, and the person will
+    from T016; until then the person's project has no node, so it answers Unreachable, which T016 replaces.
+    `BrokerRuntime.DeliverInstructionAsync` (803) — `instruct` refuses the facilitator today and the person from T048.
+    `BrokerRuntime` refresh (1381) — `DueAsync` excludes both adapters. `OwnershipLine.NotHere` — ownership excludes
+    both. `ServeCommand` (953) — refreshed agents only.
+  - **Harmless for them**: `AgentStanding` (166, 188, 236) compares a machine only against catalogued roles, and no
+    catalogue can hold either reserved role once enrolment refuses them (T047). `ServerOptions` (183) — a launch
+    naming `human-user@<project>` fails the this-machine check, which is correct.
+  - **Goes in T026**: `Shell.Mine` (3305), with the rest of the typed-seat code.
+  - **Not an agent's name**: `LocalLauncher` (a file location's machine).
+- [X] T014 Server test: a fresh broker for project `alpha` holds exactly one `human-user@alpha` and one
   `parley-facilitator@alpha` before anything attaches, and still one of each after a restart; `Nodes.Describe`
   of `alpha` says no such machine, in `tests/Parley.Server.Tests/PersonSeatExistsTests.cs`
 
@@ -122,24 +137,24 @@ guard task names what it must fail against before it is believed.**
 **Independent test**: with no surface open and no node connected, an agent's Request to `human-user` returns
 `WITH_THE_PERSON`, the message waits, and a Result from the person reaches the agent.
 
-- [ ] T015 [P] [US1] Add `WakeOutcome.WithThePerson = 4` with `<remarks>` on why it is not `AlreadyComing`, in
+- [X] T015 [P] [US1] Add `WakeOutcome.WithThePerson = 4` with `<remarks>` on why it is not `AlreadyComing`, in
   `src/Parley.Core/WakeOutcome.cs`; add `WAKE_OUTCOME_WITH_THE_PERSON = 5` in `proto/parley.proto`; map it in
   `src/Parley.Server/Wire.cs`
-- [ ] T016 [US1] In `RequestAttentionForMail`, return `WithThePerson` for `PersonSeat.Is(agent)` after the nudge
+- [X] T016 [US1] In `RequestAttentionForMail`, return `WithThePerson` for `PersonSeat.Is(agent)` after the nudge
   and before any claim, and skip the person in `WakeForOutstandingWorkAsync`, in `src/Parley.Server/BrokerRuntime.cs`
-- [ ] T017 [US1] Server probe: a Request to the person with no node at all, with a node whose catalogue lists
+- [X] T017 [US1] Server probe: a Request to the person with no node at all, with a node whose catalogue lists
   a role `human-user`, **and while a surface holds the seat** (`/speckit-analyze` issue 7) all return
   `WITH_THE_PERSON`; no node receives a start or turn command; the attached surface receives its notice. **Watch it fail
   against today's code (Unreachable)**, in `tests/Parley.Server.Tests/MessageToThePersonTests.cs`
-- [ ] T018 [P] [US1] Render `WithThePerson` in `ParleyTools.Woken` ("with the person: they have it and will
+- [X] T018 [P] [US1] Render `WithThePerson` in `ParleyTools.Woken` ("with the person: they have it and will
   answer. They may be away; waiting for their decision is correct."), in `src/Parley.Mcp/ParleyTools.cs`; handle
   it in `SeatVoice.Waking` and `Reported` so no switch falls through, in `src/Parley.Client/Seating/SeatVoice.cs`
-- [ ] T019 [US1] Replace the "if nobody is seated" clause in the MCP instructions and in `parley_result`'s
+- [X] T019 [US1] Replace the "if nobody is seated" clause in the MCP instructions and in `parley_result`'s
   description with contracts/person-seat.md's sentence, in `src/Parley.Mcp/ParleyInstructions.cs` and
   `src/Parley.Mcp/ParleyTools.cs`
-- [ ] T020 [US1] MCP test: the instructions and the `parley_result` description name `human-user`, say waiting is
+- [X] T020 [US1] MCP test: the instructions and the `parley_result` description name `human-user`, say waiting is
   correct, and no longer contain "nobody is seated", in `tests/Parley.Mcp.Tests/PersonInstructionsTests.cs`
-- [ ] T021 [US1] Server test over a socket, as a theory over **1 minute, 20 minutes, 1 hour and 7 hours** on a fake
+- [X] T021 [US1] Server test over a socket, as a theory over **1 minute, 20 minutes, 1 hour and 7 hours** on a fake
   clock (SC-002, `/speckit-analyze` issue 9): an agent's Request to the person is admitted, waits uncollected, is
   drained by the person, and the person's Result reaches the agent attributed to `human-user@<project>` with
   responder `human:human-user`. No retention case: the person's mail follows the normal rules (FR-010), in `tests/Parley.Server.Tests/AskThePersonLaterTests.cs`
@@ -302,8 +317,8 @@ the broker's own row can be stored as it or under the seat's adapter. What this 
   store created before this change keeps its old shape with no warning: no person-seat rules, a real `nodes` row
   named for the project, and the facilitator under its machine name. The owner's call (the second
   `/speckit-analyze`, issue 1): documented, not refused. Say it in both installers' output when upgrading across
-  0.36.0, in README's upgrade notes and in CLAUDE.md, naming `reset.ps1` (and noting `reset.sh` is still owed, 019
-  T080), in `install.ps1`, `install.sh`, `README.md`, `CLAUDE.md`
+  0.36.0, in README's upgrade notes and in CLAUDE.md, naming the installers' own `-Reset` / `--reset` (which run
+  `reset.ps1` / `reset.sh`; both exist), in `install.ps1`, `install.sh`, `README.md`, `CLAUDE.md`
 - [ ] T053 Confirm `VersionPrefix` is 0.36.0 (bumped in T013) and that nothing after it needs a further patch
   bump before the walk, in `Directory.Build.props`
 - [ ] T054 Sweep for every sentence that still tells a person to join or take a seat, or says a seat was

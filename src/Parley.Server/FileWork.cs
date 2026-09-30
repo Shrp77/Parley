@@ -583,7 +583,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
         var assignment = await new ExchangeRepository(connection).AssignConversationAsync(
             agent,
             named,
-            senderIsPerson: string.Equals(adapter, Seats.Adapter, StringComparison.Ordinal),
+            senderIsPerson: string.Equals(adapter, PersonSeat.Adapter, StringComparison.Ordinal),
             transaction,
             cancellationToken).ConfigureAwait(false);
 

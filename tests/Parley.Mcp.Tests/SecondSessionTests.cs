@@ -125,7 +125,8 @@ public sealed class SecondSessionTests
 
         try
         {
-            var runtime = Parley.Server.BrokerRuntime.Open(path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
+            var runtime = Parley.Server.BrokerRuntime.Open(
+                Parley.Core.ProjectName.Create("test"), path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
 
             await runtime.DisposeAsync();
 

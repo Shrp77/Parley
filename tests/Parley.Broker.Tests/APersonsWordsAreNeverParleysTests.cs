@@ -41,7 +41,7 @@ public sealed class APersonsWordsAreNeverParleysTests : IDisposable
                 ('arvind@test', 'parley-console', 'pull', 'active');
             """);
 
-        _parley = new AgentRepository(_connection).EnsureFacilitatorAsync("test").GetAwaiter().GetResult();
+        _parley = new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test")).GetAwaiter().GetResult();
         _facilitator = new Facilitator(_connection, BrokerOptions.Default);
         _agents = new Broker(_connection, BrokerOptions.Default);
         _agents.ServeFrom(T0);

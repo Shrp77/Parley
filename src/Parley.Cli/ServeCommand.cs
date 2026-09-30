@@ -134,7 +134,7 @@ public static class ServeCommand
 
             try
             {
-                runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
+                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
             }
             catch (StoreHeldException held)
             {

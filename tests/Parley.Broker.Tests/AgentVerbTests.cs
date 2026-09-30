@@ -210,7 +210,7 @@ public sealed class AgentVerbTests : IDisposable
     {
         // Principle 2.10: a person is where lines of work begin.
         var person = AgentName.Create("arvind@test");
-        Requests.Register(_connection, person, Seats.Adapter);
+        Requests.Register(_connection, person, PersonSeat.Adapter);
 
         await Send(from: Orders, to: person, conversationId: "pricing");
 

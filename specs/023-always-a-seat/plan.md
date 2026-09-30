@@ -52,6 +52,14 @@ agent-facing operation gains a person-only capability; `SurfaceTests`' one-file-
 **Gate result**: proceed to design **on condition** that the 5.0.0 amendment is its own commit and lands before
 any code. That is task T001.
 
+**Re-check against 5.0.0 (T002, 2026-09-30, after commit f0ed4a6)**: III — **Pass**: the principle now names the
+person seat as the second identity no launch fixes, `human-user@<project>`, provided by the broker, spoken as by
+every surface, with no machine; the design gives it exactly that (R1, R6, R11). The principle also states the
+limit this plan's Principle V row records — an attach under the existing row is guarded by code trusting the
+caller's adapter — and the one thing storage guarantees whoever attaches, no ownership line, which T010 builds.
+II — **Pass**, unchanged: "the facilitator is never the person seated" now also holds in storage, since the two
+roles are reserved to different adapters. V — **Pass, with the recorded limit**, as above. No new conflict.
+
 **Re-check after Phase 1**: the design holds. The only new capability is that every surface speaks as one broker
 fixed name, which is what III's amendment names. The person gains nothing the typed seat did not have.
 

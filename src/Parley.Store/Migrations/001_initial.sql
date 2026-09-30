@@ -168,8 +168,20 @@ CREATE TABLE agents (
                   GENERATED ALWAYS AS (substr(name, 1, instr(name, '@') - 1)) STORED,
   -- The node that reported this agent. Detected there and never configured, so two machines
   -- cannot both claim to be server-b -- see §4.1.1.
-  machine         TEXT    NOT NULL
-                  GENERATED ALWAYS AS (substr(name, instr(name, '@') + 1)) STORED
+  --
+  -- NULL for the two participants the broker provides, the person seat and the facilitator
+  -- (§12.3). Neither is hosted on a machine: the part after '@' in their names says what this
+  -- store serves (§4.1.1), not where anything runs. A machine entry could not simply be left out:
+  -- the key below would refuse the row. A NULL machine is allowed by the key and says what is
+  -- true. The checks after the columns hold that only these two may have none, and hold their
+  -- second half to the grammar §4.1.1 gives it.
+  machine         TEXT
+                  GENERATED ALWAYS AS (
+                    CASE WHEN substr(name, 1, instr(name, '@') - 1)
+                              IN ('human-user', 'parley-facilitator')
+                         THEN NULL
+                         ELSE substr(name, instr(name, '@') + 1)
+                    END) STORED
                   REFERENCES nodes(machine),
   adapter         TEXT    NOT NULL,
   tier            TEXT    NOT NULL CHECK (tier IN ('full', 'pull', 'headless')),
@@ -198,6 +210,22 @@ CREATE TABLE agents (
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
+
+  -- Only the two participants the broker provides have no machine (§4.1.1).
+  CHECK (machine IS NOT NULL OR role IN ('human-user', 'parley-facilitator')),
+
+  -- Their second half is not a machine, so it is held to the grammar §4.1.1 gives it instead. The
+  -- machine CHECK passes on NULL, so without this the part after '@' would be checked by nothing.
+  CHECK (machine IS NOT NULL
+         OR (length(substr(name, instr(name, '@') + 1)) BETWEEN 1 AND 32
+             AND substr(name, instr(name, '@') + 1) GLOB '[a-z]*'
+             AND substr(name, instr(name, '@') + 1) NOT GLOB '*[^a-z0-9-]*')),
+
+  -- Neither owns a repository, so neither has an ownership line. Here rather than in code
+  -- because every attach refreshes `owns` from the launch, and something attaching under the
+  -- person's name would otherwise put its own line in every agent's roster as the person's
+  -- (§12.3). This one holds whoever attaches.
+  CHECK (owns IS NULL OR role NOT IN ('human-user', 'parley-facilitator')),
 
   -- What this agent owns, in one line, written by whoever configured its launch. Bounded
   -- here because terseness is a security control (principle 2.2) and this text is charged
@@ -341,6 +369,7 @@ CREATE INDEX ix_invocations_agent ON invocations(agent, started_utc);
 
 CREATE TRIGGER tr_agent_declares_its_machine
 BEFORE INSERT ON agents
+WHEN substr(NEW.name, 1, instr(NEW.name, '@') - 1) NOT IN ('human-user', 'parley-facilitator')
 BEGIN
   INSERT INTO nodes (machine, connected, first_seen_utc)
   VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -842,6 +871,26 @@ WHEN OLD.adapter = 'parley-facilitator'
 BEGIN
   SELECT RAISE(ABORT, 'the facilitator cannot be purged');
 END;
+
+-- The person seat (§12.3): `human-user@...`, which the broker writes when it opens a store and
+-- never releases. Keyed on the role rather than the seat adapter, because a seat taken under a
+-- typed name carried that adapter too; the role is the one fact only the person seat has.
+CREATE TRIGGER tr_person_is_never_retired
+BEFORE UPDATE OF status ON agents
+WHEN substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user' AND NEW.status <> 'active'
+BEGIN
+  SELECT RAISE(ABORT, 'the person seat cannot be retired');
+END;
+
+CREATE TRIGGER tr_person_is_never_purged
+BEFORE DELETE ON agents
+WHEN substr(OLD.name, 1, instr(OLD.name, '@') - 1) = 'human-user'
+BEGIN
+  SELECT RAISE(ABORT, 'the person seat cannot be purged');
+END;
+
+-- One person per store. However the row came to be written, a second is refused.
+CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
 
 -- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
 -- current question; earlier rows are history, kept so asking again does not erase what was said.

@@ -1037,6 +1037,9 @@ enum WakeOutcome {
   WAKE_OUTCOME_ALREADY_RUNNING = 2;
   WAKE_OUTCOME_ALREADY_COMING = 3;
   WAKE_OUTCOME_UNREACHABLE = 4;
+  // The receiver is the person seat (section 12.3): they have it and will answer, whether here or
+  // away. No machine was asked to start anybody, because nothing starts a person.
+  WAKE_OUTCOME_WITH_THE_PERSON = 5;
 }
 
 enum ClosureError {
