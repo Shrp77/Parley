@@ -668,6 +668,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   both orders. **The sixth appearance of `Projects.Selected` standing in for `Current`** was beside it, in the reread
   after a send.
 
+  **0.36.2: a conversation is tailed, on both surfaces** (the owner's call of 2026-10-01). It opens on the newest
+  message and carries a reader at the end to each new one. **Anywhere else the reader is not moved at all** — the
+  owner's nuance, and the part that was wrong in the first draft. **What is on screen decides, never where the cursor
+  is**: the wheel scrolls the terminal's view and leaves the cursor behind, so a rule read off the cursor carried a
+  reader who had wheeled back to the start down to row 134 (`FollowingTests` watched it). And setting the selection
+  scrolls it into view, so the redraw itself moved such a reader; the view is put back now. A cursor somebody placed on
+  a visible row is their place too, since a conversation that fits on one screen is always "at the bottom". **This
+  reverses 0.25.7**, which left a reader who had never moved at the top, and the test that asserted it was turned round
+  rather than deleted. On the web, "at the end" is the end of the newest message being on screen — not the page's
+  bottom, because the composer sits below it, and not its first line, which a reader on the message before can see.
+  The web script has no test, as before: this repository has no browser.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

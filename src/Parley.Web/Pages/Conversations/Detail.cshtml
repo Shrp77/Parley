@@ -181,13 +181,24 @@ else
             var url = region.getAttribute("data-follow");
             var every = 3000;
 
-            function scroller() { return document.scrollingElement || document.documentElement; }
+            // **Tailed, the owner's call of 2026-10-01**: the page opens on the newest message and stays
+            // there while the reader does, as the terminal's transcript does. At the end means the end of
+            // the newest message is on screen -- not the page's own bottom, because the composer sits below
+            // it, and not merely its first line, because a reader on the message before it can see that
+            // much and is still reading back. Anywhere else the reader is not moved at all.
+            function newest() {
+                var turns = region.querySelectorAll("li.turn");
+                return turns.length ? turns[turns.length - 1] : null;
+            }
 
-            // At the bottom only once the reader has moved at all. One who never scrolled is left at
-            // the top, as the terminal leaves a cursor nobody moved.
             function atBottom() {
-                var s = scroller();
-                return s.scrollTop > 0 && s.scrollTop + window.innerHeight >= s.scrollHeight - 8;
+                var last = newest();
+                return !last || last.getBoundingClientRect().bottom <= window.innerHeight + 8;
+            }
+
+            function tail() {
+                var last = newest();
+                if (last) { last.scrollIntoView({ block: "end" }); }
             }
 
             function anchor() {
@@ -204,7 +215,6 @@ else
 
             function apply(fresh) {
                 var bottom = atBottom();
-                var top = scroller().scrollTop === 0;
                 var held = anchor();
 
                 region.replaceChildren.apply(region, [].slice.call(fresh.childNodes).map(function (n) {
@@ -215,8 +225,8 @@ else
                 if (between) { between.textContent = fresh.getAttribute("data-participants") || ""; }
 
                 if (bottom) {
-                    window.scrollTo(0, scroller().scrollHeight);
-                } else if (!top && held && held.id) {
+                    tail();
+                } else if (held && held.id) {
                     var again = document.getElementById(held.id);
 
                     if (again) { window.scrollBy(0, again.getBoundingClientRect().top - held.top); }
@@ -255,6 +265,9 @@ else
                     })
                     .then(next);
             }
+
+            // Opened at the newest message, unless the address names one to go to.
+            if (!window.location.hash) { tail(); }
 
             next();
         })();

@@ -122,6 +122,12 @@ internal sealed class TranscriptRegion : FrameView
         ConversationExport? export,
         string? problem)
     {
+        // **Opened at the end, and read again at the end when the reader was there** (the owner's call of 2026-10-01: a
+        // conversation taking place should be tailed). A conversation is read for what has just been said, so the newest
+        // message is where somebody arriving belongs. The same conversation read again — after a send, say — keeps a
+        // reader who scrolled up where they are, by the rule `Follow` keeps.
+        var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
+
         Open = problem is null ? conversationId : null;
 
         // **Read on screen rather than exported to it.** What was here was `Transcript.Write`,
@@ -143,7 +149,54 @@ internal sealed class TranscriptRegion : FrameView
             return;
         }
 
-        Mark(Laid(conversationId, project, export));
+        _followEnd = arriving || Tailing();
+
+        try
+        {
+            Mark(Laid(conversationId, project, export));
+        }
+        finally
+        {
+            _followEnd = false;
+        }
+    }
+
+    /// <summary>Whether the reader is at the end, and so is carried to the new end when the conversation grows.</summary>
+    /// <returns><see langword="true"/> on the last row, or on no row at all.</returns>
+    /// <remarks>
+    /// <b>No row counts as the end since 2026-10-01</b>, which reverses 0.25.7. That release left a reader who had never
+    /// moved the cursor at the top, on the grounds that nothing said they were waiting at the bottom. The owner's answer
+    /// is that a conversation taking place is what somebody is waiting on, so the screen tails it. Only a reader who
+    /// moved the cursor somewhere above the end has said they are reading back, and only they are left alone.
+    /// </remarks>
+    private bool Tailing()
+    {
+        var rows = _lines.Source?.Count ?? 0;
+
+        if (rows == 0)
+        {
+            return true;
+        }
+
+        // **What is on screen decides, not where the cursor is** (the owner's nuance of 2026-10-01: at the bottom, tail;
+        // anywhere else, do not even move the reader). The wheel scrolls the view and leaves the cursor behind, so a
+        // reader who wheeled back to the start still had the cursor on the last row and was carried away from what they
+        // were reading. The cursor is the answer only before a layout has given the list a height to judge by.
+        //
+        // **And a cursor somebody put on a row they can see is that reader's place**, so the view being at the bottom is
+        // not enough on its own: a conversation that fits on one screen is always at the bottom, and a reader who moved
+        // the cursor up it is reading back just as much as one who scrolled. A cursor scrolled out of sight above says
+        // nothing, because the reader has left it behind.
+        var view = _lines.Viewport;
+
+        if (view.Height <= 0)
+        {
+            return _lines.SelectedItem is not { } last || last >= rows - 1;
+        }
+
+        var reading = _lines.SelectedItem is { } at && at < rows - 1 && at >= view.Y;
+
+        return view.Y + view.Height >= rows && !reading;
     }
 
     /// <summary>Draws the open conversation again, if what it holds has changed.</summary>
@@ -162,9 +215,10 @@ internal sealed class TranscriptRegion : FrameView
     /// ignored.</b> It says "a page that changed under a reader mid-sentence would be worse than one that
     /// is briefly out of date". That is true of a page that redraws from the top. This does not move
     /// what somebody is reading: a transcript only grows at the end, so the row under the cursor is the
-    /// same row afterwards — and a reader on the last row, who is reading as it arrives, is kept on the
-    /// last row. A reader who has not moved the cursor at all is left at the top, because nothing says
-    /// they are waiting at the bottom.
+    /// same row afterwards — and a reader at the end, who is reading as it arrives, is carried to the new
+    /// end. **Since 2026-10-01 that includes a reader on no row**, because a transcript opens at the end and
+    /// tails what is said (<see cref="Tailing"/>); 0.25.7 left them at the top, and the owner asked for the
+    /// opposite.
     /// </para>
     /// <para>
     /// Compared on the written text rather than on a message count. A person's close, a destruction or an
@@ -189,9 +243,7 @@ internal sealed class TranscriptRegion : FrameView
             return false;
         }
 
-        var rows = _lines.Source?.Count ?? 0;
-
-        _followEnd = rows > 0 && _lines.SelectedItem is { } at && at >= rows - 1;
+        _followEnd = Tailing();
 
         try
         {
@@ -579,12 +631,22 @@ internal sealed class TranscriptRegion : FrameView
                 ? Math.Clamp(at, 0, wrapped.Count - 1)
                 : null;
 
+        var top = _lines.Viewport.Y;
+
         _lines.Replace(wrapped, selected, also: () =>
         {
             _tints = tints;
             _owners = owners;
             _drawn = wrapped;
         });
+
+        // **And a reader who is not being carried is not moved at all.** Setting the selection scrolls it into view, so a
+        // reader who wheeled up past a cursor left on the last row was sent back down by the redraw itself. The view is
+        // put back where they had it, held inside the rows that now exist.
+        if (!_followEnd && _lines.Viewport is { Height: > 0 } now && now.Y != top)
+        {
+            _lines.Viewport = now with { Y = Math.Clamp(top, 0, Math.Max(0, wrapped.Count - now.Height)) };
+        }
     }
 
     /// <summary>Whether a line is drawn as things stand.</summary>
