@@ -254,7 +254,7 @@ public sealed class EveryActionIsOnTheBarTests
 
         var item = Assert.Single(Assert.Single(menus).Items);
 
-        Assert.Equal("k", item.Stroke);
+        Assert.Equal(Shell.Alt('k'), item.Stroke);
         Assert.Contains("Ask somebody", item.Label, StringComparison.Ordinal);
         Assert.Contains("opens an exchange", item.Label, StringComparison.Ordinal);
     }

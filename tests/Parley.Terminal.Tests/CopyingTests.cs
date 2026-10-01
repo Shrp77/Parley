@@ -104,7 +104,7 @@ public sealed class CopyingTests
 
         Assert.Contains(shell.Actions(), action => action.Label == Shell.CopyTitle);
 
-        driving.Press(new Key(Shell.CopyKey));
+        driving.Press(new Key(Shell.CopyKey).WithAlt);
 
         Assert.Single(driving.Copied);
     }

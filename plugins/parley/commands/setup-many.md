@@ -70,7 +70,7 @@ usually not meant to be agents. Repositories that already have an `.mcp.json` ar
 because leaving a working agent unticked is how one quietly stops being offered.
 
 **The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. `parley` has the
-same picker inside a project, as **Agent > Enroll agents from folders** (`f`), with a folder browser
+same picker inside a project, as **Agent > Enroll agents from folders** (`Alt+f`), with a folder browser
 in front of it - on a machine where the user is at a keyboard, that is the easier way in.
 
 **`--describe` says what would change and changes nothing.** Read it with the user before the real

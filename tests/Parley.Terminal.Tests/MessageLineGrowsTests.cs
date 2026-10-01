@@ -124,7 +124,7 @@ public sealed class MessageLineGrowsTests
         Assert.Contains(Shell.WholeTitle, shell.Shown[^1], StringComparison.Ordinal);
 
         // Pressed rather than called, because the key is what the last row advertises.
-        driving.Press(new Key(Shell.WholeKey));
+        driving.Press(new Key(Shell.WholeKey).WithAlt);
         driving.App.LayoutAndDraw(true);
 
         Assert.NotNull(shell.Showing);
@@ -203,7 +203,7 @@ public sealed class MessageLineGrowsTests
 
         Assert.Contains("something happened", driving.Text(), StringComparison.Ordinal);
 
-        driving.Press(new Key(Shell.ClearKey));
+        driving.Press(new Key(Shell.ClearKey).WithAlt);
         driving.App.LayoutAndDraw(true);
 
         Assert.Equal(string.Empty, shell.Said);

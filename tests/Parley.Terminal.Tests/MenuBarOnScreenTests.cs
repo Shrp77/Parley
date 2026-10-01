@@ -26,7 +26,7 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 public sealed class MenuBarOnScreenTests
 {
-    private static BrokerDirectory Directory() =>
+    internal static BrokerDirectory Directory() =>
         new(
             [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
@@ -157,17 +157,16 @@ public sealed class MenuBarOnScreenTests
     }
 
     [Theory]
-    [InlineData('P', "Project")]
-    [InlineData('D', "Deployment")]
-    [InlineData('H', "Help")]
-    [InlineData('p', "Project")]
-    public void Alt_and_a_menus_letter_opens_that_menu(char letter, string title)
+    [InlineData("Project")]
+    [InlineData("Deployment")]
+    [InlineData("Help")]
+    public void F10_and_the_arrows_reach_every_menu(string title)
     {
         // **The key pressed, not the seam.** Every test of the bar read its text and none pressed the
-        // chord it advertises, so the chord did nothing on a real terminal and the suite was green:
-        // `Key.AsRune` is empty for any key carrying Alt, which is the very thing that makes it a chord.
+        // chord it advertised, so the chord did nothing on a real terminal and the suite was green.
         // CLAUDE.md has the sentence already -- a key tested only through its own seam is a key nobody
-        // has pressed. Lowercase too, because that is what a terminal sends when Shift is not held.
+        // has pressed. Alt and a letter opened these until 2026-10-01; it is every action's key now, and
+        // F10 with Left and Right is how the bar is reached (`KeysNeedAModifierTests`).
         using var driving = Driving.Open(width: 120, height: 30);
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -175,7 +174,40 @@ public sealed class MenuBarOnScreenTests
         driving.Show(shell);
         shell.Lay(120);
 
-        driving.Press(new Key(letter).WithAlt);
+        OpenMenu(driving, shell, title);
+
+        Assert.Equal(title, shell.MenuOpen);
+    }
+
+    [Fact]
+    public void Alt_and_a_menus_letter_no_longer_opens_it()
+    {
+        // The other half: Alt and H is an action's key now, and a menu that also answered it would be one keystroke
+        // doing two things.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+        shell.Lay(120);
+
+        driving.Press(Key.H.WithAlt);
+
+        Assert.Null(shell.MenuOpen);
+    }
+
+    /// <summary>Opens a menu the way a person does: F10, then Right until it is the one wanted.</summary>
+    /// <param name="driving">The session.</param>
+    /// <param name="shell">The surface.</param>
+    /// <param name="title">The menu's title.</param>
+    internal static void OpenMenu(Driving.Session driving, Shell shell, string title)
+    {
+        driving.Press(Shell.MenuKey);
+
+        for (var step = 0; step < 10 && shell.MenuOpen != title; step++)
+        {
+            driving.Press(Key.CursorRight);
+        }
 
         Assert.Equal(title, shell.MenuOpen);
     }
@@ -193,7 +225,7 @@ public sealed class MenuBarOnScreenTests
         driving.Show(shell);
         shell.Lay(120);
 
-        driving.Press(Key.H.WithAlt);
+        OpenMenu(driving, shell, "Help");
 
         Assert.Same(shell, driving.App.TopRunnableView);
 
@@ -215,7 +247,7 @@ public sealed class MenuBarOnScreenTests
         driving.Show(shell);
         shell.Lay(120);
 
-        driving.Press(Key.H.WithAlt);
+        OpenMenu(driving, shell, "Help");
         driving.Press(Key.CursorDown);
         driving.Enter();
 
@@ -241,7 +273,7 @@ public sealed class MenuBarOnScreenTests
 
         // Help rather than Project: the bar is the focused region's, and in a project the agents pane has
         // focus and no project actions. Help is on every screen.
-        driving.Press(Key.H.WithAlt);
+        OpenMenu(driving, shell, "Help");
         Assert.Equal("Help", shell.MenuOpen);
 
         driving.Escape();
@@ -288,7 +320,7 @@ public sealed class MenuBarOnScreenTests
 
         for (var i = 0; i < 20; i++)
         {
-            driving.Press(Key.H.WithAlt);
+            OpenMenu(driving, shell, "Help");
             driving.Escape();
         }
 

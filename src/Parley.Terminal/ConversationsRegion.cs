@@ -44,7 +44,7 @@ internal sealed class ConversationsRegion : FrameView
         "No conversation here yet.",
         "One starts when an agent sends",
         "another a request, or when you",
-        "press k to start one yourself.",
+        "press Alt+k to start one.",
     ];
 
     private readonly GuardedList _list = Lists.Filling(Colours.Conversations);

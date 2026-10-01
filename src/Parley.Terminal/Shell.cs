@@ -1607,11 +1607,6 @@ internal sealed class Shell : Window
     /// </remarks>
     private IReadOnlyList<RegionAction> Bar() => [.. Actions(), .. Messaging(), .. Global()];
 
-    /// <summary>Drops down the bar's menu for a category, if the bar is showing one.</summary>
-    /// <param name="initial">The letter Alt was pressed with.</param>
-    /// <returns><see langword="true"/> when a menu opened.</returns>
-    private bool OpenMenu(char initial) => _bar.Open(initial);
-
     /// <summary>Runs what a menu line names, as the bar offers it now.</summary>
     /// <param name="stroke">The line's key.</param>
     /// <param name="label">The line's label, as written on the menu.</param>
@@ -2720,7 +2715,7 @@ internal sealed class Shell : Window
         SaidMore = pieces.Count > room;
 
         IReadOnlyList<string> shown = SaidMore
-            ? [.. pieces.Take(room - 1), $"{WholeKey}: {WholeTitle}"]
+            ? [.. pieces.Take(room - 1), $"{Alt(WholeKey)}: {WholeTitle}"]
             : pieces;
 
         _message.Text = string.Join(Environment.NewLine, shown);
@@ -3763,11 +3758,14 @@ internal sealed class Shell : Window
             return true;
         }
 
-        // **A box somebody types into wins every printable key, and that is not a nicety.**
+        // **A box somebody types into wins every printable key.** Since 2026-10-01 no action is a bare character, so
+        // this is the second line rather than the only one — and the owner's report is why: a `c` typed into a message
+        // copied the conversation, because this guard holds only while the field itself has focus, and focus had moved
+        // off the field and stayed in its pane. What follows is the history of the first line.
         //
-        // Every action on this surface is a letter, and this handler takes a region's letter before the focused
-        // view sees it — so without this, typing a question mark into an ask opens the actions menu and typing
-        // `x` clears the message line. Nobody had met it because the box was not on screen: the three-pane
+        // Every action on this surface was a letter, and this handler takes a region's letter before the focused
+        // view sees it — so without this, typing a question mark into an ask opened the actions menu and typing
+        // `x` cleared the message line. Nobody had met it because the box was not on screen: the three-pane
         // arrangement was never written, so the line region had no size and drew nothing, while `LineTests`
         // set its text in memory and passed. **A property the suite holds to and the screen never shows**, which
         // is the third time this repository has recorded that shape — `Shell.Said` shown to nobody, and a
@@ -3794,17 +3792,14 @@ internal sealed class Shell : Window
             return true;
         }
 
-        // **Before the regions, because Alt is nobody's letter.** A focused box wins every printable
-        // key -- 0.30.4's lesson -- and that is exactly why the bar is reached with a modifier: opening
-        // the Conversation menu must work while somebody is typing into the composer, where `c` is a `c`.
-        //
-        // **The letter is read with Alt taken off, and for 0.34.1 it was not.** `Key.AsRune` is empty for
-        // any key carrying Alt or Ctrl -- the toolkit's rule that a chord is not a character -- so this arm
-        // asked for the letter of a chord and got nothing, every time, and the bar advertised three keys
-        // that did nothing. Nothing in the suite had pressed one.
-        if (key.IsAlt && !key.IsCtrl && key.NoAlt.AsRune.Value is > 0 and < 128
-            && OpenMenu((char)key.NoAlt.AsRune.Value))
+        // **F10 opens the bar, and Alt and a letter is an action** (the owner's call of 2026-10-01). Alt and a letter
+        // opened a menu until then, while every action was a bare letter — so a letter typed anywhere the box did not
+        // hold focus set one off. Actions took Alt so that a plain character is never one; the menus moved to F10, the
+        // key most programs with a bar use, and Left and Right walk from the first menu to the rest.
+        if (key == MenuKey)
         {
+            _ = _bar.OpenFirst();
+
             return true;
         }
 
@@ -3849,27 +3844,48 @@ internal sealed class Shell : Window
         return base.OnKeyDown(key);
     }
 
-    /// <summary>Whether a keystroke is somebody typing a character this surface binds.</summary>
+    /// <summary>How an action's character is written, wherever a person is told the key.</summary>
+    /// <param name="character">The character.</param>
+    /// <returns><c>Alt+</c> and the character.</returns>
+    /// <remarks>One spelling, so the status line, the menus and every sentence that names a key cannot disagree.</remarks>
+    internal static string Alt(char character) => "Alt+" + character;
+
+    /// <summary>The key that opens the menu bar.</summary>
+    internal static Key MenuKey => Key.F10;
+
+    /// <summary>Whether a keystroke is Alt and the character an action is bound to.</summary>
     /// <param name="key">What arrived.</param>
     /// <param name="character">The character an action is bound to.</param>
     /// <returns><see langword="true"/> when the two are the same keystroke.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The character, not the key code.</b> <c>?</c> is Shift and another key on every keyboard
-    /// there is, and a driver is free to say so by carrying the shift modifier on what it hands
-    /// up. Comparing against a bare <c>new Key('?')</c> then matches under one driver and not
-    /// another — the same keystroke, the same code, working on the machine the suite runs on and
-    /// dead on somebody's terminal. That is what happened, and it is invisible from inside a test
-    /// that injects the key it is about to compare against.
+    /// <b>Alt, always, on the owner's call of 2026-10-01.</b> Every action here was a bare letter, so a letter typed
+    /// anywhere the box did not happen to hold focus was an action: the owner typed a <c>c</c> into a message and the
+    /// conversation went to the clipboard. The box's own guard could only ever cover the moment it had focus. With
+    /// a modifier a plain character is never an action, wherever focus is, so no guard has to be right for typing to
+    /// be safe. The menus moved to F10 to free Alt.
     /// </para>
     /// <para>
-    /// Control and Alt are excluded rather than ignored. They are how a terminal spells a
-    /// different keystroke entirely, and an action that answered to Ctrl+C as readily as to
-    /// <c>c</c> would fire on the chord half the world presses to stop a program.
+    /// <b>The character, not the key code.</b> <c>?</c> is Shift and another key on every keyboard
+    /// there is, and a driver is free to say so by carrying the shift modifier on what it hands
+    /// up. Comparing against a bare key code then matches under one driver and not another — the
+    /// same keystroke, the same code, working on the machine the suite runs on and dead on
+    /// somebody's terminal. That is what happened, and it is invisible from inside a test that
+    /// injects the key it is about to compare against. <b>The character is read with Alt taken off</b>, because
+    /// <c>Key.AsRune</c> is empty for any key carrying a modifier — 0.34.2 records the bar advertising keys that did
+    /// nothing for exactly that reason. A letter matches in either case, so Caps Lock does not disable every action.
+    /// </para>
+    /// <para>
+    /// Control is excluded rather than ignored. Ctrl and Alt together is how a terminal spells a different keystroke,
+    /// and on several keyboard layouts it is AltGr, which types an ordinary character.
     /// </para>
     /// </remarks>
-    private static bool Typed(Key key, char character) =>
-        !key.IsCtrl && !key.IsAlt && key.AsRune == new Rune(character);
+    internal static bool Typed(Key key, char character) =>
+        key.IsAlt
+        && !key.IsCtrl
+        && key.NoAlt.AsRune is { Value: > 0 } typed
+        && (typed == new Rune(character)
+            || (char.IsAsciiLetter(character) && Rune.ToLowerInvariant(typed) == new Rune(char.ToLowerInvariant(character))));
 
     /// <summary>Reads the manifest and every broker, and draws the projects.</summary>
     /// <param name="cancellationToken">Stops the reads.</param>
@@ -5252,7 +5268,8 @@ internal sealed record RegionAction(
     int Order = 0)
 {
     /// <summary>How this action's key is written, wherever it is offered.</summary>
-    public string Stroke => Chord?.ToString() ?? Key.ToString();
+    /// <remarks>Alt and the letter, since 2026-10-01; <see cref="Shell.Typed"/> says why.</remarks>
+    public string Stroke => Chord?.ToString() ?? Shell.Alt(Key);
 
     /// <summary>The run this action falls in, named or not.</summary>
     /// <remarks>
@@ -5266,5 +5283,5 @@ internal sealed record RegionAction(
     /// <returns><see langword="true"/> when it does.</returns>
     public bool Answers(Key key) => Chord is { } chord
         ? key == chord
-        : !key.IsCtrl && !key.IsAlt && key.AsRune == new Rune(Key);
+        : Shell.Typed(key, Key);
 }

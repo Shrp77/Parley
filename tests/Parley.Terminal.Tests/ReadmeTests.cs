@@ -96,7 +96,7 @@ public sealed class ReadmeTests
     [Fact]
     public void The_key_it_tells_people_to_press_is_the_key_that_is_bound()
     {
-        Assert.Contains($"Press `{Shell.ActionsKey}`", Readme(), StringComparison.Ordinal);
+        Assert.Contains($"Press `{Shell.Alt(Shell.ActionsKey)}`", Readme(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,11 +1,9 @@
 using System.Drawing;
-using System.Text;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
-using Attribute = Terminal.Gui.Drawing.Attribute;
 using ToolkitItem = Terminal.Gui.Views.MenuItem;
 
 namespace Parley.Terminal;
@@ -49,6 +47,9 @@ internal sealed class MenuBarView(
     /// <summary>The columns before the first title and between each pair.</summary>
     private const int Gap = 2;
 
+    /// <summary>What the bar says after its titles, naming the key that opens it.</summary>
+    internal const string MenusHint = "(F10)";
+
     private readonly Lock _gate = new();
     private IReadOnlyList<string> _titles = [];
     private PopoverMenu? _open;
@@ -81,7 +82,7 @@ internal sealed class MenuBarView(
     }
 
     /// <summary>Drops down the menu whose title starts with a letter.</summary>
-    /// <param name="initial">The letter pressed with Alt, or the first letter of the title clicked.</param>
+    /// <param name="initial">The first letter of the title clicked.</param>
     /// <returns><see langword="true"/> when a menu opened.</returns>
     /// <remarks>
     /// The menus are read now rather than remembered, so what drops down is what the focused region offers
@@ -90,36 +91,67 @@ internal sealed class MenuBarView(
     /// </remarks>
     internal bool Open(char initial)
     {
-        if (App?.Popovers is not { } popovers)
-        {
-            return false;
-        }
-
         var offered = menus();
-
-        Show([.. offered.Select(menu => menu.Title)]);
-
-        var at = -1;
 
         for (var i = 0; i < offered.Count; i++)
         {
             if (char.ToUpperInvariant(offered[i].Title[0]) == char.ToUpperInvariant(initial))
             {
-                at = i;
-
-                break;
+                return OpenAt(offered, i);
             }
         }
 
-        if (at < 0)
+        return false;
+    }
+
+    /// <summary>Drops down the first menu, which is what F10 does.</summary>
+    /// <returns><see langword="true"/> when a menu opened.</returns>
+    /// <remarks>
+    /// <b>F10 rather than Alt and a letter, on the owner's call of 2026-10-01.</b> Alt and a letter is every action's key
+    /// now, so that a plain letter is never an action and typing can never set one off. F10 is the menu key on most
+    /// programs that have a bar, and Left and Right walk from the first menu to the rest.
+    /// </remarks>
+    internal bool OpenFirst()
+    {
+        var offered = menus();
+
+        return offered.Count > 0 && OpenAt(offered, 0);
+    }
+
+    /// <summary>Drops down one menu, taking down whichever was open.</summary>
+    /// <param name="offered">The menus as read now.</param>
+    /// <param name="at">Which one.</param>
+    /// <returns><see langword="true"/> when it opened.</returns>
+    private bool OpenAt(IReadOnlyList<(string Title, IReadOnlyList<MenuItem> Items)> offered, int at)
+    {
+        if (App?.Popovers is not { } popovers)
         {
             return false;
         }
 
+        Show([.. offered.Select(menu => menu.Title)]);
         Close(popovers);
 
         var (title, items) = offered[at];
         var menu = new PopoverMenu(Views(items));
+
+        // **Left and Right go to the neighbouring menu**, because F10 opens only the first and a bar a person can enter
+        // and not cross is half a bar. Taken on the menu's own key event, which runs before its bindings do.
+        menu.KeyDown += (_, key) =>
+        {
+            if (key == Key.CursorRight || key == Key.CursorLeft)
+            {
+                key.Handled = true;
+
+                var next = (at + (key == Key.CursorRight ? 1 : -1) + offered.Count) % offered.Count;
+                var now = menus();
+
+                if (now.Count > 0)
+                {
+                    OpenAt(now, Math.Min(next, now.Count - 1));
+                }
+            }
+        };
 
         popovers.Register(menu);
 
@@ -143,24 +175,24 @@ internal sealed class MenuBarView(
         }
 
         var normal = GetAttributeForRole(VisualRole.Normal);
-        var hot = new Attribute(normal.Foreground, normal.Background, TextStyle.Underline);
 
         SetAttribute(normal);
         Move(0, 0);
         AddStr(new string(' ', Math.Max(Viewport.Width, 0)));
 
+        // **No letter is underlined any more.** It marked the letter Alt opened the menu with, and Alt and a letter is an
+        // action's key now (2026-10-01); an underline would advertise a key that does something else. F10 is named on
+        // the row itself instead, after the titles, so the key is on screen where the menus are.
         for (var i = 0; i < titles.Count; i++)
         {
-            var title = titles[i];
-
             Move(Left(titles, i), 0);
+            AddStr(titles[i]);
+        }
 
-            // The letter Alt opens it with is underlined, as it is on any other program's bar. It is the
-            // one mark on this row that says the key exists.
-            SetAttribute(hot);
-            AddRune(new Rune(title[0]));
-            SetAttribute(normal);
-            AddStr(title[1..]);
+        if (titles.Count > 0)
+        {
+            Move(Left(titles, titles.Count), 0);
+            AddStr(MenusHint);
         }
 
         return true;

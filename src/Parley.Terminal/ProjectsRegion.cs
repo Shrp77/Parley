@@ -39,7 +39,7 @@ internal sealed class ProjectsRegion : FrameView
 
     /// <summary>What is shown when the machine names none.</summary>
     internal const string Nothing =
-        "This machine names no projects yet. Press c to create one, or ? for everything this "
+        "This machine names no projects yet. Press Alt+c to create one, or Alt+? for everything this "
         + "region can do.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Projects);

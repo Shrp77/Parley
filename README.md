@@ -158,8 +158,8 @@ That is the whole of it. The script packs the tools and installs them, registers
 start when you log in, starts it, and then checks that it answers. It never asks where a store
 goes: that is a project's to say. The broker serves every project this machine names, and on a
 machine that names none yet it waits for the first — so the script ends by telling you what to do
-next: run `parley`, create a project with `c`, then open it and choose **Agent > Enroll agents from
-folders** (`f`) to add the repositories that should answer in it. The broker starts a new project
+next: run `parley`, create a project with `Alt+c`, then open it and choose **Agent > Enroll agents from
+folders** (`Alt+f`) to add the repositories that should answer in it. The broker starts a new project
 within seconds, and the web UI shows it.
 
 There are four tools, and which of them a machine wants is a real question:
@@ -504,12 +504,12 @@ Parley writes it into the launch configuration, marks it as accepted automatical
 the agent once it is idle so its peers read it. Nothing is restarted mid-turn. An answer that
 cannot be a line as written, or from an agent on another machine, waits for a person instead.
 
-**Every line can be checked and corrected in the ownership review** — `v` on the agents pane in
+**Every line can be checked and corrected in the ownership review** — `Alt+v` on the agents pane in
 `parley`, or *Review ownership* on a project's page in the web UI. It shows each agent's line,
 whether a person or nobody read it, and any answer waiting. From there you accept, edit or
 discard an answer, write a line yourself, reply to an agent that asked Parley something back, or
-have Parley ask again (`k` for one agent, `e` for all). None of it needs a seat. Turn Auto Accept
-off (`a` on the projects pane) and every answer waits for you.
+have Parley ask again (`Alt+k` for one agent, `Alt+e` for all). None of it needs a seat. Turn Auto Accept
+off (`Alt+a` on the projects pane) and every answer waits for you.
 
 **There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
 versions capped it at a hundred characters, measured: a roster entry costs about seventy-five
@@ -798,15 +798,19 @@ answered before anything is opened. Enter goes into a
 project and shows its agents and its conversations; Enter again opens a conversation and reads it.
 Escape comes back, and lands on what you were looking at rather than at the top, so reading three
 conversations in turn costs three keystrokes. The status line says where you are and where Escape
-leads, and the same entry heads the `?` menu, so the way out is never only a key. `Ctrl+Q` leaves
+leads, and the same entry heads the `Alt+?` menu, so the way out is never only a key. `Ctrl+Q` leaves
 altogether, from any view, and sits on that line beside it — on a terminal too narrow to hold
-both, the line keeps `?` and the menu keeps them. Escape at the top of the tree does nothing:
+both, the line keeps `Alt+?` and the menu keeps them. Escape at the top of the tree does nothing:
 pressing it once more than you meant to costs nothing.
 
 Tab moves between the panes of the view you are on — a project has two, the other views one — and
 the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
-panes stack and Tab still visits both. Press `?` for everything the view you are on can do, and
-`F8` to open the web UI on whatever is in front of you.
+panes stack and Tab still visits both. Press `Alt+?` for everything the view you are on can do,
+`F10` for the menu bar (Left and Right move between its menus), and `F8` to open the web UI on
+whatever is in front of you.
+
+**Every action is Alt and a letter**, shown that way on the status line and in the menus. A plain
+letter is never an action, so typing can never set one off wherever the cursor happens to be.
 
 It draws in colour, and no fact rests on it: a project is green because the line says
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
@@ -855,7 +859,7 @@ purge stands behind — described first, keeping offered first, the conversation
 typed back — and when something in it is still open, what the waiting agent will see is named and
 accepted before the identifier is asked for.
 
-**Files** (`l`, from the projects list or from the conversations half) lists what agents have
+**Files** (`Alt+l`, from the projects list or from the conversations half) lists what agents have
 placed, with who placed how much. Choosing a file opens it in its editor or removes it — described
 first, keeping offered first — and the list also opens the folder, or removes every file, which
 takes the project's name typed back.

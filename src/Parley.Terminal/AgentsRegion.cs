@@ -70,7 +70,7 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>What is shown before anything has been read.</summary>
     internal const string Nothing =
-        "No agent is registered in this project and its catalogue names none. Press a to make a "
+        "No agent is registered in this project and its catalogue names none. Press Alt+a to make a "
         + "repository on this machine one.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);

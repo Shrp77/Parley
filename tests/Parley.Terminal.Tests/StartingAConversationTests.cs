@@ -51,7 +51,7 @@ public sealed class StartingAConversationTests
     {
         // Forty columns is the narrowest terminal this surface is held to, less the pane's two border columns.
         Assert.All(ConversationsRegion.Nothing, row => Assert.True(row.Length <= 38, $"{row.Length}: {row}"));
-        Assert.Contains(ConversationsRegion.Nothing, row => row.Contains("press k", StringComparison.Ordinal));
+        Assert.Contains(ConversationsRegion.Nothing, row => row.Contains("press Alt+k", StringComparison.Ordinal));
     }
 
     [Fact]

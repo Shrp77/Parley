@@ -680,6 +680,19 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   bottom, because the composer sits below it, and not its first line, which a reader on the message before can see.
   The web script has no test, as before: this repository has no browser.
 
+  **0.37.0: every action in the terminal is Alt and a letter, and the menus open with F10** (the owner's call of
+  2026-10-01). The owner typed a `c` into a message and the conversation went to the clipboard. Copy is the
+  transcript's action, so focus had reached the transcript pane — and while every action was a bare letter, the only
+  thing between typing and an action was the box's guard, which holds while the field itself has focus. **A guard that
+  has to be right about focus for typing to be safe is the wrong shape**; with a modifier a plain character is never an
+  action anywhere. Alt was chosen over Ctrl because a terminal already owns too many Ctrl letters (C stops the program,
+  H is Backspace, I is Tab, M is Enter, Z suspends on Linux) and the box's editor takes its own Ctrl keys first. That
+  freed Alt by moving the menus to F10, the key most programs with a bar use; Left and Right walk between menus, and
+  the bar says `(F10)` after its titles because nothing else on the row names it now. **Breaking for anybody who knew
+  the keys**, hence the minor. The cost: macOS's Terminal needs *Use Option as Meta* for Alt to arrive at all.
+  `KeysNeedAModifierTests` presses every plain letter on every pane of a conversation and fails against the old rule.
+  Dialog keys (the tick list's `a` and `n`) are unchanged: they are inside a dialog with no text field.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —
