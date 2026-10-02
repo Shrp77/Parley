@@ -59,7 +59,7 @@ public sealed class AddressingFromTheRoomTests
         seated.Focus<RoomRegion>();
         seated.Row(shell.Room.List, Seated.Orders.Value);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
 
         await shell.Settled;
 
@@ -87,10 +87,10 @@ public sealed class AddressingFromTheRoomTests
         seated.Focus<RoomRegion>();
         seated.Row(shell.Room.List, Seated.Orders.Value);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
         await shell.Settled;
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
         await shell.Settled;
 
         Assert.Contains(Seated.Orders, shell.Drafting!.Recipients);
@@ -109,7 +109,7 @@ public sealed class AddressingFromTheRoomTests
         seated.Focus<RoomRegion>();
         seated.Row(shell.Room.List, Seated.Orders.Value);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
 
         await shell.Settled;
 
@@ -118,7 +118,36 @@ public sealed class AddressingFromTheRoomTests
     }
 
     [Fact]
-    public async Task Space_does_the_same_thing_and_is_named_where_a_person_would_look()
+    public async Task Enter_on_an_agent_goes_to_the_box_and_leaves_the_ticks_alone()
+    {
+        // **The owner's call of 2026-10-02**: Enter on an agent is somebody about to type, so it puts them in the box.
+        // It ticked and unticked until then, the same as Space; the ticks stay exactly as they were now. Pressed as a
+        // real key, because the list takes Enter before anything else sees it.
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var shell = seated.Shell;
+
+        shell.Drafting!.Widen(Seated.Billing);
+        shell.Room.Address(shell.Drafting!.Recipients);
+
+        var before = shell.Drafting!.Recipients.ToList();
+
+        seated.Focus<RoomRegion>();
+        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Session.Enter();
+
+        await shell.Settled;
+
+        Assert.True(shell.Line.Editing, "Enter on an agent did not put the cursor in the box");
+        Assert.Equal(before, shell.Drafting!.Recipients);
+
+        // And typing lands there straight away.
+        seated.Session.Type("right away");
+
+        Assert.Equal("right away", shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task Space_ticks_and_is_named_where_a_person_would_look()
     {
         // `contracts/views.md`: no action exists only as a key. The chord is offered only on a row it would
         // do something to, which is the other half of that rule.
@@ -152,7 +181,7 @@ public sealed class AddressingFromTheRoomTests
 
         seated.Lay();
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, "answer or ask back");
+        seated.Row(shell.Room.List, "waiting for your reply");
 
         Assert.Null(shell.Room.SelectedPeer);
         Assert.NotNull(shell.Room.Selected);

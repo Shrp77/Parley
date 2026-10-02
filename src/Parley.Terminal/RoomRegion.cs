@@ -107,12 +107,16 @@ internal sealed class RoomRegion : FrameView
         // `contracts/views.md` means by nothing existing only as a key.
         _list.Accepting += (_, args) =>
         {
-            // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: a
-            // participant is somebody you are addressing or not, and a thing owed is something to go and read.
+            // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: on a
+            // participant it is going to say something, and on a thing owed it is going to read it.
+            //
+            // **Enter on a participant goes to the box and leaves the ticks alone** (the owner's call of 2026-10-02).
+            // It ticked and unticked until then, the same as Space; the owner's report was that pressing Enter on an
+            // agent is somebody about to type, and they want to start typing. Space is still the tick.
             if (SelectedPeer is { } peer)
             {
                 args.Handled = true;
-                Toggling?.Invoke(this, peer);
+                Choosing?.Invoke(this, peer);
 
                 return;
             }
@@ -133,6 +137,9 @@ internal sealed class RoomRegion : FrameView
     /// <summary>Raised when somebody included or excluded a participant from what they are writing.</summary>
     internal event EventHandler<AgentName>? Toggling;
 
+    /// <summary>Raised when somebody pressed Enter on a participant, which means they are about to write.</summary>
+    internal event EventHandler<AgentName>? Choosing;
+
     /// <summary>What the list is showing, for a test to read without the screen.</summary>
     internal IReadOnlyList<string> Written => [.. _rows.Select(r => r.Text)];
 
@@ -151,8 +158,8 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>Includes or excludes the participant under the cursor.</summary>
     /// <remarks>
-    /// Raises the same event the row's own Enter raises rather than changing anything itself. This column
-    /// draws who a message is going to; it does not decide it.
+    /// Raises an event rather than changing anything itself. This column draws who a message is going to; it does
+    /// not decide it. Space, since 2026-10-02: Enter on a participant goes to the box instead.
     /// </remarks>
     internal void Toggle()
     {

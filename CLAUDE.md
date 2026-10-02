@@ -693,6 +693,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   `KeysNeedAModifierTests` presses every plain letter on every pane of a conversation and fails against the old rule.
   Dialog keys (the tick list's `a` and `n`) are unchanged: they are inside a dialog with no text field.
 
+  **0.37.1: the box says who a line goes to and nothing else, there is no "ask back instead", and Enter on an agent in
+  the Room goes to the box** (the owner's calls of 2026-10-02). The preview read *"to: orders@host.
+  orders@host answer — closes the exchange (F2: ask back instead)"*, and the owner read it as wrong twice:
+  **a conversation never really stops** — *"even when it has come to a natural conclusion, some jerk might come in and
+  say 'actually…'"* — so a line saying a reply closes something narrates bookkeeping as if it were the conversation;
+  and F2's choice made no sense. The act is still derived (a reply to an agent's request is its Result, a reply on
+  one's own request is a Clarify, anything else opens one), just not narrated. **The cost is recorded in `Draft`'s
+  remarks rather than hidden**: the choice existed because a person's reply that is really a question is recorded as
+  the request's Result. The stray full stop was `Reports.Sentences`, which closes every part of a report with one and
+  ran the preview's lines together. Enter on an agent puts the cursor in the box and leaves the ticks alone; Space is
+  the tick.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

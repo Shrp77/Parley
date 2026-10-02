@@ -311,23 +311,26 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task F2_takes_the_other_side_of_the_one_choice_a_draft_offers()
+    public async Task There_is_no_answer_or_ask_back_choice_any_more()
     {
+        // **Removed on the owner's call of 2026-10-02.** F2 took "the other side of the one choice a draft offers" —
+        // answer, or ask back instead — and the owner's reading was that it made no sense: a conversation never really
+        // stops. Holding a request, what somebody types answers it; nothing offers to flip that.
         var ct = TestContext.Current.CancellationToken;
         var (shell, _) = await SeatedAsync(ct);
         using var held = shell;
 
         Focus(shell);
 
-        // The fixture's peer asked this person something, so the default is to answer.
-        Assert.Contains("closes the exchange", shell.Line.Preview, StringComparison.Ordinal);
+        var before = shell.Line.Preview;
 
-        shell.NewKeyDownEvent(Shell.OtherKey);
+        shell.NewKeyDownEvent(Key.F2);
 
         await shell.Settled;
 
-        Assert.Contains("asks them back", shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains(Shell.OtherKey.ToString(), shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Equal(before, shell.Line.Preview);
+        Assert.Equal(Act.Answer, Assert.Single(shell.Drafting!.Plan()).Act);
+        Assert.DoesNotContain(shell.Actions(), action => action.Chord is { } chord && chord == Key.F2);
     }
 
     /// <summary>Puts the cursor in the box, which is where every key in this file is pressed.</summary>
@@ -380,24 +383,17 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Both_of_the_line_pane_actions_are_offered_where_a_person_would_look_for_them()
+    public async Task Sending_is_offered_where_a_person_would_look_for_it()
     {
-        // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too.
-        // The flip is a chord because every letter in this pane belongs to the text, and a chord that reached
-        // the menu under no name would be exactly the promise this holds the surface to.
+        // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too. This was
+        // both line-pane actions until the answer-or-ask-back flip went on 2026-10-02.
         var (shell, _) = await SeatedAsync(TestContext.Current.CancellationToken);
 
         using var held = shell;
 
         Focus(shell);
 
-        var offered = shell.Actions();
-
-        Assert.Contains(offered, action => action.Label == Shell.SendTitle);
-
-        var flip = Assert.Single(offered, action => action.Label == Shell.OtherTitle);
-
-        Assert.Equal(Shell.OtherKey.ToString(), flip.Stroke);
+        Assert.Contains(shell.Actions(), action => action.Label == Shell.SendTitle);
     }
 
     [Fact]
@@ -461,12 +457,12 @@ public sealed class CompletingTests : IAsyncDisposable
         driving.App.LayoutAndDraw(true);
 
         var owed = Assert.Single(shell.Room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal)
-            && row.Contains("answer or ask back", StringComparison.Ordinal));
+            && row.Contains("waiting for your reply", StringComparison.Ordinal));
 
         Assert.NotEmpty(owed);
 
         shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is RoomRegion));
-        driving.Row(shell.Room.List, "answer or ask back");
+        driving.Row(shell.Room.List, "waiting for your reply");
 
         var item = shell.Room.Selected;
 

@@ -11,19 +11,21 @@ public enum Act
     /// <summary>A Clarify on a request this person sent. The turn goes back to the recipient.</summary>
     Clarify = 1,
 
-    /// <summary>A Result. Closes the exchange the recipient opened.</summary>
+    /// <summary>A Result. Settles the request the recipient sent this person.</summary>
+    /// <remarks>
+    /// <b>There is no "ask back instead" any more</b> (the owner's call of 2026-10-02). It was a Clarify on a request this
+    /// person held, offered as the other side of answering under F2 — and the owner's reading is that it made no sense:
+    /// a conversation never really stops, so somebody who wants to ask something back simply says it, and the reply
+    /// that settles one request is followed by whatever comes next as a request of its own.
+    /// </remarks>
     Answer = 2,
-
-    /// <summary>A Clarify on a request this person holds. The turn goes back, and nothing closes.</summary>
-    AskBack = 3
 }
 
 /// <summary>One recipient and what Enter would do to them.</summary>
 /// <param name="Peer">Who it goes to.</param>
 /// <param name="Act">What it would be recorded as.</param>
 /// <param name="Exchange">The exchange it lands in, or <see langword="null"/> when it opens one.</param>
-/// <param name="Choosable">Whether this recipient's act is the one the person may take the other side of.</param>
-public sealed record Addressed(AgentName Peer, Act Act, long? Exchange, bool Choosable);
+public sealed record Addressed(AgentName Peer, Act Act, long? Exchange);
 
 /// <summary>What became of a send.</summary>
 /// <param name="Count">How many recipients got it.</param>
@@ -34,17 +36,6 @@ public sealed record Addressed(AgentName Peer, Act Act, long? Exchange, bool Cho
 /// needs to know is whether anything went.
 /// </remarks>
 public sealed record Sent(int Count, string Says);
-
-/// <summary>What a send would cost, in the units the protocol counts.</summary>
-/// <param name="Opens">How many exchanges it opens, each owing a Result.</param>
-/// <param name="Closes">How many it closes.</param>
-/// <param name="HandsBack">How many hand a turn back without closing anything.</param>
-/// <remarks>
-/// Counted in exchanges rather than messages because that is what SPEC.md §5.5 makes a plural ask: N recipients
-/// is N exchanges, each an obligation somebody owes a Result on. A person deciding whether to press Enter is
-/// deciding about obligations, not about lines of text.
-/// </remarks>
-public sealed record Cost(int Opens, int Closes, int HandsBack);
 
 /// <summary>
 /// One line of text, its recipients, and what Enter would do to each.
@@ -57,10 +48,12 @@ public sealed record Cost(int Opens, int Closes, int HandsBack);
 /// is correct for its own pair.
 /// </para>
 /// <para>
-/// <b>One case is not derivable and is never guessed.</b> Holding a Request, what somebody types may be the
-/// answer — which closes the exchange — or a question they need settled first, which hands the turn back. A wrong
-/// guess closes work that was never done, and an exchange closed on work that was not done is a record asserting
-/// it was. So both are offered, the default is said, and <see cref="Answering"/> takes the other.
+/// <b>Holding a Request, what somebody types is the answer.</b> Until 2026-10-02 this was offered both ways — the
+/// answer, or a question back that handed the turn over — on the argument that a wrong guess settles a request whose
+/// work was never done. The owner removed the choice: <i>"a conversation never stops, really"</i>, so a person who
+/// wants to ask something back says so in the answer, and whatever follows is a request of its own. <b>The cost is
+/// recorded rather than hidden</b>: a person's reply to an agent's request is always recorded as that request's
+/// Result, including a reply that is really a question.
 /// </para>
 /// <para>
 /// <b>Addressing never reaches the text.</b> <see cref="Recipients"/> is resolved agents and <see cref="Text"/>
@@ -79,7 +72,6 @@ public sealed class Draft
     /// </remarks>
     public const string All = "all";
 
-    private readonly Dictionary<AgentName, bool> _answering = [];
     private readonly List<string> _chips = [];
 
     private bool _narrowed;
@@ -239,19 +231,6 @@ public sealed class Draft
         _narrowed = false;
     }
 
-    /// <summary>Whether a recipient in the answer-or-ask-back state will be answered rather than asked back.</summary>
-    /// <param name="peer">The recipient.</param>
-    /// <returns>Whether Enter would close their exchange.</returns>
-    /// <remarks>
-    /// Defaults to answering, because holding a request and typing is far more often an answer than a question
-    /// back. Said on screen rather than assumed, and one keystroke takes the other.
-    /// </remarks>
-    public bool Answering(AgentName peer) => !_answering.TryGetValue(peer, out var chosen) || chosen;
-
-    /// <summary>Takes the other side of the one choice this draft offers.</summary>
-    /// <param name="peer">The recipient whose act to flip.</param>
-    public void Flip(AgentName peer) => _answering[peer] = !Answering(peer);
-
     /// <summary>What Enter would do, one entry per recipient.</summary>
     /// <returns>The recipients and their acts, in the order the pairs were given.</returns>
     public IReadOnlyList<Addressed> Plan()
@@ -270,32 +249,12 @@ public sealed class Draft
             // at all, so typing opens a new one rather than being refused with somebody's words in it.
             planned.Add(pair switch
             {
-                { Turn: Turn.Mine, Asked: false } => new Addressed(
-                    peer,
-                    Answering(peer) ? Act.Answer : Act.AskBack,
-                    pair.OpenExchange,
-                    Choosable: true),
-                { Turn: Turn.Mine, Asked: true } => new Addressed(
-                    peer,
-                    Act.Clarify,
-                    pair.OpenExchange,
-                    Choosable: false),
-                _ => new Addressed(peer, Act.Ask, null, Choosable: false),
+                { Turn: Turn.Mine, Asked: false } => new Addressed(peer, Act.Answer, pair.OpenExchange),
+                { Turn: Turn.Mine, Asked: true } => new Addressed(peer, Act.Clarify, pair.OpenExchange),
+                _ => new Addressed(peer, Act.Ask, null),
             });
         }
 
         return planned;
-    }
-
-    /// <summary>What the plan costs, in exchanges.</summary>
-    /// <returns>How many exchanges open, close, and have a turn handed back.</returns>
-    public Cost Costs()
-    {
-        var plan = Plan();
-
-        return new Cost(
-            plan.Count(a => a.Act == Act.Ask),
-            plan.Count(a => a.Act == Act.Answer),
-            plan.Count(a => a.Act is Act.Clarify or Act.AskBack));
     }
 }

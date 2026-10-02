@@ -149,29 +149,6 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>What taking the other side of the one choice is called.</summary>
-    internal const string OtherTitle = "Answer, or ask back instead";
-
-    /// <summary>
-    /// The key that takes the other side of the one choice a draft offers.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>A chord rather than a letter</b>, for <see cref="BrowserKey"/>'s reason and one more: this region holds
-    /// a box somebody types prose into, so every letter belongs to the text. There is nowhere in this pane for a
-    /// letter to mean anything else.
-    /// </para>
-    /// <para>
-    /// <b>It was Tab for an afternoon, and Tab cannot have it.</b> This surface takes Tab for "the next region"
-    /// in its own key handler, before any region sees one — so the alternative was advertised in the preview
-    /// ("Tab: ask back instead") and bound to a key that moved focus away instead. A key named on screen and
-    /// doing something else is the fault <c>Lists</c> was written about, reached from the other side. Tab's one
-    /// exception is completing an open list (FR-030), which the owner asked for by name and which is visible on
-    /// screen while it applies.
-    /// </para>
-    /// </remarks>
-    internal static Key OtherKey => Key.F2;
-
     /// <summary>Sends what is written, as the preview said it would.</summary>
     /// <returns>When the send has been queued.</returns>
     /// <remarks>
@@ -433,30 +410,6 @@ internal sealed class Shell : Window
         Retyped();
     }
 
-    /// <summary>Takes the other side of the one choice a draft offers.</summary>
-    /// <returns>When the preview has been redrawn.</returns>
-    /// <remarks>
-    /// Applied to every recipient in that state rather than to one, because the line addresses them together and
-    /// there is no cursor among them to mean "this one". A person who wants them to differ sends twice, which is
-    /// also what makes each send readable against its own outcome.
-    /// </remarks>
-    private Task FlipOne()
-    {
-        if (Drafting is not { } draft)
-        {
-            return Task.CompletedTask;
-        }
-
-        foreach (var addressed in draft.Plan().Where(a => a.Choosable))
-        {
-            draft.Flip(addressed.Peer);
-        }
-
-        Line.Show(draft, seated: true);
-        Relay();
-
-        return Task.CompletedTask;
-    }
 
     /// <summary>What showing headers only is called.</summary>
     internal const string FoldTitle = "Fold to one line per message";
@@ -689,6 +642,16 @@ internal sealed class Shell : Window
             // Guarded for the reason the seat's own setter is: this is wired before the line exists, and the
             // compiler cannot see that nothing raises it until somebody presses a key.
             Line?.Show(draft, seated: true, Near());
+        };
+
+        // **Enter on an agent is somebody about to write**, so it puts them in the box with the ticks as they were (the
+        // owner's call of 2026-10-02). Space is the tick.
+        Room.Choosing += (_, _) =>
+        {
+            if (Line is not null)
+            {
+                Focus(Panes.ToList().IndexOf(Line));
+            }
         };
 
         Room.Reading += (_, item) =>
@@ -1867,10 +1830,6 @@ internal sealed class Shell : Window
             .. Held is not null && Room.SelectedPeer is not null
                 ? new[] { new RegionAction(default, IncludeTitle, ToggleOne, null, Key.Space) }
                 : Array.Empty<RegionAction>(),
-
-            .. Drafting is { } drafted && drafted.Plan().Any(a => a.Choosable)
-                ? new[] { new RegionAction('a', OtherTitle, FlipOne) }
-                : Array.Empty<RegionAction>(),
         ],
 
         // Offered only on a row, so the key is never named where it would change nothing. Enter does the same, taken
@@ -1890,13 +1849,6 @@ internal sealed class Shell : Window
                     new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
                     new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithCtrl),
                 }
-                : Array.Empty<RegionAction>(),
-
-            // **Offered only where the choice applies**, which is the rule this surface keeps about every key:
-            // an action advertised where it would do nothing is a key named and unbound. A chord rather than a
-            // letter because every letter in this pane belongs to the text somebody is typing.
-            .. Held is not null && Drafting is { } writing && writing.Plan().Any(a => a.Choosable)
-                ? new[] { new RegionAction(default, OtherTitle, FlipOne, null, OtherKey) }
                 : Array.Empty<RegionAction>(),
         ],
 
@@ -4557,8 +4509,8 @@ internal sealed class Shell : Window
 
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
-        // Rebuilt from the pair state that was just read, keeping whichever answer-or-ask-back choices the
-        // person had already made about peers that are still in the same state.
+        // Rebuilt from the pair state that was just read, keeping what the person had already decided about it: the
+        // chips a completion wrote and who the line is addressed to.
         var was = Drafting;
 
         // Parley is never a recipient: it receives nobody's work, and a line addressed to it would be refused by the
@@ -4567,12 +4519,7 @@ internal sealed class Shell : Window
 
         if (was is not null)
         {
-            foreach (var peer in pairs.Where(pair => pair.Turn == Turn.Mine && !was.Answering(pair.Peer)))
-            {
-                Drafting.Flip(peer.Peer);
-            }
-
-            // **And the chips, or the words stop being words.** `Text` is carried above, so a name a
+            // **The chips, or the words stop being words.** `Text` is carried above, so a name a
             // completion wrote is still in the box — while the record that it was *addressing* lived only on
             // the draft being replaced. Losing it means `Says` has nothing to take back out, and the next
             // Enter puts `@name` into a payload: the one thing §13's envelope exists to have ignored, with
@@ -4622,7 +4569,7 @@ internal sealed class Shell : Window
             .Where(pair => pair.Turn == Turn.Mine && pair.OpenExchange is not null)
             .Select(pair => new OutstandingItem(
                 pair.Peer,
-                $"{pair.Peer.Value} — answer or ask back",
+                $"{pair.Peer.Value} — waiting for your reply",
                 pair.OpenExchange!.Value,
                 Asked(export, pair)))];
 

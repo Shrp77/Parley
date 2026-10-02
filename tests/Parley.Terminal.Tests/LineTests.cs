@@ -238,8 +238,12 @@ public sealed class LineTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_preview_names_the_recipient_and_what_it_will_do()
+    public async Task The_preview_names_who_it_goes_to_and_nothing_else()
     {
+        // **The owner's call of 2026-10-02.** This asserted the preview said "answer" and "closes the exchange" beside
+        // each recipient — what Enter would record — and the owner read that as wrong: a conversation never really
+        // stops, and bookkeeping about exchanges is not what somebody about to send is deciding. The act is still
+        // derived; it is just not narrated.
         var ct = TestContext.Current.CancellationToken;
         using var driving = Driving.Open(width: 140, height: 40);
         using var directory = Directory();
@@ -250,12 +254,7 @@ public sealed class LineTests : IAsyncDisposable
 
         await shell.Settled;
 
-        // **It says "answer", and that is the derivation working.** The fixture's peer asked this person
-        // something, so typing to them is a Result and not a Request — which is the whole point of deriving
-        // the act from who owes whom rather than asking for a verb first.
-        Assert.Contains(Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains("answer", shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains("closes the exchange", shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Equal($"to: {Orders.Value}", shell.Line.Preview.Trim());
     }
 
     [Fact]

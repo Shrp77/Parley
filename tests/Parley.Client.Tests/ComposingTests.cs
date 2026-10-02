@@ -32,7 +32,6 @@ public sealed class ComposingTests
 
         Assert.Equal(Act.Ask, plan.Act);
         Assert.Null(plan.Exchange);
-        Assert.False(plan.Choosable);
     }
 
     [Fact]
@@ -48,7 +47,6 @@ public sealed class ComposingTests
 
         Assert.Equal(Act.Ask, plan.Act);
         Assert.Null(plan.Exchange);
-        Assert.False(plan.Choosable);
     }
 
     [Fact]
@@ -62,54 +60,19 @@ public sealed class ComposingTests
 
         Assert.Equal(Act.Clarify, plan.Act);
         Assert.Equal(7, plan.Exchange);
-        Assert.False(plan.Choosable);
     }
 
     [Fact]
-    public void Holding_their_request_answers_by_default_and_says_so()
+    public void Holding_their_request_answers_it()
     {
+        // **Always, since 2026-10-02.** This was a default with an "ask back instead" on F2; the owner removed the
+        // choice, because a conversation never really stops and a reply that is a question is still a reply.
         var draft = Over(new PairState(Billing, 3, Turn.Mine));
 
         var plan = Assert.Single(draft.Plan());
 
         Assert.Equal(Act.Answer, plan.Act);
         Assert.Equal(3, plan.Exchange);
-
-        // Choosable is what the preview reads to offer the other side. Without it the person is never told the
-        // alternative exists, which is the whole of FR-008.
-        Assert.True(plan.Choosable);
-        Assert.True(draft.Answering(Billing));
-    }
-
-    [Fact]
-    public void And_the_other_side_of_that_one_choice_can_be_taken()
-    {
-        var draft = Over(new PairState(Billing, 3, Turn.Mine));
-
-        draft.Flip(Billing);
-
-        Assert.Equal(Act.AskBack, Assert.Single(draft.Plan()).Act);
-        Assert.False(draft.Answering(Billing));
-
-        // And back, because a person who reconsiders must not have to clear the line to do it.
-        draft.Flip(Billing);
-
-        Assert.Equal(Act.Answer, Assert.Single(draft.Plan()).Act);
-    }
-
-    [Fact]
-    public void Flipping_one_recipient_leaves_the_others_alone()
-    {
-        var draft = Over(
-            new PairState(Billing, 3, Turn.Mine),
-            new PairState(Inventory, 4, Turn.Mine));
-
-        draft.Flip(Billing);
-
-        var plan = draft.Plan();
-
-        Assert.Equal(Act.AskBack, plan.First(a => a.Peer == Billing).Act);
-        Assert.Equal(Act.Answer, plan.First(a => a.Peer == Inventory).Act);
     }
 
     [Fact]
@@ -134,47 +97,6 @@ public sealed class ComposingTests
     }
 
     [Fact]
-    public void The_cost_is_counted_in_exchanges_because_that_is_what_a_plural_ask_is()
-    {
-        var draft = Over(
-            new PairState(Billing, 3, Turn.Mine),
-            new PairState(Orders, 7, Turn.Mine, Asked: true),
-            new PairState(Inventory, null, Turn.Nobody));
-
-        var cost = draft.Costs();
-
-        Assert.Equal(1, cost.Opens);
-        Assert.Equal(1, cost.Closes);
-        Assert.Equal(1, cost.HandsBack);
-    }
-
-    [Fact]
-    public void Waiting_on_a_peer_costs_a_new_exchange_rather_than_nothing()
-    {
-        // The bill has to say so: there is nothing to add to an exchange whose move is theirs, so typing to
-        // somebody who owes you opens a second one — which is an obligation, and §5.5 is why it is shown
-        // before Enter rather than found in `parley flags` the next day.
-        var cost = Over(new PairState(Orders, 7, Turn.Theirs)).Costs();
-
-        Assert.Equal(1, cost.Opens);
-        Assert.Equal(0, cost.Closes);
-        Assert.Equal(0, cost.HandsBack);
-    }
-
-    [Fact]
-    public void Asking_back_moves_a_close_into_a_handed_back_turn()
-    {
-        var draft = Over(new PairState(Billing, 3, Turn.Mine));
-
-        Assert.Equal(1, draft.Costs().Closes);
-
-        draft.Flip(Billing);
-
-        Assert.Equal(0, draft.Costs().Closes);
-        Assert.Equal(1, draft.Costs().HandsBack);
-    }
-
-    [Fact]
     public void Every_participant_is_a_recipient_until_it_is_narrowed()
     {
         var draft = Over(
@@ -186,7 +108,6 @@ public sealed class ComposingTests
         draft.AddressTo([Orders]);
 
         Assert.Equal([Orders], draft.Recipients);
-        Assert.Equal(1, draft.Costs().Opens);
     }
 
     [Fact]
@@ -211,7 +132,6 @@ public sealed class ComposingTests
         draft.AddressTo([Orders, Inventory]);
 
         Assert.Equal(Act.Ask, draft.Plan().First(a => a.Peer == Inventory).Act);
-        Assert.Equal(2, draft.Costs().Opens);
     }
 
     [Fact]
@@ -317,6 +237,5 @@ public sealed class ComposingTests
 
         Assert.Equal(Act.Answer, plan.Act);
         Assert.Equal(7, plan.Exchange);
-        Assert.Equal(new Cost(0, 1, 0), draft.Costs());
     }
 }

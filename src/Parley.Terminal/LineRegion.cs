@@ -366,19 +366,17 @@ internal sealed class LineRegion : FrameView
         }
         else
         {
-            var plan = draft.Plan();
-
-            lines.Add("to: " + Safe.Text(string.Join(", ", plan.Select(a => a.Peer.Value))));
-
-            foreach (var addressed in plan)
-            {
-                lines.Add("  " + Safe.Text(addressed.Peer.Value) + "  " + Says(addressed));
-            }
-
-            lines.Add(Counted(draft.Costs()));
+            // **Who it goes to, and nothing else** (the owner's call of 2026-10-02). This listed each recipient again
+            // with what Enter would record — "answer — closes the exchange (F2: ask back instead)" — and a count of
+            // exchanges opened and closed. The owner read both as wrong: a conversation never really stops, so a line
+            // that says it closes something is describing bookkeeping as if it were the conversation.
+            lines.Add("to: " + Safe.Text(string.Join(", ", draft.Plan().Select(a => a.Peer.Value))));
         }
 
-        _preview.Text = Reports.Sentences(lines);
+        // **One line each, with nothing added.** `Reports.Sentences` joins a report into one paragraph and closes each
+        // part with a full stop, which is right for a report and was wrong here: the owner read "to: orders@host."
+        // with a stop after the agent's name and the next line run on after it. Each part is already neutralised.
+        _preview.Text = string.Join('\n', lines);
 
         Measure();
     }
@@ -418,44 +416,4 @@ internal sealed class LineRegion : FrameView
         Commands.Table.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)) is { } found
             ? "  " + found.Says
             : string.Empty;
-
-    /// <summary>What one recipient will get, and how to take the other side where there is one.</summary>
-    /// <param name="addressed">The recipient and its act.</param>
-    /// <returns>The clause.</returns>
-    /// <remarks>
-    /// The alternative is named only where it applies. An action advertised where it would do nothing is the
-    /// same fault as a key named on a status line and bound to nothing.
-    /// </remarks>
-    private static string Says(Addressed addressed) => addressed.Act switch
-    {
-        Act.Answer => $"answer — closes the exchange ({Shell.OtherKey}: ask back instead)",
-        Act.AskBack => $"asks them back — the turn goes to them ({Shell.OtherKey}: answer instead)",
-        Act.Clarify => "clarifies your open request",
-        _ => "new request — they will owe a result",
-    };
-
-    /// <summary>The cost of a send, in the units the protocol counts.</summary>
-    /// <param name="cost">What the draft would do.</param>
-    /// <returns>The sentence.</returns>
-    private static string Counted(Cost cost)
-    {
-        var parts = new List<string>();
-
-        if (cost.Opens > 0)
-        {
-            parts.Add($"{cost.Opens} exchange{(cost.Opens == 1 ? string.Empty : "s")} opened, each owing a result");
-        }
-
-        if (cost.Closes > 0)
-        {
-            parts.Add($"{cost.Closes} closed");
-        }
-
-        if (cost.HandsBack > 0)
-        {
-            parts.Add($"{cost.HandsBack} handed back");
-        }
-
-        return parts.Count == 0 ? Empty : string.Join(" · ", parts);
-    }
 }
