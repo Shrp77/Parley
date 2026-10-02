@@ -434,6 +434,37 @@ internal sealed class TranscriptRegion : FrameView
         return true;
     }
 
+    /// <summary>One message as it reads on screen, for somebody taking a copy of it.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>Its header and its body, one line each and without the indent, or null when it is not here.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The whole message whether or not it is folded</b>, because a fold is a way of looking and not a shortening —
+    /// the same reason copying the conversation takes <see cref="Written"/> rather than what is drawn.
+    /// </para>
+    /// <para>
+    /// <b>The indent is taken off</b>, because it is this screen's structure rather than anybody's words: it is what keeps a
+    /// payload from passing for a header here, and pasted anywhere else it is four spaces in front of every line.
+    /// </para>
+    /// </remarks>
+    internal string? MessageText(long message)
+    {
+        var lines = _marked.Where(line => line.Message == message).ToList();
+
+        if (lines.Count == 0)
+        {
+            return null;
+        }
+
+        var indent = new string(' ', Reading.Indent);
+
+        var rows = lines
+            .SelectMany(line => line.Text.ReplaceLineEndings("\n").Split('\n'))
+            .Select(row => row.StartsWith(indent, StringComparison.Ordinal) ? row[indent.Length..] : row);
+
+        return Safe.Lines(string.Join(Environment.NewLine, rows)).TrimEnd();
+    }
+
     /// <summary>The message the cursor is on, or null when it is on none.</summary>
     internal long? Under =>
         _lines.SelectedItem is int at && at >= 0 && at < _owners.Count ? _owners[at] : null;

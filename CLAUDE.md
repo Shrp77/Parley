@@ -716,6 +716,12 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   conversation addressed the next conversation's line to the same agent. `_drafted` keys the draft to its conversation.
   `RememberedAddressingTests` fails against both halves.
 
+  **0.37.3: one message can be copied, with Alt+M** (the owner's key, 2026-10-02), in the View menu beside copying the
+  whole conversation. It takes the message the cursor is on — header and text, without the four-column indent, which is
+  this screen's structure rather than anybody's words — and the whole message even when the transcript is folded. A
+  cursor on no message says so rather than copying the nearest one. "Show the whole message" moved from `m` to `e` to
+  make room; it appears only when the message line has been cut off.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

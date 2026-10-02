@@ -468,6 +468,22 @@ internal sealed class Shell : Window
     /// <summary>The key that copies it.</summary>
     internal const char CopyKey = 'c';
 
+    /// <summary>What copying the one message under the cursor is called.</summary>
+    internal const string CopyMessageTitle = "Copy this message to the clipboard";
+
+    /// <summary>The key that copies one message, the owner's choice of 2026-10-02.</summary>
+    internal const char CopyMessageKey = 'm';
+
+    /// <summary>What is said when the cursor is not on a message, so nothing was copied.</summary>
+    internal const string NoMessageHere =
+        "The cursor is not on a message, so nothing was copied. Move it onto one, or Alt+c copies the whole conversation.";
+
+    /// <summary>What is said when one message went.</summary>
+    /// <param name="characters">How long it was.</param>
+    /// <returns>The sentence.</returns>
+    internal static string CopiedMessage(int characters) =>
+        $"Copied the message to the clipboard ({characters} characters).";
+
     /// <summary>What is said when the copy went.</summary>
     /// <remarks>
     /// The size is in it because a clipboard gives no other evidence that anything happened: a
@@ -497,7 +513,11 @@ internal sealed class Shell : Window
     internal const char ClearKey = 'x';
 
     /// <summary>The key that shows a message the line could not hold.</summary>
-    internal const char WholeKey = 'm';
+    /// <remarks>
+    /// <c>e</c>, for expand, since 2026-10-02: it was <c>m</c>, and the owner asked for Alt+M to copy one message. The
+    /// copy is used far more often than this, which appears only when the message line has been cut off.
+    /// </remarks>
+    internal const char WholeKey = 'e';
 
     private readonly BrokerDirectory _directory;
     private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
@@ -1929,6 +1949,7 @@ internal sealed class Shell : Window
                     // transcript and folding one change nothing anybody else can see, which is the
                     // line the View category draws.
                     new RegionAction(CopyKey, CopyTitle, Copy, Category: ActionCategory.View),
+                    new RegionAction(CopyMessageKey, CopyMessageTitle, CopyMessage, Category: ActionCategory.View),
                     new RegionAction(
                         FoldKey,
                         Transcript.Folded ? UnfoldTitle : FoldTitle,
@@ -2827,6 +2848,33 @@ internal sealed class Shell : Window
         var written = Transcript.Written;
 
         Said = Copier(app, written) ? Copied(written.Length) : NotCopied;
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Puts the one message under the cursor on the clipboard.</summary>
+    /// <returns>When it has been copied, or why not has been said.</returns>
+    /// <remarks>
+    /// Offered whenever a conversation is open rather than only while the cursor is on a message, because the cursor moves
+    /// without the actions being read again. A cursor on no message — the blank line between two, or the conversation's
+    /// own preamble — is told so rather than handed the nearest message, which would put words on the clipboard that the
+    /// person did not point at.
+    /// </remarks>
+    private Task CopyMessage()
+    {
+        if (App is not { } app || Transcript.Open is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (Transcript.Under is not { } message || Transcript.MessageText(message) is not { } text)
+        {
+            Said = NoMessageHere;
+
+            return Task.CompletedTask;
+        }
+
+        Said = Copier(app, text) ? CopiedMessage(text.Length) : NotCopied;
 
         return Task.CompletedTask;
     }

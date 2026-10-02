@@ -812,6 +812,9 @@ whatever is in front of you.
 **Every action is Alt and a letter**, shown that way on the status line and in the menus. A plain
 letter is never an action, so typing can never set one off wherever the cursor happens to be.
 
+In a conversation, `Alt+c` copies the whole of it to the clipboard and `Alt+m` copies the one message
+the cursor is on, header and text, without the screen's indent.
+
 It draws in colour, and no fact rests on it: a project is green because the line says
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
 the web UI gives it. Strip every attribute and nothing on the screen is lost.
