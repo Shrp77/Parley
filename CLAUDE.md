@@ -705,6 +705,17 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   ran the preview's lines together. Enter on an agent puts the cursor in the box and leaves the ticks alone; Space is
   the tick.
 
+  **0.37.2: who each conversation's line goes to survives a restart.** The owner had four agents pick one to speak for
+  them, ticked that one, upgraded, and every agent was ticked again — so all four answered a line meant for one.
+  `AddressBook` keeps the narrowing in `terminal-addressing.json` beside the manifest, per project and conversation,
+  written whenever the ticks, an `@` completion or `/add` change it; everyone is recorded as no entry, so an agent that
+  joins later is not silently left out. A remembered agent no longer in the conversation is dropped rather than
+  addressed, since addressing it would pull it in. **Only the program names the file** (`TerminalCommand`), on
+  `CataloguePath`'s reasoning: a driven test must not write into the machine's Parley folder. **Building it found a
+  live defect**: the draft was rebuilt from the previous draft whatever conversation that had been, so narrowing in one
+  conversation addressed the next conversation's line to the same agent. `_drafted` keys the draft to its conversation.
+  `RememberedAddressingTests` fails against both halves.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

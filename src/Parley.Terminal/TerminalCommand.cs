@@ -111,7 +111,8 @@ public static class TerminalCommand
             null, Environment.GetEnvironmentVariable, manifestPath).Value;
 
         return await DriveAsync(
-            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, cancellationToken)
+            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, AddressBook.Beside(manifestPath),
+            cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -133,6 +134,11 @@ public static class TerminalCommand
     /// developer's own <c>PARLEY_NODE_CONFIG</c> and enrolled their temporary repositories into a live
     /// deployment's catalogue.
     /// </param>
+    /// <param name="addressingPath">
+    /// Where who-each-line-goes-to is kept across restarts, or null to keep it for this run only. Null unless the
+    /// program itself names it, for <paramref name="cataloguePath"/>'s reason: a driven test must not write into the
+    /// Parley folder of the machine it runs on.
+    /// </param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
     internal static async Task<int> DriveAsync(
@@ -142,11 +148,12 @@ public static class TerminalCommand
         string? manifestPath = null,
         InstalledEntry? installed = null,
         string? cataloguePath = null,
+        string? addressingPath = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        using var shell = Build(directory, seats, manifestPath, installed, cataloguePath);
+        using var shell = Build(directory, seats, manifestPath, installed, cataloguePath, addressingPath);
 
         // **Started, not awaited, so the screen is on before the brokers have answered.**
         //
@@ -191,6 +198,7 @@ public static class TerminalCommand
     /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
     /// <param name="installed">What this machine's supervisor runs, or null.</param>
     /// <param name="cataloguePath">This machine's node catalogue, or null to take it from the manifest.</param>
+    /// <param name="addressingPath">Where who-each-line-goes-to is kept, or null for this run only.</param>
     /// <returns>The surface.</returns>
     /// <remarks>
     /// Separated from <see cref="DriveAsync"/> because a test drives the surface without a run
@@ -202,13 +210,15 @@ public static class TerminalCommand
         SeatBook? seats = null,
         string? manifestPath = null,
         InstalledEntry? installed = null,
-        string? cataloguePath = null) =>
+        string? cataloguePath = null,
+        string? addressingPath = null) =>
         new(directory)
         {
             Seats = seats,
             ManifestPath = manifestPath,
             Installed = installed,
             CataloguePath = cataloguePath,
+            Addressing = new AddressBook(addressingPath),
         };
 
     /// <summary>Whether there is a terminal to draw on at all.</summary>

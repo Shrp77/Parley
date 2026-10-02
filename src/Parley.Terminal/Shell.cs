@@ -132,6 +132,24 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>Records who the line in this conversation goes to, so a restart keeps it.</summary>
+    /// <remarks>
+    /// Called wherever the recipients change. Everyone is recorded as nothing, including a line that was narrowed and
+    /// then ticked back to every participant — otherwise a remembered list would quietly leave out an agent that joins
+    /// later, which is the opposite of what "everyone" meant when it was chosen.
+    /// </remarks>
+    private void RememberAddressing()
+    {
+        if (Drafting is not { } draft || _drafted is not { } at)
+        {
+            return;
+        }
+
+        var everyone = !draft.Narrowed || draft.Pairs.All(pair => draft.Recipients.Contains(pair.Peer));
+
+        Addressing.Remember(at.Project, at.Conversation, everyone ? null : draft.Recipients);
+    }
+
     /// <summary>What including or excluding a participant is called.</summary>
     internal const string IncludeTitle = "Include or exclude this agent";
 
@@ -274,6 +292,7 @@ internal sealed class Shell : Window
             }
 
             draft.Widen(peer);
+            RememberAddressing();
             Line.Written = string.Empty;
             Line.Show(draft, seated: true);
 
@@ -395,6 +414,8 @@ internal sealed class Shell : Window
                     draft.Narrow(peer);
                 }
             }
+
+            RememberAddressing();
 
             // **The name stays in the box, and only the command that carried it goes.** `/add` has done its
             // work the moment the agent is resolved, so leaving it there would be a command nothing consumed
@@ -638,6 +659,7 @@ internal sealed class Shell : Window
             }
 
             Room.Address(draft.Recipients);
+            RememberAddressing();
 
             // Guarded for the reason the seat's own setter is: this is wired before the line exists, and the
             // compiler cannot see that nothing raises it until somebody presses a key.
@@ -2316,6 +2338,22 @@ internal sealed class Shell : Window
     /// </para>
     /// </remarks>
     internal string? CataloguePath { get; init; }
+
+    /// <summary>Who the line in each conversation goes to, kept across restarts.</summary>
+    /// <remarks>
+    /// For this run only unless whoever builds the shell names a file, for the reason <see cref="CataloguePath"/> is
+    /// passed in: a driven test must never write into a real machine's Parley folder.
+    /// </remarks>
+    internal AddressBook Addressing { get; init; } = new(null);
+
+    /// <summary>The project and conversation the current draft was built for.</summary>
+    /// <remarks>
+    /// <b>A draft belongs to one conversation, and nothing said so until 2026-10-02.</b> Rebuilding the draft carried the
+    /// previous one's narrowing forward whatever conversation it had been for, so narrowing to one agent in one
+    /// conversation and then opening another addressed the second conversation's line to that agent — and sending it
+    /// would have pulled the agent into a conversation it was not in. Found while making the narrowing survive a restart.
+    /// </remarks>
+    private (string Project, string Conversation)? _drafted;
 
     /// <summary>What this machine's supervisor runs, or null for none or unknown.</summary>
     internal InstalledEntry? Installed { get; init; }
@@ -4450,7 +4488,7 @@ internal sealed class Shell : Window
 
         Transcript.Show(conversationId, project.Name.Value, read.Value, read.Problem);
 
-        await FillRoomAsync(project, read.Value, cancellationToken).ConfigureAwait(false);
+        await FillRoomAsync(project, conversationId, read.Value, cancellationToken).ConfigureAwait(false);
 
         // Followed only once it has been read. A conversation that could not be read already says why,
         // and asking a broker that did not answer every few seconds would say it again each time.
@@ -4462,6 +4500,7 @@ internal sealed class Shell : Window
 
     /// <summary>Fills the room's column from the conversation and the broker's wait-for graph.</summary>
     /// <param name="project">The project.</param>
+    /// <param name="conversationId">Which conversation, so a draft is never carried into another one.</param>
     /// <param name="export">The conversation, or null when it could not be read.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>When the column has been drawn.</returns>
@@ -4479,6 +4518,7 @@ internal sealed class Shell : Window
     /// </remarks>
     private async Task FillRoomAsync(
         ProjectSettings project,
+        string conversationId,
         ConversationExport? export,
         CancellationToken cancellationToken)
     {
@@ -4510,12 +4550,27 @@ internal sealed class Shell : Window
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
         // Rebuilt from the pair state that was just read, keeping what the person had already decided about it: the
-        // chips a completion wrote and who the line is addressed to.
-        var was = Drafting;
+        // chips a completion wrote and who the line is addressed to — **for this conversation only** (`_drafted`).
+        var here = (project.Name.Value, conversationId);
+        var was = _drafted == here ? Drafting : null;
 
         // Parley is never a recipient: it receives nobody's work, and a line addressed to it would be refused by the
         // broker (SPEC.md §10.1). It stays in the room column, named, because it is in the conversation.
         Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.Written };
+        _drafted = here;
+
+        if (was is null && Addressing.Recall(here.Item1, here.Item2) is { } remembered)
+        {
+            // **What the person chose last time they were here, restarts included** (`AddressBook`). Only agents still in
+            // the conversation: addressing one that is not would open a request and pull it in, which is a different act
+            // from the one that was remembered. Nobody left means everyone, which is where a conversation starts.
+            var still = remembered.Where(agent => Drafting.Pairs.Any(pair => pair.Peer == agent)).ToList();
+
+            if (still.Count > 0)
+            {
+                Drafting.AddressTo(still);
+            }
+        }
 
         if (was is not null)
         {
