@@ -22,6 +22,14 @@ namespace Parley.Mcp;
 /// and is available live through <c>parley_agents</c>. Kept short, because it lands in every agent's
 /// context on every session.
 /// </para>
+/// <para>
+/// <b>The bullet about refused permissions earns its length</b> (the owner's report of 2026-10-03). An agent tried a
+/// command, nobody was there to approve it, the call was refused, and its turn ended without a word — and the room read
+/// "working" for nearly three hours, because a request picked up and not answered is all the broker could see. The
+/// protocol already had the answer, a Result <c>blocked</c> with blocker <c>permission</c>; what was missing was telling
+/// an agent that a refusal is not a pause and that silence strands whoever asked. Reporting turns to the broker, so a
+/// surface can tell a stopped agent from a working one whether or not the agent says so, is specs/024.
+/// </para>
 /// </remarks>
 public static class ParleyInstructions
 {
@@ -44,6 +52,11 @@ public static class ParleyInstructions
           person - the participant whose role is human-user, listed by parley_agents. They may be away.
           Your message waits for them, and waiting for their decision is correct; it is not a reason to
           report blocked.
+        - You often run with nobody at the keyboard, so a tool call that needs approval is refused, not
+          paused: nobody will see it. If a refusal stops work you owe, never end your turn without saying
+          so - the asker cannot tell a refused command from work in progress. Ask the person to allow it,
+          naming the exact command or tool and why you need it, or send a parley_result with "blocked"
+          and blocker "permission" naming the same.
         - Every message is answered. Sending never blocks — carry on with what does not depend on it.
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never

@@ -642,6 +642,15 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
+- **Queued plan**: `specs/024-report-agent-turns/` — **planned 2026-10-03, not started; on `019-layout`.** The node
+  reports each turn's start and end (`Nodes.ReportTurn`), so a surface shows *working* only while a turn runs and
+  *stopped* — naming permission refusals — when one ended with work still owed; a permission-refused stop is flagged at
+  once. Prompted by an agent shown as working for nearly three hours after a refused command ended its turn silently
+  (0.37.9 is the stop-gap). **It also settles a spec/code disagreement**: SPEC.md §17 q1 says `invocations` records every
+  turn, and on the node path nothing writes it — decided as the code's defect (`research.md` R11). Running turns live in
+  the broker's memory, not a table (R3); an older node degrades to *unknown*, never *stopped* (R5). SPEC.md first.
+  **`.specify/feature.json` points at 024; point it back at 023 to resume 023's phases 5–8.**
+
 - **Latest plan**: `specs/023-always-a-seat/` — **0.36.0, being built; on `019-layout`.** **Upgrading to 0.36.0
   needs a reset** (`install.ps1 -Reset`, `install.sh --reset`): schema 1 was edited in place and its number did not
   move, so a store made by an older broker opens without complaint and keeps its old shape — no person-seat rules,
@@ -776,6 +785,15 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   column is resized. **Splitting made row positions move**, so the cursor is now kept by what it is on rather than by its
   row number — otherwise a status growing past the edge above it would put Space on somebody else. And **ticking an agent
   redrew the room without its activity**, blanking every mark until the next read; `Address` carries it now.
+
+  **0.37.9: agents are told a refused permission must be reported.** An agent's command was refused for want of approval
+  — it runs with nobody at the keyboard, so a call needing approval is refused rather than paused — its turn ended
+  without a word, and the room read "working" for nearly three hours: picked up and not answered is all the broker can
+  see. The protocol already had the answer (a Result `blocked`, blocker `permission`); `ParleyInstructions` now tells
+  every agent that a refusal is not a pause, never to end a turn on one without saying so, and to ask the person to allow
+  the exact command or report it blocked. **Relies on the model, which is why it is not the whole fix**: the node already
+  measures each turn, including permission refusals, and reports none of it to the broker on the path a deployment uses.
+  Reporting turns, so a surface can tell *working* from *stopped* without the agent's co-operation, is **specs/024**.
 
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant

@@ -143,6 +143,21 @@ public sealed class ServerInstructionsTests : IDisposable
     }
 
     [Fact]
+    public void The_instructions_say_a_refused_permission_must_be_reported_not_left_silent()
+    {
+        // **The owner's report of 2026-10-03**: an agent's command was refused for want of approval, its turn ended
+        // without a word, and the room said "working" for nearly three hours. The protocol has the answer already; what
+        // the agent was never told is that a refusal is not a pause, and that silence is indistinguishable from work.
+        // Read with its line breaks folded to spaces, because where a sentence wraps in the source is not what it says.
+        var said = string.Join(' ', ParleyInstructions.Text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.Contains("is refused, not paused", said, StringComparison.Ordinal);
+        Assert.Contains("never end your turn without saying so", said, StringComparison.Ordinal);
+        Assert.Contains("blocker \"permission\"", said, StringComparison.Ordinal);
+        Assert.Contains("exact command", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_instructions_stay_within_a_message_of_their_own_budget()
     {
         // A standing charge against every agent's context on every session, so it is held to the

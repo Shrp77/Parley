@@ -236,9 +236,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         need, send it a parley_request in this conversation and use its Result. If no agent can, ask the
         person - the participant whose role is human-user - and wait for their answer. They may be away;
         waiting for their decision is correct and is not a reason to report blocked. A conflict: resolve it,
-        including by asking other agents to do work that unblocks you. A missing permission: name it and
-        who could grant it. "Too big", "someone else should decide" and "I was not told I could" are not
-        blockers.
+        including by asking other agents to do work that unblocks you. A missing permission: name the
+        exact command or tool that was refused, and who could grant it. "Too big", "someone else should
+        decide" and "I was not told I could" are not blockers.
 
         Name every agent whose Result you relied on in sources. Write decisions into the repository they
         govern and say where.
