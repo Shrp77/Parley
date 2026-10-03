@@ -958,6 +958,14 @@ public static class ServeCommand
                 continue;
             }
 
+            if (because is null)
+            {
+                // **The file was written and the record refused it**, which since the combined review gate means a person
+                // decided this question while the pass was deciding it. Their line goes back into the file, so what the
+                // agent carries at its next start is the person's and not the answer they had already overruled.
+                await RestoreAcceptedLineAsync(runtime, project, answer.Agent, cancellationToken).ConfigureAwait(false);
+            }
+
             because ??= "the line could not be recorded, so it waits for a person.";
 
             _ = await runtime.HoldAsync(answer, because, cancellationToken).ConfigureAwait(false);
@@ -973,6 +981,33 @@ public static class ServeCommand
                 $"{project}: asked {refreshed.Machine}'s node to restart {refreshed.Value} once it is idle, so its peers " +
                 "read its new ownership line.").ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Writes the agent's recorded line back into its launch configuration, or takes the line out if none is.</summary>
+    /// <param name="runtime">The broker.</param>
+    /// <param name="project">The project whose launch entry it is.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>When the file agrees with the record again, as far as it can be made to.</returns>
+    /// <remarks>
+    /// Best effort and said nothing about: the same refusals as any write apply (another machine, a moved repository), and
+    /// a file left disagreeing shows as pending on every surface, which is the truth.
+    /// </remarks>
+    private static async Task RestoreAcceptedLineAsync(
+        BrokerRuntime runtime, string project, AgentName agent, CancellationToken cancellationToken)
+    {
+        var record = (await runtime.UseConnectionAsync(
+                (connection, _, ct) => new AgentRepository(connection).GetAllAsync(ct),
+                cancellationToken).ConfigureAwait(false))
+            .FirstOrDefault(row => row.Name == agent);
+
+        if (record is null)
+        {
+            return;
+        }
+
+        _ = await OwnershipLine.WriteAsync(record.Workspace, project, agent, record.OwnsAccepted, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

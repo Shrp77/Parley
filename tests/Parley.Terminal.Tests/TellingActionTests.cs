@@ -22,7 +22,7 @@ namespace Parley.Terminal.Tests;
 public sealed class TellingActionTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
-    private static readonly AgentName Arvind = AgentName.Create("arvind@test");
+    private static readonly AgentName Arvind = PersonSeat.On(ProjectName.Create("test"));
     private static readonly AgentName Billing = AgentName.Create("billing@test");
     private static readonly DateTimeOffset T0 = new(2026, 9, 8, 9, 0, 0, TimeSpan.Zero);
 

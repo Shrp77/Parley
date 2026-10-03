@@ -130,8 +130,11 @@ public static class ProjectManifest
     /// </summary>
     /// <param name="root">The machine's root.</param>
     /// <param name="projects">The projects, empty when the machine has none.</param>
-    /// <param name="problem">Why they could not be read, when this returns false.</param>
-    /// <returns><see langword="true"/> when the machine had no projects or usable ones.</returns>
+    /// <param name="problem">
+    /// Why the projects could not be read, when this returns false; and what was left out, when it returns true having
+    /// skipped a folder that is not a usable project. Null when there is nothing to say.
+    /// </param>
+    /// <returns><see langword="true"/> unless the projects directory itself could not be listed.</returns>
     /// <remarks>
     /// <para>
     /// <b>The directory listing is the set of projects, and there is no index.</b> So there is nothing for
@@ -143,6 +146,13 @@ public static class ProjectManifest
     /// one. What cannot be read returns false and is reported <b>in terms of the project and its file</b>,
     /// never as the machine having no projects — a distinction this reader has always been held to, and
     /// one that matters more now that a bad folder sits beside good ones rather than inside one file.
+    /// </para>
+    /// <para>
+    /// <b>One bad folder costs that project and no other</b> (specs/019 <c>contracts/layout.md</c>). This returned
+    /// nothing at all for any problem, so an empty folder with a space in its name stopped every command and the broker
+    /// for every project on the machine — the combined review gate drove it. A folder that is not a project, or whose
+    /// configuration does not read, is left out and said; two projects claiming one endpoint are both left out, since
+    /// serving either would be a guess about which the person meant.
     /// </para>
     /// </remarks>
     public static bool TryRead(
@@ -197,6 +207,15 @@ public static class ProjectManifest
             // whose contents are the answer, and silence there is how a project goes missing.
             if (!ProjectName.TryCreate(entry, out var name))
             {
+                // **Only when it holds a configuration.** A folder with none is nobody's project whatever its name — an
+                // Explorer "New folder" — and the stamp the watchers compare counts configurations only, so reporting an
+                // empty one left the report standing after the folder went, with nothing to make anyone read again
+                // (the combined review gate). The two now agree by construction, as ProjectFolder.StampOf says.
+                if (!File.Exists(Path.Combine(folder, ProjectFolder.ConfigurationFileName)))
+                {
+                    continue;
+                }
+
                 problems.Add(
                     $"'{entry}' is not a project name, so it is not a project. Names are lowercase " +
                     $"letters, digits and hyphens, starting with a letter, at most " +
@@ -226,15 +245,20 @@ public static class ProjectManifest
         // which is reported naming both rather than resolved in favour of either.
         problems.AddRange(Collisions(found));
 
+        var clashing = found
+            .Where(p => !string.IsNullOrEmpty(p.Endpoint))
+            .GroupBy(p => p.Endpoint, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .SelectMany(g => g)
+            .ToHashSet();
+
         if (problems.Count > 0)
         {
-            problem = $"{directory} is not usable yet:{Environment.NewLine}  - " +
-                string.Join($"{Environment.NewLine}  - ", problems);
-
-            return false;
+            problem = $"{directory} holds something that is not a usable project, and it was left out:" +
+                $"{Environment.NewLine}  - " + string.Join($"{Environment.NewLine}  - ", problems);
         }
 
-        projects = found;
+        projects = [.. found.Where(p => !clashing.Contains(p))];
         return true;
     }
 

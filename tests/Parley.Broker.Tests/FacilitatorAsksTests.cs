@@ -42,7 +42,7 @@ public sealed class FacilitatorAsksTests : IDisposable
                 ('orders@test', 'claude-code', 'full', 'active'),
                 ('billing@test', 'claude-code', 'full', 'active'),
                 ('inventory@test', 'claude-code', 'full', 'retired'),
-                ('arvind@test', 'parley-console', 'pull', 'active'),
+                ('human-user@test', 'parley-console', 'pull', 'active'),
                 ('orders@other', 'claude-code', 'full', 'active');
             """);
 
@@ -88,10 +88,10 @@ public sealed class FacilitatorAsksTests : IDisposable
             VALUES ('billing@test', 'invoices; not tax', 'proposed', 17, 'c-agreed', '2026-09-28T00:00:00.0000000Z');
             """);
 
-        // billing has a line, inventory is retired, arvind is a seat, the facilitator is the facilitator, and orders is
+        // billing has a line, inventory is retired, human-user is the person, the facilitator is the facilitator, and orders is
         // not attached: the only agent a question should reach is the one on another machine.
         var asked = await _facilitator.AskDueAsync(
-            _parley, ["billing@test", "inventory@test", "arvind@test", "orders@other", _parley.Value], T0, Ct);
+            _parley, ["billing@test", "inventory@test", "human-user@test", "orders@other", _parley.Value], T0, Ct);
 
         Assert.Equal([AgentName.Create("orders@other")], asked);
 

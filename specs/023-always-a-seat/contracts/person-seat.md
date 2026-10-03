@@ -10,8 +10,13 @@ What every participant, surface and implementation may rely on.
 - The role `human-user` is reserved. Enrolment, attach and storage each refuse it to an agent, with the sentence
   *"`human-user` is the person's seat in every project, so no agent can be called that."* An attach that reports
   the seat's own adapter is admitted as the person: see the spec's *What the reservation does not do*.
-- The person seat is never retired and never purged. `retire`, `reinstate`, `purge`, `start`, `instruct` and
-  `ask_again` refuse it with a sentence saying it is the person.
+- The person seat is never retired and never purged. Storage holds both: `tr_person_is_never_retired` and
+  `tr_person_is_never_purged` abort with *"the person seat cannot be retired"* and *"… purged"*. `ask_again`
+  refuses it with a sentence saying it is a person's seat.
+- `reinstate` does **not** refuse it with a sentence. *Planned:* every operation above refused it with a
+  sentence saying it is the person. *As built:* `Operators.Reinstate` changes only an agent that is retired,
+  and the seat never is, so over the wire it returns a `DidItReply` with `changed = false` and no sentence. A
+  surface that offers reinstating the person must say why nothing happened itself; the broker does not.
 - The person seat is never the facilitator, and neither can take the other's role.
 
 ## Presence
@@ -24,8 +29,11 @@ What every participant, surface and implementation may rely on.
 The person seat is never reported as `running`, `startable`, `stranded` or `retired`. Presence never gates
 routing.
 
-The facilitator, which also has no machine, is reported as `running` whenever its project is served (SPEC.md
-§14: "present whenever its project is served"), never as `stranded`. Every surface leaves it out of its lists
+The facilitator, which also has no machine, is reported as `running` whenever its project is served, never as
+`stranded`. SPEC.md §14: *"It is present whenever its project is served and absent otherwise — reported as
+`running` wherever a presence is returned for it, since it has no machine to be connected or not."* For the
+person, §14 says: *"The person is reachable whenever the project is served (§12.3), and whether they are at a
+screen is the only thing a connection says about them."* Every surface leaves it out of its lists
 anyway; this is what `registry()` returns.
 
 ## Sending to the person

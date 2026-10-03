@@ -61,9 +61,16 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         // store opens, so an attach under the name fires no storage rule; this comparison is the whole guard, and it
         // trusts the adapter the caller reports, as §16 concedes of every name. Without it an agent attached here
         // would speak with the person's standing — a person may always open a conversation (principle 2.10).
-        if (PersonSeat.Is(name) && !string.Equals(request.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
+        if (PersonSeat.Is(name) != string.Equals(request.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
         {
-            throw new RpcException(new Status(StatusCode.PermissionDenied, PersonSeat.Reserved));
+            // Both directions (§12.3). The second is the one with the standing in it: the broker recognises the person by
+            // this adapter, so an agent registering under it could name any conversation as only a person may — found by
+            // the combined review gate, round 3, after round 1 closed only the first.
+            throw new RpcException(new Status(
+                StatusCode.PermissionDenied,
+                PersonSeat.Is(name)
+                    ? PersonSeat.Reserved
+                    : $"'{PersonSeat.Adapter}' is the adapter of the person's seat, so no agent can attach under it."));
         }
 
         RequireTheSameProtocol(request.ProtocolVersion);

@@ -249,17 +249,26 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
 
         using var scope = WriteScope.Begin(_connection, ambient: null);
 
+        // **The question first, and only while it is still the one this pass read.** A person may have recorded a line or
+        // asked again since; their decision stands, and nothing below runs (the combined review gate).
+        if (!await Questions.StillAnsweredAsync(answer.Question, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+
         var (recorded, _) = await new AgentRepository(_connection)
             .RecordOwnershipAsync(answer.Agent, acceptance, nowUtc, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        if (!recorded)
+        // The line first, then the question: storage accepts a question only once its line is recorded. Settled by its
+        // id, so nothing but the question this pass read can be settled. Not completed on a refusal, so nothing is kept.
+        if (!recorded
+            || !await Questions.AcceptAnsweredAsync(answer.Question, nowUtc, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false))
         {
-            scope.Complete();
             return false;
         }
-
-        await Questions.AcceptAsync(answer.Agent, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
         await AgreeDoneAsync(facilitator, answer.Conversation, nowUtc, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 

@@ -11,12 +11,15 @@ One rule, in one place — `ProjectManifest.Locate` — and read by everything e
 | Given | Root is |
 |---|---|
 | `--config <dir>` | that directory |
-| `--config <dir>/projects.json` | `<dir>` — the previous spelling, honoured for at least one release |
+| `--config <dir>/projects.json` | *Planned:* `<dir>`, the previous spelling, honoured for at least one release. *Built (0.32.0):* **not honoured.** It is refused with exit 78, naming the directory to point at instead and the reset script that clears the old layout |
 | `PARLEY_CONFIG` set | the same two rules |
 | neither | the platform's per-user configuration directory |
 
 **The old spelling is recognised by name, never by probing the filesystem.** A value whose final segment
-is the manifest's own file name names its parent; anything else is a directory. A rule that tested for
+is the manifest's own file name names the old manifest; anything else is a directory. *As planned* the
+first was read as its parent. *As built* it is refused, because the migration was cut (nothing had been
+released, so there was nothing to move) and quietly reading a root beside the old file would hide a layout
+that needs clearing. A rule that tested for
 existence would behave differently before and after first run, which is a rule nobody can reason about.
 
 The root is created if absent. That is the first run on a new machine, and nothing about it is an error.
@@ -65,7 +68,7 @@ open <root>/ports.json  with no sharing        ← the hold starts
   read it; unreadable or absent → treat as empty
   list <root>/projects/*/project.json
   spoken_for = handed_out ∪ { every endpoint's port found in a project }
-  if the operator stated an endpoint:
+  if the operator stated an endpoint:            ← superseded: no command states one (see below)
       try to bind it on THE ADDRESS IT NAMES
       if it binds:  release, record it as spoken for, write, done
       if it does not: refuse, naming the address
@@ -96,6 +99,13 @@ deployment. Two consequences, and getting either wrong is a real defect:
   about `0.0.0.0:n` — the loopback bind succeeds while the real one fails, and the failure arrives at the
   next start, on the interface nobody was watching.
 
+**Superseded (0.32.0): no command states an endpoint.** FR-020 and FR-021 were withdrawn on the owner's
+call, and `--listen` was removed from every command. The claim only ever hands out a loopback port. The
+reason: all three gRPC services share one port, so a broker reachable from the network exposes the
+operator's controls, with no credentials on the wire. The supported way to reach a broker from another
+machine is an SSH tunnel to its loopback port. An endpoint edited into `project.json` by hand is still
+served, and the broker warns about it in its log at every start.
+
 ### Refusals
 
 | Case | Result |
@@ -103,7 +113,7 @@ deployment. Two consequences, and getting either wrong is a real defect:
 | File held by another claim | retry with backoff; on exhausting the budget, refuse naming the contention, **create nothing** |
 | File unreadable | the claim refuses saying so. **Nothing that serves is affected** |
 | Band exhausted | refuse, name the band, create nothing |
-| `handed_out` names a project that is gone | entry dropped, port available |
+| `handed_out` names a project that is gone | *Planned:* entry dropped, port available. **Built: the entry is kept until `project remove` releases it.** A claim is recorded before the project's folder is written, so "no folder" cannot tell a project that is gone from one being created, and dropping its entry would hand that port out twice — the race the ledger exists to stop. Found by the combined review gate, which decided the contract was wrong here, not the code. |
 | `handed_out` disagrees with a project's `project.json` | the project wins; the entry is corrected |
 | File absent | created, and every existing project's port learned from its own file |
 
@@ -111,7 +121,9 @@ deployment. Two consequences, and getting either wrong is a real defect:
 Linux an exclusive lock belongs to an open file rather than a name, so unlinking it lets the next two
 claimants each lock a different file of one name.
 
-**Nothing on the serving path opens it.** Only `project add` and `project remove` take the hold.
+**Nothing on the serving path opens it.** Only adding and removing a project take the hold. Since 0.32.0
+both are done from the terminal, which runs the same code in process; `parley project add` and
+`parley project remove` on the command line are refused.
 
 ## What a store is, and what travels with it
 
@@ -128,6 +140,11 @@ The store is `<root>/projects/<name>/parley.db`. What belongs to it is the list
 | `.files-incoming` | staging for placements in progress — a **directory** |
 
 ## Moving an existing deployment
+
+> **Superseded (0.32.0): the migration was cut and never built.** Nothing had been released, so there was
+> nothing to move. A developer's pre-019 layout is cleared with `reset.ps1` (or `reset.sh`) instead. What
+> follows is the design as planned, kept for its reasoning. Where it says `project set`, that command is
+> now refused on the command line too.
 
 Per project, in this order:
 

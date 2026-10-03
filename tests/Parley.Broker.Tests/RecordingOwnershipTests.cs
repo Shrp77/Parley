@@ -107,6 +107,21 @@ public sealed class RecordingOwnershipTests : IDisposable
     }
 
     [Fact]
+    public async Task No_line_is_recorded_for_the_persons_seat()
+    {
+        // A person owns no repository and storage refuses the seat an `owns` line, so an accepted one would read as
+        // pending for ever. Admitted over the wire until the combined review gate.
+        var ct = TestContext.Current.CancellationToken;
+        var person = PersonSeat.On(ProjectName.Create("test"));
+
+        var record = await Console().RecordOwnershipAsync(
+            person, new OwnershipAcceptance("everything", OwnershipSource.Composed, null, null), T0, ct);
+
+        Assert.False(record.Recorded);
+        Assert.Contains("person's seat", record.Problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_accepted_line_is_pending_until_the_agent_restarts()
     {
         // The two halves differ, so the surface says so. Must fail against `Pending` being hardcoded

@@ -8,13 +8,13 @@
 
 <h1>Projects</h1>
 
+@* Said beside the projects that did read, not instead of them: one bad folder costs that project and no other. *@
 @if (Model.ManifestProblem is { Length: > 0 } problem)
 {
-    <p class="unreachable" role="alert">
-        This machine has a project manifest that could not be read: @problem
-    </p>
+    <p class="unreachable" role="alert">Some of this machine's projects could not be read: @problem</p>
 }
-else if (Model.Projects.Count == 0)
+
+@if (Model.Projects.Count == 0 && Model.ManifestProblem is not { Length: > 0 })
 {
     @* An ordinary machine, not a broken one -- and the two must not render alike. *@
     <p>
@@ -22,7 +22,7 @@ else if (Model.Projects.Count == 0)
         <code>parley</code>; the broker starts it within seconds and it appears here.
     </p>
 }
-else
+else if (Model.Projects.Count > 0)
 {
     <ul>
         @foreach (var project in Model.Projects)

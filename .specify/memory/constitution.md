@@ -60,7 +60,7 @@ Version change: 2.0.0 → 3.0.0 (MAJOR)
   which is what governance requires and what specs/015 established after /speckit-analyze found
   changing a principle inside a feature's tasks a blocking conflict.
   - Principle IV. Terseness is a security control — the ownership statement (`agents.owns`) has no
-    bound by default from specs/020 (0.33.0, schema 12). The constraint stays in storage and stands
+    bound by default from specs/020 (0.33.0, schema 1). The constraint stays in storage and stands
     down at the top of its range; the character class is NOT relaxed.
   MAJOR rather than MINOR by this file's own rule: "an amendment that changes what a principle
   permits is MAJOR even when its title is unchanged". Principle IV required a bound on text that
@@ -205,7 +205,7 @@ bounded like any other: a name has a maximum length, and a list or a batch of no
 maximum count per call.
 
 **The ownership statement is the one exception, and it is an exception rather than a
-reinterpretation.** From specs/020 (0.33.0, schema 12) an agent's `owns` line has **no bound by
+reinterpretation.** From specs/020 (0.33.0, schema 1) an agent's `owns` line has **no bound by
 default**. The constraint stays in storage and stands down at the top of its range, so a
 deployment may reinstate one and it is still enforced below any code that could route around it
 (Principle V); the character class that stops a roster entry breaking, hiding or reordering its

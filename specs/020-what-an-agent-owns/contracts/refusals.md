@@ -6,13 +6,17 @@ check twelve tests in 019 were pinned to, and the reason a removal is cheap and 
 
 ## Asking
 
+> **Superseded in part.** Since 0.35.0 (022) the ask is Parley's, not the person's: the facilitator asks
+> each attached agent once, and a person who wants it asked again uses `ask_again`, which Parley sends.
+> SPEC.md §10.2 is the authority for asking now. Two rows below are marked where they stopped being true.
+
 | State | Answer |
 |---|---|
 | The agent is not registered | `Nothing has registered under 'orders@test', so nothing can be addressed to it. §14 counts an unregistered name unroutable, so this is not a quiet agent — it is an unaddressable one. Start it from the agents pane and it registers as it attaches.` |
 | The agent is retired | `'orders@test' is retired, so it receives nothing. Reinstate it first if it should answer.` |
-| The agent is registered but nothing is attached | `'orders@test' is registered and nothing is connected to it. Asking will start it, which costs a turn. Ask anyway?` — **not a refusal**; FR-005 covers unreachable, and a startable agent is reachable |
+| The agent is registered but nothing is attached | *Planned:* `'orders@test' is registered and nothing is connected to it. Asking will start it, which costs a turn. Ask anyway?` — **not a refusal**; FR-005 covers unreachable, and a startable agent is reachable. **Superseded (0.35.0).** SPEC.md §10.2: Parley asks only an agent that is attached, and *"never starts an agent in order to ask it"*; an agent not attached is asked when it next registers or reattaches. Only `ask_again` asks outside that, because a person *"chooses to spend its turn"*: the question is sent, and the agent is woken the way any Request's recipient is |
 | The broker cannot be asked | `Could not ask the broker whether 'orders@test' can be reached, so this is not being sent. That is not the same as the agent being absent.` — 0.20.1's rule: a guard that fails open says so |
-| The person holds no seat | `Asking is sending a message, and a message is sent by somebody. Take a seat and this is sent as that name.` — offered, never hidden (FR/edge case, and 0.28.2's finding that hiding the action was the defect) |
+| The person holds no seat | *Planned:* `Asking is sending a message, and a message is sent by somebody. Take a seat and this is sent as that name.` — offered, never hidden (FR/edge case, and 0.28.2's finding that hiding the action was the defect). **Gone.** Since 0.35.0 the ask is Parley's and needs no seat (§10.2 `ask_again`: *"Needs no seat, because the facilitator sends it"*), and since 0.36.0 (023) the person always has a seat, so there is no state left to refuse |
 | The agent has not answered yet | `'orders@test' has not answered yet.` — **never** *declined*. AC US1.5, and 008's rule: a timeout says "I do not know", never "it did not happen" |
 
 ## Accepting

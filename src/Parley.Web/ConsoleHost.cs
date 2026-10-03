@@ -116,6 +116,14 @@ public static class ConsoleHost
             }
         }
 
+        // **Only requests that name this console's own host are served** (the combined review gate, lens 2). With no
+        // allow-list the host accepts any Host header, so a page whose own name an attacker points at 127.0.0.1 — DNS
+        // rebinding — is same-origin with this console in the person's browser: it reads a form, takes its antiforgery
+        // token and posts it back. Driven: Start reached the broker that way. Antiforgery is the only thing between a
+        // browser and purge, instruct and every transcript, so the Host is checked before anything else. Set only when
+        // the deployment has not chosen its own `AllowedHosts`.
+        builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen);
+
         // The application part named rather than discovered. Razor Pages are found by walking the
         // entry assembly and its dependencies, and the entry assembly is `parley` when the
         // console is started as a subcommand — which finds the stylesheet, because that is a file
@@ -237,6 +245,39 @@ public static class ConsoleHost
             // serving a deployment that had shut down.
             await app.StopAsync(CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>The Host names this console answers to, separated as <c>AllowedHosts</c> reads them.</summary>
+    /// <param name="chosen">The address it binds, or null for the loopback default.</param>
+    /// <returns>The loopback names, and each host the bind address names.</returns>
+    /// <remarks>
+    /// A bind on every interface (<c>*</c>, <c>+</c>, <c>0.0.0.0</c>, <c>[::]</c>) names no host, so this machine's own
+    /// name is allowed for it — what a person on the network types — and never a wildcard, which would be the rebinding
+    /// hole again. Somebody who reaches it by an IP address sets <c>AllowedHosts</c> themselves, and the host keeps it.
+    /// </remarks>
+    internal static string AllowedHosts(string? chosen)
+    {
+        var hosts = new List<string> { "localhost", "127.0.0.1", "[::1]" };
+
+        foreach (var one in (chosen ?? string.Empty)
+                     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var host = Uri.TryCreate(one.Replace("://*", "://wildcard", StringComparison.Ordinal)
+                                        .Replace("://+", "://wildcard", StringComparison.Ordinal), UriKind.Absolute, out var uri)
+                ? uri.Host
+                : null;
+
+            if (host is null or "wildcard" or "0.0.0.0" or "[::]")
+            {
+                hosts.Add(Environment.MachineName);
+            }
+            else
+            {
+                hosts.Add(host);
+            }
+        }
+
+        return string.Join(';', hosts.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>Whether an address reaches only this machine.</summary>

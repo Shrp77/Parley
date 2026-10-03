@@ -40,7 +40,7 @@ ignores it, as it ignores every unknown command today (`NodeCommand.cs:208-213`)
 |---|---|---|
 | Project view, **Agent** menu | Review ownership — the list of agents, their line, its provenance, and any question and its state | `v` |
 | Ownership review | Accept a waiting answer, edit it, write a line, discard it, ask again, reply to an agent that asked back | in the review |
-| Projects pane, **Project** menu | Auto Accept on / off, showing the current state | `a` (`o` is Instruct on the agents pane) |
+| **Configuration** view, reached from the **Project** menu (from the projects list or inside a project) | Auto Accept on / off, showing the current state. *Planned* as a `Project` menu action under `a`; *built* (0.35) as a setting in the project's Configuration view, opened with F3, because a global letter is shadowed by whichever pane already uses it | `F3`, then Enter on Auto Accept |
 
 020's "Ask what this agent owns" (`k`) and "Ask every agent" (`e`) become **Ask again**, sent by Parley, needing
 no seat. The seat-required refusal is removed.

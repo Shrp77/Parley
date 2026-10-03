@@ -210,6 +210,22 @@ public static class ProjectCommand
             return Config;
         }
 
+        // What was left out, said before what is listed: a listing that silently lacked a project is how one goes missing.
+        // And the listing then exits as a refusal does, so a script reading it is not told all was well (FR-029: never
+        // read as the machine having fewer projects than it has).
+        var incomplete = problem is { Length: > 0 };
+
+        if (incomplete)
+        {
+            await error.WriteLineAsync(problem).ConfigureAwait(false);
+        }
+
+        if (projects.Count == 0 && incomplete)
+        {
+            // Never "no projects configured" when one is there and could not be read.
+            return Config;
+        }
+
         if (projects.Count == 0)
         {
             // Not an error. A machine with nothing configured is an ordinary machine, and saying
@@ -268,7 +284,7 @@ public static class ProjectCommand
         await output.WriteLineAsync($"\nroot:     {root}").ConfigureAwait(false);
         await output.WriteLineAsync($"projects: {ProjectFolder.ProjectsIn(root)}").ConfigureAwait(false);
 
-        return 0;
+        return incomplete ? Config : 0;
     }
 
     /// <summary>
@@ -344,6 +360,19 @@ public static class ProjectCommand
         // wins — and this feature exists because a deployment had been arrived at one flag at a time. A
         // project that must be reachable elsewhere has its endpoint edited in its own `project.json`,
         // which is one place, readable, and the same place every reader already looks.
+        // **Nothing is created beside a project that cannot be read.** Reading leaves such a project out and carries on,
+        // since serving and listing the rest costs nothing; creating does not, because the port the unreadable one holds
+        // is unknown and a claim could hand it out again. Explicit since the combined review gate made reading lenient —
+        // this refusal had been a side effect of the whole read failing.
+        if (!ProjectManifest.TryRead(root, out _, out var unreadable) || unreadable is { Length: > 0 })
+        {
+            await error.WriteLineAsync(
+                $"'{name}' has not been created, because another project here cannot be read: {unreadable}")
+                .ConfigureAwait(false);
+
+            return Config;
+        }
+
         if (!PortLedger.TryClaim(root, name, out var endpoint, out var refused))
         {
             await error.WriteLineAsync(refused).ConfigureAwait(false);

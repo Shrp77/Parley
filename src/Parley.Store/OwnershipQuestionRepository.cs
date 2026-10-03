@@ -296,6 +296,54 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await SettleAsync(agent, "accepted", nowUtc, transaction, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Whether one question is still answered and undecided.</summary>
+    /// <param name="id">The question.</param>
+    /// <param name="transaction">The transaction the decision is made in.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether it is.</returns>
+    /// <remarks>
+    /// Asked inside the transaction that records the line, before it does: storage accepts a question only once its line
+    /// is recorded, so the check cannot be the settling itself.
+    /// </remarks>
+    public async Task<bool> StillAnsweredAsync(
+        long id,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                "SELECT count(*) FROM ownership_questions WHERE id = @Id AND state = 'answered';",
+                new { Id = id },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
+    /// <summary>Settles one question as accepted, only while it is still the answered one a pass read.</summary>
+    /// <param name="id">The question.</param>
+    /// <param name="nowUtc">When.</param>
+    /// <param name="transaction">The transaction that will record the line.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was still answered and is now accepted.</returns>
+    /// <remarks>
+    /// <b>Keyed by the question, for Auto Accept alone</b> (the combined review gate). A pass reads an answer and decides it
+    /// later; a person who recorded a line meanwhile settled that question, and settling by agent then overwrote their
+    /// line with the agent's, marked automatic — or, if they had asked again, settled the new question with no answer and
+    /// failed at the constraint. A question no longer answered is the person's decision and is left alone.
+    /// </remarks>
+    public async Task<bool> AcceptAnsweredAsync(
+        long id,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                UPDATE ownership_questions
+                   SET state = 'accepted', settled_utc = @When, waiting_because = NULL
+                 WHERE id = @Id AND state = 'answered';
+                """,
+                new { Id = id, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
+
     /// <summary>Settles an agent's waiting answer, or a question nobody will answer, as discarded.</summary>
     /// <param name="agent">Whose question.</param>
     /// <param name="nowUtc">When.</param>

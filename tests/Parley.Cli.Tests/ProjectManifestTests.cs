@@ -245,8 +245,9 @@ public sealed class ProjectManifestTests : IDisposable
         // and writing over it destroys the only copy of what the operator described.
         Given("orders", """{ "endpoint": "http://x:1", """);
 
-        Assert.False(ProjectManifest.TryRead(_root, out var projects, out var problem));
+        Assert.True(ProjectManifest.TryRead(_root, out var projects, out var problem));
         Assert.Empty(projects);
+        Assert.NotNull(problem);
         Assert.Contains(ConfigurationOf("orders"), problem, StringComparison.Ordinal);
     }
 
@@ -255,8 +256,25 @@ public sealed class ProjectManifestTests : IDisposable
     {
         Given("orders", """["not", "an", "object"]""");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("does not hold an object", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void An_empty_folder_with_any_name_is_nobodys_project_and_costs_nothing()
+    {
+        // Explorer's "New folder" beside a real project. It stopped every command and the broker, and once reported the
+        // report outlived the folder: the watchers' stamp counts configurations only, so removing it changed nothing they
+        // compare (the combined review gate, lenses 1 and 3). A folder with no configuration is not a project, whatever
+        // it is called.
+        Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
+        Directory.CreateDirectory(Path.Combine(_root, ProjectFolder.ProjectsDirectoryName, "New folder"));
+
+        Assert.True(ProjectManifest.TryRead(_root, out var projects, out var problem));
+        Assert.Equal("orders", Assert.Single(projects).Name.Value);
+        Assert.Null(problem);
     }
 
     [Fact]
@@ -268,7 +286,10 @@ public sealed class ProjectManifestTests : IDisposable
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
         Given("billing", """{ "endpoint": """);
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, and the readable one kept: until the combined review gate this returned nothing at all,
+        // which is exactly what the name of this test says must not happen.
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Equal("orders", Assert.Single(kept).Name.Value);
 
         Assert.Contains("billing", problem, StringComparison.Ordinal);
         Assert.DoesNotContain("projects[", problem, StringComparison.Ordinal);
@@ -299,7 +320,9 @@ public sealed class ProjectManifestTests : IDisposable
         // project goes missing.
         Given("Orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("lowercase", problem, StringComparison.Ordinal);
     }
 
@@ -333,7 +356,9 @@ public sealed class ProjectManifestTests : IDisposable
     {
         Given("orders", """{ "endpoint": "nonsense" }""");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("not an absolute address", problem, StringComparison.Ordinal);
     }
 
@@ -415,7 +440,9 @@ public sealed class ProjectManifestTests : IDisposable
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
         Given("billing", """{ "endpoint": "http://127.0.0.1:51707" }""");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("share an endpoint", problem, StringComparison.Ordinal);
     }
 
@@ -643,7 +670,9 @@ public sealed class ProjectManifestTests : IDisposable
             "{ \"endpoint\": \"http://127.0.0.1:51707\", "
             + "\"description\": \"the shop\\u000Aacme  http://127.0.0.1:1  reachable\" }");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("control character", problem, StringComparison.Ordinal);
     }
 
@@ -655,7 +684,9 @@ public sealed class ProjectManifestTests : IDisposable
             "{ \"endpoint\": \"http://127.0.0.1:51707\", \"description\": \""
             + new string('x', ProjectSettings.MaxDescription + 1) + "\" }");
 
-        Assert.False(ProjectManifest.TryRead(_root, out _, out var problem));
+        // Left out and said, never the machine's other projects with it (the combined review gate).
+        Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
+        Assert.Empty(kept);
         Assert.Contains("description is", problem, StringComparison.Ordinal);
     }
 

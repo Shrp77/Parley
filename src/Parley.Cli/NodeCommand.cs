@@ -213,7 +213,8 @@ public static class NodeCommand
 
                             case Wire.NodeCommand.CommandOneofCase.Refresh:
                                 await RefreshAsync(
-                                    command.Refresh, catalogue, project, residents, output, cancellationToken)
+                                    command.Refresh, catalogue, project, residents, output, cancellationToken,
+                                    new TurnReporter(nodes, request.Machine, output))
                                     .ConfigureAwait(false);
                                 break;
 
@@ -911,6 +912,7 @@ public static class NodeCommand
     /// <param name="residents">The agents running here.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the node, and with it the wait.</param>
+    /// <param name="reporter">Reports the restarted agent's first turn to the broker, when there is a broker to tell.</param>
     /// <returns>A task that completes once the refresh has been handed off.</returns>
     /// <remarks>
     /// <para>
@@ -930,7 +932,8 @@ public static class NodeCommand
         string? project,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         ArgumentNullException.ThrowIfNull(refresh);
         ArgumentNullException.ThrowIfNull(catalogue);
@@ -952,7 +955,8 @@ public static class NodeCommand
             return;
         }
 
-        _ = Observed(RefreshWhenIdleAsync(agent, identity, resident, catalogue, residents, output, cancellationToken));
+        _ = Observed(RefreshWhenIdleAsync(
+            agent, identity, resident, catalogue, residents, output, cancellationToken, reporter));
 
 #pragma warning disable CA1031 // Do not catch general exception types
         static async Task Observed(Task refreshing)
@@ -979,7 +983,8 @@ public static class NodeCommand
         NodeCatalogue catalogue,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TurnReporter? reporter)
     {
         _ = await resident.ShutdownWhenIdleAsync(ShutdownGrace, cancellationToken).ConfigureAwait(false);
 
@@ -1015,15 +1020,22 @@ public static class NodeCommand
                 return;
             }
 
-            residents[identity] = ResidentAgent.Start(
+            var restarted = ResidentAgent.Start(
                 agent,
                 InvocationCommand.Parse(command),
                 catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
                 TimeProvider.System);
 
+            residents[identity] = restarted;
+
             await output.WriteLineAsync(
                 $"  {agent.Value}: restarted once its turn was over, so it reads its new ownership line.")
                 .ConfigureAwait(false);
+
+            // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
+            // queued on it and came back died, and the broker's wake stays claimed until a drain — so without this the
+            // restarted agent sat on mail nothing would ask it to read (the combined review gate, lens 1).
+            DispatchTurn(restarted, output, cancellationToken, reporter);
         }
         finally
         {

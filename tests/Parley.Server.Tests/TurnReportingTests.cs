@@ -265,4 +265,21 @@ public sealed class TurnReportingTests
         await using var seat = await AttachedClient.AttachAsync(
             broker, Person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
     }
+
+    [Fact]
+    public async Task No_agent_attaches_under_the_persons_adapter()
+    {
+        // The other half of §12.3's tie, and the one with the standing in it: the broker recognises the person by the
+        // seat's adapter (principle 2.10 — a person may always name a conversation), and registration writes whatever
+        // adapter the caller reports. Admitted until the combined review gate, round 3.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+
+        var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(async () =>
+        {
+            await using var impostor = await AttachedClient.AttachAsync(
+                broker, "orders@m1", cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
+        });
+
+        Assert.Equal(Grpc.Core.StatusCode.PermissionDenied, refused.StatusCode);
+    }
 }

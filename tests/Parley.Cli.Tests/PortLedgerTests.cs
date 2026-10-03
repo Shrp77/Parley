@@ -60,6 +60,21 @@ public sealed class PortLedgerTests : IDisposable
     }
 
     [Fact]
+    public void Where_the_record_and_the_project_disagree_the_project_wins()
+    {
+        // specs/019 contracts/layout.md, and missed until the combined review gate: the record's number was handed back
+        // although the project's own file — what its broker binds — names another, giving it a second port.
+        var orders = ProjectName.Create("orders");
+
+        Assert.True(PortLedger.TryClaim(_root, orders, Anything, out _, out var problem), problem);
+
+        ProjectFolder.Write(_root, new ProjectSettings(orders, string.Empty, "http://127.0.0.1:19150", null));
+
+        Assert.True(PortLedger.TryClaim(_root, orders, Anything, out var again, out problem), problem);
+        Assert.Equal(19150, PortOf(again!));
+    }
+
+    [Fact]
     public void The_band_is_clear_of_both_operating_systems_ephemeral_ranges()
     {
         // **Not taste, and not arbitrary.** The deployment that prompted 019 serves on 51707 and 53283,

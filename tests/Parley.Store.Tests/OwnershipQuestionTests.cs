@@ -95,9 +95,9 @@ public sealed class OwnershipQuestionTests : IDisposable
     [Fact]
     public void Neither_a_seat_nor_the_facilitator_is_asked()
     {
-        var seat = _store.Asked("owns-arvind-1", FacilitatorStore.Facilitator, "arvind@test");
+        var seat = _store.Asked("owns-human-user-1", FacilitatorStore.Facilitator, "human-user@test");
 
-        Assert.Throws<SqliteException>(() => _store.Question("arvind@test", "owns-arvind-1", seat));
+        Assert.Throws<SqliteException>(() => _store.Question("human-user@test", "owns-human-user-1", seat));
 
         // The control: an agent is.
         _store.Question("orders@test", "owns-orders-1", Asked());

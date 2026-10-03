@@ -215,10 +215,11 @@ public sealed class BrokerDirectory : IDisposable
 
         if (projects.Count == 0 && fallback is { Endpoint.Length: > 0 } offer)
         {
-            return new Snapshot([Unnamed(offer.Endpoint)], null, stamp);
+            return new Snapshot([Unnamed(offer.Endpoint)], problem, stamp);
         }
 
-        return new Snapshot(projects, null, stamp);
+        // The projects that read, and what was left out beside them: one bad folder costs that project, not the screen.
+        return new Snapshot(projects, problem, stamp);
     }
 
     /// <summary>Reads the manifest's stamp without opening it.</summary>

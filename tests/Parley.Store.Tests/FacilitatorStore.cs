@@ -31,7 +31,7 @@ internal sealed class FacilitatorStore : IDisposable
                 ('{Facilitator}', 'parley-facilitator', 'pull', 'active'),
                 ('orders@test', 'claude-code', 'full', 'active'),
                 ('billing@test', 'claude-code', 'full', 'active'),
-                ('arvind@test', 'parley-console', 'pull', 'active');
+                ('human-user@test', 'parley-console', 'pull', 'active');
             """);
     }
 

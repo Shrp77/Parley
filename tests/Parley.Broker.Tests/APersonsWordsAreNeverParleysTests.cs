@@ -38,7 +38,7 @@ public sealed class APersonsWordsAreNeverParleysTests : IDisposable
             INSERT INTO agents (name, adapter, tier, status) VALUES
                 ('orders@test', 'claude-code', 'full', 'active'),
                 ('inventory@test', 'claude-code', 'full', 'retired'),
-                ('arvind@test', 'parley-console', 'pull', 'active');
+                ('human-user@test', 'parley-console', 'pull', 'active');
             """);
 
         _parley = new AgentRepository(_connection).EnsureFacilitatorAsync(ProjectName.Create("test")).GetAwaiter().GetResult();
@@ -99,7 +99,7 @@ public sealed class APersonsWordsAreNeverParleysTests : IDisposable
     [Fact]
     public async Task Asking_again_is_refused_for_a_seat_a_retired_agent_and_an_undecided_answer()
     {
-        Assert.False((await _facilitator.AskAgainAsync(_parley, AgentName.Create("arvind@test"), T0, Ct)).Done);
+        Assert.False((await _facilitator.AskAgainAsync(_parley, AgentName.Create("human-user@test"), T0, Ct)).Done);
         Assert.False((await _facilitator.AskAgainAsync(_parley, AgentName.Create("inventory@test"), T0, Ct)).Done);
         Assert.False((await _facilitator.AskAgainAsync(_parley, _parley, T0, Ct)).Done);
 

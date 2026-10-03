@@ -693,6 +693,22 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   README promised old autostart flags still started a broker (it exits 64, and `autostart status` now says so for
   `--console` too), and described a per-project, role-keyed `node.json` that 018 removed.
 
+  **0.38.3: round three, and two of its findings were the worst of the gate.** **The web UI served any Host header**, so
+  a page whose own name was pointed at 127.0.0.1 (DNS rebinding) was same-origin with it: it read a form's antiforgery
+  token and posted it back, and the broker started an agent. `ConsoleHost` now answers only to the loopback names and the
+  host it binds. **And any agent could be treated as the person** by attaching under the seat's adapter, `parley-console`,
+  which is what the broker recognises a person by (principle 2.10). Round 1 closed the name and not the adapter. `Attach`
+  refuses both directions now, and storage ties the role and the adapter as it does the facilitator's — the "reservation
+  pair" 023 planned and never built, which a store test had been waiting to be inverted for. **That half is in schema 1,
+  edited in place, so a store made before 0.38.3 lacks it until a reset**; the door holds either way. Also: one badly
+  named folder under `projects/` stopped every command and the broker (now that project is left out and said, as 019's
+  contract always said, and an empty folder of any name is nobody's project); a person deciding an answer while Parley's
+  pass decided it was overwritten (now settled by question, and the person's line goes back in the file); an agent
+  restarted to read its new line got no turn; a port recorded for a project was handed back when the project's own file
+  named another; Enter's label on the status line drew as "Alt+" and cut the row off; `record_ownership` accepted a line
+  for the person. **One contract row was wrong rather than the code**: dropping a recorded port whose folder is gone would
+  hand it out twice, because a claim precedes the folder.
+
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
 - **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on

@@ -1960,7 +1960,10 @@ internal sealed class Shell : Window
             .. Held is not null
                 ? new[]
                 {
-                    new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
+                    // Named by its chord, Enter. Keyed on a carriage return, its stroke was "Alt+" and the character —
+                    // which drew as nothing and cut the status line off there, and wrongly said Alt (the review gate).
+                    // The box takes Enter itself and marks it handled, so the chord is a name and never a second send.
+                    new RegionAction(default, SendTitle, SendLine, Owing.Requesting, Key.Enter),
                     new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithShift),
                 }
                 : Array.Empty<RegionAction>(),

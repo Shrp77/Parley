@@ -892,6 +892,26 @@ END;
 -- One person per store. However the row came to be written, a second is refused.
 CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
 
+-- The role and the seat's adapter are tied in both directions (§12.3), as the facilitator's are. A row with the role and
+-- another adapter is an agent claiming to be the person; a row with the adapter and another role is an agent the broker
+-- would treat as a person, who may always name a conversation (principle 2.10). Added at the combined review gate, which
+-- found the second direction admitted at attach; the door refuses both first, with a sentence.
+CREATE TRIGGER tr_person_role_is_reserved
+BEFORE INSERT ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
+     <> (NEW.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'the role human-user and its adapter belong to the person seat alone');
+END;
+
+CREATE TRIGGER tr_person_role_is_reserved_on_update
+BEFORE UPDATE OF name, adapter ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
+     <> (NEW.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'the role human-user and its adapter belong to the person seat alone');
+END;
+
 -- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
 -- current question; earlier rows are history, kept so asking again does not erase what was said.
 --

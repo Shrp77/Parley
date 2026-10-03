@@ -112,7 +112,7 @@ public sealed class ProbeTwelveTests : IDisposable
         // And the refusal names them rather than passing over them, which is FR-027: a folder somebody
         // made in the one directory whose contents are the answer is somebody's mistake, and silence
         // there is how a project goes missing.
-        Assert.False(read, "a folder named something the grammar refuses was read as a project");
+        Assert.True(projects.Count == 0 && problem is { Length: > 0 }, "a folder named something the grammar refuses was read as a project, or passed over in silence");
         Assert.Contains("not a project name", problem, StringComparison.Ordinal);
     }
 

@@ -472,6 +472,13 @@ if (!ProjectManifest.TryRead(manifestPath, out var configuredProjects, out var m
     return Config;
 }
 
+// A folder left out costs that project and no other, and is said once on the way in rather than taking every command
+// with it (the combined review gate).
+if (manifestProblem is { Length: > 0 })
+{
+    await Console.Error.WriteLineAsync(manifestProblem).ConfigureAwait(false);
+}
+
 // Beside `serve` and the rest because managing configuration must not need a broker: the command
 // that fixes "nothing is configured" cannot require something configured.
 // --destroy is refused everywhere but here, by the same rule as --with-node: a flag accepted

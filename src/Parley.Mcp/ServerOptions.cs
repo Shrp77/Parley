@@ -292,6 +292,14 @@ public sealed record ServerOptions(
         var project = projects.FirstOrDefault(p =>
             string.Equals(p.Name.Value, named, StringComparison.Ordinal));
 
+        // Not found, beside a project that could not be read: the one named may well be it, so what failed to read is the
+        // answer, never "describes no projects" (the combined review gate made reading leave a bad project out).
+        if (project is null && problem is { Length: > 0 })
+        {
+            throw new InvalidOperationException(
+                $"{ProjectVariable} is '{named}', and the manifest could not be read. {problem}");
+        }
+
         if (project is null)
         {
             var configured = projects.Count == 0

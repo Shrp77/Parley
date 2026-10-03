@@ -137,6 +137,16 @@ public sealed class OperatorConsole
                 LiveStatement: null);
         }
 
+        // The person's seat owns no repository, and storage refuses it an `owns` line — so a line accepted for it would read
+        // as pending for ever, a promise nothing can keep (the combined review gate). The sentence is `ask_again`'s.
+        if (PersonSeat.Is(agent))
+        {
+            return new OwnershipRecord(
+                Recorded: false,
+                $"'{agent.Value}' is a person's seat, and a person owns no repository to describe.",
+                LiveStatement: null);
+        }
+
         if (acceptance.Problem() is { } wrong)
         {
             return new OwnershipRecord(Recorded: false, wrong, LiveStatement: null);

@@ -209,7 +209,7 @@ public sealed class AgentVerbTests : IDisposable
     public async Task A_person_may_start_a_conversation_whatever_it_holds()
     {
         // Principle 2.10: a person is where lines of work begin.
-        var person = AgentName.Create("arvind@test");
+        var person = PersonSeat.On(ProjectName.Create("test"));
         Requests.Register(_connection, person, PersonSeat.Adapter);
 
         await Send(from: Orders, to: person, conversationId: "pricing");

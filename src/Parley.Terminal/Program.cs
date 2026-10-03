@@ -23,8 +23,9 @@ parley-terminal: the operator's terminal surface.
 
   parley-terminal [--config <path>] [--broker <address>]
 
-  --config <path>     The project manifest to read. Defaults to this machine's.
-  --broker <address>  A broker to offer when the manifest names no project.
+  --config <path>     The folder that holds this machine's projects/ folder.
+                      Defaults to this machine's.
+  --broker <address>  A broker to offer when that folder holds no project.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 

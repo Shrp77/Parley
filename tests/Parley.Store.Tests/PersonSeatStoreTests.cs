@@ -149,14 +149,24 @@ public sealed class PersonSeatStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_typed_seat_beside_the_person_is_still_admitted_until_the_reservation_lands()
+    public async Task The_seats_adapter_under_any_other_role_is_refused_now_the_reservation_has_landed()
     {
-        // Phase 2 keys every rule on the role, not the adapter, so the typed seats the surfaces still take work until
-        // they stop taking them (tasks.md rule 6). When the reservation pair lands this test is inverted, not deleted.
+        // Inverted, as this test said it would be, when the reservation pair landed — at the combined review gate, which
+        // found an agent attaching under the seat's adapter and so being treated as the person (principle 2.10).
         await SeatedAsync();
 
-        Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('arvind@alpha', 'parley-console', 'pull', 'active');");
+        var refused = Assert.Throws<SqliteException>(() =>
+            Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('arvind@alpha', 'parley-console', 'pull', 'active');"));
 
-        Assert.Equal(1L, Count("SELECT count(*) FROM agents WHERE name = 'arvind@alpha';"));
+        Assert.Contains("person seat alone", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_persons_role_under_any_other_adapter_is_refused()
+    {
+        var refused = Assert.Throws<SqliteException>(() =>
+            Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('human-user@alpha', 'claude-code', 'pull', 'active');"));
+
+        Assert.Contains("person seat alone", refused.Message, StringComparison.Ordinal);
     }
 }

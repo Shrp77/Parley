@@ -56,9 +56,12 @@ protocol.
   another's reasoning. Do not paste a transcript into an agent's session as a shortcut for asking
   it.
 - **Retiring** stops an agent's server from starting at all. It is a withdrawal, not a mute.
-- **Purging** deletes a registration outright, and is refused the moment anything references the
-  agent. It is for a registration that should never have existed: a mistyped name, a repository
-  somebody opened once. An agent that has traded is retired, never purged.
+- **Purging** deletes the agent and every conversation it took part in: every message, exchange and
+  file in them, including the other agents' side of those conversations. It frees the name and
+  cannot be undone. The person is told what was deleted, table by table. Retiring keeps all of
+  that, so retire when the record matters, which is almost always. Purge only when the record
+  itself is what should go: a mistyped name, a repository somebody opened once. The person seat
+  cannot be purged.
 
 None of this is a rule a tool enforces. It is the reason these actions are kept away from agents.
 No agent has authority over another, and these are how a **person** steps in.

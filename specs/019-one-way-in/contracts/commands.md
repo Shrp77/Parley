@@ -1,5 +1,16 @@
 # Contract: the command surface after 019
 
+> **Superseded in part, as of 0.32.0.** This contract was written before the build, and three
+> things in it did not survive. Each is marked where it occurs below, with the original kept so the
+> reasoning stays readable:
+>
+> - `project add`, `project set` and `project remove` are refused on the command line (exit 64).
+>   Creating, changing and removing a project is the terminal's: run `parley` and do it there. Only
+>   `project list` stays.
+> - `--listen` is gone from every command, `project` included. No command makes a broker reachable
+>   from another machine; the supported route is an SSH tunnel (see the README).
+> - `serve` kept `--with-web-ui` and `--web-ui <url>`. `parley --help` still offers them.
+
 Twelve verbs stay, sixteen go. The list was derived by sweeping every script, hook and plugin command in
 the repository first (see [research.md](../research.md) R5) and keeping what a program calls — not by
 deciding what looked useful.
@@ -18,13 +29,13 @@ deciding what looked useful.
 
 | Verb | Shape | Why it stays |
 |---|---|---|
-| `serve` | `[--log <path>] [--with-node]` | brings the machine up. **`--listen`, `--db`, `--with-web-ui`, `--web-ui`, `--no-web-ui` are gone**: it serves everything and starts the surfaces (FR-030, FR-031, FR-039) |
+| `serve` | `[--log <path>] [--with-node] [--with-web-ui [--web-ui <url>]]` | brings the machine up. **`--listen`, `--db` and `--no-web-ui` are gone.** *Planned:* `--with-web-ui` and `--web-ui` were to go too, with `serve` always starting the surfaces (FR-030, FR-031, FR-039). *Built (0.32.0):* both stay, and the web UI starts only when asked for |
 | `up` | `[--node-config <path>]` | the node alone |
 | `autostart` | `install` \| `remove` \| `status` | installers call `install` and `remove`; `status` is how a machine that stopped serving is diagnosed. **All four options gone** (FR-039) |
 | `terminal` | *(forwarded verbatim)* | the surface |
 | `web-ui` | `[<url>]` | the surface |
 | `use` | `[<project>] [--shell] [--clear]` | prints the line that sets `PARLEY_PROJECT` |
-| `project` | `list` \| `add <name>` \| `set <name>` \| `remove <name> [--destroy]` | `list` is called by both installers, including the readiness poll. `add` loses `--db` and `--node-config`; it keeps `--listen` (FR-020) and `--description`. **`list` is where a person answers "what listens where"** — see below |
+| `project` | `list` | `list` is called by both installers, including the readiness poll. **`list` is where a person answers "what listens where"** — see below. *Planned:* `add <name>`, `set <name>` and `remove <name> [--destroy]` stayed too, `add` keeping `--listen` (FR-020) and `--description`. *Built (0.32.0):* `add`, `set` and `remove` exit 64 and send the person to the terminal (`parley`); FR-020 was withdrawn, so no command takes `--listen` |
 | `enroll` | `<dir> [--all\|--none] [--describe]` | one verb, no subcommands (FR-040) |
 | `registry` | — | named by both installers' closing check |
 | `waiting` | `<agent\|role> [--with-files]` | **the plugin hook, on nearly every turn of every session** |
@@ -71,12 +82,12 @@ reads it as reachable from the network, and **no rule they write can make that t
 the machine can address `127.0.0.1`. The word is doing the opposite of its job (FR-023). The `node` line
 names the per-project catalogue 018 made meaningless, and goes.
 
-After:
+After, as planned (the remedy line is superseded; see below):
 
 ```
 orders        http://127.0.0.1:19100     answering · this machine only
               store   …\projects\orders\parley.db
-              To reach it from another machine: parley project set orders --listen http://0.0.0.0:19100
+              To reach it from another machine: (the planned remedy, removed in 0.32.0)
 
 billing       http://0.0.0.0:19101       answering · reachable from other machines
               store   …\projects\billing\parley.db
@@ -86,6 +97,16 @@ billing       http://0.0.0.0:19101       answering · reachable from other machi
   this machine could address it.
 - **The remedy sits beside the limitation** (FR-024), so the answer is where the question is.
 - **Endpoint, store and reachability in one place** (FR-025) — no second source to consult.
+
+**The planned remedy is superseded (0.32.0).** It read `project set orders --listen
+http://0.0.0.0:19100`, and both halves of that were removed: `project set` is the terminal's, and no
+command takes `--listen`. As built, `project list` prints three things on separate lines: whether the
+broker answered, whether only this machine can address it, and its store. The way to reach a broker
+from another machine is a tunnel: an SSH port-forward to the project's loopback port, with
+`PARLEY_BROKER` pointed at the local end (see the README). Adding a project in the terminal says so
+when it hands out the port. An endpoint edited into `project.json` by hand to bind a network address
+is still served, and the listing then says that any machine able to reach it can address it, with no
+credentials.
 
 Parley says nothing about whether a firewall *permits* the traffic. It cannot know, and a tool that
 guessed would be believed.
@@ -130,7 +151,7 @@ A companion test, `The_agent_facing_command_reaches_for_no_operator_command`, ho
 | `README.md` | ~90 mentions |
 | `plugins/parley/skills/parley-operator/SKILL.md` | the full listing at L122–178, and the sixteen |
 | `plugins/parley/README.md` | prose sweep |
-| `plugins/parley/commands/setup.md` | `project add --db --listen` → `project add <name>` |
+| `plugins/parley/commands/setup.md` | `project add --db --listen` → `project add <name>` (planned; as built, naming a project is the terminal's) |
 | `plugins/parley/commands/setup-many.md` | `enroll scan\|plan\|apply` → the one verb |
 | `plugins/parley/commands/files-*.md` | unchanged — those verbs stay |
 | `SPEC.md` §4.1 | the manifest illustration becomes the layout |

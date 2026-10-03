@@ -101,18 +101,23 @@ internal sealed class ProjectsRegion : FrameView
 
         var keep = Selected?.Name.Value;
 
-        _projects = manifestProblem is null ? [.. projects] : [];
+        // The projects that read, with what was left out said after them: one bad folder costs that project and no
+        // other (the combined review gate). After rather than above, so a row's position is still its project's.
+        _projects = [.. projects];
 
         // Names and addresses are padded to the widest of each, so the columns line up and the eye can run
         // down one fact across every project.
         var names = _projects.Count == 0 ? 0 : _projects.Max(project => project.Name.Value.Length);
         var addresses = _projects.Count == 0 ? 0 : _projects.Max(project => Address(project).Length);
 
-        var lines = manifestProblem is not null
-            ? [$"This machine's projects could not be read. {manifestProblem}"]
-            : _projects.Count == 0
-                ? new List<string> { Nothing }
-                : [.. _projects.Select(project => Line(project, health, figures, names, addresses))];
+        var lines = _projects.Count == 0
+            ? manifestProblem is null ? new List<string> { Nothing } : []
+            : [.. _projects.Select(project => Line(project, health, figures, names, addresses))];
+
+        if (manifestProblem is not null)
+        {
+            lines.Add($"Some of this machine's projects could not be read. {manifestProblem}");
+        }
 
         var at = keep is null ? -1 : _projects.FindIndex(p => p.Name.Value == keep);
 

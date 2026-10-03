@@ -2082,6 +2082,26 @@ END;
 -- One person per store. However the row came to be written, a second is refused.
 CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
 
+-- The role and the seat's adapter are tied in both directions (§12.3), as the facilitator's are. A row with the role and
+-- another adapter is an agent claiming to be the person; a row with the adapter and another role is an agent the broker
+-- would treat as a person, who may always name a conversation (principle 2.10). Added at the combined review gate, which
+-- found the second direction admitted at attach; the door refuses both first, with a sentence.
+CREATE TRIGGER tr_person_role_is_reserved
+BEFORE INSERT ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
+     <> (NEW.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'the role human-user and its adapter belong to the person seat alone');
+END;
+
+CREATE TRIGGER tr_person_role_is_reserved_on_update
+BEFORE UPDATE OF name, adapter ON agents
+WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
+     <> (NEW.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'the role human-user and its adapter belong to the person seat alone');
+END;
+
 -- Each question the facilitator asked (§10.2 `facilitation`). The latest row for an agent is its
 -- current question; earlier rows are history, kept so asking again does not erase what was said.
 --
@@ -2624,7 +2644,7 @@ other could.
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. Refused for the person seat, which is never retired (§12.3). |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `purge(agent)` | Delete an agent and every conversation it was party to, with those conversations' files, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. Refused for the person seat: the broker would write it again on its next start, so a purge could only cut the person's words out of every transcript. |
-| `record_ownership(agent, statement, source, proposed_length?, conversation_id?)` | Record that a person accepted a statement of what an agent owns: the statement, which of three ways it was arrived at — the agent's own words, its words edited, or a line composed with no ask — how long the agent's own proposal was, and the conversation it was agreed in. **It does not write `owns`.** What peers read is still filled from the launch environment when the agent attaches (§12.3), so a line takes effect on the agent's next start and this operation returns what peers read *now* beside what was accepted, which is how a surface says the two differ. Named `record_ownership` rather than `accept_ownership` for the reason `registry` is not `agents`: the person did the accepting, and a name claiming this operation did it would describe the wrong actor. **A fourth source, `automatic`, is recorded only by the broker itself** when Auto Accept makes an answer a line (below), and a call passing it is refused: a person's decision is never recorded as the machine's. See §17 question 10. |
+| `record_ownership(agent, statement, source, proposed_length?, conversation_id?)` | Record that a person accepted a statement of what an agent owns: the statement, which of three ways it was arrived at — the agent's own words, its words edited, or a line composed with no ask — how long the agent's own proposal was, and the conversation it was agreed in. **It does not write `owns`.** What peers read is still filled from the launch environment when the agent attaches (§12.3), so a line takes effect on the agent's next start and this operation returns what peers read *now* beside what was accepted, which is how a surface says the two differ. Named `record_ownership` rather than `accept_ownership` for the reason `registry` is not `agents`: the person did the accepting, and a name claiming this operation did it would describe the wrong actor. **A fourth source, `automatic`, is recorded only by the broker itself** when Auto Accept makes an answer a line (below), and a call passing it is refused: a person's decision is never recorded as the machine's. Refused for the person seat: a person owns no repository, and storage refuses the seat an `owns` line, so one accepted for it would read as pending for ever. See §17 question 10. |
 | `facilitation()` | The project's Auto Accept switch, and every agent's current ownership question from the facilitator: its state — asked, asked back, answered, waiting, accepted or discarded — the answer as the agent wrote it, the answer with its whitespace collapsed, and why it is waiting when it is. What a surface reviews ownership from. |
 | `set_auto_accept(on)` | Turn the project's Auto Accept switch on or off, and return it as now set. Governs answers that arrive afterwards; answers already waiting stay waiting. |
 | `ask_again(agent)` | Have the facilitator ask an agent what it owns, as a new question. Needs no seat, because the facilitator sends it. Refused for the facilitator, a seat, a retired agent, or an agent whose question is asked, asked back, answered or waiting — asking again then would lose an answer nobody has decided on. |
