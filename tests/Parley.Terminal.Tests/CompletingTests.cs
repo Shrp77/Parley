@@ -456,10 +456,9 @@ public sealed class CompletingTests : IAsyncDisposable
 
         driving.App.LayoutAndDraw(true);
 
-        var owed = Assert.Single(shell.Room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal)
-            && row.Contains("waiting for your reply", StringComparison.Ordinal));
-
-        Assert.NotEmpty(owed);
+        // One row saying it, which may sit under the name rather than beside it since 0.37.8 splits a row too wide for the
+        // column; which agent it is about is read off the item the row belongs to rather than off the text.
+        Assert.Single(shell.Room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
 
         shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is RoomRegion));
         driving.Row(shell.Room.List, "waiting for your reply");
@@ -467,6 +466,7 @@ public sealed class CompletingTests : IAsyncDisposable
         var item = shell.Room.Selected;
 
         Assert.NotNull(item);
+        Assert.Equal(Orders, item!.Peer);
 
         // The message it points at is the peer's own, in the exchange this person holds.
         Assert.NotNull(item!.At);

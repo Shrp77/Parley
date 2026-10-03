@@ -769,6 +769,14 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   property the suite holds to and the screen never shows.** It reads the drawn rows now and failed until the filter moved
   above the join. The web UI filtered first and was right.
 
+  **0.37.8: a status too long for the room goes under the name.** The owner's screenshot, with 0.37.5's marks in, still
+  read "— worki" and "— waiting on y" at the edge of a column about thirty characters wide: dropping the machine was not
+  enough for long role names. `RoomRegion.Fit` splits a row wider than the column at its dash and puts the rest on an
+  indented row of its own, belonging to the same agent or owed item so a key on either acts on it; it is redone when the
+  column is resized. **Splitting made row positions move**, so the cursor is now kept by what it is on rather than by its
+  row number — otherwise a status growing past the edge above it would put Space on somebody else. And **ticking an agent
+  redrew the room without its activity**, blanking every mark until the next read; `Address` carries it now.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

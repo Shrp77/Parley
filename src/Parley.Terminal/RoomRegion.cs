@@ -2,6 +2,7 @@ using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
@@ -176,7 +177,24 @@ internal sealed class RoomRegion : FrameView
     {
         ArgumentNullException.ThrowIfNull(addressed);
 
-        Show(_pairs, _outstanding, _seated, _me, addressed);
+        // With the activity it already has: a tick changes who a line goes to, not what anybody is doing, and drawing
+        // without it blanked every mark until the next read.
+        Show(_pairs, _outstanding, _seated, _me, addressed, _activity, _now);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Drawn again at a new width, because where a row splits depends on it. The rows are what the column was last
+    /// given, so nothing is read again.
+    /// </remarks>
+    protected override void OnViewportChanged(DrawEventArgs e)
+    {
+        base.OnViewportChanged(e);
+
+        if (Viewport.Width != _width && _width >= 0)
+        {
+            Show(_pairs, _outstanding, _seated, _me, _addressed, _activity, _now);
+        }
     }
 
     /// <summary>Shows a conversation's participants and what this person owes in it.</summary>
@@ -269,8 +287,76 @@ internal sealed class RoomRegion : FrameView
             rows.AddRange(Legend.Select(line => new Row(line, null, null, null)));
         }
 
+        _width = Viewport.Width;
+        rows = Fit(rows, _width);
+
+        // **The cursor stays on what it was on, not on the row number it was at.** A row that splits or joins above it
+        // moves everything below by one, and every refresh can do that now that a status can grow past the edge — so a
+        // cursor kept by position would land on a different agent, and Space would tick somebody else.
+        var was = Under;
+        var at = was is null ? _list.SelectedItem : rows.FindIndex(row => Same(row, was));
+
         _rows = rows;
-        _list.Replace([.. rows.Select(r => r.Text)], _list.SelectedItem);
+        _list.Replace([.. rows.Select(r => r.Text)], at is >= 0 ? at : _list.SelectedItem);
+    }
+
+    /// <summary>Whether two rows are about the same agent or the same thing owed.</summary>
+    /// <param name="row">A row.</param>
+    /// <param name="other">Another.</param>
+    /// <returns><see langword="true"/> when they name one thing.</returns>
+    private static bool Same(Row row, Row other) =>
+        (other.Peer is { } peer && row.Peer == peer)
+        || (other.Item is { } item && row.Item is { } mine && mine.Exchange == item.Exchange)
+        || (other.Peer is null && other.Item is null && row.Text == other.Text);
+
+    /// <summary>The width the rows were last fitted to, or -1 before anything was shown.</summary>
+    private int _width = -1;
+
+    /// <summary>Splits a row too wide for the column at its dash, with what follows on an indented row of its own.</summary>
+    /// <param name="rows">The rows as written.</param>
+    /// <param name="width">The column's width, or nought before it has one.</param>
+    /// <returns>The rows as they fit.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The owner's report of 2026-10-03</b>, with the marks already in: "inventoryledger — worki" and "orders —
+    /// waiting on y" at the edge of a column some thirty characters wide. What an agent is doing is the half of the row
+    /// worth reading, and it was the half that was cut.
+    /// </para>
+    /// <para>
+    /// <b>Both rows belong to the same thing</b>, so a key on either acts on the agent or the item it names — the second
+    /// row is not a separate place for the cursor to mean nothing. A row with no dash, or one that fits, is left alone.
+    /// </para>
+    /// </remarks>
+    private static List<Row> Fit(List<Row> rows, int width)
+    {
+        if (width <= 0)
+        {
+            return rows;
+        }
+
+        var fitted = new List<Row>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            var dash = row.Text.IndexOf(" — ", StringComparison.Ordinal);
+
+            if (row.Text.Length <= width || dash < 0)
+            {
+                fitted.Add(row);
+
+                continue;
+            }
+
+            // Under the name, which starts after the tick and the mark; the leading spaces of an owed row otherwise.
+            var indent = row.Peer is not null
+                ? Addressed.Length + 2
+                : row.Text.Length - row.Text.TrimStart().Length;
+
+            fitted.Add(row with { Text = row.Text[..dash] });
+            fitted.Add(row with { Text = new string(' ', indent + 2) + row.Text[(dash + 3)..] });
+        }
+
+        return fitted;
     }
 
     /// <summary>The mark for a participant that is working on a request it has picked up.</summary>

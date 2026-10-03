@@ -122,6 +122,62 @@ public sealed class RoomActivityTests
     }
 
     [Fact]
+    public void A_status_too_long_for_the_column_goes_under_the_name_rather_than_off_the_edge()
+    {
+        // **The owner's screenshot of 2026-10-03**, with the marks already in: "<long role> — worki" at the edge of a
+        // column about thirty characters wide. Placeholder names of the same length.
+        var waiting = AgentName.Create("inventoryledger@here");
+        var working = AgentName.Create("inventoryledgerwarrant@here");
+        var room = new RoomRegion { Frame = new System.Drawing.Rectangle(0, 0, 32, 40) };
+
+        room.Show(
+            [new PairState(waiting, 3, Turn.Mine), new PairState(working, null, Turn.Nobody)],
+            [new OutstandingItem(waiting, $"{waiting.Value} — waiting for your reply", 3, null)],
+            seated: true,
+            Person,
+            activity: new Dictionary<AgentName, Activity>
+            {
+                [waiting] = new(Doing.Running, null),
+                [working] = new(Doing.Working, T0),
+            },
+            now: T0.AddMinutes(3));
+
+        var width = room.Viewport.Width;
+        var rows = room.Written;
+
+        Assert.True(width is > 0 and < 40, $"the room was laid out {width} wide");
+        Assert.All(rows, row => Assert.True(row.Length <= width, $"{row.Length} > {width}: '{row}'"));
+
+        // The status is on screen, on the row under the name it belongs to.
+        var name = rows.ToList().FindIndex(row => row.Contains(working.Role, StringComparison.Ordinal));
+
+        Assert.Contains("working 3m", rows[name + 1], StringComparison.Ordinal);
+        Assert.Contains(rows, row => row.Contains("waiting on you", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Ticking_somebody_keeps_every_mark()
+    {
+        // A tick changes who a line goes to, not what anybody is doing. Redrawn without the activity, every mark went blank
+        // until the next read.
+        var room = new RoomRegion();
+
+        room.Show(
+            [new PairState(Asker, null, Turn.Nobody), new PairState(Worker, null, Turn.Nobody)],
+            [],
+            seated: true,
+            Person,
+            activity: new Dictionary<AgentName, Activity> { [Worker] = new(Doing.Working, T0), [Asker] = new(Doing.Running, null) },
+            now: T0.AddMinutes(2));
+
+        room.Address([Worker]);
+
+        Assert.Contains(room.Written, row => row.Contains($"{RoomRegion.WorkingMark} billing", StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains($"{RoomRegion.RunningMark} orders", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task The_room_keeps_itself_current_while_the_conversation_is_followed()
     {
         // It was read only on arriving, so the room went on describing the moment the conversation opened: an agent that
