@@ -210,10 +210,29 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// turn's reply.
     /// </para>
     /// </remarks>
+    public Task<TurnOutcome> TakeTurnAsync(
+        string text, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+        TakeTurnAsync(text, timeout, static () => Task.CompletedTask, cancellationToken);
+
+    /// <summary>
+    /// Gives the agent a turn, saying when it actually begins, and waits for it to finish.
+    /// </summary>
+    /// <param name="text">What to say to it.</param>
+    /// <param name="timeout">How long to wait before giving up on this turn.</param>
+    /// <param name="began">Run once the turn holds the agent, before anything is said to it.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns>What the turn cost and how it ended.</returns>
+    /// <remarks>
+    /// <b>A turn begins when it holds the agent, not when it is asked for.</b> A second wake while a turn runs queues
+    /// behind it, and a start reported at the asking put the turn's end — start plus <see cref="TurnOutcome.Elapsed"/>,
+    /// which is measured from here — before the work it picked up, so a turn stopped on a refused permission was never
+    /// flagged or shown stopped (the review gate's finding, specs/024).
+    /// </remarks>
     public async Task<TurnOutcome> TakeTurnAsync(
-        string text, TimeSpan timeout, CancellationToken cancellationToken = default)
+        string text, TimeSpan timeout, Func<Task> began, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentNullException.ThrowIfNull(began);
 
         await _turnLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -221,6 +240,8 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         try
         {
+            await began().ConfigureAwait(false);
+
             if (!IsAlive)
             {
                 return Died(started);

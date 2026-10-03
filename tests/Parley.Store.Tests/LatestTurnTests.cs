@@ -52,6 +52,25 @@ public sealed class LatestTurnTests
     }
 
     [Fact]
+    public async Task A_turn_recorded_as_ending_past_the_calendar_is_still_read()
+    {
+        // The review gate's finding: such a row made this read throw, and the registry with it, for the whole broker. The
+        // broker refuses such a report now; a store written before that must still be readable.
+        var ct = TestContext.Current.CancellationToken;
+
+        using var connection = ParleyDatabase.OpenInMemory();
+        await new AgentRepository(connection).UpsertAsync(
+            new AgentRecord(Orders, "mcp", AgentTier.Headless, null, null, null, false, AgentStatus.Active), ct);
+
+        var turns = new InvocationRepository(connection);
+        await turns.RecordAsync(
+            Orders, 1, 1, new DateTimeOffset(9999, 12, 31, 0, 0, 0, TimeSpan.Zero), TimeSpan.FromDays(2), 0, false,
+            cancellationToken: ct);
+
+        Assert.Equal(DateTimeOffset.MaxValue, Assert.Single(await turns.LatestTurnsAsync(ct)).EndedUtc);
+    }
+
+    [Fact]
     public async Task An_agent_with_no_recorded_turn_has_no_entry()
     {
         var ct = TestContext.Current.CancellationToken;

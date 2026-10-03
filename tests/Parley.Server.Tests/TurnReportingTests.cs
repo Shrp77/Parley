@@ -19,7 +19,11 @@ public sealed class TurnReportingTests
 {
     private const string Here = "m1";
     private const string Agent = "billing@m1";
-    private static readonly DateTimeOffset T0 = new(2026, 10, 3, 9, 0, 0, TimeSpan.Zero);
+    private const string Person = "human-user@test";
+
+    // Today, to the second: the broker believes a node's time only within a day of its own clock.
+    private static readonly DateTimeOffset T0 = new(
+        DateTimeOffset.UtcNow.Ticks - (DateTimeOffset.UtcNow.Ticks % TimeSpan.TicksPerSecond), TimeSpan.Zero);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -181,5 +185,84 @@ public sealed class TurnReportingTests
         var rows = (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows;
 
         Assert.DoesNotContain(rows, row => row.Name == "nobody@m1");
+    }
+
+    [Theory]
+    [InlineData(48L * 60 * 60 * 1000, 0)]
+    [InlineData(900_000_000_000_000L, 0)]
+    [InlineData(long.MaxValue, 0)]
+    [InlineData(90_000, 365)]
+    public async Task One_implausible_turn_cannot_break_the_registry_or_the_flags_for_everyone(long elapsedMs, int daysAhead)
+    {
+        // The review gate's finding: one report whose end fell past the calendar made every later registry and flags read
+        // throw — for every surface, for the whole broker, and surviving the reporter leaving. No victim was needed: an
+        // agent of the attacker's own was enough.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+
+        var report = Ended(Here, Agent, T0.AddDays(daysAhead), denials: 1);
+        report.Ended.ElapsedMs = elapsedMs;
+        report.Ended.CostUsd = double.PositiveInfinity;
+
+        await node.Nodes.ReportTurnAsync(report, cancellationToken: Ct);
+
+        if (daysAhead > 0)
+        {
+            // A start a year ahead would hold the agent "working" until then.
+            await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddDays(daysAhead)), cancellationToken: Ct);
+        }
+
+        var row = await RowAsync(broker, Agent);
+
+        _ = await broker.ConnectAsOperator().DescribeFlagsAsync(new Wire.Empty(), cancellationToken: Ct);
+
+        Assert.Empty(row.LastTurnEndedUtc);
+        Assert.Empty(row.TurnRunningSinceUtc);
+    }
+
+    [Fact]
+    public async Task No_node_reports_a_turn_for_the_person_or_for_Parley()
+    {
+        // Neither is hosted on a machine: the half of their names after '@' is the project, so the machine comparison
+        // alone admitted any node joined under the project's name — and a PermissionRefused flag against the person.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "test", [], Ct, reportsTurns: true);
+
+        foreach (var name in new[] { Person, "parley-facilitator@test" })
+        {
+            await node.Nodes.ReportTurnAsync(Started("test", name, T0), cancellationToken: Ct);
+            await node.Nodes.ReportTurnAsync(Ended("test", name, T0, denials: 3), cancellationToken: Ct);
+            await node.Nodes.ReportTurnAsync(Started("test", name, T0.AddMinutes(5)), cancellationToken: Ct);
+        }
+
+        var rows = (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows;
+        var person = rows.Single(row => row.Name == Person);
+
+        Assert.Empty(person.TurnRunningSinceUtc);
+        Assert.Empty(person.LastTurnEndedUtc);
+        Assert.DoesNotContain(
+            rows,
+            row => row.Name == "parley-facilitator@test" && (row.LastTurnEndedUtc.Length > 0 || row.TurnRunningSinceUtc.Length > 0));
+    }
+
+    [Fact]
+    public async Task Nothing_but_a_surface_seating_the_person_attaches_as_the_person()
+    {
+        // SPEC.md §12.3 says attaching under the reserved role is refused, and no code did: an agent's adapter attached as
+        // the person and opened a conversation with the person's standing (principle 2.10).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+
+        var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(async () =>
+        {
+            await using var impostor = await AttachedClient.AttachAsync(
+                broker, Person, cancellationToken: Ct, adapter: "claude-code");
+        });
+
+        Assert.Equal(Grpc.Core.StatusCode.PermissionDenied, refused.StatusCode);
+        Assert.Contains("person's seat", refused.Status.Detail, StringComparison.Ordinal);
+
+        await using var seat = await AttachedClient.AttachAsync(
+            broker, Person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
     }
 }

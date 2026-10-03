@@ -267,6 +267,11 @@ public static class EnrollmentPlan
                 // with nothing said about why. `parley` alone is not reserved: a folder called Parley enrols as it.
                 problems.Add($"{where}: {Facilitation.Reserved}");
             }
+            else if (PersonSeat.IsReserved(entry.Agent))
+            {
+                // The person's seat (§12.3). Enrolled, the repository's adapter would attach under the person's name.
+                problems.Add($"{where}: {PersonSeat.Reserved}");
+            }
             else if (claimed.TryGetValue(entry.Agent, out var first))
             {
                 // Not tidiness. Identity is the one thing Parley makes unforgeable, and it does

@@ -57,6 +57,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             throw new RpcException(new Status(StatusCode.PermissionDenied, Facilitation.Reserved));
         }
 
+        // The person's seat (§12.3): only a surface seating the person attaches under it. The row is written when the
+        // store opens, so an attach under the name fires no storage rule; this comparison is the whole guard, and it
+        // trusts the adapter the caller reports, as §16 concedes of every name. Without it an agent attached here
+        // would speak with the person's standing — a person may always open a conversation (principle 2.10).
+        if (PersonSeat.Is(name) && !string.Equals(request.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(StatusCode.PermissionDenied, PersonSeat.Reserved));
+        }
+
         RequireTheSameProtocol(request.ProtocolVersion);
 
         var registration = new AgentRecord(

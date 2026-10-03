@@ -3014,6 +3014,18 @@ editor and runs no node turns at all — and no surface may say otherwise.
 Anything else is ignored and nothing is stored. §16 concedes that anything able to reach a broker can
 claim to be anything; refusing a node's claim about another machine's agent costs one comparison.
 
+**Nor for the person seat or the facilitator, and nor for a turn no node gives.** Neither is hosted on a
+machine (§4.1.1), so the half of their names after `@` is a project, and a node joined under that name would
+otherwise pass the comparison above — a node could have flagged the person as stopped on a refused
+permission. A turn is also ignored when it is said to begin more than a day from the broker's own clock, or
+to have run longer than a day: machines' clocks differ, so the window is loose, and what it stops is one
+report holding an agent "working" for a year, or putting a turn's end past the calendar where reading it
+fails. A node gives up on a turn long before either bound.
+
+A turn is reported as beginning when the agent takes it, not when it is asked for. A turn asked for while
+another is running waits for it, and a start reported at the asking would put the end, which is the start plus
+the time the turn ran, before the work that turn picked up.
+
 **Nothing here reaches an agent.** How another agent's turns went, what they cost and what they were
 refused is the operator's view (§10.2's `registry()` and `flags()`), never `agents()` (§10.1). And a
 failed report never fails the turn it describes: the node notes it and carries on.

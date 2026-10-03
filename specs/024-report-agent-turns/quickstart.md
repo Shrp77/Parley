@@ -8,7 +8,7 @@ agents `orders` and `billing`; `billing`'s repository allows no shell commands.
 2. **Stopped is a turn that ended owing.** `orders` asks `billing` for something that needs a shell command. `billing`'s
    command is refused and, if it ignores 0.37.9's instruction, its turn ends silently. Within one refresh the room shows
    `■ billing — stopped <1m — 1 permission refused`, never `working`.
-3. **Told at once.** The flags list (terminal Health, web UI, `parley flags`) shows a permission-refused flag naming
+3. **Told at once.** The flags list (terminal Health, the web UI's health page; `parley flags` went in 019) shows a permission-refused flag naming
    `billing` and the conversation, without waiting four hours.
 4. **It clears.** Allow the command in `billing`'s repository settings and give it a turn; it answers; the room's mark and
    the flag both go.

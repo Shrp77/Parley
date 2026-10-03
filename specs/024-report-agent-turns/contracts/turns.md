@@ -22,11 +22,11 @@ message TurnReport {
 }
 
 message TurnStarted {
-  google.protobuf.Timestamp started_utc = 1;
+  string started_utc = 1;            // RFC 3339, UTC, as every time on this wire
 }
 
 message TurnEnded {
-  google.protobuf.Timestamp started_utc = 1;   // pairs it with its start
+  string started_utc = 1;                      // pairs it with its start
   int64 elapsed_ms = 2;
   bool clean = 3;                              // completed, not an error
   bool timed_out = 4;
@@ -42,7 +42,8 @@ Broker behaviour:
 - A start sets the agent's running turn; an end records an `invocations` row (waiting counts filled by the broker) and
   clears the running turn if it is not newer than the end's start.
 - Reports for an agent not on the reporting machine, from a node not joined, or for an agent the broker does not know,
-  are ignored and nothing is stored.
+  are ignored and nothing is stored. So are reports for the person or Parley, which no node hosts, a start more than a
+  day from the broker's clock, and an end claiming a turn longer than a day (all three found by the combined review gate).
 - A node's stream ending clears every running turn it reported.
 - A failed report never fails the turn: the node logs and carries on.
 
@@ -51,11 +52,11 @@ Broker behaviour:
 `DescribeRegistry`'s agent gains:
 
 ```proto
-bool turns_reported = 20;
-google.protobuf.Timestamp turn_running_since = 21;     // unset when no turn is running
-google.protobuf.Timestamp last_turn_ended_utc = 22;    // unset before the first reported turn
-bool last_turn_clean = 23;
-int32 last_turn_permission_denials = 24;
+bool turns_reported = 12;
+string turn_running_since_utc = 13;   // empty when no turn is running
+string last_turn_ended_utc = 14;      // empty before the first reported turn
+bool last_turn_clean = 15;
+int32 last_turn_permission_denials = 16;
 ```
 
 `DescribeFlags` gains `FlagKind.PERMISSION_REFUSED`.

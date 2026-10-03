@@ -770,8 +770,8 @@ public static class NodeCommand
                 var turn = await new TurnReporter(nodes, machine, output)
                     .RunAsync(
                         resident.Name,
-                        () => resident.TakeTurnAsync(
-                            OperatorInstruction.Mark(instruct.Text), TurnTimeout, cancellationToken))
+                        began => resident.TakeTurnAsync(
+                            OperatorInstruction.Mark(instruct.Text), TurnTimeout, began, cancellationToken))
                     .ConfigureAwait(false);
 
                 outcome = turn.Succeeded
@@ -885,7 +885,7 @@ public static class NodeCommand
             var outcome = await TurnReporter.Run(
                     reporter,
                     resident,
-                    () => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, cancellationToken))
+                    began => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, began, cancellationToken))
                 .ConfigureAwait(false);
 
             if (!outcome.Succeeded)

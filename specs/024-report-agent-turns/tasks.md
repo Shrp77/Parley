@@ -121,7 +121,7 @@ and "1 permission refused", never working.
 - [X] T028 [P] [US2] Show it in the terminal's Health dialog with the agent, the conversation and the refusals, in
   src/Parley.Terminal/Health.cs
 - [X] T029 [P] [US2] Show it on the web UI's health page, in src/Parley.Web/Pages/Projects/Health.cshtml(.cs)
-- [X] T030 [P] [US2] Word it in `parley flags`, in src/Parley.Cli/OperatorCommands.cs
+- [X] T030 [P] [US2] Word it in `parley flags`, in src/Parley.Cli/OperatorCommands.cs — *the combined review gate found `flags` is not dispatched since 019, so this wording is unreachable; the two surfaces above are where the flag is read*
 
 **Checkpoint**: US2 complete.
 

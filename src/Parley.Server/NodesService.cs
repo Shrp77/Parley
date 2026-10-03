@@ -108,7 +108,8 @@ public sealed class NodesService : Wire.Nodes.NodesBase
                 break;
 
             case Wire.TurnReport.PhaseOneofCase.Ended
-                when Timestamp(request.Ended.StartedUtc) is { } began:
+                when Timestamp(request.Ended.StartedUtc) is { } began
+                    && request.Ended.ElapsedMs is >= 0 and <= LongestTurnMs:
                 var ended = request.Ended;
 
                 _ = await _runtime.TurnEndedAsync(
@@ -116,12 +117,12 @@ public sealed class NodesService : Wire.Nodes.NodesBase
                     agent,
                     new EndedTurn(
                         began,
-                        TimeSpan.FromMilliseconds(Math.Max(0, ended.ElapsedMs)),
+                        TimeSpan.FromMilliseconds(ended.ElapsedMs),
                         ended.Clean,
                         ended.TimedOut,
                         ended.ProcessDied,
                         Math.Max(0, ended.PermissionDenials),
-                        Math.Max(0, ended.CostUsd),
+                        double.IsFinite(ended.CostUsd) ? Math.Max(0, ended.CostUsd) : 0,
                         Math.Max(0, ended.ModelTurns)),
                     context.CancellationToken).ConfigureAwait(false);
                 break;
@@ -129,6 +130,15 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
         return new Wire.Empty();
     }
+
+    /// <summary>The longest turn a report may claim: a day.</summary>
+    /// <remarks>
+    /// A node gives up on a turn after twenty minutes, so a day is not a limit any real turn meets. What it stops is a
+    /// length that put a turn's end past the calendar, which made every later registry and flags read throw — one report
+    /// breaking both for the whole broker (the review gate's finding). A report beyond it is ignored like any other that
+    /// does not check out.
+    /// </remarks>
+    internal const long LongestTurnMs = 24L * 60 * 60 * 1000;
 
     /// <summary>Reads a time from the wire, or null when it is not one.</summary>
     /// <param name="value">RFC 3339, in UTC.</param>

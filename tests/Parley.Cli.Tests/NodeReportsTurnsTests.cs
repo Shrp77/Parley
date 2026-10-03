@@ -55,8 +55,10 @@ public sealed class NodeReportsTurnsTests
         {
             TurnStanding? during = null;
 
-            var outcome = await new TurnReporter(nodes, Machine, TextWriter.Null).RunAsync(Billing, async () =>
+            var outcome = await new TurnReporter(nodes, Machine, TextWriter.Null).RunAsync(Billing, async began =>
             {
+                await began();
+
                 during = await StandingAsync(broker);
 
                 return Outcome(denials: 2);
@@ -88,7 +90,12 @@ public sealed class NodeReportsTurnsTests
         {
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 new TurnReporter(nodes, Machine, TextWriter.Null).RunAsync(
-                    Billing, () => throw new InvalidOperationException("the runner fell over")));
+                    Billing, async began =>
+                    {
+                        await began();
+
+                        throw new InvalidOperationException("the runner fell over");
+                    }));
 
             var after = await StandingAsync(broker);
 
@@ -99,12 +106,74 @@ public sealed class NodeReportsTurnsTests
     }
 
     [Fact]
+    public async Task A_turn_is_reported_from_when_it_begins_not_from_when_it_was_asked_for()
+    {
+        // The review gate's finding: a turn queued behind another was reported as starting when it was asked for, so its
+        // end — start plus the time it ran — landed before the work it took, and a stop on a refused permission was never
+        // flagged. The wait here stands in for the agent's turn lock.
+        using var connection = ParleyDatabase.OpenInMemory();
+        var (broker, nodes, joined) = await JoinedAsync(connection);
+
+        await using (broker)
+        await using (joined)
+        {
+            var asked = DateTimeOffset.UtcNow;
+            TurnStanding? during = null;
+
+            _ = await new TurnReporter(nodes, Machine, TextWriter.Null).RunAsync(Billing, async began =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+
+                during = await StandingAsync(broker);
+
+                await began();
+
+                return Outcome();
+            });
+
+            Assert.Null(during!.RunningSince);
+
+            var after = await StandingAsync(broker);
+
+            Assert.True(
+                after.LastEnded >= asked.AddMilliseconds(900),
+                $"the end was put at {after.LastEnded:O}, though the turn began a second after {asked:O}");
+        }
+    }
+
+    [Fact]
+    public async Task A_turn_that_never_began_is_not_reported()
+    {
+        // Cancelled while it queued: nothing ran, so there is no turn to record.
+        using var connection = ParleyDatabase.OpenInMemory();
+        var (broker, nodes, joined) = await JoinedAsync(connection);
+
+        await using (broker)
+        await using (joined)
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() =>
+                new TurnReporter(nodes, Machine, TextWriter.Null).RunAsync(
+                    Billing, _ => throw new OperationCanceledException()));
+
+            var after = await StandingAsync(broker);
+
+            Assert.Null(after.RunningSince);
+            Assert.Null(after.LastEnded);
+        }
+    }
+
+    [Fact]
     public async Task A_broker_that_cannot_be_reached_never_fails_the_turn()
     {
         var nowhere = new Wire.Nodes.NodesClient(GrpcChannel.ForAddress("http://127.0.0.1:1"));
         var said = new StringWriter();
 
-        var outcome = await new TurnReporter(nowhere, Machine, said).RunAsync(Billing, () => Task.FromResult(Outcome()));
+        var outcome = await new TurnReporter(nowhere, Machine, said).RunAsync(Billing, async began =>
+        {
+            await began();
+
+            return Outcome();
+        });
 
         Assert.True(outcome.Succeeded);
         Assert.Contains("could not report its turn", said.ToString(), StringComparison.Ordinal);

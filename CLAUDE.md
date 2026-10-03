@@ -667,6 +667,19 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   - **A mutation loop reset `BrokerRuntime.cs` with `git checkout` and wiped 140 uncommitted lines**; the copy taken first
     restored it. Reset from the copy, never from git.
 
+  **0.38.1: the combined review gate's first runs (019–024, the owner's call of 2026-10-03) found six defects, five in
+  024.** One forged turn report whose end fell past the calendar made every registry and flags read throw, for the whole
+  broker, surviving the reporter leaving; the broker now ignores a start more than a day from its clock and a turn longer
+  than a day, and the readers survive a row written before that. Turn reports were accepted for `human-user` and
+  `parley-facilitator`, whose names end in a project rather than a machine, so a node named after the project could flag
+  the person as stopped. **SPEC.md §12.3 said attaching as `human-user` is refused, and nothing refused it**: an agent's
+  adapter attached as the person and opened a conversation with the person's standing. `Attach` and enrolment refuse it
+  now. A turn queued behind another reported its start when it was asked for, so its end landed before the work it took
+  and the very case 024 exists for — a stop on a refused permission — was never flagged; `ResidentAgent.TakeTurnAsync`
+  says when the turn really begins. And the README sent people to `parley flags`, gone since 019, and to `Alt+a` for
+  Auto Accept, which moved to *Configuration* (`F3`). Each fix was mutation-checked; **one mutation did not compile and
+  proved nothing until it was redone** — the second time on this feature.
+
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
 - **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on

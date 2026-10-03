@@ -752,6 +752,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<bool> TurnStartedAsync(
         string machine, AgentName agent, DateTimeOffset startedUtc, CancellationToken cancellationToken = default)
     {
+        if (!Plausible(startedUtc) || !_nodes.TryGetValue(machine, out var reporter))
+        {
+            return false;
+        }
 
         var before = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
 
@@ -760,13 +764,30 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
-        _ = _turns.AddOrUpdate(
-            agent,
-            new RunningTurn(startedUtc, machine, waiting),
-            (_, was) => was.Started > startedUtc ? was : new RunningTurn(startedUtc, machine, waiting));
+        var running = new RunningTurn(startedUtc, machine, waiting);
+
+        _ = _turns.AddOrUpdate(agent, running, (_, was) => was.Started > startedUtc ? was : running);
+
+        // The node may have left while the count was read, and its release swept the table before this landed. Taken
+        // back, or the agent would read as working until its next report — the three hours 024 exists to end.
+        if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
+        {
+            _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
+            return false;
+        }
 
         return true;
     }
+
+    /// <summary>Whether a node's word about when a turn began is within a day of this broker's clock.</summary>
+    /// <param name="startedUtc">The node's time.</param>
+    /// <returns>Whether to believe it.</returns>
+    /// <remarks>
+    /// Machines' clocks differ, so this is loose on purpose; what it stops is a start a year ahead, which would hold an
+    /// agent "working" until then, or put a turn's end past the calendar (both found by the review gate).
+    /// </remarks>
+    private bool Plausible(DateTimeOffset startedUtc) =>
+        (startedUtc - Clock.GetUtcNow()).Duration() <= TimeSpan.FromDays(1);
 
     /// <summary>Records that a node's turn for one of its agents ended (SPEC.md §11.6).</summary>
     /// <param name="machine">The reporting node's machine.</param>
@@ -789,6 +810,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         string machine, AgentName agent, EndedTurn ended, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(ended);
+
+        if (!Plausible(ended.StartedUtc))
+        {
+            return false;
+        }
 
         var after = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
 
@@ -848,7 +874,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private async Task<long?> AcceptedTurnAsync(string machine, AgentName agent, CancellationToken cancellationToken)
     {
-        if (!_nodes.ContainsKey(machine) || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        // The person and Parley are hosted nowhere: the half of their names after '@' is the project, so the machine
+        // comparison would admit any node joined under the project's name (WakeForOutstandingWorkAsync has the same
+        // exclusion). No node gives either of them a turn.
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_nodes.ContainsKey(machine)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
         {
             return null;
         }

@@ -124,7 +124,7 @@ public sealed class FlagRepository(SqliteConnection connection)
             // patient with. Read off the most recent turn, so a later clean turn clears it (research R6).
             if (row.LastTurnDenials > 0
                 && row.LastTurnStarted is { } began
-                && ExchangeRow.ParseTimestamp(began).AddMilliseconds(row.LastTurnElapsedMs) is var ended
+                && InvocationRepository.EndOf(ExchangeRow.ParseTimestamp(began), row.LastTurnElapsedMs) is var ended
                 && ended > progress)
             {
                 flags.Add(new Flag(FlagKind.PermissionRefused, row.Id, row.ConversationId, owedBy, waiting, ended));

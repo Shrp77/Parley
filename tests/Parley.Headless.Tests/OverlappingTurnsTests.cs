@@ -14,7 +14,7 @@ namespace Parley.Headless.Tests;
 /// sessions working one repository at once is the hazard the whole resident design exists to avoid.
 /// </para>
 /// <para>
-/// <see cref="ResidentAgent.TakeTurnAsync"/> takes a per-agent lock, which its remarks said and nothing checked. Pinned
+/// <see cref="ResidentAgent.TakeTurnAsync(string, TimeSpan, CancellationToken)"/> takes a per-agent lock, which its remarks said and nothing checked. Pinned
 /// by timing against a stub that answers each turn after a fixed delay: taken in order, the second completes a whole
 /// delay after the first; interleaved, the two complete together.
 /// </para>

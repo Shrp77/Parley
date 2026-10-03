@@ -509,7 +509,7 @@ cannot be a line as written, or from an agent on another machine, waits for a pe
 whether a person or nobody read it, and any answer waiting. From there you accept, edit or
 discard an answer, write a line yourself, reply to an agent that asked Parley something back, or
 have Parley ask again (`Alt+k` for one agent, `Alt+e` for all). None of it needs a seat. Turn Auto Accept
-off (`Alt+a` on the projects pane) and every answer waits for you.
+off (in *Configuration*, `F3`, or the Project menu) and every answer waits for you.
 
 **There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
 versions capped it at a hundred characters, measured: a roster entry costs about seventy-five
@@ -822,8 +822,8 @@ is waiting for the answer, which is not stopped. An agent whose machine does not
 agent opened in somebody's editor — shows only whether it is running, because anything more would be a guess. The web UI
 says the same things on a conversation's page.
 
-**A stop caused by a refused permission is flagged at once**, in Health (`Alt+y`), on the web UI's health page and in
-`parley flags`, rather than after the usual four hours: only a person can get the agent past it, by allowing the command
+**A stop caused by a refused permission is flagged at once**, in Health (`Alt+y`) and on the web UI's health page,
+rather than after the usual four hours: only a person can get the agent past it, by allowing the command
 in that repository's Claude Code permission settings and starting the agent again.
 
 It draws in colour, and no fact rests on it: a project is green because the line says

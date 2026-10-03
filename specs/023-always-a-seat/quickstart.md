@@ -23,7 +23,7 @@ into the live deployment's catalogue. `walk.ps1` goes beside this file, as 019's
 
 1. With no surface open, have a scripted agent send a Request to `human-user@alpha`.
    **Expect** `receiver_is` to say the person has it and will answer. **Expect** it not to say unreachable.
-2. `parley flags` after the flag threshold. **Expect** *waiting on you*, naming the agent, with no
+2. Health (`Alt+y` in the terminal) after the flag threshold — `parley flags` went in 019. **Expect** *waiting on you*, naming the agent, with no
    "ask the agent" remedy.
 
 ## 4. The person opens a surface and answers

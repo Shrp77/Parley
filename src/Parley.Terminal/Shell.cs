@@ -1903,9 +1903,8 @@ internal sealed class Shell : Window
                 : Array.Empty<RegionAction>(),
         ],
 
-        // **The room column, and the flip lives here as well as on F2.** The rows this pane lists are what an
-        // answer-or-ask-back choice is about, and a list is somewhere a letter is free — which the box beside it
-        // is not, since every letter there belongs to the text. No action on this surface exists only as a key.
+        // **The room column.** A list is somewhere a letter is free — which the box beside it is not, since every
+        // letter there belongs to the text. No action on this surface exists only as a key.
         RoomRegion =>
         [
             // Offered only on a row that is a participant, because that is the only row it would do anything
@@ -3877,7 +3876,7 @@ internal sealed class Shell : Window
         // letter the status line advertised. One of the two has to yield, and while a text box has focus the
         // answer is obvious.
         //
-        // Below the keys above rather than above them: Tab, Escape, the quit chord, F8 and F2 keep working
+        // Below the keys above rather than above them: Tab, Escape, the quit chord and F8 keep working
         // while somebody types, because none of them is a character and leaving a box must not need the mouse.
         if (Line.Editing && !key.IsCtrl && !key.IsAlt && key.AsRune.Value != 0)
         {

@@ -361,13 +361,29 @@ public sealed class InvocationRepository(SqliteConnection connection)
 
             latest.Add(new LatestTurn(
                 agent,
-                ExchangeRow.ParseTimestamp(reader.GetString(1)).AddMilliseconds(reader.GetInt64(2)),
+                EndOf(ExchangeRow.ParseTimestamp(reader.GetString(1)), reader.GetInt64(2)),
                 reader.GetInt64(3) == 0 && reader.GetInt64(4) == 0,
                 (int)reader.GetInt64(5)));
         }
 
         return latest;
     }
+
+    /// <summary>When a turn ended: its start plus its length, held to the calendar.</summary>
+    /// <param name="started">When it began.</param>
+    /// <param name="elapsedMs">How long it ran.</param>
+    /// <returns>The end, or the last representable instant.</returns>
+    /// <remarks>
+    /// A row is a node's say-so (§16), and one that put the end past the year 9999 made the addition throw on every
+    /// later read of the registry and of the flags — one report breaking both for the whole broker, found by the review
+    /// gate. The broker refuses such a report now; this keeps a store written before that readable.
+    /// </remarks>
+    internal static DateTimeOffset EndOf(DateTimeOffset started, long elapsedMs) =>
+        elapsedMs <= 0
+            ? started
+            : elapsedMs >= (DateTimeOffset.MaxValue - started).TotalMilliseconds
+                ? DateTimeOffset.MaxValue
+                : started.AddMilliseconds(elapsedMs);
 
     /// <summary>Reads what invocation has cost, per agent.</summary>
     /// <param name="cancellationToken">Cancels the read.</param>

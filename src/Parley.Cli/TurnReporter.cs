@@ -27,57 +27,76 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 
     /// <summary>Runs a turn, reporting its start and its end.</summary>
     /// <param name="agent">The agent whose turn it is.</param>
-    /// <param name="turn">The turn.</param>
+    /// <param name="turn">The turn, handed what to call once it actually begins.</param>
     /// <returns>What the turn came to.</returns>
-    internal async Task<TurnOutcome> RunAsync(Parley.Core.AgentName agent, Func<Task<TurnOutcome>> turn)
+    /// <remarks>
+    /// <b>The start is reported when the turn begins, not when it is asked for</b>: a turn queued behind another for the
+    /// same agent would otherwise be reported as starting early, and its end — the start plus the time it ran — would
+    /// land before the work it took, so a stop on a refused permission was never flagged (the review gate's finding). A
+    /// turn that never began, cancelled while it queued, is reported not at all.
+    /// </remarks>
+    internal async Task<TurnOutcome> RunAsync(
+        Parley.Core.AgentName agent, Func<Func<Task>, Task<TurnOutcome>> turn)
     {
         ArgumentNullException.ThrowIfNull(turn);
 
-        var started = DateTimeOffset.UtcNow;
+        DateTimeOffset? began = null;
 
-        await SendAsync(new Wire.TurnReport
+        async Task Began()
         {
-            Machine = machine,
-            Agent = agent.Value,
-            Started = new Wire.TurnStarted { StartedUtc = Stamp(started) },
-        }).ConfigureAwait(false);
+            began = DateTimeOffset.UtcNow;
+
+            await SendAsync(new Wire.TurnReport
+            {
+                Machine = machine,
+                Agent = agent.Value,
+                Started = new Wire.TurnStarted { StartedUtc = Stamp(began.Value) },
+            }).ConfigureAwait(false);
+        }
 
         TurnOutcome? outcome = null;
 
         try
         {
-            outcome = await turn().ConfigureAwait(false);
+            outcome = await turn(Began).ConfigureAwait(false);
 
             return outcome;
         }
         finally
         {
-            await SendAsync(new Wire.TurnReport
+            if (began is { } started)
             {
-                Machine = machine,
-                Agent = agent.Value,
-                Ended = new Wire.TurnEnded
-                {
-                    StartedUtc = Stamp(started),
-                    ElapsedMs = (long)(outcome?.Elapsed ?? (DateTimeOffset.UtcNow - started)).TotalMilliseconds,
-                    Clean = outcome?.Succeeded ?? false,
-                    TimedOut = outcome?.TimedOut ?? false,
-                    ProcessDied = outcome?.ProcessDied ?? false,
-                    PermissionDenials = outcome?.PermissionDenials ?? 0,
-                    CostUsd = outcome?.CostUsd ?? 0,
-                    ModelTurns = outcome?.ModelTurns ?? 0,
-                },
-            }).ConfigureAwait(false);
+                await ReportEndAsync(agent, started, outcome).ConfigureAwait(false);
+            }
         }
     }
+
+    private Task ReportEndAsync(Parley.Core.AgentName agent, DateTimeOffset started, TurnOutcome? outcome) =>
+        SendAsync(new Wire.TurnReport
+        {
+            Machine = machine,
+            Agent = agent.Value,
+            Ended = new Wire.TurnEnded
+            {
+                StartedUtc = Stamp(started),
+                ElapsedMs = (long)(outcome?.Elapsed ?? (DateTimeOffset.UtcNow - started)).TotalMilliseconds,
+                Clean = outcome?.Succeeded ?? false,
+                TimedOut = outcome?.TimedOut ?? false,
+                ProcessDied = outcome?.ProcessDied ?? false,
+                PermissionDenials = outcome?.PermissionDenials ?? 0,
+                CostUsd = outcome?.CostUsd ?? 0,
+                ModelTurns = outcome?.ModelTurns ?? 0,
+            },
+        });
 
     /// <summary>Runs a turn through a reporter when there is one, and plainly when there is not.</summary>
     /// <param name="reporter">The reporter, or null.</param>
     /// <param name="resident">The agent, whose name is reported.</param>
-    /// <param name="turn">The turn.</param>
+    /// <param name="turn">The turn, handed what to call once it actually begins.</param>
     /// <returns>What the turn came to.</returns>
-    internal static Task<TurnOutcome> Run(TurnReporter? reporter, ResidentAgent resident, Func<Task<TurnOutcome>> turn) =>
-        reporter is null ? turn() : reporter.RunAsync(resident.Name, turn);
+    internal static Task<TurnOutcome> Run(
+        TurnReporter? reporter, ResidentAgent resident, Func<Func<Task>, Task<TurnOutcome>> turn) =>
+        reporter is null ? turn(static () => Task.CompletedTask) : reporter.RunAsync(resident.Name, turn);
 
     private static string Stamp(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
@@ -91,7 +110,9 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         }
         catch (Exception failure)
         {
-            var why = failure is RpcException rpc ? rpc.Status.Detail : failure.Message;
+            var why = failure is RpcException rpc
+                ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
+                : failure.Message;
 
             await output.WriteLineAsync($"  {report.Agent}: could not report its turn to the broker — {why}")
                 .ConfigureAwait(false);

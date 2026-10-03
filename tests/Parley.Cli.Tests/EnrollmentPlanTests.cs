@@ -74,6 +74,18 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
+    public void The_persons_role_is_refused_and_a_user_is_not()
+    {
+        // SPEC.md §12.3 says enrolment refuses a repository under the person's seat, and until the review gate nothing
+        // did: the repository's adapter would have attached under the person's name. `user` stays an ordinary role.
+        Assert.Contains(
+            Validate(new EnrollmentEntry(Workspace, PersonSeat.Role, "", false)),
+            p => p.Contains(PersonSeat.Reserved, StringComparison.Ordinal));
+
+        Assert.Empty(Validate(new EnrollmentEntry(Workspace, "user", "", false)));
+    }
+
+    [Fact]
     public void An_empty_owns_line_needs_no_approval()
     {
         // Declining to state a boundary is a legitimate answer and must not need a second
