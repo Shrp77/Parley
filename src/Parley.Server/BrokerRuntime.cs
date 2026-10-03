@@ -611,7 +611,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 throw new InvalidOperationException(
                     $"'{registration.Name.Value}' is retired and cannot attach. An operator " +
-                    "reinstates it with `parley reinstate`.");
+                    "reinstates it from the agents pane in `parley`, or from its page in the web UI.");
             }
 
             var attached = new AttachedAgent(this, registration.Name, broker, started);

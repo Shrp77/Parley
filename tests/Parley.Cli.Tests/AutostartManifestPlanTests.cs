@@ -121,4 +121,21 @@ public sealed class AutostartManifestPlanTests
         Assert.Null(InstalledEntry.Parse(string.Empty));
         Assert.Null(InstalledEntry.Parse("up --node-config node.json"));
     }
+
+    [Theory]
+    [InlineData("serve --with-console", "--with-console", null)]
+    [InlineData("serve --no-console", "--no-console", null)]
+    [InlineData("serve --console http://127.0.0.1:5089", "--console", "http://127.0.0.1:5089")]
+    public void Every_old_console_spelling_is_reported_and_the_address_is_still_read(
+        string arguments, string removed, string? address)
+    {
+        // A broker given any of the three refuses it and exits, so the entry starts nothing at logon, and `autostart
+        // status` is the one place that can say so. `--console` was read for its address and never reported, so the
+        // one old spelling that carries a value was the one that went unmentioned (the combined review gate).
+        var entry = InstalledEntry.Parse(arguments);
+
+        Assert.NotNull(entry);
+        Assert.Contains(removed, entry.Removed);
+        Assert.Equal(address, entry.Console);
+    }
 }

@@ -258,10 +258,11 @@ you, and start the broker again at logon. `parley autostart status` says whether
 and what it was registered to run; `parley autostart remove` undoes it, leaving a broker that is
 already running alone.
 
-**It serves the manifest, not a store.** Every project named in it gets its own broker from that
-one process, hosting this machine's node in each project whose entry names a catalogue — except on
-a machine with one project, where `PARLEY_NODE_CONFIG`, when it is set, names the catalogue instead,
-as it does for `parley up`. A project named later gets its broker within seconds, because the process watches the manifest; nothing is
+**It serves every project, not one store.** Each project gets its own broker from that one
+process. The process also runs this machine's node in every project. The node reads one catalogue
+for the whole machine: `node.json`, in the same folder as the projects. `parley autostart install
+--node-config <path>` names a different file. The entry does not read `PARLEY_NODE_CONFIG`, because
+nothing sets that variable at logon. A project named later gets its broker within seconds, because the process watches the manifest; nothing is
 reinstalled and nothing restarts. A machine that names no project yet is served the same way: the
 process waits, with the web UI up, for the first one.
 
@@ -276,10 +277,17 @@ tool of its own. If the address is already taken, or the tool is not installed o
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
 deployment, and it names `parley` in the same breath so you are never told there is no way in.
 
-`--with-console`, `--console` and `--no-console` were the old spellings. They are **removed** as of
-0.22.0: a broker given one starts anyway and ignores it, so an autostart entry written before this
-version keeps working and quietly stops starting a web UI — `parley autostart status` says so and
-names what to re-run. `parley autostart install` writes an entry this version understands.
+`--with-console`, `--console` and `--no-console` were the old spellings. They were **removed** in
+0.22.0. A broker given one of them does not start: it says the flag is not an option it takes, and
+exits with code 64. So an autostart entry written before 0.19.0 that still names one starts no
+broker at logon. The fix is to register the entry again:
+
+```
+parley autostart install
+```
+
+That writes an entry this version understands. Add `--no-web-ui` to leave the web UI out, or
+`--web-ui <url>` to move it.
 
 **`parley` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
@@ -298,9 +306,11 @@ parley
 parley --project acme registry
 ```
 
-The list lives in one file per machine, under your own configuration directory; `parley project
-list` says where and reports which brokers are answering. `--config`, or `PARLEY_CONFIG`, names a
-different file — for a test rig or a second account, not for one repository to have its own, which
+The projects live in one folder per machine, under your own configuration directory: each
+project is a folder of its own inside it. `parley project list` says where that folder is and
+reports which brokers are answering. `--config`, or `PARLEY_CONFIG`, names a different folder.
+It names the folder, not a file: since 0.32.0, pointing it at the old `projects.json` file is
+refused. Use it for a test rig or a second account, not for one repository to have its own, which
 would be the disagreement this ends rather than a use of it. A command acts on the project
 `--project` names; failing that, on `PARLEY_PROJECT`, which `parley use <name>` prints the line to
 set for one terminal; failing that, on the one the repository you run it in names in its
@@ -653,21 +663,35 @@ a session acts when a person sends it something — so an exchange between two r
 needs a human at both ends, which is not what the protocol is for.
 
 How to start a repository is configuration belonging to the machine it is on, so it lives in
-`node.json` — beside where you run `parley up`, or wherever `PARLEY_NODE_CONFIG` points — and
-never reaches the broker:
+`node.json` on that machine and never reaches the broker. There is one for the whole machine. It
+sits in the same folder as your projects (`parley project list` says where). `PARLEY_NODE_CONFIG`,
+or `--node-config` on `parley up`, names a different file.
+
+You rarely edit it. Enrolling a repository writes its entry, from the terminal or with
+`parley enroll`. It looks like this:
 
 ```json
 {
   "agents": {
-    "orders": { "command": "claude" }
+    "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011": {
+      "command": "claude",
+      "workspace": "C:\\src\\orders"
+    }
   }
 }
 ```
 
+Each key is an agent's identity: a GUID that enrolment writes once into the repository's own
+`.mcp.json`, as `parleyAgentId`. An entry says two things: the command that starts the agent, and
+the folder to start it in. It says nothing about projects or names. Those come from the
+repository's `.mcp.json`, which has one entry per project it answers in. So one checkout enrolled
+in two projects is one entry here, and it can be started from either project. An entry keyed by
+anything other than an identity, such as a role name from an older version, is skipped and
+reported.
+
 Listing a repository there is the permission. `parley up` may start it when a peer needs one,
 kept alive so it remembers the conversations it is in; leave it out and nothing starts that
-repository unless a person asks. It is keyed by *role* — an agent is `role@machine` and the
-machine half is detected, so the file describes this machine and can only ever mean agents on it.
+repository unless a person asks.
 
 That the broker holds no launch command at all is the point rather than a detail. It is a
 smaller trusted surface, it stays smaller as a deployment spreads across machines, and it
@@ -680,7 +704,7 @@ parley up
 ```
 
 Run it in a terminal and leave it. Ctrl+C stops the fleet and every agent in it. An agent
-is also told to quit when you `retire` it, or when you remove the variable and open that
+is also told to quit when you retire it in the terminal or the web UI, or when you remove the variable and open that
 repository once — a withdrawal has to reach a process that is already running, or the
 register says one thing while the deployment does another.
 

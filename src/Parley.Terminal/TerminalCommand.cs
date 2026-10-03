@@ -239,6 +239,6 @@ public static class TerminalCommand
     private const string Redirected =
         "parley draws a full screen, and this terminal is redirected — nothing here "
         + "would be readable and the frames would fill the log. For the same facts in a pipe, "
-        + "use `parley project list`, `parley registry` and `parley export <conversation>`. "
-        + "For a browser instead, `parley web-ui`.";
+        + "use `parley project list`, `parley registry` and `parley open`. "
+        + "For a conversation's whole transcript, or anything else, use the web UI: `parley web-ui`.";
 }

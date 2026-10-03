@@ -84,6 +84,7 @@ else
     <nav aria-label="Actions">
         <a href="/Projects/Act?project=@Model.Project&amp;action=askownership&amp;subject=@agent.Name.Value">Ask what it owns</a>
         <a href="/Projects/Act?project=@Model.Project&amp;action=ownership&amp;subject=@agent.Name.Value">Record what it owns</a>
+        <a href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
         <a href="/Projects/Act?project=@Model.Project&amp;action=instruct&amp;subject=@agent.Name.Value">Instruct</a>
         @if (agent.Status == AgentStatus.Retired)
         {

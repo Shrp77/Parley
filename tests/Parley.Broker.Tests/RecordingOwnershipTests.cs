@@ -88,6 +88,25 @@ public sealed class RecordingOwnershipTests : IDisposable
     }
 
     [Fact]
+    public async Task A_person_can_never_record_a_line_as_accepted_automatically()
+    {
+        // SPEC.md §10.2: only the broker records `automatic`, below this surface. A surface that could send it would let a
+        // person's edit read as the agent's untouched words. Held by code nothing checked until the combined review gate,
+        // which made the condition never true and watched every suite pass.
+        var ct = TestContext.Current.CancellationToken;
+        await RegisterAsync("Invoicing only.", ct);
+
+        const string Line = "Invoicing and tax. Not stock.";
+        var record = await Console().RecordOwnershipAsync(
+            Orders, new OwnershipAcceptance(Line, OwnershipSource.Automatic, Line.Length, Discussion), T0, ct);
+
+        Assert.False(record.Recorded);
+        Assert.Equal(
+            0,
+            _connection.QuerySingle<long>("SELECT count(*) FROM agent_ownership_accepted WHERE agent = 'orders@test';"));
+    }
+
+    [Fact]
     public async Task An_accepted_line_is_pending_until_the_agent_restarts()
     {
         // The two halves differ, so the surface says so. Must fail against `Pending` being hardcoded

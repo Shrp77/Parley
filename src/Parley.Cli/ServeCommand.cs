@@ -926,10 +926,30 @@ public static class ServeCommand
         foreach (var answer in answers)
         {
             var autoAccept = await runtime.AutoAcceptAsync(cancellationToken).ConfigureAwait(false);
-            var because = await WhyNotAutomaticallyAsync(runtime, project, answer, autoAccept, cancellationToken)
-                .ConfigureAwait(false);
+            string? because;
+            bool accepted;
 
-            if (because is null && await runtime.AcceptAutomaticallyAsync(answer, cancellationToken).ConfigureAwait(false))
+            // **Each answer is settled whatever happened to another.** FacilitateAsync has already marked every one
+            // answered, so an answer this pass neither accepts nor holds is never visited again — and the review gate
+            // found one repository's unreadable launch configuration stranding every answer after it, with both surfaces
+            // saying "Parley is deciding" for ever.
+#pragma warning disable CA1031 // Whatever went wrong deciding one answer, it is held for a person rather than lost.
+            try
+            {
+                because = await WhyNotAutomaticallyAsync(runtime, project, answer, autoAccept, cancellationToken)
+                    .ConfigureAwait(false);
+
+                accepted = because is null
+                    && await runtime.AcceptAutomaticallyAsync(answer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception failed) when (failed is not OperationCanceledException)
+            {
+                because = $"deciding it failed: {failed.Message}";
+                accepted = false;
+            }
+#pragma warning restore CA1031
+
+            if (accepted)
             {
                 await output.WriteLineAsync(
                     $"{project}: {answer.Agent.Value} answered Parley, and its answer is now its ownership line.")

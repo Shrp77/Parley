@@ -147,16 +147,16 @@ const string Help = """
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
     Explicit flags and environment variables still win over a project.
 
-    Every command except `serve`, `autostart`, `project` and `enroll` connects to a broker, at
+    Every command except `serve`, `autostart` and `project` connects to a broker, at
     --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
     serve opens its projects' stores — and it is the only command that touches a file. There is no
     way to name one: a project's store is parley.db inside its own folder and its port was claimed
     when it was created, so --project is the only thing that narrows what serve does. It migrates
-    the schema, which nothing else does. prune applies the policy the broker was started with, from
-    PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS on the broker's machine; it
-    removes text permanently, so export first if you want to keep a discussion.
+    the schema, which nothing else does. Pruning, in the terminal and the web UI, applies the policy
+    the broker was started with, from PARLEY_RETENTION_IDLE_HOURS and PARLEY_RETENTION_MAX_AGE_HOURS
+    on the broker's machine; it removes text permanently, so save a discussion first if you want it.
 
     up runs until you stop it. It tells the broker this machine is here, which is what makes the
     agents registered to it startable rather than stranded, and starts one when a question

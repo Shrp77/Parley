@@ -114,6 +114,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "reinstate" => ($"'{Subject}' will be routed to again.", false),
 
+            // Reachable from the web since the combined review gate found it was not: the operation was bound here in
+            // no page at all, and DriftTests passed because the host's own `app.StartAsync(` contains its name.
+            "start" => ($"The node on '{Subject}'s machine is asked to start it. Nothing is said to it, and it costs "
+                      + "no turn; it attaches and is reachable. A retired agent is not started, and nothing can be "
+                      + "asked of a machine whose node is not running.", false),
+
             "purge" => ($"'{Subject}' will be deleted, along with every conversation it was party "
                       + "to — including its peers' side of those conversations. Its name becomes "
                       + "free for another agent. This cannot be undone, and retiring it instead "
@@ -242,6 +248,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
                 "reinstate" => Describe(broker.ReinstateAsync(agent, token)),
 
+                "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
+
                 "purge" => DescribePurge(broker.PurgeAsync(agent, token)),
 
                 "instruct" => DescribeInstruction(
@@ -280,6 +288,13 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
     private static async Task<string> Describe(Task<bool> action) =>
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
+
+    // What a start reports is that a node was asked, never that the agent is running: whether it attaches and registers is
+    // a different question, and 0.25.2 records a screen predicting a registration instead of checking one.
+    private static async Task<string> DescribeStart(Task<bool> start) =>
+        await start.ConfigureAwait(false)
+            ? "Its node was asked to start it. It is reachable once it attaches; the agent's page shows when it has."
+            : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
 
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
     /// <param name="project">

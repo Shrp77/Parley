@@ -17,8 +17,8 @@ costs *n*, and the blocks that come out are the only ones that were ever true.
 This command does the part that batches. `parley enroll` writes launch configurations, node
 entries and the placeholder frame of `/parley:setup` step 6 - none of which need the tools bound,
 which is why they can all happen before any restart. What it does not do is the two things that
-cannot be batched: the `owns` line, which has to come from a person, and `/parley:write-peers`,
-which needs a live session per repository.
+cannot be batched: the `owns` line, which each agent is asked for once it is running, and
+`/parley:write-peers`, which needs a live session per repository.
 
 It is a verb on the `parley` command rather than a script beside this file, because .NET is the
 only runtime a deployment is guaranteed to have - nothing is an agent without `parley-mcp` on
@@ -92,11 +92,11 @@ and names how many it is about to start, before it configures anything. This rev
 per-repository opt-in that defaulted to off - which produced, on a real machine, nineteen
 repositories that were enrolled, addressable and unstartable.
 
-**A repository configured once before still has its old line in git history**, even if `.mcp.json`
-was later deleted - which is the ordinary state of a deployment being reconfigured. Enrolment
-recovers it: it reads the repository's own history and puts the earlier registration into
-`_evidence`, with the commit it came from and the name it used. That is the user's own sentence,
-recovered rather than composed.
+**Enrolment does not read a repository's git history.** It used to: it searched each repository's
+history for an `owns` line it had been registered with before, and put that line in `_evidence`.
+That stopped in 0.34.2. It cost a process per repository before the picker could open, and the
+worksheet it filled in was removed in 0.32.0. Now the agent is asked what it owns, and an agent
+that already knows says so.
 
 
 ## 3. Read the roster once

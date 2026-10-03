@@ -73,6 +73,15 @@
             <p class="unreachable" role="alert">@filter</p>
         }
 
+        @if (Model.Hidden is { Length: > 0 } hidden)
+        {
+            @* Computed and never shown until the review gate: once archiving had a button, an archived conversation
+               would have left the list with nothing saying where it went or how to bring it back. *@
+            <p class="composer-note">
+                @hidden <a href="/Projects/Agents?project=@Model.Project&amp;showArchived=true">Show them</a>
+            </p>
+        }
+
         @if (Model.ConversationProblem is { Length: > 0 } unread)
         {
             <p class="unreachable" role="alert">@unread</p>
@@ -98,7 +107,23 @@
                                    the tint is only how you find it. *@
                                 <span class="tag open">still open</span>
                             }
+                            @if (conversation.Archived)
+                            {
+                                <span class="tag">archived</span>
+                            }
                         </p>
+                        @* Filing away and destroying, linked from here since the combined review gate found both
+                           performed by this console and reached from no page. Archiving is one click because one
+                           click reverses it; destroying goes to a page that describes it and takes the name typed. *@
+                        <form method="post" asp-page-handler="Archive">
+                            <input type="hidden" name="project" value="@Model.Project" />
+                            <input type="hidden" name="id" value="@conversation.Id" />
+                            <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
+                            <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
+                            <input type="hidden" name="sort" value="@Model.Sort" />
+                            <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
+                        </form>
+                        <a href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
                     </li>
                 }
             </ul>

@@ -85,6 +85,12 @@ public static class OwnershipLine
         {
             return $"could not take {path}: {busy.Message} Nothing has been written.";
         }
+        catch (InvalidDataException refused)
+        {
+            // A link, which HoldAsync will not write through. An answer, not a throw: the facilitator's pass called this
+            // for each answer in turn, and one repository's link stranded every answer after it (the review gate).
+            return $"{refused.Message} Nothing has been written.";
+        }
 
         using (held)
         {
@@ -110,8 +116,20 @@ public static class OwnershipLine
                        "Nothing has been written.";
             }
 
-            var servers = root["mcpServers"] as JsonObject;
-            var (key, existing) = LaunchEntries.Landing(servers, project);
+            JsonObject? servers;
+            string key;
+            LaunchEntry? existing;
+
+            try
+            {
+                servers = root["mcpServers"] as JsonObject;
+                (key, existing) = LaunchEntries.Landing(servers, project);
+            }
+            catch (Exception ambiguous) when (ambiguous is InvalidDataException or ArgumentException)
+            {
+                // A key written twice — the file's or a server's — which the parser accepts and indexing does not.
+                return $"{path} is not readable as a launch configuration: {ambiguous.Message} Nothing has been written.";
+            }
 
             if (servers is null || existing is null)
             {

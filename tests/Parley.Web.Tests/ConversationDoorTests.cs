@@ -29,6 +29,20 @@ namespace Parley.Web.Tests;
 /// </remarks>
 public sealed class ConversationDoorTests
 {
+    private static string Root()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "specs")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+
+        return directory!.FullName;
+    }
+
     [Fact]
     public void No_handler_archives_or_destroys_on_a_get()
     {
@@ -54,6 +68,23 @@ public sealed class ConversationDoorTests
                 Assert.DoesNotContain("Destroy", method.Name, StringComparison.Ordinal);
             }
         }
+    }
+
+    [Fact]
+    public void A_conversation_in_the_list_offers_archiving_and_destroying()
+    {
+        // The combined review gate found both performed by this console and reached from no page — since 006, when they
+        // were added. A handler nothing posts to and a page nothing links to are the 020 walk's finding again. Read from
+        // the page's source, as `ListingStateTests` reads the redirect: what is checked is that the door is there at all.
+        var page = File.ReadAllText(Path.Combine(
+            Root(), "src", "Parley.Web", "Pages", "Projects", "Agents.cshtml"));
+
+        Assert.Contains("asp-page-handler=\"Archive\"", page, StringComparison.Ordinal);
+        Assert.Contains("href=\"/Conversations/Destroy?", page, StringComparison.Ordinal);
+
+        // And archiving does not lose the listing's options on its redirect.
+        Assert.Contains("name=\"showArchived\"", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"sort\"", page, StringComparison.Ordinal);
     }
 
     [Fact]

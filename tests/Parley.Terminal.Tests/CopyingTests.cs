@@ -174,6 +174,9 @@ public sealed class CopyingTests
         await shell.Copy();
 
         Assert.Equal(Shell.NotCopied, shell.Said);
-        Assert.Contains("parley export", shell.Said, StringComparison.Ordinal);
+        // The way round it is one that works. It named `parley export` until the combined review gate, which the command
+        // line has refused since 019 -- sending the person to a door that sends them back here.
+        Assert.Contains("F8", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley export", shell.Said, StringComparison.Ordinal);
     }
 }

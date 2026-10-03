@@ -164,6 +164,37 @@ internal sealed class Seated : IAsyncDisposable
         return new Seated(connection, broker, directory, seats, driving, shell);
     }
 
+    /// <summary>The person's seat, as the broker named it.</summary>
+    internal AgentName Person => _seats.Known(Walking.Alpha.Value)!.Name;
+
+    /// <summary>Sends a request straight to the broker, as somebody other than this surface.</summary>
+    /// <param name="from">Who asks: an agent, or the person on another surface.</param>
+    /// <param name="to">Who is asked.</param>
+    /// <param name="ask">What is asked.</param>
+    /// <param name="conversation">Where.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>The exchange the request opened.</returns>
+    internal async Task<long> AsksAsync(
+        AgentName from, AgentName to, string ask, string conversation, CancellationToken cancellationToken)
+    {
+        var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await speaking.StartAsync(from, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+
+        var sent = await speaking.RequestAsync(
+            from,
+            to,
+            "model-a",
+            System.Text.Json.JsonSerializer.Serialize(new { ask }),
+            DateTimeOffset.UtcNow,
+            conversation,
+            cancellationToken).ConfigureAwait(false);
+
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
+
+        return sent.Exchange!.Id;
+    }
+
     /// <summary>Lays the screen out, which is what makes a frame true.</summary>
     /// <remarks>
     /// The harness never pumps the loop, so a frame read without this is whatever was last drawn — which for

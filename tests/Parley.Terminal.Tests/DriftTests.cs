@@ -67,6 +67,23 @@ public sealed class DriftTests
                 .Select(File.ReadAllText));
     }
 
+    /// <summary>Whether source calls an operation, rather than merely containing its name.</summary>
+    /// <param name="source">A surface's source, from <see cref="Text"/>.</param>
+    /// <param name="name">The operation's method name.</param>
+    /// <returns>Whether it is called outside a comment, on something other than the web host.</returns>
+    /// <remarks>
+    /// <b>A substring was not a binding, and the combined review gate found what that cost.</b> The web UI started no
+    /// agent anywhere — and this passed, because <c>ConsoleHost</c> calls <c>app.StartAsync(</c>. The same check was
+    /// satisfied by an operation's name in a comment. A call is a dot, the name and a bracket, in a line that is not a
+    /// comment; the host's own start is excluded by name, which is the one collision there is.
+    /// </remarks>
+    private static bool Calls(string source, string name) =>
+        source.Split('\n')
+            .Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)
+                        && !line.TrimStart().StartsWith("@*", StringComparison.Ordinal))
+            .Any(line => System.Text.RegularExpressions.Regex.IsMatch(
+                line, $@"(?<!\bapp)\.{System.Text.RegularExpressions.Regex.Escape(name)}\("));
+
     [Fact]
     public void Every_operation_the_client_offers_is_bound_by_at_least_one_surface()
     {
@@ -85,9 +102,9 @@ public sealed class DriftTests
         var commands = Text("src", "Parley.Cli");
 
         var orphaned = Operations()
-            .Where(name => !console.Contains(name, StringComparison.Ordinal)
-                        && !terminal.Contains(name, StringComparison.Ordinal)
-                        && !commands.Contains(name, StringComparison.Ordinal))
+            .Where(name => !Calls(console, name)
+                        && !Calls(terminal, name)
+                        && !Calls(commands, name))
             .Where(name => !Pending().Contains(name, StringComparison.Ordinal))
             .ToList();
 
@@ -168,8 +185,8 @@ public sealed class DriftTests
             Path.Combine(Root(), "specs", "005-tabbed-terminal-agents", "contracts", "operations.md"));
 
         var undeclared = Operations()
-            .Where(name => console.Contains(name, StringComparison.Ordinal)
-                        != terminal.Contains(name, StringComparison.Ordinal))
+            .Where(name => Calls(console, name)
+                        != Calls(terminal, name))
             .Where(name => !contract.Contains(
                 name.Replace("Async", string.Empty, StringComparison.Ordinal),
                 StringComparison.Ordinal))
@@ -192,8 +209,8 @@ public sealed class DriftTests
         var terminal = Text("src", "Parley.Terminal");
 
         var unbound = Operations()
-            .Where(name => !console.Contains(name, StringComparison.Ordinal)
-                        || !terminal.Contains(name, StringComparison.Ordinal))
+            .Where(name => !Calls(console, name)
+                        || !Calls(terminal, name))
             .ToList();
 
         Assert.True(

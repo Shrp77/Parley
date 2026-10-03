@@ -38,11 +38,11 @@ public sealed record InstalledEntry(
     /// <summary>The spellings this version no longer accepts, in the order they were written.</summary>
     /// <remarks>
     /// <para>
-    /// <b>This is the release that removes them, and a live scheduled task holds one right now.</b>
-    /// The broker still starts — every verb ignores options it has no use for — so the entry keeps
-    /// working and quietly loses its web UI, which is the safer of the two failures and is still a
-    /// change nothing announces. What an operator gets otherwise is an absence: the web UI stops
-    /// appearing and nothing connects that to an upgrade.
+    /// <b>An entry naming one starts no broker at all.</b> This said the broker still started and only
+    /// lost its web UI, because every verb once ignored options it had no use for; since each command
+    /// refuses an option it does not take, the broker exits at logon instead (the combined review gate
+    /// drove all three). What an operator gets otherwise is a deployment that is simply not there after a
+    /// restart, with nothing connecting it to an upgrade.
     /// </para>
     /// <para>
     /// Recorded here because this type already exists to read an entry back, which makes it the one
@@ -132,8 +132,16 @@ public sealed record InstalledEntry(
                 // web UI -- so `autostart status` would say one thing while the entry did another,
                 // and a reinstall carrying the arguments forward would drop it.
                 case "--web-ui":
+                    console = value;
+                    i++;
+                    break;
+
+                // Still read for the address, and also gone: a broker given it refuses and exits, so the entry
+                // starts nothing at logon. Missed here until the combined review gate, so `autostart status` said
+                // nothing about the one old spelling that carries a value.
                 case "--console":
                     console = value;
+                    removed.Add(parts[i]);
                     i++;
                     break;
 

@@ -680,6 +680,19 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   Auto Accept, which moved to *Configuration* (`F3`). Each fix was mutation-checked; **one mutation did not compile and
   proved nothing until it was redone** — the second time on this feature.
 
+  **0.38.2: the gate's second round found eleven more, and three are worth remembering.** *Coming back from away sent
+  the draft from before the person left*: while away the follow leaves the draft alone, and 0.36.1's Enter took the
+  stream back and sent it — so a Request that arrived meanwhile was answered with a new Request. The shell now records
+  which stream derived the draft and reads again when it is not the one held; a changed set of recipients is shown,
+  not sent. *One unreadable `.mcp.json` stranded every Auto Accept answer after it*, because `OwnershipLine` threw
+  where it promised to return and the pass had already marked every answer answered. And **the web UI could not start
+  an agent, archive a conversation or destroy one** — all three implemented and reached from no page since 006, while
+  `DriftTests` passed because `ConsoleHost` calls `app.StartAsync(`. **A substring is not a binding**: `DriftTests` now
+  asks for a call outside a comment. The rest was documentation 019 left behind: the plugin's operator skill told
+  agents to run fifteen removed verbs, a redirected terminal and `parley export` sent a person round in a loop, the
+  README promised old autostart flags still started a broker (it exits 64, and `autostart status` now says so for
+  `--console` too), and described a per-project, role-keyed `node.json` that 018 removed.
+
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
 - **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on

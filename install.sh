@@ -923,7 +923,7 @@ fi
 # **Every machine's entry serves the manifest**: every project this machine names, each on its own store and port, and
 # a project named later started within seconds. A machine that names none yet gets the same entry, waiting for the
 # first -- so this never asks where a store goes. That is a project's to say, and a project is named in `parley terminal`
-# or with `parley project add`, where everything else it needs is said at the same time.
+# (the terminal), where everything else it needs is said at the same time.
 #
 # This used to ask for a store when nothing was named and register one deployment by explicit paths, and to register
 # that same narrow entry over a working manifest when it was given --store: a reinstall that stopped serving every

@@ -225,6 +225,38 @@ internal sealed class Shell : Window
                 await EnsureSeatAsync(place, null, token).ConfigureAwait(false);
             }
 
+            // **And the draft may be from before they went.** While away the follow reads the conversation and leaves
+            // the draft alone, because there is no stream to derive "owed by you" from — so a Request that arrived
+            // meanwhile was answered with a new Request, the agent's question left open and the person shown as owing it
+            // (the review gate's finding). A draft derived through a stream that is not the one held now is read again,
+            // which rebuilds it from what the conversation is, keeping the narrowing and the chips.
+            if (Held is not null && !ReferenceEquals(_draftedWith, Held))
+            {
+                await OpenAsync(place, conversation, token).ConfigureAwait(false);
+            }
+
+            if (!ReferenceEquals(Drafting, draft))
+            {
+                if (Drafting is not { } fresh)
+                {
+                    Said = NotReadYet;
+
+                    return;
+                }
+
+                // Somebody joined or left since the preview was drawn, so the line would not go where it said. Shown,
+                // not sent: who a line reaches is the one thing the preview promises.
+                if (!fresh.Recipients.ToHashSet().SetEquals(draft.Recipients))
+                {
+                    Said = RecipientsChangedWhileAway;
+
+                    return;
+                }
+
+                fresh.Text = fresh.Says(Line.Written);
+                draft = fresh;
+            }
+
             if (Held is not { } hold || Voice() is not { } voice)
             {
                 Said = NotConnected;
@@ -500,8 +532,8 @@ internal sealed class Shell : Window
     /// clipboard the toolkit can reach in any case, which is rarely the one somebody wants.
     /// </remarks>
     internal const string NotCopied =
-        "This machine's clipboard could not be written to. `parley export <conversation>` writes "
-        + "the same transcript to a file.";
+        "This machine's clipboard could not be written to. F8 opens this conversation in the web UI, where a "
+        + "browser can copy or save it.";
 
     /// <summary>What clearing the message line is called.</summary>
     internal const string ClearTitle = "Clear the message";
@@ -2361,6 +2393,12 @@ internal sealed class Shell : Window
     private const string NotReadYet =
         "This conversation is still being read, so nothing was sent. Press Enter again in a moment.";
 
+    /// <summary>Said when somebody joined or left since the preview was drawn, so the line would not go where it said.</summary>
+    /// <remarks>Most often met on coming back from being away, when the preview was drawn before the person left.</remarks>
+    private const string RecipientsChangedWhileAway =
+        "Who this goes to changed since it was shown, so nothing was sent. Check who it goes to above, then press " +
+        "Enter again.";
+
     /// <summary>The last reason a seat could not be taken, so the same one is not said again on every refresh.</summary>
     private string? _seatProblem;
 
@@ -2415,6 +2453,13 @@ internal sealed class Shell : Window
     /// would have pulled the agent into a conversation it was not in. Found while making the narrowing survive a restart.
     /// </remarks>
     private (string Project, string Conversation)? _drafted;
+
+    /// <summary>The stream the draft was derived through, so a send can tell a draft from before the person was away.</summary>
+    /// <remarks>
+    /// While away there is no stream, so the follow leaves the draft alone; coming back takes a new one. A draft whose
+    /// stream is not the one held now says who owed whom before the person left (the review gate's finding).
+    /// </remarks>
+    private SeatHold? _draftedWith;
 
     /// <summary>What this machine's supervisor runs, or null for none or unknown.</summary>
     internal InstalledEntry? Installed { get; init; }
@@ -4678,6 +4723,7 @@ internal sealed class Shell : Window
         // broker (SPEC.md §10.1). It stays in the room column, named, because it is in the conversation.
         Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.Written };
         _drafted = here;
+        _draftedWith = hold;
 
         if (was is null && Addressing.Recall(here.Item1, here.Item2) is { } remembered)
         {

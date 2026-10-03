@@ -753,18 +753,17 @@ public static class AutostartCommand
                     "project on this machine.").ConfigureAwait(false);
             }
 
-            // **The one place an operator can be told, and otherwise they are told nothing.** This
-            // version removes these spellings; the broker still starts, because every verb ignores
-            // options it has no use for, so the entry goes on working and quietly stops starting a
-            // web UI. What is left is an absence — a page that no longer answers — with nothing
-            // anywhere connecting it to an upgrade. This command's whole job is to say what is
-            // installed, so it says this too.
+            // **The one place an operator can be told, and otherwise they are told nothing.** A broker
+            // given one of these spellings refuses it and exits, so the entry starts nothing at logon —
+            // and nothing anywhere connects that to an upgrade. This command's whole job is to say what
+            // is installed, so it says this too. (It said the entry still started until the combined
+            // review gate drove all three spellings.)
             if (entry.Removed.Count > 0)
             {
                 await output.WriteLineAsync(
                     $"  This entry names {string.Join(" and ", entry.Removed)}, which this version "
-                    + "no longer accepts.\n  It still starts, and it no longer starts a web UI. Re-run "
-                    + "`parley autostart install`\n  to write an entry this version understands.")
+                    + "no longer accepts.\n  The broker refuses it and exits, so this entry starts nothing at "
+                    + "logon. Re-run\n  `parley autostart install` to write an entry this version understands.")
                     .ConfigureAwait(false);
             }
         }
