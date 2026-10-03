@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Grpc.Core;
+using Grpc.Core.Interceptors;
 using Grpc.Net.Client;
 using Parley.Configuration;
 using Parley.Core;
@@ -156,7 +157,10 @@ public sealed class BrokerDirectory : IDisposable
 
             var fresh = ReadManifest(_manifestPath, _fallback, stamp);
 
-            _snapshot = fresh;
+            // A read that left something out is kept without its stamp, so the next look reads again: a project.json caught
+            // mid-replace is unreadable for a moment, and keeping the stamp would show it missing until something else
+            // changed (the combined review gate).
+            _snapshot = fresh.Problem is null ? fresh : fresh with { Stamp = string.Empty };
 
             return fresh;
         }
@@ -323,7 +327,7 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Operators.OperatorsClient(channel.Value);
+        return new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()));
     }
 
     /// <summary>Opens an agent client for one project, for the seat a person holds there.</summary>
@@ -362,7 +366,7 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Agents.AgentsClient(channel.Value);
+        return new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()));
     }
 
     /// <summary>Runs one read against one project, containing a failure to that project.</summary>

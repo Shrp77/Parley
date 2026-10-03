@@ -1,0 +1,66 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using Grpc.Core;
+using Grpc.Core.Interceptors;
+using Xunit;
+using Wire = Parley.Transport;
+
+namespace Parley.Client.Tests;
+
+/// <summary>
+/// That a broker which accepts a connection and never answers is given up on, rather than holding a surface for ever.
+/// </summary>
+/// <remarks>
+/// The combined review gate's finding (lens 1, run 4), older than the branch. No call had a deadline, and the terminal runs
+/// its work one item at a time, so one wedged broker stopped every send, open and toggle in every project — sixty seconds
+/// in the probe, and unbounded in fact. Driven against a listener that accepts and says nothing.
+/// </remarks>
+public sealed class ASilentBrokerIsGivenUpOnTests
+{
+    [Fact]
+    public async Task A_call_to_a_broker_that_never_answers_ends_at_its_deadline()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        using var silent = new TcpListener(IPAddress.Loopback, 0);
+        silent.Start();
+        _ = silent.AcceptTcpClientAsync(ct);
+
+        var endpoint = $"http://127.0.0.1:{((IPEndPoint)silent.LocalEndpoint).Port}";
+        using var channel = BrokerDirectory.Connect(endpoint);
+        var operators = new Wire.Operators.OperatorsClient(channel.Intercept(new Patience(TimeSpan.FromSeconds(1))));
+
+        var clock = Stopwatch.StartNew();
+        var gaveUp = await Assert.ThrowsAsync<RpcException>(async () =>
+            await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: ct));
+
+        Assert.Equal(StatusCode.DeadlineExceeded, gaveUp.StatusCode);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"gave up only after {clock.Elapsed}");
+    }
+
+    [Fact]
+    public void Every_client_a_surface_is_handed_carries_the_deadline()
+    {
+        // The check above is of Patience; this is that the directory applies it, so a client made the old way — straight
+        // over the channel — fails here rather than in somebody's terminal.
+        var source = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Client", "BrokerDirectory.cs"));
+
+        Assert.Contains("new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
+        Assert.Contains("new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
+    }
+
+    private static string Root()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "specs")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+
+        return directory!.FullName;
+    }
+}

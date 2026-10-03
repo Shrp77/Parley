@@ -39,7 +39,7 @@ public readonly partial struct ProjectName : IEquatable<ProjectName>, IComparabl
     /// <exception cref="InvalidOperationException">The value was never created.</exception>
     public string Value => _value ?? throw new InvalidOperationException("Uninitialised ProjectName.");
 
-    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant)]
     private static partial Regex Pattern { get; }
 
     /// <summary>

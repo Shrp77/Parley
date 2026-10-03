@@ -338,6 +338,26 @@ public sealed class ProjectCommandTests : IDisposable
     // ---- remove ----------------------------------------------------------------------------
 
     [Fact]
+    public async Task Removing_one_project_beside_an_unreadable_one_changes_nothing()
+    {
+        // The combined review gate's finding (lens 3, run 4), and a regression from the round before it: reading leaves an
+        // unreadable project out, the writer removes every configuration not in what it is handed — so removing `orders`
+        // deleted `billing`'s file too, and said "Nothing was deleted".
+        await AddAsync("orders");
+
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("billing")));
+        const string damaged = "{ \"endpoint\": ";
+        await File.WriteAllTextAsync(ConfigurationOf("billing"), damaged, TestContext.Current.CancellationToken);
+
+        var (code, _, error) = await RunAsync(["remove", "orders"]);
+
+        Assert.Equal(78, code);
+        Assert.Contains("cannot be read", error, StringComparison.Ordinal);
+        Assert.Equal(damaged, await File.ReadAllTextAsync(ConfigurationOf("billing"), TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(ConfigurationOf("orders")), "orders was removed although the change was refused");
+    }
+
+    [Fact]
     public async Task Removing_takes_out_the_configuration_and_deletes_nothing()
     {
         await AddAsync("orders");

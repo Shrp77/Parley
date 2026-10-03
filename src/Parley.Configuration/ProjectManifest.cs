@@ -605,9 +605,13 @@ public static class ProjectManifest
         {
             // Inside the lock, because the write below is computed from it. This is the whole
             // point: read and write were already each safe on their own.
-            if (!TryRead(path, out var projects, out var unreadable))
+            // **And refused when anything was left out.** Reading leaves an unreadable project out, and Write removes every
+            // configuration not in what it is handed — so changing one project beside an unreadable one deleted the
+            // unreadable one's file, and every project sharing an endpoint with another (the combined review gate, which
+            // caught round three's lenient read reaching this writer). A write needs every project, or none.
+            if (!TryRead(path, out var projects, out var unreadable) || unreadable is { Length: > 0 })
             {
-                problem = unreadable;
+                problem = $"Nothing has been changed, because a project here cannot be read: {unreadable}";
                 return false;
             }
 

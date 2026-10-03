@@ -891,7 +891,12 @@ public static class NodeCommand
 
             if (!outcome.Succeeded)
             {
-                await output.WriteLineAsync($"  {resident.Name.Value}: {outcome}")
+                // **How it ended, never what was said.** This printed the record, whose default text includes Reply — the
+                // agent's own words, which TurnOutcome keeps out of every record on purpose — into the broker's log, where
+                // nothing prunes them and a line break in them forges a line of the log (the combined review gate).
+                await output.WriteLineAsync(
+                        $"  {resident.Name.Value}: turn ended without finishing — {outcome.Describe()} after " +
+                        $"{outcome.Elapsed.TotalSeconds:0}s, {outcome.PermissionDenials} permission(s) refused")
                     .ConfigureAwait(false);
             }
         }

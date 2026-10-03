@@ -709,6 +709,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   for the person. **One contract row was wrong rather than the code**: dropping a recorded port whose folder is gone would
   hand it out twice, because a claim precedes the folder.
 
+  **0.38.4: round four, and two of its findings were round three's own fixes.** Making the manifest read lenient fed a
+  writer that removes every configuration not in its list, so **removing one project deleted every project that did
+  not read** — and a `project.json` caught mid-replace was left out, so the serve watcher stopped its broker and, having
+  stored the stamp first, never read again. Writes now refuse when anything was left out, and the watcher changes
+  nothing until a read is clean (`ServeCommand.Rereader`, the program's own function so the test drives it). **A fix
+  that relaxes a reader must be checked against every writer that reads through it.** Also: a failed turn printed the
+  agent's reply into the broker's log, where a line break forged a log line; words typed after Enter were sent and then
+  wiped; a broker that accepts and never answers froze the terminal (every unary call has a deadline now, `Patience`);
+  agent and project names accepted a trailing line feed (`$` matches before one in .NET — `\z` now); and the README and
+  the destroy dialog still described the pre-023 seat and a per-project catalogue. **Owed, and the owner's call:** the
+  person still reads as `stranded` where SPEC says `here` or `away` — 023's T034, unbuilt.
+
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
 - **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on

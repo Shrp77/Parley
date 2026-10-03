@@ -71,12 +71,12 @@ internal static class Removing
 
     /// <summary>What forgetting does, said before it is done.</summary>
     internal const string Forgetting =
-        "Forgetting deletes nothing. The store and catalogue stay where they are, and the broker "
+        "Forgetting deletes nothing. The store stays where it is, and the broker "
         + "serving the manifest stops this project's within a few seconds.";
 
     /// <summary>What destroying does, said before it is done.</summary>
     internal const string Destroying =
-        "Destroying stops this project's broker, deletes its store and catalogue, and forgets it. "
+        "Destroying stops this project's broker, deletes its store, and forgets it. "
         + "Every conversation in it goes with the store. Repositories that were agents in it keep "
         + "their launch configuration and will find no broker.";
 

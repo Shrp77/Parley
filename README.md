@@ -237,8 +237,8 @@ somebody reinstalling a tool has not asked to lose their history or their launch
 ### 2. Know what the broker is
 
 The script already started one, so this is here to explain what it started rather than to be
-run. A deployment is a **project**: a store, the address its broker listens on, and optionally the
-catalogue of agents this machine may start for it. Name one on the first screen of:
+run. A deployment is a **project**: a store and the address its broker listens on. Name one on the
+first screen of:
 
 ```
 parley
@@ -516,9 +516,11 @@ cannot be a line as written, or from an agent on another machine, waits for a pe
 
 **Every line can be checked and corrected in the ownership review** — `Alt+v` on the agents pane in
 `parley`, or *Review ownership* on a project's page in the web UI. It shows each agent's line,
-whether a person or nobody read it, and any answer waiting. From there you accept, edit or
-discard an answer, write a line yourself, reply to an agent that asked Parley something back, or
-have Parley ask again (`Alt+k` for one agent, `Alt+e` for all). None of it needs a seat. Turn Auto Accept
+whether a person or nobody read it, and any answer waiting. Choose an agent there and you can
+accept, edit or discard its answer, write a line yourself, reply if it asked Parley something back,
+or, when nothing is waiting on it, have Parley ask it again. Outside the review, on the agents pane,
+`Alt+k` has Parley ask the agent under the cursor and `Alt+e` asks every agent at once. None of it
+needs a seat. Turn Auto Accept
 off (in *Configuration*, `F3`, or the Project menu) and every answer waits for you.
 
 **There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
@@ -643,11 +645,11 @@ So it forgets by default: a discussion whose exchanges have all closed is remove
 it has been quiet for `PARLEY_RETENTION_IDLE_HOURS` (three days if unset), and nothing
 outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
 
-Set those **on the agents' servers**, not only in your own shell — the servers are what
-apply the policy, on every sweep. Pruning from the terminal only brings the next sweep
-forward. Set
-them in one place and not the other and your agents quietly enforce the default while
-the numbers it reports are the ones you meant.
+Set those **in the broker's environment** — the process that runs `parley serve` — not in
+your own shell and not on the agents' servers. The broker is the only process that reads them,
+and it applies the policy on every sweep. Pruning from the terminal only brings the next sweep
+forward, under the same policy. Set them anywhere else and the broker quietly keeps the
+default.
 
 A floor bounds the dial in the other direction, and is not configurable. Tightening
 retention can never delete a message nobody has collected yet, anything on an exchange
@@ -750,12 +752,14 @@ parley files open <name>...         open a file in its editor, on the broker's m
 parley files folder                 open a conversation's folder, or the whole location
 parley web-ui [<url>]               the web UI in a browser: every project, the agents in
                                     each, and conversations as a transcript that says who
-                                    did not see what. Join it with a name to take part as
-                                    yourself. Binds loopback unless you give it an address.
+                                    did not see what. You take part as yourself with
+                                    nothing to join. Binds loopback unless you give it an
+                                    address.
                                     Its own tool, parley-web-ui, installed separately
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
-parley project list|add|remove      the deployments this machine is configured for
+parley project list                 the deployments this machine is configured for; creating
+                                    and removing one is done in the terminal
 parley use [<project>]              the project this terminal's commands act on
 parley --help                       the same list, on stdout, exiting zero
 ```
@@ -780,24 +784,25 @@ Files page, and so does the terminal.
 
 ### Taking part yourself
 
-The web UI has a Join button. Type a name and you are an agent like any other: a registration,
-a place in every roster, and an identity recorded against everything you say. Then the box at the
-bottom of a conversation stops being a way to instruct agents and becomes a way to talk to them —
-your message lands in the transcript under your own name, and a peer answers you rather than
-being told something by an operator. Leave gives the seat back.
+You always have a seat. In every project, the broker provides one for the person, named
+`human-user@<project>`, and never takes it away. There is nothing to join and nothing to leave:
+the web UI and the terminal both take your seat as soon as you open them. The seat is a place in
+every roster and an identity recorded against everything you say. So the box at the bottom of a
+conversation is a way to talk to the agents in it — your message lands in the transcript under
+your own name, and a peer answers you rather than being told something by an operator.
 
 Two things about that are worth knowing before you use it.
 
-Your seat is an open connection, which is the only thing that makes anybody present here. There
-is no heartbeat and nothing to expire, so holding the connection is being here and dropping it is
-being gone — which means a console nobody has used for twenty minutes gives your seat back on its
-own. A tab left open is not a person at a desk, and a roster that claimed otherwise would be
-lying to the agents reading it.
+Having a seat and being at it are different. Being here is an open connection, and nothing else
+counts: there is no heartbeat. A surface nobody has touched for twenty minutes drops its
+connection, because a tab left open is not a person at a desk. Your seat stays. The next key you
+press, or the next page you load, connects you again. While you are away, messages for you wait
+for you, and an agent that sends one is told it is with the person rather than that you cannot be
+reached.
 
-And a name another agent already holds is refused rather than taken over. Joining as `orders`
-would let you write messages recorded as the orders agent's own words, and that is the one thing
-a console has never been able to do: it has always been able to retire or purge an agent, and has
-never been able to speak as one.
+And the seat is always yours, never an agent's. No agent can take the name `human-user`, and no
+surface lets you speak as `orders` or any other agent. A console has always been able to retire or
+purge an agent; it has never been able to write words recorded as an agent's own.
 
 ### From a terminal
 
@@ -827,8 +832,9 @@ altogether, from any view, and sits on that line beside it — on a terminal too
 both, the line keeps `Alt+?` and the menu keeps them. Escape at the top of the tree does nothing:
 pressing it once more than you meant to costs nothing.
 
-Tab moves between the panes of the view you are on — a project has two, the other views one — and
-the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
+Tab moves between the panes of the view you are on — the projects list has one, a project has two
+(its agents and its conversations), and a conversation has three (the room, the transcript and the
+box you type into) — and the arrow keys move within one. The mouse does the same. Below eighty columns a project's two
 panes stack and Tab still visits both. Press `Alt+?` for everything the view you are on can do,
 `F10` for the menu bar (Left and Right move between its menus), and `F8` to open the web UI on
 whatever is in front of you.
@@ -854,12 +860,13 @@ It draws in colour, and no fact rests on it: a project is green because the line
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
 the web UI gives it. Strip every attribute and nothing on the screen is lost.
 
-From the projects region you can name the deployment this machine already runs — every path
-pre-filled from the autostart entry — or create a new project, which proposes its own database
-beside your existing ones and a free port, checks each answer as you type it, and is answering on
-the list a few seconds later because the broker serving the manifest starts it. The broker's log is
+From the projects region you can create a new project. Naming it is the whole of creating it: the
+form asks for a name, checked as you type it, and a one-line description if you want one. Its
+store and its port are not asked for. The store goes in the project's own folder, named by the
+project, and a free port is claimed for it. The project is answering on the list a few seconds
+later, because the broker serving this machine's projects starts it. The broker's log is
 followed live from there, and a project can be removed: forgetting it deletes nothing, and
-destroying it — its broker stopped, its store and catalogue deleted — takes the project's own name
+destroying it — its broker stopped, its store deleted — takes the project's own name
 typed back first.
 
 The agents half of a project view shows who is in it, joining what the broker's registry says to
@@ -873,15 +880,15 @@ peer and can never be started here.
 From there you can also **add an agent**: walk to a repository on this machine — the search opens
 beside the last one you added, and marks which folders are repositories — and it is made an agent of
 this project. Its launch configuration names the project, its own `CLAUDE.md` gains the section
-telling the agent how to use Parley, a line is added to the project's catalogue, and then the agent
+telling the agent how to use Parley, a line is added to this machine's catalogue, and then the agent
 is started once so that it registers itself. All of it is shown before any of it happens, because
 the last step runs a process on your machine. It is startable from then on without anybody opening
 that repository by hand.
 
-A repository may answer in **several projects** and be started unattended by only one: add it to a
-second project and it gets the launch entry and no catalogue line, because a node starts a client
-with the repository as its working directory and two of those is two models editing one checkout. It
-is still started once, through the project that does start it, so it registers in both.
+A repository may answer in **several projects**: add it to a second project and its launch
+configuration gains that project's entry. It is still one agent with one line in this machine's
+catalogue, so either project can start it — and two asking at once still start one process, because
+two would be two models editing one checkout. Started once, it registers in both.
 
 And **remove one**: the agent is
 described — what it is, where it runs, what it owns, and any answer it owes right now — and then

@@ -77,15 +77,15 @@ public readonly partial struct AgentName : IEquatable<AgentName>, IComparable<Ag
     /// </exception>
     public string Value => _value ?? throw new InvalidOperationException("Uninitialised AgentName.");
 
-    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}@[a-z0-9][a-z0-9.-]{0,63}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,31}@[a-z0-9][a-z0-9.-]{0,63}\z", RegexOptions.CultureInvariant)]
     private static partial Regex Pattern { get; }
 
     /// <summary>The grammar a role half must match on its own.</summary>
-    [GeneratedRegex("^[a-z][a-z0-9-]{0,31}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,31}\z", RegexOptions.CultureInvariant)]
     private static partial Regex RolePattern { get; }
 
     /// <summary>The grammar a machine half must match on its own.</summary>
-    [GeneratedRegex("^[a-z0-9][a-z0-9.-]{0,63}$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9.-]{0,63}\z", RegexOptions.CultureInvariant)]
     private static partial Regex MachinePattern { get; }
 
     /// <summary>

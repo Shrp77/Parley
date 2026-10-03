@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using Parley.Broker;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Server;
 using Parley.Setup;
@@ -475,6 +476,50 @@ public static class ServeCommand
     /// nothing worth measuring, and the entry point reads it only when its stamp has moved.
     /// </remarks>
     internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
+
+    /// <summary>The <c>reread</c> a served root is watched through: its projects when they changed, or null.</summary>
+    /// <param name="root">The machine's root.</param>
+    /// <returns>A function giving the projects when they changed and read cleanly, and null otherwise.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing changes on a read that left anything out, and the stamp is kept only from a clean one.</b> A project.json
+    /// mid-replace is briefly unreadable and reading leaves it out; taking that as the project being removed stopped its
+    /// broker, and storing the stamp before reading meant nothing read again, so it stayed stopped (the combined review
+    /// gate, lenses 1 and 3, after round three made reading lenient). With the stamp unchanged the next tick reads again,
+    /// until the read is clean.
+    /// </para>
+    /// <para>
+    /// The cost is recorded rather than hidden: while any project's file stays unreadable, no change to any other is
+    /// applied either. That is the promise <see cref="WatchAsync"/> already made — nothing is stopped on the strength of a
+    /// file somebody is halfway through editing — kept the only way it can be.
+    /// </para>
+    /// <para>
+    /// Here rather than inline in the program so the test drives the function the program uses, not a copy of it.
+    /// </para>
+    /// </remarks>
+    internal static Func<IReadOnlyList<ProjectSettings>?> Rereader(string root)
+    {
+        var held = ProjectFolder.StampOf(root);
+
+        return () =>
+        {
+            var stamp = ProjectFolder.StampOf(root);
+
+            if (string.Equals(stamp, held, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (!ProjectManifest.TryRead(root, out var current, out var leftOut) || leftOut is { Length: > 0 })
+            {
+                return null;
+            }
+
+            held = stamp;
+
+            return current;
+        };
+    }
 
     /// <summary>What a broker says when it finds its store already being served, before it exits.</summary>
     /// <param name="label">The store, or the project and its store.</param>

@@ -380,12 +380,13 @@ public static class EnrollCommand
 
         if (!ConsolePicker.Available)
         {
-            // Whatever a previous scan or a hand edit already marked is kept; what is new stays
-            // unticked. Saying "nothing was marked" would be wrong the moment this is re-run
-            // against a manifest somebody has already filled in, which is the common case.
+            // **Only --all is named, because it is the only way left.** This sentence also said to set
+            // "enroll": true in the manifest, which was the file `scan` wrote and `apply` read back. That
+            // file went with those verbs, so nothing is carried from a previous run and every row here is
+            // unticked: the instruction pointed at a file that no longer exists.
             await error.WriteLineAsync(
-                "No terminal to choose from, so nothing new was marked for enrollment. Either set\n" +
-                "\"enroll\": true in the manifest, or re-run with --all to mark every repository found.")
+                "No terminal to choose from, so no repository was chosen. Re-run with --all to enroll\n" +
+                "every repository found.")
                 .ConfigureAwait(false);
 
             return entries;

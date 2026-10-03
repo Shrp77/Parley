@@ -39,7 +39,7 @@ public static class ProjectCommand
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="destroy">
-    /// For <c>remove</c>: also stop the project's broker and delete its store and catalogue. The
+    /// For <c>remove</c>: also stop the project's broker and delete its store. The
     /// one destructive thing this command can do, and it says so in its name.
     /// </param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -606,10 +606,10 @@ public static class ProjectCommand
     /// is reported, with the store's path, and the deleting is the person's.
     /// </para>
     /// <para>
-    /// The catalogue goes with the store. The manifest refuses two projects that share one —
-    /// consent to run unattended is per project because the catalogue is — so a project's
-    /// catalogue is nobody else's, and leaving it behind would be leaving a list of repositories
-    /// that a deleted deployment was allowed to start.
+    /// <b>No catalogue goes with it, because since 018 there is none per project.</b> This said the catalogue went with
+    /// the store, and the terminal's dialog promised it; the catalogue is one per machine, keyed by each repository's
+    /// identity, and a repository's membership is read out of the repository — so there is nothing of the project's left
+    /// in it to delete (the combined review gate).
     /// </para>
     /// </remarks>
     private static async Task<int> DestroyAsync(

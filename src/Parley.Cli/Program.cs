@@ -976,21 +976,7 @@ if (verb == "serve" && rest.Length == 0)
         // started with while `project add` reports success. What it costs is N directory entries and N
         // small reads every two seconds, on a machine with a handful of projects — not worth engineering
         // around, and the alternative costs a great deal.
-        var projectsStamp = ProjectFolder.StampOf(manifestPath);
-
-        IReadOnlyList<ProjectSettings>? RereadManifest()
-        {
-            var stamp = ProjectFolder.StampOf(manifestPath);
-
-            if (string.Equals(stamp, projectsStamp, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            projectsStamp = stamp;
-
-            return ProjectManifest.TryRead(manifestPath, out var current, out _) ? current : null;
-        }
+        var rereadManifest = ServeCommand.Rereader(manifestPath);
 
         // **A machine that names no project yet is still a machine being served — but only when
         // something asked it to serve that machine.** That is the entry the installer registers on a
@@ -1042,7 +1028,7 @@ if (verb == "serve" && rest.Length == 0)
             Console.Error,
             hostNode ? HostingNodeFor : null,
             hostWebUi ? HostingWebUi : null,
-            watching ? RereadManifest : null,
+            watching ? rereadManifest : null,
             token);
         }).ConfigureAwait(false);
     }

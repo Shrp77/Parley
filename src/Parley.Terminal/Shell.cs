@@ -214,6 +214,12 @@ internal sealed class Shell : Window
         // receiver to treat as inert data.
         draft.Text = draft.Says(Line.Written);
 
+        // **What was in the box when Enter was pressed, and nothing typed after it.** The send runs when the work queue
+        // reaches it — behind a follow read or a mail poll — and typing goes on meanwhile, setting the draft's text on
+        // every key; so the words typed after Enter were sent in the payload and then cleared from the box (the
+        // combined review gate, lens 1, run 4).
+        var pressed = Line.Written;
+
         Queue(async token =>
         {
             // **Enter is a key, so a person who was away is back** (specs/023). The idle sweep dropped only the stream;
@@ -253,9 +259,10 @@ internal sealed class Shell : Window
                     return;
                 }
 
-                fresh.Text = fresh.Says(Line.Written);
                 draft = fresh;
             }
+
+            draft.Text = draft.Says(pressed);
 
             if (Held is not { } hold || Voice() is not { } voice)
             {
@@ -277,7 +284,10 @@ internal sealed class Shell : Window
                 return;
             }
 
-            Line.Written = string.Empty;
+            // Only what was sent leaves the box: what was typed after Enter is the start of the next thought.
+            Line.Written = Line.Written.StartsWith(pressed, StringComparison.Ordinal)
+                ? Line.Written[pressed.Length..].TrimStart()
+                : Line.Written;
 
             // The view's project, not the list's selection: the two are different accessors for one question, which is
             // this repository's most-repeated defect.
