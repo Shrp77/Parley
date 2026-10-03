@@ -762,6 +762,13 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   `BoxGrowthTests.Typing_past_the_edge_grows_the_box_once_and_it_stays_grown` types prose a key at a time, lays out twice
   per key, and fails against the old measure at the 161st key.
 
+  **0.37.7: Parley is off the terminal's agents list.** The owner restarted and saw `parley-facilitator@<project>` listed
+  as "stranded, not in this catalogue". `AgentsRegion.Show` joined the rows from the registry **one line before** 022
+  filtered the facilitator out, so it was gone from the registry, the standings, the recipients and every action — and
+  on the screen. `ParleyIsShownApartTests` read those four and never the drawn list, which is **0.29.2's shape again: a
+  property the suite holds to and the screen never shows.** It reads the drawn rows now and failed until the filter moved
+  above the join. The web UI filtered first and was right.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

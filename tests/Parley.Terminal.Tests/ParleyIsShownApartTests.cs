@@ -55,6 +55,13 @@ public sealed class ParleyIsShownApartTests
         Assert.DoesNotContain(shell.Agents.Registry, record => record.Facilitator);
         Assert.DoesNotContain(shell.Agents.Standings, row => row.Name.StartsWith(Facilitation.Role, StringComparison.Ordinal));
         Assert.Contains(shell.Agents.Standings, row => row.Name == "orders@test");
+
+        // **And not on the screen**, which is what the owner looks at (2026-10-03: "parley-facilitator@… stranded, not in
+        // this catalogue"). The rows were built from the registry a line before it was filtered, so everything this test
+        // read was right and the list drawn beside it was not.
+        Assert.DoesNotContain(
+            Drawn.Rows(shell.Agents.List),
+            row => row.Contains(Facilitation.Role, StringComparison.Ordinal));
     }
 
     [Fact]
