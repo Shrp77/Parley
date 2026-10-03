@@ -224,21 +224,74 @@ internal sealed class Entry
     /// <param name="paragraph">The view.</param>
     /// <returns>The rows, at least one.</returns>
     /// <remarks>
+    /// <para>
     /// Measured from the text rather than asked of the toolkit, because the answer is needed while deciding
-    /// the layout that would give the toolkit something to measure. The width used is the view's own once it
-    /// has been laid out and an estimate before that, self-correcting on the first real layout.
+    /// the layout that would give the toolkit something to measure. An estimate before the first layout,
+    /// self-correcting on it.
+    /// </para>
+    /// <para>
+    /// <b>Against a width that does not move, and counted the way word wrap counts</b> (the owner's report of
+    /// 2026-10-03: the box flickered and bounced as text began to wrap). This measured the text's current width,
+    /// which loses a column whenever the scrollbar appears — and the scrollbar appears whenever the box is shorter
+    /// than the text. It also counted characters while the toolkit wraps at words, so near the edge the two
+    /// disagreed: the box grew, lost the scrollbar, measured one row fewer, shrank, gained it, and grew again on
+    /// every keystroke and every redraw. The width is the frame's less the scrollbar's column, whether or not the
+    /// scrollbar is showing, so the measure cannot depend on what it decides; and at that narrower width a greedy
+    /// word wrap never needs fewer rows than the toolkit's, so the scrollbar stays away until the box is at its bound.
+    /// </para>
     /// </remarks>
     private static int Deep(TextView paragraph)
     {
-        var width = paragraph.Viewport.Width > 0 ? paragraph.Viewport.Width : 60;
+        var width = paragraph.Frame.Width > 2 ? paragraph.Frame.Width - 1 : 60;
         var rows = 0;
 
         foreach (var line in paragraph.Text.Split('\n'))
         {
-            rows += Math.Max(1, (int)Math.Ceiling(line.TrimEnd('\r').Length / (double)width));
+            rows += Wrapped(line.TrimEnd('\r'), width);
         }
 
         return Math.Max(1, rows);
+    }
+
+    /// <summary>How many rows one line takes when wrapped at words.</summary>
+    /// <param name="line">The line, with no line break in it.</param>
+    /// <param name="width">The columns available.</param>
+    /// <returns>The rows, at least one.</returns>
+    /// <remarks>
+    /// Greedy: a word goes on the row it is typed on if it fits there with a space before it, and on the next row if
+    /// not; a word longer than a whole row is broken across as many rows as it needs. Never fewer rows than counting
+    /// characters gives, which keeps it on the safe side of the toolkit's own wrap.
+    /// </remarks>
+    private static int Wrapped(string line, int width)
+    {
+        var rows = 1;
+        var column = 0;
+
+        foreach (var word in line.Split(' '))
+        {
+            var length = word.Length;
+
+            if (column > 0 && column + 1 + length > width)
+            {
+                rows++;
+                column = 0;
+            }
+            else if (column > 0)
+            {
+                column++;
+            }
+
+            while (length > width - column)
+            {
+                length -= width - column;
+                rows++;
+                column = 0;
+            }
+
+            column += length;
+        }
+
+        return Math.Max(rows, (int)Math.Ceiling(line.Length / (double)width));
     }
 }
 

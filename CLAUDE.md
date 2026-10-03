@@ -753,6 +753,15 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   tick** now; it was read only on arriving, so it described the moment the conversation opened. `RoomActivityTests` covers
   the derivation, the drawing and the refresh, and fails without the last.
 
+  **0.37.6: the box stops bouncing as text wraps.** The owner saw it flicker and jump up and down until enough was typed.
+  `Entry.Deep` measured the text's *current* width, which loses a column whenever the scrollbar appears — and the
+  scrollbar appears whenever the box is shorter than the text — and it counted characters while the toolkit wraps at
+  words. **A measurement that depends on what it decides is a loop**: near the edge the box grew, lost its scrollbar,
+  measured a row fewer, shrank, gained it back, and went round on every key and every redraw. It measures against the
+  frame less the scrollbar's column now, shown or not, with a greedy word wrap that never undercounts the toolkit's.
+  `BoxGrowthTests.Typing_past_the_edge_grows_the_box_once_and_it_stays_grown` types prose a key at a time, lays out twice
+  per key, and fails against the old measure at the 161st key.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —
