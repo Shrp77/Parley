@@ -777,6 +777,14 @@ tracks both:
 |---|---|---|---|
 | Not collected | the Request being written | 15 minutes | Nobody has picked it up: the receiver never started, its machine is off, or it died on the way. |
 | Collected, no Result | the receiver collecting it | 4 hours without a message from the receiver in the conversation | It was picked up and is being worked on — or the receiver has stalled. |
+| Stopped on a refused permission | the receiver's last turn ending (§11.6) | at once, when that turn refused at least one tool call for want of permission and the receiver has said nothing in the conversation since | The receiver tried something it was not allowed to do, nobody was there to approve it, and it will not get further without a person. |
+
+**A refused permission is flagged at once; a turn that merely ended is not.** An agent may end a turn
+with work outstanding for good reasons — it asked somebody and is waiting, it is between steps — and the
+ordinary threshold is patience with that. A refusal is different in kind: the agent cannot get past it on
+its own, so there is nothing to be patient with. The flag is read off the agent's **most recent** turn, so
+a later turn that ends cleanly clears it even if the work is still owed, and the exchange falls back to
+the threshold above — the refusal is no longer what is stopping it.
 
 Crossing a threshold changes nothing about the exchange. It puts the exchange in front of the
 person (§10.2), naming the stage and the participant it is waiting on, and the person decides
@@ -2601,7 +2609,7 @@ other could.
 
 | Operation | Description |
 |---|---|
-| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
+| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
@@ -2612,7 +2620,7 @@ other could.
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set, and, for exchanges opened before 0.7, how often a Result gave their items different outcomes. The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
-| `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
+| `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
 | `retire(agent)` | Mark an agent `retired`, so it is no longer routed to or listed. See §14. Refused for the person seat, which is never retired (§12.3). |
 | `reinstate(agent)` | Withdraw a retirement. Registration does not, and must not, do this. |
 | `purge(agent)` | Delete an agent and every conversation it was party to, with those conversations' files, freeing its name. Destroys its peers' side of those conversations too, and cannot be undone. See §14. Refused for the person seat: the broker would write it again on its next start, so a purge could only cut the person's words out of every transcript. |
@@ -2982,6 +2990,33 @@ says why: a process's output belongs to whoever spawned it. That is the channel 
 down, so an instruction is not a new route into an agent — it is the existing one carrying one more
 kind of thing. An agent on a machine whose node is not connected cannot be instructed, and must be told
 so rather than left to look as though it was.
+
+### 11.6 A node reports the turns it gives
+
+**A node tells the broker when each turn it gives begins and when it ends.** The end carries how long
+the turn ran, whether it finished cleanly, whether it was cut off for running too long, whether the
+process died, what it cost and how many model turns it took, and **how many tool calls were refused for
+want of permission**. A resident agent runs with nobody at the keyboard, so a call needing approval is
+refused rather than paused — and an agent whose work was stopped that way looks, from every other fact
+the broker holds, exactly like one still doing it: a Request collected and not answered.
+
+The broker records each ended turn in `invocations` (§9.2), counting itself how much the agent had
+waiting before and after — that is its inbox, which the node cannot see. A turn that has begun and not
+ended is held as running for as long as the node that reported it stays joined; when that node's stream
+ends, nothing it reported is claimed to be running any more. A broker that restarts forgets every
+running turn, and an end whose beginning it never heard is still recorded.
+
+A node declares when it joins that it reports turns. **An agent whose turns nobody reports is not
+stopped; it is unknown** — whether its node predates this section or it is attached through somebody's
+editor and runs no node turns at all — and no surface may say otherwise.
+
+**A report is accepted only for an agent on the reporting node's machine, from a node that is joined.**
+Anything else is ignored and nothing is stored. §16 concedes that anything able to reach a broker can
+claim to be anything; refusing a node's claim about another machine's agent costs one comparison.
+
+**Nothing here reaches an agent.** How another agent's turns went, what they cost and what they were
+refused is the operator's view (§10.2's `registry()` and `flags()`), never `agents()` (§10.1). And a
+failed report never fails the turn it describes: the node notes it and carries on.
 
 ## 12. Registration and credentials
 
@@ -3817,6 +3852,12 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    What would decide it is already collected: inbox depth per agent, sustained (§15), and
    `invocations`, which records every turn with its duration and cost — so "what did one participant's
    requests spend on another's machine" has an answer in the same place as every other turn's.
+
+   **That was untrue for every deployment run through a node until 2026-10-03, and is recorded rather
+   than tidied.** Only the old in-process fleet wrote `invocations`; a node ran each turn, measured it,
+   and told the broker nothing. Which artifact was wrong was decided, not assumed: the claim stands and
+   the code was the defect, since the evidence this question relies on had simply not been collected.
+   §11.6 makes it true.
 2. Should the human be a first-class Headless agent, or a distinct escalation path?
 
    **Being answered in the affirmative, from use rather than from argument.** §11.2 already
@@ -4526,6 +4567,23 @@ why it is recorded here:
   at a screen, and waiting for the person's decision is correct; the hand-it-back branch applies only
   where an implementation provides no person seat (§5 *Blocked*, §8 rule 10).
 - **Operator operations refuse the person** (§10.2): `retire`, `purge`, `start` and `instruct`.
+
+#### Amended, 2026-10-03: a node reports the turns it gives
+
+**Still 0.7, and it would be even if 0.7 had shipped.** The protocol version is what an agent's adapter
+announces, and a broker refuses an adapter announcing another; nothing below reaches an agent, so moving the
+number would refuse every adapter for a change none of them can observe. What a second implementation's
+node and operator surfaces will observe:
+
+- **A node reports each turn's start and end** (§11.6), and says when it joins that it does. A turn's end
+  carries its duration, whether it finished cleanly, was cut off or died, its cost and model turns, and how
+  many tool calls were refused for want of permission. Reports for an agent on another machine, or from a
+  node not joined, are ignored.
+- **`registry()` rows carry each agent's turn standing** (§10.2): reported or not, running since, and the last
+  turn's end, cleanness and permission refusals. `agents()` (§10.1) carries none of it.
+- **A new flag** (§6, §10.2 `flags()`): an exchange whose owing agent's last turn ended with a refused
+  permission and who has said nothing since, raised at once.
+- **`invocations` is written for every turn a node gives**, which §17 question 1 had claimed all along.
 
 ### 0.6 — files cross between repositories
 

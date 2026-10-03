@@ -20,20 +20,20 @@ the check fail, and every probe in contracts/turns.md is written as the maliciou
 
 **Purpose**: the protocol change is a specification change before it is code.
 
-- [ ] T001 Amend SPEC.md §11/§12's node contract: a node that runs an agent reports each turn's start and end to the
+- [X] T001 Amend SPEC.md §11/§12's node contract: a node that runs an agent reports each turn's start and end to the
   broker, with the facts in contracts/turns.md; a failed report never fails a turn; reports are accepted only for agents
   on the reporting node's machine (research R10); in SPEC.md
-- [ ] T002 Amend SPEC.md §10.2's registry read: each agent's turn standing (`turns_reported`, running since, last ended
+- [X] T002 Amend SPEC.md §10.2's registry read: each agent's turn standing (`turns_reported`, running since, last ended
   turn's end, clean, permission refusals) on the operator's read and **never** on the agent roster (FR-005); in SPEC.md
-- [ ] T003 Amend SPEC.md §6's flags table with the permission-refused flag — raised at once when a turn ends owing work
+- [X] T003 Amend SPEC.md §6's flags table with the permission-refused flag — raised at once when a turn ends owing work
   with at least one refusal, cleared by derivation (research R6) — and say why a turn ending owing work *without*
   refusals is not flagged early; in SPEC.md
-- [ ] T004 Close SPEC.md §17 question 1's gap: the turn record was promised for every turn and the node path wrote none;
+- [X] T004 Close SPEC.md §17 question 1's gap: the turn record was promised for every turn and the node path wrote none;
   record the decision (research R11) and that this feature makes it true; in SPEC.md
-- [ ] T005 Add SPEC.md §18's entry under the **current** protocol version as an addition to the node and operator
+- [X] T005 Add SPEC.md §18's entry under the **current** protocol version as an addition to the node and operator
   contracts, saying why the version does not move (research R9: agents see nothing, and moving it would force every
   adapter to upgrade); in SPEC.md
-- [ ] T006 Run `tests/Parley.Spec.Tests` and fix any reference, table or schema fragment the amendments broke
+- [X] T006 Run `tests/Parley.Spec.Tests` and fix any reference, table or schema fragment the amendments broke
 
 **Checkpoint**: SPEC.md describes the feature; spec tests green.
 
