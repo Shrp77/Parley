@@ -77,12 +77,12 @@ public sealed class ColourTests
         Assert.Contains(
             room.Written,
             row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal)
-                && row.Contains(billing.Value, StringComparison.Ordinal));
+                && row.Contains(billing.Role, StringComparison.Ordinal));
 
         Assert.Contains(
             room.Written,
             row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
-                && row.Contains(orders.Value, StringComparison.Ordinal));
+                && row.Contains(orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]

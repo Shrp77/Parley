@@ -145,7 +145,19 @@ internal sealed class LineRegion : FrameView
         // rather than an accept: the key has to be taken before the binding runs.
         _field.View.KeyDown += (_, key) =>
         {
-            if (key != Key.Enter)
+            // **Shift+Enter is a line break, and so is Ctrl+Enter** (the owner asked for Shift+Enter on 2026-10-03). Taken
+            // here rather than left to the shell's action, because a focused view is offered a key first and the field's
+            // own Enter binding would otherwise read either chord as Enter.
+            if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
+            {
+                key.Handled = true;
+                Break();
+
+                return;
+            }
+
+            // The break itself, which is the field's own Enter: let it through rather than reading it as a send.
+            if (key != Key.Enter || _breaking)
             {
                 return;
             }
@@ -256,11 +268,33 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>Adds a line break where the cursor is.</summary>
     /// <remarks>
+    /// <para>
     /// <b>Enter sends, so a line break needs a key of its own.</b> The chord is what a person reaches for and
     /// what the owner asked about by name; <c>\</c> then Enter is the one that works in a terminal that cannot
     /// tell a chord from a bare Enter, which several cannot.
+    /// </para>
+    /// <para>
+    /// <b>The field makes a break by being sent Enter, and this region reads Enter as a send.</b> So the send stands
+    /// aside while the break is being made. Without it every chord that "started a new line" sent the message instead —
+    /// found on 2026-10-03 by the first test that pressed Shift+Enter; the test of Ctrl+Enter had only ever read its label.
+    /// </para>
     /// </remarks>
-    internal void Break() => _field.Break();
+    internal void Break()
+    {
+        _breaking = true;
+
+        try
+        {
+            _field.Break();
+        }
+        finally
+        {
+            _breaking = false;
+        }
+    }
+
+    // Set only while `Break` hands the field its own Enter, so the send ignores that one.
+    private bool _breaking;
 
     /// <summary>Presses Enter in the box, as a person does.</summary>
     /// <remarks>

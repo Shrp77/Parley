@@ -98,7 +98,7 @@ public sealed class RememberedAddressingTests
             Assert.Contains(
                 after.Shell.Room.Written,
                 row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
-                    && row.Contains(Billing.Value, StringComparison.Ordinal));
+                    && row.Contains(Billing.Role, StringComparison.Ordinal));
         }
         finally
         {
@@ -157,7 +157,7 @@ public sealed class RememberedAddressingTests
     private static void Untick(Seated seated, AgentName agent)
     {
         seated.Focus<RoomRegion>();
-        seated.Row(seated.Shell.Room.List, agent.Value);
+        seated.Row(seated.Shell.Room.List, agent.Role);
         seated.Shell.NewKeyDownEvent(Key.Space);
     }
 

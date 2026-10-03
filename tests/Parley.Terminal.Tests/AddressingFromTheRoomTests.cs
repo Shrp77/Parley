@@ -41,7 +41,7 @@ public sealed class AddressingFromTheRoomTests
         Assert.Contains(
             seated.Shell.Room.Written,
             row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal)
-                && row.Contains(Seated.Orders.Value, StringComparison.Ordinal));
+                && row.Contains(Seated.Orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
         shell.NewKeyDownEvent(Key.Space);
 
@@ -69,7 +69,7 @@ public sealed class AddressingFromTheRoomTests
         Assert.Contains(
             shell.Room.Written,
             row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
-                && row.Contains(Seated.Orders.Value, StringComparison.Ordinal));
+                && row.Contains(Seated.Orders.Role, StringComparison.Ordinal));
 
         // And the preview above the box agrees, because it is the same draft.
         Assert.DoesNotContain(Seated.Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
@@ -85,7 +85,7 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
         shell.NewKeyDownEvent(Key.Space);
         await shell.Settled;
@@ -107,7 +107,7 @@ public sealed class AddressingFromTheRoomTests
         Assert.Single(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
         shell.NewKeyDownEvent(Key.Space);
 
@@ -132,7 +132,7 @@ public sealed class AddressingFromTheRoomTests
         var before = shell.Drafting!.Recipients.ToList();
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
         seated.Session.Enter();
 
         await shell.Settled;
@@ -158,7 +158,7 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
         var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.IncludeTitle);
 

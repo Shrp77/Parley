@@ -102,8 +102,8 @@ public sealed class RoomTests
         var room = Filled(true, new PairState(Billing, null, Turn.Nobody), new PairState(Orders, null, Turn.Nobody));
 
         Assert.Contains(RoomRegion.Participants, room.Written);
-        Assert.Contains(room.Written, row => row.Contains(Billing.Value, StringComparison.Ordinal));
-        Assert.Contains(room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Billing.Role, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class RoomTests
         // was actually read, and 0.28.2 records what hiding things from a seatless person costs.
         var room = Filled(false, new PairState(Billing, null, Turn.Nobody));
 
-        Assert.Contains(room.Written, row => row.Contains(Billing.Value, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Billing.Role, StringComparison.Ordinal));
         Assert.Contains("  " + RoomRegion.NoSeat, room.Written);
         Assert.DoesNotContain("  " + RoomRegion.NothingOwed, room.Written);
     }

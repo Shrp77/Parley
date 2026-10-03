@@ -739,6 +739,20 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   it. The application's own `Keyboard.KeyDown` feeds it now, raised for every key before any view sees one.
   `TypingIsBeingHereTests` fails against the old wiring in both directions.
 
+  **0.37.5: Shift+Enter starts a new line, and the room shows what every participant is doing.** Shift+Enter, the owner's
+  ask, joins Ctrl+Enter and backslash-Enter. **Pressing it found that every chord had always sent the message**: the
+  field makes a break by being handed Enter, and the region reads Enter as a send, so `Break` set off the send it was
+  meant to avoid. The only test of Ctrl+Enter read its label. The send now stands aside while a break is made.
+
+  The room said only what stood between each agent and the person, so one agent working on another's request had no row
+  at all — and `@machine` on every name pushed even "owes you" off a narrow column. The owner chose marks: **◆ working**
+  (holds a request in this conversation and has picked it up, with how long), **● running**, **○ not running**, with a
+  legend. `Activities` derives them from the wait-for graph narrowed to the conversation's exchanges, each message's
+  collected time and the registry's presence — **no wire change, and so no claim about being mid-turn**, which only a
+  node knows. Names drop the machine where no other participant shares the role. **The room is refreshed on every follow
+  tick** now; it was read only on arriving, so it described the moment the conversation opened. `RoomActivityTests` covers
+  the derivation, the drawing and the refresh, and fails without the last.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

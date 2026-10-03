@@ -185,6 +185,8 @@ internal sealed class RoomRegion : FrameView
     /// <param name="seated">Whether a seat is held.</param>
     /// <param name="me">The name the person holds a seat under, or null when they hold none.</param>
     /// <param name="addressed">Who what is being written goes to, or null for every participant.</param>
+    /// <param name="activity">What each participant is doing, or null when it could not be read.</param>
+    /// <param name="now">The time to measure how long somebody has been working against.</param>
     /// <remarks>
     /// Headings are rows rather than decoration, for the reason the agents list groups by state: a row does not
     /// wrap, and a heading said once is shorter than a qualifier repeated on every row.
@@ -194,10 +196,15 @@ internal sealed class RoomRegion : FrameView
         IReadOnlyList<OutstandingItem> outstanding,
         bool seated,
         AgentName? me = null,
-        IReadOnlyList<AgentName>? addressed = null)
+        IReadOnlyList<AgentName>? addressed = null,
+        IReadOnlyDictionary<AgentName, Activity>? activity = null,
+        DateTimeOffset? now = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
         ArgumentNullException.ThrowIfNull(outstanding);
+
+        _activity = activity ?? new Dictionary<AgentName, Activity>();
+        _now = now ?? DateTimeOffset.UtcNow;
 
         _pairs = pairs;
         _outstanding = outstanding;
@@ -229,7 +236,7 @@ internal sealed class RoomRegion : FrameView
             }
 
             rows.Add(new Row(
-                Mark(pair.Peer) + Safe.Text(pair.Peer.Value) + Standing(pair),
+                Mark(pair.Peer) + Glyph(pair.Peer) + " " + Safe.Text(Shown(pair.Peer, pairs)) + Standing(pair),
                 null,
                 Palette.SlotFor(pair.Peer),
                 pair.Peer));
@@ -254,9 +261,65 @@ internal sealed class RoomRegion : FrameView
             }
         }
 
+        // **What the marks mean, said on screen**, because a mark nothing explains is a fact that exists only for the
+        // person who wrote it — the same rule that keeps colour from carrying anything alone.
+        if (pairs.Any(pair => !Facilitation.Is(pair.Peer)))
+        {
+            rows.Add(new Row(string.Empty, null, null, null));
+            rows.AddRange(Legend.Select(line => new Row(line, null, null, null)));
+        }
+
         _rows = rows;
         _list.Replace([.. rows.Select(r => r.Text)], _list.SelectedItem);
     }
+
+    /// <summary>The mark for a participant that is working on a request it has picked up.</summary>
+    internal const string WorkingMark = "◆";
+
+    /// <summary>The mark for a participant that is running and holds nothing it has picked up.</summary>
+    internal const string RunningMark = "●";
+
+    /// <summary>The mark for a participant nothing is running.</summary>
+    internal const string NotRunningMark = "○";
+
+    /// <summary>What the marks mean, at the foot of the column.</summary>
+    internal static readonly IReadOnlyList<string> Legend =
+    [
+        $"{RunningMark} running",
+        $"{WorkingMark} working on a request",
+        $"{NotRunningMark} not running",
+    ];
+
+    /// <summary>The word for how long somebody has been working, before the duration.</summary>
+    internal const string WorkingFor = " — working ";
+
+    private IReadOnlyDictionary<AgentName, Activity> _activity = new Dictionary<AgentName, Activity>();
+
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+
+    /// <summary>The mark in front of a participant, from what they are doing.</summary>
+    /// <param name="peer">The participant.</param>
+    /// <returns>One character; a space when the registry could not be read, so nothing is claimed.</returns>
+    private string Glyph(AgentName peer) => (_activity.TryGetValue(peer, out var doing) ? doing.Doing : Doing.Unknown) switch
+    {
+        Doing.Working => WorkingMark,
+        Doing.Running => RunningMark,
+        Doing.NotRunning => NotRunningMark,
+        _ => " ",
+    };
+
+    /// <summary>A participant's name as the column draws it.</summary>
+    /// <param name="peer">The participant.</param>
+    /// <param name="pairs">Everybody in the conversation.</param>
+    /// <returns>The role alone where no other participant shares it, else the whole name.</returns>
+    /// <remarks>
+    /// <b>The machine half was most of what the owner could not see.</b> Agents in one deployment are nearly always on one
+    /// machine, so <c>@machine</c> on every row is the same word repeated in a column twenty-odd characters wide — and it
+    /// pushed what each agent was doing off the edge. Where two participants share a role the machine is what tells them
+    /// apart, and the whole name is kept.
+    /// </remarks>
+    private static string Shown(AgentName peer, IReadOnlyList<PairState> pairs) =>
+        pairs.Count(pair => pair.Peer.Role == peer.Role) > 1 ? peer.Value : peer.Role;
 
     /// <summary>Whether what is being written goes to this participant.</summary>
     /// <param name="peer">The participant.</param>
@@ -273,14 +336,15 @@ internal sealed class RoomRegion : FrameView
     /// <returns>The clause, or nothing where nothing is open.</returns>
     /// <remarks>
     /// Written out rather than left to the colour, and phrased from this person's side: "owes you" and "waiting on
-    /// you" are the two facts somebody reads this column to learn.
+    /// you" are the two facts somebody reads this column to learn. Since 2026-10-03 a participant working on a request it
+    /// has picked up says so and for how long, whoever asked it -- unless the turn is this person's, which wins.
     /// </remarks>
-    private static string Standing(PairState pair) => pair.Turn switch
-    {
-        Turn.Mine => " — waiting on you",
-        Turn.Theirs => " — owes you",
-        _ => string.Empty,
-    };
+    private string Standing(PairState pair) =>
+        pair.Turn == Turn.Mine
+            ? " — waiting on you"
+            : _activity.TryGetValue(pair.Peer, out var doing) && doing is { Doing: Doing.Working, Since: { } since }
+                ? WorkingFor + Activities.For(since, _now)
+                : pair.Turn == Turn.Theirs ? " — owes you" : string.Empty;
 
     /// <summary>The colour of one row, derived from a name already written on it.</summary>
     /// <param name="row">Which row.</param>

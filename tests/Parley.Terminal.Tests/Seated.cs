@@ -91,13 +91,15 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="height">How tall the terminal is.</param>
     /// <param name="addressing">Where who-each-line-goes-to is kept, or null for this run only.</param>
     /// <param name="mailEvery">How often the waiting count is asked for, or null (the default) not to poll at all.</param>
+    /// <param name="followEvery">How often the open conversation is read again, or null (the default) not to follow.</param>
     /// <returns>The fixture.</returns>
     internal static async Task<Seated> OpenAsync(
         CancellationToken cancellationToken,
         int width = 140,
         int height = 40,
         AddressBook? addressing = null,
-        TimeSpan? mailEvery = null)
+        TimeSpan? mailEvery = null,
+        TimeSpan? followEvery = null)
     {
         var connection = ParleyDatabase.OpenInMemory();
         var agents = new AgentRepository(connection);
@@ -125,6 +127,9 @@ internal sealed class Seated : IAsyncDisposable
         };
 
         driving.Show(shell);
+
+        // After `Show`, which turns following off on every driven surface; a test that asks for it gets it back.
+        shell.FollowEvery = followEvery;
 
         await shell.RefreshAsync(cancellationToken).ConfigureAwait(false);
         await shell.Settled.ConfigureAwait(false);

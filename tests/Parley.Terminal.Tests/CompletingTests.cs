@@ -703,7 +703,44 @@ public sealed class CompletingTests : IAsyncDisposable
 
         var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.BreakTitle);
 
-        Assert.Equal(Key.Enter.WithCtrl.ToString(), offered.Stroke);
+        // Shift+Enter since 2026-10-03, the owner's ask; Ctrl+Enter and the backslash are named beside it.
+        Assert.Equal(Key.Enter.WithShift.ToString(), offered.Stroke);
         Assert.Equal(Shell.BreakAlso, offered.Costs);
+        Assert.Contains("Ctrl+Enter", Shell.BreakAlso, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Shift_or_Ctrl_and_Enter_add_a_line_rather_than_sending(bool shift)
+    {
+        // Pressed on the box, where a person presses them: the field is offered a key before anything else, and its own
+        // Enter binding would take either chord as Enter and send.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "first")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        shell.NewKeyDownEvent(shift ? Key.Enter.WithShift : Key.Enter.WithCtrl);
+
+        foreach (var key in "second")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        Assert.Equal("first\nsecond", shell.Line.Written.ReplaceLineEndings("\n"));
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        // One message, the fixture's own: nothing was sent.
+        Assert.Single(export?.Messages ?? []);
     }
 }

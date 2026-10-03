@@ -121,7 +121,7 @@ internal sealed class Shell : Window
     internal const string BreakTitle = "Start a new line";
 
     /// <summary>The other way to add one, for a terminal that cannot tell the chord from a bare Enter.</summary>
-    internal const string BreakAlso = "or type a backslash and press Enter";
+    internal const string BreakAlso = "or Ctrl+Enter, or type a backslash and press Enter";
 
     /// <summary>Adds a line break to what is being written.</summary>
     /// <returns>When it has been added.</returns>
@@ -1930,7 +1930,7 @@ internal sealed class Shell : Window
                 ? new[]
                 {
                     new RegionAction('\r', SendTitle, SendLine, Owing.Requesting),
-                    new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithCtrl),
+                    new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithShift),
                 }
                 : Array.Empty<RegionAction>(),
         ],
@@ -3118,6 +3118,14 @@ internal sealed class Shell : Window
 
                 _followFailed = null;
                 _ = Transcript.Follow(conversationId, project.Name.Value, export);
+
+                // **The room as well, every time, and whether or not the transcript changed** (2026-10-03). Somebody picking
+                // a request up changes nothing in the transcript but everything in the room's marks, and "working 3m" has to
+                // count. It was read only on arriving, so the room went on describing the moment the conversation opened.
+                if (StillReading(conversationId))
+                {
+                    await FillRoomAsync(project, conversationId, export, cancellationToken).ConfigureAwait(false);
+                }
 
                 return;
             }
@@ -4651,6 +4659,15 @@ internal sealed class Shell : Window
                 .WaitingAsync(cancellationToken).ConfigureAwait(false))
             .ConfigureAwait(false);
 
+        // **Who is running, for the marks beside each name** (2026-10-03). A registry that could not be read leaves the
+        // marks blank rather than guessing, which `Activities` says and `RoomRegion.Glyph` draws.
+        var registry = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(_directory.ClientFor(project))
+                .RegistryAsync(cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false);
+
+        var activity = Activities.Of(export, waiting.Value ?? [], registry.Value);
+
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
         // Rebuilt from the pair state that was just read, keeping what the person had already decided about it: the
@@ -4708,7 +4725,7 @@ internal sealed class Shell : Window
         // **The column is drawn after the draft, because its ticks are the draft's recipients.** Drawing it
         // first would show the set from the previous read until the next one finished, which is the whole of
         // what a checklist must never do.
-        Room.Show(pairs, Outstanding(pairs, export), seated: true, hold.Seat.Name, Drafting.Recipients);
+        Room.Show(pairs, Outstanding(pairs, export), seated: true, hold.Seat.Name, Drafting.Recipients, activity);
         Line.Show(Drafting, seated: true, Near());
     }
 
