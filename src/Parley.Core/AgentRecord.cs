@@ -68,6 +68,10 @@ namespace Parley.Core;
 /// Travels so a surface can show a line accepted automatically apart from one a person decided: the review's
 /// whole worth is that a person can tell the two apart at a glance.
 /// </param>
+/// <param name="Turns">
+/// What the agent's node has said about its turns (SPEC.md §11.6), or null where nobody has read it — which a surface
+/// treats exactly as <see cref="TurnStanding.Unreported"/>. On the operator's registry only.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. This record is
 /// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
@@ -90,7 +94,8 @@ public sealed record AgentRecord(
     string? Owns = null,
     AgentPresence Presence = AgentPresence.Stranded,
     string? OwnsAccepted = null,
-    OwnershipSource? OwnsSource = null)
+    OwnershipSource? OwnsSource = null,
+    TurnStanding? Turns = null)
 {
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>

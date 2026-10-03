@@ -69,6 +69,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
+    // The turns nodes have said are running and not yet said are over (SPEC.md §11.6). In memory on purpose: it is a
+    // fact about live connections, like a node being joined, and a broker that has just started holds none — so a
+    // restart forgetting them is right by construction, where a column would be false after every crash.
+    private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
+
     /// <summary>The silent participants each closure poll has already asked again, keyed by poll.</summary>
     /// <remarks>
     /// In memory, for the reason the pending mark is: a restart forgets, and the worst that costs is one more ask.
@@ -632,6 +637,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="node">What the node observed about its machine.</param>
     /// <param name="startableRoles">The roles it says it can launch.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
+    /// <param name="reportsTurns">Whether the node said it reports the turns it gives (SPEC.md §11.6).</param>
     /// <returns>The join, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="node"/> is null.</exception>
     /// <exception cref="InvalidOperationException">A node is already joined for that machine.</exception>
@@ -644,13 +650,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<JoinedNode> JoinNodeAsync(
         NodeRecord node,
         IEnumerable<string> startableRoles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool reportsTurns = false)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(startableRoles);
 
         var joined = new JoinedNode(
-            this, node.Machine, startableRoles.ToHashSet(StringComparer.Ordinal));
+            this, node.Machine, startableRoles.ToHashSet(StringComparer.Ordinal), reportsTurns);
 
         if (!_nodes.TryAdd(node.Machine, joined))
         {
@@ -736,6 +743,130 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
     }
 
+    /// <summary>Records that a node began a turn for one of its agents (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="startedUtc">When the turn began, as the node says.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    public async Task<bool> TurnStartedAsync(
+        string machine, AgentName agent, DateTimeOffset startedUtc, CancellationToken cancellationToken = default)
+    {
+
+        var before = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
+
+        if (before is not { } waiting)
+        {
+            return false;
+        }
+
+        _ = _turns.AddOrUpdate(
+            agent,
+            new RunningTurn(startedUtc, machine, waiting),
+            (_, was) => was.Started > startedUtc ? was : new RunningTurn(startedUtc, machine, waiting));
+
+        return true;
+    }
+
+    /// <summary>Records that a node's turn for one of its agents ended (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="ended">What the node said about the turn.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Recorded in <c>invocations</c> with waiting counts the broker took itself</b> — before from when it heard the turn
+    /// begin, after from now — because they are its inbox, which the node cannot see. An end whose beginning this broker
+    /// never heard (it restarted mid-turn) is still recorded, counting before as after: nothing better is known.
+    /// </para>
+    /// <para>
+    /// <b>An end clears a running turn only if that turn is not newer than it.</b> A slow report of one turn's end arriving
+    /// after the next turn's start must not make the agent read as idle while it works.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> TurnEndedAsync(
+        string machine, AgentName agent, EndedTurn ended, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ended);
+
+        var after = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
+
+        if (after is not { } waitingAfter)
+        {
+            return false;
+        }
+
+        var before = _turns.TryGetValue(agent, out var running) && running.Started == ended.StartedUtc
+            ? running.WaitingBefore
+            : waitingAfter;
+
+        if (running is not null && running.Started <= ended.StartedUtc)
+        {
+            _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
+        }
+
+        _ = await UseConnectionAsync(
+            (connection, _, ct) => new InvocationRepository(connection).RecordAsync(
+                agent,
+                before,
+                waitingAfter,
+                ended.StartedUtc,
+                ended.Elapsed,
+                ended.Clean ? 0 : 1,
+                ended.TimedOut,
+                ended.CostUsd,
+                ended.ModelTurns,
+                ended.PermissionDenials,
+                ct),
+            cancellationToken).ConfigureAwait(false);
+
+        return true;
+    }
+
+    /// <summary>When the turn running now for an agent began, or null when none is.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The start.</returns>
+    public DateTimeOffset? TurnRunningSince(AgentName agent) =>
+        _turns.TryGetValue(agent, out var running) ? running.Started : null;
+
+    /// <summary>Whether the node on an agent's machine reports its turns (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>True only while a node that said so is joined for that machine.</returns>
+    public bool TurnsReported(AgentName agent) =>
+        _nodes.TryGetValue(agent.Machine, out var node) && node.ReportsTurns;
+
+    /// <summary>Checks a turn report and counts the agent's waiting work, or says no.</summary>
+    /// <param name="machine">The reporting machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>What the agent has waiting, or null when the report is not accepted.</returns>
+    /// <remarks>
+    /// <b>Only for an agent on the reporting node's own machine, from a node that is joined, about an agent this broker
+    /// knows</b> (§11.6). §16 concedes anything that reaches a broker can claim to be anything; a node's claim about another
+    /// machine's agent is the cheap forgery, and refusing it costs one comparison.
+    /// </remarks>
+    private async Task<long?> AcceptedTurnAsync(string machine, AgentName agent, CancellationToken cancellationToken)
+    {
+        if (!_nodes.ContainsKey(machine) || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return await UseConnectionAsync(
+            async (connection, _, ct) =>
+                await new AgentRepository(connection).IsRegisteredAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    ? await new InvocationRepository(connection).CountWaitingAsync(agent, ct).ConfigureAwait(false)
+                    : (long?)null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>A turn a node has said began and not yet said ended.</summary>
+    /// <param name="Started">When it began.</param>
+    /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
+    /// <param name="WaitingBefore">What the agent had waiting when it began.</param>
+    private sealed record RunningTurn(DateTimeOffset Started, string Machine, long WaitingBefore);
+
     /// <summary>Releases a node when its stream has ended.</summary>
     /// <param name="joined">The join.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
@@ -745,6 +876,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(joined.Machine, joined));
+
+        // **Nothing a departed node said is running is claimed to be running any more** (§11.6, specs/024 FR-006). A turn
+        // reported as begun and never as ended would otherwise read as working for ever.
+        foreach (var turn in _turns.Where(entry => entry.Value.Machine == joined.Machine).ToList())
+        {
+            _ = _turns.TryRemove(turn);
+        }
 
         _ = await UseConnectionAsync(
             async (connection, now, ct) =>

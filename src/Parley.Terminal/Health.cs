@@ -194,6 +194,8 @@ internal sealed class Health : Dialog
                 $"{flag.WaitingOn.Value} has not collected what {flag.Waiting.Value} sent, since {since}.{where}",
             FlagKind.NoProgress =>
                 $"{flag.WaitingOn.Value} collected {flag.Waiting.Value}'s request and has done nothing on it since {since}.{where}",
+            FlagKind.PermissionRefused =>
+                Parley.Client.Views.Activities.RefusedFlag(flag.WaitingOn, flag.Waiting, since) + where,
             _ =>
                 $"{flag.WaitingOn.Value} is retired and still holds {flag.Waiting.Value}'s request, since {since}.{where}",
         };

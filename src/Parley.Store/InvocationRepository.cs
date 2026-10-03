@@ -50,6 +50,13 @@ public sealed record InvocationCandidate(
     bool Connected,
     long? StuckAt);
 
+/// <summary>How an agent's most recent recorded turn ended (SPEC.md §11.6).</summary>
+/// <param name="Agent">The agent.</param>
+/// <param name="EndedUtc">When it ended: its start plus how long it ran.</param>
+/// <param name="Clean">Whether it finished cleanly: exit code nought and not cut off.</param>
+/// <param name="PermissionDenials">Tool calls it had refused for want of permission.</param>
+public sealed record LatestTurn(AgentName Agent, DateTimeOffset EndedUtc, bool Clean, int PermissionDenials);
+
 /// <summary>
 /// What invocation has cost, per agent.
 /// </summary>
@@ -321,6 +328,45 @@ public sealed class InvocationRepository(SqliteConnection connection)
         command.Parameters.AddWithValue("@Denials", Math.Max(0, permissionDenials));
 
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads how each agent's most recent recorded turn ended.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One per agent that has a recorded turn.</returns>
+    /// <remarks>
+    /// <b>The most recently recorded, not the most recently started</b> (specs/024): a node reports a turn when it ends,
+    /// so the order rows arrive in is the order turns finished, and that is what "the last turn" means to somebody asking
+    /// why an agent has stopped. The read the registry makes on every room refresh, so it is one statement.
+    /// </remarks>
+    public async Task<IReadOnlyList<LatestTurn>> LatestTurnsAsync(CancellationToken cancellationToken = default)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT i.agent, i.started_utc, i.elapsed_ms, i.exit_code, i.timed_out, i.permission_denials
+              FROM invocations i
+             WHERE i.id = (SELECT max(id) FROM invocations WHERE agent = i.agent);
+            """;
+
+        var latest = new List<LatestTurn>();
+
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!AgentName.TryCreate(reader.GetString(0), out var agent))
+            {
+                continue;
+            }
+
+            latest.Add(new LatestTurn(
+                agent,
+                ExchangeRow.ParseTimestamp(reader.GetString(1)).AddMilliseconds(reader.GetInt64(2)),
+                reader.GetInt64(3) == 0 && reader.GetInt64(4) == 0,
+                (int)reader.GetInt64(5)));
+        }
+
+        return latest;
     }
 
     /// <summary>Reads what invocation has cost, per agent.</summary>

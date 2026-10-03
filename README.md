@@ -815,6 +815,17 @@ letter is never an action, so typing can never set one off wherever the cursor h
 In a conversation, `Alt+c` copies the whole of it to the clipboard and `Alt+m` copies the one message
 the cursor is on, header and text, without the screen's indent.
 
+**The Room says what each agent is doing.** `◆ working 4m` means a turn is running for it right now. `■ stopped 2h48m`
+means its last turn ended while it still owes work in this conversation, and `— 1 permission refused` says why, when a
+tool call it needed was refused because nobody was there to approve it. `● waiting on orders` means it asked somebody and
+is waiting for the answer, which is not stopped. An agent whose machine does not report turns — an older node, or an
+agent opened in somebody's editor — shows only whether it is running, because anything more would be a guess. The web UI
+says the same things on a conversation's page.
+
+**A stop caused by a refused permission is flagged at once**, in Health (`Alt+y`), on the web UI's health page and in
+`parley flags`, rather than after the usual four hours: only a person can get the agent past it, by allowing the command
+in that repository's Claude Code permission settings and starting the agent again.
+
 It draws in colour, and no fact rests on it: a project is green because the line says
 `answering`, an agent is pink because the line says `retired`, and each agent keeps the colour
 the web UI gives it. Strip every attribute and nothing on the screen is lost.

@@ -469,12 +469,43 @@ service Nodes {
 
   // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
+
+  // A turn this node gave an agent began or ended (section 11.6, specs/024). Ignored unless the agent is on this
+  // node's machine and the node is joined. A failure here never fails the turn.
+  rpc ReportTurn(TurnReport) returns (Empty);
 }
 
 message JoinRequest {
   string machine = 1;
   NodeFacts facts = 2;
   repeated string startable_roles = 3;   // what this node's catalogue can launch
+  // This node reports its turns (section 11.6). A node that does not say so leaves its agents' turn standing unknown
+  // rather than stopped: an older node reports nothing, and nothing must not read as stopped.
+  bool reports_turns = 4;
+}
+
+message TurnReport {
+  string machine = 1;
+  string agent = 2;
+  oneof phase {
+    TurnStarted started = 3;
+    TurnEnded ended = 4;
+  }
+}
+
+message TurnStarted {
+  string started_utc = 1;
+}
+
+message TurnEnded {
+  string started_utc = 1;          // pairs it with its start
+  int64 elapsed_ms = 2;
+  bool clean = 3;                  // completed, and not an error
+  bool timed_out = 4;
+  bool process_died = 5;
+  int32 permission_denials = 6;    // tool calls refused for want of permission
+  double cost_usd = 7;
+  int32 model_turns = 8;
 }
 
 message NodeFacts {
@@ -709,6 +740,18 @@ message RegistryRow {
   // `parley-facilitator`, and storage ties that adapter to the reserved role in both directions -- so a flag would be
   // a second statement of one fact, free to disagree with the first.
   OwnershipSource owns_source = 11;
+
+  // The agent's turn standing (section 11.6, specs/024): what its node said about the turns it gives. Operator-only --
+  // the agent roster (`ListAgentsReply`) carries none of it, because how another agent's turns went is not a peer's to
+  // read (section 10.1).
+  //
+  // `turns_reported` false means nobody reports this agent's turns -- a node older than section 11.6, or an agent
+  // attached from somebody's editor -- and a surface must then say neither working nor stopped.
+  bool turns_reported = 12;
+  string turn_running_since_utc = 13;        // empty when no turn is running
+  string last_turn_ended_utc = 14;           // empty before the first reported turn
+  bool last_turn_clean = 15;
+  int32 last_turn_permission_denials = 16;
 }
 
 message RefusalsReply {
@@ -1121,6 +1164,9 @@ enum FlagKind {
   FLAG_KIND_NO_PROGRESS = 2;
   FLAG_KIND_RETIRED = 3;
   FLAG_KIND_NOT_VOTED = 4;
+  // The owing agent's last turn ended with tool calls refused for want of permission, and it has said nothing since
+  // (section 6, specs/024). Raised at once, not after a threshold.
+  FLAG_KIND_PERMISSION_REFUSED = 5;
 }
 
 enum Vote {

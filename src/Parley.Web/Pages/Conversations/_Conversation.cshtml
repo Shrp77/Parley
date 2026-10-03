@@ -32,9 +32,10 @@ else
         "In this conversation",
         [.. Model.Participants.Select(who => new RosterEntry(
             who,
-            Model.Roll.TryGetValue(who.Value, out var known)
-                ? Roster.State(known)
-                : "not in the registry"))],
+            Model.Doing(who)
+                ?? (Model.Roll.TryGetValue(who.Value, out var known)
+                    ? Roster.State(known)
+                    : "not in the registry")))],
         null))" />
 
     <ol class="transcript">

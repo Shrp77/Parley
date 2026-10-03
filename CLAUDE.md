@@ -642,16 +642,35 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Queued plan**: `specs/024-report-agent-turns/` — **planned 2026-10-03, not started; on `019-layout`.** The node
-  reports each turn's start and end (`Nodes.ReportTurn`), so a surface shows *working* only while a turn runs and
-  *stopped* — naming permission refusals — when one ended with work still owed; a permission-refused stop is flagged at
-  once. Prompted by an agent shown as working for nearly three hours after a refused command ended its turn silently
-  (0.37.9 is the stop-gap). **It also settles a spec/code disagreement**: SPEC.md §17 q1 says `invocations` records every
-  turn, and on the node path nothing writes it — decided as the code's defect (`research.md` R11). Running turns live in
-  the broker's memory, not a table (R3); an older node degrades to *unknown*, never *stopped* (R5). SPEC.md first.
-  **`.specify/feature.json` points at 024; point it back at 023 to resume 023's phases 5–8.**
+- **Latest plan**: `specs/024-report-agent-turns/` — **0.38.0, built through every story; on `019-layout`. The
+  quickstart walk (T035) and the review gate are owed.** The node reports each turn's start and end
+  (`Nodes.ReportTurn`, `TurnReporter`), so a surface shows *working* only while a turn runs, *stopped* — naming permission
+  refusals — when one ended with work still owed, and *waiting on X* for an agent that asked and is waiting; a
+  permission-refused stop is flagged at once (`FlagKind.PermissionRefused`). Prompted by an agent shown as working for
+  nearly three hours after a refused command ended its turn silently (0.37.9 is the stop-gap). **It settles a spec/code
+  disagreement**: SPEC.md §17 q1 said `invocations` records every turn, and on the node path nothing wrote it — decided
+  as the code's defect (`research.md` R11). Running turns live in the broker's memory, not a table (R3); an older node
+  degrades to *unknown*, never *stopped* (R5); **the protocol version does not move** (R9: it is what agents' adapters
+  announce, and nothing here reaches an agent — `AgentsCannotSeeTurnsTests` walks every `Agents` reply to hold that).
+  `Activities` moved to `Parley.Client` so the room and the web page share one derivation, mark and sentence.
 
-- **Latest plan**: `specs/023-always-a-seat/` — **0.36.0, being built; on `019-layout`.** **Upgrading to 0.36.0
+  **What building it found:**
+
+  - **Two surfaces would have called the new flag a retirement.** Both health describers ended in a default arm that said
+    "is retired and still holds it", so a flag added for a refused command would have told the person the agent had been
+    retired. One sentence now, `Activities.RefusedFlag`, used by both.
+  - **The registry is the store's and running turns are not**, so `DescribeRegistry` fills each row's turn standing from
+    the runtime and `InvocationRepository.LatestTurnsAsync` on the way out; nothing about turns is stored on `agents`.
+  - **`TransportEnumTests` caught the flag mapping to "unspecified"** on the wire before any surface could show it.
+  - **A mutation that does not compile proves nothing**: `if (true)` in the derivation was refused as unreachable code, the
+    tests ran the previous binary and passed. Mutate with something the compiler accepts.
+  - **A mutation loop reset `BrokerRuntime.cs` with `git checkout` and wiped 140 uncommitted lines**; the copy taken first
+    restored it. Reset from the copy, never from git.
+
+  **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
+
+- **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on
+  `019-layout`.** **Upgrading to 0.36.0
   needs a reset** (`install.ps1 -Reset`, `install.sh --reset`): schema 1 was edited in place and its number did not
   move, so a store made by an older broker opens without complaint and keeps its old shape — no person-seat rules,
   and each project recorded as a machine. The owner's call was to say so rather than have the broker refuse such a

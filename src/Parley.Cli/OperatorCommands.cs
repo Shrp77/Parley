@@ -283,6 +283,11 @@ public sealed class OperatorCommands
             {
                 Wire.FlagKind.NotCollected => "has not collected it",
                 Wire.FlagKind.NoProgress => "collected it and has done nothing since",
+
+                // SPEC.md §6, specs/024: raised at once, because only a person can get it past this.
+                Wire.FlagKind.PermissionRefused =>
+                    "stopped after a tool call it needed was refused for want of permission; allow it in that " +
+                    "repository's settings, then start the agent again",
                 _ => "is retired and still holds it"
             };
 

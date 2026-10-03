@@ -82,6 +82,67 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <b>Ignored rather than refused when it does not check out</b> (SPEC.md §11.6): an agent on another machine, a node
+    /// not joined, an agent this broker does not know, a time that does not parse. A node never fails a turn over a
+    /// report, so a refusal would tell it nothing it could act on — and nothing is stored either way.
+    /// </remarks>
+    public override async Task<Wire.Empty> ReportTurn(Wire.TurnReport request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (!AgentName.TryCreate(request.Agent, out var agent))
+        {
+            return new Wire.Empty();
+        }
+
+        var machine = Machine(request.Machine);
+
+        switch (request.PhaseCase)
+        {
+            case Wire.TurnReport.PhaseOneofCase.Started
+                when Timestamp(request.Started.StartedUtc) is { } started:
+                _ = await _runtime.TurnStartedAsync(machine, agent, started, context.CancellationToken)
+                    .ConfigureAwait(false);
+                break;
+
+            case Wire.TurnReport.PhaseOneofCase.Ended
+                when Timestamp(request.Ended.StartedUtc) is { } began:
+                var ended = request.Ended;
+
+                _ = await _runtime.TurnEndedAsync(
+                    machine,
+                    agent,
+                    new EndedTurn(
+                        began,
+                        TimeSpan.FromMilliseconds(Math.Max(0, ended.ElapsedMs)),
+                        ended.Clean,
+                        ended.TimedOut,
+                        ended.ProcessDied,
+                        Math.Max(0, ended.PermissionDenials),
+                        Math.Max(0, ended.CostUsd),
+                        Math.Max(0, ended.ModelTurns)),
+                    context.CancellationToken).ConfigureAwait(false);
+                break;
+        }
+
+        return new Wire.Empty();
+    }
+
+    /// <summary>Reads a time from the wire, or null when it is not one.</summary>
+    /// <param name="value">RFC 3339, in UTC.</param>
+    /// <returns>The instant.</returns>
+    private static DateTimeOffset? Timestamp(string value) =>
+        DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+            ? parsed
+            : null;
+
+    /// <inheritdoc/>
     public override async Task Join(
         Wire.JoinRequest request,
         IServerStreamWriter<Wire.NodeCommand> responseStream,
@@ -109,7 +170,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         try
         {
             joined = await _runtime.JoinNodeAsync(
-                record, request.StartableRoles, context.CancellationToken).ConfigureAwait(false);
+                record, request.StartableRoles, context.CancellationToken, request.ReportsTurns).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {
@@ -239,12 +300,20 @@ public sealed class JoinedNode : IAsyncDisposable
 
     private int _closed;
 
-    internal JoinedNode(BrokerRuntime runtime, string machine, IReadOnlySet<string> startable)
+    internal JoinedNode(BrokerRuntime runtime, string machine, IReadOnlySet<string> startable, bool reportsTurns = false)
     {
         _runtime = runtime;
         Machine = machine;
         Startable = startable;
+        ReportsTurns = reportsTurns;
     }
+
+    /// <summary>Whether this node said it reports the turns it gives (SPEC.md §11.6).</summary>
+    /// <remarks>
+    /// An agent on a node that did not say so is unknown rather than stopped: an older node reports nothing, and nothing
+    /// must not read as stopped.
+    /// </remarks>
+    public bool ReportsTurns { get; }
 
     /// <summary>Gets the machine this stream belongs to.</summary>
     public string Machine { get; }

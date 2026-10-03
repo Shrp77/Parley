@@ -65,6 +65,8 @@ public sealed class HealthModel(BrokerDirectory directory) : PageModel
                 $"{flag.WaitingOn.Value} collected {flag.Waiting.Value}'s request and has done nothing on it since {since}.",
             FlagKind.NotVoted =>
                 $"The work in {flag.ConversationId} is all closed and {flag.Waiting.Value} is finished; closing it has waited on {flag.WaitingOn.Value} to say whether it is too since {since}.",
+            FlagKind.PermissionRefused =>
+                Parley.Client.Views.Activities.RefusedFlag(flag.WaitingOn, flag.Waiting, since),
             _ =>
                 $"{flag.WaitingOn.Value} is retired and still holds {flag.Waiting.Value}'s request, since {since}.",
         };

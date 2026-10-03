@@ -4,6 +4,7 @@ using Parley.Core;
 using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client;
+using Parley.Client.Views;
 using Parley.Web.Seating;
 
 namespace Parley.Web.Pages.Conversations;
@@ -56,6 +57,18 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// </remarks>
     public IReadOnlyDictionary<string, AgentRecord> Roll { get; private set; } =
         new Dictionary<string, AgentRecord>(StringComparer.Ordinal);
+
+    /// <summary>What each participant is doing, as the terminal's room says it (specs/024).</summary>
+    public IReadOnlyDictionary<AgentName, Activity> ParticipantActivity { get; private set; } =
+        new Dictionary<AgentName, Activity>();
+
+    /// <summary>What a participant is doing, in the words and mark both surfaces use, or null when there is nothing to say.</summary>
+    /// <param name="who">The participant.</param>
+    /// <returns>For example <c>■ stopped 2h48m — 1 permission refused</c>.</returns>
+    public string? Doing(AgentName who) =>
+        ParticipantActivity.TryGetValue(who, out var doing) && Activities.Says(doing, DateTimeOffset.UtcNow) is { Length: > 0 } says
+            ? $"{Activities.Mark(doing)} {says}"
+            : null;
 
     /// <summary>Why this project could not be read, when it could not.</summary>
     public string? Problem { get; private set; }
@@ -484,6 +497,16 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             }
 
             Roll = known;
+
+            // **What each participant is doing, from the same derivation as the terminal's room** (specs/024 FR-013):
+            // working only while a turn runs, stopped with what it was refused, waiting on somebody. Read here, which is
+            // the follow's path too, so it refreshes with the transcript rather than freezing at page load.
+            var waiting = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project))
+                    .WaitingAsync(HttpContext.RequestAborted).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            ParticipantActivity = Activities.Of(read.Value, waiting.Value ?? [], roll.Value);
         }
         AsOf = DateTimeOffset.Now;
     }

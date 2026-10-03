@@ -423,20 +423,23 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <param name="startable">The roles this node can launch.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
     /// <param name="facts">What the node observed about itself.</param>
+    /// <param name="reportsTurns">Whether this node says it reports the turns it gives (SPEC.md §11.6).</param>
     /// <returns>The joined node.</returns>
     public static async Task<JoinedNodeClient> JoinAsync(
         LoopbackBroker broker,
         string machine,
         IEnumerable<string> startable,
         CancellationToken cancellationToken = default,
-        Wire.NodeFacts? facts = null)
+        Wire.NodeFacts? facts = null,
+        bool reportsTurns = false)
     {
         var nodes = broker.ConnectAsNode();
 
         var request = new Wire.JoinRequest
         {
             Machine = machine,
-            Facts = facts ?? new Wire.NodeFacts { Os = "test-os" }
+            Facts = facts ?? new Wire.NodeFacts { Os = "test-os" },
+            ReportsTurns = reportsTurns,
         };
 
         request.StartableRoles.AddRange(startable);

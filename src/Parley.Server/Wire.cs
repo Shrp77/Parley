@@ -210,6 +210,7 @@ internal static class Conversions
         FlagKind.NoProgress => Wire.FlagKind.NoProgress,
         FlagKind.Retired => Wire.FlagKind.Retired,
         FlagKind.NotVoted => Wire.FlagKind.NotVoted,
+        FlagKind.PermissionRefused => Wire.FlagKind.PermissionRefused,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined flag.")
     };
 
@@ -520,7 +521,14 @@ internal static class Conversions
             // side by side and say which is which -- a flag would carry the comparison and lose the
             // thing being compared.
             OwnsAccepted = record.OwnsAccepted ?? string.Empty,
-            OwnsSource = record.OwnsSource is { } source ? Out(source) : Wire.OwnershipSource.Unspecified
+            OwnsSource = record.OwnsSource is { } source ? Out(source) : Wire.OwnershipSource.Unspecified,
+
+            // The turn standing (SPEC.md §11.6). Absent means nobody read it, which travels as unreported.
+            TurnsReported = record.Turns?.Reported ?? false,
+            TurnRunningSinceUtc = record.Turns?.RunningSince is { } running ? Stamp(running) : string.Empty,
+            LastTurnEndedUtc = record.Turns?.LastEnded is { } ended ? Stamp(ended) : string.Empty,
+            LastTurnClean = record.Turns?.LastClean ?? false,
+            LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
         };
     }
 

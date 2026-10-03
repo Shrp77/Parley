@@ -43,42 +43,42 @@ the check fail, and every probe in contracts/turns.md is written as the maliciou
 
 ### Wire and core
 
-- [ ] T007 Add `JoinRequest.reports_turns`, `rpc ReportTurn(TurnReport)` with `TurnStarted`/`TurnEnded`, the five
+- [X] T007 Add `JoinRequest.reports_turns`, `rpc ReportTurn(TurnReport)` with `TurnStarted`/`TurnEnded`, the five
   registry-row fields and `FlagKind.PERMISSION_REFUSED`, exactly as contracts/turns.md, in proto/parley.proto
-- [ ] T008 [P] Add the turn standing to `AgentRecord` (`TurnsReported`, `TurnRunningSince`, `LastTurnEndedUtc`,
+- [X] T008 [P] Add the turn standing to `AgentRecord` (`TurnsReported`, `TurnRunningSince`, `LastTurnEndedUtc`,
   `LastTurnClean`, `LastTurnPermissionDenials`), documented with *why* in remarks, in src/Parley.Core/AgentRecord.cs
-- [ ] T009 [P] Add `FlagKind.PermissionRefused` with its remarks, in src/Parley.Core/FlagReport.cs
-- [ ] T010 [P] Test that no message the `Agents` service returns carries any turn field — reflect over the generated
+- [X] T009 [P] Add `FlagKind.PermissionRefused` with its remarks, in src/Parley.Core/FlagReport.cs
+- [X] T010 [P] Test that no message the `Agents` service returns carries any turn field — reflect over the generated
   `ListAgentsReply` and every Agents reply type — modelled on `AgentsCannotSetTheirOwnLineTests`, in
   tests/Parley.Server.Tests/AgentsCannotSeeTurnsTests.cs
 
 ### Broker (probes first)
 
-- [ ] T011 Write the probes before the code, each watched to fail: a report for an agent on another machine is ignored;
+- [X] T011 Write the probes before the code, each watched to fail: a report for an agent on another machine is ignored;
   a report from a node not joined is ignored; a report for an unknown agent stores nothing; an end older than a newer
   start does not clear it; a node's stream ending clears its running turns; an ended turn writes one `invocations` row
   with broker-computed waiting counts; **an end whose start the broker never saw (it restarted mid-turn) is still
   recorded, and nothing is shown as running** (spec edge case, `/speckit-analyze` C1) — in
   tests/Parley.Server.Tests/TurnReportingTests.cs
-- [ ] T012 Add the running-turn table to the broker runtime (agent → start, machine), cleared when a node's join stream
+- [X] T012 Add the running-turn table to the broker runtime (agent → start, machine), cleared when a node's join stream
   ends (research R3), in src/Parley.Server/BrokerRuntime.cs
-- [ ] T013 Implement `ReportTurn` with research R10's guard: start sets the running turn; end clears it if not newer and
+- [X] T013 Implement `ReportTurn` with research R10's guard: start sets the running turn; end clears it if not newer and
   records `invocations` via `InvocationRepository.RecordAsync` with waiting counts read from the store at start and end
   (research R2), in src/Parley.Server/NodesService.cs
-- [ ] T014 Record `reports_turns` per joined node and expose it per agent, in src/Parley.Server/NodesService.cs and
+- [X] T014 Record `reports_turns` per joined node and expose it per agent, in src/Parley.Server/NodesService.cs and
   src/Parley.Server/BrokerRuntime.cs
-- [ ] T015 Add a read of each agent's most recent ended turn, in src/Parley.Store/InvocationRepository.cs, with a store
+- [X] T015 Add a read of each agent's most recent ended turn, in src/Parley.Store/InvocationRepository.cs, with a store
   test in tests/Parley.Store.Tests/LatestTurnTests.cs
-- [ ] T016 Fill the registry row's turn fields from T012–T015, in src/Parley.Server/OperatorsService.cs and
+- [X] T016 Fill the registry row's turn fields from T012–T015, in src/Parley.Server/OperatorsService.cs and
   src/Parley.Server/Wire.cs
-- [ ] T017 Map the registry turn fields into `AgentRecord`, in src/Parley.Client/BrokerClient.cs
+- [X] T017 Map the registry turn fields into `AgentRecord`, in src/Parley.Client/BrokerClient.cs
 
 ### Node
 
-- [ ] T018 Join with `reports_turns = true`; report `TurnStarted` before and `TurnEnded` after both turn sites
+- [X] T018 Join with `reports_turns = true`; report `TurnStarted` before and `TurnEnded` after both turn sites
   (`GiveTurnAsync` and the instruction path, research R1), mapping `TurnOutcome`; a report that fails is logged and never
   fails the turn — in src/Parley.Cli/NodeCommand.cs
-- [ ] T019 Test over a real loopback broker that a node's turn appears as running and then as an ended turn with its
+- [X] T019 Test over a real loopback broker that a node's turn appears as running and then as an ended turn with its
   permission refusals, in tests/Parley.Cli.Tests/NodeReportsTurnsTests.cs
 
 **Checkpoint**: the broker knows every turn the node runs; nothing on screen has changed yet.
@@ -92,16 +92,16 @@ the check fail, and every probe in contracts/turns.md is written as the maliciou
 **Independent Test**: an agent's turn ends silently with a refused permission while owing work; the room says stopped
 and "1 permission refused", never working.
 
-- [ ] T020 [US1] Move `Activities`, `Doing` and `Activity` from src/Parley.Terminal/Activity.cs to
+- [X] T020 [US1] Move `Activities`, `Doing` and `Activity` from src/Parley.Terminal/Activity.cs to
   src/Parley.Client/Views/Activities.cs (research R8), keeping 0.37.5's tests passing from their new home
-- [ ] T021 [US1] Write the derivation tests first: working only with a turn running; waiting-on when the agent is the
+- [X] T021 [US1] Write the derivation tests first: working only with a turn running; waiting-on when the agent is the
   waiter (research R7); stopped when the last turn ended after the pickup and work is still owed; refusals named; unknown
   when turns are not reported (research R5), in tests/Parley.Client.Tests/ActivitiesTests.cs
-- [ ] T022 [US1] Extend `Activities.Of` with `Waiting`, `Stopped` and `Unknown` from the registry's turn standing and the
+- [X] T022 [US1] Extend `Activities.Of` with `Waiting`, `Stopped` and `Unknown` from the registry's turn standing and the
   wait-for graph, in src/Parley.Client/Views/Activities.cs
-- [ ] T023 [US1] Add the stopped mark, its words ("stopped 2h48m — 1 permission refused"), waiting-on, and the legend
+- [X] T023 [US1] Add the stopped mark, its words ("stopped 2h48m — 1 permission refused"), waiting-on, and the legend
   line, per contracts/turns.md, in src/Parley.Terminal/RoomRegion.cs; split long rows as 0.37.8 does
-- [ ] T024 [US1] Room tests: the stopped row and its refusals, a waiting row, no working claim for an unknown agent, and
+- [X] T024 [US1] Room tests: the stopped row and its refusals, a waiting row, no working claim for an unknown agent, and
   the legend, in tests/Parley.Terminal.Tests/RoomActivityTests.cs
 
 **Checkpoint**: US1 complete — the owner's three hours would have read "stopped" within one refresh.
@@ -114,14 +114,14 @@ and "1 permission refused", never working.
 
 **Independent Test**: such a turn ends; the flags list shows it at once; it clears when the agent answers.
 
-- [ ] T025 [US2] Write the flag tests first: raised at once with refusals; not raised early without refusals; cleared when
+- [X] T025 [US2] Write the flag tests first: raised at once with refusals; not raised early without refusals; cleared when
   the agent answers or the exchange closes, in tests/Parley.Store.Tests/PermissionRefusedFlagTests.cs
-- [ ] T026 [US2] Derive `FlagKind.PermissionRefused` per research R6, in src/Parley.Store/FlagRepository.cs
-- [ ] T027 [US2] Map it on the wire both ways, in src/Parley.Server/Wire.cs and src/Parley.Client/BrokerClient.cs
-- [ ] T028 [P] [US2] Show it in the terminal's Health dialog with the agent, the conversation and the refusals, in
+- [X] T026 [US2] Derive `FlagKind.PermissionRefused` per research R6, in src/Parley.Store/FlagRepository.cs
+- [X] T027 [US2] Map it on the wire both ways, in src/Parley.Server/Wire.cs and src/Parley.Client/BrokerClient.cs
+- [X] T028 [P] [US2] Show it in the terminal's Health dialog with the agent, the conversation and the refusals, in
   src/Parley.Terminal/Health.cs
-- [ ] T029 [P] [US2] Show it on the web UI's health page, in src/Parley.Web/Pages/Projects/Health.cshtml(.cs)
-- [ ] T030 [P] [US2] Word it in `parley flags`, in src/Parley.Cli/OperatorCommands.cs
+- [X] T029 [P] [US2] Show it on the web UI's health page, in src/Parley.Web/Pages/Projects/Health.cshtml(.cs)
+- [X] T030 [P] [US2] Word it in `parley flags`, in src/Parley.Cli/OperatorCommands.cs
 
 **Checkpoint**: US2 complete.
 
@@ -129,25 +129,25 @@ and "1 permission refused", never working.
 
 ## Phase 5: User Story 3 — Both surfaces agree (P3)
 
-- [ ] T031 [US3] Show each participant's activity on the conversation page from the same `Activities` and words,
+- [X] T031 [US3] Show each participant's activity on the conversation page from the same `Activities` and words,
   **inside the followed region** so it refreshes with the transcript every few seconds — the participants list in
   Detail.cshtml today sits outside `_Followed` and would show the state at page load for ever (`/speckit-analyze` U2) —
   in src/Parley.Web/Pages/Conversations/_Followed.cshtml and Detail.cshtml.cs (the follow handler reads the registry and
   the wait-for graph as the page does)
-- [ ] T032 [US3] Test that a stopped agent with refusals reads identically on both surfaces, in
+- [X] T032 [US3] Test that a stopped agent with refusals reads identically on both surfaces, in
   tests/Parley.Web.Tests/ActivityOnTheWebTests.cs
 
 ---
 
 ## Phase 6: Polish
 
-- [ ] T033 [P] README: what working, waiting, stopped and unknown mean, and where the flag appears, in README.md
-- [ ] T034 [P] CLAUDE.md: move 024 from queued to latest with what building it found, in CLAUDE.md
+- [X] T033 [P] README: what working, waiting, stopped and unknown mean, and where the flag appears, in README.md
+- [X] T034 [P] CLAUDE.md: move 024 from queued to latest with what building it found, in CLAUDE.md
 - [ ] T035 Walk quickstart.md against packed tools in a scratch root, recording each step's result
-- [ ] T036 Hygiene grep (sibling names, hyphenated and spaced forms, machine name; untracked files included) on its own,
+- [X] T036 Hygiene grep (sibling names, hyphenated and spaced forms, machine name; untracked files included) on its own,
   before each commit
-- [ ] T037 Point `.specify/feature.json` back at specs/023-always-a-seat to resume 023's phases 5–8
-- [ ] T038 Ask the owner whether to run the review gate for 024 alone or fold it into the combined 019–024 gate
+- [X] T037 Point `.specify/feature.json` back at specs/023-always-a-seat to resume 023's phases 5–8
+- [X] T038 Ask the owner whether to run the review gate for 024 alone or fold it into the combined 019–024 gate
 
 ---
 

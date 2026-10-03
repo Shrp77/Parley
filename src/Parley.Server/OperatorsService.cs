@@ -393,8 +393,24 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var rows = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
 
+        // **Each agent's turn standing, from what its node reported** (SPEC.md §10.2, §11.6, specs/024): whether a turn is
+        // running from the broker's memory, how the last one ended from `invocations`. On this read only — the agent
+        // roster carries none of it.
+        var latest = (await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new Parley.Store.InvocationRepository(connection).LatestTurnsAsync(ct),
+                context.CancellationToken).ConfigureAwait(false))
+            .ToDictionary(turn => turn.Agent);
+
         var reply = new Wire.RegistryReply();
-        reply.Rows.AddRange(rows.Select(Conversions.Out));
+        reply.Rows.AddRange(rows.Select(row => Conversions.Out(row with
+        {
+            Turns = new TurnStanding(
+                _runtime.TurnsReported(row.Name),
+                _runtime.TurnRunningSince(row.Name),
+                latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
+                last?.Clean ?? false,
+                last?.PermissionDenials ?? 0),
+        })));
 
         return reply;
     }

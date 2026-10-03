@@ -147,7 +147,10 @@ public static class NodeCommand
                 var request = new Wire.JoinRequest
                 {
                     Machine = NodeCatalogue.Machine,
-                    Facts = Observe()
+                    Facts = Observe(),
+
+                    // This node reports the turns it gives (SPEC.md §11.6), so its agents can be told working from stopped.
+                    ReportsTurns = true,
                 };
 
                 // **What this node can start for this project, which the repositories decide** (018 R3).
@@ -185,11 +188,14 @@ public static class NodeCommand
 
                             case Wire.NodeCommand.CommandOneofCase.Start:
                                 await StartAsync(command.Start, catalogue, project, residents, output,
-                                    cancellationToken).ConfigureAwait(false);
+                                    cancellationToken, new TurnReporter(nodes, request.Machine, output))
+                                    .ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Turn:
-                                await TurnAsync(command.Turn, catalogue, project, residents, output, cancellationToken)
+                                await TurnAsync(
+                                        command.Turn, catalogue, project, residents, output, cancellationToken,
+                                        new TurnReporter(nodes, request.Machine, output))
                                     .ConfigureAwait(false);
                                 break;
 
@@ -468,6 +474,7 @@ public static class NodeCommand
     /// <param name="residents">The agents already running here.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
+    /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn has been taken.</returns>
     /// <remarks>
     /// <para>
@@ -489,7 +496,8 @@ public static class NodeCommand
         string? project,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         if (!AgentName.TryCreate(start.Agent, out var agent))
         {
@@ -547,7 +555,7 @@ public static class NodeCommand
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
                     // one checkout stays one process when a second project asks for it under another name.
-                    DispatchTurn(existing, output, cancellationToken);
+                    DispatchTurn(existing, output, cancellationToken, reporter);
                     return;
                 }
 
@@ -590,7 +598,7 @@ public static class NodeCommand
                         ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
                         : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
 
-                DispatchTurn(resident, output, cancellationToken);
+                DispatchTurn(resident, output, cancellationToken, reporter);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -633,6 +641,7 @@ public static class NodeCommand
     /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
     /// <param name="project">The project this node serves, or null to accept every claim.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
+    /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn has been taken.</returns>
     /// <remarks>
     /// <para>
@@ -659,7 +668,8 @@ public static class NodeCommand
         string? project,
         ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
         TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         if (!AgentName.TryCreate(turn.Agent, out var agent))
         {
@@ -702,7 +712,7 @@ public static class NodeCommand
 
         // Reported like any other turn once it is actually given. Only the "not mine" case is
         // silent; a turn that fails is a turn the operator needs to hear about.
-        DispatchTurn(resident, output, cancellationToken);
+        DispatchTurn(resident, output, cancellationToken, reporter);
     }
 
     /// <summary>Gives an agent the operator's words, and reports what became of them.</summary>
@@ -756,9 +766,12 @@ public static class NodeCommand
                 // operator's rather than as a peer's, because what the agent must be able to tell
                 // is which of the two it is reading — and it is only able to decline knowingly if
                 // it knows it was instructed at all.
-                var turn = await resident
-                    .TakeTurnAsync(
-                        OperatorInstruction.Mark(instruct.Text), TurnTimeout, cancellationToken)
+                // An instruction is a turn like any other, and reported as one (SPEC.md §11.6).
+                var turn = await new TurnReporter(nodes, machine, output)
+                    .RunAsync(
+                        resident.Name,
+                        () => resident.TakeTurnAsync(
+                            OperatorInstruction.Mark(instruct.Text), TurnTimeout, cancellationToken))
                     .ConfigureAwait(false);
 
                 outcome = turn.Succeeded
@@ -805,6 +818,7 @@ public static class NodeCommand
     /// <param name="resident">The agent to give a turn.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
+    /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <remarks>
     /// <para>
     /// A turn is a model taking a turn and can run for minutes. Awaiting one inside the command
@@ -827,9 +841,9 @@ public static class NodeCommand
     /// </para>
     /// </remarks>
     private static void DispatchTurn(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken)
+        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
     {
-        _ = Observe(GiveTurnAsync(resident, output, cancellationToken));
+        _ = Observe(GiveTurnAsync(resident, output, cancellationToken, reporter));
 
 #pragma warning disable CA1031 // Do not catch general exception types
         static async Task Observe(Task turn)
@@ -859,14 +873,19 @@ public static class NodeCommand
     /// <param name="resident">The agent.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
+    /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn ends.</returns>
     private static async Task GiveTurnAsync(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken)
+        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
     {
         try
         {
-            var outcome = await resident
-                .TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, cancellationToken)
+            // Reported to the broker when there is a reporter (SPEC.md §11.6), so a surface can tell this turn running from
+            // it having ended — and see what it was refused.
+            var outcome = await TurnReporter.Run(
+                    reporter,
+                    resident,
+                    () => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, cancellationToken))
                 .ConfigureAwait(false);
 
             if (!outcome.Succeeded)

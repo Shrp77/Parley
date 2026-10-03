@@ -47,7 +47,13 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             string.IsNullOrEmpty(row.Owns) ? null : row.Owns,
             Presence(row.Presence),
             string.IsNullOrEmpty(row.OwnsAccepted) ? null : row.OwnsAccepted,
-            AcceptedBy(row.OwnsSource)))];
+            AcceptedBy(row.OwnsSource),
+            new TurnStanding(
+                row.TurnsReported,
+                Read(row.TurnRunningSinceUtc),
+                Read(row.LastTurnEndedUtc),
+                row.LastTurnClean,
+                row.LastTurnPermissionDenials)))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -248,6 +254,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                     Wire.FlagKind.NoProgress => FlagKind.NoProgress,
                     Wire.FlagKind.Retired => FlagKind.Retired,
                     Wire.FlagKind.NotVoted => FlagKind.NotVoted,
+                    Wire.FlagKind.PermissionRefused => FlagKind.PermissionRefused,
                     _ => FlagKind.NotCollected
                 },
                 f.ExchangeId,

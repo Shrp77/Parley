@@ -1,4 +1,5 @@
 using Parley.Client.Seating;
+using Parley.Client.Views;
 using Parley.Core;
 using Xunit;
 
@@ -32,53 +33,8 @@ public sealed class RoomActivityTests
             ],
             [new ExchangeSnapshot(7, ExchangeState.Open, T0, null)]);
 
-    private static IReadOnlyList<AgentRecord> Registry(params (AgentName Name, AgentPresence Presence)[] agents) =>
-        [.. agents.Select(a => new AgentRecord(a.Name, "mcp", AgentTier.Pull, null, null, null, true, AgentStatus.Active, Presence: a.Presence))];
-
-    [Fact]
-    public void An_agent_that_picked_up_another_agents_request_is_working_since_it_did()
-    {
-        var activity = Activities.Of(
-            AgentAsksAgent(pickedUp: true),
-            [new WaitingEdge(Asker, Worker, 7)],
-            Registry((Asker, AgentPresence.Running), (Worker, AgentPresence.Running), (Idle, AgentPresence.Startable)));
-
-        Assert.Equal(new Activity(Doing.Working, T0.AddMinutes(1)), activity[Worker]);
-        Assert.Equal(Doing.Running, activity[Asker].Doing);
-        Assert.Equal(Doing.NotRunning, activity[Idle].Doing);
-    }
-
-    [Fact]
-    public void A_request_not_yet_picked_up_is_not_work_yet()
-    {
-        // Working means taken: a message waiting in somebody's inbox says nothing about what they are doing.
-        var activity = Activities.Of(
-            AgentAsksAgent(pickedUp: false),
-            [new WaitingEdge(Asker, Worker, 7)],
-            Registry((Worker, AgentPresence.Running)));
-
-        Assert.Equal(Doing.Running, activity[Worker].Doing);
-    }
-
-    [Fact]
-    public void Work_in_another_conversation_is_not_this_ones()
-    {
-        // The wait-for graph is deployment-wide; only this conversation's exchanges count here.
-        var activity = Activities.Of(
-            AgentAsksAgent(pickedUp: true),
-            [new WaitingEdge(Asker, Idle, 99)],
-            Registry((Idle, AgentPresence.Running)));
-
-        Assert.Equal(Doing.Running, activity[Idle].Doing);
-    }
-
-    [Fact]
-    public void A_registry_that_could_not_be_read_claims_nothing()
-    {
-        var activity = Activities.Of(AgentAsksAgent(pickedUp: false), [], registry: null);
-
-        Assert.False(activity.ContainsKey(Worker));
-    }
+    private static AgentRecord Agent(AgentName name, AgentPresence presence, TurnStanding? turns = null) =>
+        new(name, "mcp", AgentTier.Headless, null, null, null, true, AgentStatus.Active, Presence: presence, Turns: turns);
 
     [Fact]
     public void The_room_draws_the_marks_short_names_how_long_and_a_legend()
@@ -94,18 +50,54 @@ public sealed class RoomActivityTests
             activity: Activities.Of(
                 AgentAsksAgent(pickedUp: true),
                 [new WaitingEdge(Asker, Worker, 7)],
-                Registry((Asker, AgentPresence.Running), (Worker, AgentPresence.Running), (Idle, AgentPresence.Startable))),
+                [
+                    Agent(Asker, AgentPresence.Running, TurnStanding.Unreported),
+                    Agent(Worker, AgentPresence.Running, new TurnStanding(true, T0.AddMinutes(1), null, false, 0)),
+                    Agent(Idle, AgentPresence.Startable),
+                ]),
             now: now);
 
         var rows = room.Written;
 
         // The role alone: nobody else in the room shares it, and "@here" on every row is what pushed the state off the edge.
-        Assert.Contains(rows, row => row.Contains($"{RoomRegion.WorkingMark} billing{RoomRegion.WorkingFor}3m", StringComparison.Ordinal));
-        Assert.Contains(rows, row => row.Contains($"{RoomRegion.RunningMark} orders", StringComparison.Ordinal));
-        Assert.Contains(rows, row => row.Contains($"{RoomRegion.NotRunningMark} inventory", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains($"{Activities.WorkingMark} billing — working 3m", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains($"{Activities.RunningMark} orders", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Contains($"{Activities.NotRunningMark} inventory", StringComparison.Ordinal));
         Assert.DoesNotContain(rows, row => row.Contains("@here", StringComparison.Ordinal));
 
-        Assert.All(RoomRegion.Legend, line => Assert.Contains(line, rows));
+        Assert.All(Activities.Legend, line => Assert.Contains(line, rows));
+    }
+
+    [Fact]
+    public void An_agent_whose_turn_ended_owing_work_reads_as_stopped_with_what_it_was_refused()
+    {
+        // **The owner's report, specs/024**: nearly three hours of "working" after a refused command ended the turn. Picked
+        // up at 9:01, its turn ended at 9:05 with one call refused, and it has said nothing since.
+        var room = new RoomRegion();
+
+        room.Show(
+            [new PairState(Asker, null, Turn.Nobody), new PairState(Worker, null, Turn.Nobody)],
+            [],
+            seated: true,
+            Person,
+            activity: Activities.Of(
+                AgentAsksAgent(pickedUp: true),
+                [new WaitingEdge(Asker, Worker, 7)],
+                [
+                    Agent(Asker, AgentPresence.Running, new TurnStanding(true, null, T0.AddMinutes(1), true, 0)),
+                    Agent(Worker, AgentPresence.Running, new TurnStanding(true, null, T0.AddMinutes(5), true, 1)),
+                ]),
+            now: T0.AddMinutes(5).AddHours(2).AddMinutes(48));
+
+        var text = string.Join("\n", room.Written);
+
+        Assert.Contains($"{Activities.StoppedMark} billing", text, StringComparison.Ordinal);
+        Assert.Contains("stopped 2h48m", text, StringComparison.Ordinal);
+        Assert.Contains("1 permission refused", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("working", text.Replace(Activities.Legend[1], string.Empty, StringComparison.Ordinal), StringComparison.Ordinal);
+
+        // And the asker, which asked and is waiting, is waiting rather than stopped.
+        Assert.Contains("waiting on billing", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -173,8 +165,8 @@ public sealed class RoomActivityTests
 
         room.Address([Worker]);
 
-        Assert.Contains(room.Written, row => row.Contains($"{RoomRegion.WorkingMark} billing", StringComparison.Ordinal));
-        Assert.Contains(room.Written, row => row.Contains($"{RoomRegion.RunningMark} orders", StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains($"{Activities.WorkingMark} billing", StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains($"{Activities.RunningMark} orders", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -197,11 +189,4 @@ public sealed class RoomActivityTests
             "the room never showed the agent that joined",
             ct);
     }
-
-    [Theory]
-    [InlineData(30, "<1m")]
-    [InlineData(180, "3m")]
-    [InlineData(7500, "2h05m")]
-    public void How_long_is_said_in_few_characters(int seconds, string expected) =>
-        Assert.Equal(expected, Activities.For(T0, T0.AddSeconds(seconds)));
 }
