@@ -722,6 +722,23 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   cursor on no message says so rather than copying the nearest one. "Show the whole message" moved from `m` to `e` to
   make room; it appears only when the message line has been cut off.
 
+  **0.37.4: focus stays where a person put it, and typing counts as being here.** The owner reported focus leaving the
+  box at the `9` of "PR9 yes". **The 9 was a coincidence of timing, and probing the key found nothing** — every digit,
+  Shift+9, Page Up, Alt and Ctrl with 9, and a follow redraw mid-word all left the cursor in the box. **What found it was
+  asking which code paths can focus the transcript**, the owner's suggestion. `FocusedRegion` changed only through the
+  shell's own `Focus`, so a pane reached by the mouse had focus on screen and not in the record; every re-arrangement
+  re-applies the record; and **the mail poll re-arranges every five seconds**. Opening a conversation records the
+  transcript, so somebody who clicked into the box was moved back to it at the next poll. Every region's
+  `HasFocusChanged` now updates the record. `FocusStaysWhereItIsTests` clicks into the box with the poll running and fails
+  without it. **The lesson worth keeping: when a symptom will not reproduce from its trigger, enumerate the paths to the
+  effect instead.**
+
+  The first round of probing found the second defect: the idle rule was fed only by `OnKeyDown`, and **a focused view
+  takes its keys before the shell is offered them** (0.30.4's sentence) — so every letter typed into the box and every
+  arrow in a list was invisible to it, and twenty minutes of writing an answer marked the person away while they wrote
+  it. The application's own `Keyboard.KeyDown` feeds it now, raised for every key before any view sees one.
+  `TypingIsBeingHereTests` fails against the old wiring in both directions.
+
 - **Previous plan**: `specs/022-parley-facilitator/` — **0.35.0, built through every story; on `019-layout` with
   019–021, and the combined review gate covers all four** (the owner's call of 2026-09-28). Parley is a participant
   the broker provides in every project. It asks each attached agent what it owns once, with nobody asking, and —

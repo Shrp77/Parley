@@ -286,6 +286,9 @@ internal sealed class LineRegion : FrameView
     /// </remarks>
     internal int BoxRows => _field.View.Frame.Height;
 
+    /// <summary>The box itself, so a test can click into it the way a person does.</summary>
+    internal View Box => _field.View;
+
     /// <summary>How wide the box is, which is what its wrapping is measured against.</summary>
     internal int BoxWidth => _field.View.Viewport.Width;
 

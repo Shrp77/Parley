@@ -625,6 +625,10 @@ internal sealed class Shell : Window
     private Task _work = Task.CompletedTask;
     private DateTimeOffset _touched = DateTimeOffset.UtcNow;
 
+    // The application's keyboard, once hooked, so every key counts as being here (`AnyKey`) and the hook is let go on
+    // dispose.
+    private IKeyboard? _keyboard;
+
     internal Shell(BrokerDirectory directory)
     {
         ArgumentNullException.ThrowIfNull(directory);
@@ -721,6 +725,16 @@ internal sealed class Shell : Window
         // when 017 added them, so after a conversation had given them a size, going back left both drawn over the
         // project view. `LeavingTheRoomTests` asks the regions themselves rather than this list.
         _regions = [Projects, Agents, Conversations, Transcript, Room, Line, Configuration];
+
+        // **The record of which pane has focus follows focus, however it moved** (the owner's report of 2026-10-03).
+        // `FocusedRegion` changed only through `Focus`, so a pane reached by the mouse had focus on screen and not in the
+        // record — and every re-arrangement re-applies the record. The mail poll re-arranges every five seconds, so
+        // somebody who clicked into the box was moved to the transcript mid-word. The shell's own `Focus` raises this
+        // too and finds the record already right.
+        foreach (var region in new View[] { Projects, Agents, Conversations, Transcript, Room, Line, Configuration })
+        {
+            region.HasFocusChanged += (sender, _) => Followed(sender as View);
+        }
 
         // Choosing and opening are things a person did, whether by key or by pointer, so both
         // count as being here. A mouse-only session would otherwise be swept mid-use.
@@ -1197,6 +1211,33 @@ internal sealed class Shell : Window
         region.SetFocus();
 
         DescribeLocked();
+    }
+
+    /// <summary>Records a pane that has just gained focus by any route, without moving focus anywhere.</summary>
+    /// <param name="region">The pane whose focus changed.</param>
+    /// <remarks>
+    /// Only a pane of the current view that now has focus is recorded, and only when the record is wrong, so the shell's
+    /// own <see cref="Focus"/> — which raises this from inside its lock — changes nothing a second time.
+    /// </remarks>
+    private void Followed(View? region)
+    {
+        if (region is not { HasFocus: true })
+        {
+            return;
+        }
+
+        var at = Panes.ToList().IndexOf(region);
+
+        if (at < 0 || at == FocusedRegion)
+        {
+            return;
+        }
+
+        lock (_screen)
+        {
+            FocusedRegion = at;
+            DescribeLocked();
+        }
     }
 
     /// <summary>Writes the status line for wherever the surface is now.</summary>
@@ -3621,12 +3662,27 @@ internal sealed class Shell : Window
     /// <inheritdoc/>
     protected override bool OnDrawingContent(DrawContext? context)
     {
+        // **Every key is a touch, wherever it lands** (2026-10-03). This hooks the application's keyboard the first time
+        // there is one, because a key the focused view takes never reaches `OnKeyDown`: every letter typed into the box and
+        // every arrow in a list was invisible to the idle rule, so twenty minutes of writing an answer marked the person
+        // away while they typed it. Found probing the owner's report of focus leaving the box.
+        if (_keyboard is null && App?.Keyboard is { } keyboard)
+        {
+            _keyboard = keyboard;
+            keyboard.KeyDown += AnyKey;
+        }
+
         // Every draw, because there is nowhere else this could hang: the surface has no menu to
         // revisit, and 004 swept on every visit to one. What it does not do is call this a touch.
         Tick(DateTimeOffset.UtcNow);
 
         return base.OnDrawingContent(context);
     }
+
+    /// <summary>Marks the person here for any key the application receives, before any view sees it.</summary>
+    /// <param name="sender">The keyboard.</param>
+    /// <param name="key">The key, which is left unhandled.</param>
+    private void AnyKey(object? sender, Key key) => Touched();
 
     /// <summary>Records that somebody is actually here.</summary>
     /// <param name="at">When, or now when a caller has no reason to say.</param>
@@ -5114,6 +5170,12 @@ internal sealed class Shell : Window
         if (disposing && !_closed)
         {
             _closed = true;
+
+            if (_keyboard is { } keyboard)
+            {
+                keyboard.KeyDown -= AnyKey;
+                _keyboard = null;
+            }
 
             // Cancelled before the base disposes the views, so a read still in flight cannot draw
             // into a region that has gone. The seat book's streams are not this object's to end;

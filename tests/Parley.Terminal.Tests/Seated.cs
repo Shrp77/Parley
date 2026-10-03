@@ -90,12 +90,14 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="width">How wide the terminal is.</param>
     /// <param name="height">How tall the terminal is.</param>
     /// <param name="addressing">Where who-each-line-goes-to is kept, or null for this run only.</param>
+    /// <param name="mailEvery">How often the waiting count is asked for, or null (the default) not to poll at all.</param>
     /// <returns>The fixture.</returns>
     internal static async Task<Seated> OpenAsync(
         CancellationToken cancellationToken,
         int width = 140,
         int height = 40,
-        AddressBook? addressing = null)
+        AddressBook? addressing = null,
+        TimeSpan? mailEvery = null)
     {
         var connection = ParleyDatabase.OpenInMemory();
         var agents = new AgentRepository(connection);
@@ -119,7 +121,7 @@ internal sealed class Seated : IAsyncDisposable
         // `Settled` mean "nothing is in flight just now" rather than "the screen is true".
         var shell = new Shell(directory)
         {
-            Seats = seats, MailEvery = null, FollowEvery = null, Addressing = addressing ?? new AddressBook(null),
+            Seats = seats, MailEvery = mailEvery, FollowEvery = null, Addressing = addressing ?? new AddressBook(null),
         };
 
         driving.Show(shell);
@@ -168,12 +170,13 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="to">Who is asked, which makes them a participant.</param>
     /// <param name="conversation">Where; a new name starts one.</param>
     /// <param name="cancellationToken">Stops the work.</param>
+    /// <param name="go">Whether to go to the conversation afterwards, or leave the screen to find out by itself.</param>
     /// <returns>When the request is stored and the screen agrees.</returns>
     /// <remarks>
     /// The person rather than the agent, because that is how an agent joins a conversation: a person may name any
     /// conversation (principle 2.10), and an agent naming one it is not in is refused as not assignable.
     /// </remarks>
-    internal async Task AskAsync(AgentName to, string conversation, CancellationToken cancellationToken)
+    internal async Task AskAsync(AgentName to, string conversation, CancellationToken cancellationToken, bool go = true)
     {
         var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
 
@@ -190,8 +193,11 @@ internal sealed class Seated : IAsyncDisposable
 
         Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
 
-        await Walking.GoAsync(Shell, Viewing.Conversation, conversation).ConfigureAwait(false);
-        await Shell.Settled.ConfigureAwait(false);
+        if (go)
+        {
+            await Walking.GoAsync(Shell, Viewing.Conversation, conversation).ConfigureAwait(false);
+            await Shell.Settled.ConfigureAwait(false);
+        }
     }
 
     /// <summary>Puts the cursor in a pane.</summary>
