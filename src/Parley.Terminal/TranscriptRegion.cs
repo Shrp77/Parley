@@ -78,9 +78,24 @@ internal sealed class TranscriptRegion : FrameView
     // under the list's own guard, like the colours and the owners beside it.
     private List<string> _drawn = [];
 
-    // Set only for the length of one redraw by Follow, when the reader was on the last row: they are
-    // reading the conversation as it arrives, so the new last row is where they belong.
-    private bool _followEnd;
+    // Whether the reader is at the end and so is carried to each new end. **Remembered, never re-derived from the
+    // screen's shape** (the owner's report of 2026-10-04: at the bottom, they replied, and nothing that followed was
+    // shown). Writing a reply grows the box, which takes rows from this region, and the redraw that resize causes put
+    // the view back at the top -- after which every read judged a reader who had not moved to be reading back. Only
+    // the reader leaves the end: moving the cursor up it, or scrolling up it. A resize is not the reader.
+    private bool _tailing = true;
+
+    // The first row on screen where the reader left it, for a reader who is not following the end. Kept here
+    // because the list cannot be trusted to keep it: in Terminal.Gui 2.4.17 a list whose frame changes has its
+    // scrollbar reset the view to the first row (`ScrollBar.ShowHide`), so a reader halfway up a conversation was
+    // thrown to its start whenever the box grew.
+    private int _top;
+
+    // Set while this region lays out its list, when every move of the view is the toolkit's and not the reader's.
+    private bool _laying;
+
+    // Set while this region moves the list itself, so its own moves are not taken for the reader's.
+    private bool _moving;
 
     private bool _folded;
 
@@ -94,6 +109,8 @@ internal sealed class TranscriptRegion : FrameView
         _lines.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
 
         Add(_lines);
+        _lines.ValueChanged += (_, _) => Moved();
+        _lines.ViewportChanged += (_, args) => Scrolled(args);
         Lists.Tint(_lines, at => at >= 0 && at < _tints.Count ? _tints[at] : null);
         Say(Nothing, LineKind.Annotation);
     }
@@ -149,19 +166,15 @@ internal sealed class TranscriptRegion : FrameView
             return;
         }
 
-        _followEnd = arriving || Tailing();
+        if (arriving)
+        {
+            _tailing = true;
+        }
 
-        try
-        {
-            Mark(Laid(conversationId, project, export));
-        }
-        finally
-        {
-            _followEnd = false;
-        }
+        Mark(Laid(conversationId, project, export));
     }
 
-    /// <summary>Whether the reader is at the end, and so is carried to the new end when the conversation grows.</summary>
+    /// <summary>Whether what is on screen says the reader is at the end, judged when the reader has just scrolled.</summary>
     /// <returns><see langword="true"/> on the last row, or on no row at all.</returns>
     /// <remarks>
     /// <b>No row counts as the end since 2026-10-01</b>, which reverses 0.25.7. That release left a reader who had never
@@ -169,7 +182,7 @@ internal sealed class TranscriptRegion : FrameView
     /// is that a conversation taking place is what somebody is waiting on, so the screen tails it. Only a reader who
     /// moved the cursor somewhere above the end has said they are reading back, and only they are left alone.
     /// </remarks>
-    private bool Tailing()
+    private bool Judged()
     {
         var rows = _lines.Source?.Count ?? 0;
 
@@ -243,18 +256,122 @@ internal sealed class TranscriptRegion : FrameView
             return false;
         }
 
-        _followEnd = Tailing();
+        Mark(lines);
+
+        return true;
+    }
+
+    /// <summary>Whether the reader is carried to the end, for a test to read.</summary>
+    internal bool Tailing => _tailing;
+
+    /// <summary>The reader moved the cursor: at the last row they are following again, anywhere else they are not.</summary>
+    private void Moved()
+    {
+        if (_moving)
+        {
+            return;
+        }
+
+        var rows = _lines.Source?.Count ?? 0;
+
+        _tailing = _lines.SelectedItem is not { } at || at >= rows - 1;
+    }
+
+    /// <summary>The list's view moved, which outside a layout and outside this region's own redraw is the reader.</summary>
+    /// <param name="args">The view before and after.</param>
+    private void Scrolled(DrawEventArgs args)
+    {
+        if (_moving || _laying)
+        {
+            return;
+        }
+
+        _top = args.NewViewport.Y;
+        _tailing = Judged();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnSubViewLayout(LayoutEventArgs args)
+    {
+        _laying = true;
+        base.OnSubViewLayout(args);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>The reader is put back where they were after every layout</b>, because a layout is the box growing or the
+    /// terminal resizing and neither is the reader moving. A reader following the end is shown the end; anyone else is
+    /// shown the row they had at the top, held inside the rows there are.
+    /// </remarks>
+    protected override void OnSubViewsLaidOut(LayoutEventArgs args)
+    {
+        base.OnSubViewsLaidOut(args);
+        _laying = false;
+        Place();
+    }
+
+    /// <summary>Puts the view where the reader is: at the end when following it, at their own row when not.</summary>
+    private void Place()
+    {
+        if (_tailing)
+        {
+            ToTheEnd();
+
+            return;
+        }
+
+        if (_lines.Viewport is not { Height: > 0 } view)
+        {
+            return;
+        }
+
+        var rows = _lines.Source?.Count ?? 0;
+        var y = Math.Clamp(_top, 0, Math.Max(0, rows - view.Height));
+
+        if (view.Y == y)
+        {
+            return;
+        }
+
+        _moving = true;
 
         try
         {
-            Mark(lines);
+            _lines.Viewport = view with { Y = y };
         }
         finally
         {
-            _followEnd = false;
+            _moving = false;
+        }
+    }
+
+    /// <summary>Shows the last rows, without touching the cursor.</summary>
+    private void ToTheEnd()
+    {
+        var rows = _lines.Source?.Count ?? 0;
+
+        if (_lines.Viewport is not { Height: > 0 } view)
+        {
+            return;
         }
 
-        return true;
+        var end = Math.Max(0, rows - view.Height);
+
+        if (view.Y == end)
+        {
+            return;
+        }
+
+        _moving = true;
+
+        try
+        {
+            _lines.Viewport = view with { Y = end };
+        }
+        finally
+        {
+            _moving = false;
+        }
     }
 
     /// <summary>Lays a conversation out, whatever state it is in.</summary>
@@ -656,28 +773,33 @@ internal sealed class TranscriptRegion : FrameView
         // **No selection stays no selection, which the first version of this clamp threw away.** A reader who
         // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
         // the surface claim they are reading something, and `FollowingTests` says so in as many words.
-        int? selected = _followEnd && wrapped.Count > 0
+        int? selected = _tailing && wrapped.Count > 0
             ? wrapped.Count - 1
             : _lines.SelectedItem is { } at && wrapped.Count > 0
                 ? Math.Clamp(at, 0, wrapped.Count - 1)
                 : null;
 
-        var top = _lines.Viewport.Y;
+        _moving = true;
 
-        _lines.Replace(wrapped, selected, also: () =>
+        try
         {
-            _tints = tints;
-            _owners = owners;
-            _drawn = wrapped;
-        });
+            _lines.Replace(wrapped, selected, also: () =>
+            {
+                _tints = tints;
+                _owners = owners;
+                _drawn = wrapped;
+            });
+
+        }
+        finally
+        {
+            _moving = false;
+        }
 
         // **And a reader who is not being carried is not moved at all.** Setting the selection scrolls it into view, so a
         // reader who wheeled up past a cursor left on the last row was sent back down by the redraw itself. The view is
-        // put back where they had it, held inside the rows that now exist.
-        if (!_followEnd && _lines.Viewport is { Height: > 0 } now && now.Y != top)
-        {
-            _lines.Viewport = now with { Y = Math.Clamp(top, 0, Math.Max(0, wrapped.Count - now.Height)) };
-        }
+        // put back where they had it, held inside the rows that now exist; a reader following the end is shown it.
+        Place();
     }
 
     /// <summary>Whether a line is drawn as things stand.</summary>

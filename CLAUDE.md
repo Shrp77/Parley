@@ -733,6 +733,14 @@ below in the form Spec Kit's checks read; this file remains the authority when t
   under the owner's rule that the code matches the spec before review; and with no compatibility kept for older
   adapters, which the owner ruled out until release (*"we'll NUKE AND REBUILD until we release"*).
 
+  **0.40.1: writing a reply stopped the transcript tailing.** The owner, at the bottom of a conversation, replied and
+  saw nothing that followed. A long reply grows the box, which takes rows from the transcript, and in Terminal.Gui
+  2.4.17 **a list whose frame changes has its scrollbar reset the view to the first row** (`ScrollBar.ShowHide`). The
+  transcript judged from that screen that the reader was reading the start, and stopped carrying them. Whether a reader
+  follows the end is now remembered rather than re-derived from the screen: only the reader leaves it, by moving the
+  cursor or scrolling up, and after every layout the region puts the view back (`TranscriptRegion.Place`). A reader
+  halfway up was thrown to the first message by the same reset. `TailingWhileWritingTests` fails without the restore.
+
 - **Also being built**: `specs/023-always-a-seat/` — **0.39.0, built through phase 7; the walks (T056, T057) and the
   combined review gate are owed; on `019-layout`.** Phases 5–7 were built in one push on 2026-10-03, after the owner
   stopped the combined gate: *"You have already moved the spec and documentation ahead but the code is playing
