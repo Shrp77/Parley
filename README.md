@@ -848,9 +848,12 @@ the cursor is on, header and text, without the screen's indent.
 **The Room says what each agent is doing.** `◆ working 4m` means a turn is running for it right now. `■ stopped 2h48m`
 means its last turn ended while it still owes work in this conversation, and `— 1 permission refused` says why, when a
 tool call it needed was refused because nobody was there to approve it. `● waiting on orders` means it asked somebody and
-is waiting for the answer, which is not stopped. An agent whose machine does not report turns — an older node, or an
-agent opened in somebody's editor — shows only whether it is running, because anything more would be a guess. The web UI
-says the same things on a conversation's page.
+is waiting for the answer, which is not stopped. `◇ open outside Parley` means somebody started that agent themselves —
+opened its repository in an editor — so Parley cannot give it turns: a message to it waits until somebody there prompts
+it, and Parley will not start a second copy beside it. The web UI says the same things on a conversation's page.
+
+**How Parley knows which agents it started.** When its machine starts an agent, it hands that process a one-time token,
+and the agent presents it when it connects. An agent that connects without one was started some other way.
 
 **A stop caused by a refused permission is flagged at once**, in Health (`Alt+y`) and on the web UI's health page,
 rather than after the usual four hours: only a person can get the agent past it, by allowing the command

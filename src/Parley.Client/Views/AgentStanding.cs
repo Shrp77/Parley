@@ -66,6 +66,9 @@ public static class Standing
     /// <summary>The person, at no screen just now — still there, still asked (SPEC.md §14).</summary>
     public const string Away = "away";
 
+    /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
+    public const string Outside = "open outside Parley, so Parley cannot give it turns";
+
     /// <summary>An operator has withdrawn it.</summary>
     public const string Retired = "retired";
 
@@ -175,6 +178,7 @@ public static class Standing
                 // The person reads here or away and nothing else (023 T039): "your seat" said whose row it is and
                 // nothing about whether anybody was there, which is the one fact a peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    : agent.OpenOutside && !retired ? Outside
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
                 running,
                 EverRun: true,

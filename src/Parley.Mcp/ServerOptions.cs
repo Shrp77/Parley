@@ -23,6 +23,10 @@ namespace Parley.Mcp;
 /// Something the launch configuration should be told about how <see cref="Broker"/> was chosen,
 /// or <see langword="null"/> when there is nothing to say.
 /// </param>
+/// <param name="LaunchToken">
+/// What the node that started this process put in its environment (SPEC.md §11.7), presented on attach so the broker
+/// knows Parley started it; null when somebody started it outside Parley.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b><see cref="Agent"/> comes from the launch configuration and from nowhere else.</b> It is
@@ -54,8 +58,10 @@ public sealed record ServerOptions(
     string ResponderModel,
     string? Workspace,
     string? Owns = null,
-    string? BrokerNotice = null)
+    string? BrokerNotice = null,
+    string? LaunchToken = null)
 {
+
     /// <summary>The environment variable naming the broker to connect to.</summary>
     /// <remarks>
     /// The name itself lives in <see cref="BrokerEndpoint"/>, because all three processes read
@@ -229,7 +235,8 @@ public sealed record ServerOptions(
             responder,
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
             owns,
-            brokerNotice);
+            brokerNotice,
+            read(Parley.Core.LaunchToken.Variable) is { Length: > 0 } token ? token.Trim() : null);
     }
 
     /// <summary>

@@ -587,7 +587,9 @@ public static class NodeCommand
                 var invocation = InvocationCommand.Parse(command);
                 var workspace = catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory();
 
-                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System);
+                // Named to the broker first, so the process it starts is known as Parley's (SPEC.md §11.7).
+                var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
+                var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
                 residents[identity] = resident;
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
@@ -1025,11 +1027,13 @@ public static class NodeCommand
                 return;
             }
 
+            var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
             var restarted = ResidentAgent.Start(
                 agent,
                 InvocationCommand.Parse(command),
                 catalogue.WorkspaceFor(identity) ?? Directory.GetCurrentDirectory(),
-                TimeProvider.System);
+                TimeProvider.System,
+                launched);
 
             residents[identity] = restarted;
 

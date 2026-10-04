@@ -199,7 +199,8 @@ public sealed class BrokerLink : IAsyncDisposable
                 Tier = Wire.AgentTier.Pull,
                 Workspace = options.Workspace ?? string.Empty,
                 Owns = options.Owns ?? string.Empty,
-                ProtocolVersion = ProtocolVersion.Current
+                ProtocolVersion = ProtocolVersion.Current,
+                LaunchToken = options.LaunchToken ?? string.Empty
             };
 
             var stream = agents.Attach(request, cancellationToken: cancellationToken);

@@ -67,7 +67,8 @@ public sealed class LimitedCollectionTests
         await using (node)
         await using (sender)
         {
-            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+            // The resident its node started (SPEC.md §11.7): one opened outside Parley is asked for nothing at all.
+            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node))
             {
                 var reply = await resident.Client.DrainInboxAsync(
                     new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 1 }, cancellationToken: token);
@@ -90,7 +91,8 @@ public sealed class LimitedCollectionTests
         await using (node)
         await using (sender)
         {
-            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+            // Started by its node, as above, so that asking for nothing more is a decision rather than §11.7's silence.
+            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node))
             {
                 var reply = await resident.Client.DrainInboxAsync(
                     new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 2 }, cancellationToken: token);

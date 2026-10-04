@@ -722,6 +722,17 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
+- **Built 2026-10-04, 0.40.0: Parley knows which agents it started** (SPEC.md §11.7). The owner asked what an agent
+  started outside Parley does, and chose a launch token over asking the model. A node names each launch to the broker
+  (`Nodes.ReportLaunch`) and starts the process with `PARLEY_LAUNCH_TOKEN` (`Parley.Core.LaunchToken`); `parley-mcp`
+  presents it on attach; the broker spends it. An attachment without it is **open outside Parley**: the registry says so
+  (`OpenOutside`), a wake on it asks nobody and tells the sender `OpenOutside` instead of marking a turn as coming that no
+  node can give, `start` refuses it (two models in one checkout), its turns read as unknown, and the room shows `◇`.
+  **Not a credential** — §16 already concedes the name; it tells an honest deployment which of its processes Parley runs.
+  It replaced 0.39.0's per-machine-and-role guess, whose recorded limit it closes. Built spec first, code in one push,
+  under the owner's rule that the code matches the spec before review; and with no compatibility kept for older
+  adapters, which the owner ruled out until release (*"we'll NUKE AND REBUILD until we release"*).
+
 - **Also being built**: `specs/023-always-a-seat/` — **0.39.0, built through phase 7; the walks (T056, T057) and the
   combined review gate are owed; on `019-layout`.** Phases 5–7 were built in one push on 2026-10-03, after the owner
   stopped the combined gate: *"You have already moved the spec and documentation ahead but the code is playing

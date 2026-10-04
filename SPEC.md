@@ -680,7 +680,8 @@ it, which a message expecting nothing back never told anybody (principle 2.7).
 **A Request wakes its receiver.** An agent that is not running is started and one that is
 running is given a turn, by the machine that holds it (§4). What the sender is told alongside
 the exchange identifier is what became of the receiver: started, already running, already being
-seen to, not reachable from here, or **with the person**. **None of these is a refusal.** The
+seen to, not reachable from here, **open outside Parley** (§11.7) — it reads the message when somebody
+prompts it — or **with the person**. **None of these is a refusal.** The
 Request is stored before any of it is decided, and an unreachable receiver is flagged to the person
 running the deployment rather than written off (principle 2.8).
 
@@ -2632,7 +2633,7 @@ other could.
 
 | Operation | Description |
 |---|---|
-| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
+| `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
@@ -2657,7 +2658,7 @@ other could.
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
-| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. |
+| `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because their names break §9.5's rules. Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
@@ -3031,8 +3032,10 @@ ends, nothing it reported is claimed to be running any more. A broker that resta
 running turn, and an end whose beginning it never heard is still recorded.
 
 A node declares when it joins that it reports turns. **An agent whose turns nobody reports is not
-stopped; it is unknown** — whether its node predates this section or it is attached through somebody's
-editor and runs no node turns at all — and no surface may say otherwise.
+stopped; it is unknown**, and no surface may say otherwise. Its turns are reported only while it runs as a
+process its machine's node started (§11.7), or, when it is not running at all, when that node can start it.
+**One opened outside Parley is unknown**: no node gives it a turn, so nothing reports one, and what the node
+last reported for that name describes a different process.
 
 **A report is accepted only for an agent on the reporting node's machine, from a node that is joined.**
 Anything else is ignored and nothing is stored. §16 concedes that anything able to reach a broker can
@@ -3053,6 +3056,36 @@ the time the turn ran, before the work that turn picked up.
 **Nothing here reaches an agent.** How another agent's turns went, what they cost and what they were
 refused is the operator's view (§10.2's `registry()` and `flags()`), never `agents()` (§10.1). And a
 failed report never fails the turn it describes: the node notes it and carries on.
+
+### 11.7 A node says which processes it started
+
+**An agent can be running without Parley having started it.** Somebody opens its repository in an editor, the
+editor brings up the adapter, and it attaches under the same name a node would have started it under. The
+broker cannot give it a turn — a node gives turns only to processes it launched — so a message to it waits until
+the person at that editor prompts it, and a node that started its own copy would put two models in one checkout.
+Every other fact the broker holds says only that the name is attached.
+
+**So a node names each launch.** Before it starts an agent it tells the broker the agent and a token it chose
+for this one launch, and starts the process with that token in its environment; the adapter presents the token
+when it attaches. An attachment presenting the token the broker was told of for that agent, by the node on that
+agent's machine, is **started by Parley**, and the token is spent. Any other attachment — no token, an old one,
+another agent's — is **open outside Parley**. A launch the broker was never told of, because the report did not
+arrive, reads the same way; a failed report never stops the launch.
+
+What follows from it:
+
+- **A wake on an agent open only outside Parley asks nobody.** The sender is told the agent is open outside
+  Parley and reads the message when somebody prompts it (§5); no node is asked for a start or a turn, and the
+  wake is not marked as coming, because nothing is.
+- **`start` refuses an agent open outside Parley** (§10.2): a second process in one checkout is two models
+  editing it.
+- **The registry says which** (§10.2), and a surface says it in words: open outside Parley, so Parley cannot
+  give it turns.
+- **Turns are reported only for an agent started by Parley** (§11.6).
+
+**This is not a credential.** A token in an environment is not a secret from the person who owns the machine,
+and §16 already concedes that anything able to reach a broker can claim to be any agent. It tells an honest
+deployment which of its processes Parley is running, which is all it is for.
 
 ## 12. Registration and credentials
 
@@ -4631,6 +4664,11 @@ node and operator surfaces will observe:
 - Every operation that acts on an agent refuses the person seat with one sentence (§10.2).
 - A participant's turns are reported only when a node that reports turns can start it (§11.6), never the person's or
   Parley's.
+- **A node names each launch** (§11.7): `Nodes.ReportLaunch` carries the agent and a one-launch token, the
+  process gets the token in its environment, and the adapter presents it on attach. An attachment without it is
+  open outside Parley: the registry says so, a wake on it asks nobody and tells the sender `open outside Parley`
+  (§5), `start` refuses it, and its turns are not reported (§11.6). The owner's question of 2026-10-03 — what an
+  agent started outside Parley does — and their choice of a token over asking the model.
 - §10.2 named the command line as a third operator surface that MUST offer every operation. 019 moved every operation
   a person decides off the command line, on the owner's call, and the section now says so; §4.1 now says a different
   root may be named; §17 q15 no longer describes a typed name.

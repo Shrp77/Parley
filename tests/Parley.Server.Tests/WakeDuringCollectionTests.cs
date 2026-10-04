@@ -32,7 +32,9 @@ public sealed class WakeDuringCollectionTests
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
-        await using var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
+
+        // Started by its node (SPEC.md §11.7), which is what makes it a resident a node gives turns to.
+        await using var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node);
 
         // The turn that is collecting was asked for by an earlier message.
         Assert.NotEqual(WakeOutcome.AlreadyComing, broker.Runtime.RequestAttentionForMail(Orders, "first"));

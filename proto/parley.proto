@@ -91,6 +91,7 @@ message AttachRequest {
   string adapter_config = 6;
   string owns = 7;
   string protocol_version = 8;
+  string launch_token = 9;       // what the node that started this process put in its environment; empty when none did (section 11.7)
 }
 
 message Event {
@@ -473,6 +474,17 @@ service Nodes {
   // A turn this node gave an agent began or ended (section 11.6, specs/024). Ignored unless the agent is on this
   // node's machine and the node is joined. A failure here never fails the turn.
   rpc ReportTurn(TurnReport) returns (Empty);
+
+  // This node is about to start an agent, with this token in its environment (section 11.7). The adapter presents
+  // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
+  // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
+  rpc ReportLaunch(LaunchReport) returns (Empty);
+}
+
+message LaunchReport {
+  string machine = 1;
+  string agent = 2;
+  string token = 3;     // chosen by the node for this one launch
 }
 
 message JoinRequest {
@@ -480,7 +492,7 @@ message JoinRequest {
   NodeFacts facts = 2;
   repeated string startable_roles = 3;   // what this node's catalogue can launch
   // This node reports its turns (section 11.6). A node that does not say so leaves its agents' turn standing unknown
-  // rather than stopped: an older node reports nothing, and nothing must not read as stopped.
+  // rather than stopped: nothing reported must not read as stopped.
   bool reports_turns = 4;
 }
 
@@ -752,6 +764,8 @@ message RegistryRow {
   string last_turn_ended_utc = 14;           // empty before the first reported turn
   bool last_turn_clean = 15;
   int32 last_turn_permission_denials = 16;
+  // Running, and only as a process Parley did not start (section 11.7): no node can give it a turn.
+  bool open_outside = 17;
 }
 
 message RefusalsReply {
@@ -1087,6 +1101,9 @@ enum WakeOutcome {
   // The receiver is the person seat (section 12.3): they have it and will answer, whether here or
   // away. No machine was asked to start anybody, because nothing starts a person.
   WAKE_OUTCOME_WITH_THE_PERSON = 5;
+  // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
+  // the message when somebody prompts it.
+  WAKE_OUTCOME_OPEN_OUTSIDE = 6;
 }
 
 enum ClosureError {

@@ -72,6 +72,10 @@ namespace Parley.Core;
 /// What the agent's node has said about its turns (SPEC.md §11.6), or null where nobody has read it — which a surface
 /// treats exactly as <see cref="TurnStanding.Unreported"/>. On the operator's registry only.
 /// </param>
+/// <param name="OpenOutside">
+/// Running, and only as a process Parley did not start (SPEC.md §11.7), so no node can give it a turn. Observed by the
+/// broker from the attachments it holds; on the operator's registry only.
+/// </param>
 /// <remarks>
 /// Credentials are deliberately not a field here, and should not become one. This record is
 /// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
@@ -95,7 +99,8 @@ public sealed record AgentRecord(
     AgentPresence Presence = AgentPresence.Stranded,
     string? OwnsAccepted = null,
     OwnershipSource? OwnsSource = null,
-    TurnStanding? Turns = null)
+    TurnStanding? Turns = null,
+    bool OpenOutside = false)
 {
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>

@@ -82,6 +82,22 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
+    public override Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        // Ignored rather than refused when it does not check out, as a turn report is: a node never stops a launch over a
+        // report, so a refusal would tell it nothing it could act on (SPEC.md §11.7).
+        if (AgentName.TryCreate(request.Agent, out var agent))
+        {
+            _ = _runtime.LaunchReported(Machine(request.Machine), agent, request.Token);
+        }
+
+        return Task.FromResult(new Wire.Empty());
+    }
+
+    /// <inheritdoc/>
     /// <remarks>
     /// <b>Ignored rather than refused when it does not check out</b> (SPEC.md §11.6): an agent on another machine, a node
     /// not joined, an agent this broker does not know, a time that does not parse. A node never fails a turn over a

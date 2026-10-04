@@ -79,5 +79,16 @@ public enum WakeOutcome
     /// told something arrived, which is the ordinary notice every attached adapter gets.
     /// </para>
     /// </remarks>
-    WithThePerson = 4
+    WithThePerson = 4,
+
+    /// <summary>
+    /// The recipient is running only as a process Parley did not start (SPEC.md §11.7): nobody was asked, and it reads the
+    /// message when somebody prompts it.
+    /// </summary>
+    /// <remarks>
+    /// Before §11.7 this was <see cref="AlreadyRunning"/>: the broker asked the node for a turn the node could not give,
+    /// marked one as coming, and so suppressed every wake after it — while the sender was told its receiver was running.
+    /// Somebody opened that repository in an editor, and only they can make it read.
+    /// </remarks>
+    OpenOutside = 5
 }

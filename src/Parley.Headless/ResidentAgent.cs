@@ -127,6 +127,9 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <param name="command">What to run.</param>
     /// <param name="workspace">The directory to run it in.</param>
     /// <param name="clock">The clock turns are measured against.</param>
+    /// <param name="environment">
+    /// Added to what the process inherits — the launch token a node gives each process it starts (SPEC.md §11.7).
+    /// </param>
     /// <returns>The running agent.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <exception cref="DirectoryNotFoundException">The workspace does not exist.</exception>
@@ -138,7 +141,11 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// difference between a fixable fleet and a mysterious one.
     /// </remarks>
     public static ResidentAgent Start(
-        AgentName name, InvocationCommand command, string workspace, TimeProvider clock)
+        AgentName name,
+        InvocationCommand command,
+        string workspace,
+        TimeProvider clock,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(clock);
@@ -165,6 +172,12 @@ public sealed class ResidentAgent : IAsyncDisposable
         foreach (var argument in command.Arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        // Added to what the process inherits, never in place of it: the agent's own tools need PATH and the rest.
+        foreach (var (key, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[key] = value;
         }
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };

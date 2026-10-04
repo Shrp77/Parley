@@ -354,6 +354,7 @@ internal static class Conversions
         Core.WakeOutcome.AlreadyComing => Wire.WakeOutcome.AlreadyComing,
         Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
         Core.WakeOutcome.WithThePerson => Wire.WakeOutcome.WithThePerson,
+        Core.WakeOutcome.OpenOutside => Wire.WakeOutcome.OpenOutside,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 
@@ -531,6 +532,7 @@ internal static class Conversions
             LastTurnEndedUtc = record.Turns?.LastEnded is { } ended ? Stamp(ended) : string.Empty,
             LastTurnClean = record.Turns?.LastClean ?? false,
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
+            OpenOutside = record.OpenOutside,
         };
     }
 

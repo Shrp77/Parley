@@ -71,13 +71,14 @@ public sealed class WakeLifecycleTests
         // again" and was not the same thing.** Clear, the rest waited for some later message to ask, and
         // the review gate found that nothing ever might (lens 1 run 1.18). The drain now asks for the
         // turn itself, so the mark is held again -- for a turn that is coming -- and a further message
-        // does not stack a second one.
+        // does not stack a second one. Orders is the resident its node started (SPEC.md §11.7), since
+        // an agent opened outside Parley is asked for no turn at all.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
         await using var orders = await AttachedClient.AttachAsync(
-            broker, "orders@alpha", cancellationToken: token);
+            broker, "orders@alpha", cancellationToken: token, startedBy: node);
         await using var sender = await AttachedClient.AttachAsync(
             broker, "billing@alpha", cancellationToken: token);
 

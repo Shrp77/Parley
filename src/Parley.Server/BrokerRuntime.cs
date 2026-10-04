@@ -51,6 +51,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // Immutable arrays under AddOrUpdate rather than a lock around a list. Nudging reads this on
     // every write to any inbox, and a reader that had to take a lock would be contending with
     // attach and detach for the privilege of sending a notice that is disposable anyway.
+    /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
+    private readonly ConcurrentDictionary<AgentName, string> _launches = new();
+
     private readonly ConcurrentDictionary<string, ImmutableArray<AttachedAgent>> _attached =
         new(StringComparer.Ordinal);
 
@@ -547,6 +550,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="registration">What the adapter said about itself.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <param name="launchToken">What the node that started this process put in its environment, or null (SPEC.md §11.7).</param>
     /// <returns>The attachment, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -554,7 +558,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </exception>
     public async Task<AttachedAgent> AttachAsync(
         AgentRecord registration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? launchToken = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
@@ -614,7 +619,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     "reinstates it from the agents pane in `parley`, or from its page in the web UI.");
             }
 
-            var attached = new AttachedAgent(this, registration.Name, broker, started);
+            // **Started by Parley only by the token its node reported for this launch** (SPEC.md §11.7), and spent here, so
+            // a second process presenting it — an editor started from a shell that inherited it — reads as outside.
+            var byParley = launchToken is { Length: > 0 }
+                && _launches.TryGetValue(registration.Name, out var launched)
+                && string.Equals(launched, launchToken, StringComparison.Ordinal)
+                && _launches.TryRemove(new KeyValuePair<AgentName, string>(registration.Name, launched));
+
+            var attached = new AttachedAgent(this, registration.Name, broker, started, byParley);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -856,6 +868,40 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public DateTimeOffset? TurnRunningSince(AgentName agent) =>
         _turns.TryGetValue(agent, out var running) ? running.Started : null;
 
+    /// <summary>Records that a node is about to start an agent with a token in its environment (SPEC.md §11.7).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent it is starting.</param>
+    /// <param name="token">The token it chose for this launch.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
+    /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
+    /// </remarks>
+    public bool LaunchReported(string machine, AgentName agent, string token)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || string.IsNullOrWhiteSpace(token)
+            || token.Length > 128
+            || !_nodes.ContainsKey(machine)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _launches[agent] = token;
+
+        return true;
+    }
+
+    /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>True when it is attached and no attachment presented its node's token.</returns>
+    public bool OpenOutside(AgentName agent) =>
+        _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+        && sessions.All(session => !session.StartedByParley);
+
     /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent.</param>
     /// <returns>
@@ -874,7 +920,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
         && !Facilitation.Is(agent)
         && _nodes.TryGetValue(agent.Machine, out var node)
         && node.ReportsTurns
-        && node.Startable.Contains(agent.Role);
+        && (_attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty
+            // Running: only as a process the node started, by its token (§11.7) — one opened outside is unknown.
+            ? sessions.Any(session => session.StartedByParley)
+            // Not running: what the node last said about a process it could start again.
+            : node.Startable.Contains(agent.Role));
 
     /// <summary>Checks a turn report and counts the agent's waiting work, or says no.</summary>
     /// <param name="machine">The reporting machine.</param>
@@ -1314,6 +1364,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // nobody: written and never collected while the registry reported the agent live. The node gives the turn only to a resident of its own, so an
         // agent attached through somebody's editor window is left alone rather than duplicated.
         var running = _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty;
+
+        // **Open only outside Parley** (§11.7): no node can give it a turn and starting a second process would put two
+        // models in one checkout, so nobody is asked — and nothing is marked as coming, which before this suppressed
+        // every wake after the first while the sender was told its receiver was running.
+        if (running && sessions.All(session => !session.StartedByParley))
+        {
+            return WakeOutcome.OpenOutside;
+        }
 
         if (!(running ? node.RequestTurn(agent, because) : node.RequestStart(agent, because)))
         {

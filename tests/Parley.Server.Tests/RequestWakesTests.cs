@@ -171,7 +171,9 @@ public sealed class RequestWakesTests
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
         await using var sender = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
-        await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
+
+        // Started by its node, which is what makes it an agent a node gives turns to (SPEC.md §11.7).
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node);
 
         Assert.Equal(Wire.WakeOutcome.AlreadyRunning, Assert.Single((await sender.Client.RequestAsync(Request("one"), cancellationToken: token)).Outcomes).Wake);
         Assert.Equal(Wire.WakeOutcome.AlreadyComing, Assert.Single((await sender.Client.RequestAsync(Request("two"), cancellationToken: token)).Outcomes).Wake);
@@ -235,7 +237,7 @@ public sealed class RequestWakesTests
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["billing"], token);
-        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token, startedBy: node);
         await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
 
         var sent = Assert.Single((await orders.Client.RequestAsync(Request("is it still read?", from: "orders@alpha", to: "billing@alpha"), cancellationToken: token)).Outcomes);
@@ -276,7 +278,7 @@ public sealed class RequestWakesTests
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["inventory"], token);
-        await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@alpha", cancellationToken: token);
+        await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@alpha", cancellationToken: token, startedBy: node);
         await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
         await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
 

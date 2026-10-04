@@ -23,6 +23,12 @@ public enum Doing
 
     /// <summary>Its last turn ended after it picked up work in this conversation that it still owes.</summary>
     Stopped = 5,
+
+    /// <summary>
+    /// Running only as a process Parley did not start — somebody opened it in an editor — so no node can give it a turn
+    /// (SPEC.md §11.7). It reads what is waiting when somebody prompts it there.
+    /// </summary>
+    Outside = 6,
 }
 
 /// <summary>One participant's activity.</summary>
@@ -69,6 +75,9 @@ public static class Activities
     /// <summary>The mark for an agent nothing is running.</summary>
     public const string NotRunningMark = "○";
 
+    /// <summary>The mark for an agent open outside Parley, which Parley cannot give a turn.</summary>
+    public const string OutsideMark = "◇";
+
     /// <summary>What the marks mean, said once beside them.</summary>
     public static IReadOnlyList<string> Legend { get; } =
     [
@@ -76,6 +85,7 @@ public static class Activities
         $"{WorkingMark} working on a turn",
         $"{StoppedMark} stopped, still owes work",
         $"{NotRunningMark} not running",
+        $"{OutsideMark} open outside Parley",
     ];
 
     /// <summary>What each participant is doing.</summary>
@@ -128,6 +138,7 @@ public static class Activities
             { Doing: Doing.Stopped, Since: { } since, PermissionDenials: > 0 } =>
                 $"stopped {For(since, now)} — {Refused(activity.PermissionDenials)}",
             { Doing: Doing.Stopped, Since: { } since } => "stopped " + For(since, now),
+            { Doing: Doing.Outside } => Outside,
             _ => string.Empty,
         };
     }
@@ -141,6 +152,7 @@ public static class Activities
         Doing.Stopped => StoppedMark,
         Doing.Running or Doing.Waiting => RunningMark,
         Doing.NotRunning => NotRunningMark,
+        Doing.Outside => OutsideMark,
         _ => " ",
     };
 
@@ -179,8 +191,18 @@ public static class Activities
     private static string Refused(int count) =>
         count == 1 ? "1 permission refused" : count.ToString(CultureInfo.InvariantCulture) + " permissions refused";
 
+    /// <summary>What an agent open outside Parley is said to be doing.</summary>
+    /// <remarks>It names what follows from it, because that is what a person needs: Parley cannot hand it work.</remarks>
+    public const string Outside = "open outside Parley — no turns from Parley";
+
     private static Activity Derive(AgentRecord agent, ConversationExport export, List<WaitingEdge> here)
     {
+        // First: whatever the node last reported for this name describes a different process (SPEC.md §11.7).
+        if (agent.OpenOutside)
+        {
+            return new Activity(Doing.Outside);
+        }
+
         var presence = agent.Presence == AgentPresence.Running ? Doing.Running : Doing.NotRunning;
         var turns = agent.Turns ?? TurnStanding.Unreported;
 

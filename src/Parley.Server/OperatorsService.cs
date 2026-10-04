@@ -188,6 +188,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var agent = Acted(request.Agent);
 
+        // A second process in one checkout is two models editing it (SPEC.md §11.7).
+        if (_runtime.OpenOutside(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting another " +
+                "would put two models in one checkout. Close that session first, or prompt it there."));
+        }
+
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
             .ConfigureAwait(false);
 
@@ -410,6 +419,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
                 last?.Clean ?? false,
                 last?.PermissionDenials ?? 0),
+            OpenOutside = _runtime.OpenOutside(row.Name),
         })));
 
         return reply;

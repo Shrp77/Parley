@@ -53,7 +53,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.TurnRunningSinceUtc),
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
-                row.LastTurnPermissionDenials)))];
+                row.LastTurnPermissionDenials),
+            row.OpenOutside))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>

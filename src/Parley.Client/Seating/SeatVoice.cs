@@ -311,6 +311,12 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             parts.Add($"{coming} already being seen to");
         }
 
+        // SPEC.md §11.7: open in somebody's editor, so only a prompt there makes it read.
+        if (counted.GetValueOrDefault(Wire.WakeOutcome.OpenOutside) is > 0 and var outside)
+        {
+            parts.Add($"{outside} open outside Parley, reading it when prompted there");
+        }
+
         if (parts.Count > 0)
         {
             _ = said.Append(' ').Append(string.Join(", ", parts)).Append('.');
@@ -495,6 +501,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         // Only reachable if the person is ever the recipient of their own seat's send, which no surface offers — so this
         // is here so the switch never says "not reported" about a fact the broker did report.
         Wire.WakeOutcome.WithThePerson => $"{to.Value} is the person, and has it.",
+        Wire.WakeOutcome.OpenOutside =>
+            $"{to.Value} is open outside Parley — somebody started it in an editor — so Parley cannot give it a turn; it " +
+            "reads this when somebody prompts it there.",
         _ => $"What became of {to.Value} was not reported.",
     };
 

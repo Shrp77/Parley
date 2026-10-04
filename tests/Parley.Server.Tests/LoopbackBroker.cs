@@ -234,6 +234,11 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// The adapter it attaches through. <c>test</c> unless a test is attaching as the person, whose seat adapter is
     /// what a surface reports (specs/023).
     /// </param>
+    /// <param name="launchToken">The token a node put in its environment, when a node started it (SPEC.md §11.7).</param>
+    /// <param name="startedBy">
+    /// The node that started it, which names the launch to the broker first and gives it the token — the way every agent
+    /// a node runs attaches. Without one it is an agent somebody opened outside Parley, which no node gives a turn.
+    /// </param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -241,8 +246,19 @@ internal sealed class AttachedClient : IAsyncDisposable
         string? workspace = null,
         CancellationToken cancellationToken = default,
         string? owns = null,
-        string adapter = "test")
+        string adapter = "test",
+        string? launchToken = null,
+        JoinedNodeClient? startedBy = null)
     {
+        if (startedBy is not null)
+        {
+            launchToken = Guid.NewGuid().ToString("N");
+
+            _ = await startedBy.Nodes.ReportLaunchAsync(
+                new Wire.LaunchReport { Machine = startedBy.Machine, Agent = name, Token = launchToken },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
         var client = broker.Connect();
 
         var stream = client.Attach(
@@ -262,7 +278,10 @@ internal sealed class AttachedClient : IAsyncDisposable
                 // Announced, because the broker checks it. Taken from the constant rather than
                 // written out, so a version bump does not need this file edited -- and so the
                 // check cannot be satisfied by a literal that happens to match.
-                ProtocolVersion = Parley.Core.ProtocolVersion.Current
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+
+                // What a node put in the process's environment, when a node started it (SPEC.md §11.7).
+                LaunchToken = launchToken ?? string.Empty
             },
             cancellationToken: cancellationToken);
 

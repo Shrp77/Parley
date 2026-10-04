@@ -119,14 +119,14 @@ public sealed class StartOnDemandTests
         // Starting a process for an agent that already has one is how a deployment ends up with two
         // of something. What the traffic needs then is a turn, which is the distinction
         // BrokerRuntime.RequestAttention already draws and this operation inherits rather than
-        // reinventing.
+        // reinventing. The agent was started by its node (SPEC.md §11.7), so its node is the one that can give the turn.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
 
         await using var orders = await AttachedClient.AttachAsync(
-            broker, "orders@alpha", "C:/repo-orders", token);
+            broker, "orders@alpha", "C:/repo-orders", token, startedBy: node);
 
         await broker.ConnectAsOperator().StartAsync(
             new Wire.StartRequest { Agent = "orders@alpha", Because = "a probe" },
@@ -135,5 +135,28 @@ public sealed class StartOnDemandTests
         var command = await node.WaitForCommandAsync(Patience);
 
         Assert.Equal(Wire.NodeCommand.CommandOneofCase.Turn, command.CommandCase);
+    }
+
+    [Fact]
+    public async Task An_agent_attached_outside_Parley_is_asked_for_nothing_and_the_sender_is_told()
+    {
+        // The counterpart of the test above. The same agent, attached with no token, is a session somebody opened in
+        // an editor (SPEC.md §11.7): the node runs no resident for it, so a turn asked of the node could not be given
+        // and a turn marked as coming would never come. Nobody is asked, and the sender hears why.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
+
+        await using var orders = await AttachedClient.AttachAsync(
+            broker, "orders@alpha", "C:/repo-orders", token);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
+
+        var outcome = Assert.Single((await billing.Client.RequestAsync(
+            Requests.Open("billing@alpha", "orders@alpha", "who owns the retry policy"), cancellationToken: token)).Outcomes);
+
+        Assert.True(outcome.Ok);
+        Assert.Equal(Wire.WakeOutcome.OpenOutside, outcome.Wake);
+        Assert.Equal(0, await node.CountCommandsAsync(TimeSpan.FromMilliseconds(500)));
     }
 }

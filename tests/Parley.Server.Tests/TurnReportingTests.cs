@@ -46,6 +46,15 @@ public sealed class TurnReportingTests
             },
         };
 
+    // An agent as its node starts it: the launch named to the broker first, then the token presented on attach (§11.7).
+    private static async Task<AttachedClient> LaunchedAsync(LoopbackBroker broker, JoinedNodeClient node)
+    {
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport { Machine = Here, Agent = Agent, Token = "launch-1" }, cancellationToken: Ct);
+
+        return await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "launch-1");
+    }
+
     private static async Task<Wire.RegistryRow> RowAsync(LoopbackBroker broker, string name) =>
         (await broker.ConnectAsOperator().DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct)).Rows
         .Single(row => row.Name == name);
@@ -54,8 +63,8 @@ public sealed class TurnReportingTests
     public async Task A_turn_reads_as_running_and_then_as_ended_with_its_refusals()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
-        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        await using var agent = await LaunchedAsync(broker, node);
 
         await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
 
@@ -224,12 +233,12 @@ public sealed class TurnReportingTests
     [Fact]
     public async Task Turns_are_reported_only_for_an_agent_the_node_can_start()
     {
-        // Decided per agent, not per machine (SPEC.md §11.6): an agent nobody's node runs is unknown, never stopped. Before,
-        // any agent on a reporting node's machine read as reported — including one opened in an editor.
+        // Decided per agent, not per machine (SPEC.md §11.6, §11.7): an agent its node did not start is unknown, never
+        // stopped. Before, any agent on a reporting node's machine read as reported — including one opened in an editor.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
-        await using var billing = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing", "docs"], Ct, reportsTurns: true);
+        await using var billing = await LaunchedAsync(broker, node);
         await using var editor = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         Assert.True((await RowAsync(broker, Agent)).TurnsReported);
         Assert.False((await RowAsync(broker, "docs@m1")).TurnsReported);

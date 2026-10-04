@@ -35,12 +35,14 @@ public sealed class AttachedAgent : IAsyncDisposable
         BrokerRuntime runtime,
         AgentName name,
         Parley.Broker.Broker broker,
-        Parley.Broker.StartResult started)
+        Parley.Broker.StartResult started,
+        bool startedByParley = false)
     {
         _runtime = runtime;
         Name = name;
         Broker = broker;
         Started = started;
+        StartedByParley = startedByParley;
 
         // One slot, newest wins. See the remarks: a notice supersedes its predecessor entirely,
         // so a backlog of them carries no information a single current one does not.
@@ -55,6 +57,10 @@ public sealed class AttachedAgent : IAsyncDisposable
 
     /// <summary>Gets the agent this stream belongs to.</summary>
     public AgentName Name { get; }
+
+    /// <summary>Whether this is a process a node started, by the token it presented (SPEC.md §11.7).</summary>
+    /// <remarks>False is "open outside Parley": no node can give it a turn.</remarks>
+    public bool StartedByParley { get; }
 
     /// <summary>Gets what the attach sequence of SPEC.md §14 did.</summary>
     public Parley.Broker.StartResult Started { get; }

@@ -1584,6 +1584,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         // hours has still been asked, and waiting for their decision is the right thing to do.
         Wire.WakeOutcome.WithThePerson =>
             "with the person: they have it and will answer. They may be away; waiting for their decision is correct",
+
+        // SPEC.md §11.7: somebody has that repository open in an editor, and only they can make it read.
+        Wire.WakeOutcome.OpenOutside =>
+            "open in a session Parley did not start; it reads your request when somebody there prompts it",
         _ => "unknown"
     };
 
