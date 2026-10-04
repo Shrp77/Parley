@@ -16,5 +16,5 @@ agents `orders` and `billing`; `billing`'s repository allows no shell commands.
    waiting on orders`.
 6. **A machine that goes away.** Stop the node mid-turn; the room stops claiming `working` for its agents within one
    refresh.
-7. **An older node.** Run one node at the previous version; its agents show presence only — no working, no stopped.
+7. **An older node.** Run one node at the previous version; its agents show presence only — no working, no stopped. *Superseded by 0.40.0 (SPEC.md §11.7): nothing is kept compatible before the first release, the owner's call of 2026-10-03. An older node passes no launch token, so its agent reads* `◇ open outside Parley` *and gets its first turn only. The walk of 2026-10-04 confirmed exactly that.*
 8. **Agents cannot read it.** From an agent's own MCP tools, `parley_agents` shows nothing about anybody's turns.

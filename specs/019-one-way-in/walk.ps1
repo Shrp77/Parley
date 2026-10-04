@@ -1,4 +1,4 @@
-# T109: walks the shell-reachable steps of specs/019-one-way-in/quickstart.md.
+﻿# T109: walks the shell-reachable steps of specs/019-one-way-in/quickstart.md.
 #
 # Step 1 and 5.3 need a person at a terminal and are not attempted here -- `parley terminal` refuses a
 # redirected stream by design. The project this walk needs is therefore written the way the terminal
@@ -58,7 +58,7 @@ $wrongCode = @(); $noSurface = @(); $selfNamed = @()
 foreach ($verb in $sixteen) {
     $said = & $parley $verb 2>&1 | Out-String
     if ($LASTEXITCODE -ne 64) { $wrongCode += "$verb=$LASTEXITCODE" }
-    if ($said -notmatch 'parley terminal') { $noSurface += $verb }
+    if ($said -notmatch '`parley`') { $noSurface += $verb }
     if ($said -match [regex]::Escape("parley $verb")) { $selfNamed += $verb }
 }
 
@@ -70,7 +70,7 @@ Check '11.3 none prints parley plus its own removed verb' ($selfNamed.Count -eq 
 foreach ($action in @('add','set','remove')) {
     $said = & $parley project $action anything 2>&1 | Out-String
     Check "11.4 project $action is refused (exit $LASTEXITCODE) and names the terminal" `
-        (($LASTEXITCODE -eq 64) -and ($said -match 'parley terminal'))
+        (($LASTEXITCODE -eq 64) -and ($said -match '`parley`'))
 }
 
 $listed = & $parley --config $root project list 2>&1 | Out-String

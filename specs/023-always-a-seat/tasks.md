@@ -431,8 +431,10 @@ the broker's own row can be stored as it or under the seat's adapter. What this 
   `plugins`, `README.md` — and fix or justify each
 - [ ] T055 Run every test host executable directly (`tests/Parley.*.Tests/bin/*/net10.0/Parley.*.Tests.exe`),
   not `dotnet test`, and record the counts per project from a build made after the last edit
-- [ ] T056 Write `specs/023-always-a-seat/walk.ps1` and walk `quickstart.md` steps 1–6 against packed tools in a
+- [X] T056 Write `specs/023-always-a-seat/walk.ps1` and walk `quickstart.md` steps 1–6 against packed tools in a
   scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md`
+  — walked 2026-10-04 at 0.40.0 (`walk.ps1`, with the real 21-minute idle wait): 56 checks, 56 passed; terminal-only
+  halves of 4.1, 5.1, 5.2 and 6 recorded as not drivable, step 7 not attempted (T057)
 - [ ] T057 Walk quickstart step 7 with this repository's own agent and record what it actually did (SC-006)
 - [ ] T058 Hygiene: case-insensitive `git grep` for the originating project's names, **including untracked new
   files** (`git grep` misses them), before committing

@@ -143,7 +143,9 @@ and "1 permission refused", never working.
 
 - [X] T033 [P] README: what working, waiting, stopped and unknown mean, and where the flag appears, in README.md
 - [X] T034 [P] CLAUDE.md: move 024 from queued to latest with what building it found, in CLAUDE.md
-- [ ] T035 Walk quickstart.md against packed tools in a scratch root, recording each step's result
+- [X] T035 Walk quickstart.md against packed tools in a scratch root, recording each step's result
+  — walked 2026-10-04 at 0.40.0 (`walk.ps1`, a real node and a stand-in agent, a 0.37.9 node for step 7): 40 checks,
+  40 passed; one finding at step 7 (an older node's agent gets no turn after its first), recorded in `REVIEW-LEDGER.md`
 - [X] T036 Hygiene grep (sibling names, hyphenated and spaced forms, machine name; untracked files included) on its own,
   before each commit
 - [X] T037 Point `.specify/feature.json` back at specs/023-always-a-seat to resume 023's phases 5–8

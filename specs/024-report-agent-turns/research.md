@@ -61,6 +61,11 @@ keep in step with the registry.
 **Rationale**: without it, a node one version behind reports nothing and every agent it runs reads as stopped the moment
 its first turn ends — the defect this feature exists to remove, inverted. FR-010.
 
+**Amended 2026-10-04.** The older-node half of this no longer holds: nothing is kept compatible before the first release
+(the owner's call of 2026-10-03), and since 0.40.0 a node names each launch with a token (SPEC.md §11.7), so an agent an
+older node starts reads as open outside Parley. What survives is the editor half, now exact rather than inferred: an agent
+no node started is unknown, never stopped.
+
 ## R6 — The early flag
 
 **Decision**: a new `FlagKind.PermissionRefused`, derived in `FlagRepository` from what is stored: an open exchange owed
