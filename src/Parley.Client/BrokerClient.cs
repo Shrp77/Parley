@@ -585,6 +585,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     {
         Wire.AgentPresence.Running => AgentPresence.Running,
         Wire.AgentPresence.Startable => AgentPresence.Startable,
+        Wire.AgentPresence.Here => AgentPresence.Here,
+        Wire.AgentPresence.Away => AgentPresence.Away,
         _ => AgentPresence.Stranded
     };
 

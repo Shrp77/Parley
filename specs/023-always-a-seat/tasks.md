@@ -304,28 +304,28 @@ spec names; "conversations it is in" filters the list, says so, and Esc clears i
 **Goal**: The person reads `here` or `away` everywhere, and never `startable`.
 **Independent test**: open a surface → `here`; fire the idle seam → `away`, still listed; touch → `here`.
 
-- [ ] T034 [P] [US3] Add `AgentPresence.Here = 3` and `Away = 4`; `AgentLiveness.Read` takes the adapter and
+- [X] T034 [P] [US3] Add `AgentPresence.Here = 3` and `Away = 4`; `AgentLiveness.Read` takes the adapter and
   returns them for the person seat only, and returns `Running` for the facilitator, which SPEC.md §14 already
   calls "present whenever its project is served" (without this it would read `Stranded`, having no machine; the
   second `/speckit-analyze`, issue 4). The person reads `Stranded` between T010 and this task, a state that exists
   only mid-build, in `src/Parley.Core/AgentTier.cs` and `src/Parley.Core/AgentLiveness.cs`;
   add the wire values in `proto/parley.proto` and map them in `src/Parley.Server/Wire.cs`
-- [ ] T035 [US3] Pass the adapter to `AgentLiveness.Read` from `ListRoutableAsync` and `GetAllAsync`, in
+- [X] T035 [US3] Pass the adapter to `AgentLiveness.Read` from `ListRoutableAsync` and `GetAllAsync`, in
   `src/Parley.Store/AgentRepository.cs`
-- [ ] T036 [US3] Core and store tests: the person is `here` with a connection and `away` without, on a machine
+- [X] T036 [US3] Core and store tests: the person is `here` with a connection and `away` without, on a machine
   with and without a node; no agent ever reads `here` or `away`, in `tests/Parley.Core.Tests/PersonPresenceTests.cs`
   and `tests/Parley.Store.Tests/PersonPresenceStoreTests.cs`
-- [ ] T037 [US3] `SeatBook.Sweep` drops an idle hold's stream and keeps the seat; the next `Touch` re-attaches
+- [X] T037 [US3] `SeatBook.Sweep` drops an idle hold's stream and keeps the seat; the next `Touch` re-attaches
   silently; `Held` never returns null for a project whose registry has a person row, in
   `src/Parley.Client/Seating/SeatBook.cs` and `SeatHold.cs`
-- [ ] T038 [US3] Client test on a fake clock: idle drops the stream (the broker reads `away`), a touch re-attaches
+- [X] T038 [US3] Client test on a fake clock: idle drops the stream (the broker reads `away`), a touch re-attaches
   (the broker reads `here`), and at no point is the seat unavailable to `SeatVoice`, in
   `tests/Parley.Client.Tests/AwayAndBackTests.cs`
-- [ ] T039 [P] [US3] Show `here`/`away` for the person in the agents region and in `parley_agents`' output, and
+- [X] T039 [P] [US3] Show `here`/`away` for the person in the agents region and in `parley_agents`' output, and
   remove the terminal's "released" state, in `src/Parley.Terminal/AgentsRegion.cs` and `src/Parley.Mcp/ParleyTools.cs`
-- [ ] T040 [P] [US3] Show `here`/`away` for the person on the web agents page and in `parley registry`, in
+- [X] T040 [P] [US3] Show `here`/`away` for the person on the web agents page and in `parley registry`, in
   `src/Parley.Web/Pages/Projects/Agents.cshtml(.cs)` and `src/Parley.Cli/OperatorCommands.cs`
-- [ ] T041 [US3] Show the waiting count for the person on both surfaces whether here or away, replacing the
+- [X] T041 [US3] Show the waiting count for the person on both surfaces whether here or away, replacing the
   unseated branch (`WaitingUnseatedAsync`, the inbox's "seated nowhere" text), in `src/Parley.Terminal/Shell.cs`,
   `src/Parley.Web/Pages/Shared/_Layout.cshtml`, `src/Parley.Web/Pages/Inbox.cshtml`
 
@@ -340,12 +340,12 @@ Placed before US4 because it touches no rule US4 depends on and US4 is the phase
 **Goal**: A flag owed by the person reads *waiting on you* and suggests no remedy for an agent.
 **Independent test**: a Request to the person past the flag threshold, read on all three surfaces.
 
-- [ ] T042 [P] [US5] One wording for a flag whose owing participant is the person — "waiting on you: <asker> asked
+- [X] T042 [P] [US5] One wording for a flag whose owing participant is the person — "waiting on you: <asker> asked
   <when>" — with no "ask the agent" remedy, in `src/Parley.Client/Rendering/FlagWording.cs` (new)
-- [ ] T043 [US5] Use it in the CLI, the terminal's Health dialog and the web Health page, in
+- [X] T043 [US5] Use it in the CLI, the terminal's Health dialog and the web Health page, in
   `src/Parley.Cli/OperatorCommands.cs`, `src/Parley.Terminal/Health.cs`,
   `src/Parley.Web/Pages/Projects/Health.cshtml.cs`
-- [ ] T044 [US5] Tests: each surface words a person-owed flag as waiting on you and an agent-owed flag as before,
+- [X] T044 [US5] Tests: each surface words a person-owed flag as waiting on you and an agent-owed flag as before,
   in `tests/Parley.Client.Tests/FlagWordingTests.cs`
 
 ---
@@ -360,17 +360,17 @@ the broker's own row can be stored as it or under the seat's adapter. What this 
 **Independent test**: enrol as `human-user`; attach under it with any adapter but the seat's; direct insert as
 `human-user` under another adapter, and of any other role as `parley-console`; all refused.
 
-- [ ] T045 [US4] Add `tr_person_role_is_reserved` and `tr_person_role_is_reserved_on_update` to
+- [X] T045 [US4] Add `tr_person_role_is_reserved` and `tr_person_role_is_reserved_on_update` to
   `src/Parley.Store/Migrations/001_initial.sql` and to SPEC.md §9.2 in the same commit
-- [ ] T046 [US4] Store probes: `human-user@x` as `claude-code`, `orders@x` as `parley-console`, and updating the
+- [X] T046 [US4] Store probes: `human-user@x` as `claude-code`, `orders@x` as `parley-console`, and updating the
   person's adapter — all refused. **Remove each trigger and watch its probe pass**, in
   `tests/Parley.Store.Tests/PersonSeatStoreTests.cs`
-- [ ] T047 [P] [US4] Refuse `human-user` at attach and in `Caller`, in `src/Parley.Server/AgentsService.cs`; at
+- [X] T047 [P] [US4] Refuse `human-user` at attach and in `Caller`, in `src/Parley.Server/AgentsService.cs`; at
   enrolment, in `src/Parley.Setup/EnrollmentPlan.cs`
-- [ ] T048 [P] [US4] Refuse the person seat in `OperatorsService.Subject` and `Instruct` with a sentence saying it
+- [X] T048 [P] [US4] Refuse the person seat in `OperatorsService.Subject` and `Instruct` with a sentence saying it
   is the person (`start`, `retire`, `reinstate`, `purge`, `ask_again`, `instruct`), in
   `src/Parley.Server/OperatorsService.cs`
-- [ ] T049 [US4] Probes over a socket and through the binary, **with the person row already present**, as it always
+- [X] T049 [US4] Probes over a socket and through the binary, **with the person row already present**, as it always
   is: `parley-mcp` launched as `human-user` (adapter `claude-code`) is refused at attach; `parley enroll` of a
   repository as `human-user` refuses; `parley retire` and `purge` of the person refuse; the facilitator and the
   person cannot take each other's role. **And one probe that asserts the recorded limit**: calling
@@ -382,30 +382,51 @@ the broker's own row can be stored as it or under the seat's adapter. What this 
   `AgentsService` is the whole of the guard against a claimant, as the spec's *What the reservation does not do*
   says. If that probe ever fails, the spec's section is out of date, in
   `tests/Parley.Server.Tests/PersonNameIsReservedTests.cs` and `tests/Parley.Cli.Tests/PersonNameIsReservedTests.cs`
-- [ ] T050 [US4] Re-check the existing facilitator probes (`ParleyIsNotThePersonSeatedTests`,
+- [X] T050 [US4] Re-check the existing facilitator probes (`ParleyIsNotThePersonSeatedTests`,
   `APersonsWordsAreNeverParleysTests`) against the person seat: the facilitator's relay of a person's reply is
   attributed to `human-user`, in `tests/Parley.Server.Tests` and `tests/Parley.Broker.Tests`
 
 **Checkpoint**: SC-003 holds.
 
+**Built 2026-10-03, in one push after the owner's call that the code must match the spec before any more review
+(0.39.0).** Notes on the tasks as written:
+
+- **T037/T038**: built by phases 1–4 (an idle drop takes only the stream; the next key re-attaches), held by
+  `SendAfterIdleTests`, `TypingIsBeingHereTests` and `BackFromAwayTests`; the broker's `here`→`away`→`here` over a socket
+  is `PersonIsHereOrAwayTests`. `Held` does go null while away, by design: it is the stream, not the seat.
+- **T041**: the web already counted while away; the terminal stopped asking and cleared the count when the stream went.
+  It asks without a stream now (`SeatBook.WaitingAsync`), `MailWaitsWhileAwayTests`.
+- **T042–T044**: one wording, `FlagWording`, used by both health views — which also ended the "is retired" default arm
+  both had.
+- **T045–T047**: built during the combined gate (0.38.3). **T047's "and in `Caller`" was not done, on purpose**: every
+  Agents call names its caller through `Caller`, including the person's own sends, so refusing the role there would stop
+  the person speaking. The guard is that those calls need an attachment, which only the seat's adapter can get.
+- **T048**: `OperatorsService.Acted` refuses the person in start, retire, reinstate, purge and instruct with one
+  sentence; `PersonNameIsReservedTests`. `record_ownership` refuses it in `OperatorConsole`.
+- **T049**: the binary probes are covered by the door and storage tests above; the recorded limit (a direct runtime
+  attach under the person's name writes no row) is unchanged by 0.38.3's triggers, which fire only on an insert or an
+  update of the adapter.
+- **T053**: 0.39.0, a minor, for the two presence values on the wire.
+
+
 ---
 
 ## Phase 8: Polish and cross-cutting
 
-- [ ] T051 [P] Rewrite README's "Taking part yourself" and the `parley web-ui` help line: no join, you are
+- [X] T051 [P] Rewrite README's "Taking part yourself" and the `parley web-ui` help line: no join, you are
   `human-user`, here and away, what agents are told, in `README.md`
-- [ ] T052 [P] Update CLAUDE.md's `Parley.Web` paragraphs on the seat (the typed name, `SeatBook` refusing names,
+- [X] T052 [P] Update CLAUDE.md's `Parley.Web` paragraphs on the seat (the typed name, `SeatBook` refusing names,
   `IdleAfter` releasing a seat), in `CLAUDE.md`
-- [ ] T052a [P] **Say that 0.36.0 needs a reset.** The installer and CLAUDE.md parts land with T013; what is left
+- [X] T052a [P] **Say that 0.36.0 needs a reset.** The installer and CLAUDE.md parts land with T013; what is left
   here is the README, and checking the installers' wording against the finished build. Schema 1 is edited in place and its number does not move, so a
   store created before this change keeps its old shape with no warning: no person-seat rules, a real `nodes` row
   named for the project, and the facilitator under its machine name. The owner's call (the second
   `/speckit-analyze`, issue 1): documented, not refused. Say it in both installers' output when upgrading across
   0.36.0, in README's upgrade notes and in CLAUDE.md, naming the installers' own `-Reset` / `--reset` (which run
   `reset.ps1` / `reset.sh`; both exist), in `install.ps1`, `install.sh`, `README.md`, `CLAUDE.md`
-- [ ] T053 Confirm `VersionPrefix` is 0.36.0 (bumped in T013) and that nothing after it needs a further patch
+- [X] T053 Confirm `VersionPrefix` is 0.36.0 (bumped in T013) and that nothing after it needs a further patch
   bump before the walk, in `Directory.Build.props`
-- [ ] T054 Sweep for every sentence that still tells a person to join or take a seat, or says a seat was
+- [X] T054 Sweep for every sentence that still tells a person to join or take a seat, or says a seat was
   released — `git grep -i` for `take a seat`, `join`, `released`, `seated nowhere`, `Join as` across `src`,
   `plugins`, `README.md` — and fix or justify each
 - [ ] T055 Run every test host executable directly (`tests/Parley.*.Tests/bin/*/net10.0/Parley.*.Tests.exe`),

@@ -121,20 +121,22 @@ public sealed class AgentStandingTests
         Assert.Equal(Standing.Retired, row.Standing);
     }
 
-    [Fact]
-    public void A_seat_is_marked_as_one_and_never_given_an_agent_state()
+    [Theory]
+    [InlineData(AgentPresence.Here, Standing.Here)]
+    [InlineData(AgentPresence.Away, Standing.Away)]
+    public void The_person_is_marked_as_a_seat_and_reads_here_or_away(AgentPresence presence, string reads)
     {
-        // It decides what may be done to the row: a seat is never offered for retiring or purging,
-        // whoever holds it.
+        // A seat is never offered for retiring or purging, and since 023 it says the one thing a peer asking the person
+        // needs (SPEC.md §14): whether anybody is at a screen. Never an agent's state.
         var rows = Standing.Join(
-            [Registered("someone@test", AgentPresence.Running, adapter: SeatAdapter)],
+            [Registered("human-user@test", presence, adapter: SeatAdapter)],
             new HashSet<string>(),
             SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
         Assert.True(row.Seat);
-        Assert.Equal(Standing.Seat, row.Standing);
+        Assert.Equal(reads, row.Standing);
     }
 
     [Fact]
@@ -144,7 +146,7 @@ public sealed class AgentStandingTests
         // than against the ones a particular fixture happens to reach.
         string[] phrases =
         [
-            Standing.Seat, Standing.Retired, Standing.Running, Standing.Idle,
+            Standing.Here, Standing.Away, Standing.Retired, Standing.Running, Standing.Idle,
             Standing.OnlyWhenOpened, Standing.NoMachine, Standing.NeverRun, Standing.NeverRunStuck,
         ];
 

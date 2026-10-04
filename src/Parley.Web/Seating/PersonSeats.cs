@@ -32,8 +32,14 @@ internal static class PersonSeats
     /// SPEC.md §4.0 has no heartbeat. Each project is tried independently; one broker that does not answer leaves that
     /// project without a seat and every other project with one.
     /// </remarks>
+    /// <param name="person">
+    /// Whether a person caused this render. False for a page reloading itself on a timer, which keeps the seat's stream
+    /// but is no evidence anybody is there: SPEC.md §14 has <c>here</c> mean in use, and a tab left open on a page that
+    /// reloads every thirty seconds would otherwise read <c>here</c> for ever (the audit before the gate resumed).
+    /// </param>
+    /// <returns>When every project has been tried.</returns>
     internal static async Task EnsureAsync(
-        SeatBook seats, BrokerDirectory directory, CancellationToken cancellationToken)
+        SeatBook seats, BrokerDirectory directory, CancellationToken cancellationToken, bool person = true)
     {
         ArgumentNullException.ThrowIfNull(seats);
         ArgumentNullException.ThrowIfNull(directory);
@@ -43,8 +49,14 @@ internal static class PersonSeats
             await EnsureAsync(seats, directory, project, cancellationToken).ConfigureAwait(false);
         }
 
-        seats.Touch(DateTimeOffset.UtcNow);
+        if (person)
+        {
+            seats.Touch(DateTimeOffset.UtcNow);
+        }
     }
+
+    /// <summary>The query parameter a page's own timed reload carries, so the render can tell it from a person.</summary>
+    internal const string Reloaded = "reloaded";
 
     /// <summary>The person's seat in one project, taking it first if nothing holds it now.</summary>
     /// <param name="seats">The book.</param>

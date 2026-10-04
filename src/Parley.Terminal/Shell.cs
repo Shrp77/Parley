@@ -2282,10 +2282,8 @@ internal sealed class Shell : Window
             // seat it is drafted as is the broker's and outlives a dropped stream (specs/023). Dropping it here was right
             // while a seat went with its stream; after that it left a person back from the idle window holding a seat and
             // no draft, and their first Enter refused (the owner's report of 0.36.0, `SendAfterIdleTests`).
-            if (value is null)
-            {
-                Mail = null;
-            }
+            // **Nor is the count.** It is the person's mail, which waits for them whether or not this surface holds a
+            // stream (023 T041); the next ask refreshes it either way.
 
             // The line says what it needs the moment the seat changes, rather than at the next read. A person
             // who has just lost a seat must not be looking at a preview of what Enter would have done.
@@ -3245,15 +3243,10 @@ internal sealed class Shell : Window
     {
         try
         {
+            // **Asked while away as well** (023 T041): an idle drop takes the stream, never the mail, and a person back
+            // at the screen needs to see what arrived while they were not.
             while (true)
             {
-                if (Held is null)
-                {
-                    Mail = null;
-
-                    return;
-                }
-
                 if (Interlocked.CompareExchange(ref _mailQueued, 1, 0) == 0)
                 {
                     Queue(MailOnceAsync);
@@ -3280,27 +3273,28 @@ internal sealed class Shell : Window
             // through the seat the book granted. A first version of this constructed its own and tripped the
             // guard -- the property held, since the seat was the held one, but a rule that has to be re-argued
             // at each call site is the rule that eventually is not.
-            if (Voice() is not { } voice)
+            if (Voice() is { } voice)
+            {
+                var read = await BrokerDirectory.ReadAsync(async () =>
+                    await voice.WaitingAsync(cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false);
+
+                Mail = read.Problem is null ? (read.Value.Messages, true) : (0, false);
+            }
+            else if (Seats is not null && Current is { } project)
+            {
+                // Away: no stream, and the seat is still the broker's, so its mail is counted without one — the count
+                // opens no attachment and so does not make the person present (`SeatBook.WaitingAsync`).
+                var (waiting, certain) = await Seats.WaitingAsync([project], cancellationToken).ConfigureAwait(false);
+
+                Mail = (waiting, certain);
+            }
+            else
             {
                 Mail = null;
 
                 return;
             }
-
-            var read = await BrokerDirectory.ReadAsync(async () =>
-                await voice.WaitingAsync(cancellationToken).ConfigureAwait(false))
-                .ConfigureAwait(false);
-
-            // Held again rather than assumed: the sweep can release a seat while this was in flight, and a
-            // count left on the status line under nobody's name is the console's own released-seat fault.
-            if (Held is null)
-            {
-                Mail = null;
-
-                return;
-            }
-
-            Mail = read.Problem is null ? (read.Value.Messages, true) : (0, false);
 
             Relay();
         }

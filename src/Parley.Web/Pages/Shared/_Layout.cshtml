@@ -15,7 +15,10 @@
     //
     // A page render is evidence the person is at the console, and that is the whole of what keeps them marked here:
     // SPEC.md §4.0 has no heartbeat. Doing it in the frame means every page counts, including ones nobody instrumented.
-    await PersonSeats.EnsureAsync(Seats, Directory, Context.RequestAborted);
+    // **Except a page reloading itself**, which carries `reloaded` and is a timer, not a person (SPEC.md §14).
+    await PersonSeats.EnsureAsync(
+        Seats, Directory, Context.RequestAborted,
+        person: !Context.Request.Query.ContainsKey(PersonSeats.Reloaded));
 
     var here = Seats.Seats();
 
@@ -1122,7 +1125,13 @@
        than overruling it. *@
     @if (ViewData["Refresh"] is string seconds)
     {
-        <meta http-equiv="refresh" content="@seconds" />
+        // The same page, marked as the timer's reload, so it does not count as somebody at the console.
+        var query = Microsoft.AspNetCore.Http.QueryString.Create(
+            Context.Request.Query
+                .Where(pair => pair.Key != PersonSeats.Reloaded)
+                .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)))
+                .Append(new KeyValuePair<string, string?>(PersonSeats.Reloaded, "1")));
+        <meta http-equiv="refresh" content="@($"{seconds};url={Context.Request.Path}{query}")" />
     }
 </head>
 <body>

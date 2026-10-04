@@ -55,7 +55,7 @@ public sealed class TurnReportingTests
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
 
@@ -79,7 +79,7 @@ public sealed class TurnReportingTests
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var elsewhere = await AttachedClient.AttachAsync(broker, "billing@m2", cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Started(Here, "billing@m2", T0), cancellationToken: Ct);
         await node.Nodes.ReportTurnAsync(Ended(Here, "billing@m2", T0, denials: 3), cancellationToken: Ct);
@@ -113,7 +113,7 @@ public sealed class TurnReportingTests
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
         await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(5)), cancellationToken: Ct);
@@ -128,7 +128,7 @@ public sealed class TurnReportingTests
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
 
-        var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
 
@@ -153,7 +153,7 @@ public sealed class TurnReportingTests
         // The broker restarted mid-turn: it holds no running turn, and the end must still land.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0, denials: 1), cancellationToken: Ct);
 
@@ -177,7 +177,7 @@ public sealed class TurnReportingTests
     public async Task A_report_for_an_agent_nobody_registered_stores_nothing_and_fails_nothing()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         await node.Nodes.ReportTurnAsync(Started(Here, "nobody@m1", T0), cancellationToken: Ct);
         await node.Nodes.ReportTurnAsync(Ended(Here, "nobody@m1", T0), cancellationToken: Ct);
@@ -199,7 +199,7 @@ public sealed class TurnReportingTests
         // agent of the attacker's own was enough.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
-        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, [], Ct, reportsTurns: true);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
         var report = Ended(Here, Agent, T0.AddDays(daysAhead), denials: 1);
         report.Ended.ElapsedMs = elapsedMs;
@@ -219,6 +219,31 @@ public sealed class TurnReportingTests
 
         Assert.Empty(row.LastTurnEndedUtc);
         Assert.Empty(row.TurnRunningSinceUtc);
+    }
+
+    [Fact]
+    public async Task Turns_are_reported_only_for_an_agent_the_node_can_start()
+    {
+        // Decided per agent, not per machine (SPEC.md §11.6): an agent nobody's node runs is unknown, never stopped. Before,
+        // any agent on a reporting node's machine read as reported — including one opened in an editor.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var editor = await AttachedClient.AttachAsync(broker, "docs@m1", cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        Assert.True((await RowAsync(broker, Agent)).TurnsReported);
+        Assert.False((await RowAsync(broker, "docs@m1")).TurnsReported);
+    }
+
+    [Fact]
+    public async Task Neither_the_person_nor_Parley_reads_as_reported_whatever_node_joins()
+    {
+        // Their names end in the project, so a node joined under the project's name matched them by machine.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(
+            broker, "test", ["human-user", "parley-facilitator"], Ct, reportsTurns: true);
+
+        Assert.False((await RowAsync(broker, Person)).TurnsReported);
     }
 
     [Fact]

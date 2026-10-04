@@ -60,8 +60,11 @@ public sealed record AgentStanding(
 /// </remarks>
 public static class Standing
 {
-    /// <summary>What a person's seat says instead of a state.</summary>
-    public const string Seat = "your seat";
+    /// <summary>The person, at a screen and in use (SPEC.md §14).</summary>
+    public const string Here = "here";
+
+    /// <summary>The person, at no screen just now — still there, still asked (SPEC.md §14).</summary>
+    public const string Away = "away";
 
     /// <summary>An operator has withdrawn it.</summary>
     public const string Retired = "retired";
@@ -169,7 +172,10 @@ public static class Standing
 
             rows.Add(new AgentStanding(
                 agent.Name.Value,
-                seat ? Seat : Phrase(retired, running, agent.Presence, startable, everRun: true),
+                // The person reads here or away and nothing else (023 T039): "your seat" said whose row it is and
+                // nothing about whether anybody was there, which is the one fact a peer asking them needs.
+                seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
+                    : Phrase(retired, running, agent.Presence, startable, everRun: true),
                 running,
                 EverRun: true,
                 startable,

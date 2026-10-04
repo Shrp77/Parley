@@ -70,10 +70,10 @@ public sealed class OwnershipRoutingTests
 
         var listed = (await orders.AgentsAsync(ct))["agents"]!.AsArray();
 
-        // Exactly the two entries there really are: billing, and the person the broker provides (specs/023). A forged
-        // key would show as a third entry, or as a name nothing registered.
+        // Exactly the one agent there really is: billing (the person is listed apart, SPEC.md §10.1). A forged key would
+        // show as a second entry, or as a name nothing registered.
         Assert.Equal(
-            ["billing@test", "human-user@test"],
+            ["billing@test"],
             listed.Select(a => (string?)a!["name"]).Order(StringComparer.Ordinal));
 
         var billing = listed.Single(a => (string?)a!["name"] == "billing@test")!;

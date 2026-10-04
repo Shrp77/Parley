@@ -34,7 +34,8 @@ public sealed class NodeReportsTurnsTests
 
         var broker = LoopbackOperator.Start(connection);
         var nodes = new Wire.Nodes.NodesClient(GrpcChannel.ForAddress(broker.Address));
-        var join = nodes.Join(new Wire.JoinRequest { Machine = Machine, ReportsTurns = true }, cancellationToken: Ct);
+        var join = nodes.Join(
+            new Wire.JoinRequest { Machine = Machine, ReportsTurns = true, StartableRoles = { "billing" } }, cancellationToken: Ct);
 
         Assert.True(await join.ResponseStream.MoveNext(Ct), "the node was not acknowledged");
 

@@ -182,23 +182,13 @@ internal sealed class Health : Dialog
     private static string Describe(Flag flag)
     {
         var since = LocalTime.Write(flag.SinceUtc);
+        // The sentence is the one every surface uses (`FlagWording`); the exchange is this dialog's, for finding it. A vote
+        // names its conversation in the sentence already.
         var where = flag.Kind == FlagKind.NotVoted
-            ? $" ({flag.ConversationId})"
+            ? string.Empty
             : string.Create(CultureInfo.InvariantCulture, $" ({flag.ConversationId}, exchange {flag.ExchangeId})");
 
-        return flag.Kind switch
-        {
-            FlagKind.NotVoted =>
-                $"Its work is all closed and {flag.Waiting.Value} is finished; closing it has waited on {flag.WaitingOn.Value} to say whether it is too since {since}.{where}",
-            FlagKind.NotCollected =>
-                $"{flag.WaitingOn.Value} has not collected what {flag.Waiting.Value} sent, since {since}.{where}",
-            FlagKind.NoProgress =>
-                $"{flag.WaitingOn.Value} collected {flag.Waiting.Value}'s request and has done nothing on it since {since}.{where}",
-            FlagKind.PermissionRefused =>
-                Parley.Client.Views.Activities.RefusedFlag(flag.WaitingOn, flag.Waiting, since) + where,
-            _ =>
-                $"{flag.WaitingOn.Value} is retired and still holds {flag.Waiting.Value}'s request, since {since}.{where}",
-        };
+        return FlagWording.Describe(flag, since) + where;
     }
 
     /// <summary>Shows a project's health.</summary>

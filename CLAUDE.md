@@ -213,30 +213,29 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     conversation instead of only instructing the agents in it. SPEC.md §17
                     question 2 carries the argument; `Seating` holds the code.
 
-                    A person joins by typing a name and leaves by pressing Leave. **An
-                    earlier draft of this file required the name to come from the command
-                    line and forbade a form. That was wrong, and the reasoning it rested on
-                    is worth keeping because it is nearly right.** §13 does rest on a sender
-                    being unable to forge the agent it claims to be — but §16 already
-                    concedes that anything able to reach a broker can claim to be any agent,
-                    and whoever can reach this console can already retire and purge every
-                    agent in the deployment through §10.2. A login form is a lock on a door
-                    standing in open ground, and pretending otherwise would have bought
-                    nothing but a worse console.
+                    **There is no join and no leave, and no name is typed** (specs/023). The
+                    broker provides `human-user@<project>` in every project, and both surfaces
+                    act as it as soon as they open. Earlier versions joined by typing a name and
+                    left by pressing Leave; an earlier draft of this file had gone further and
+                    required the name to come from the command line. The reasoning against a
+                    login form is still right: §16 concedes that anything able to reach a broker
+                    can claim to be any agent, and whoever can reach this console can already
+                    retire and purge every agent through §10.2.
 
                     What the seat genuinely adds is the ability to *speak as* somebody, which
                     no operator operation has ever granted, and a transcript recording words
                     an agent never said is a different kind of wrong from an operator visibly
-                    instructing it. **So that is the one thing guarded: `SeatBook` refuses a
-                    name the registry holds for anything whose adapter is not
-                    `parley-console`, and refuses outright when the registry could not be
-                    read** — a guard that skipped the check on an unreachable broker would
-                    pass hardest exactly when the deployment is least well known.
+                    instructing it. **So that is what is guarded, at every door**: the role
+                    `human-user` and the adapter `parley-console` are tied in both directions —
+                    `Attach` refuses either without the other with a sentence, enrolment refuses
+                    the role, and storage refuses the pair apart (0.38.3) — because the broker
+                    recognises a person by that adapter, and an agent claiming it could name any
+                    conversation as only a person may. No operator operation acts on the seat.
 
-                    The seat is an ordinary attachment, which is the part worth not losing.
-                    §4.0 makes an open connection the evidence an agent is reachable, so
-                    joining and leaving are the same events every other agent's arrival and
-                    departure are — not a session flag the console keeps to itself.
+                    The seat's connection is an ordinary attachment, which is the part worth not
+                    losing. §4.0 makes an open connection the evidence of presence, so a person
+                    reads `here` while a surface holds it and `away` once it is dropped — the same
+                    events as every agent's arrival and departure, never a flag the console keeps.
 
                     **A seat outlives the person's presence; the claim that they are present
                     does not** (constitution 5.0.0, for specs/023). This paragraph used to say
@@ -250,8 +249,8 @@ src/Parley.Web      The operator's console of SPEC.md §10.2, and a client of th
                     somebody at a desk, and that connection is now the evidence of *here*
                     rather than of the seat.
 
-                    Without a seat the console has no agent identity at all and the composer
-                    sends instructions, which is what it did before any of this.
+                    A project whose broker has no person seat — one older than 0.36.0 — gives the
+                    console no identity there, and it says so rather than acting as anybody.
 src/Parley.Server   The broker process of SPEC.md §4: the only thing that opens the
                     database. Joins Parley.Broker to Parley.Transport, and exists so
                     that Parley.Broker does not have to learn about either.
@@ -723,8 +722,18 @@ below in the form Spec Kit's checks read; this file remains the authority when t
 
   **`.specify/feature.json` points at 023 again** to resume its phases 5–8.
 
-- **Also being built**: `specs/023-always-a-seat/` — **0.36.0, phases 1–4 and User Story 6 built, phases 5–8 open; on
-  `019-layout`.** **Upgrading to 0.36.0
+- **Also being built**: `specs/023-always-a-seat/` — **0.39.0, built through phase 7; the walks (T056, T057) and the
+  combined review gate are owed; on `019-layout`.** Phases 5–7 were built in one push on 2026-10-03, after the owner
+  stopped the combined gate: *"You have already moved the spec and documentation ahead but the code is playing
+  catch-up … generate all the code so it's up-to-snuff with the spec."* The person reads `here` or `away` everywhere and
+  Parley `running` (`AgentLiveness.Read(name, …)`, two values on the wire); the terminal counts what is waiting while the
+  person is away; a person-owed flag reads *waiting on you* (`FlagWording`, one wording for every surface); every
+  operation acting on an agent refuses the person with one sentence (`OperatorsService.Acted`); `parley_agents` lists the
+  person apart from the agents. An audit of SPEC.md against the code then found two defects — a web page reloading
+  itself on a timer kept the person `here` for ever (the reload is marked now and does not count), and turns read as
+  reported for any agent on a reporting node's machine (now only one the node can start) — and four places the spec lagged
+  the owner's decisions, amended with a §18 entry. **T047's "refuse in `Caller`" was not done, on purpose**: every Agents
+  call names its caller there, the person's own included. **Upgrading to 0.36.0
   needs a reset** (`install.ps1 -Reset`, `install.sh --reset`): schema 1 was edited in place and its number did not
   move, so a store made by an older broker opens without complaint and keeps its old shape — no person-seat rules,
   and each project recorded as a machine. The owner's call was to say so rather than have the broker refuse such a

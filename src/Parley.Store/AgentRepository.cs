@@ -254,12 +254,17 @@ public sealed class AgentRepository(SqliteConnection connection)
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return rows.Select(r => new AgentSummary(
-            AgentName.Create(r.Name),
-            r.Adapter,
-            AgentRow.ParseTier(r.Tier),
-            AgentLiveness.Read(r.NodeConnected != 0, r.AgentConnected != 0),
-            r.Owns)).ToList();
+        return rows.Select(r =>
+        {
+            var name = AgentName.Create(r.Name);
+
+            return new AgentSummary(
+                name,
+                r.Adapter,
+                AgentRow.ParseTier(r.Tier),
+                AgentLiveness.Read(name, r.NodeConnected != 0, r.AgentConnected != 0),
+                r.Owns);
+        }).ToList();
     }
 
     /// <summary>
@@ -1488,8 +1493,10 @@ public sealed class AgentRepository(SqliteConnection connection)
             _ => throw new InvalidOperationException($"Unrecognised status '{value}'.")
         };
 
-        public AgentRecord ToDomain() => new(
-            AgentName.Create(Name),
+        public AgentRecord ToDomain() => Domain(AgentName.Create(Name));
+
+        private AgentRecord Domain(AgentName name) => new(
+            name,
             Adapter,
             ParseTier(Tier),
             Workspace,
@@ -1498,7 +1505,7 @@ public sealed class AgentRepository(SqliteConnection connection)
             Connected != 0,
             ParseStatus(Status),
             Owns,
-            AgentLiveness.Read(NodeConnected != 0, Connected != 0),
+            AgentLiveness.Read(name, NodeConnected != 0, Connected != 0),
             OwnsAccepted,
             OwnsSource is null ? null : ParseSource(OwnsSource));
 

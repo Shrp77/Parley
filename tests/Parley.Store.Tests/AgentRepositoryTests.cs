@@ -71,7 +71,7 @@ public sealed class AgentRepositoryTests : IDisposable
             Enum.GetNames<AgentStatus>().Order(StringComparer.Ordinal));
 
         Assert.Equal(
-            ["Running", "Startable", "Stranded"],
+            ["Away", "Here", "Running", "Startable", "Stranded"],
             Enum.GetNames<AgentPresence>().Order(StringComparer.Ordinal));
     }
 

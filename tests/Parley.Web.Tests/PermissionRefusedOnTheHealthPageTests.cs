@@ -32,4 +32,21 @@ public sealed class PermissionRefusedOnTheHealthPageTests
         Assert.Contains("Allow it in that repository's settings", said, StringComparison.Ordinal);
         Assert.DoesNotContain("retired", said, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void A_flag_the_person_owes_reads_as_waiting_on_them()
+    {
+        // specs/023 US5: the person's own to-do, naming who asked, with no remedy for an agent.
+        var flag = new Flag(
+            FlagKind.NoProgress,
+            7,
+            "room",
+            PersonSeat.On(ProjectName.Create("alpha")),
+            AgentName.Create("orders@here"),
+            new DateTimeOffset(2026, 10, 3, 9, 5, 0, TimeSpan.Zero));
+
+        var said = HealthModel.Describe(flag);
+
+        Assert.StartsWith("Waiting on you: orders@here asked", said, StringComparison.Ordinal);
+    }
 }

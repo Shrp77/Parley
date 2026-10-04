@@ -856,11 +856,25 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public DateTimeOffset? TurnRunningSince(AgentName agent) =>
         _turns.TryGetValue(agent, out var running) ? running.Started : null;
 
-    /// <summary>Whether the node on an agent's machine reports its turns (SPEC.md §11.6).</summary>
+    /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
     /// <param name="agent">The agent.</param>
-    /// <returns>True only while a node that said so is joined for that machine.</returns>
+    /// <returns>
+    /// True only while a node that said so is joined for the agent's machine and can start it — never for the person or
+    /// Parley, whom no node gives a turn.
+    /// </returns>
+    /// <remarks>
+    /// <b>Per agent, not per machine</b> (the audit before the gate resumed). Decided by machine alone, an agent nobody's
+    /// node runs — one opened in an editor on a machine whose node reports turns — read as reported, and could be shown
+    /// stopped on a turn some earlier run left behind; and a node joined under a project's name made the person and Parley
+    /// read as reported. <b>The limit is recorded rather than hidden</b>: an agent the node could start but somebody
+    /// opened in an editor instead still reads as reported, because the broker sees two attachments of one name alike.
+    /// </remarks>
     public bool TurnsReported(AgentName agent) =>
-        _nodes.TryGetValue(agent.Machine, out var node) && node.ReportsTurns;
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _nodes.TryGetValue(agent.Machine, out var node)
+        && node.ReportsTurns
+        && node.Startable.Contains(agent.Role);
 
     /// <summary>Checks a turn report and counts the agent's waiting work, or says no.</summary>
     /// <param name="machine">The reporting machine.</param>

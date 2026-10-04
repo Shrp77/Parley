@@ -66,6 +66,30 @@ public static class AgentLiveness
         : AgentPresence.Stranded;
 
     /// <summary>
+    /// Reports a participant's presence, telling the person seat and the facilitator apart from agents.
+    /// </summary>
+    /// <param name="name">Who.</param>
+    /// <param name="nodeConnected">Whether the node on its machine is connected; meaningless for the two hosted nowhere.</param>
+    /// <param name="agentConnected">Whether its own connection is open.</param>
+    /// <returns>What to report.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The person reads <see cref="AgentPresence.Here"/> or <see cref="AgentPresence.Away"/>, never anything else</b>
+    /// (SPEC.md §14). With no machine, the agents' reading gave the person <see cref="AgentPresence.Stranded"/> — telling a
+    /// peer the person could not be reached, which 023 made untrue: the seat is always there and always asked.
+    /// </para>
+    /// <para>
+    /// <b>The facilitator reads <see cref="AgentPresence.Running"/></b>, since it is present whenever its project is served
+    /// and has no machine to be connected or not. Keyed on the name rather than the adapter: both roles are reserved and
+    /// storage ties each to its adapter, so the name says the same thing and every caller has it.
+    /// </para>
+    /// </remarks>
+    public static AgentPresence Read(AgentName name, bool nodeConnected, bool agentConnected) =>
+        PersonSeat.Is(name) ? (agentConnected ? AgentPresence.Here : AgentPresence.Away)
+        : Facilitation.Is(name) ? AgentPresence.Running
+        : Read(nodeConnected, agentConnected);
+
+    /// <summary>
     /// Whether traffic may be routed to an agent in this state.
     /// </summary>
     /// <param name="status">What an operator has decided about the registration.</param>

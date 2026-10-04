@@ -105,6 +105,16 @@ public enum AgentPresence
     Startable = 1,
 
     /// <summary>The agent's adapter is connected and can be routed to now.</summary>
-    Running = 2
+    Running = 2,
+
+    /// <summary>The person seat only: a surface is open and in use (SPEC.md §14).</summary>
+    /// <remarks>
+    /// A person has no machine and is never started, so <see cref="Startable"/> would tell a peer an absent person can be
+    /// woken and <see cref="Stranded"/> that one cannot be reached. Neither this nor <see cref="Away"/> gates routing.
+    /// </remarks>
+    Here = 3,
+
+    /// <summary>The person seat only: nobody is at a screen; the seat is still there and still asked (SPEC.md §14).</summary>
+    Away = 4
 }
 

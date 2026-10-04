@@ -1042,6 +1042,10 @@ enum AgentPresence {
   AGENT_PRESENCE_STRANDED = 1;
   AGENT_PRESENCE_STARTABLE = 2;
   AGENT_PRESENCE_RUNNING = 3;
+  // The person seat only (section 14): a surface is open and in use, or nobody is at a screen. A person has no
+  // machine and is never started, so stranded and startable would each say something false about them.
+  AGENT_PRESENCE_HERE = 4;
+  AGENT_PRESENCE_AWAY = 5;
 }
 
 // Why a Request was refused. A value rather than a sentence: composing the sentence is the adapter's

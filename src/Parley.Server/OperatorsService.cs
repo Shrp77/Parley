@@ -186,7 +186,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Subject(request.Agent);
+        var agent = Acted(request.Agent);
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
             .ConfigureAwait(false);
@@ -208,7 +208,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Subject(request.Agent);
+        var agent = Acted(request.Agent);
         var changed = await Console((console, _, ct) => console.RetireAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -351,7 +351,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Subject(request.Agent);
+        var agent = Acted(request.Agent);
         var changed = await Console((console, _, ct) => console.ReinstateAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -363,7 +363,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Subject(request.Agent);
+        var agent = Acted(request.Agent);
 
         // Every conversation it took part in goes, and placing a file made it a participant, so its files go too
         // (SPEC.md §14). The folders are read before the purge, because afterwards nothing names them.
@@ -608,10 +608,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
         }
 
-        if (Parley.Core.Facilitation.Is(agent))
-        {
-            throw NotAnAgent();
-        }
+        _ = Acted(request.Agent);
 
         if (request.Text.Length > MessageLimits.MaxPayloadCharacters)
         {
@@ -901,6 +898,26 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var agent = Name(value);
 
         return Parley.Core.Facilitation.Is(agent) ? throw NotAnAgent() : agent;
+    }
+
+    /// <summary>An agent an operation acts on, refusing Parley and the person with a sentence each.</summary>
+    /// <param name="value">The name on the wire.</param>
+    /// <returns>The agent.</returns>
+    /// <remarks>
+    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2, specs/023 T048). Before, `retire` and `purge`
+    /// failed at a storage trigger with a raw constraint, `start` asked a node to start somebody no node can, `instruct`
+    /// came back undeliverable and `reinstate` changed nothing — five different answers to one fact.
+    /// </remarks>
+    private static AgentName Acted(string value)
+    {
+        var agent = Subject(value);
+
+        return PersonSeat.Is(agent)
+            ? throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is the person's seat. A person is asked, never instructed, started, retired or purged — " +
+                "there is nothing to do to it."))
+            : agent;
     }
 
     /// <summary>What an operator operation on an agent says when it is given the facilitator.</summary>

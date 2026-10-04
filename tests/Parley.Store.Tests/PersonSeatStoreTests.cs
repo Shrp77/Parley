@@ -169,4 +169,16 @@ public sealed class PersonSeatStoreTests : IDisposable
 
         Assert.Contains("person seat alone", refused.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task The_persons_adapter_cannot_be_changed_afterwards()
+    {
+        // specs/023 T046's third probe: the row exists before any attach, so an update is the way a claimant would try.
+        await SeatedAsync();
+
+        var refused = Assert.Throws<SqliteException>(() =>
+            Execute("UPDATE agents SET adapter = 'claude-code' WHERE role = 'human-user';"));
+
+        Assert.Contains("person seat alone", refused.Message, StringComparison.Ordinal);
+    }
 }

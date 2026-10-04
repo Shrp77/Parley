@@ -525,6 +525,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         "owns" is one line written by whoever configured that agent. An agent that is not running is
         started when a request arrives for it. One whose machine is off gets your request when it comes
         back, and the person running the deployment is shown that it is waiting.
+
+        The person is listed apart, under "person", as here or away. Ask them when no agent can help.
+        Away means nobody is at a screen just now, not that they cannot be asked: your request waits for
+        them either way.
         """)]
     public async Task<JsonNode> AgentsAsync(CancellationToken cancellationToken = default)
     {
@@ -535,9 +539,24 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 cancellationToken: cancellationToken);
 
             var listed = new JsonArray();
+            JsonObject? person = null;
 
             foreach (var agent in agents.Agents.Where(a => !string.Equals(a.Name, _options.Agent.Value, StringComparison.Ordinal)))
             {
+                // **The person, as the person rather than as an agent** (SPEC.md §10.1): no adapter, no tier and nothing
+                // owned, which describe a repository; only who they are and whether they are at a screen. Apart from the
+                // agents, so a model reading for who owns the work does not count a person among them.
+                if (AgentName.TryCreate(agent.Name, out var named) && PersonSeat.Is(named))
+                {
+                    person = new JsonObject
+                    {
+                        ["name"] = agent.Name,
+                        ["presence"] = agent.Presence.ToString().ToLowerInvariant()
+                    };
+
+                    continue;
+                }
+
                 var entry = new JsonObject
                 {
                     ["name"] = agent.Name,
@@ -556,7 +575,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 listed.Add(entry);
             }
 
-            return new JsonObject { ["agents"] = listed };
+            var result = new JsonObject { ["agents"] = listed };
+
+            if (person is not null)
+            {
+                result["person"] = person;
+            }
+
+            return result;
         }
         catch (RpcException failure)
         {

@@ -78,6 +78,8 @@ internal static class Conversions
         AgentPresence.Stranded => Wire.AgentPresence.Stranded,
         AgentPresence.Startable => Wire.AgentPresence.Startable,
         AgentPresence.Running => Wire.AgentPresence.Running,
+        AgentPresence.Here => Wire.AgentPresence.Here,
+        AgentPresence.Away => Wire.AgentPresence.Away,
         _ => throw new ArgumentOutOfRangeException(nameof(presence), presence, "Not a defined presence.")
     };
 

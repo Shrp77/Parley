@@ -49,14 +49,19 @@ public sealed class TwoServersTests
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        var listed = (await orders.AgentsAsync(ct))["agents"]!.AsArray();
+        var roster = await orders.AgentsAsync(ct);
+        var listed = roster["agents"]!.AsArray();
 
         // Billing, and not orders itself: an agent cannot send itself a request, and listing it
-        // invites the attempt. And the person, whom the broker provides in every project (specs/023)
-        // so an agent always has somebody to ask when no agent can help.
+        // invites the attempt.
         Assert.Equal(
-            ["billing@test", "human-user@test"],
+            ["billing@test"],
             listed.Select(a => a!["name"]!.GetValue<string>()).Order(StringComparer.Ordinal));
+
+        // And the person, whom the broker provides in every project (specs/023) so an agent always has somebody to ask
+        // when no agent can help — listed apart, as the person rather than as an agent (SPEC.md §10.1).
+        Assert.Equal("human-user@test", roster["person"]!["name"]!.GetValue<string>());
+        Assert.Null(roster["person"]!["adapter"]);
     }
 
     [Fact]

@@ -81,6 +81,14 @@ else
        somebody is most often here for. Both were built at 0.33.0 and linked from nowhere until
        0.34.1, which is what 020's quickstart walk found: the operation existed, the page model
        performed it, and no door led to it. *@
+    @if (Parley.Core.PersonSeat.Is(agent.Name))
+    {
+        @* The person's seat (specs/023): a person is asked, never started, instructed, retired or purged, and owns no
+           repository — so every action below would only be refused. Said once instead. *@
+        <p>This is you. Agents ask you things here; there is nothing to do to it.</p>
+    }
+    else
+    {
     <nav aria-label="Actions">
         <a href="/Projects/Act?project=@Model.Project&amp;action=askownership&amp;subject=@agent.Name.Value">Ask what it owns</a>
         <a href="/Projects/Act?project=@Model.Project&amp;action=ownership&amp;subject=@agent.Name.Value">Record what it owns</a>
@@ -96,6 +104,7 @@ else
         }
         <a href="/Projects/Act?project=@Model.Project&amp;action=purge&amp;subject=@agent.Name.Value">Purge</a>
     </nav>
+    }
 
     <p>
         <a href="/Projects/Agents?project=@Model.Project&amp;participant=@agent.Name.Value">Conversations this agent is party to</a>

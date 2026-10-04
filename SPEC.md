@@ -273,7 +273,8 @@ transport endpoint:
 
 **Where that layout lives is a property of the machine, not of the protocol.** It is one
 root per user, at the platform's conventional configuration location, holding one folder
-per project. Nothing in it is ever read by a broker, sent over the transport, or stored:
+per project. A different root may be named, for a test rig or a second account, and is then
+the whole of what is read; nothing names a store or a port outside a project's folder. Nothing in it is ever read by a broker, sent over the transport, or stored:
 it exists so that a person, and the tools a person runs, can say *which deployment* they
 mean without repeating paths and without inferring any of them from a working directory.
 
@@ -2615,10 +2616,12 @@ Available to the person running the deployment, never to an agent. An adapter th
 these into an agent's tool set would breach §10.1 and, through it, §16 — an agent able to call
 `export` could read every other agent's traffic.
 
-**The person running the deployment can do all of it, from any operator surface** (principle 2.9).
-The command line, the terminal and the web UI are three ways in to one set of operations, and each
-MUST offer every operation in this table. A surface missing one is incomplete; it is not a narrower
-surface by design.
+**The person running the deployment can do all of it, from either operator surface** (principle 2.9).
+The terminal and the web UI are two ways in to one set of operations, and each MUST offer every
+operation in this table. A surface missing one is incomplete; it is not a narrower surface by design.
+The command line is not one of them: it keeps only what a script or an installer reads — the registry,
+the open conversations, what is waiting, and the file location — and refuses the rest by naming the
+terminal, because every other operation takes something a person decides by looking at it first.
 
 **This table is a versioned contract, and the version is broker V1.** A broker either implements
 all of it or is not a V1 broker, and a client adapts to the broker rather than the other way round:
@@ -2771,7 +2774,8 @@ on its own.
 `describe_file_location` says where a file is so a person can open it: a surface running on the broker's
 machine opens a file with the application registered to edit it, or a folder in the file browser, and a
 surface anywhere else names the machine and the path and launches nothing, because the file is not
-there to open. Every operator surface offers all four, like every other operation in this table.
+there to open. Both operator surfaces offer all four, like every other operation in this table; the command line
+lists, removes, prunes and opens them as well, because scripts need them.
 
 ## 11. Adapters
 
@@ -4407,7 +4411,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     neither of which is somewhere to hold a conversation.
 
     `parley top` -- `parley terminal` since 0.27.0 -- is a terminal a person takes part from: it lists the projects a machine knows,
-    shows who is in each and what has been said, seats the person under their own name, and lets
+    shows who is in each and what has been said, seats the person as the project's person seat, and lets
     them read what is waiting and answer it. The web console already did this in a browser; what
     is new is that it no longer needs one, which matters because the machine running a broker is
     frequently not the machine somebody has a browser open on.
@@ -4616,6 +4620,20 @@ node and operator surfaces will observe:
 - **A new flag** (§6, §10.2 `flags()`): an exchange whose owing agent's last turn ended with a refused
   permission and who has said nothing since, raised at once.
 - **`invocations` is written for every turn a node gives**, which §17 question 1 had claimed all along.
+
+#### Amended, 2026-10-03: the person reads here or away, and the text catches up with the code
+
+**Still 0.7**: nothing has been released, so nothing is kept compatible and no number is spent.
+- `agents()` and `registry()` report the person seat as `here` or `away` (§14), two values added to the presence
+  enumeration; the facilitator reads `running`.
+- `agents()` lists the person apart from the agents (§10.1).
+- A flag owed by the person reads *waiting on you* on every surface (§6).
+- Every operation that acts on an agent refuses the person seat with one sentence (§10.2).
+- A participant's turns are reported only when a node that reports turns can start it (§11.6), never the person's or
+  Parley's.
+- §10.2 named the command line as a third operator surface that MUST offer every operation. 019 moved every operation
+  a person decides off the command line, on the owner's call, and the section now says so; §4.1 now says a different
+  root may be named; §17 q15 no longer describes a typed name.
 
 ### 0.6 — files cross between repositories
 

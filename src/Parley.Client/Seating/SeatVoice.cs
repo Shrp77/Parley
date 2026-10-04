@@ -371,9 +371,13 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>What is said when a project holds nobody to send to.</summary>
     internal const string NobodyToAsk = "There is nobody in this project to send this to, so nothing was sent.";
 
-    /// <summary>What is said when the seat went part way through a Request to several.</summary>
-    /// <remarks>It names what did go rather than only what did not, so a person knows what to send again.</remarks>
-    internal const string Left = "Your seat was released part way through, so the rest were not sent.";
+    /// <summary>What is said when the connection went part way through a Request to several.</summary>
+    /// <remarks>
+    /// It names what did go rather than only what did not, so a person knows what to send again. Not "your seat was
+    /// released" (specs/023): the seat is the broker's and never released; only this surface's connection went.
+    /// </remarks>
+    internal const string Left =
+        "The connection to the broker went part way through, so the rest were not sent. Send them again.";
 
     /// <summary>What is wrong with a Request before any of it goes on the wire.</summary>
     /// <param name="ask">What is wanted.</param>

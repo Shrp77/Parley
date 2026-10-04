@@ -57,19 +57,8 @@ public sealed class HealthModel(BrokerDirectory directory) : PageModel
 
         var since = flag.SinceUtc.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
-        return flag.Kind switch
-        {
-            FlagKind.NotCollected =>
-                $"{flag.WaitingOn.Value} has not collected what {flag.Waiting.Value} sent, since {since}.",
-            FlagKind.NoProgress =>
-                $"{flag.WaitingOn.Value} collected {flag.Waiting.Value}'s request and has done nothing on it since {since}.",
-            FlagKind.NotVoted =>
-                $"The work in {flag.ConversationId} is all closed and {flag.Waiting.Value} is finished; closing it has waited on {flag.WaitingOn.Value} to say whether it is too since {since}.",
-            FlagKind.PermissionRefused =>
-                Parley.Client.Views.Activities.RefusedFlag(flag.WaitingOn, flag.Waiting, since),
-            _ =>
-                $"{flag.WaitingOn.Value} is retired and still holds {flag.Waiting.Value}'s request, since {since}.",
-        };
+        // The one sentence every surface uses, so the terminal and this page cannot word a flag differently.
+        return Parley.Client.Rendering.FlagWording.Describe(flag, since);
     }
 
     /// <summary>Reads every health report for one project.</summary>
