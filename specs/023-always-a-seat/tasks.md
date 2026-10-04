@@ -435,7 +435,10 @@ the broker's own row can be stored as it or under the seat's adapter. What this 
   scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md`
   — walked 2026-10-04 at 0.40.0 (`walk.ps1`, with the real 21-minute idle wait): 56 checks, 56 passed; terminal-only
   halves of 4.1, 5.1, 5.2 and 6 recorded as not drivable, step 7 not attempted (T057)
-- [ ] T057 Walk quickstart step 7 with this repository's own agent and record what it actually did (SC-006)
+- [X] T057 Walk quickstart step 7 with this repository's own agent and record what it actually did (SC-006)
+  — walked 2026-10-04 on 0.40.0: asked for a version without one given, the agent asked `human-user` which number
+  and waited; it neither chose one nor reported `blocked`. A first attempt that said "pick" handed it the decision
+  and tested nothing
 - [ ] T058 Hygiene: case-insensitive `git grep` for the originating project's names, **including untracked new
   files** (`git grep` misses them), before committing
 - [ ] T059 Update CLAUDE.md's plan pointer for 023 with what building it found
