@@ -4214,6 +4214,26 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     automatically is routed by exactly as much, and refused on exactly as little, as one a person
     wrote.
 
+    **Evidence, 2026-10-04: this repository's own agent, asked by the built feature (0.40.0).** It was
+    enrolled into a live deployment; the facilitator asked it within seconds of its registering, with
+    nobody asking, and Auto Accept took its answer as its line (`automatic`, 713 characters). The answer,
+    verbatim except one phrase replaced to keep another project's name out of this document:
+
+    > I own the Parley repository: SPEC.md (the protocol, the primary artifact), the .NET reference
+    > implementation (core domain, SQLite store, broker, gRPC transport, MCP adapter, node/fleet, CLI,
+    > terminal and web UI), the Claude Code plugin, installers and the Spec Kit design record. I do not
+    > own any other repository's code, its agent configuration or its launch settings, so ask the owning
+    > agent for those. I do not own what an agent does with Parley once it is attached, and I do not
+    > decide who works on what: no agent has authority over another. Ask me about how Parley behaves (I
+    > answer from SPEC.md) or to change Parley itself, not about *[another project's]* application logic
+    > or anything else outside this repository.
+
+    What it shows, for the bound this question keeps open: a model asked plainly writes a line about
+    seven times the old hundred-character cap, and every sentence of it is routing information — what to
+    send here, what to send elsewhere, and the one standing instruction (answer from SPEC.md) a peer
+    needs. Nothing in it is padding a cap would have removed without losing a routing fact. One agent's
+    answer is not a measurement of all of them; it is the first.
+
 11. Should a Clarify say what turns on it? A Request used to be made to say what done looks like — a
     `done_when`, removed at 0.7 (§18) — on the ground that a receiver who knows what the work is for
     does better work. A Clarify is the receiver asking the requester for something it needs, and the
