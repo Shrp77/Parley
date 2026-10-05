@@ -156,11 +156,26 @@ attach as every older one is.
 `settles` and would not understand an outcome of `settled`, and a person's line now arrives as a Request where a 0.7
 surface sent a Result. The owner: no compatibility before release.
 
+## R12. Showing what a reply settled, without a new column
+
+**Decision**: A surface finds what an agent's reply settled by matching: exchanges with `settled_by` equal to the reply's
+exchange **and** `closed_utc` equal to the reply's `created_utc`. `Broker.SayAsync` applies the settle and appends the
+message in one transaction with one `nowUtc`, so the two instants are the same value by construction. Each surface shows
+under the reply: *Settled: "<start of question>", "<start of question>"* (FR-021).
+
+**Rationale**: The owner asked that the person see what the agent decided (2026-10-05). The broker cannot check the
+agent's words, so the surface shows the record. A column pointing at the settling *message* was considered and rejected:
+retention deletes message rows (`Pruner`, §9.4), so a foreign key to one would either block pruning or dangle. The
+exchange and the instant survive pruning, and once the reply's text is pruned there is nothing to show the line beside.
+
+**Alternatives considered**: Requiring the person to confirm each settle. Offered and declined in favour of this.
+
 ## R11. What the agent is told to do with it
 
 **Decision**: `ParleyInstructions` and the descriptions of `parley_result` and `parley_clarify` gain a short paragraph:
 a request from the person may answer questions you asked them earlier; the inbox lists those; name in `settles` only
-the ones the person's words answered or made moot, and say which in your reply; leave the rest open.
+the ones the person's words answered or made moot, and say which in your reply; leave the rest open. **A line asking
+for more about a question does not settle it** (FR-022): answer what was asked and leave the question open.
 
 **Rationale**: A model reads the tool description on every call (`ParleyTools` remarks). SC-007 is measured on a real
 agent because only a real model shows whether these words are enough.

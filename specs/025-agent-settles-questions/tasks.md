@@ -137,11 +137,16 @@ closes `settled` citing the person's exchange, one stays open.
   exchange ids) and report `settled` / `turned_back`, and each refusal as a sentence per contracts/surfaces.md;
   `parley_inbox` emits `your_open_questions_to_them`, `more_open_questions` and the `settling` line beside a person's
   request
-- [ ] T027 [US2] `src/Parley.Mcp/ParleyInstructions.cs` and the two tool descriptions: the paragraph of research R11
+- [ ] T027 [US2] `src/Parley.Mcp/ParleyInstructions.cs` and the two tool descriptions: the paragraph of research R11,
+  including that the reply must say which questions it settled and that asking for clarification settles nothing
+  (FR-021, FR-022)
 - [ ] T028 [P] [US2] `tests/Parley.Mcp.Tests/SettlesToolTests.cs`: the built server over stdio: inbox shows the list;
   a Result with `settles` settles; a bad id comes back as a sentence naming it
 - [ ] T029 [US2] `src/Parley.Client/Rendering/Reading.cs`: a settled exchange reads `settled by <agent> in exchange <n>`
-  on both surfaces and in the export (FR-017); `tests/Parley.Client.Tests/SettledReadsAsSettledTests.cs`
+  on both surfaces and in the export (FR-017); and under the agent's reply that settled questions, a line *Settled:
+  "<start>", …* found by research R12's match (FR-021), drawn by both surfaces since both lay out through `Reading`;
+  `tests/Parley.Client.Tests/SettledReadsAsSettledTests.cs` covers both, including a reply whose own words say nothing
+  about settling
 
 **Checkpoint**: Broker, Server, Mcp and Client suites green; US1+US2 together are the shippable fix.
 

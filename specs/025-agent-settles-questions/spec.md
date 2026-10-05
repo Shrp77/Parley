@@ -71,6 +71,10 @@ stop reading *waiting on you*.
 **Why this priority**: Without it, User Story 1 leaves every question an agent asks the person open for ever. The two
 ship together.
 
+**Owner's addition (2026-10-05)**: nothing can know whether the person answered a question or asked for more about it,
+so the agent decides — and the person must be able to see what it decided, beside its reply, without trusting the
+agent's words to say so.
+
 **Independent Test**: An agent with two requests open to the person receives a request from the person. It replies naming
 one of the two as settled. Check that the named one is closed, that the record says the agent settled it and names the
 person's request, that the other is still open, and that the person's *waiting on you* count dropped by one.
@@ -220,6 +224,13 @@ every row would mark the person with ◇.
   its place in the transcript.
 - **FR-017**: A question settled by the agent MUST read on every surface as settled by that agent, not as answered by the
   person, wherever a closed exchange's outcome is shown.
+- **FR-021**: Every surface MUST show, with the agent's reply that settled questions, which questions it settled (the
+  start of each), taken from the broker's record and not from the agent's words, so the person sees what was settled in
+  the same place they read the reply — even if the agent did not say so. The agent's instructions MUST also tell it to
+  say in its reply which questions it settled and why.
+- **FR-022**: Asking for more about a question is not answering it. The agent's instructions MUST say that a line from
+  the person asking for clarification of a question leaves that question open: the agent answers what was asked and
+  does not settle it.
 - **FR-018**: Health and flag reports (SPEC.md §6) MUST stop counting a settled question as owed by the person.
 
 **Housekeeping**
@@ -253,6 +264,8 @@ every row would mark the person with ◇.
 - **SC-005**: The terminal and the web UI show the same agents and counts for *waiting on you* in every conversation.
 - **SC-006**: Re-running the 2026-10-05 conversation shape — five questions waiting, a reply to the newest — leaves all five
   open after the person's line, and the agent replies.
+- **SC-008**: In 100% of cases where an agent settled questions, the person sees which ones beside that agent's reply on
+  both surfaces, whatever the reply's own words say.
 - **SC-007**: A real agent (this repository's own, or another live one) receiving a person's line that answers one of its
   earlier questions names that question as settled in its reply. Recorded in the ledger whichever way it goes, because a
   scripted agent cannot show it.

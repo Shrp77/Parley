@@ -44,6 +44,12 @@ Oldest first, cut to the width with `…`. Choosing one closes the list and move
 two rows above it. A question settled since the list opened says *"That question has been settled since."* and does not
 move the transcript.
 
+**Under an agent's reply that settled questions** (FR-021), from the record:
+
+```text
+  Settled: "Which invoice schema should the export target?", "Should a refund reopen…"
+```
+
 **A settled question in the transcript**: its exchange's state reads `settled by <agent> in exchange <n>` where the
 other states read `answered`, `blocked` and so on.
 
