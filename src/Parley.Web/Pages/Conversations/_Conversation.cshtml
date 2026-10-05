@@ -38,6 +38,39 @@ else
                     : "not in the registry")))],
         null))" />
 
+    @if (Model.WaitingOnYou.Count > 0)
+    {
+        @* What is waiting on the person, each agent once with how many of its questions, and each question a link to
+           where it was asked -- the terminal's room list, from the same derivation (specs/025). The words are the
+           agent's and are escaped like every other agent-written text. *@
+        <section class="waiting-on-you" aria-label="Waiting on you">
+            <h2>Waiting on you</h2>
+            <ul>
+                @foreach (var on in Model.WaitingOnYou)
+                {
+                    <li>
+                        <strong>@on.Peer.Value</strong> (@on.Questions.Count)
+                        <ol>
+                            @foreach (var question in on.Questions)
+                            {
+                                <li>
+                                    @if (question.At is { } at)
+                                    {
+                                        <a href="@($"#m{at}")">@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
+                                    }
+                                    else
+                                    {
+                                        @Parley.Web.Pages.Conversations.DetailModel.Start(question)
+                                    }
+                                </li>
+                            }
+                        </ol>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
     <ol class="transcript">
         @{ var day = default(DateOnly?); }
         @foreach (var message in Model.Messages)
@@ -137,6 +170,12 @@ else
                         }
                         <span> · written by @message.ResponderModel</span>
                     </p>
+                    @if (Model.SettledBy(message) is { Length: > 0 } settled)
+                    {
+                        @* What this reply settled, from the record, so the person sees what the agent decided
+                           whatever its words say (SPEC.md 5.6). Escaped like every other agent-written text. *@
+                        <p class="settled">@settled</p>
+                    }
                 </div>
             </li>
 

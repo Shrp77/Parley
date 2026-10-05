@@ -481,7 +481,8 @@ CREATE TABLE "exchanges" (
   delivered_utc       TEXT,
   closed_utc          TEXT,
   request_hash        TEXT    NOT NULL,
-  outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed')),
+  outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed', 'settled')),
+  settled_by          INTEGER REFERENCES exchanges(id),
   conversation_id     TEXT    NOT NULL REFERENCES conversations(id),
   version             INTEGER NOT NULL DEFAULT 0,
 
@@ -492,6 +493,8 @@ CREATE TABLE "exchanges" (
   CHECK (uncollected_flag_ms > 0 AND stalled_flag_ms > 0),
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   CHECK ((state = 'CLOSED') = (outcome IS NOT NULL)),
+  CHECK ((outcome IS 'settled') = (settled_by IS NOT NULL)),
+  CHECK (settled_by IS NULL OR settled_by <> id),
   CHECK (pair_key = min(requester, receiver) || char(31) || max(requester, receiver))
 ) STRICT;
 
@@ -603,7 +606,7 @@ CREATE TRIGGER tr_an_outcome_has_its_result BEFORE UPDATE OF outcome ON exchange
 WHEN NEW.outcome IS NOT NULL AND OLD.outcome IS NULL
 BEGIN
   SELECT RAISE(ABORT, 'an exchange closes on a result from its receiver')
-   WHERE NEW.outcome <> 'closed'
+   WHERE NEW.outcome NOT IN ('closed', 'settled')
      AND NOT EXISTS (SELECT 1 FROM messages
                       WHERE exchange_id = NEW.id AND type = 'result'
                         AND from_agent = NEW.receiver
@@ -614,6 +617,23 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM messages
                       WHERE exchange_id = NEW.id AND type = 'result'
                         AND responder_model = 'parley:broker');
+
+  -- SPEC.md §5.6: settled only by the agent that asked, only a question to the person, and only beside a reply it
+  -- wrote at that instant on a Request the person opened with it in the same conversation. The instant is what lets a
+  -- surface show, beside that reply, what it settled.
+  SELECT RAISE(ABORT, 'a question is settled only by its requester''s reply to the person')
+   WHERE NEW.outcome = 'settled'
+     AND NOT EXISTS (SELECT 1 FROM exchanges AS s
+                       JOIN agents AS p ON p.name = NEW.receiver
+                       JOIN messages AS m ON m.exchange_id = s.id
+                      WHERE s.id = NEW.settled_by
+                        AND s.conversation_id = NEW.conversation_id
+                        AND s.requester = NEW.receiver
+                        AND s.receiver = NEW.requester
+                        AND p.adapter = 'parley-console'
+                        AND m.from_agent = NEW.requester
+                        AND m.type IN ('clarify', 'result')
+                        AND m.created_utc = NEW.closed_utc);
 END;
 
 CREATE TRIGGER tr_closed_conversation_stays_closed BEFORE INSERT ON exchanges

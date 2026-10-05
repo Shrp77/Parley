@@ -19,17 +19,17 @@ No part is reviewed while the code is behind the spec.
 
 **Purpose**: Principle I. SPEC.md is amended in its own commit before any code.
 
-- [ ] T001 Amend `SPEC.md`: new §5.6 *A person's line, and what the agent settles* (the person's line is always a Request;
+- [X] T001 Amend `SPEC.md`: new §5.6 *A person's line, and what the agent settles* (the person's line is always a Request;
   `settles` on a Result or Clarify from the receiver of the person's request; settling the agent's own request closes it
   `settled` citing the settling exchange; naming the person's own request awaiting a clarification hands the turn back;
   the five refusals of research R5; refusal is whole; limited to the person — FR-009; the settleable list and its bounds,
   R8). Cross-reference it from §5.2, §5.3 (the outcome table gains `settled`, "written by the requester, for the
   person's line"), §12.3 (surfaces send a person's line as a Request) and §13 (the settleable list is the agent's own
   words and is bounded)
-- [ ] T002 Amend `SPEC.md` §9.2's `exchanges` DDL (around line 1390) to match data-model.md: `outcome` admits
+- [X] T002 Amend `SPEC.md` §9.2's `exchanges` DDL (around line 1390) to match data-model.md: `outcome` admits
   `settled`, `settled_by` column with both CHECKs; add `tr_settled_by_its_requester` to §9.2 and a row for it in §9.3's
   invariant table
-- [ ] T003 Amend `SPEC.md` §10.1 (`result` and `clarify` take `settles`; what `inbox` returns beside a person's request)
+- [X] T003 Amend `SPEC.md` §10.1 (`result` and `clarify` take `settles`; what `inbox` returns beside a person's request)
   and §18 (protocol 0.8: what changed and why a 0.7 adapter is refused); run
   `tests/Parley.Spec.Tests/bin/Debug/net10.0/Parley.Spec.Tests.exe` (the schema fragments execute) and commit SPEC.md
   alone
@@ -40,35 +40,35 @@ No part is reviewed while the code is behind the spec.
 
 **Purpose**: Everything every story reads. Blocks all stories.
 
-- [ ] T004 [P] `src/Parley.Core/ProtocolVersion.cs`: `Current` = `0.8`
-- [ ] T005 [P] `src/Parley.Core/ExchangeOutcome.cs`: add `Settled = 3`; `src/Parley.Core/TransitionError.cs` (or where
+- [X] T004 [P] `src/Parley.Core/ProtocolVersion.cs`: `Current` = `0.8`
+- [X] T005 [P] `src/Parley.Core/ExchangeOutcome.cs`: add `Settled = 3`; `src/Parley.Core/TransitionError.cs` (or where
   `TransitionError` lives): add `CannotSettle`; new `src/Parley.Core/SettleProblem.cs` with the five problems of
   contracts/wire.md
-- [ ] T006 `src/Parley.Core/Exchange.cs`: `SettledBy` property; `Settle(AgentName from, long settling, DateTimeOffset now)`
+- [X] T006 `src/Parley.Core/Exchange.cs`: `SettledBy` property; `Settle(AgentName from, long settling, DateTimeOffset now)`
   (open, `from` is requester, turn is the receiver's → closed, `Settled`, `SettledBy`, `ClosedUtc`); `TurnBack(AgentName
   from)` (open, `from` is receiver, turn is the requester's → `OwedBy` receiver, depth unchanged); carry `SettledBy`
   through the rehydrating constructor
-- [ ] T007 [P] `tests/Parley.Core.Tests/SettlingTransitionsTests.cs`: each transition's success and every refusal
+- [X] T007 [P] `tests/Parley.Core.Tests/SettlingTransitionsTests.cs`: each transition's success and every refusal
   (closed, wrong party, wrong turn); `TurnBack` leaves `ClarifyDepth` unchanged
-- [ ] T008 `src/Parley.Store/Migrations/001_initial.sql`: `exchanges.outcome` admits `settled`; `settled_by INTEGER
+- [X] T008 `src/Parley.Store/Migrations/001_initial.sql`: `exchanges.outcome` admits `settled`; `settled_by INTEGER
   REFERENCES exchanges(id)` with `CHECK ((outcome = 'settled') = (settled_by IS NOT NULL))` and `CHECK (settled_by IS
   NULL OR settled_by <> id)`; trigger `tr_settled_by_its_requester` per data-model.md (same conversation; settling
   exchange's requester = this receiver and receiver = this requester; this receiver's adapter is `parley-console`)
-- [ ] T009 `src/Parley.Store/ExchangeRepository.cs` (and `ExchangeRow.cs`): read and write `settled_by`; map
+- [X] T009 `src/Parley.Store/ExchangeRepository.cs` (and `ExchangeRow.cs`): read and write `settled_by`; map
   `settled` both ways; new `GetSettleableAsync(AgentName agent, AgentName person, string conversationId, int limit, …)`
   returning the open exchanges between them in that conversation owed by the person, oldest first, with the last thing
   the agent said in each and the total count
-- [ ] T010 [P] `tests/Parley.Store.Tests/SettledExchangeTests.cs`: a well-formed settle is stored; each storage rule
+- [X] T010 [P] `tests/Parley.Store.Tests/SettledExchangeTests.cs`: a well-formed settle is stored; each storage rule
   refuses its malformed case — `settled` without `settled_by`, `settled_by` without `settled`, settling itself, a
   settling exchange in another conversation, one between other parties, one whose receiver is not the person, settling
   the person's own request. **Remove each rule from the schema in turn and watch its case be admitted** (from a copy of
   the file, never `git checkout`)
-- [ ] T011 `proto/parley.proto` per contracts/wire.md: `settles` on `ClarifyRequest` and `ResultRequest`; `SayReply.
+- [X] T011 `proto/parley.proto` per contracts/wire.md: `settles` on `ClarifyRequest` and `ResultRequest`; `SayReply.
   cannot_settle`; `SettleRefusal`; `SettleProblem`; `TRANSITION_ERROR_CANNOT_SETTLE`; `DeliveredMessage.settleable` and
   `settleable_left_out`; `SettleableQuestion`; `EXCHANGE_OUTCOME_SETTLED`; `ExchangeSnapshot.settled_by`
-- [ ] T012 `src/Parley.Server/Wire.cs`: map every new enum and field both ways; `tests/Parley.Server.Tests`'s
+- [X] T012 `src/Parley.Server/Wire.cs`: map every new enum and field both ways; `tests/Parley.Server.Tests`'s
   `TransportEnumTests` must cover `Settled`, `CannotSettle` and every `SettleProblem` (none may map to unspecified)
-- [ ] T013 [P] `src/Parley.Client/BrokerClient.cs` and `src/Parley.Core/ExchangeSnapshot.cs` (or where the client-side
+- [X] T013 [P] `src/Parley.Client/BrokerClient.cs` and `src/Parley.Core/ExchangeSnapshot.cs` (or where the client-side
   snapshot lives): carry `SettledBy` and `Settled` through `Export`
 
 **Checkpoint**: builds; Core, Store and Spec suites green.
@@ -82,25 +82,25 @@ No part is reviewed while the code is behind the spec.
 **Independent test**: three of `orders`' requests owed by the person; a line to `orders`; a fourth exchange opens owed
 by `orders` and the three stay open.
 
-- [ ] T014 [P] [US1] `tests/Parley.Client.Tests/EveryLineIsARequestTests.cs`: `Composing.Plan` gives `Act.Ask` for a
+- [X] T014 [P] [US1] (built as the reworked `ComposingTests` and `LineIsARequestOverTheWireTests`: `Plan` and the acts were removed, so there is no derivation left to test headless) `tests/Parley.Client.Tests/EveryLineIsARequestTests.cs`: `Composing.Plan` gives `Act.Ask` for a
   peer the person owes one request, several, a clarification on the person's own request, and nothing; and for several
   recipients at once. Fails against today's `Plan`
-- [ ] T015 [US1] `src/Parley.Client/Seating/Composing.cs`: `Plan` returns `Act.Ask` for every recipient; rewrite the
+- [X] T015 [US1] `src/Parley.Client/Seating/Composing.cs`: `Plan` returns `Act.Ask` for every recipient; rewrite the
   remarks (why the surface no longer derives an act, citing the 2026-10-05 report and research R1); remove the
   `Answer`/`Clarify` arms
-- [ ] T016 [US1] `src/Parley.Client/Seating/SeatVoice.cs`: `SendAsync` no longer has answer/clarify branches or the
+- [X] T016 [US1] `src/Parley.Client/Seating/SeatVoice.cs`: `SendAsync` no longer has answer/clarify branches or the
   "refused act falls back to a Request" path for the box (0.30.7's fallback is moot); keep `ResultAsync` and
   `ClarifyAsync` for the explicit paths (web Inbox, terminal delivery dialogs)
-- [ ] T017 [US1] `src/Parley.Client/Seating/Pairing.cs`: `PairState` stops carrying one chosen exchange for the box;
+- [X] T017 [US1] `src/Parley.Client/Seating/Pairing.cs`: `PairState` stops carrying one chosen exchange for the box;
   keep turn and role per peer for the room's standing and add the list of every exchange the person owes each peer
   (used by US3/US4). Update the remarks
-- [ ] T018 [US1] `src/Parley.Terminal/LineRegion.cs` (and wherever the preview is written): the preview says who the
+- [X] T018 [US1] `src/Parley.Terminal/LineRegion.cs` (and wherever the preview is written): the preview says who the
   line goes to and nothing about answering or clarifying (FR-003)
-- [ ] T019 [P] [US1] `tests/Parley.Terminal.Tests/LineIsARequestOverTheWireTests.cs`: driven terminal, real loopback
+- [X] T019 [P] [US1] `tests/Parley.Terminal.Tests/LineIsARequestOverTheWireTests.cs`: driven terminal, real loopback
   broker: `orders` sends the seated person three requests; the person types a line to `orders` and presses Enter;
   assert through `Export` that a new exchange requested by the person is open and the three are still open and owed by
   the person. Fails against 0.40.1
-- [ ] T020 [US1] Sweep and fix the tests that asserted the old acts (`ComposingTests`, `LineTests`, any `Answer`
+- [X] T020 [US1] Sweep and fix the tests that asserted the old acts (`ComposingTests`, `LineTests`, any `Answer`
   preview assertions): each is either replaced by its US1 equivalent or deleted with a line in the commit saying which
   and why
 
@@ -115,34 +115,34 @@ by `orders` and the three stay open.
 **Independent test**: `orders` with two requests open to the person replies to a person's request settling one; one
 closes `settled` citing the person's exchange, one stays open.
 
-- [ ] T021 [US2] `src/Parley.Broker/Broker.cs`: `ResultAsync` and `ClarifyAsync` take `IReadOnlyList<long> settles`;
+- [X] T021 [US2] `src/Parley.Broker/Broker.cs`: `ResultAsync` and `ClarifyAsync` take `IReadOnlyList<long> settles`;
   `SayAsync` validates and applies them inside its `WriteScope` before appending the message (research R5's five checks
   in order; any failure returns `SayOutcome.Refused(TransitionError.CannotSettle, …)` with each id and problem and
   stores nothing); de-duplicate ids; at most 50; settling the agent's own request calls `Exchange.Settle`, the person's
   own request calls `Exchange.TurnBack`; both saved in the same transaction. `SayOutcome` carries the refusals and what
   was settled and turned back
-- [ ] T022 [US2] `src/Parley.Broker/Broker.cs` `DrainInboxAsync`: for a Request whose sender is the person (`PersonSeat.
+- [X] T022 [US2] `src/Parley.Broker/Broker.cs` `DrainInboxAsync`: for a Request whose sender is the person (`PersonSeat.
   Is`), attach the settleable list from `GetSettleableAsync` (20 entries, 160 characters each cut at a character
   boundary with `…`, plus the count left out); `src/Parley.Broker/Inbox.cs` / `DeliveredMessage` carry it
-- [ ] T023 [US2] `src/Parley.Server/AgentsService.cs`: pass `settles` through from both requests; return
+- [X] T023 [US2] `src/Parley.Server/AgentsService.cs`: pass `settles` through from both requests; return
   `cannot_settle`; `DeliveredMessage.settleable` out
-- [ ] T024 [P] [US2] `tests/Parley.Broker.Tests/SettlingTests.cs`: settle one of two; settle the person's own request
+- [X] T024 [P] [US2] `tests/Parley.Broker.Tests/SettlingTests.cs`: settle one of two; settle the person's own request
   after a Clarify (turn back, depth unchanged, no message on it); each of the five refusals refuses the whole reply and
   stores nothing (message count and the person's request state unchanged); a repeated id settles once; a reply that is
   not on a person's request refuses any `settles`; between two agents nothing can be settled (FR-009)
-- [ ] T025 [P] [US2] `tests/Parley.Server.Tests/SettlingOverTheWireTests.cs`: the quickstart's steps 1–5 through
+- [X] T025 [P] [US2] `tests/Parley.Server.Tests/SettlingOverTheWireTests.cs`: the quickstart's steps 1–5 through
   `AttachedClient`/`LoopbackBroker`: what the agent is told on drain, the settle, the refusal, the turn back; and two
   replies racing to settle one exchange (one wins, the other is refused whole)
-- [ ] T026 [US2] `src/Parley.Mcp/ParleyTools.cs`: `parley_result` and `parley_clarify` take `settles` (array of
-  exchange ids) and report `settled` / `turned_back`, and each refusal as a sentence per contracts/surfaces.md;
+- [X] T026 [US2] `src/Parley.Mcp/ParleyTools.cs`: `parley_result` and `parley_clarify` take `settles` (array of
+  exchange ids) and report `settled` / `handed_back`, and each refusal as a sentence per contracts/surfaces.md;
   `parley_inbox` emits `your_open_questions_to_them`, `more_open_questions` and the `settling` line beside a person's
   request
-- [ ] T027 [US2] `src/Parley.Mcp/ParleyInstructions.cs` and the two tool descriptions: the paragraph of research R11,
+- [X] T027 [US2] `src/Parley.Mcp/ParleyInstructions.cs` and the two tool descriptions: the paragraph of research R11,
   including that the reply must say which questions it settled and that asking for clarification settles nothing
   (FR-021, FR-022)
-- [ ] T028 [P] [US2] `tests/Parley.Mcp.Tests/SettlesToolTests.cs`: the built server over stdio: inbox shows the list;
+- [X] T028 [P] [US2] `tests/Parley.Mcp.Tests/SettlesToolTests.cs`: the built server over stdio: inbox shows the list;
   a Result with `settles` settles; a bad id comes back as a sentence naming it
-- [ ] T029 [US2] `src/Parley.Client/Rendering/Reading.cs`: a settled exchange reads `settled by <agent> in exchange <n>`
+- [X] T029 [US2] `src/Parley.Client/Rendering/Reading.cs`: a settled exchange reads `settled by <agent> in exchange <n>`
   on both surfaces and in the export (FR-017); and under the agent's reply that settled questions, a line *Settled:
   "<start>", …* found by research R12's match (FR-021), drawn by both surfaces since both lay out through `Reading`;
   `tests/Parley.Client.Tests/SettledReadsAsSettledTests.cs` covers both, including a reply whose own words say nothing
@@ -159,29 +159,29 @@ closes `settled` citing the person's exchange, one stays open.
 **Independent test**: one agent with three questions waiting, another with one: two rows with 3 and 1; Enter lists
 three oldest first; choosing the second shows it in the transcript.
 
-- [ ] T030 [US3] `src/Parley.Client/Seating/WaitingOnYou.cs` (new): the shared derivation — per peer, every exchange the
+- [X] T030 [US3] `src/Parley.Client/Seating/WaitingOnYou.cs` (new): the shared derivation — per peer, every exchange the
   person owes in the conversation, oldest first, with the message to show (the latest thing the peer said in it, 0.30.1's
   rule) and the start of its text. Used by both surfaces
-- [ ] T031 [US3] `src/Parley.Terminal/Shell.cs` `Outstanding` and `src/Parley.Terminal/RoomRegion.cs`: one row per peer,
+- [X] T031 [US3] `src/Parley.Terminal/Shell.cs` `Outstanding` and `src/Parley.Terminal/RoomRegion.cs`: one row per peer,
   `<name>  <count>`, no "waiting for your reply"; the row keeps its peer and its questions
-- [ ] T032 [US3] `src/Parley.Terminal/Shell.cs`: Enter on such a row opens `Prompting.Choose` titled
+- [X] T032 [US3] `src/Parley.Terminal/Shell.cs`: Enter on such a row opens `Prompting.Choose` titled
   `Waiting on you from <name>`, entries `MMM dd HH:mm  <start of question>` cut to the width; choosing one moves the
   transcript to the message (the room's existing jump, two rows of context); a question gone from the transcript says
   "That question has been settled since." and does not move it
-- [ ] T033 [P] [US3] `tests/Parley.Terminal.Tests/WaitingOnYouListTests.cs`: drawn rows and counts read off the laid-out
+- [X] T033 [P] [US3] `tests/Parley.Terminal.Tests/WaitingOnYouListTests.cs`: drawn rows and counts read off the laid-out
   screen; Enter opens the list in order; choosing moves the transcript (assert the row on screen); the stale entry; the
   old "waiting for your reply" text never drawn. Fails against 0.40.1
-- [ ] T034 [US3] Keep `NoTwoActionsShareAKeyTests`, `EveryKeyIsOfferedTests` and `KeysNeedAModifierTests` green: Enter
+- [X] T034 [US3] Keep `NoTwoActionsShareAKeyTests`, `EveryKeyIsOfferedTests` and `KeysNeedAModifierTests` green: Enter
   on the room's row is already offered; name the list on the status line if the action table requires it
 
 ---
 
 ## Phase 6: User Story 4 — The web UI offers the same (P2)
 
-- [ ] T035 [US4] `src/Parley.Web/Pages/Conversations/Detail.cshtml.cs` and `Detail.cshtml` (or `_Conversation.cshtml`
+- [X] T035 [US4] `src/Parley.Web/Pages/Conversations/Detail.cshtml.cs` and `Detail.cshtml` (or `_Conversation.cshtml`
   so the follow partial carries it): a *Waiting on you* section from `WaitingOnYou`, one line per agent with the count,
   each question a link to the message's existing anchor
-- [ ] T036 [P] [US4] `tests/Parley.Web.Tests/WaitingOnYouOnThePageTests.cs`: the page lists the same agents and counts
+- [X] T036 [P] [US4] `tests/Parley.Web.Tests/WaitingOnYouOnThePageTests.cs`: the page lists the same agents and counts
   as the terminal's derivation for one export; each link targets an anchor that exists on the page; agent-written text
   in the question starts is escaped
 
@@ -189,28 +189,28 @@ three oldest first; choosing the second shows it in the transcript.
 
 ## Phase 7: User Story 5 — The person is never shown as open outside Parley (P3)
 
-- [ ] T037 [US5] `src/Parley.Server/OperatorsService.cs` (or `BrokerRuntime`'s registry fill): never set
+- [X] T037 [US5] `src/Parley.Server/OperatorsService.cs` (or `BrokerRuntime`'s registry fill): never set
   `open_outside` on the person's or the facilitator's row
-- [ ] T038 [P] [US5] `tests/Parley.Server.Tests/PersonIsNotOpenOutsideTests.cs`: seat the person, read the registry,
+- [X] T038 [P] [US5] `tests/Parley.Server.Tests/PersonIsNotOpenOutsideTests.cs`: seat the person, read the registry,
   both rows false. Fails against 0.40.1
 
 ---
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T039 `Directory.Build.props`: `VersionPrefix` 0.41.0 (minor: protocol change); every test that pins the
+- [X] T039 `Directory.Build.props`: `VersionPrefix` 0.41.0 (minor: protocol change); every test that pins the
   protocol version reads `ProtocolVersion.Current`
-- [ ] T040 [P] `README.md` and `plugins/parley/` (skills and commands that describe `parley_result`, answering the
+- [X] T040 [P] `README.md` and `plugins/parley/` (skills and commands that describe `parley_result`, answering the
   person, or what the room shows): say a person's line is a request and that agents settle their own questions;
   `PluginTests` green
-- [ ] T041 [P] `CLAUDE.md`: the 025 entry — what building it found
-- [ ] T042 Full suites through the executables (`tests/Parley.*.Tests/bin/Debug/net10.0/Parley.*.Tests.exe`), not
+- [X] T041 [P] `CLAUDE.md`: the 025 entry — what building it found
+- [X] T042 Full suites through the executables (`tests/Parley.*.Tests/bin/Debug/net10.0/Parley.*.Tests.exe`), not
   `dotnet test`; every one green
 - [ ] T043 Write `specs/025-agent-settles-questions/walk.ps1` and walk quickstart steps 1–5, 7 and 8 against packed tools
   in a scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md`
 - [ ] T044 Quickstart step 6 (SC-007) with a real agent on the live deployment — **the owner's call to run it**; record
   what the agent actually did
-- [ ] T045 Hygiene: case-insensitive grep for the private names and for any quotation from the live conversation,
+- [X] T045 Hygiene: case-insensitive grep for the private names and for any quotation from the live conversation,
   **including untracked new files**, run on its own before each commit
 - [ ] T046 The combined review gate (019–025, T060 of 023): three lenses, three consecutive clean runs each, from zero,
   logged in `REVIEW-LEDGER.md`, agents isolated from the live deployment

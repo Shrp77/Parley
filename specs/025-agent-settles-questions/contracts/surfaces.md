@@ -18,7 +18,7 @@
 ```
 
 **`parley_result` and `parley_clarify`** gain `settles` (optional, a list of exchange ids). Success adds
-`"settled": [65]` (and `"turned_back": [..]` for the person's own requests handed back). A refusal names each id and
+`"settled": [65]` (and `"handed_back": [..]` for the person's own requests handed back). A refusal names each id and
 its problem in a sentence:
 
 > 89: the person does not owe the next move on it. Nothing was sent; send it again without 89.

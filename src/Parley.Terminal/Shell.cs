@@ -742,24 +742,7 @@ internal sealed class Shell : Window
             }
         };
 
-        Room.Reading += (_, item) =>
-        {
-            if (item.At is not { } at)
-            {
-                Said = RoomRegion.Unreachable;
-
-                return;
-            }
-
-            if (Transcript.Reach(at))
-            {
-                Focus(Panes.ToList().IndexOf(Transcript));
-            }
-            else
-            {
-                Said = RoomRegion.Unreachable;
-            }
-        };
+        Room.Reading += (_, item) => ListQuestions(item);
         Line = new LineRegion();
         Configuration = new ConfigurationRegion();
 
@@ -4777,46 +4760,106 @@ internal sealed class Shell : Window
         // **The column is drawn after the draft, because its ticks are the draft's recipients.** Drawing it
         // first would show the set from the previous read until the next one finished, which is the whole of
         // what a checklist must never do.
-        Room.Show(pairs, Outstanding(pairs, export), seated: true, hold.Seat.Name, Drafting.Recipients, activity);
+        Room.Show(
+            pairs,
+            Outstanding(export, waiting.Value ?? [], hold.Seat.Name),
+            seated: true,
+            hold.Seat.Name,
+            Drafting.Recipients,
+            activity);
         Line.Show(Drafting, seated: true, Near());
     }
 
-    /// <summary>What this person must address in the conversation on screen.</summary>
-    /// <param name="pairs">The pair state for every participant.</param>
-    /// <param name="export">The conversation as it was read, for the message each row points at.</param>
-    /// <returns>One item per thing owed, in the order the participants are listed.</returns>
+    /// <summary>What is waiting on this person in the conversation on screen, one item per agent.</summary>
+    /// <param name="export">The conversation as it was read.</param>
+    /// <param name="waiting">The wait-for graph.</param>
+    /// <param name="me">The person.</param>
+    /// <returns>One item per agent with questions waiting on the person.</returns>
     /// <remarks>
-    /// Read from the same pair state the input line derives its acts from, so the column and the line cannot
-    /// disagree about what is outstanding. Two sources for one fact is how a surface comes to promise something
-    /// it will not do.
+    /// <see cref="WaitingOnYou"/>, which the web page reads too. Until specs/025 this kept one exchange per agent, the one
+    /// <see cref="Pairing"/> happened to pick, so a person with five of an agent's questions waiting was shown one.
     /// </remarks>
     private static IReadOnlyList<OutstandingItem> Outstanding(
-        IReadOnlyList<PairState> pairs,
-        ConversationExport export) =>
-        [.. pairs
-            .Where(pair => pair.Turn == Turn.Mine && pair.OpenExchange is not null)
-            .Select(pair => new OutstandingItem(
-                pair.Peer,
-                $"{pair.Peer.Value} — waiting for your reply",
-                pair.OpenExchange!.Value,
-                Asked(export, pair)))];
+        ConversationExport export,
+        IReadOnlyList<WaitingEdge> waiting,
+        AgentName me) =>
+        [.. WaitingOnYou.From(export, waiting, me).Select(on => new OutstandingItem(on.Peer, on.Questions))];
 
-    /// <summary>The message that put this person on the hook, so the column can point at it.</summary>
-    /// <param name="export">The conversation as it was read.</param>
-    /// <param name="pair">The pair state.</param>
-    /// <returns>The message identifier, or null when the export does not carry one.</returns>
+    /// <summary>Lists one agent's questions waiting on this person, and shows the one chosen where it was asked.</summary>
+    /// <param name="item">The agent and its questions.</param>
     /// <remarks>
-    /// <b>The latest thing the peer said in that exchange, not the first.</b> An exchange can hold a Request
-    /// and then a Clarify on it, and what is actually owed an answer is the last question asked -- which is
-    /// also what somebody scrolling to it wants to read. Null rather than a guess where nothing matches: a
-    /// row that cannot point anywhere says so by doing nothing, which beats moving a reader somewhere
-    /// arbitrary.
+    /// <para>
+    /// <b>The owner's design of 2026-10-05</b>: the agent once with a count, Enter for the list, and choosing one moves the
+    /// transcript to that question so it is read in its context rather than hunted for.
+    /// </para>
+    /// <para>
+    /// Each entry is numbered, which keeps two questions that start with the same words apart, and says when it was asked.
+    /// A question the agent settled while the list was open is no longer in the transcript's record of what is owed, and
+    /// says so rather than moving the reader.
+    /// </para>
     /// </remarks>
-    private static long? Asked(ConversationExport export, PairState pair) =>
-        export.Messages
-            .Where(message => message.ExchangeId == pair.OpenExchange && message.From == pair.Peer)
-            .Select(message => (long?)message.Id)
-            .LastOrDefault();
+    private void ListQuestions(OutstandingItem item)
+    {
+        if (App is not { } app)
+        {
+            return;
+        }
+
+        var entries = item.Questions
+            .Select((question, at) => (
+                Question: question,
+                Label: $"{at + 1}. {LocalTime.Write(question.AskedUtc)[..16]}  {Safe.Text(Cut(question.Asked))}"))
+            .ToList();
+
+        var dialog = Prompting.Choose(
+            RoomRegion.ListTitle(item.Peer.Value), RoomRegion.ListSays, [.. entries.Select(e => e.Label)]);
+        var token = Prompting.Open(app, dialog);
+
+        dialog.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, token);
+
+            if (entries.FirstOrDefault(e => string.Equals(e.Label, chosen, StringComparison.Ordinal)) is not
+                { Question: { } question })
+            {
+                return;
+            }
+
+            // Still waiting? The room is redrawn on every follow, so a settled question is gone from it by now.
+            if (Room.Waiting(item.Peer) is { } now && now.All(q => q.Exchange != question.Exchange))
+            {
+                Said = RoomRegion.SettledSince;
+
+                return;
+            }
+
+            if (question.At is { } at && Transcript.Reach(at))
+            {
+                Focus(Panes.ToList().IndexOf(Transcript));
+            }
+            else
+            {
+                Said = RoomRegion.Unreachable;
+            }
+        };
+    }
+
+    /// <summary>The start of a question, short enough for one row of the list.</summary>
+    /// <param name="said">The words.</param>
+    /// <returns>Up to seventy characters on one line, with an ellipsis when cut.</returns>
+    private static string Cut(string said)
+    {
+        var flat = string.Join(' ', said.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        if (flat.Length <= 70)
+        {
+            return flat;
+        }
+
+        var at = char.IsHighSurrogate(flat[68]) ? 68 : 69;
+
+        return string.Concat(flat.AsSpan(0, at), "\u2026");
+    }
 
     /// <summary>
     /// Reads this machine's catalogue, which is the one fact about a deployment the broker never

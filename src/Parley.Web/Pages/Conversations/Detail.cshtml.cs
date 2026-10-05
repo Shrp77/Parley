@@ -58,6 +58,27 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     public IReadOnlyDictionary<string, AgentRecord> Roll { get; private set; } =
         new Dictionary<string, AgentRecord>(StringComparer.Ordinal);
 
+    /// <summary>What is waiting on the person here, one entry per agent, as the terminal's room lists it (specs/025).</summary>
+    /// <remarks>
+    /// <see cref="Parley.Client.Seating.WaitingOnYou"/>, the one derivation both surfaces read, so the page and the room
+    /// cannot disagree about who is waiting on the person or how many questions each has.
+    /// </remarks>
+    public IReadOnlyList<WaitingOn> WaitingOnYou { get; private set; } = [];
+
+    /// <summary>The start of a question, short enough for one line of the list.</summary>
+    /// <param name="question">The question.</param>
+    /// <returns>Up to a hundred characters, on one line, with an ellipsis when cut.</returns>
+    public static string Start(WaitingQuestion question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+
+        var flat = string.Join(' ', question.Asked.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        return flat.Length <= 100
+            ? flat
+            : string.Concat(flat.AsSpan(0, char.IsHighSurrogate(flat[98]) ? 98 : 99), "\u2026");
+    }
+
     /// <summary>What each participant is doing, as the terminal's room says it (specs/024).</summary>
     public IReadOnlyDictionary<AgentName, Activity> ParticipantActivity { get; private set; } =
         new Dictionary<AgentName, Activity>();
@@ -125,6 +146,17 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
             ? snapshot.State == ExchangeState.Open ? "still open, awaiting a result" : Reading.State(snapshot)
             : string.Empty;
+
+    /// <summary>What a reply settled (SPEC.md §5.6), from the record rather than its words.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The sentence, or empty when it settled nothing.</returns>
+    public string SettledBy(Message message) =>
+        Reading.Settled(message, Whole) is { Count: > 0 } settled ? Reading.SettledLine(settled) : string.Empty;
+
+    /// <summary>The conversation as one export, for the derivations that read messages and exchanges together.</summary>
+    private ConversationExport Whole => _whole ??= new ConversationExport([.. Messages], [.. Exchanges.Values], null);
+
+    private ConversationExport? _whole;
 
     /// <summary>Whether the exchange a message belongs to was closed by a person rather than finished.</summary>
     /// <param name="message">The message.</param>
@@ -507,6 +539,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
                 .ConfigureAwait(false);
 
             ParticipantActivity = Activities.Of(read.Value, waiting.Value ?? [], roll.Value);
+            WaitingOnYou = Parley.Client.Seating.WaitingOnYou.From(
+                read.Value, waiting.Value ?? [], PersonSeat.On(project.Name));
         }
         AsOf = DateTimeOffset.Now;
     }

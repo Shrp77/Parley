@@ -1,3 +1,4 @@
+using System.Globalization;
 using Parley.Client.Rendering;
 using Parley.Client.Views;
 using Parley.Client.Seating;
@@ -84,6 +85,21 @@ internal sealed class RoomRegion : FrameView
     /// </remarks>
     internal const string Unreachable = "That message is not in the transcript as it stands. Read it again.";
 
+    /// <summary>What is said when a question chosen from the list was settled after the list was drawn.</summary>
+    /// <remarks>
+    /// Said rather than moving the reader somewhere misleading: the agent settled it while the list was open, and the
+    /// transcript beside it now says so (SPEC.md §5.6).
+    /// </remarks>
+    internal const string SettledSince = "That question has been settled since.";
+
+    /// <summary>What the list of one agent's questions is called.</summary>
+    /// <param name="peer">The agent, as the column names it.</param>
+    /// <returns>The title.</returns>
+    internal static string ListTitle(string peer) => $"Waiting on you from {peer}";
+
+    /// <summary>What the list of one agent's questions says above them.</summary>
+    internal const string ListSays = "Oldest first. Choose one to read it where it was asked.";
+
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
     private List<Row> _rows = [];
@@ -147,6 +163,12 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>The list itself, so a test drives this column the way it drives every other one.</summary>
     internal GuardedList List => _list;
+
+    /// <summary>The questions of one agent the column last showed as waiting on this person.</summary>
+    /// <param name="peer">The agent.</param>
+    /// <returns>Its questions, or null when it has none waiting.</returns>
+    internal IReadOnlyList<WaitingQuestion>? Waiting(AgentName peer) =>
+        _outstanding.FirstOrDefault(item => item.Peer == peer)?.Questions;
 
     /// <summary>The outstanding item under the cursor, or null when the cursor is not on one.</summary>
     internal OutstandingItem? Selected => Under?.Item;
@@ -274,9 +296,16 @@ internal sealed class RoomRegion : FrameView
         }
         else
         {
+            // **One row per agent, with how many of its questions are waiting** (the owner's call of 2026-10-05). It was
+            // one row per agent reading "orders@host — waiting for your reply", which repeated the heading above it and
+            // hid how many there were; Enter on the row now lists them (specs/025).
             foreach (var item in outstanding)
             {
-                rows.Add(new Row("  " + Safe.Text(item.Says), item, Palette.SlotFor(item.Peer), null));
+                rows.Add(new Row(
+                    "  " + Safe.Text(Shown(item.Peer, pairs)) + " (" + item.Questions.Count.ToString(CultureInfo.InvariantCulture) + ")",
+                    item,
+                    Palette.SlotFor(item.Peer),
+                    null));
             }
         }
 
@@ -307,7 +336,7 @@ internal sealed class RoomRegion : FrameView
     /// <returns><see langword="true"/> when they name one thing.</returns>
     private static bool Same(Row row, Row other) =>
         (other.Peer is { } peer && row.Peer == peer)
-        || (other.Item is { } item && row.Item is { } mine && mine.Exchange == item.Exchange)
+        || (other.Item is { } item && row.Item is { } mine && mine.Peer == item.Peer)
         || (other.Peer is null && other.Item is null && row.Text == other.Text);
 
     /// <summary>The width the rows were last fitted to, or -1 before anything was shown.</summary>
@@ -439,14 +468,12 @@ internal sealed class RoomRegion : FrameView
 }
 
 /// <summary>
-/// Something this person must address, and the message it refers to.
+/// One agent and every question of its waiting on this person, which Enter on its row lists.
 /// </summary>
-/// <param name="Peer">Who is waiting, or who asked.</param>
-/// <param name="Says">What is owed, in words a person reads.</param>
-/// <param name="Exchange">The exchange it belongs to.</param>
-/// <param name="At">The message to put on screen when this is activated, or null when there is none to show.</param>
+/// <param name="Peer">The agent waiting.</param>
+/// <param name="Questions">Its questions, oldest first, from <see cref="WaitingOnYou"/>.</param>
 /// <remarks>
-/// Built from the same pair state the input line derives its acts from, so the column and the line cannot
-/// disagree about what is outstanding.
+/// Built from the one derivation the web page reads too, so the two surfaces cannot disagree about who is waiting on the
+/// person or how many questions each has.
 /// </remarks>
-internal sealed record OutstandingItem(AgentName Peer, string Says, long Exchange, long? At);
+internal sealed record OutstandingItem(AgentName Peer, IReadOnlyList<WaitingQuestion> Questions);

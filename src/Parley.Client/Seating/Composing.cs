@@ -2,31 +2,6 @@ using Parley.Core;
 
 namespace Parley.Client.Seating;
 
-/// <summary>What typing to one recipient would do.</summary>
-public enum Act
-{
-    /// <summary>A Request. Opens an exchange the recipient will owe a Result on.</summary>
-    Ask = 0,
-
-    /// <summary>A Clarify on a request this person sent. The turn goes back to the recipient.</summary>
-    Clarify = 1,
-
-    /// <summary>A Result. Settles the request the recipient sent this person.</summary>
-    /// <remarks>
-    /// <b>There is no "ask back instead" any more</b> (the owner's call of 2026-10-02). It was a Clarify on a request this
-    /// person held, offered as the other side of answering under F2 — and the owner's reading is that it made no sense:
-    /// a conversation never really stops, so somebody who wants to ask something back simply says it, and the reply
-    /// that settles one request is followed by whatever comes next as a request of its own.
-    /// </remarks>
-    Answer = 2,
-}
-
-/// <summary>One recipient and what Enter would do to them.</summary>
-/// <param name="Peer">Who it goes to.</param>
-/// <param name="Act">What it would be recorded as.</param>
-/// <param name="Exchange">The exchange it lands in, or <see langword="null"/> when it opens one.</param>
-public sealed record Addressed(AgentName Peer, Act Act, long? Exchange);
-
 /// <summary>What became of a send.</summary>
 /// <param name="Count">How many recipients got it.</param>
 /// <param name="Says">The sentence to put in front of the person.</param>
@@ -38,22 +13,21 @@ public sealed record Addressed(AgentName Peer, Act Act, long? Exchange);
 public sealed record Sent(int Count, string Says);
 
 /// <summary>
-/// One line of text, its recipients, and what Enter would do to each.
+/// One line of text and who it goes to. Every recipient receives it as a Request (SPEC.md §5.6).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The act is derived, never chosen first.</b> A person knows what they want to say; which of §5.1's Request,
-/// §5.2's Clarify and §5.3's Result that amounts to is bookkeeping about who owes whom, and
-/// <see cref="Pairing"/> already answers it. One line to three recipients may be three different acts and each
-/// is correct for its own pair.
+/// <b>The surface no longer decides what a line answers</b> (specs/025, the owner's call of 2026-10-05). Until then this
+/// derived an act per recipient from who owed whom: a Result where the agent had asked the person something, a Clarify
+/// where the agent had asked back. With several of an agent's questions open, it took whichever exchange the wait-for
+/// graph listed first — the store's order, nobody's choice — and the owner's reply to the newest question was filed as
+/// the Result of an unrelated one two days old. A Result asks nothing back, so the agent read it and said nothing.
 /// </para>
 /// <para>
-/// <b>Holding a Request, what somebody types is the answer.</b> Until 2026-10-02 this was offered both ways — the
-/// answer, or a question back that handed the turn over — on the argument that a wrong guess settles a request whose
-/// work was never done. The owner removed the choice: <i>"a conversation never stops, really"</i>, so a person who
-/// wants to ask something back says so in the answer, and whatever follows is a request of its own. <b>The cost is
-/// recorded rather than hidden</b>: a person's reply to an agent's request is always recorded as that request's
-/// Result, including a reply that is really a question.
+/// <b>Only the agent can know what its questions were for, so the agent decides.</b> What the person types is a
+/// Request, which the agent must answer, and the agent names in its reply which of its own questions the words settled.
+/// A person who wants to answer one particular question still can, where a surface lets them pick it (the web UI's
+/// inbox, the terminal's delivery dialogs): that is the person's choice, not a guess.
 /// </para>
 /// <para>
 /// <b>Addressing never reaches the text.</b> <see cref="Recipients"/> is resolved agents and <see cref="Text"/>
@@ -87,7 +61,7 @@ public sealed class Draft
         Recipients = [.. pairs.Select(p => p.Peer)];
     }
 
-    /// <summary>The pair state this draft derives its acts from.</summary>
+    /// <summary>The pair state of every participant, which is who the draft may go to.</summary>
     public IReadOnlyList<PairState> Pairs { get; }
 
     /// <summary>What the person has typed, exactly as typed.</summary>
@@ -217,9 +191,8 @@ public sealed class Draft
     /// <param name="peer">The resolved agent.</param>
     /// <remarks>
     /// What <c>/add</c> does. It widens whatever is addressed rather than replacing it, and it does not count as
-    /// narrowing: a person who adds an agent to a message meant for the room means the room and that agent. The
-    /// added agent has no pair state, so <see cref="Plan"/> gives it a Request — which is exactly right, since
-    /// membership is derived (§5.0) and an agent joins by being party to an exchange.
+    /// narrowing: a person who adds an agent to a message meant for the room means the room and that agent. It is
+    /// sent a Request like everyone else, which is how an agent joins (§5.0): membership is derived from exchanges.
     /// </remarks>
     public void Widen(AgentName peer) => Recipients = [.. Recipients.Append(peer).Distinct()];
 
@@ -229,32 +202,5 @@ public sealed class Draft
     {
         Recipients = [.. Pairs.Select(p => p.Peer)];
         _narrowed = false;
-    }
-
-    /// <summary>What Enter would do, one entry per recipient.</summary>
-    /// <returns>The recipients and their acts, in the order the pairs were given.</returns>
-    public IReadOnlyList<Addressed> Plan()
-    {
-        var planned = new List<Addressed>();
-
-        foreach (var peer in Recipients)
-        {
-            var pair = Pairs.FirstOrDefault(p => p.Peer == peer)
-                ?? new PairState(peer, null, Turn.Nobody);
-
-            // **Three states, not two, and the third is what lost the owner's messages.** A move owed by this
-            // person is a Result only where the peer asked: where this person asked and the peer clarified,
-            // the move owed is the answer to that clarification, which is a Clarify — §5.3 gives the Result to
-            // the receiver alone. And where the peer holds the move there is nothing to add to that exchange
-            // at all, so typing opens a new one rather than being refused with somebody's words in it.
-            planned.Add(pair switch
-            {
-                { Turn: Turn.Mine, Asked: false } => new Addressed(peer, Act.Answer, pair.OpenExchange),
-                { Turn: Turn.Mine, Asked: true } => new Addressed(peer, Act.Clarify, pair.OpenExchange),
-                _ => new Addressed(peer, Act.Ask, null),
-            });
-        }
-
-        return planned;
     }
 }

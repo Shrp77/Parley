@@ -37,6 +37,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
     private readonly ServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
 
+    /// <summary>What an agent is told beside the questions it could settle (SPEC.md §5.6).</summary>
+    internal const string Settling =
+        "These are questions you asked the person that are still open. If their words answer any of them or make them " +
+        "moot, name those in settles when you reply, and say so in your reply. Leave the rest open. A person asking " +
+        "you to explain a question has not answered it.";
+
     /// <summary>Sends a Request.</summary>
     /// <param name="to">A whole agent name, or a role.</param>
     /// <param name="ask">What is wanted, in the sender's own words (SPEC.md section 5.1).</param>
@@ -151,6 +157,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="text">What is needed, or what was asked for.</param>
     /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
     [McpServerTool(Name = "parley_clarify")]
@@ -161,11 +168,20 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         For anyone other than your requester — another agent that owns part of the work or knows what you
         need — send parley_request instead, in the same conversation. Don't make your requester relay it.
+
+        Replying to the person, you can also say which of your own questions to them their words settled:
+        see settles.
         """)]
     public async Task<JsonNode> ClarifyAsync(
         [Description("The exchange id, from your inbox.")] long exchangeId,
         [Description("What you need, or what you were asked for.")] string text,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description(
+            "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
+            "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
+            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
+            "reply which ones you settled.")]
+        long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -187,18 +203,20 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return refused;
             }
 
-            var outcome = await _link.Agents.ClarifyAsync(
-                new Wire.ClarifyRequest
-                {
-                    From = _options.Agent.Value,
-                    ExchangeId = exchangeId,
-                    ResponderModel = Responder(responderModel),
-                    PayloadJson = json
-                },
-                cancellationToken: cancellationToken);
+            var clarify = new Wire.ClarifyRequest
+            {
+                From = _options.Agent.Value,
+                ExchangeId = exchangeId,
+                ResponderModel = Responder(responderModel),
+                PayloadJson = json
+            };
+
+            clarify.Settles.AddRange(settles ?? []);
+
+            var outcome = await _link.Agents.ClarifyAsync(clarify, cancellationToken: cancellationToken);
 
             return outcome.Ok
-                ? new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }
+                ? WithSettled(new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }, outcome)
                 : Refusal(outcome);
         }
         catch (RpcException failure)
@@ -214,6 +232,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="blocker">The kind of blocker, when blocked.</param>
     /// <param name="sources">The agents whose Results were relied on.</param>
     /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
     /// <remarks>
@@ -242,6 +261,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         Name every agent whose Result you relied on in sources. Write decisions into the repository they
         govern and say where.
+
+        A request from the person may answer questions you asked them earlier, which your inbox lists beside
+        it. Name the ones their words answered or made moot in settles, and say so in your text; leave the
+        rest open. A person asking you to explain a question has not answered it.
         """)]
     public async Task<JsonNode> ResultAsync(
         [Description("The exchange id, from your inbox.")] long exchangeId,
@@ -250,6 +273,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description("Only when blocked: missing_information, conflict, or permission.")] string? blocker = null,
         [Description("Optional. The agents whose Results you relied on.")] string[]? sources = null,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description(
+            "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
+            "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
+            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
+            "reply which ones you settled.")]
+        long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -271,7 +300,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badSources;
             }
 
-            var sent = await SendResultAsync([answer], exchangeId, responderModel, cancellationToken)
+            var sent = await SendResultAsync([answer], exchangeId, responderModel, settles, cancellationToken)
                 .ConfigureAwait(false);
 
             // **An exchange opened under 0.5 or 0.6 is still owed its own items**, and nothing times out, so one
@@ -317,11 +346,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     [.. stale.ExpectedItems.Select(id => answer with { Id = id })],
                     exchangeId,
                     responderModel,
+                    settles,
                     cancellationToken).ConfigureAwait(false);
             }
 
             return sent.Refused
-                ?? (sent.Reply!.Ok ? new JsonObject { ["ok"] = true, ["closed"] = true } : Refusal(sent.Reply));
+                ?? (sent.Reply!.Ok
+                    ? WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply)
+                    : Refusal(sent.Reply));
         }
         catch (RpcException failure)
         {
@@ -333,6 +365,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="outcomes">What to record, already checked.</param>
     /// <param name="exchangeId">The exchange being closed.</param>
     /// <param name="responderModel">What produced this.</param>
+    /// <param name="settles">The person's questions it says were settled, if any.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The broker's reply, or the refusal that stopped it being sent at all.</returns>
     /// <remarks>
@@ -343,6 +376,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         IReadOnlyList<ItemOutcome> outcomes,
         long exchangeId,
         string? responderModel,
+        long[]? settles,
         CancellationToken cancellationToken)
     {
         var json = Framed(outcomes);
@@ -352,17 +386,40 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             return (null, refused);
         }
 
-        var reply = await _link.Agents.ResultAsync(
-            new Wire.ResultRequest
-            {
-                From = _options.Agent.Value,
-                ExchangeId = exchangeId,
-                ResponderModel = Responder(responderModel),
-                PayloadJson = json
-            },
-            cancellationToken: cancellationToken);
+        var request = new Wire.ResultRequest
+        {
+            From = _options.Agent.Value,
+            ExchangeId = exchangeId,
+            ResponderModel = Responder(responderModel),
+            PayloadJson = json
+        };
+
+        request.Settles.AddRange(settles ?? []);
+
+        var reply = await _link.Agents.ResultAsync(request, cancellationToken: cancellationToken);
 
         return (reply, null);
+    }
+
+    /// <summary>Adds what a reply settled to its confirmation, so the agent can say so (SPEC.md §5.6).</summary>
+    /// <param name="confirmation">The confirmation.</param>
+    /// <param name="reply">The broker's reply.</param>
+    /// <returns>The confirmation.</returns>
+    private static JsonObject WithSettled(JsonObject confirmation, Wire.SayReply reply)
+    {
+        if (reply.Settled.Count > 0)
+        {
+            confirmation["settled"] = new JsonArray([.. reply.Settled.Select(id => (JsonNode?)JsonValue.Create(id))]);
+        }
+
+        if (reply.HandedBack.Count > 0)
+        {
+            // The person's own requests you had asked back about: the turn is yours again, so answer each.
+            confirmation["handed_back_to_you"] =
+                new JsonArray([.. reply.HandedBack.Select(id => (JsonNode?)JsonValue.Create(id))]);
+        }
+
+        return confirmation;
     }
 
     /// <summary>Writes outcomes into the document SPEC.md §5.3 stores.</summary>
@@ -429,7 +486,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
             foreach (var delivered in inbox.Messages)
             {
-                messages.Add(new JsonObject
+                var entry = new JsonObject
                 {
                     ["exchange_id"] = delivered.Message.ExchangeId,
                     ["type"] = MessageIdentity.FormatType(WireCodec.In(delivered.Message.Type)),
@@ -438,7 +495,29 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
                     // The envelope, not the payload (§13).
                     ["message"] = delivered.Envelope
-                });
+                };
+
+                // **Beside a request from the person, the questions you asked them that are still open** (SPEC.md §5.6):
+                // your own words, returned to you and bounded, so you can say what their words settled without searching.
+                if (delivered.Settleable.Count > 0 || delivered.SettleableLeftOut > 0)
+                {
+                    entry["your_open_questions_to_them"] = new JsonArray([.. delivered.Settleable.Select(q =>
+                        (JsonNode?)new JsonObject
+                        {
+                            ["exchange_id"] = q.ExchangeId,
+                            ["asked_utc"] = q.OpenedUtc,
+                            ["you_asked"] = q.Asked
+                        })]);
+
+                    if (delivered.SettleableLeftOut > 0)
+                    {
+                        entry["more_open_questions"] = delivered.SettleableLeftOut;
+                    }
+
+                    entry["settling"] = Settling;
+                }
+
+                messages.Add(entry);
             }
 
             var polls = new JsonArray();
@@ -1695,9 +1774,29 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 Wire.TransitionError.ClosedIsTheBrokers =>
                     "\"closed\" is recorded only when a conversation is closed. Choose done, answered, " +
                     "acknowledged or blocked.",
+                Wire.TransitionError.CannotSettle =>
+                    "Nothing was sent: settles named exchanges you cannot settle. Send the reply again without " +
+                    "them; cannot_settle says why for each.",
                 _ => "Refused."
             }
         };
+
+        if (reply.CannotSettle.Count > 0)
+        {
+            refusal["cannot_settle"] = new JsonArray([.. reply.CannotSettle.Select(c => (JsonNode?)new JsonObject
+            {
+                ["exchange_id"] = c.ExchangeId,
+                ["why"] = c.Problem switch
+                {
+                    Wire.SettleProblem.NotFromThePerson =>
+                        "Only a reply to a request the person (human-user) sent you can settle anything.",
+                    Wire.SettleProblem.OtherConversation => "It is in a different conversation from this reply.",
+                    Wire.SettleProblem.NotOpen => "It is already closed, or there is no such exchange.",
+                    Wire.SettleProblem.NotBetweenYou => "It is not between you and the person.",
+                    _ => "The person does not owe the next move on it.",
+                }
+            })]);
+        }
 
         if (reply.ExpectedItems.Count > 0)
         {

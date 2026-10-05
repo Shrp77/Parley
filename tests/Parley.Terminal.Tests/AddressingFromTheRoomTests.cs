@@ -181,12 +181,18 @@ public sealed class AddressingFromTheRoomTests
 
         seated.Lay();
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, "waiting for your reply");
+        // One row per agent with its count (specs/025); Enter lists its questions and choosing one reads it.
+        seated.Row(shell.Room.List, "orders (1)");
 
         Assert.Null(shell.Room.SelectedPeer);
         Assert.NotNull(shell.Room.Selected);
 
         shell.Room.List.NewKeyDownEvent(Key.Enter);
+
+        var listing = (ChoiceDialog)seated.Session.Find(RoomRegion.ListTitle(Seated.Orders.Value));
+
+        seated.Session.Row(listing.Choices, "is the build green?");
+        seated.Session.Enter();
 
         await shell.Settled;
 

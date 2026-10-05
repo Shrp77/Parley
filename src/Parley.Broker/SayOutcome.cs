@@ -25,6 +25,18 @@ public sealed record SayOutcome
         ExpectedItems = expectedItems;
     }
 
+    /// <summary>Gets each exchange a reply named in <c>settles</c> that it could not settle, and why.</summary>
+    /// <value>On <see cref="TransitionError.CannotSettle"/>; empty otherwise. Nothing was stored (SPEC.md §5.6).</value>
+    public IReadOnlyList<(long Exchange, SettleProblem Problem)> CannotSettle { get; private init; } = [];
+
+    /// <summary>Gets the agent's own questions to the person this reply closed as settled.</summary>
+    /// <value>Empty unless the reply named some and was stored.</value>
+    public IReadOnlyList<long> Settled { get; private init; } = [];
+
+    /// <summary>Gets the person's own Requests this reply handed back to the agent.</summary>
+    /// <value>Empty unless the reply named some and was stored.</value>
+    public IReadOnlyList<long> HandedBack { get; private init; } = [];
+
     /// <summary>Gets the message as stored, or the earlier identical one.</summary>
     /// <value>Non-null exactly when <see cref="Succeeded"/> is <see langword="true"/>.</value>
     public Message? Message { get; }
@@ -55,6 +67,15 @@ public sealed record SayOutcome
         ArgumentNullException.ThrowIfNull(message);
         return new(message, stored, error: null, []);
     }
+
+    internal static SayOutcome Said(Message message, IReadOnlyList<long> settled, IReadOnlyList<long> handedBack)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        return new(message, stored: true, error: null, []) { Settled = settled, HandedBack = handedBack };
+    }
+
+    internal static SayOutcome RefusedToSettle(IReadOnlyList<(long Exchange, SettleProblem Problem)> problems) =>
+        new(message: null, stored: false, TransitionError.CannotSettle, []) { CannotSettle = problems };
 
     internal static SayOutcome Refused(TransitionError error, IReadOnlyList<string>? expectedItems = null) =>
         new(message: null, stored: false, error, expectedItems ?? []);

@@ -48,7 +48,8 @@ public sealed class TransportEnumTests
             { typeof(Broker.ClosureError), typeof(Wire.ClosureError) },
             { typeof(Core.WakeOutcome), typeof(Wire.WakeOutcome) },
             { typeof(Core.FileRejection), typeof(Wire.FileRejection) },
-            { typeof(Core.PlaceOutcome), typeof(Wire.PlaceOutcome) }
+            { typeof(Core.PlaceOutcome), typeof(Wire.PlaceOutcome) },
+            { typeof(Core.SettleProblem), typeof(Wire.SettleProblem) }
         };
 
     [Theory]

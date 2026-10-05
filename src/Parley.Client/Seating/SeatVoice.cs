@@ -418,16 +418,12 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>Appends what the broker refused, grouped by why.</summary>
     /// <param name="said">The report so far.</param>
     /// <param name="turnedAway">Those the broker refused.</param>
-    /// <param name="what">What became of them, for a report about something other than a refusal.</param>
     /// <remarks>
     /// The count first, the reason next, the names last, and the groups bounded: a terminal shows this in one
     /// row, so what comes first is what survives, and a broker whose detail names the recipient gives one
     /// group each.
     /// </remarks>
-    private static void Turned(
-        StringBuilder said,
-        IReadOnlyList<TurnedAway> turnedAway,
-        string what = "Refused for")
+    private static void Turned(StringBuilder said, IReadOnlyList<TurnedAway> turnedAway)
     {
         var groups = turnedAway
             .GroupBy(refusal => Reason(refusal.Because), StringComparer.Ordinal)
@@ -436,9 +432,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
         foreach (var group in groups.Take(Causes))
         {
-            _ = said.Append(' ')
-                .Append(what)
-                .Append(' ')
+            _ = said.Append(" Refused for ")
                 .Append(group.Count())
                 .Append(": ")
                 .Append(group.Key)
@@ -666,24 +660,23 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         }
     }
 
-    /// <summary>Performs a draft: one act per recipient, each the one its own pair state calls for.</summary>
+    /// <summary>Sends a draft: one Request to each recipient (SPEC.md §5.6).</summary>
     /// <param name="hold">The seat this is sent under.</param>
-    /// <param name="draft">What was written, who it goes to, and what Enter was said to do.</param>
+    /// <param name="draft">What was written and who it goes to.</param>
     /// <param name="conversationId">The conversation the room is showing.</param>
     /// <param name="cancellationToken">Cancels the sends.</param>
     /// <returns>How many recipients got it, and a sentence saying what happened.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> or <paramref name="draft"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>The acts are the draft's, not this method's.</b> What typing means per recipient is derived from who
-    /// owes whom (<see cref="Pairing"/>), and this performs exactly what the person was shown before they pressed
-    /// Enter. That is the whole of SC-002, and the reason the plan is read once here rather than recomputed: a
-    /// second derivation between the preview and the send is a second opinion about what was promised.
+    /// <b>Always a Request, whatever is open between them</b> (specs/025). This used to derive a Result or a Clarify from
+    /// who owed whom and, with several of an agent's questions open, filed the person's words against whichever one the
+    /// broker happened to list first. The agent decides what the words settle; this delivers them so it must answer.
+    /// That also retires 0.30.7's fallback, which turned a refused derived act into a Request: nothing is derived now.
     /// </para>
     /// <para>
-    /// <b>Length is checked for every recipient before anything is sent.</b> Each act frames its payload
-    /// differently, so one line can fit as a Clarify and not as a Result; refusing the whole draft up front is
-    /// what keeps a partial send from being the first thing a person learns about the cap.
+    /// <b>Length is checked once, before anything is sent</b>, because every recipient receives the same payload, so
+    /// a partial send is never the first thing a person learns about the cap.
     /// </para>
     /// <para>
     /// <b>N recipients is N sends</b> (SPEC.md section 5.5), and a failure against one must not lose the rest.
@@ -705,31 +698,25 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
             return new Sent(0, NothingWritten);
         }
 
-        var plan = draft.Plan();
+        var recipients = draft.Recipients;
 
-        if (plan.Count == 0)
+        if (recipients.Count == 0)
         {
             return new Sent(0, NobodyToAsk);
         }
 
-        // Every payload measured first. A draft that fits one act and not another would otherwise send in part.
-        foreach (var addressed in plan)
+        if (TooLong(Framed(draft.Text)) is { } refused)
         {
-            if (TooLong(Shaped(addressed, draft, hold)) is { } refused)
-            {
-                await RecordAsync(Wire.MessageType.Request, draft.Text.Length, cancellationToken)
-                    .ConfigureAwait(false);
+            await RecordAsync(Wire.MessageType.Request, draft.Text.Length, cancellationToken).ConfigureAwait(false);
 
-                return new Sent(0, refused);
-            }
+            return new Sent(0, refused);
         }
 
         var done = new List<string>();
         var turnedAway = new List<TurnedAway>();
-        var instead = new List<TurnedAway>();
         var stopped = false;
 
-        foreach (var addressed in plan)
+        foreach (var peer in recipients)
         {
             if (hold.Lost)
             {
@@ -740,55 +727,27 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
             try
             {
-                var problem = await PerformAsync(hold, addressed, draft, conversationId, cancellationToken)
-                    .ConfigureAwait(false);
+                var said = await RequestAsync(peer, draft.Text, conversationId, cancellationToken).ConfigureAwait(false);
 
-                if (problem is null)
+                if (said.StartsWith("Sent.", StringComparison.Ordinal))
                 {
-                    done.Add(addressed.Peer.Value);
-                }
-                else if (addressed.Act != Act.Ask
-                    && await RequestAsync(addressed.Peer, draft.Text, conversationId, cancellationToken)
-                        .ConfigureAwait(false) is var retried
-                    && retried.StartsWith("Sent.", StringComparison.Ordinal))
-                {
-                    // **A message a person typed is delivered, whatever the bookkeeping says.**
-                    //
-                    // The acts of §5.1 to §5.3 are about whose turn it is, and this surface derives which one
-                    // applies from the wait-for graph and the transcript. When that derivation is wrong the
-                    // broker refuses — correctly — and the words were simply lost: the owner watched a message
-                    // to two agents reach neither, with two different reasons about turns and nothing said
-                    // about what to do instead.
-                    //
-                    // So a refused act becomes a Request, which opens an exchange of its own and is admissible
-                    // whatever stands between the two of them. It is said rather than hidden: a new exchange
-                    // is an obligation somebody now owes a Result on, and §5.5 is the reason this surface
-                    // shows the bill before Enter rather than after.
-                    done.Add(addressed.Peer.Value);
-                    instead.Add(new TurnedAway(addressed.Peer.Value, problem));
+                    done.Add(peer.Value);
                 }
                 else
                 {
-                    turnedAway.Add(new TurnedAway(addressed.Peer.Value, problem));
+                    turnedAway.Add(new TurnedAway(peer.Value, said));
                 }
             }
             catch (RpcException failure)
             {
                 // One unreachable participant must not lose the rest.
-                turnedAway.Add(new TurnedAway(addressed.Peer.Value, failure.Status.Detail));
+                turnedAway.Add(new TurnedAway(peer.Value, failure.Status.Detail));
             }
         }
 
         // Grouped by reason through the same helper the broadcast uses, so one over-long report cannot
         // differ between the two places a person sends to several agents at once.
-        var report = new StringBuilder($"Sent to {done.Count} of {plan.Count}.");
-
-        if (instead.Count > 0)
-        {
-            // Named, with the reason the derived act could not be used: a new exchange is an obligation, and
-            // this surface does not open one quietly.
-            Turned(report, instead, "Sent as a new request instead");
-        }
+        var report = new StringBuilder($"Sent to {done.Count} of {recipients.Count}.");
 
         if (turnedAway.Count > 0)
         {
@@ -805,81 +764,6 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
 
     /// <summary>What is said when Enter was pressed on an empty line.</summary>
     internal const string NothingWritten = "Nothing was written, so nothing was sent.";
-
-    /// <summary>The outcome a person answering in prose is recorded under.</summary>
-    /// <remarks>
-    /// <b>A simplification, and recorded as one.</b> Section 5.3 offers done, answered, acknowledged and blocked,
-    /// and a person typing a reply into a line is not asked which. <c>answered</c> is the honest default for prose
-    /// -- it is what a question comes back as -- but somebody who did work and wants it recorded as <c>done</c>,
-    /// or who is blocked and must name a blocker, still needs the result form. Choosing the word from the line is
-    /// worth doing and is not done here.
-    /// </remarks>
-    private const string Answered = "answered";
-
-    /// <summary>Performs one recipient's act.</summary>
-    /// <param name="hold">The seat.</param>
-    /// <param name="addressed">The recipient and what was promised.</param>
-    /// <param name="draft">The draft.</param>
-    /// <param name="conversationId">The conversation.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The problem, or null when it went.</returns>
-    private async Task<string?> PerformAsync(
-        SeatHold hold,
-        Addressed addressed,
-        Draft draft,
-        string conversationId,
-        CancellationToken cancellationToken)
-    {
-        if (addressed.Act == Act.Ask)
-        {
-            var said = await RequestAsync(addressed.Peer, draft.Text, conversationId, cancellationToken)
-                .ConfigureAwait(false);
-
-            return said.StartsWith("Sent.", StringComparison.Ordinal) ? null : said;
-        }
-
-        if (addressed.Act == Act.Answer)
-        {
-            var answered = await ResultAsync(
-                hold,
-                addressed.Exchange!.Value,
-                [.. Held(hold, addressed.Exchange.Value).Select(id => (id, draft.Text, Answered))],
-                cancellationToken).ConfigureAwait(false);
-
-            return answered.Closed ? null : answered.Says;
-        }
-
-        var clarified = await ClarifyAsync(hold, addressed.Exchange!.Value, draft.Text, cancellationToken)
-            .ConfigureAwait(false);
-
-        return clarified.Closed ? null : clarified.Says;
-    }
-
-    /// <summary>What a recipient's act would put on the wire, for measuring before anything is sent.</summary>
-    /// <param name="addressed">The recipient and its act.</param>
-    /// <param name="draft">The draft.</param>
-    /// <param name="hold">The seat, for the items a Result must answer.</param>
-    /// <returns>The payload as it would be stored.</returns>
-    private static string Shaped(Addressed addressed, Draft draft, SeatHold hold) =>
-        addressed.Act switch
-        {
-            Act.Ask => Framed(draft.Text),
-            Act.Answer => new JsonObject
-            {
-                ["outcomes"] = new JsonArray([.. Held(hold, addressed.Exchange!.Value).Select(id =>
-                    (JsonNode?)new JsonObject { ["id"] = id, ["outcome"] = Answered, ["text"] = draft.Text })]),
-            }.ToJsonString(),
-            _ => new JsonObject { ["text"] = draft.Text }.ToJsonString(),
-        };
-
-    /// <summary>The items a Result on one exchange must answer.</summary>
-    /// <param name="hold">The seat holding it.</param>
-    /// <param name="exchangeId">The exchange.</param>
-    /// <returns>The identifiers, which for anything written since 0.7 is the one spelling section 5.3 reserves.</returns>
-    private static IReadOnlyList<string> Held(SeatHold hold, long exchangeId) =>
-        hold.Delivered.FirstOrDefault(d => d.Message.ExchangeId == exchangeId) is { } held
-            ? held.Items()
-            : [PayloadShape.WholeRequest];
 
     /// <summary>Sends a Clarify on an exchange this person holds, and settles the seat when the turn went.</summary>
     /// <param name="hold">The seat holding the delivered message.</param>

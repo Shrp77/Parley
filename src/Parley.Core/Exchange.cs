@@ -120,6 +120,14 @@ public sealed class Exchange
     /// </remarks>
     public ExchangeOutcome? Outcome { get; private set; }
 
+    /// <summary>Gets the exchange whose Request settled this one, when it closed as settled.</summary>
+    /// <value><see langword="null"/> unless <see cref="Outcome"/> is <see cref="ExchangeOutcome.Settled"/>.</value>
+    /// <remarks>
+    /// An exchange rather than a message, because retention deletes messages (§9.4) and the record of what settled a
+    /// question must outlive them (SPEC.md §5.6).
+    /// </remarks>
+    public long? SettledBy { get; private set; }
+
     /// <summary>Gets the instant the exchange was opened.</summary>
     /// <value>The creation timestamp, in UTC.</value>
     public DateTimeOffset OpenedUtc { get; }
@@ -298,6 +306,81 @@ public sealed class Exchange
         return TransitionResult.Ok;
     }
 
+    /// <summary>Closes the requester's own question to the person, because something the person wrote later settled it.</summary>
+    /// <param name="from">The participant settling it. Must be the requester, with the turn the receiver's.</param>
+    /// <param name="settling">The exchange whose Request settled it.</param>
+    /// <param name="nowUtc">The instant, which is also the instant of the reply that settles it.</param>
+    /// <returns><see cref="TransitionResult.Ok"/>, or why the move was refused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The one close a requester makes, and only of a question to the person</b> (SPEC.md §5.6). Whether the receiver
+    /// is the person, and whether <paramref name="settling"/> is a Request the person opened with this requester in the
+    /// same conversation, are facts about other rows: the broker checks them and storage checks them again. What is true
+    /// of this exchange alone is checked here.
+    /// </para>
+    /// <para>
+    /// No message is written on it. The person did not answer here and the requester wrote no Result here, so the
+    /// outcome and the exchange that settled it are the whole record.
+    /// </para>
+    /// </remarks>
+    public TransitionResult Settle(AgentName from, long settling, DateTimeOffset nowUtc)
+    {
+        if (State != ExchangeState.Open)
+        {
+            return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
+        }
+
+        if (from != Requester)
+        {
+            return TransitionResult.Fail(TransitionError.NotAParticipant);
+        }
+
+        if (OwedBy != Receiver)
+        {
+            return TransitionResult.Fail(TransitionError.NotYourTurn);
+        }
+
+        if (settling == Id)
+        {
+            throw new ArgumentException("An exchange cannot settle itself.", nameof(settling));
+        }
+
+        State = ExchangeState.Closed;
+        ClosedUtc = nowUtc;
+        Outcome = ExchangeOutcome.Settled;
+        SettledBy = settling;
+        return TransitionResult.Ok;
+    }
+
+    /// <summary>Hands the turn back to the receiver, on a request whose requester the receiver asked back.</summary>
+    /// <param name="from">The participant taking the turn. Must be the receiver, with the turn the requester's.</param>
+    /// <returns><see cref="TransitionResult.Ok"/>, or why the move was refused.</returns>
+    /// <remarks>
+    /// What the requester's own reply would have done (§5.2), taken by the receiver because the requester is the person
+    /// and answered in a later Request instead (SPEC.md §5.6). Nothing else moves: no message, and the depth counts only
+    /// what the receiver asks.
+    /// </remarks>
+    public TransitionResult TurnBack(AgentName from)
+    {
+        if (State != ExchangeState.Open)
+        {
+            return TransitionResult.Fail(TransitionError.ExchangeNotOpen);
+        }
+
+        if (from != Receiver)
+        {
+            return TransitionResult.Fail(TransitionError.NotAParticipant);
+        }
+
+        if (OwedBy != Requester)
+        {
+            return TransitionResult.Fail(TransitionError.NotYourTurn);
+        }
+
+        OwedBy = Receiver;
+        return TransitionResult.Ok;
+    }
+
     /// <summary>Closes the exchange because the conversation it belongs to closed first.</summary>
     /// <param name="nowUtc">The instant of closure, in UTC.</param>
     /// <returns><see cref="TransitionResult.Ok"/>, or a failure if the exchange is not open.</returns>
@@ -334,6 +417,7 @@ public sealed class Exchange
     /// <param name="closedUtc">The closing timestamp, if closed.</param>
     /// <param name="outcome">How it closed, or <see langword="null"/> while open.</param>
     /// <param name="version">The optimistic concurrency stamp held by the stored row.</param>
+    /// <param name="settledBy">The exchange that settled it, when it closed as settled.</param>
     /// <returns>The reconstructed exchange.</returns>
     /// <remarks>
     /// For the persistence layer only. It bypasses every transition guard, so the values are trusted
@@ -353,7 +437,8 @@ public sealed class Exchange
         DateTimeOffset? deliveredUtc,
         DateTimeOffset? closedUtc,
         ExchangeOutcome? outcome,
-        long version = 0) =>
+        long version = 0,
+        long? settledBy = null) =>
         new(id, requester, receiver, uncollectedAfter, stalledAfter, clarifyDepthCap, openedUtc)
         {
             OwedBy = owedBy,
@@ -362,6 +447,7 @@ public sealed class Exchange
             DeliveredUtc = deliveredUtc,
             ClosedUtc = closedUtc,
             Outcome = outcome,
-            Version = version
+            Version = version,
+            SettledBy = settledBy
         };
 }

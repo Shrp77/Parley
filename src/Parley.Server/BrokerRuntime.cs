@@ -897,8 +897,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>
     /// <returns>True when it is attached and no attachment presented its node's token.</returns>
+    /// <remarks>
+    /// <b>Never the person or Parley</b> (specs/025). Open outside Parley means a process Parley could have started and did
+    /// not, and no node ever starts either of them: the person's attachment is a surface, which is always "not started by
+    /// Parley", so the registry was reporting the person as open outside — a surface reading the flag for every row
+    /// would have marked them with the agents' warning.
+    /// </remarks>
     public bool OpenOutside(AgentName agent) =>
-        _attached.TryGetValue(agent.Value, out var sessions)
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
         && !sessions.IsEmpty
         && sessions.All(session => !session.StartedByParley);
 

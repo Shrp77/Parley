@@ -183,8 +183,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Wire.ExchangeOutcome.Complete => ExchangeOutcome.Complete,
                 Wire.ExchangeOutcome.Blocked => ExchangeOutcome.Blocked,
                 Wire.ExchangeOutcome.Closed => ExchangeOutcome.Closed,
+                Wire.ExchangeOutcome.Settled => ExchangeOutcome.Settled,
                 _ => null
-            }));
+            },
+            e.SettledBy == 0 ? null : e.SettledBy));
 
         return new ConversationExport([.. messages], [.. exchanges], destroyed);
     }

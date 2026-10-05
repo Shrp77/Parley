@@ -257,12 +257,6 @@ public sealed class CompletingTests : IAsyncDisposable
         Assert.Equal($"@{Billing.Value} ", shell.Line.Written);
         Assert.Contains(Billing, shell.Drafting!.Recipients);
         Assert.Contains(Orders, shell.Drafting!.Recipients);
-
-        // An agent that is not a participant has no pair state, so it gets a Request -- which is how an agent
-        // joins a conversation at all, membership being derived (§5.0).
-        Assert.Contains(
-            shell.Drafting!.Plan(),
-            addressed => addressed.Peer == Billing && addressed.Act == Act.Ask);
     }
 
     [Fact]
@@ -315,7 +309,8 @@ public sealed class CompletingTests : IAsyncDisposable
     {
         // **Removed on the owner's call of 2026-10-02.** F2 took "the other side of the one choice a draft offers" —
         // answer, or ask back instead — and the owner's reading was that it made no sense: a conversation never really
-        // stops. Holding a request, what somebody types answers it; nothing offers to flip that.
+        // stops. And since specs/025 what somebody types is a Request whatever they hold (SPEC.md §5.6), so there is
+        // nothing left to flip.
         var ct = TestContext.Current.CancellationToken;
         var (shell, _) = await SeatedAsync(ct);
         using var held = shell;
@@ -329,7 +324,6 @@ public sealed class CompletingTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal(before, shell.Line.Preview);
-        Assert.Equal(Act.Answer, Assert.Single(shell.Drafting!.Plan()).Act);
         Assert.DoesNotContain(shell.Actions(), action => action.Chord is { } chord && chord == Key.F2);
     }
 
@@ -456,22 +450,34 @@ public sealed class CompletingTests : IAsyncDisposable
 
         driving.App.LayoutAndDraw(true);
 
-        // One row saying it, which may sit under the name rather than beside it since 0.37.8 splits a row too wide for the
-        // column; which agent it is about is read off the item the row belongs to rather than off the text.
-        Assert.Single(shell.Room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+        // **One row for the agent, with how many questions are waiting** (specs/025): "orders (1)", where it said
+        // "orders@test — waiting for your reply" and repeated the heading above it.
+        Assert.DoesNotContain(shell.Room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+        Assert.Single(shell.Room.Written, row => row.Trim() == "orders (1)");
 
         shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is RoomRegion));
-        driving.Row(shell.Room.List, "waiting for your reply");
+        driving.Row(shell.Room.List, "orders (1)");
 
         var item = shell.Room.Selected;
 
         Assert.NotNull(item);
         Assert.Equal(Orders, item!.Peer);
 
-        // The message it points at is the peer's own, in the exchange this person holds.
-        Assert.NotNull(item!.At);
+        // The message the one question points at is the peer's own, in the exchange this person holds.
+        var question = Assert.Single(item.Questions);
 
+        Assert.NotNull(question.At);
+
+        // Enter lists the questions; choosing one is what moves the transcript.
         shell.Room.List.NewKeyDownEvent(Key.Enter);
+
+        var listing = (ChoiceDialog)driving.Find(RoomRegion.ListTitle(Orders.Value));
+        var entry = Assert.Single(listing.Choices.Source!.ToList().Cast<string>());
+
+        Assert.Contains("is the build green?", entry, StringComparison.Ordinal);
+
+        driving.Row(listing.Choices, "is the build green?");
+        driving.Enter();
 
         await shell.Settled;
 
@@ -484,7 +490,7 @@ public sealed class CompletingTests : IAsyncDisposable
 
         Assert.NotNull(at);
         Assert.Equal(
-            shell.Transcript.Rows.ToList().IndexOf(item.At!.Value),
+            shell.Transcript.Rows.ToList().IndexOf(question.At!.Value),
             at);
 
         // And a message within the first few rows is still reachable, rather than being refused for having

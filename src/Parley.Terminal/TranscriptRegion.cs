@@ -442,7 +442,7 @@ internal sealed class TranscriptRegion : FrameView
         // colour until a dump of the screen put the two side by side.
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
-        .. Reading.Lines(export.Messages),
+        .. Reading.Lines(export),
     ];
 
     /// <summary>Puts one line on screen, and nothing else.</summary>

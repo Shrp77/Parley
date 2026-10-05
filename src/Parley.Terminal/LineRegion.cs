@@ -407,7 +407,7 @@ internal sealed class LineRegion : FrameView
             // with what Enter would record — "answer — closes the exchange (F2: ask back instead)" — and a count of
             // exchanges opened and closed. The owner read both as wrong: a conversation never really stops, so a line
             // that says it closes something is describing bookkeeping as if it were the conversation.
-            lines.Add("to: " + Safe.Text(string.Join(", ", draft.Plan().Select(a => a.Peer.Value))));
+            lines.Add("to: " + Safe.Text(string.Join(", ", draft.Recipients.Select(peer => peer.Value))));
         }
 
         // **One line each, with nothing added.** `Reports.Sentences` joins a report into one paragraph and closes each

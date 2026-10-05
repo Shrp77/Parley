@@ -583,7 +583,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             State = Conversions.Out(e.State),
             OpenedUtc = e.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
             ClosedUtc = e.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
-            Outcome = Conversions.Out(e.Outcome)
+            Outcome = Conversions.Out(e.Outcome),
+            SettledBy = e.SettledBy ?? 0
         }));
 
         return reply;

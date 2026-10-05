@@ -641,11 +641,33 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Latest plan**: `specs/025-agent-settles-questions/` — **planned 2026-10-05, not built; on `019-layout`.** A person's
-  line to an agent is always a new request, and the agent says which of its own questions to the person it settled
-  (protocol 0.8). Prompted by a reply the terminal filed as the answer to an unrelated two-day-old question, because
-  `Pairing.From` kept one exchange per agent, chosen by the store's edge order. The room's *waiting on you* becomes one
-  row per agent with a count, and Enter lists the questions. `research.md` R1–R11 carries the decisions.
+- **Latest plan**: `specs/025-agent-settles-questions/` — **0.41.0, protocol 0.8, built through every story; on `019-layout`.
+  The walk (T043), the live check with a real agent (T044, the owner's call) and the combined review gate are owed.**
+  A person's line to an agent is always a new Request, and the agent replying says, in `settles`, which of its own
+  questions to the person the words settled; the broker closes those `settled`, citing the person's request, with no
+  message written on them. Prompted by a reply the terminal filed as the Result of an unrelated two-day-old question:
+  `Pairing.From` kept one exchange per agent, chosen by the store's edge order, and a Result asks nothing back, so the
+  agent went quiet. The owner's calls of 2026-10-05: the agent decides, because only it knows what its questions were
+  for; the person sees what it decided beside its reply, from the record rather than the model's words; asking about a
+  question settles nothing; and the room's *waiting on you* is one row per agent with a count, Enter listing the
+  questions and moving the transcript to the one chosen. The web page lists the same, from the same derivation
+  (`WaitingOnYou`). `research.md` R1–R12 carries the decisions.
+
+  **What building it found:**
+
+  - **`CHECK ((outcome = 'settled') = (settled_by IS NOT NULL))` let `settled_by` onto an open exchange.** A NULL outcome
+    makes the comparison NULL and a CHECK admits NULL. `IS` never yields NULL; the store test that writes it was watched
+    to fail with `=`.
+  - **The existing outcome trigger would have refused every settle**, since it requires a Result from the receiver. The
+    rule went into `tr_an_outcome_has_its_result` rather than a new trigger, and it requires the agent's reply at the
+    settle's own instant — which is also what lets a surface put the list beside the reply exactly.
+  - **A retried reply would have been refused for settling what its first copy settled**, had the settles been judged
+    before the write; they are applied after it, in the same transaction, and a bad name rolls the whole reply back.
+  - **The person read as open outside Parley in the live registry**: a surface is never "started by Parley". The rule
+    now applies only to agents a node could start.
+  - Every storage and broker guard was mutation-checked; three survive only as second layers (settling itself, the
+    person's-move check under the domain transition, and settles on a deduplicated reply, which a closed exchange refuses
+    first) and are recorded as such.
 
 - **Previous plan**: `specs/024-report-agent-turns/` — **0.38.0, built through every story; on `019-layout`. The
   quickstart walk (T035) and the review gate are owed.** The node reports each turn's start and end

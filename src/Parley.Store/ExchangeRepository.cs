@@ -37,7 +37,8 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                delivered_utc       AS DeliveredUtc,
                closed_utc          AS ClosedUtc,
                outcome             AS Outcome,
-               version             AS Version
+               version             AS Version,
+               settled_by          AS SettledBy
         FROM exchanges
         """;
 
@@ -531,6 +532,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                        delivered_utc = @DeliveredUtc,
                        closed_utc    = @ClosedUtc,
                        outcome       = @Outcome,
+                       settled_by    = @SettledBy,
                        version       = @NextVersion
                  WHERE id = @Id AND version = @ExpectedVersion;
                 """,
@@ -543,6 +545,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                     DeliveredUtc = exchange.DeliveredUtc is { } d ? ExchangeRow.FormatTimestamp(d) : null,
                     ClosedUtc = exchange.ClosedUtc is { } c ? ExchangeRow.FormatTimestamp(c) : null,
                     Outcome = OutcomeTokens.Format(exchange.Outcome),
+                    exchange.SettledBy,
                     ExpectedVersion = exchange.Version,
                     NextVersion = nextVersion
                 },
@@ -572,7 +575,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 SELECT id AS Id, state AS State, opened_utc AS OpenedUtc, closed_utc AS ClosedUtc,
-                       outcome AS Outcome
+                       outcome AS Outcome, settled_by AS SettledBy
                   FROM exchanges
                  WHERE conversation_id = @Conversation
                  ORDER BY id;
@@ -585,7 +588,63 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             ExchangeRow.ParseState(r.State),
             ExchangeRow.ParseTimestamp(r.OpenedUtc),
             r.ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(r.ClosedUtc),
-            OutcomeTokens.ParseExchange(r.Outcome)))];
+            OutcomeTokens.ParseExchange(r.Outcome),
+            r.SettledBy))];
+    }
+
+    /// <summary>
+    /// An agent's open questions to the person in one conversation, for delivery beside the person's Request (SPEC.md §5.6).
+    /// </summary>
+    /// <param name="agent">The agent the person's Request is for.</param>
+    /// <param name="person">The person.</param>
+    /// <param name="conversationId">The conversation the Request is in.</param>
+    /// <param name="limit">The most to return.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Up to <paramref name="limit"/> questions, oldest first, and how many there are in all.</returns>
+    /// <remarks>
+    /// Every exchange the agent could name in <c>settles</c>: open, between the two, in that conversation, with the
+    /// person owing the next move. That includes the person's own Request the agent asked back about, which the agent
+    /// would hand back to itself. What each carries is the last thing the agent said in it, because that is what the
+    /// person owes a reply to; it is the agent's own words, returned to it.
+    /// </remarks>
+    public async Task<(IReadOnlyList<SettleableQuestion> Questions, int Total)> GetSettleableAsync(
+        AgentName agent,
+        AgentName person,
+        string conversationId,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        var rows = (await _connection.QueryAsync<SettleableRow>(
+            new CommandDefinition(
+                """
+                SELECT e.id AS Id, e.opened_utc AS OpenedUtc,
+                       (SELECT m.payload_json FROM messages AS m
+                         WHERE m.exchange_id = e.id AND m.from_agent = @Agent
+                         ORDER BY m.id DESC LIMIT 1) AS Said
+                  FROM exchanges AS e
+                 WHERE e.state = 'OPEN'
+                   AND e.conversation_id = @Conversation
+                   AND e.owed_by = @Person
+                   AND ((e.requester = @Agent AND e.receiver = @Person)
+                        OR (e.requester = @Person AND e.receiver = @Agent))
+                 ORDER BY e.id;
+                """,
+                new { Agent = agent.Value, Person = person.Value, Conversation = conversationId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
+
+        return ([.. rows.Take(limit).Select(r => new SettleableQuestion(
+            r.Id, ExchangeRow.ParseTimestamp(r.OpenedUtc), PayloadShape.Spoken(r.Said)))], rows.Count);
+    }
+
+    private sealed class SettleableRow
+    {
+        public long Id { get; init; }
+
+        public string OpenedUtc { get; init; } = string.Empty;
+
+        public string? Said { get; init; }
     }
 
     private sealed class SnapshotRow
@@ -599,5 +658,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         public string? ClosedUtc { get; init; }
 
         public string? Outcome { get; init; }
+
+        public long? SettledBy { get; init; }
     }
 }

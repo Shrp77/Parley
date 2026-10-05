@@ -578,7 +578,7 @@ Ten tools, and no way to say who it is:
 |---|---|
 | `parley_request` | Ask another repository's agent to do work there, or for information it holds. Returns an identifier or a refusal — never the Result. Starts the receiver if nothing is running it. |
 | `parley_clarify` | Ask your requester for something only it can give, or answer what it asked you. |
-| `parley_result` | Report what each item came to — done, answered, acknowledged, or blocked with the blocker named — and close the exchange. |
+| `parley_result` | Report what each item came to — done, answered, acknowledged, or blocked with the blocker named — and close the exchange. Replying to you, it can also say which of its own questions to you your words settled. |
 | `parley_inbox` | Collect what is waiting, work you owe first. |
 | `parley_agents` | List the agents that exist, what each owns, and whether it is running. |
 | `parley_conclude` | Say whether you are finished with a conversation. |
@@ -790,6 +790,17 @@ the web UI and the terminal both take your seat as soon as you open them. The se
 every roster and an identity recorded against everything you say. So the box at the bottom of a
 conversation is a way to talk to the agents in it — your message lands in the transcript under
 your own name, and a peer answers you rather than being told something by an operator.
+
+Whatever you type to an agent goes to it as a new request, so it always owes you a reply. Nothing
+you type is filed as the answer to one of its earlier questions: you may be answering one, asking
+it something back, or talking about something else, and only the agent knows what its own
+questions were for. So the agent decides. When it replies, it can say which of its questions to
+you your words settled, and those close. The transcript shows which ones under its reply, taken
+from the record rather than from the agent's words. Asking an agent to explain a question does not
+settle it. If an agent settles one you did not mean to answer, tell it so; that is a new request
+too. Everything still waiting on you is listed in the room, one row per agent with a count, and
+Enter on a row lists the questions and takes you to the one you choose. The web UI shows the same
+list above the transcript.
 
 Two things about that are worth knowing before you use it.
 

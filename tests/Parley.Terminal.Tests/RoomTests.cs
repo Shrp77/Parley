@@ -40,7 +40,7 @@ public sealed class RoomTests
         room.Show(
             pairs,
             [.. pairs.Where(p => p.Turn == Turn.Mine && p.OpenExchange is not null)
-                .Select(p => new OutstandingItem(p.Peer, $"{p.Peer.Value} — waiting for your reply", p.OpenExchange!.Value, null))],
+                .Select(p => new OutstandingItem(p.Peer, [new WaitingQuestion(p.OpenExchange!.Value, DateTimeOffset.UnixEpoch, null, "a question")]))],
             seated);
 
         return room;
@@ -126,7 +126,9 @@ public sealed class RoomTests
         var room = Filled(true, new PairState(Billing, 3, Turn.Mine));
 
         Assert.Contains(RoomRegion.ToAddress, room.Written);
-        Assert.Contains(room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+        // One row for the agent with how many questions are waiting (specs/025), not the heading said again.
+        Assert.Contains("  billing (1)", room.Written);
+        Assert.DoesNotContain(room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
     }
 
     [Fact]

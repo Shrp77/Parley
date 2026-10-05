@@ -124,7 +124,7 @@ public sealed class RoomActivityTests
 
         room.Show(
             [new PairState(waiting, 3, Turn.Mine), new PairState(working, null, Turn.Nobody)],
-            [new OutstandingItem(waiting, $"{waiting.Value} — waiting for your reply", 3, null)],
+            [new OutstandingItem(waiting, [new WaitingQuestion(3, T0, null, "which schema?")])],
             seated: true,
             Person,
             activity: new Dictionary<AgentName, Activity>
@@ -145,7 +145,7 @@ public sealed class RoomActivityTests
 
         Assert.Contains("working 3m", rows[name + 1], StringComparison.Ordinal);
         Assert.Contains(rows, row => row.Contains("waiting on you", StringComparison.Ordinal));
-        Assert.Contains(rows, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.Trim() == "inventoryledger (1)");
     }
 
     [Fact]

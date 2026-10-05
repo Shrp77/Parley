@@ -62,6 +62,9 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>The exchanges every export returns.</summary>
     public List<Wire.ExchangeSnapshot> Exchanges { get; } = [];
 
+    /// <summary>The wait-for graph every <c>DescribeWaiting</c> returns; empty unless a test needs one.</summary>
+    public List<Wire.WaitingEdge> Edges { get; } = [];
+
     /// <summary>How many exports were asked for.</summary>
     public int Exports { get; private set; }
 
@@ -148,6 +151,7 @@ public sealed class ScriptedExport : HttpMessageHandler
             {
                 "/parley.v1.Operators/Export" => Export(),
                 "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply(),
+                "/parley.v1.Operators/DescribeWaiting" => Waiting(),
                 _ => null
             };
         }
@@ -174,6 +178,15 @@ public sealed class ScriptedExport : HttpMessageHandler
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));
 
         return response;
+    }
+
+    private Wire.WaitingReply Waiting()
+    {
+        var reply = new Wire.WaitingReply();
+
+        reply.Edges.AddRange(Edges);
+
+        return reply;
     }
 
     private Wire.ExportReply Export()

@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.7
+**Version:** 0.8
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -1501,7 +1501,7 @@ CREATE TABLE exchanges (
   -- A closed exchange says how it closed; an open one cannot, since it has not.
   CHECK ((state = 'CLOSED') = (outcome IS NOT NULL)),
   -- Settled names what settled it, and nothing else does.
-  CHECK ((outcome = 'settled') = (settled_by IS NOT NULL)),
+  CHECK ((outcome IS 'settled') = (settled_by IS NOT NULL)),
   CHECK (settled_by IS NULL OR settled_by <> id),
   CHECK (pair_key = min(requester, receiver) || char(31) || max(requester, receiver))
 ) STRICT;

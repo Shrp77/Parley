@@ -149,6 +149,100 @@ public static class Reading
         return lines;
     }
 
+    /// <summary>Lays a conversation out for reading, with what each reply settled beneath it (SPEC.md §5.6).</summary>
+    /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
+    /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>The transcript, line by line.</returns>
+    /// <remarks>
+    /// <b>From the record, never from the reply's words.</b> The person must see what an agent decided its words settled,
+    /// and the broker cannot check that a model said so — so the list is drawn from the exchanges the reply closed, the
+    /// way <see cref="Settled"/> finds them, beneath the reply that closed them.
+    /// </remarks>
+    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
+        var lines = new List<TranscriptLine>();
+
+        foreach (var line in Lines(export.Messages, zone))
+        {
+            lines.Add(line);
+
+            if (line.Kind != LineKind.Header || line.Message is not { } id)
+            {
+                continue;
+            }
+
+            var message = export.Messages.First(m => m.Id == id);
+
+            if (Settled(message, export) is { Count: > 0 } settled)
+            {
+                lines.Add(new TranscriptLine(Pad(SettledLine(settled)), LineKind.Annotation, null, id));
+            }
+        }
+
+        return lines;
+    }
+
+    /// <summary>What a reply settled, as one sentence beneath it.</summary>
+    /// <param name="settled">The start of each question settled.</param>
+    /// <returns>The sentence.</returns>
+    public static string SettledLine(IReadOnlyList<string> settled)
+    {
+        ArgumentNullException.ThrowIfNull(settled);
+
+        return "Settled: " + string.Join(", ", settled.Select(asked => "\u201C" + asked + "\u201D"));
+    }
+
+    /// <summary>The questions a reply settled, each as the start of what was asked (SPEC.md §5.6).</summary>
+    /// <param name="message">The reply.</param>
+    /// <param name="export">The conversation it is in.</param>
+    /// <returns>The start of each question it settled, oldest first; empty for any other message.</returns>
+    /// <remarks>
+    /// A question was settled by this reply when it names the reply's exchange as what settled it, closed at the reply's
+    /// own instant, and was asked by the reply's sender. The broker writes the reply and the settle in one transaction at
+    /// one instant, and storage refuses a settle no reply stands beside, so the match is exact rather than a guess.
+    /// Where retention has pruned a question's own words, the exchange is named instead.
+    /// </remarks>
+    public static IReadOnlyList<string> Settled(Message message, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(export);
+
+        if (message.Type == MessageType.Request)
+        {
+            return [];
+        }
+
+        return [.. export.Exchanges
+            .Where(e => e.Outcome == ExchangeOutcome.Settled
+                && e.SettledBy == message.ExchangeId
+                && e.ClosedUtc == message.CreatedUtc)
+            .Select(e => (Exchange: e, Asked: export.Messages.FirstOrDefault(m => m.ExchangeId == e.ExchangeId)))
+            .Where(q => q.Asked is null || q.Asked.From == message.From)
+            .OrderBy(q => q.Exchange.ExchangeId)
+            .Select(q => q.Asked is { } asked && PayloadShape.Spoken(asked.PayloadJson) is { Length: > 0 } said
+                ? Short(said)
+                : $"exchange {q.Exchange.ExchangeId}")];
+    }
+
+    /// <summary>The start of a question, short enough to list several on one line.</summary>
+    /// <param name="said">The words.</param>
+    /// <returns>The first sixty characters, on one line, with an ellipsis when cut.</returns>
+    private static string Short(string said)
+    {
+        var flat = string.Join(' ', said.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        if (flat.Length <= 60)
+        {
+            return flat;
+        }
+
+        var at = char.IsHighSurrogate(flat[58]) ? 58 : 59;
+
+        return string.Concat(flat.AsSpan(0, at), "\u2026");
+    }
+
     /// <summary>The state of an exchange, as a header says it.</summary>
     /// <param name="snapshot">The exchange.</param>
     /// <returns>A short phrase: open, or how it closed.</returns>
@@ -167,6 +261,7 @@ public static class Reading
                 ExchangeOutcome.Complete => "closed, complete",
                 ExchangeOutcome.Blocked => "closed, blocked",
                 ExchangeOutcome.Closed => "closed before it finished",
+                ExchangeOutcome.Settled => $"settled by the agent that asked, in exchange {snapshot.SettledBy}",
                 _ => "closed"
             };
     }

@@ -42,5 +42,9 @@ public enum TransitionError
     OutcomesDoNotMatchItems,
 
     /// <summary>A participant tried to record <c>closed</c>, which only the broker writes.</summary>
-    ClosedIsTheBrokers
+    ClosedIsTheBrokers,
+
+    /// <summary>A reply named an exchange in <c>settles</c> that it may not settle (SPEC.md §5.6).</summary>
+    /// <remarks>The whole reply is refused and nothing is stored; the refusal says, for each exchange, why.</remarks>
+    CannotSettle
 }

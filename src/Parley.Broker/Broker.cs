@@ -366,6 +366,7 @@ public sealed class Broker
     /// <param name="payloadJson">The clarification document.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the clarification.</param>
+    /// <param name="settles">Exchanges the person's Request settled, on a reply to one (SPEC.md §5.6); empty otherwise.</param>
     /// <returns>The message as stored, or why the exchange refused it.</returns>
     /// <remarks>
     /// One operation for both directions, because which it is depends only on who is speaking. A
@@ -377,11 +378,12 @@ public sealed class Broker
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<long>? settles = null) =>
         SayAsync(
             exchangeId, from, MessageType.Clarify, responderModel, payloadJson, nowUtc,
             (exchange, speaker) => exchange.Clarify(speaker, nowUtc), expectedItems: null,
-            cancellationToken);
+            settles ?? [], cancellationToken);
 
     /// <summary>Sends the Result of a Request, closing its exchange (§5.3).</summary>
     /// <param name="exchangeId">The exchange.</param>
@@ -390,6 +392,7 @@ public sealed class Broker
     /// <param name="payloadJson">The Result document: an outcome for each item of the Request.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the Result.</param>
+    /// <param name="settles">Exchanges the person's Request settled, on a reply to one (SPEC.md §5.6); empty otherwise.</param>
     /// <returns>The Result as stored, or why the exchange refused it — with the item ids it expected.</returns>
     /// <exception cref="ArgumentException">The payload has no readable outcomes.</exception>
     /// <remarks>
@@ -411,7 +414,8 @@ public sealed class Broker
         string responderModel,
         string payloadJson,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<long>? settles = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(payloadJson);
 
@@ -429,6 +433,7 @@ public sealed class Broker
             exchangeId, from, MessageType.Result, responderModel, payloadJson, nowUtc,
             (exchange, speaker) => exchange.Close(speaker, nowUtc, rollup),
             expectedItems: [.. outcomes.Select(o => o.Id)],
+            settles ?? [],
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -441,6 +446,7 @@ public sealed class Broker
     /// <param name="nowUtc">The instant.</param>
     /// <param name="transition">The domain transition to attempt.</param>
     /// <param name="expectedItems">For a Result, the item ids it gives outcomes for; otherwise null.</param>
+    /// <param name="settles">Exchanges the person's Request settled (SPEC.md §5.6).</param>
     /// <param name="cancellationToken">Cancels the move.</param>
     /// <returns>The message as stored, or why the move was refused.</returns>
     /// <remarks>
@@ -453,6 +459,12 @@ public sealed class Broker
     /// A duplicate inside the deduplication window is a transport retry of a move already applied, so it
     /// is reported as sent and the transition is not applied twice.
     /// </para>
+    /// <para>
+    /// <b>What the reply settles is applied after the message is written, inside the same transaction.</b> A retry is
+    /// recognised at the write, before anything is settled, so it is reported as sent rather than refused for naming
+    /// questions its first copy already closed. And a name that cannot be settled refuses the whole reply by leaving the
+    /// transaction uncommitted: the message, the transition and every settle go together or not at all.
+    /// </para>
     /// </remarks>
     private async Task<SayOutcome> SayAsync(
         long exchangeId,
@@ -463,6 +475,7 @@ public sealed class Broker
         DateTimeOffset nowUtc,
         Func<Exchange, AgentName, TransitionResult> transition,
         IReadOnlyList<string>? expectedItems,
+        IReadOnlyList<long> settles,
         CancellationToken cancellationToken)
     {
         RequireStarted(type == MessageType.Result ? "sending a result" : "clarifying");
@@ -530,8 +543,134 @@ public sealed class Broker
                 "the connection is not honouring IMMEDIATE transactions.");
         }
 
+        if (settles.Count == 0)
+        {
+            scope.Complete();
+            return SayOutcome.Said(appended.Message, appended.Stored);
+        }
+
+        var settled = await SettleAsync(exchange, from, settles, nowUtc, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (settled.Problems.Count > 0)
+        {
+            // Not completed, so the message and the transition go with it: the whole reply is refused (§5.6).
+            return SayOutcome.RefusedToSettle(settled.Problems);
+        }
+
         scope.Complete();
-        return SayOutcome.Said(appended.Message, appended.Stored);
+        return SayOutcome.Said(appended.Message, settled.Settled, settled.HandedBack);
+    }
+
+    /// <summary>Settles what a reply on the person's Request names (SPEC.md §5.6), or says why it cannot.</summary>
+    /// <param name="reply">The exchange the reply is on, as it stood before the reply moved it.</param>
+    /// <param name="from">The agent replying.</param>
+    /// <param name="settles">What it named.</param>
+    /// <param name="nowUtc">The reply's instant, which every settle carries so a surface can show them beside it.</param>
+    /// <param name="transaction">The reply's own transaction.</param>
+    /// <param name="cancellationToken">Cancels the reads and writes.</param>
+    /// <returns>What was settled and handed back, or every problem found; when there are problems nothing is kept.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Every name is checked before any is refused</b>, so the refusal lists them all and the agent can send again
+    /// without them in one move rather than discovering them one at a time.
+    /// </para>
+    /// <para>
+    /// The order of the checks is the order of the problems' meaning: an exchange that does not exist has no conversation
+    /// to compare, and one in another conversation is reported as that whether or not it is open. Storage checks the
+    /// conversation, the pairing and the person again when the outcome is written.
+    /// </para>
+    /// </remarks>
+    private async Task<(IReadOnlyList<long> Settled, IReadOnlyList<long> HandedBack,
+        IReadOnlyList<(long Exchange, SettleProblem Problem)> Problems)> SettleAsync(
+        Exchange reply,
+        AgentName from,
+        IReadOnlyList<long> settles,
+        DateTimeOffset nowUtc,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        var named = settles.Distinct().ToList();
+
+        if (named.Count > Settling.MostNamed)
+        {
+            throw new ArgumentException(
+                $"A reply may settle at most {Settling.MostNamed} exchanges; this one named {named.Count}.",
+                nameof(settles));
+        }
+
+        var person = reply.Requester;
+        var problems = new List<(long Exchange, SettleProblem Problem)>();
+
+        // Only a reply on a Request the person opened with this agent can settle anything.
+        if (!PersonSeat.Is(person) || reply.Receiver != from)
+        {
+            return ([], [], [.. named.Select(id => (id, SettleProblem.NotFromThePerson))]);
+        }
+
+        var conversation = (await _messages.GetRequestAsync(reply.Id, transaction, cancellationToken)
+            .ConfigureAwait(false))?.ConversationId;
+
+        var settled = new List<long>();
+        var handedBack = new List<long>();
+
+        foreach (var id in named)
+        {
+            // The reply's own exchange: the person did not owe the move on it when the agent replied.
+            if (id == reply.Id)
+            {
+                problems.Add((id, SettleProblem.NotTheirMove));
+                continue;
+            }
+
+            var target = await _exchanges.GetAsync(id, transaction, cancellationToken).ConfigureAwait(false);
+            var targetConversation = target is null
+                ? null
+                : (await _messages.GetRequestAsync(id, transaction, cancellationToken).ConfigureAwait(false))
+                    ?.ConversationId;
+
+            if (target is null)
+            {
+                problems.Add((id, SettleProblem.NotOpen));
+            }
+            else if (!string.Equals(targetConversation, conversation, StringComparison.Ordinal))
+            {
+                problems.Add((id, SettleProblem.OtherConversation));
+            }
+            else if (target.State != ExchangeState.Open)
+            {
+                problems.Add((id, SettleProblem.NotOpen));
+            }
+            else if (!target.Involves(from) || !target.Involves(person))
+            {
+                problems.Add((id, SettleProblem.NotBetweenYou));
+            }
+            else if (target.OwedBy != person)
+            {
+                problems.Add((id, SettleProblem.NotTheirMove));
+            }
+            else
+            {
+                var moved = target.Requester == from ? target.Settle(from, reply.Id, nowUtc) : target.TurnBack(from);
+
+                if (!moved.Succeeded)
+                {
+                    // Unreachable after the checks above, which are the transitions' own conditions.
+                    problems.Add((id, SettleProblem.NotTheirMove));
+                    continue;
+                }
+
+                if (!await _exchanges.SaveAsync(target, transaction, cancellationToken).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"Exchange {id} changed under a write lock held for this operation.");
+                }
+
+                (target.Requester == from ? settled : handedBack).Add(id);
+            }
+        }
+
+        return problems.Count > 0 ? ([], [], problems) : (settled, handedBack, []);
     }
 
     /// <summary>Lists the participants this one may address (§10.1's <c>agents()</c>).</summary>
@@ -855,6 +994,21 @@ public sealed class Broker
                 ? asked.PayloadJson
                 : null;
 
+            // **Beside a Request from the person, the agent's own open questions to them** (SPEC.md §5.6), so it can say
+            // what the person's words settled without searching. Its own words, returned to it, and bounded (§13).
+            IReadOnlyList<SettleableQuestion>? settleable = null;
+            var leftOut = 0;
+
+            if (message.Type == MessageType.Request && PersonSeat.Is(message.From))
+            {
+                var (questions, total) = await _exchanges.GetSettleableAsync(
+                    agent, message.From, message.ConversationId, Settling.MostListed, cancellationToken)
+                    .ConfigureAwait(false);
+
+                settleable = [.. questions.Select(q => q with { Asked = Settling.Cut(q.Asked) })];
+                leftOut = total - questions.Count;
+            }
+
             delivered.Add(new DeliveredMessage(
                 message,
                 TrustEnvelope.Wrap(
@@ -863,7 +1017,9 @@ public sealed class Broker
                     message.PayloadJson,
                     TrustEnvelope.NewToken(),
                     message.ConversationId,
-                    request)));
+                    request),
+                settleable,
+                leftOut));
         }
 
         var polls = await _conversations.GetOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false);

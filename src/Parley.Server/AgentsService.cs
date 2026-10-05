@@ -181,7 +181,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         var outcome = await Run(
             from,
             (broker, now, ct) => broker.ClarifyAsync(
-                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
+                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
             context).ConfigureAwait(false);
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
@@ -200,7 +200,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         var outcome = await Run(
             from,
             (broker, now, ct) => broker.ResultAsync(
-                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
+                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
             context).ConfigureAwait(false);
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
@@ -528,6 +528,13 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         };
 
         reply.ExpectedItems.AddRange(outcome.ExpectedItems);
+        reply.CannotSettle.AddRange(outcome.CannotSettle.Select(c => new Wire.SettleRefusal
+        {
+            ExchangeId = c.Exchange,
+            Problem = Conversions.Out(c.Problem)
+        }));
+        reply.Settled.AddRange(outcome.Settled);
+        reply.HandedBack.AddRange(outcome.HandedBack);
         return reply;
     }
 

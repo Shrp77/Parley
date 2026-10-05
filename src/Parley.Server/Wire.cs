@@ -132,7 +132,22 @@ internal static class Conversions
         ExchangeOutcome.Complete => Wire.ExchangeOutcome.Complete,
         ExchangeOutcome.Blocked => Wire.ExchangeOutcome.Blocked,
         ExchangeOutcome.Closed => Wire.ExchangeOutcome.Closed,
+        ExchangeOutcome.Settled => Wire.ExchangeOutcome.Settled,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
+    };
+
+    /// <summary>Converts why an exchange could not be settled for the wire (SPEC.md §5.6).</summary>
+    /// <param name="problem">The problem.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The problem is not a defined member.</exception>
+    public static Wire.SettleProblem Out(SettleProblem problem) => problem switch
+    {
+        SettleProblem.NotFromThePerson => Wire.SettleProblem.NotFromThePerson,
+        SettleProblem.OtherConversation => Wire.SettleProblem.OtherConversation,
+        SettleProblem.NotOpen => Wire.SettleProblem.NotOpen,
+        SettleProblem.NotBetweenYou => Wire.SettleProblem.NotBetweenYou,
+        SettleProblem.NotTheirMove => Wire.SettleProblem.NotTheirMove,
+        _ => throw new ArgumentOutOfRangeException(nameof(problem), problem, "Not a defined problem.")
     };
 
     /// <summary>Converts an item outcome for the wire.</summary>
@@ -340,6 +355,7 @@ internal static class Conversions
         TransitionError.ClarifyDepthExceeded => Wire.TransitionError.ClarifyDepthExceeded,
         TransitionError.OutcomesDoNotMatchItems => Wire.TransitionError.OutcomesDoNotMatchItems,
         TransitionError.ClosedIsTheBrokers => Wire.TransitionError.ClosedIsTheBrokers,
+        TransitionError.CannotSettle => Wire.TransitionError.CannotSettle,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
@@ -432,7 +448,21 @@ internal static class Conversions
     {
         ArgumentNullException.ThrowIfNull(delivered);
 
-        return new Wire.DeliveredMessage { Message = Out(delivered.Message), Envelope = delivered.Envelope };
+        var wire = new Wire.DeliveredMessage
+        {
+            Message = Out(delivered.Message),
+            Envelope = delivered.Envelope,
+            SettleableLeftOut = delivered.SettleableLeftOut
+        };
+
+        wire.Settleable.AddRange((delivered.Settleable ?? []).Select(q => new Wire.SettleableQuestion
+        {
+            ExchangeId = q.ExchangeId,
+            OpenedUtc = Stamp(q.OpenedUtc),
+            Asked = q.Asked
+        }));
+
+        return wire;
     }
 
     /// <summary>Converts a closure poll for the wire.</summary>

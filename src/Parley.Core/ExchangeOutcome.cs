@@ -17,5 +17,11 @@ public enum ExchangeOutcome
     Blocked = 1,
 
     /// <summary>The conversation was closed before the receiver sent its Result.</summary>
-    Closed = 2
+    Closed = 2,
+
+    /// <summary>
+    /// The requester's question to the person, closed by the requester because something the person wrote later
+    /// settled it (SPEC.md §5.6). No Result was written for it.
+    /// </summary>
+    Settled = 3
 }

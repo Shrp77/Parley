@@ -7,15 +7,16 @@ Schema 1, edited in place (unreleased; a store from before needs a reset).
 | Column | Change | Rule |
 |---|---|---|
 | `outcome` | admits `settled` | `CHECK (outcome IN ('complete', 'blocked', 'closed', 'settled'))` |
-| `settled_by` | **new**, `INTEGER REFERENCES exchanges(id)` | `CHECK ((outcome = 'settled') = (settled_by IS NOT NULL))`; `CHECK (settled_by IS NULL OR settled_by <> id)` |
+| `settled_by` | **new**, `INTEGER REFERENCES exchanges(id)` | `CHECK ((outcome IS 'settled') = (settled_by IS NOT NULL))` (`IS`, because `=` with a NULL outcome is NULL and a CHECK admits NULL); `CHECK (settled_by IS NULL OR settled_by <> id)` |
 
-**Trigger `tr_settled_by_its_requester`** — before an update that sets `outcome = 'settled'`, refuse unless all hold:
+**In `tr_an_outcome_has_its_result`** (built: folded into the existing outcome trigger rather than a new one, which would otherwise have refused every settle for lacking a Result) — before an update that sets `outcome = 'settled'`, refuse unless all hold:
 
 - the settling exchange (`settled_by`) is in the same conversation;
 - its requester is this exchange's receiver, and its receiver is this exchange's requester;
-- this exchange's receiver is the person (adapter `parley-console`).
+- this exchange's receiver is the person (adapter `parley-console`);
+- the requester wrote a Clarify or Result on the settling exchange at exactly this exchange's `closed_utc`.
 
-The last also refuses settling the person's own request: its receiver is an agent.
+The person check also refuses settling the person's own request: its receiver is an agent.
 
 **State transitions**
 
