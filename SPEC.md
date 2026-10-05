@@ -608,6 +608,11 @@ needs, where that is the truth (§5.3). Nothing closes the exchange on the recei
 **Depth increments only when the receiver sends.** The requester's reply supplies what was
 asked for; it does not open a round.
 
+**Where the requester is the person, the reply may come as a new Request** (§5.6). A person's line
+to an agent is always a Request, so a person asked back does not answer inside the exchange; the
+agent reads what the person said and, if it supplied what was asked for, hands the turn on the
+original exchange back to itself, exactly as the person's reply would have.
+
 ### 5.3 Result
 
 Closes the exchange. Carries **one outcome**, for the ask as a whole:
@@ -619,6 +624,7 @@ Closes the exchange. Carries **one outcome**, for the ask as a whole:
 | `acknowledged` | Received and understood; nothing further to do or say | the receiver |
 | `blocked` | A concrete blocker remains after the receiver tried to resolve it | the receiver |
 | `closed` | The person running the deployment closed the conversation first | the broker, for the person |
+| `settled` | An agent's question to the person was settled by something the person said later, in the agent's judgement (§5.6) | the requester, in its reply to the person |
 
 The outcome is recorded against the item `request`, which is the identifier a Request answered as a
 whole has always used — a person's close writes it too. **A Request stored under 0.5 or 0.6 carried
@@ -666,7 +672,8 @@ concrete blocker it could not resolve, and it must say what the blocker is and w
 could". Those are not blockers.
 
 **The exchange carries one rolled-up outcome** (§9.2): `blocked` or `closed` if the outcome was —
-or, for an exchange opened before 0.7, if any of its items was — otherwise complete. It is what
+or, for an exchange opened before 0.7, if any of its items was — otherwise complete; or `settled`,
+which no Result writes (§5.6). It is what
 survives once retention prunes the message text (§9.4), so it is deliberately the least favourable
 reading.
 
@@ -739,6 +746,57 @@ it flagged as waiting on an unreachable agent. Silently leaving the machine out 
 when nothing is registered under that role is almost always a misspelling, and "asked nobody,
 all done" is an answer that looks like success.
 
+### 5.6 A person's line, and what the agent settles
+
+**Everything a person writes to an agent is a Request.** A surface never decides which of the
+agent's open questions a person's words answer, because it cannot know: the agent may have asked
+something days ago while the person moved on, and what the person types may be an answer, a
+question back, or about something else entirely. A surface that guessed filed a person's question
+as the answer to an unrelated, older one, closing it, and left the agent owing nothing — so it said
+nothing (§18, 0.8). A Request is owed a reply, so the agent always answers what the person said.
+
+**The agent decides what that settled.** Only the agent knows what its own questions were for. When
+it sends a Clarify or a Result on a Request the person opened with it, it may name, in `settles`,
+exchanges the person's words settled:
+
+- **its own Request to the person**, which the person has not answered. The broker closes it with
+  the outcome `settled`, recording the exchange whose Request settled it. No message is written on
+  it: the person did not answer there and the agent did not write a Result there, and a message on
+  it under either name would put words in the transcript nobody said (§5). What the agent said is
+  its reply on the person's Request, and that is where every surface shows it;
+- **the person's own Request to the agent, on which the agent asked back** (§5.2) and the person
+  owes the next move. The broker hands the turn back to the agent, as the person's reply there would
+  have, and changes nothing else: no message, and the depth does not move. The agent then answers
+  it with an ordinary Result.
+
+**Asking for more is not an answer.** A person who asks the agent to explain a question has not
+settled it. The agent answers what it was asked and leaves its question open, still waiting on the
+person — which is what the person's screen should go on saying.
+
+**Every surface shows what a reply settled, beside the reply, from the record** — not from the
+agent's words, which may not mention it. The broker cannot check what a model says; it can say
+exactly what was settled and when, and a person who disagrees writes to the agent again. Nothing is
+reopened (§9.3); a question worth asking again is asked again.
+
+**The whole reply is refused if anything named cannot be settled**, and nothing is stored. Each
+exchange named must be in the same conversation, open, between this agent and the person, with the
+person owing the next move; and the reply must be on a Request the person opened with this agent.
+The refusal names each exchange and why, so the agent can send again without it. A name given twice
+is settled once.
+
+**Only questions to the person can be settled this way.** Between agents a Request is closed by its
+receiver's Result and nothing else: a requester able to close work another agent owes would be
+deciding for that agent what its work came to, and no agent decides anything for another (principle
+2.5). A person is different because a person does not answer
+through a tool that names an exchange, and the agent that asked is the only participant able to say
+its question is answered.
+
+**The agent is told what it could settle.** A Request from the person is delivered with the agent's
+own open questions to the person in that conversation — oldest first, at most 20, each with its
+exchange, when it was asked, and the first 160 characters of the last thing the agent said in it —
+and a count of any left out. They are the agent's own words returned to it, not a peer's, and they
+are bounded like everything else that crosses (§13).
+
 ## 6. Exchange state machine
 
 ```
@@ -758,7 +816,8 @@ all done" is an answer that looks like success.
 ```
 
 Two states. An exchange is open until its receiver sends a Result or the person running the
-deployment closes its conversation (§5.0). Nothing else closes it.
+deployment closes its conversation (§5.0) — or, for a question an agent put to the person, until
+the agent says something the person wrote later settled it (§5.6). Nothing else closes it.
 
 Invariants:
 
@@ -1423,8 +1482,13 @@ CREATE TABLE exchanges (
   request_hash        TEXT    NOT NULL,      -- content identity, §7.1 and §13.1
   -- NULL while open. The rolled-up outcome of §5.3: 'closed' if the conversation was closed
   -- first, 'blocked' if any item was, otherwise 'complete'. It outlives the message text §9.4
-  -- prunes, so it is deliberately the least favourable reading of the Result.
-  outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed')),
+  -- prunes, so it is deliberately the least favourable reading of the Result. 'settled' is an
+  -- agent's question to the person, closed by the agent because something the person wrote later
+  -- answered it (§5.6); no Result is written for it.
+  outcome             TEXT    CHECK (outcome IN ('complete', 'blocked', 'closed', 'settled')),
+  -- For a 'settled' exchange, the person's Request whose reply settled it (§5.6). An exchange
+  -- rather than a message, because retention deletes messages (§9.4) and the record must outlive them.
+  settled_by          INTEGER REFERENCES exchanges(id),
   conversation_id     TEXT    NOT NULL REFERENCES conversations(id),
   version             INTEGER NOT NULL DEFAULT 0,
 
@@ -1436,6 +1500,9 @@ CREATE TABLE exchanges (
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
   -- A closed exchange says how it closed; an open one cannot, since it has not.
   CHECK ((state = 'CLOSED') = (outcome IS NOT NULL)),
+  -- Settled names what settled it, and nothing else does.
+  CHECK ((outcome = 'settled') = (settled_by IS NOT NULL)),
+  CHECK (settled_by IS NULL OR settled_by <> id),
   CHECK (pair_key = min(requester, receiver) || char(31) || max(requester, receiver))
 ) STRICT;
 
@@ -1597,13 +1664,14 @@ CREATE TABLE messages (
 
 -- An exchange closes on a Result, and this is where that is held rather than trusted: the outcome
 -- may be set only once a Result exists for it. 'closed' needs the broker's own closed Result
--- (§14); anything else needs one from the receiver. The message is written before the exchange
+-- (§14); 'settled' needs the requester's reply on the person's Request that settled it (§5.6);
+-- anything else needs one from the receiver. The message is written before the exchange
 -- moves, inside one transaction (§10.1), which is the order this depends on.
 CREATE TRIGGER tr_an_outcome_has_its_result BEFORE UPDATE OF outcome ON exchanges
 WHEN NEW.outcome IS NOT NULL AND OLD.outcome IS NULL
 BEGIN
   SELECT RAISE(ABORT, 'an exchange closes on a result from its receiver')
-   WHERE NEW.outcome <> 'closed'
+   WHERE NEW.outcome NOT IN ('closed', 'settled')
      AND NOT EXISTS (SELECT 1 FROM messages
                       WHERE exchange_id = NEW.id AND type = 'result'
                         AND from_agent = NEW.receiver
@@ -1614,6 +1682,23 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM messages
                       WHERE exchange_id = NEW.id AND type = 'result'
                         AND responder_model = 'parley:broker');
+
+  -- Settled only by the agent that asked, only a question to the person, and only in a reply it
+  -- sent at that instant on a Request the person opened with it in the same conversation (§5.6).
+  -- The instant is what lets a surface show, beside that reply, what it settled.
+  SELECT RAISE(ABORT, 'a question is settled only by its requester''s reply to the person')
+   WHERE NEW.outcome = 'settled'
+     AND NOT EXISTS (SELECT 1 FROM exchanges AS s
+                       JOIN agents AS p ON p.name = NEW.receiver
+                       JOIN messages AS m ON m.exchange_id = s.id
+                      WHERE s.id = NEW.settled_by
+                        AND s.conversation_id = NEW.conversation_id
+                        AND s.requester = NEW.receiver
+                        AND s.receiver = NEW.requester
+                        AND p.adapter = 'parley-console'
+                        AND m.from_agent = NEW.requester
+                        AND m.type IN ('clarify', 'result')
+                        AND m.created_utc = NEW.closed_utc);
 END;
 
 -- What the size cap actually refused, so the next value for it is measured rather than judged.
@@ -2264,7 +2349,10 @@ that needed it; an enumeration written as prose has already decayed.
   because destroying that conversation now clears the link rather than being refused by it.
 - **An exchange closes only on a Result.** `tr_an_outcome_has_its_result`. An exchange closed
   with no Result written tells the requester its work is settled and leaves it no way to find
-  out how (§10.1).
+  out how (§10.1). **The one exception is `settled`**, and the same trigger holds it: only an
+  agent's question to the person, only by that agent, and only beside a reply it wrote at that
+  instant on a Request the person opened with it, in the same conversation (§5.6). The two CHECKs
+  beside the column keep `settled` and `settled_by` together.
 - **Closed stays closed.** An exchange by `tr_closed_exchange_stays_closed`, a conversation by
   `tr_closed_conversation_stays_closed`. Nothing reopens work; work worth resuming is new work
   (§5.0).
@@ -2535,9 +2623,9 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 |---|---|
 | `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. The project's person seat (§12.3) is listed too, as the person rather than as an agent, with `here` or `away` in place of liveness (§14), so an agent can find who to ask when no agent can help (principle 2.6). |
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
-| `clarify(exchange_id, text)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). |
-| `result(exchange_id, outcome)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. |
-| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5). |
+| `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
+| `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
+| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
 | `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so change notices follow (§9.5). Never returns the file's contents. |
@@ -3275,7 +3363,8 @@ opened a screen. So the broker writes `human-user@<project>`, under the seat ada
 `parley-console`, when it opens a store, if absent, found by its role. It is never retired, purged
 or released: the broker would write it again on its next start, so removing it could only cut the
 person's words out of every transcript. Every surface that reaches the broker speaks as it, and no
-surface registers a person of its own. Neither the person seat nor the facilitator has a machine
+surface registers a person of its own. **What a person types to an agent is sent as a Request**
+(§5.6); a surface answers one of an agent's questions only where the person picked that question. Neither the person seat nor the facilitator has a machine
 (§4.1.1), and neither is ever asked to start (§14): a message to the person waits for them.
 
 **The role is reserved, in storage and at every door.** Storage refuses a row under that role with
@@ -3359,6 +3448,11 @@ visibly not the broker's.
 enforced on the column precisely so this holds: text that would read as a change to the agent's own
 instructions arrives as the contents of a JSON string rather than as free-standing lines. Unwrapping a
 `text` field into the envelope would discard that protection.
+
+**The open questions delivered beside a person's Request are outside the envelope, and bounded**
+(§5.6). They are the receiving agent's own words, returned to it, so there is no other participant
+whose authority they could claim — but they cross into a model's context like anything else, so
+there are at most 20 and each is cut at 160 characters.
 
 **A fetched file is untrusted data from another participant**, exactly as a payload is. Parley never
 reads, interprets or delivers its contents into a model's context: `file_fetch` writes it to disk in the
@@ -4544,6 +4638,29 @@ The version is `major.minor` and has no patch level, because a protocol change i
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
 §4.0's `Attach` refuses the pairing rather than discovering it later.
+
+### 0.8 — a person's line is a request, and the agent says what it settled
+
+**A person's reply was filed as the answer to the wrong question.** An agent had asked the person
+several things in one conversation. The person read the newest, typed a question back, and the
+surface — which had to tie the line to one open exchange — took whichever the broker happened to
+list first, an unrelated question two days old, and sent the line as its Result. A Result closes an
+exchange and asks nothing back, so the agent read it, owed nothing and said nothing; the questions it
+had really asked stayed open, and the person's question was never answered.
+
+What a second implementation will observe:
+
+- **A surface sends what a person types to an agent as a Request**, whatever is open between them
+  (§5.6, §12.3). The act is no longer derived from who owes whom.
+- **`result` and `clarify` take `settles`**: exchanges the person's Request settled, named by the
+  agent replying to it (§5.6, §10.1). The agent's own questions to the person close as `settled`,
+  a new rolled-up outcome with no Result written; the person's own Request, asked back, returns to
+  the agent. Any name that cannot be settled refuses the whole call, with a reason per exchange.
+- **A Request from the person is delivered with the agent's open questions to the person** in that
+  conversation, bounded (§5.6, §13).
+- **`exchanges` gains `settled_by`**, and `outcome` admits `settled` (§9.2), held by
+  `tr_an_outcome_has_its_result` (§9.3). Schema 1 is edited in place: nothing has been released.
+- **A 0.7 adapter is refused at attach.** No compatibility is kept before the first release.
 
 ### 0.7 — a request is the ask
 
