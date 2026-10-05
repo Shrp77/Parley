@@ -15,7 +15,7 @@ the same. Also fix in passing: the registry reports the person seat as open_outs
 
 On 2026-10-05 an agent had asked the person five questions over three days, all in one conversation. The person read the
 newest one and typed a reply that was itself a question. The terminal had to tie the line to one of the five, and it took
-whichever the broker happened to list first — a question about where the installer is downloaded from, two days old and
+whichever the broker happened to list first — a question about something else entirely, two days old and
 unrelated. It sent the line as that question's answer. An answer closes a question and asks nothing back, so the agent
 read it, owed nothing, and said nothing. The four questions it had really asked went on reading *waiting on you*, and the
 person's actual question went unanswered.

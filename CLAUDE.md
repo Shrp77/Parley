@@ -641,7 +641,13 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Latest plan**: `specs/024-report-agent-turns/` — **0.38.0, built through every story; on `019-layout`. The
+- **Latest plan**: `specs/025-agent-settles-questions/` — **planned 2026-10-05, not built; on `019-layout`.** A person's
+  line to an agent is always a new request, and the agent says which of its own questions to the person it settled
+  (protocol 0.8). Prompted by a reply the terminal filed as the answer to an unrelated two-day-old question, because
+  `Pairing.From` kept one exchange per agent, chosen by the store's edge order. The room's *waiting on you* becomes one
+  row per agent with a count, and Enter lists the questions. `research.md` R1–R11 carries the decisions.
+
+- **Previous plan**: `specs/024-report-agent-turns/` — **0.38.0, built through every story; on `019-layout`. The
   quickstart walk (T035) and the review gate are owed.** The node reports each turn's start and end
   (`Nodes.ReportTurn`, `TurnReporter`), so a surface shows *working* only while a turn runs, *stopped* — naming permission
   refusals — when one ended with work still owed, and *waiting on X* for an agent that asked and is waiting; a
