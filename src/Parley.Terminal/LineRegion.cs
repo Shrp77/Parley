@@ -43,7 +43,7 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>What the preview says while this terminal is not connected to the project as the person.</summary>
     /// <remarks>Not "take a seat" (specs/023): there is no seat to take, only a connection coming back.</remarks>
-    internal const string NoSeat = "not connected as you just now; it is reconnecting";
+    internal const string NoSeat = "you are not connected to this project";
 
     /// <summary>What the preview says with an empty line.</summary>
     internal const string Empty = "type to say something";

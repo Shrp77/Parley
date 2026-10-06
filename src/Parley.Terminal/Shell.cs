@@ -266,7 +266,7 @@ internal sealed class Shell : Window
 
             if (Held is not { } hold || Voice() is not { } voice)
             {
-                Said = NotConnected;
+                Said = Unconnected(NotConnected);
 
                 return;
             }
@@ -526,6 +526,18 @@ internal sealed class Shell : Window
     internal static string CopiedMessage(int characters) =>
         $"Copied the message to the clipboard ({characters} characters).";
 
+    /// <summary>What is said when somebody has dragged across part of a transcript.</summary>
+    /// <param name="characters">How much is selected.</param>
+    /// <returns>The sentence, which names the key that takes it.</returns>
+    internal static string Selected(int characters) =>
+        $"Selected {characters} characters. Ctrl+C copies them.";
+
+    /// <summary>What is said when the selection went to the clipboard.</summary>
+    /// <param name="characters">How long it was.</param>
+    /// <returns>The sentence.</returns>
+    internal static string CopiedSelection(int characters) =>
+        $"Copied the selection to the clipboard ({characters} characters).";
+
     /// <summary>What is said when the copy went.</summary>
     /// <remarks>
     /// The size is in it because a clipboard gives no other evidence that anything happened: a
@@ -684,6 +696,16 @@ internal sealed class Shell : Window
         Agents = new AgentsRegion();
         Conversations = new ConversationsRegion();
         Transcript = new TranscriptRegion();
+
+        // **A drag in the transcript says what Ctrl+C would take**, because a highlight alone does not say that a key
+        // copies it, and the key is not on any menu: it is the one everybody tries.
+        Transcript.Selecting.SelectionChanged += (_, _) =>
+        {
+            if (Transcript.Selecting.SelectedText() is { Length: > 0 } picked)
+            {
+                Said = Selected(picked.Length);
+            }
+        };
         Room = new RoomRegion();
 
         // **Enter on something owed reads it where it was said.** The primary action of the active control
@@ -696,7 +718,7 @@ internal sealed class Shell : Window
         {
             if (Held is null)
             {
-                Said = RoomRegion.NoSeat;
+                Said = Unconnected(RoomRegion.NoSeat + ".");
 
                 return;
             }
@@ -706,7 +728,35 @@ internal sealed class Shell : Window
                 return;
             }
 
-            if (!draft.Recipients.Contains(peer))
+            if (draft.Pairs.All(pair => pair.Peer != peer))
+            {
+                // **Not in the conversation yet: ticking adds, and unticking takes back.** It widens whatever is
+                // addressed rather than replacing it, as `/add` does � somebody who ticks an agent from the
+                // "not in it yet" list means the room and that agent, not that agent alone.
+                if (draft.Recipients.Contains(peer))
+                {
+                    var kept = draft.Recipients.Where(addressed => addressed != peer).ToList();
+
+                    if (draft.Narrowed)
+                    {
+                        draft.AddressTo(kept);
+                    }
+                    else
+                    {
+                        draft.AddressEveryone();
+
+                        foreach (var extra in kept.Except(draft.Recipients))
+                        {
+                            draft.Widen(extra);
+                        }
+                    }
+                }
+                else
+                {
+                    draft.Widen(peer);
+                }
+            }
+            else if (!draft.Recipients.Contains(peer))
             {
                 draft.Narrow(peer);
             }
@@ -2378,7 +2428,15 @@ internal sealed class Shell : Window
     /// moment will do. When the broker is down or too old, the agents region and the message line say why.
     /// </remarks>
     internal const string NotConnected =
-        "Not connected to this project as you just now, so nothing was sent. It is reconnecting; try again in a moment.";
+        "You are not connected to this project, so nothing was sent.";
+
+    /// <summary>Says that this terminal is not connected, and why when the broker has said why.</summary>
+    /// <remarks>
+    /// The reason is the last one the broker gave for refusing the connection, so a version mismatch reads as one
+    /// rather than as a connection that is "reconnecting" and never does.
+    /// </remarks>
+    private string Unconnected(string lead) =>
+        _seatProblem is { } why ? $"{lead} {why}" : $"{lead} Trying to reconnect.";
 
     /// <summary>Said when Enter is pressed before the conversation has been read, so there is nobody to send to yet.</summary>
     /// <remarks>
@@ -2929,6 +2987,46 @@ internal sealed class Shell : Window
         Said = Copier(app, written) ? Copied(written.Length) : NotCopied;
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Puts the text dragged across in the transcript on the clipboard.</summary>
+    /// <returns><see langword="true"/> when there was a selection to copy.</returns>
+    /// <remarks>
+    /// The selection stays afterwards: pressing the same key twice by habit would otherwise end the program the second
+    /// time, which is the one thing a person copying did not ask for.
+    /// </remarks>
+    internal bool CopySelection()
+    {
+        if (App is not { } app || Transcript.Selecting.SelectedText() is not { Length: > 0 } text)
+        {
+            return false;
+        }
+
+        Said = Copier(app, text) ? CopiedSelection(text.Length) : NotCopied;
+
+        return true;
+    }
+
+    /// <summary>Takes Ctrl+C when the terminal delivers it as an interrupt and there is a selection to copy.</summary>
+    /// <returns><see langword="true"/> when the interrupt was taken and the program should carry on.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Whether Ctrl+C arrives as a key or as the process's interrupt depends on the terminal and the platform</b>, and
+    /// only the second can end the program, so both are answered the same way: with a selection it copies, without one it
+    /// is not handled here and means what it always meant. It is raised on another thread, so the copy is handed to the
+    /// loop.
+    /// </para>
+    /// </remarks>
+    internal bool CopyOnInterrupt()
+    {
+        if (App is not { } app || !Transcript.Selecting.HasSelection)
+        {
+            return false;
+        }
+
+        app.Invoke(() => CopySelection());
+
+        return true;
     }
 
     /// <summary>Puts the one message under the cursor on the clipboard.</summary>
@@ -3811,6 +3909,16 @@ internal sealed class Shell : Window
         if (key == QuitKey)
         {
             Quit();
+
+            return true;
+        }
+
+        // **Ctrl+C copies what is selected, and only then.** With nothing selected it is left alone, so it means what it
+        // always did on a terminal; the selection is what makes it a copy, and it stays after the copy so a second press
+        // does the same thing again instead of ending the program.
+        if (key == Key.C.WithCtrl && Transcript.Selecting.HasSelection)
+        {
+            CopySelection();
 
             return true;
         }
@@ -4704,6 +4812,20 @@ internal sealed class Shell : Window
 
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
+        // A conversation named and not yet spoken in has nobody in it as far as the broker knows; the agents it was
+        // started for are its participants until the first message makes that true.
+        if (_pending is { } pending && pending.Project == project.Name.Value
+            && pending.Conversation == conversationId && export.Messages.Count == 0)
+        {
+            pairs =
+            [
+                .. pairs,
+                .. pending.Peers
+                    .Where(peer => pairs.All(pair => pair.Peer != peer))
+                    .Select(peer => new PairState(peer, null, Turn.Nobody)),
+            ];
+        }
+
         // Rebuilt from the pair state that was just read, keeping what the person had already decided about it: the
         // chips a completion wrote and who the line is addressed to — **for this conversation only** (`_drafted`).
         var here = (project.Name.Value, conversationId);
@@ -4766,9 +4888,34 @@ internal sealed class Shell : Window
             seated: true,
             hold.Seat.Name,
             Drafting.Recipients,
-            activity);
+            activity,
+            now: null,
+            others: Elsewhere(registry.Value, pairs, hold.Seat.Name));
         Line.Show(Drafting, seated: true, Near());
     }
+
+    /// <summary>The project's agents that are not in the conversation, for the room to offer.</summary>
+    /// <param name="registry">The registry as read, or null when it could not be.</param>
+    /// <param name="pairs">Who is in the conversation.</param>
+    /// <param name="me">The person.</param>
+    /// <returns>Active agents that are neither participants, the person, a person's seat nor Parley.</returns>
+    /// <remarks>
+    /// <b>Being listed is not being able to read the conversation.</b> SPEC.md �10.1 gives an agent no history
+    /// operation, so one brought in later knows only what its own Request says; the room lists them so that choice
+    /// exists, and the box's preview names who a line goes to.
+    /// </remarks>
+    private static IReadOnlyList<AgentName> Elsewhere(
+        IReadOnlyList<AgentRecord>? registry,
+        IReadOnlyList<PairState> pairs,
+        AgentName me) =>
+        [.. (registry ?? [])
+            .Where(agent => agent.Status == AgentStatus.Active
+                && agent.Name != me
+                && !Facilitation.Is(agent.Name)
+                && !string.Equals(agent.Adapter, Seat.Adapter, StringComparison.Ordinal)
+                && pairs.All(pair => pair.Peer != agent.Name))
+            .Select(agent => agent.Name)
+            .OrderBy(name => name.Value, StringComparer.Ordinal)];
 
     /// <summary>What is waiting on this person in the conversation on screen, one item per agent.</summary>
     /// <param name="export">The conversation as it was read.</param>
@@ -5129,6 +5276,16 @@ internal sealed class Shell : Window
 
         void Open(AgentName? peer, IReadOnlyList<AgentName>? all)
         {
+        // **Starting a conversation asks for its name and nothing else** (the owner's call of 2026-10-05), then takes the
+        // person into the transcript with the box focused, so what they say is written where it will be read. The ask
+        // was a second form of the same shape as the box; one input line for everything is the point of the room.
+        if (inConversation is null)
+        {
+            NameThenSpeak([.. all ?? (peer is { } one ? [one] : [])], project);
+
+            return;
+        }
+
         // **Everything that is prose is a long field, and the name is not.** Rule 8.1's three parts
         // are sentences and a request's text may run to the whole of rule 8.4's cap — the
         // owner wrote a long one into a field one row tall and could see about sixty characters of
@@ -5211,6 +5368,62 @@ internal sealed class Shell : Window
             });
         };
         }
+    }
+
+    /// <summary>A conversation the person has named and not yet spoken in, and who it is for.</summary>
+    /// <remarks>
+    /// <b>A conversation exists when its first message does</b> (SPEC.md §5.0), so naming one creates nothing at the
+    /// broker. The surface remembers the name and the agents it was started for until the first send makes it real, and
+    /// the room shows them as its participants meanwhile. Once the conversation has any message the record is ignored.
+    /// </remarks>
+    private (string Project, string Conversation, IReadOnlyList<AgentName> Peers)? _pending;
+
+    /// <summary>Asks for a conversation's name, then opens it empty with the box focused.</summary>
+    /// <param name="peers">Who it is for.</param>
+    /// <param name="project">The project it is in.</param>
+    private void NameThenSpeak(IReadOnlyList<AgentName> peers, ProjectSettings project)
+    {
+        if (App is not { } app)
+        {
+            return;
+        }
+
+        var form = new FormDialog(
+            Participation.NameTitle,
+            [
+                new FormField(
+                    "Conversation name — " + ConversationName.Rule,
+                    Participation.Suggested(),
+                    Participation.ConversationProblem,
+                    Correct: ConversationName.Correct,
+                    Corrected: ConversationName.WasCorrected),
+            ]);
+
+        var token = Prompting.Open(app, form);
+
+        form.Done += (_, values) =>
+        {
+            Prompting.Close(app, token);
+
+            if (values is null)
+            {
+                Said = string.Empty;
+
+                return;
+            }
+
+            var name = values[0].Trim();
+
+            Queue(async _ =>
+            {
+                _pending = (project.Name.Value, name, peers);
+
+                await GoAsync(ViewPlace.Into(project.Name).Into(name)).ConfigureAwait(false);
+
+                // The box, not the transcript: they named it in order to say something in it.
+                Focus(Panes.ToList().IndexOf(Line));
+            });
+        };
     }
 
     /// <summary>Everyone in this project a person could speak to.</summary>

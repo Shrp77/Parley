@@ -146,21 +146,10 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Participation.Everyone(2), () => shell.Settled);
+        await Composing.StartAndSayAsync(driving, shell, Participation.Everyone(2), "everyone", "does anything here read orders.total?");
 
-        Written(form, "does anything here read orders.total?");
-        form.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.Contains("Sent to all 2", shell.Said, StringComparison.Ordinal);
-        Assert.Contains("owed a Result", shell.Said, StringComparison.Ordinal);
-
-        // This deployment has no node, so neither can be started -- a fact about the recipients and not a
-        // failed send, and the sentence names them.
-        Assert.Contains(Orders.Value, shell.Said, StringComparison.Ordinal);
-        Assert.Contains(Billing.Value, shell.Said, StringComparison.Ordinal);
+        Assert.Contains("Sent to 2 of 2", shell.Said, StringComparison.Ordinal);
+        // What each recipient owes is said in the box's preview before the send, not narrated after it (0.37.1).
 
         Assert.Equal(2, Requests());
         Assert.Equal(2, Open());
@@ -183,13 +172,7 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         shell.Agents.Show([Agent(Orders), Agent(Billing)], NodeCatalogue.Empty, null);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-
-        Written(form, "just you");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Orders.Value, "everyone", "just you");
 
         Assert.Equal(1, Requests());
     }
@@ -279,13 +262,7 @@ public sealed class TellingEverybodyTests : IAsyncDisposable
 
         shell.Agents.Show([Agent(Orders), Agent(Billing)], Catalogue("orders"), null);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Participation.Everyone(2), () => shell.Settled);
-
-        Written(form, "once each, please");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Participation.Everyone(2), "everyone", "once each, please");
 
         // Two agents, two Requests. Not three, and no duplicate reported.
         Assert.Equal(2, Requests());

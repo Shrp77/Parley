@@ -43,8 +43,10 @@ internal static class Participation
     /// terminal's stream, and the key that asked has already started taking it back.
     /// </remarks>
     internal const string Gone =
-        "Not connected to this project as you just now, so nothing was sent. It is reconnecting; send it again in a " +
-        "moment.";
+        "You are not connected to this project, so nothing was sent. Send it again once the connection is back.";
+
+    /// <summary>What the dialog that names a conversation is called.</summary>
+    internal const string NameTitle = "Name the conversation";
 
     /// <summary>What the dialog offering delivery is called.</summary>
     internal const string DeliveryTitle = "Take delivery";

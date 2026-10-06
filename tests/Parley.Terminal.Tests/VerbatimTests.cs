@@ -84,13 +84,8 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "deciding whether " + Hostile + ": is " + Hostile + " true?");
-        form.Fill(1, "verbatim");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(
+            driving, shell, Orders.Value, "verbatim", "deciding whether " + Hostile + ": is " + Hostile + " true?");
 
         var said = await ExportedAsync();
 
@@ -139,29 +134,16 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "   ");
-        form.Fill(1, "verbatim");
-
         Assert.NotNull(Participation.RequiredProblem("   "));
 
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Orders.Value, "verbatim", "   ");
 
         Assert.Equal(string.Empty, await ExportedAsync());
     }
 
     private async Task TellAsync(Driving.Session driving, Shell shell, string words)
     {
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, words);
-        form.Fill(1, "verbatim");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Orders.Value, "verbatim", words);
     }
 
     private async Task<Shell> SeatedAsync(

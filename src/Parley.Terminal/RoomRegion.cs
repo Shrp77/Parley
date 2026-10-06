@@ -39,6 +39,14 @@ internal sealed class RoomRegion : FrameView
     /// <summary>The heading the participants are listed under.</summary>
     internal const string Participants = "in this conversation";
 
+    /// <summary>The heading the project's other agents are listed under.</summary>
+    /// <remarks>
+    /// Listed so they can be brought in later (the owner's report of 2026-10-05): a conversation grows by sending an
+    /// agent a Request, and an agent that is not shown cannot be chosen. It says what ticking one does rather than
+    /// that they are absent, because the person is here to decide who joins.
+    /// </remarks>
+    internal const string Elsewhere = "not in it yet (Space adds)";
+
     /// <summary>The heading the person's own seat is listed under.</summary>
     /// <remarks>
     /// <b>On its own line, above the agents, because a person is not one of them.</b> The owner asked for it
@@ -72,7 +80,7 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>What is said while this terminal is not connected to the project as the person.</summary>
     /// <remarks>Not "take a seat" (specs/023): there is no seat to take, only a connection coming back.</remarks>
-    internal const string NoSeat = "not connected as you just now";
+    internal const string NoSeat = "you are not connected to this project";
 
     /// <summary>What is said when somebody tries to exclude the last recipient left.</summary>
     internal const string LastOne =
@@ -108,6 +116,9 @@ internal sealed class RoomRegion : FrameView
     // without asking a broker anything. A column that had to be re-read to change a checkbox would put a
     // network round trip between a keystroke and the mark it makes.
     private IReadOnlyList<PairState> _pairs = [];
+
+    /// <summary>The project's agents that are not in the conversation on screen.</summary>
+    private IReadOnlyList<AgentName> _others = [];
     private IReadOnlyList<OutstandingItem> _outstanding = [];
     private IReadOnlyList<AgentName> _addressed = [];
     private AgentName? _me;
@@ -202,7 +213,7 @@ internal sealed class RoomRegion : FrameView
 
         // With the activity it already has: a tick changes who a line goes to, not what anybody is doing, and drawing
         // without it blanked every mark until the next read.
-        Show(_pairs, _outstanding, _seated, _me, addressed, _activity, _now);
+        Show(_pairs, _outstanding, _seated, _me, addressed, _activity, _now, _others);
     }
 
     /// <inheritdoc/>
@@ -216,7 +227,7 @@ internal sealed class RoomRegion : FrameView
 
         if (Viewport.Width != _width && _width >= 0)
         {
-            Show(_pairs, _outstanding, _seated, _me, _addressed, _activity, _now);
+            Show(_pairs, _outstanding, _seated, _me, _addressed, _activity, _now, _others);
         }
     }
 
@@ -228,6 +239,7 @@ internal sealed class RoomRegion : FrameView
     /// <param name="addressed">Who what is being written goes to, or null for every participant.</param>
     /// <param name="activity">What each participant is doing, or null when it could not be read.</param>
     /// <param name="now">The time to measure how long somebody has been working against.</param>
+    /// <param name="others">The project's agents that are not in this conversation, or null for none.</param>
     /// <remarks>
     /// Headings are rows rather than decoration, for the reason the agents list groups by state: a row does not
     /// wrap, and a heading said once is shorter than a qualifier repeated on every row.
@@ -239,7 +251,8 @@ internal sealed class RoomRegion : FrameView
         AgentName? me = null,
         IReadOnlyList<AgentName>? addressed = null,
         IReadOnlyDictionary<AgentName, Activity>? activity = null,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null,
+        IReadOnlyList<AgentName>? others = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
         ArgumentNullException.ThrowIfNull(outstanding);
@@ -248,6 +261,7 @@ internal sealed class RoomRegion : FrameView
         _now = now ?? DateTimeOffset.UtcNow;
 
         _pairs = pairs;
+        _others = others ?? [];
         _outstanding = outstanding;
         _seated = seated;
         _me = me;
@@ -281,6 +295,21 @@ internal sealed class RoomRegion : FrameView
                 null,
                 Palette.SlotFor(pair.Peer),
                 pair.Peer));
+        }
+
+        if (seated && _others.Count > 0)
+        {
+            rows.Add(new Row(string.Empty, null, null, null));
+            rows.Add(new Row(Elsewhere, null, null, null));
+
+            foreach (var other in _others)
+            {
+                rows.Add(new Row(
+                    Mark(other) + " " + Safe.Text(_others.Count(o => o.Role == other.Role) > 1 ? other.Value : other.Role),
+                    null,
+                    Palette.SlotFor(other),
+                    other));
+            }
         }
 
         rows.Add(new Row(string.Empty, null, null, null));

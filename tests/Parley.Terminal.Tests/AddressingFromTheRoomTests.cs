@@ -76,6 +76,45 @@ public sealed class AddressingFromTheRoomTests
     }
 
     [Fact]
+    public async Task An_agent_not_in_the_conversation_is_listed_so_it_can_be_brought_in_later()
+    {
+        // The owner's report of 2026-10-05: a line to one agent left every other agent out of the room, so none of
+        // them could be chosen afterwards. Only participants were drawn.
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var rows = seated.Shell.Room.Written.ToList();
+
+        var heading = rows.FindIndex(row => row == RoomRegion.Elsewhere);
+
+        Assert.True(heading >= 0, "the agents outside the conversation were not listed");
+        Assert.Contains(Seated.Billing.Role, rows[heading + 1], StringComparison.Ordinal);
+        Assert.StartsWith(RoomRegion.NotAddressed, rows[heading + 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ticking_one_outside_adds_it_to_the_room_rather_than_replacing_the_room()
+    {
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var shell = seated.Shell;
+
+        seated.Focus<RoomRegion>();
+        seated.Row(shell.Room.List, Seated.Billing.Role);
+
+        shell.NewKeyDownEvent(Key.Space);
+        await shell.Settled;
+
+        Assert.Contains(Seated.Orders, shell.Drafting!.Recipients);
+        Assert.Contains(Seated.Billing, shell.Drafting!.Recipients);
+
+        // And again takes it back out, leaving the room as it was.
+        seated.Row(shell.Room.List, Seated.Billing.Role);
+        shell.NewKeyDownEvent(Key.Space);
+        await shell.Settled;
+
+        Assert.Equal([Seated.Orders], shell.Drafting!.Recipients);
+        Assert.False(shell.Drafting!.Narrowed);
+    }
+
+    [Fact]
     public async Task Ticking_one_back_on_addresses_it_again()
     {
         await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);

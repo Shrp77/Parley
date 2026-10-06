@@ -179,14 +179,19 @@ public sealed class RoomActivityTests
         await using var seated = await Seated.OpenAsync(ct, followEvery: TimeSpan.FromMilliseconds(20));
         var shell = seated.Shell;
 
-        Assert.DoesNotContain(shell.Room.Written, row => row.Contains(Seated.Billing.Role, StringComparison.Ordinal));
+        // Listed under "not in it yet", which is not being in the conversation.
+        Assert.DoesNotContain(InConversation(shell.Room.Written), row => row.Contains(Seated.Billing.Role, StringComparison.Ordinal));
 
         // Billing joins the conversation; the test does not go anywhere, so only following can show it.
         await seated.AskAsync(Seated.Billing, Seated.Conversation, ct, go: false);
 
         await Eventually.UntilAsync(
-            () => shell.Room.Written.Any(row => row.Contains(Seated.Billing.Role, StringComparison.Ordinal)),
+            () => InConversation(shell.Room.Written).Any(row => row.Contains(Seated.Billing.Role, StringComparison.Ordinal)),
             "the room never showed the agent that joined",
             ct);
     }
+
+    /// <summary>The rows under the participants heading, up to the blank row that ends them.</summary>
+    private static IEnumerable<string> InConversation(IReadOnlyList<string> rows) =>
+        rows.SkipWhile(row => row != RoomRegion.Participants).Skip(1).TakeWhile(row => row.Length > 0);
 }

@@ -45,9 +45,22 @@ internal static class Lists
     /// and a list that insisted on the terminal's own background would be a rectangle of the wrong
     /// colour inside it.
     /// </remarks>
-    internal static GuardedList Filling(Color? accent = null)
+    internal static GuardedList Filling(Color? accent = null) => Styled(new GuardedList(), accent);
+
+    /// <summary>Gives a list the shape <see cref="Filling"/> gives its own.</summary>
+    /// <typeparam name="T">The kind of list.</typeparam>
+    /// <param name="list">The list.</param>
+    /// <param name="accent">The colour of the region it sits in, or null to take whatever it is put inside.</param>
+    /// <returns>The same list.</returns>
+    /// <remarks>One place for the shape, so a list with behaviour of its own is not a second definition of what a list here is.</remarks>
+    internal static T Styled<T>(T list, Color? accent = null)
+        where T : GuardedList
     {
-        var list = new GuardedList { Width = Dim.Fill(), Height = Dim.Fill(), KeystrokeNavigator = null };
+        ArgumentNullException.ThrowIfNull(list);
+
+        list.Width = Dim.Fill();
+        list.Height = Dim.Fill();
+        list.KeystrokeNavigator = null;
 
         if (accent is { } colour)
         {
@@ -132,7 +145,7 @@ internal static class Lists
 /// on the wrapping of a transcript.
 /// </para>
 /// </remarks>
-internal sealed class GuardedList : ListView
+internal class GuardedList : ListView
 {
     /// <summary>
     /// Held while the list is drawn, and while its rows are replaced.

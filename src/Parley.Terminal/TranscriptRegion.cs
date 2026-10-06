@@ -59,7 +59,7 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     internal const string FoldedTitle = "Transcript (folded — Enter opens one)";
 
-    private readonly GuardedList _lines = Lists.Filling(Colours.Transcript);
+    private readonly TranscriptList _lines = Lists.Styled(new TranscriptList(), Colours.Transcript);
 
     // Which messages are open while the transcript is folded. Identifiers rather than row numbers, because
     // the rows are rebuilt on every read and a remembered row would open whatever had moved into it.
@@ -109,6 +109,8 @@ internal sealed class TranscriptRegion : FrameView
         _lines.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
 
         Add(_lines);
+        _lines.Rows = () => _drawn;
+        _lines.Indent = Reading.Indent;
         _lines.ValueChanged += (_, _) => Moved();
         _lines.ViewportChanged += (_, args) => Scrolled(args);
         Lists.Tint(_lines, at => at >= 0 && at < _tints.Count ? _tints[at] : null);
@@ -127,6 +129,9 @@ internal sealed class TranscriptRegion : FrameView
     /// is the transcript before it was wrapped to a width, and what is on screen is the wrap.
     /// </remarks>
     internal ListView List => _lines;
+
+    /// <summary>The list the transcript is drawn in, which takes a drag as a selection.</summary>
+    internal TranscriptList Selecting => _lines;
 
     /// <summary>Draws a conversation.</summary>
     /// <param name="conversationId">Which conversation.</param>
@@ -773,6 +778,8 @@ internal sealed class TranscriptRegion : FrameView
         // **No selection stays no selection, which the first version of this clamp threw away.** A reader who
         // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
         // the surface claim they are reading something, and `FollowingTests` says so in as many words.
+        var before = _drawn;
+
         int? selected = _tailing && wrapped.Count > 0
             ? wrapped.Count - 1
             : _lines.SelectedItem is { } at && wrapped.Count > 0
@@ -795,6 +802,9 @@ internal sealed class TranscriptRegion : FrameView
         {
             _moving = false;
         }
+
+        // A selection stays only while the rows under it are the rows it was made on.
+        _lines.Keep(before, wrapped);
 
         // **And a reader who is not being carried is not moved at all.** Setting the selection scrolls it into view, so a
         // reader who wheeled up past a cursor left on the last row was sent back down by the redraw itself. The view is

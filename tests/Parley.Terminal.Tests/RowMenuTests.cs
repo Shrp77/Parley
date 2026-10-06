@@ -89,7 +89,7 @@ public sealed class RowMenuTests
         await seated.Shell.Settled;
 
         Assert.False(seated.Session.Has(Participation.WhichPeer), "the peer picker opened for a peer already chosen");
-        Assert.True(seated.Session.Has(Participation.StartTitle), "the request form did not open");
+        Assert.True(seated.Session.Has(Participation.NameTitle), "the naming dialog did not open");
     }
 
     [Fact]

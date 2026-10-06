@@ -206,7 +206,7 @@ public sealed class RefillRaceTests
         var rendered = 0;
         var lengths = new System.Collections.Concurrent.ConcurrentDictionary<int, byte>();
 
-        var list = Assert.IsType<GuardedList>(Assert.Single(
+        var list = Assert.IsAssignableFrom<GuardedList>(Assert.Single(
             region.SubViews.OfType<GuardedList>().ToList()));
 
         list.RowRender += (_, _) =>

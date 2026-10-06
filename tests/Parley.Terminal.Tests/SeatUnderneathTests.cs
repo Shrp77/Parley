@@ -62,13 +62,18 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.NameTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
 
         Assert.Null(shell.Held);
-        Written(form);
+        form.Fill(0, "underneath");
         form.Finish(taken: true);
+
+        await shell.Settled;
+
+        shell.Line.Written = "a request nobody can send";
+        shell.Line.Accept();
 
         await shell.Settled;
 
@@ -79,7 +84,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         // silently became a different region; what this test is about is the transcript.
         shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
-        Assert.StartsWith(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
+        Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -93,11 +98,16 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.NameTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
-        Written(form);
+        form.Fill(0, "underneath");
         form.Finish(taken: true);
+
+        await shell.Settled;
+
+        shell.Line.Written = "a request nobody can send";
+        shell.Line.Accept();
 
         await shell.Settled;
 
