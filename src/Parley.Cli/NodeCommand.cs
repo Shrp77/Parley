@@ -898,7 +898,8 @@ public static class NodeCommand
                 // nothing prunes them and a line break in them forges a line of the log (the combined review gate).
                 await output.WriteLineAsync(
                         $"  {resident.Name.Value}: turn ended without finishing — {outcome.Describe()} after " +
-                        $"{outcome.Elapsed.TotalSeconds:0}s, {outcome.PermissionDenials} permission(s) refused")
+                        $"{outcome.Elapsed.TotalSeconds:0}s, {outcome.PermissionDenials} permission(s) refused" +
+                        WhyItFailed(outcome))
                     .ConfigureAwait(false);
             }
         }
@@ -908,6 +909,20 @@ public static class NodeCommand
                 .ConfigureAwait(false);
         }
     }
+
+    /// <summary>The runner's own label for how an error turn ended, when it is a plain identifier.</summary>
+    /// <param name="outcome">How the turn ended.</param>
+    /// <returns>A comma and the label, or nothing when there is none or it is anything but a short identifier.</returns>
+    /// <remarks>
+    /// <b>The owner's report of 2026-10-06</b>: an agent stopped one second into a turn and nothing said why. The log named
+    /// the outcome only. The runner's <c>result</c> text stays out, as the combined review gate decided, because a peer can
+    /// steer what a model says; what is added is the <c>subtype</c> (<c>error_max_turns</c>, <c>error_during_execution</c>),
+    /// which is the runner's vocabulary and not words, and is admitted only when it looks like one.
+    /// </remarks>
+    internal static string WhyItFailed(TurnOutcome outcome) =>
+        outcome.IsError && outcome.StopReason is { Length: > 0 and <= 64 } label && label.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')
+            ? ", reason " + label
+            : string.Empty;
 
     /// <summary>
     /// Restarts an agent this node started, once its turn is over, so it reads its launch configuration afresh (SPEC.md
