@@ -1,4 +1,31 @@
 <!--
+Sync Impact Report — 2026-10-06
+Version change: 5.0.0 → 6.0.0 (MAJOR)
+  Two changes for specs/026 (roadmaps), amended BEFORE any of its code, as governance requires. This
+  file's own rule makes the second MAJOR: it changes what Principle IV permits.
+  - Principle II. A roadmap is added as a thing the person owns, so that it is not read as a plan one
+    agent imposes on another. An agent may only propose one; a person confirms, edits and declines it;
+    no agent operation reads, changes or marks done a roadmap. Nothing about the facilitator changes:
+    it may not propose or confirm one.
+  - Principle IV. Roadmap text has no bound by default, as the ownership statement has none. The text
+    is read by a person, not by an agent, and what crosses to an agent is one item inside a Request,
+    which keeps the message cap. Agents are guided to short, point-oriented items by a template in the
+    proposing tool, not by a limit. The character class that stops text breaking a surface's lines is
+    NOT relaxed. Recorded as a reduction in this principle's protection, with its residual risk
+    (any attached agent can write a large proposal into the store) stated rather than left to be found.
+Modified principles: II and IV, as above.
+Modified sections: none beyond those principles. Added sections: none. Removed sections: none.
+Templates and dependent documents:
+  ✅ CLAUDE.md — the standing constraints "No agent has authority over another" and "Terseness is a
+     security control" carry both changes in the same commit
+  ✅ specs/026-roadmaps/plan.md — its Constitution Check is re-run against 6.0.0
+  ⚠️ SPEC.md §3, §5.7, §9.2, §9.3, §10.1, §10.2, §17, §18 — NOT yet amended. They are 026's first tasks
+     and come before any code (Principle I)
+  ✅ .specify/templates/ — no principle-driven sections affected
+Deferred TODOs: SPEC.md, as above. It is the feature's own task, not this amendment's.
+-->
+
+<!--
 Sync Impact Report — 2026-09-30
 Version change: 4.0.0 → 5.0.0 (MAJOR)
   One redefinition for specs/023 (the person always has a seat), amended BEFORE any of its code, as
@@ -161,6 +188,13 @@ conversation an agent's own work belongs to. What it adds is *who* asks, never w
 A facilitator that gained one operation more would be the orchestrator this principle forbids, and
 any such change is argued here first.
 
+**A roadmap is the person's, never an agent's plan** (from specs/026). An agent may *propose* a list
+of work; nothing is a roadmap until a person confirms it, and only a person edits, reorders, removes
+from or declines one. No agent operation reads, changes or marks done a roadmap, and an agent is told
+only the outcome of its own proposal. Work reaches an agent as a request from the person, one item
+at a time, so a roadmap binds no agent: it is the person's map over requests they chose to send. The
+facilitator may not propose or confirm one.
+
 ### III. Identity is fixed by the launch, never by a call
 
 An agent's name comes from the environment its server was started with and from nowhere
@@ -244,6 +278,20 @@ Two things stand in its place:
 The answer's words are the agent's own. Only runs of whitespace are collapsed, and anything that
 would change a word is a person's decision. The character class is **not** relaxed: an answer that
 breaks it waits for a person, whatever the switch says.
+
+**Roadmap text is a further reduction in the same control, and is recorded as one** (from specs/026,
+the owner's decision of 2026-10-06). A proposed roadmap, its title and its items have **no bound by
+default**, as the ownership statement has none. Two things stand in the place of a number:
+
+- **Nothing here is read by an agent.** A proposal is read by a person. What crosses to an agent is a
+  single item inside a Request, which keeps the message cap in storage whatever the roadmap holds.
+- **Guidance rather than a limit.** The tool an agent proposes with carries a short template, so
+  that items are factual, point-oriented and brief. It is guidance and not a check.
+
+The character class that stops text breaking, hiding or reordering a surface's lines is **not**
+relaxed. **The residual risk is stated rather than left to be found:** any attached agent can write a
+very large proposal into the store, which the message cap closes for messages. The size of every
+proposal is recorded, so a bound can later be chosen from evidence, as the message cap's was.
 
 ### V. Invariants live in storage
 
@@ -332,4 +380,4 @@ removed or redefined, MINOR for one added or materially expanded, PATCH for word
 amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
 0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
 
-**Version**: 5.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-30
+**Version**: 6.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-06

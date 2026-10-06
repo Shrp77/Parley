@@ -630,6 +630,16 @@ implementation detail, and needs to be argued rather than assumed.
   its ownership line with no person in the loop. That is a further reduction in the ownership control
   above, recorded as one. In its place are truthful provenance (`automatic`) and a review on every
   surface.
+  **A roadmap is the person's, never an agent's plan** (the constitution was amended to 6.0.0 for
+  specs/026, on 2026-10-06). An agent may only propose one; a person confirms, edits and declines it. No
+  agent operation reads, changes or marks done a roadmap, and the facilitator may not propose or confirm
+  one. Work reaches an agent as a request from the person, one item at a time.
+
+  **Roadmap text has no bound by default, a further reduction in the terseness control, recorded as
+  one.** Nothing in a roadmap is read by an agent; an item that is sent travels in a Request and keeps the
+  8,000 cap. The proposing tool carries a short, point-oriented template as guidance, not a limit. The
+  line-breaking character class is not relaxed. Residual risk: any attached agent can write a large
+  proposal into the store; its size is recorded so a bound can be set from evidence.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
   resolves them at invocation and never persists or logs them. This is what makes the
   manifest safe to commit.
@@ -641,7 +651,9 @@ writes `tasks.md`. Read the plan for the feature being worked on before implemen
 The constitution in `.specify/memory/constitution.md` restates the standing constraints
 below in the form Spec Kit's checks read; this file remains the authority when they differ.
 
-- **Latest plan**: `specs/025-agent-settles-questions/` — **0.41.0, protocol 0.8, built through every story; on `019-layout`.
+- **Latest plan**: `specs/026-roadmaps/` — **planned, not built: 0.42.0, protocol 0.9. Roadmaps (an agent proposes, a person confirms; state derived; each item its own conversation) and every agent of the project in the Room. Spec, plan, research, data model, contracts and quickstart are written; SPEC.md, the constitution 6.0.0 amendment and `tasks.md` are owed before any code.**
+
+- **Previous plan**: `specs/025-agent-settles-questions/` — **0.41.0, protocol 0.8, built through every story; on `019-layout`.
   The walk (T043), the live check with a real agent (T044, the owner's call) and the combined review gate are owed.**
   A person's line to an agent is always a new Request, and the agent replying says, in `settles`, which of its own
   questions to the person the words settled; the broker closes those `settled`, citing the person's request, with no
