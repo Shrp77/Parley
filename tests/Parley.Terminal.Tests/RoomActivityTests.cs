@@ -149,6 +149,35 @@ public sealed class RoomActivityTests
     }
 
     [Fact]
+    public void A_status_with_a_second_dash_wraps_instead_of_being_cut_on_its_own_row()
+    {
+        // **The owner's screenshot of 2026-10-06**: "stopped <1m — 2 permissi" at the edge. Splitting at the first dash
+        // put the status under the name, and the status was itself wider than the column and went off the edge.
+        var stopped = AgentName.Create("timetracker@here");
+        var room = new RoomRegion { Frame = new System.Drawing.Rectangle(0, 0, 30, 40) };
+
+        room.Show(
+            [new PairState(stopped, null, Turn.Nobody)],
+            [],
+            seated: true,
+            Person,
+            activity: new Dictionary<AgentName, Activity>
+            {
+                [stopped] = new(Doing.Stopped, T0, PermissionDenials: 2),
+            },
+            now: T0.AddSeconds(20));
+
+        var width = room.Viewport.Width;
+        var rows = room.Written;
+
+        Assert.All(rows, row => Assert.True(row.Length <= width, $"{row.Length} > {width}: '{row}'"));
+
+        var text = string.Join(' ', rows.Select(row => row.Trim()));
+
+        Assert.Contains("2 permissions refused", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Ticking_somebody_keeps_every_mark()
     {
         // A tick changes who a line goes to, not what anybody is doing. Redrawn without the activity, every mark went blank

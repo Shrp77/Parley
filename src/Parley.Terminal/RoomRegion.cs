@@ -412,10 +412,66 @@ internal sealed class RoomRegion : FrameView
                 : row.Text.Length - row.Text.TrimStart().Length;
 
             fitted.Add(row with { Text = row.Text[..dash] });
-            fitted.Add(row with { Text = new string(' ', indent + 2) + row.Text[(dash + 3)..] });
+
+            // What follows the dash can be wider than the column too ("stopped <1m — 2 permission refusals ..."), and a
+            // row that is cut hides the half somebody opened the screen to read. It wraps at words, every row indented.
+            var pad = new string(' ', indent + 2);
+
+            foreach (var piece in WrapWords(row.Text[(dash + 3)..], Math.Max(width - pad.Length, 1)))
+            {
+                fitted.Add(row with { Text = pad + piece });
+            }
         }
 
         return fitted;
+    }
+
+    /// <summary>Breaks words into lines no wider than a limit; a word longer than the limit is cut.</summary>
+    /// <param name="text">The words.</param>
+    /// <param name="limit">The widest a line may be.</param>
+    /// <returns>At least one line.</returns>
+    private static List<string> WrapWords(string text, int limit)
+    {
+        var lines = new List<string>();
+        var current = string.Empty;
+
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var rest = word;
+
+            while (rest.Length > limit)
+            {
+                if (current.Length > 0)
+                {
+                    lines.Add(current);
+                    current = string.Empty;
+                }
+
+                lines.Add(rest[..limit]);
+                rest = rest[limit..];
+            }
+
+            if (current.Length == 0)
+            {
+                current = rest;
+            }
+            else if (current.Length + 1 + rest.Length <= limit)
+            {
+                current += " " + rest;
+            }
+            else
+            {
+                lines.Add(current);
+                current = rest;
+            }
+        }
+
+        if (current.Length > 0 || lines.Count == 0)
+        {
+            lines.Add(current);
+        }
+
+        return lines;
     }
 
     private IReadOnlyDictionary<AgentName, Activity> _activity = new Dictionary<AgentName, Activity>();
