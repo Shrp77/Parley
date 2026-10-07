@@ -67,15 +67,9 @@ else
 
 @* Pinned to the bottom, so it is reachable from anywhere in a long transcript.
 
-   It has two voices and says which one it is using, because the difference is the whole of what
-   the panel means. Joined, you are an agent: what you send is a message in this conversation,
-   under your own name, subject to every rule 7 refusal any other participant faces. Not joined,
-   there is no name to send as -- SPEC.md 5.0 derives participants from being party to an
-   exchange -- so what leaves here is an instruction marked as the operator's (11.5), and it
-   never appears above.
-
-   A box at the bottom of a chat that quietly is not a chat box would be the most misleading
-   thing on the page, so which one it is is the first sentence in it. *@
+   What you send is a message in this conversation, under your own seat's name, subject to every
+   rule 7 refusal any other participant faces. When the broker cannot be reached as you, the first
+   sentence in the panel says so. *@
 <form method="post" class="composer@(Model.Seat is null ? " as-operator" : " as-agent")"
       aria-label="Send to agents in this conversation">
     @if (Model.Seat is { } seat)
@@ -89,10 +83,8 @@ else
     }
     else
     {
-        @* **Not an instruction any more** (specs/023). With no seat this composer used to send an operator's
-           instruction instead — a different kind of thing, absent from the transcript. The seat is the broker's now
-           and is taken on every page, so the only way to be here is that this project's broker could not be reached
-           as the person just then; sending tries again and says why if it still cannot. *@
+        @* The seat is the broker's and is taken on every page, so the only way to be here is that this project's
+           broker could not be reached as the person just then; sending tries again and says why if it still cannot. *@
         <p class="composer-note">
             Not connected to this project as you just now. What you send is still yours and appears in the transcript;
             sending reconnects first, and says so if it cannot.
@@ -121,7 +113,19 @@ else
             <label class="target slot-@Palette.SlotFor(who)">
                 <input type="checkbox" name="Targets" value="@who.Value" />
                 <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
-                <span>@who.Value</span>
+                <span><span class="mark" aria-hidden="true">@Parley.Client.Rendering.RoomRoster.ParticipantMark</span> @who.Value</span>
+            </label>
+        }
+
+        @foreach (var who in Model.NotInIt)
+        {
+            @* Not in the conversation yet. Ticking one and sending addresses them, which brings them in (specs/026);
+               listed after the participants, which carry the mark, so the difference is on the row as well as in the
+               order. *@
+            <label class="target not-in-it slot-@Palette.SlotFor(who)">
+                <input type="checkbox" name="Targets" value="@who.Value" />
+                <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                <span>@who.Value <small>(not in it yet)</small></span>
             </label>
         }
 

@@ -20,7 +20,7 @@ namespace Parley.Server.Tests;
 /// </remarks>
 public sealed class ParleyCannotBeWithdrawnTests
 {
-    public static TheoryData<string> Operations => ["retire", "reinstate", "purge", "start", "instruct", "record"];
+    public static TheoryData<string> Operations => ["retire", "reinstate", "purge", "start", "record"];
 
     [Theory]
     [MemberData(nameof(Operations))]
@@ -39,8 +39,6 @@ public sealed class ParleyCannotBeWithdrawnTests
             "reinstate" => operators.ReinstateAsync(new Wire.AgentRequest { Agent = parley }, cancellationToken: token).ResponseAsync,
             "purge" => operators.PurgeAsync(new Wire.AgentRequest { Agent = parley }, cancellationToken: token).ResponseAsync,
             "start" => operators.StartAsync(new Wire.StartRequest { Agent = parley }, cancellationToken: token).ResponseAsync,
-            "instruct" => operators.InstructAsync(
-                new Wire.InstructRequest { Agent = parley, Text = "stop asking" }, cancellationToken: token).ResponseAsync,
             "record" => operators.RecordOwnershipAsync(
                 new Wire.RecordOwnershipRequest
                 {

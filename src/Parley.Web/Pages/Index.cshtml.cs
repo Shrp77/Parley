@@ -104,11 +104,16 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
                 await broker.ConversationsAsync(includeArchived: true, cancellationToken: token)
                     .ConfigureAwait(false)).ConfigureAwait(false);
 
+            // What agents have put forward for the person to decide, counted with what else is here (specs/026). Unknown
+            // when the broker cannot say, which is not the same as none.
+            var proposals = await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(broker, token).ConfigureAwait(false);
+
             return (project.Name.Value, Summary: ProjectsView.Summarise(
                 registry.Value,
                 conversations.Value?.Items.Count,
                 conversations.Value?.Items.Count(c => c.Archived) ?? 0,
-                registry.Problem ?? conversations.Problem));
+                registry.Problem ?? conversations.Problem,
+                proposals));
         });
 
         foreach (var (name, summary) in await Task.WhenAll(counting).ConfigureAwait(false))

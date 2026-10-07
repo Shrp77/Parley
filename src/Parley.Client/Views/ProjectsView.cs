@@ -10,6 +10,9 @@ namespace Parley.Client.Views;
 /// <param name="Conversations">How many conversations it holds, or null when unreadable.</param>
 /// <param name="Archived">How many of those are archived and therefore not in the ordinary list.</param>
 /// <param name="Problem">Why the project could not be read, when it could not.</param>
+/// <param name="Proposals">
+/// How many roadmap proposals await a person, or null when that could not be counted — never zero for unknown.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>Counts rather than lists.</b> This answers "which project do I want?" and is read while the
@@ -27,7 +30,8 @@ public sealed record ProjectSummary(
     int Running,
     int? Conversations,
     int Archived,
-    string? Problem)
+    string? Problem,
+    int? Proposals = null)
 {
     /// <summary>Whether the project answered at all.</summary>
     public bool Reachable => Problem is null;
@@ -56,7 +60,9 @@ public sealed record ProjectSummary(
             $"{Conversations ?? 0} conversation{(Conversations == 1 ? string.Empty : "s")}";
         var archived = Archived > 0 ? $" ({Archived} archived)" : string.Empty;
 
-        return $"{agents}{running} · {conversations}{archived}";
+        var proposed = Roadmaps.ProposalCount.Says(Proposals);
+
+        return $"{agents}{running} · {conversations}{archived}" + (proposed.Length > 0 ? $" · {proposed}" : string.Empty);
     }
 }
 
@@ -155,12 +161,14 @@ public static class ProjectsView
     /// <param name="conversations">How many conversations it holds, or null when unreadable.</param>
     /// <param name="archived">How many of those are archived.</param>
     /// <param name="problem">Why it could not be read, when it could not.</param>
+    /// <param name="proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
     /// <returns>The summary.</returns>
     public static ProjectSummary Summarise(
         IReadOnlyList<AgentRecord>? agents,
         int? conversations,
         int archived,
-        string? problem)
+        string? problem,
+        int? proposals = null)
     {
         if (problem is not null)
         {
@@ -172,6 +180,7 @@ public static class ProjectsView
             agents?.Count(a => a.Presence == AgentPresence.Running) ?? 0,
             conversations,
             archived,
-            null);
+            null,
+            proposals);
     }
 }

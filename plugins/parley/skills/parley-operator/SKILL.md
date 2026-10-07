@@ -37,7 +37,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project page: *Destroy…* beside each conversation, which takes the identifier typed back. |
 | Retire or purge an agent | Agents list, Alt+r (*Remove this agent*). It describes the agent, offers keeping it first, and takes the agent's name typed back. | The agent's page: Retire, Purge. |
 | Reinstate a retired agent | Agents list, Alt+i. | The agent's page: Reinstate. |
-| Give an agent an instruction | Agents list, Alt+o. Alt+h shows what you have told it, and what it said back. | The agent's page: Instruct, and "What you have told it". |
+| See or change what an agent is responsible for, or have it say it again | Agents list, Alt+n. | The agent's page: *Ask what it owns*, *Record what it owns*. |
 | Start an agent | Agents list, Enter on its row. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
 | Apply the retention policy now | Projects list, Alt+p. | Health page, "Apply the retention policy now". |
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |

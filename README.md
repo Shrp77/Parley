@@ -443,7 +443,7 @@ PARLEY_BROKER=http://127.0.0.1:19100 PARLEY_AGENT=orders claude
 **Why there is no flag for binding a network address.** The wire carries no credentials of any
 kind, so a reachable port *is* the whole of the authentication. Everything answers on that one
 port: not only the agent operations, but the operator ones — which export whole conversations,
-purge agents, and instruct a running agent, which is to say hand work to something that executes
+purge agents, and start agents, which is to say launch something that executes
 code in a repository. Anything able to open a connection can do all of it, as any agent it cares
 to name. A tunnel adds the authentication and encryption the protocol does not have and leaves no
 listening socket on the network; a bind address adds neither and removes the last thing standing
@@ -519,8 +519,9 @@ cannot be a line as written, or from an agent on another machine, waits for a pe
 whether a person or nobody read it, and any answer waiting. Choose an agent there and you can
 accept, edit or discard its answer, write a line yourself, reply if it asked Parley something back,
 or, when nothing is waiting on it, have Parley ask it again. Outside the review, on the agents pane,
-`Alt+k` has Parley ask the agent under the cursor and `Alt+e` asks every agent at once. None of it
-needs a seat. Turn Auto Accept
+`Alt+n` opens what that agent is responsible for: what it has said, the line in a field you can
+change and save in place, and a button that has Parley ask it to refresh. `Alt+e` asks every agent at
+once. None of it needs a seat. Turn Auto Accept
 off (in *Configuration*, `F3`, or the Project menu) and every answer waits for you.
 
 **There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
@@ -739,7 +740,7 @@ parley registry                     every agent, what it owns, and the workspace
                                     never sees
 parley                              everything else: retiring and purging agents,
                                     exporting, archiving and destroying conversations,
-                                    instructing, pruning, and the health reports. They
+                                    pruning, and the health reports. They
                                     take an identifier you have to have got from
                                     somewhere, and the terminal is where the lists are
 parley waiting <agent|role>         how many messages and polls await an agent;

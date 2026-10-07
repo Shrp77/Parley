@@ -1,0 +1,79 @@
+@page
+@model Parley.Web.Pages.Roadmaps.ProposalModel
+@using Parley.Client.Roadmaps
+@{
+    ViewData["Title"] = Model.Proposal is { } shown ? $"Proposed: {shown.Content.Title}" : "Proposed roadmap";
+}
+
+<h1>@(Model.Proposal?.Content.Title ?? "Proposed roadmap")</h1>
+
+<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status"><strong>@outcome</strong></p>
+}
+else if (Model.Proposal is { } proposal)
+{
+    <section class="proposal" aria-label="What was proposed">
+        @* The agent's words, escaped, and the plain statement of what a proposal is not: a person deciding it should not
+           have to remember either. *@
+        <p>
+            Proposed by <strong>@proposal.Proposer.Value</strong>@(proposal.SourceConversation is { Length: > 0 } source ? $", from the conversation {source}" : "").
+        </p>
+
+        @if (Model.Match is { } match)
+        {
+            <p>Its title matches the roadmap <strong>@match.Title</strong>. You choose below whether it revises that one.</p>
+        }
+        else if (proposal.TargetTitle is { Length: > 0 } hint)
+        {
+            <p>It says it would change a roadmap called <em>@hint</em>; there is none by that name.</p>
+        }
+
+        <ol class="proposed-items">
+            @foreach (var item in proposal.Content.Items)
+            {
+                <li>
+                    @item.Text
+                    @if (item.IntendedAgent is { } agent)
+                    {
+                        <small>(for @agent.Role)</small>
+                    }
+                </li>
+            }
+        </ol>
+
+        <p>Nothing is a roadmap until you confirm it, and it assigns nobody: work still goes to an agent as a request from you.</p>
+    </section>
+
+    <form method="post">
+        <p>
+            <label for="text">The proposal as text. Change it if it is wrong; one line per item, in order.</label><br />
+            <textarea id="text" name="Text" rows="@Math.Clamp(proposal.Content.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+        </p>
+
+        <p class="composer-note">
+            A number and a dot start each item. Add <code>| for: role@machine</code> and <code>| needs: 1, 2</code> where you know them.
+            Move a line to move the item. The first line is the title.
+        </p>
+
+        @if (Model.Match is { } revises)
+        {
+            <fieldset>
+                <legend>What it becomes</legend>
+                <label><input type="radio" name="Target" value="new" checked /> A new roadmap</label>
+                <label><input type="radio" name="Target" value="@revises.Id" /> A revision of <em>@revises.Title</em></label>
+            </fieldset>
+        }
+
+        <button type="submit">Confirm</button>
+        <a href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
+        <a href="/Roadmaps?project=@Model.Project">Leave it for now</a>
+    </form>
+}

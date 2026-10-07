@@ -912,8 +912,7 @@
         }
 
         /* The composer, pinned so it is reachable from anywhere in a long transcript. It is a
-           form rather than a chat box, and it says so: what it sends is an instruction to the
-           agents, not a message into the conversation. */
+           form, and what it sends is a message into the conversation, from the person's seat. */
         .composer {
             position: sticky;
             bottom: 0;
@@ -997,7 +996,7 @@
             font-size: 0.85rem;
         }
 
-        /* Joined, the panel is a chat box; not joined, it is an instruction form. The edge says
+        /* Seated, the panel is a chat box; not connected as the person just now, it says so. The edge says
            which, and the sentence at the top of the panel says it in words -- the colour is the
            reminder, never the statement. */
         .composer.as-agent { border-left: 3px solid #1c7c48; }
@@ -1185,7 +1184,7 @@
         @* Reading is free; the four operations that are not are each described before they
            happen and none of them is reachable by following a link. Saying "read-only" here
            would be the more comforting sentence and the false one. *@
-        <p>Operator view. Everything is a read except retire, reinstate, instruct, purge and
+        <p>Operator view. Everything is a read except retire, reinstate, purge and
            force-conclude, and each of those says what it will do before it does it.</p>
         <p class="build">parley-web-ui @Parley.Web.WebBuild.Version</p>
     </footer>

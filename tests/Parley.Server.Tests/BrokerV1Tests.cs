@@ -100,7 +100,6 @@ public sealed class BrokerV1Tests
         [
             typeof(Wire.ListConversationsRequest),
             typeof(Wire.ExportRequest),
-            typeof(Wire.InstructRequest),
             typeof(Wire.AgentRequest),
             typeof(Wire.ForceConcludeRequest)
         ];
@@ -161,58 +160,6 @@ public sealed class BrokerV1Tests
         // half that survives a refactor of the types.
         Assert.NotEqual(
             typeof(Wire.Agents.AgentsClient), typeof(Wire.Operators.OperatorsClient));
-    }
-
-    [Fact]
-    public async Task Instructing_an_agent_on_an_unreachable_machine_is_undeliverable_rather_than_lost()
-    {
-        // §11.5: an agent whose node is not connected cannot be instructed, and must be told so
-        // rather than left looking as though it was. Undeliverable and failed are different facts
-        // and the remedy differs — the machine is off, and re-sending will not change that.
-        var token = TestContext.Current.CancellationToken;
-
-        await using var broker = await LoopbackBroker.StartAsync(token);
-
-        var agent = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", token);
-        await agent.DisposeAsync();
-
-        try
-        {
-            var said = await broker.ConnectAsOperator().InstructAsync(
-                new Wire.InstructRequest { Agent = "docs@alpha", Text = "have a look at the retry policy" },
-                deadline: DateTime.UtcNow.Add(Patience),
-                cancellationToken: token);
-
-            Assert.Equal(Wire.InstructionOutcome.Undeliverable, said.Outcome);
-        }
-        catch (RpcException failure) when (failure.StatusCode == StatusCode.Unimplemented)
-        {
-            Assert.Fail("Instruct is declared in broker V1 and must be bound, not left unimplemented.");
-        }
-    }
-
-    [Fact]
-    public async Task An_over_long_instruction_is_refused_in_words_rather_than_by_the_schema()
-    {
-        // The instructions table carries the same cap the messages table does, and reaching it as
-        // a constraint violation hands the operator a failed write to interpret. This is the one
-        // refusal somebody can actually act on -- unlike an agent, a person can simply say less.
-        var token = TestContext.Current.CancellationToken;
-
-        await using var broker = await LoopbackBroker.StartAsync(token);
-
-        var failure = await Assert.ThrowsAsync<RpcException>(async () =>
-            await broker.ConnectAsOperator().InstructAsync(
-                new Wire.InstructRequest
-                {
-                    Agent = "docs@alpha",
-                    Text = new string('x', MessageLimits.MaxPayloadCharacters + 1)
-                },
-                deadline: DateTime.UtcNow.Add(Patience),
-                cancellationToken: token));
-
-        Assert.Equal(StatusCode.InvalidArgument, failure.StatusCode);
-        Assert.Contains("at most", failure.Status.Detail, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -36,7 +36,25 @@ else
                 ?? (Model.Roll.TryGetValue(who.Value, out var known)
                     ? Roster.State(known)
                     : "not in the registry")))],
-        null))" />
+        null,
+        Parley.Client.Rendering.RoomRoster.ParticipantMark))" />
+
+    @if (Model.NotInIt.Count > 0)
+    {
+        @* **Everyone else in the project** (specs/026), so a person can bring somebody in without leaving the
+           conversation. Listed from the same rule as the terminal's room. A participant carries the mark above and
+           these do not; the legend below says what it means, in words as well as the character. *@
+        <partial name="_Roster" model="@(new RosterView(
+            Model.Project,
+            "Not in it yet",
+            [.. Model.NotInIt.Select(who => new RosterEntry(
+                who,
+                Model.Doing(who)
+                    ?? (Model.Roll.TryGetValue(who.Value, out var other) ? Roster.State(other) : "not in the registry")))],
+            null))" />
+    }
+
+    <p class="roster-legend">@Parley.Client.Rendering.RoomRoster.ParticipantLegend</p>
 
     @if (Model.WaitingOnYou.Count > 0)
     {

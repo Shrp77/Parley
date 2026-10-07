@@ -233,18 +233,20 @@ internal sealed class ProjectsRegion : FrameView
 /// <param name="Conversations">Conversations on the first page the broker returned, archived ones left out.</param>
 /// <param name="More">Whether the broker had more conversations than that page.</param>
 /// <param name="Open">How many of those conversations have work still open.</param>
-internal sealed record ProjectFigures(int Agents, int Running, int Conversations, bool More, int Open)
+/// <param name="Proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
+internal sealed record ProjectFigures(int Agents, int Running, int Conversations, bool More, int Open, int? Proposals = null)
 {
     /// <summary>Counts what a broker said about its project.</summary>
     /// <param name="registry">Its registry.</param>
     /// <param name="page">The first page of its conversations.</param>
+    /// <param name="proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
     /// <returns>The figures.</returns>
     /// <remarks>
     /// A seat is a person rather than an agent, and a retired agent is one somebody has said is finished,
     /// so neither is counted: a row claiming five agents in a project that routes to three would be the
     /// row disagreeing with the agents pane one Enter away.
     /// </remarks>
-    internal static ProjectFigures Of(IReadOnlyList<AgentRecord> registry, ConversationPage page)
+    internal static ProjectFigures Of(IReadOnlyList<AgentRecord> registry, ConversationPage page, int? proposals = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(page);
@@ -259,7 +261,8 @@ internal sealed record ProjectFigures(int Agents, int Running, int Conversations
             agents.Count(agent => agent.Connected),
             page.Items.Count,
             page.NextPageToken is not null,
-            page.Items.Count(conversation => conversation.HasOpenExchange));
+            page.Items.Count(conversation => conversation.HasOpenExchange),
+            proposals);
     }
 
     /// <summary>The figures as a row says them.</summary>
@@ -268,9 +271,13 @@ internal sealed record ProjectFigures(int Agents, int Running, int Conversations
     {
         var conversations = $"{Conversations.ToString(CultureInfo.InvariantCulture)}{(More ? "+" : string.Empty)}";
 
-        return string.Create(
+        var proposed = Parley.Client.Roadmaps.ProposalCount.Says(Proposals);
+
+        var counted = string.Create(
             CultureInfo.InvariantCulture,
             $"{Agents} {(Agents == 1 ? "agent" : "agents")}, {Running} running"
             + $" · {conversations} {(Conversations == 1 && !More ? "conversation" : "conversations")}, {Open} open");
+
+        return proposed.Length > 0 ? counted + " · " + proposed : counted;
     }
 }

@@ -199,13 +199,6 @@ public static class NodeCommand
                                     .ConfigureAwait(false);
                                 break;
 
-                            case Wire.NodeCommand.CommandOneofCase.Instruct:
-                                await InstructAsync(
-                                    command.Instruct, nodes, request.Machine, catalogue, project, residents,
-                                    output, cancellationToken)
-                                    .ConfigureAwait(false);
-                                break;
-
                             case Wire.NodeCommand.CommandOneofCase.Stop:
                                 await StopAsync(command.Stop.Agent, catalogue, project, residents, output)
                                     .ConfigureAwait(false);
@@ -718,105 +711,6 @@ public static class NodeCommand
         DispatchTurn(resident, output, cancellationToken, reporter);
     }
 
-    /// <summary>Gives an agent the operator's words, and reports what became of them.</summary>
-    /// <param name="instruct">Which agent, and what was said.</param>
-    /// <param name="nodes">The broker, for the report.</param>
-    /// <param name="machine">This machine's name.</param>
-    /// <param name="residents">The agents running here.</param>
-    /// <param name="output">Where to report locally.</param>
-    /// <param name="catalogue">What this machine can start, which is what resolves a name.</param>
-    /// <param name="project">The project this node serves, or null to accept every claim.</param>
-    /// <param name="cancellationToken">Stops the turn.</param>
-    /// <returns>A task that completes when the outcome has been reported.</returns>
-    /// <remarks>
-    /// <para>
-    /// Not dispatched like an ordinary turn, and that is the difference between the two. A turn
-    /// says only that there is mail and nobody is waiting on the answer; an instruction has a
-    /// person holding a page open, so this runs to its end and reports.
-    /// </para>
-    /// <para>
-    /// The operator's text is the prompt. §4 gives a node ownership of its agents' standard
-    /// input, which is the channel a turn already travels down — so an instruction is not a new
-    /// route into an agent, it is the existing one carrying one more kind of thing.
-    /// </para>
-    /// <para>
-    /// An agent this node does not hold is reported undeliverable rather than started. Starting
-    /// one to deliver a person's words would put the operator's instruction into a session
-    /// nobody asked for, and §11.5 says an agent whose node cannot reach it must be told so.
-    /// </para>
-    /// </remarks>
-    private static async Task InstructAsync(
-        Wire.DeliverInstruction instruct,
-        Wire.Nodes.NodesClient nodes,
-        string machine,
-        NodeCatalogue catalogue,
-        string? project,
-        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents,
-        TextWriter output,
-        CancellationToken cancellationToken)
-    {
-        var outcome = Wire.InstructionOutcome.Undeliverable;
-        var reply = string.Empty;
-
-        if (AgentName.TryCreate(instruct.Agent, out var agent)
-            && catalogue.TryResolve(agent.Role, project, out var identity, out _)
-            && residents.TryGetValue(identity, out var resident)
-            && resident.IsAlive)
-        {
-            try
-            {
-                // Marked, never bare. §11.5 requires an instruction to reach the agent as the
-                // operator's rather than as a peer's, because what the agent must be able to tell
-                // is which of the two it is reading — and it is only able to decline knowingly if
-                // it knows it was instructed at all.
-                // An instruction is a turn like any other, and reported as one (SPEC.md §11.6).
-                var turn = await new TurnReporter(nodes, machine, output)
-                    .RunAsync(
-                        resident.Name,
-                        began => resident.TakeTurnAsync(
-                            OperatorInstruction.Mark(instruct.Text), TurnTimeout, began, cancellationToken))
-                    .ConfigureAwait(false);
-
-                outcome = turn.Succeeded
-                    ? Wire.InstructionOutcome.Taken
-                    : Wire.InstructionOutcome.Failed;
-
-                reply = turn.ToString();
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                outcome = Wire.InstructionOutcome.Failed;
-                reply = exception.Message;
-
-                await output.WriteLineAsync(
-                    $"  {agent.Value}: instruction failed — {exception.Message}")
-                    .ConfigureAwait(false);
-            }
-        }
-
-        try
-        {
-            _ = await nodes.ReportInstructionAsync(
-                new Wire.InstructionReport
-                {
-                    Machine = machine,
-                    InstructionId = instruct.InstructionId,
-                    Outcome = outcome,
-                    Reply = reply
-                },
-                cancellationToken: cancellationToken);
-        }
-        catch (RpcException failure)
-        {
-            // The agent may well have done the work. Losing the report loses the operator's
-            // answer, not the effect, and saying so is better than a page that waits out its
-            // patience with no explanation.
-            await output.WriteLineAsync(
-                $"  {instruct.Agent}: took the instruction, but the outcome could not be "
-                + $"reported — {failure.Status.Detail}").ConfigureAwait(false);
-        }
-    }
-
     /// <summary>Starts a turn without holding up the command stream.</summary>
     /// <param name="resident">The agent to give a turn.</param>
     /// <param name="output">Where to report.</param>
@@ -943,7 +837,7 @@ public static class NodeCommand
     /// </para>
     /// <para>
     /// <b>The wait for the turn happens off this loop</b>, as a turn does (<see cref="DispatchTurn"/>). A refresh waiting
-    /// inline for a long turn would hold every other command to this node behind it — a start, an instruction, another
+    /// inline for a long turn would hold every other command to this node behind it — a start or another
     /// agent's turn. Replacing the process happens under <see cref="Residency"/>, as a start does, so a start racing it
     /// cannot leave two processes for one checkout.
     /// </para>

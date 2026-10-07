@@ -584,7 +584,133 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 }
             }
 
+            // What became of a roadmap this agent proposed (SPEC.md §5.7). Its own title back, and an outcome; nothing is owed.
+            if (inbox.RoadmapNotices.Count > 0 || inbox.RoadmapNoticesWaiting > 0)
+            {
+                result["roadmap_notices"] = new JsonArray([.. inbox.RoadmapNotices.Select(n => (JsonNode?)new JsonObject
+                {
+                    ["proposal_id"] = n.ProposalId,
+                    ["title"] = n.Title,
+                    ["outcome"] = n.Outcome switch
+                    {
+                        Wire.ProposalState.Confirmed => "confirmed",
+                        Wire.ProposalState.Declined => "declined",
+                        Wire.ProposalState.Superseded => "superseded",
+                        _ => "decided"
+                    }
+                })]);
+
+                result["roadmap_notices_note"] =
+                    "What became of a roadmap you proposed. Nothing is owed back. Confirmed means the person made it a " +
+                    "roadmap and will send requests from it; declined or superseded means they did not, or another proposal " +
+                    "replaced it." +
+                    (inbox.RoadmapNoticesWaiting > 0
+                        ? $" {inbox.RoadmapNoticesWaiting} more are waiting; call parley_inbox again for them."
+                        : string.Empty);
+            }
+
             return result;
+        }
+        catch (RpcException failure)
+        {
+            return Unreachable(failure);
+        }
+    }
+
+    /// <summary>Puts a roadmap forward for the person to confirm.</summary>
+    /// <param name="title">A few words.</param>
+    /// <param name="items">The items, in order.</param>
+    /// <param name="conversationId">Where the list was arrived at, if it was in a conversation.</param>
+    /// <param name="revises">The title of a roadmap this would change, if it would.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal's identifier, or the refusal with what to do about it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The one roadmap operation an agent has, and the whole of what it may do with one</b> (principle 2.12). It stores
+    /// a proposal and nothing else: it creates no roadmap, assigns nobody and opens no exchange. There is no tool to read,
+    /// change or mark done a roadmap, and none may be added; the structural test in
+    /// <c>AgentsCannotChangeARoadmapTests</c> fails if one appears.
+    /// </para>
+    /// <para>
+    /// <b>The description carries the template</b>, because a model reads a description on every call and documentation
+    /// approximately never. The owner's call of 2026-10-06 was to guide a proposal to be factual, point-oriented and short
+    /// rather than to cap it, so this is advice and is written as advice.
+    /// </para>
+    /// </remarks>
+    [McpServerTool(Name = "parley_propose_roadmap")]
+    [Description(
+        """
+        Put forward a list of work for the person to confirm as a roadmap, when you and other agents have agreed
+        how to get something done and the list should not be lost in a conversation. This proposes only: it creates
+        nothing, assigns nobody, and nothing happens until the person confirms it. You are told what became of it
+        in parley_inbox.
+
+        Keep it short and factual:
+          title: a few words, e.g. "Billing export".
+          items: one line each, verb first, the thing to be done. Optionally who it is for (the whole agent name,
+                 as parley_agents lists it) and which earlier items it needs, by number. Example:
+                   1. Add CSV export endpoint            for: billing@host
+                   2. Call it from the report            for: orders@host   needs: 1
+                   3. Document the new column            needs: 2
+        No background, no reasons, no narrative: detail belongs in the item's own conversation once the person
+        starts it. An item is one line; a line break is refused.
+        """)]
+    public async Task<JsonNode> ProposeRoadmapAsync(
+        [Description("A few words naming the roadmap.")] string title,
+        [Description("The items, in order. Each is one line with optional 'for' and 'needs'.")] RoadmapItemInput[] items,
+        [Description("Optional. The conversation the list was arrived at.")] string? conversationId = null,
+        [Description("Optional. The title of an existing roadmap this would change, if you know one.")] string? revises = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (BadConversation(conversationId) is { } badConversation)
+            {
+                return badConversation;
+            }
+
+            var content = new Wire.RoadmapContent { Title = title ?? string.Empty };
+
+            foreach (var item in items ?? [])
+            {
+                var draft = new Wire.RoadmapItemDraft
+                {
+                    Text = item.Text ?? string.Empty,
+                    IntendedAgent = item.For ?? string.Empty
+                };
+
+                draft.Needs.AddRange(item.Needs ?? []);
+                content.Items.Add(draft);
+            }
+
+            var reply = await _link.Agents.ProposeRoadmapAsync(
+                new Wire.ProposeRoadmapRequest
+                {
+                    Agent = _options.Agent.Value,
+                    Content = content,
+                    ConversationId = conversationId ?? string.Empty,
+                    Revises = revises ?? string.Empty
+                },
+                cancellationToken: cancellationToken);
+
+            if (reply.ProposalId == 0)
+            {
+                return new JsonObject
+                {
+                    ["ok"] = false,
+                    ["refused"] = "proposal",
+                    ["why"] = $"Nothing was stored. {reply.Problem}"
+                };
+            }
+
+            return new JsonObject
+            {
+                ["ok"] = true,
+                ["proposal_id"] = reply.ProposalId,
+                ["note"] =
+                    "Stored for the person to read. It is not a roadmap until they confirm it, and it assigns nobody: " +
+                    "work still reaches an agent as a request from the person. Check parley_inbox for what becomes of it."
+            };
         }
         catch (RpcException failure)
         {

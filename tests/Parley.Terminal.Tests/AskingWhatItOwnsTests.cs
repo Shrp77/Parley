@@ -79,7 +79,7 @@ public sealed class AskingWhatItOwnsTests
 
         Assert.Contains(
             shell.Actions(),
-            a => a.Label.StartsWith(Ownership.AskTitle, StringComparison.Ordinal));
+            a => a.Label == Responsibility.Title);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class AskingWhatItOwnsTests
         Assert.Null(shell.Held);
         Assert.Contains(
             shell.Actions(),
-            a => a.Label.StartsWith(Ownership.AskTitle, StringComparison.Ordinal));
+            a => a.Label == Responsibility.Title);
     }
 
     [Fact]

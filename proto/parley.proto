@@ -80,6 +80,11 @@ service Agents {
 
   // Removes files the calling agent placed. Every other name is refused, naming its placer.
   rpc RemoveOwnFiles(RemoveFilesRequest) returns (RemoveFilesReply);
+
+  // Puts a roadmap forward for a person to confirm (section 5.7). Stores a proposal and nothing else: it opens no
+  // exchange, writes no message and creates no roadmap. This is the whole of what an agent can do with one -- there
+  // is no read, no change and no marking done, and none may be added (principle 2.12).
+  rpc ProposeRoadmap(ProposeRoadmapRequest) returns (ProposeRoadmapReply);
 }
 
 message AttachRequest {
@@ -116,6 +121,7 @@ message Notice {
   int32 messages_waiting = 1;
   int32 closure_polls_waiting = 2;
   int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
+  int32 roadmap_notices_waiting = 4;  // section 5.7: what became of the agent's own proposals; wakes nothing
 }
 
 message OpenRequest {
@@ -252,6 +258,11 @@ message InboxReply {
   // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
   repeated FileNotice file_notices = 3;
   int32 file_notices_waiting = 4;
+
+  // Section 5.7. What became of this agent's own roadmap proposals, with its own title. Not messages: nothing is
+  // owed back and nothing is woken.
+  repeated RoadmapNotice roadmap_notices = 5;
+  int32 roadmap_notices_waiting = 6;
 }
 
 // That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
@@ -496,9 +507,6 @@ service Nodes {
   // and a turn when it is running.
   rpc Join(JoinRequest) returns (stream NodeCommand);
 
-  // How a node answers a DeliverInstruction. The command stream runs one way.
-  rpc ReportInstruction(InstructionReport) returns (Empty);
-
   // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
 
@@ -571,11 +579,6 @@ message NodeCommand {
     StopAgent stop = 3;
     GiveTurn turn = 4;
 
-    // The person's words, for an agent this node holds. Separate from GiveTurn because a turn says only
-    // that there is mail; this carries text a person wrote and must be given to the agent as what it is
-    // (section 11.5).
-    DeliverInstruction instruct = 5;
-
     // Restart an agent this node started, once its current turn is over, so it reads its launch configuration afresh.
     // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
     // node did not start. A node that does not know this command ignores it, as it ignores every unknown command, and
@@ -600,19 +603,6 @@ message Joined {
 message StartAgent {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
-}
-
-message DeliverInstruction {
-  int64 instruction_id = 1;
-  string agent = 2;
-  string text = 3;
-}
-
-message InstructionReport {
-  string machine = 1;
-  int64 instruction_id = 2;
-  InstructionOutcome outcome = 3;
-  string reply = 4;                   // empty when the agent never got the turn
 }
 
 // A turn, for an agent this node already holds. Distinct from StartAgent because a second process
@@ -686,8 +676,6 @@ service Operators {
   rpc Implements(Empty) returns (ImplementsReply);
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
-  rpc Instruct(InstructRequest) returns (InstructReply);
-  rpc Instructions(InstructionsRequest) returns (InstructionsReply);
 
   // Filing, not muting: delivery is unchanged and no participant is told.
   rpc Archive(ConversationRequest) returns (DidItReply);
@@ -696,6 +684,15 @@ service Operators {
   // Deletes a conversation for every participant. An open exchange inside it ceases to exist, so
   // whoever was waiting is never told anything at all -- which is why closing first is recommended.
   rpc Destroy(ConversationRequest) returns (DestroyReply);
+
+  // Roadmaps (section 5.7, principle 2.12). The person's: nothing here is reachable from the Agents service.
+  // Roadmap returns facts about each item's conversation and never a state; the surface derives that.
+  rpc Roadmaps(Empty) returns (RoadmapsReply);
+  rpc Roadmap(RoadmapRequest) returns (RoadmapReply);
+  rpc Proposals(ProposalsRequest) returns (ProposalsReply);
+  rpc ConfirmProposal(ConfirmProposalRequest) returns (RoadmapChangeReply);
+  rpc DeclineProposal(ProposalRequest) returns (RoadmapChangeReply);
+  rpc EditRoadmap(EditRoadmapRequest) returns (RoadmapChangeReply);
 
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
@@ -894,6 +891,9 @@ message ExportReply {
   // both above empty means there was no such conversation ever: an empty export cannot otherwise be
   // told from a store that lost something (section 14).
   optional DestroyedConversation destroyed = 3;
+
+  // The roadmap item this conversation belongs to, by the broker's reservation and by nothing in any message.
+  optional RoadmapItemRef item = 4;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.
@@ -944,6 +944,7 @@ message ConversationSummary {
   string last_activity_utc = 5;
   bool has_open_exchange = 6;
   bool archived = 7;
+  optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
 }
 
 message WaitingReply {
@@ -1020,45 +1021,11 @@ message FacilitationActionReply {
   string problem = 2;                 // empty when it was done
 }
 
-message InstructRequest {
-  string agent = 1;
-  string text = 2;
-}
-
-message InstructReply {
-  InstructionOutcome outcome = 1;
-  string reply = 2;                   // empty when the agent never got the turn
-  int64 instruction_id = 3;           // where a caller told PENDING comes back to
-}
-
-message InstructionsRequest {
-  string agent = 1;                   // empty for every agent
-  int64 instruction_id = 2;           // 0 for all that match; otherwise exactly this one
-  int32 page_size = 3;                // the broker bounds this whatever is asked for
-  string page_token = 4;              // empty for the first page
-}
-
-message InstructionRecord {
-  int64 id = 1;
-  string agent = 2;
-  string text = 3;                    // the person's own words, on a service no agent can reach
-  InstructionOutcome outcome = 4;
-  string reply = 5;                   // empty unless settled
-  string issued_utc = 6;
-  string settled_utc = 7;             // empty while the turn is still running
-}
-
-message InstructionsReply {
-  repeated InstructionRecord instructions = 1;
-  string next_page_token = 2;         // empty at the end
-}
-
 message PruneReply {
   int32 removed = 1;
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
-  int32 instructions_removed = 5;
 }
 
 // ===========================================================================================
@@ -1162,9 +1129,6 @@ enum MessageType {
   MESSAGE_TYPE_RESULT = 3;
 }
 
-// What became of an instruction the person gave an agent. DECLINED against FAILED is the distinction
-// that matters most: an agent declines only for a blocker it names (section 11.5), and a surface
-// rendering that as a malfunction teaches whoever reads it to work around the agent.
 // How a person arrived at the ownership line they accepted. A person's own characters are never
 // attributed to a model, which is why `edited` and `composed` are told apart from `proposed` at all.
 enum OwnershipSource {
@@ -1173,15 +1137,6 @@ enum OwnershipSource {
   OWNERSHIP_SOURCE_EDITED = 2;        // the agent's proposal, changed by the person
   OWNERSHIP_SOURCE_COMPOSED = 3;      // written by the person, with no ask at all
   OWNERSHIP_SOURCE_AUTOMATIC = 4;     // the agent's own words, made its line by Auto Accept; never sent by a client
-}
-
-enum InstructionOutcome {
-  INSTRUCTION_OUTCOME_UNSPECIFIED = 0;
-  INSTRUCTION_OUTCOME_PENDING = 1;
-  INSTRUCTION_OUTCOME_TAKEN = 2;
-  INSTRUCTION_OUTCOME_DECLINED = 3;
-  INSTRUCTION_OUTCOME_UNDELIVERABLE = 4;
-  INSTRUCTION_OUTCOME_FAILED = 5;
 }
 
 enum ExchangeState {
@@ -1244,4 +1199,165 @@ enum PurgeVerdict {
   PURGE_VERDICT_UNSPECIFIED = 0;
   PURGE_VERDICT_NOT_REGISTERED = 1;
   PURGE_VERDICT_GONE = 2;
+}
+
+// ===========================================================================================
+// Roadmaps -- SPEC.md section 5.7
+// ===========================================================================================
+
+enum ProposalState {
+  PROPOSAL_STATE_UNSPECIFIED = 0;     // in a request, every state
+  PROPOSAL_STATE_WAITING = 1;
+  PROPOSAL_STATE_CONFIRMED = 2;
+  PROPOSAL_STATE_DECLINED = 3;
+  PROPOSAL_STATE_SUPERSEDED = 4;
+}
+
+enum RoadmapOrigin {
+  ROADMAP_ORIGIN_UNSPECIFIED = 0;
+  ROADMAP_ORIGIN_PROPOSED = 1;
+  ROADMAP_ORIGIN_EDITED = 2;
+}
+
+// One item as it is proposed, confirmed or edited, before it has an identity of its own.
+message RoadmapItemDraft {
+  int32 number = 1;                   // the existing item this carries across an edit; 0 for a new one
+  string text = 2;                    // one line, led by a verb
+  string intended_agent = 3;          // empty when not known; a suggestion and never an assignment
+  repeated int32 needs = 4;           // one-based positions in this list, each earlier than this item
+}
+
+message RoadmapContent {
+  string title = 1;
+  repeated RoadmapItemDraft items = 2;
+}
+
+message ProposeRoadmapRequest {
+  string agent = 1;                   // the caller, as every Agents request names it
+  RoadmapContent content = 2;
+  string conversation_id = 3;         // where it came from; empty when none
+  string revises = 4;                 // the title of a roadmap it would change, a hint; empty when none
+}
+
+message ProposeRoadmapReply {
+  int64 proposal_id = 1;              // 0 when refused
+  string problem = 2;                 // empty when it was stored
+}
+
+message RoadmapNotice {
+  int64 proposal_id = 1;
+  string title = 2;                   // the agent's own
+  ProposalState outcome = 3;
+  string created_utc = 4;
+}
+
+message RoadmapSummary {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  int32 revision = 4;
+  int32 live_items = 5;
+  int32 started_items = 6;
+}
+
+message RoadmapsReply {
+  repeated RoadmapSummary roadmaps = 1;
+}
+
+message RoadmapRequest {
+  int64 id = 1;
+}
+
+// What the broker holds about one live item's conversation. Facts and never a state (section 5.7).
+message ItemFacts {
+  bool conversation_exists = 1;
+  int32 open_exchanges = 2;
+  bool collected = 3;
+  int32 complete_exchanges = 4;
+  int32 blocked_exchanges = 5;
+  int32 closed_exchanges = 6;
+  string blocker = 7;                 // empty when none
+  string closed_by = 8;               // empty while the conversation is not closed
+  bool destroyed = 9;
+  string first_sent_text = 10;        // empty when nothing was sent
+  repeated int64 open_exchange_ids = 11;   // to join with the wait-for graph
+}
+
+message RoadmapItemDetail {
+  int64 id = 1;
+  int32 number = 2;
+  int32 position = 3;
+  string text = 4;
+  string intended_agent = 5;
+  repeated int32 needs = 6;           // item numbers
+  string conversation_name = 7;
+  int32 removed_revision = 8;         // 0 while live
+  optional ItemFacts facts = 9;       // live items only
+}
+
+message RoadmapDetail {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  RoadmapOrigin origin = 4;
+  string proposer = 5;                // as text, empty when none
+  int32 revision = 6;
+  repeated RoadmapItemDetail items = 7;
+}
+
+message RoadmapReply {
+  optional RoadmapDetail roadmap = 1; // absent when there is no such roadmap
+}
+
+message ProposalsRequest {
+  ProposalState state = 1;            // UNSPECIFIED for every state
+}
+
+message ProposalDetail {
+  int64 id = 1;
+  string proposer = 2;
+  string source_conversation = 3;
+  string target_title = 4;
+  RoadmapContent content = 5;
+  int64 size = 6;
+  ProposalState state = 7;
+  string created_utc = 8;
+  string decided_utc = 9;             // empty while waiting
+}
+
+message ProposalsReply {
+  repeated ProposalDetail proposals = 1;
+}
+
+message ProposalRequest {
+  int64 id = 1;
+}
+
+message ConfirmProposalRequest {
+  int64 id = 1;
+  RoadmapContent content = 2;         // the person's final content, which may be the proposal's own
+  int64 target_roadmap = 3;           // 0 for a new roadmap
+}
+
+message EditRoadmapRequest {
+  int64 id = 1;
+  int32 revision = 2;                 // the revision the caller read
+  RoadmapContent content = 3;
+}
+
+message RoadmapChangeReply {
+  bool done = 1;
+  string problem = 2;                 // empty when it was done
+  int64 roadmap_id = 3;
+  int32 revision = 4;
+  RoadmapOrigin origin = 5;           // how the broker found the content related to the proposal
+}
+
+// The roadmap item a conversation belongs to, by the broker's reservation (section 5.7).
+message RoadmapItemRef {
+  int64 roadmap_id = 1;
+  int32 roadmap_number = 2;
+  string title = 3;
+  int32 item_number = 4;
+  bool removed = 5;
 }

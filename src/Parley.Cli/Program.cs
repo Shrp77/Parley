@@ -369,17 +369,16 @@ if (arguments.Count == 0)
 var verb = arguments[0];
 var rest = arguments.Skip(1).ToArray();
 
-// **The sixteen operator operations that are the terminal's now** (FR-049). Held as data rather than
-// as sixteen case arms so that the refusal, the help and the test that holds them read one list --
+// **The fourteen operator operations that are the terminal's now** (FR-049). Held as data rather than
+// as fourteen case arms so that the refusal, the help and the test that holds them read one list --
 // three copies of a set like this agree until one of them is edited.
 //
 // `registry` and `open` are deliberately not here: the installers invoke both, and FR-050 requires
 // every command this repository's own scripts and plugin call to go on answering.
 string[] Moved =
 [
-    "retire", "reinstate", "purge", "export", "force-conclude", "prune", "instruct", "start",
+    "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
     "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-    "instructions",
 ];
 
 // Options are taken centrally, above the verb, because a flag consumed by the command it belongs
@@ -499,8 +498,8 @@ if (destroy && verb != "project")
 }
 
 // **The operator operations left the command line, and this is where they are answered** (FR-049 to
-// FR-051). Sixteen verbs that read or change a deployment -- retiring and purging agents, exporting,
-// archiving and destroying conversations, instructing, pruning, and the five health reports -- are
+// FR-051). Fourteen verbs that read or change a deployment -- retiring and purging agents, exporting,
+// archiving and destroying conversations, pruning, and the five health reports -- are
 // the terminal's now. The owner's call on 2026-09-24: it is the only surface where the control
 // surfaces can sensibly be offered, and a set of them split across three places is three places to
 // keep in step.

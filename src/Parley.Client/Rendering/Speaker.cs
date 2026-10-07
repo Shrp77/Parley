@@ -11,8 +11,7 @@ namespace Parley.Client.Rendering;
 /// Parley's registry name.</b> The facilitator is the sender of its question and of a reply a person wrote to an agent
 /// that asked it something back; what tells the two apart is the attribution, which only the broker writes
 /// (<see cref="Facilitation.Attribution"/>, <see cref="Facilitation.PersonAttribution"/>). A transcript that showed the
-/// registry name for both would put a person's words in Parley's mouth — which is §10.2's own warning about
-/// <c>instruct</c>, reached from the other side.
+/// registry name for both would put a person's words in Parley's mouth.
 /// </para>
 /// <para>
 /// <b>Read from the attribution, which no adapter may claim</b> (§11.3), and never from anything in a payload.

@@ -44,8 +44,10 @@ public sealed class RowMenuTests
 
         Assert.Contains(Shell.StartWithTitle + orders, offered);
         Assert.Contains(Shell.ConversationsOfTitle(orders), offered);
-        Assert.Contains(offered, label => label.StartsWith(Ownership.AskTitle, StringComparison.Ordinal));
-        Assert.Contains(offered, label => label.StartsWith(Instructing.Title, StringComparison.Ordinal));
+        Assert.Contains(Responsibility.Title, offered);
+        Assert.DoesNotContain(offered, label => label.Contains("nstruct", StringComparison.Ordinal));
+        Assert.DoesNotContain(offered, label => label.StartsWith(Ownership.AskTitle, StringComparison.Ordinal));
+        Assert.DoesNotContain(offered, label => label.StartsWith(Ownership.Title, StringComparison.Ordinal));
 
         // FR-019, the owner's call: retire, reinstate and purge stay behind the typed name, never one arrow away from
         // the most ordinary key there is.

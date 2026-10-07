@@ -60,7 +60,7 @@ public sealed class SayingWhatAnAgentOwnsTests
         shell.Agents.Show([Agent("orders@test")], NodeCatalogue.Empty, null);
         shell.Focus(2);
 
-        Assert.Contains(shell.Actions(), a => a.Label.StartsWith(Ownership.Title, StringComparison.Ordinal));
+        Assert.Contains(shell.Actions(), a => a.Label == Responsibility.Title);
     }
 
     [Fact]

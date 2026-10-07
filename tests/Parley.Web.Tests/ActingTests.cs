@@ -24,7 +24,6 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
     [InlineData("retire", "Its history is kept")]
     [InlineData("reinstate", "routed to again")]
     [InlineData("forceconclude", "whatever its participants")]
-    [InlineData("instruct", "It may decline")]
     [InlineData("prune", "deleted permanently")]
     public async Task Every_action_is_described_before_it_is_offered(string action, string said)
     {
@@ -80,28 +79,6 @@ public sealed class ActingTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Contains("cannot be undone", page, StringComparison.Ordinal);
         Assert.Contains("peers' side", page, StringComparison.Ordinal);
         Assert.Contains("retiring it instead", page, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_decline_is_not_reported_as_a_failure()
-    {
-        // §11.5: an agent may refuse, and an interface that renders refusal as malfunction
-        // teaches whoever reads it to work around the agent rather than ask why.
-        var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"));
-
-        Assert.Contains("declined, which is its right", page, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Undeliverable_is_told_apart_from_failed()
-    {
-        // Different facts with different remedies: one is a machine that is off, and re-sending
-        // will not change it.
-        var page = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Projects/Act.cshtml.cs"));
-
-        // The shared sentence rather than a copy: every surface said the same wrong thing until it was one constant.
-        Assert.Contains("InstructionWording.Undeliverable", page, StringComparison.Ordinal);
-        Assert.Contains("The turn did not complete", page, StringComparison.Ordinal);
     }
 
     /// <summary>Finds a path in the repository from wherever the tests run.</summary>

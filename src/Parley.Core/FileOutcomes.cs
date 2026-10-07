@@ -6,8 +6,8 @@ namespace Parley.Core;
 /// <remarks>
 /// <para>
 /// Constitution Principle IV: what an operation returns about files is text that crosses, and a list or a batch
-/// has a maximum count per call. The page bounds are the ones the operator's <c>conversations</c> and
-/// <c>instructions</c> already use, so there is one rule for every list in Parley.
+/// has a maximum count per call. The page bounds are the ones the operator's <c>conversations</c>
+/// already use, so there is one rule for every list in Parley.
 /// </para>
 /// <para>
 /// The broker applies these whatever a caller asks for. A bound that trusted the caller's number would bound

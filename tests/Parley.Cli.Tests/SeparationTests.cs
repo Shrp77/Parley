@@ -46,7 +46,6 @@ public sealed class SeparationTests
             "ExportAsync",
             "FlagsAsync",
             "ForceConcludeAsync",
-            "InstructAsync",
             "PruneAsync",
 
             // No agent operation deletes anything, so there is no name here to collide with —

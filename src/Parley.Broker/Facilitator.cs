@@ -432,9 +432,8 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <remarks>
     /// <para>
     /// <b>Sent on the facilitator's exchange, because only the requester may answer a Clarify there</b> (§5.2), and
-    /// <b>attributed <c>parley:person</c>, never <c>parley:facilitator</c></b> (FR-003a). §10.2 says it of
-    /// <c>instruct</c> and it holds here: a log whose worth is that it says who said what stops having any the moment a
-    /// person's words appear under another name.
+    /// <b>attributed <c>parley:person</c>, never <c>parley:facilitator</c></b> (FR-003a). A log whose worth is that it says
+    /// who said what stops having any the moment a person's words appear under another name.
     /// </para>
     /// <para>
     /// The same bound as any message (rule 8.4), because it is one; and the same transition an agent's Clarify takes,

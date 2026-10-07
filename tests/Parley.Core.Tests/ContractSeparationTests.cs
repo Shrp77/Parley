@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Core.Tests;
 
 /// <summary>
-/// That the two halves of broker V1 stay two.
+/// That the operator contract and the document stay the same list.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,9 +15,9 @@ namespace Parley.Core.Tests;
 /// thin: it depends on whoever writes the adapter reading carefully.
 /// </para>
 /// <para>
-/// So the split is structural, and this is what says it still is. The failure it guards is not
-/// somebody deciding to give an agent the power to purge a peer — it is somebody merging two
-/// interfaces because one of them has a single method, on an afternoon when that looks tidy.
+/// There is no agent-side contract in this assembly any more: an agent receives what a person says as a
+/// Request, through §10.1, and nothing else. What is left to guard is that the operator contract declares
+/// every operation §10.2 names and nothing it does not.
 /// </para>
 /// </remarks>
 public sealed class ContractSeparationTests
@@ -88,62 +88,6 @@ public sealed class ContractSeparationTests
         Assert.NotNull(directory);
 
         return Path.Combine(directory!, relative);
-    }
-
-    [Fact]
-    public void The_agent_facing_contract_carries_no_operator_operation()
-    {
-        var declared = typeof(IAcceptsOperatorInstructions)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Select(m => m.Name)
-            .ToList();
-
-        var trespassing = declared
-            .Where(name => OperatorOnly.Any(op =>
-                name.StartsWith(op, StringComparison.Ordinal)))
-            .ToList();
-
-        Assert.True(
-            trespassing.Count == 0,
-            "the contract an agent implements has acquired operator operations: "
-            + string.Join(", ", trespassing));
-    }
-
-    [Fact]
-    public void The_agent_facing_contract_holds_exactly_one_method()
-    {
-        // Stated as a number rather than as a list, because the thing worth catching is growth.
-        // An interface an agent implements is the one place where "while I am here" is expensive:
-        // every method on it is a method some adapter will bind, and §10.1 is a shorter list than
-        // anybody's sense of what would be convenient.
-        var declared = typeof(IAcceptsOperatorInstructions)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance);
-
-        Assert.Single(declared);
-        Assert.Equal("AcceptAsync", declared[0].Name);
-    }
-
-    [Fact]
-    public void The_two_contracts_share_no_method_name()
-    {
-        // The same check SpecConsistencyTests makes on §10.1 and §10.2's operation names, one
-        // level down. Two methods sharing a name across this boundary is how the wrong one gets
-        // bound: the signatures nearly match, and the mistake reads as a typo rather than as an
-        // agent acquiring the power to end a discussion over its peers' objections.
-        var operators = typeof(IParleyBrokerClient)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Select(m => m.Name)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var agents = typeof(IAcceptsOperatorInstructions)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-            .Select(m => m.Name);
-
-        var shared = agents.Where(operators.Contains).ToList();
-
-        Assert.True(
-            shared.Count == 0,
-            "a method name appears on both contracts: " + string.Join(", ", shared));
     }
 
     [Fact]

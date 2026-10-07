@@ -16,14 +16,6 @@ else
     <p class="@(Model.Destroys ? "unreachable" : null)">@Model.Warning</p>
 
     <form method="post">
-        @if (string.Equals(Model.Action, "instruct", StringComparison.OrdinalIgnoreCase))
-        {
-            <p>
-                <label for="text">What should it do?</label><br />
-                <textarea id="text" name="text" rows="6" cols="70" required></textarea>
-            </p>
-        }
-
         @if (string.Equals(Model.Action, "ownership", StringComparison.OrdinalIgnoreCase))
         {
             @* No maxlength: the bound on this line was removed at 0.33.0 and no surface may print the

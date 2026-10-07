@@ -314,7 +314,40 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         reply.FileNotices.AddRange(inbox.Notices.Notices.Select(Conversions.Out));
         reply.FileNoticesWaiting = inbox.Notices.StillWaiting;
 
+        // What became of the caller's own proposals (SPEC.md section 5.7). Not a reason to wake anything either.
+        reply.RoadmapNotices.AddRange(inbox.RoadmapNotices.Select(Conversions.Out));
+
+        reply.RoadmapNoticesWaiting = await _runtime.UseConnectionAsync(
+            async (connection, _, ct) => await new RoadmapRepository(connection).CountNoticesAsync(agent, ct)
+                .ConfigureAwait(false),
+            context.CancellationToken).ConfigureAwait(false);
+
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposeRoadmapReply> ProposeRoadmap(
+        Wire.ProposeRoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var proposer = Caller(request.Agent);
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+
+        // Stores a proposal and nothing else (SPEC.md section 5.7): no wake, no exchange, no message. The one
+        // roadmap operation an agent has, and the whole of what it may do with one (principle 2.12).
+        var outcome = await Run(
+            proposer,
+            (broker, now, ct) => broker.ProposeRoadmapAsync(
+                proposer, content, Blank(request.ConversationId), Blank(request.Revises), now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.ProposeRoadmapReply
+        {
+            ProposalId = outcome.Id ?? 0,
+            Problem = outcome.Problem ?? string.Empty,
+        };
     }
 
     /// <inheritdoc/>
@@ -334,7 +367,9 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 ClosurePollsWaiting = await new ConversationRepository(connection)
                     .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
                 FileNoticesWaiting = await new FileNoticeRepository(connection)
-                    .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false),
+                RoadmapNoticesWaiting = await new RoadmapRepository(connection)
+                    .CountNoticesAsync(agent, ct).ConfigureAwait(false)
             },
             context.CancellationToken).ConfigureAwait(false);
     }

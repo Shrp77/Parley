@@ -42,9 +42,15 @@ public sealed partial class ProjectRecordTests
     {
         // The first thing somebody arriving needs: which feature is in progress and what number it
         // ships as. A note naming the previous one sends them to the wrong plan.
+        //
+        // The feature is read from `.specify/feature.json`, which is where the toolchain records it, rather than
+        // written here: a literal naming one feature checked that somebody had typed the same name twice, and was
+        // already a feature behind. The notes hold this one fact and not the history of the ones before it.
         var notes = Read("CLAUDE.md");
+        var feature = FeatureDirectory().Match(Read(".specify/feature.json"));
 
-        Assert.Contains("specs/006-three-view-operator/", notes, StringComparison.Ordinal);
+        Assert.True(feature.Success, ".specify/feature.json names no feature_directory");
+        Assert.Contains(feature.Groups[1].Value + "/", notes, StringComparison.Ordinal);
         Assert.Contains(Shipping(), notes, StringComparison.Ordinal);
     }
 
@@ -87,17 +93,8 @@ public sealed partial class ProjectRecordTests
     [GeneratedRegex(@"<VersionPrefix>([^<]+)</VersionPrefix>")]
     private static partial Regex VersionPrefix();
 
-    [Fact]
-    public void The_notes_record_what_the_feature_reversed_rather_than_only_what_it_built()
-    {
-        // The most valuable thing in that file is the argument, not the inventory. 006 reversed a
-        // decision 005 recorded as settled, and a note that listed the new operations without
-        // saying that would leave the next reader to rediscover why the old reasoning was wrong.
-        var notes = Read("CLAUDE.md");
-
-        Assert.Contains("12.3", notes, StringComparison.Ordinal);
-        Assert.Contains("T039", notes, StringComparison.Ordinal);
-    }
+    [GeneratedRegex(@"""feature_directory""\s*:\s*""([^""]+)""")]
+    private static partial Regex FeatureDirectory();
 
     [Fact]
     public void The_specification_carries_the_four_operations_and_the_state_they_need()

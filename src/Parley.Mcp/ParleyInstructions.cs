@@ -61,6 +61,10 @@ public static class ParleyInstructions
           so - the asker cannot tell a refused command from work in progress. Ask the person to allow it,
           naming the exact command or tool and why you need it, or send a parley_result with "blocked"
           and blocker "permission" naming the same.
+        - If you and other agents have agreed how to get something done as a list of steps, put it forward
+          with parley_propose_roadmap so it is not lost in the conversation: a short title, and one line
+          per item, verb first, with who it is for and what it needs only where you know. No background
+          or reasons. It only proposes; the person decides, and work still reaches you as a request.
         - Every message is answered. Sending never blocks — carry on with what does not depend on it.
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never

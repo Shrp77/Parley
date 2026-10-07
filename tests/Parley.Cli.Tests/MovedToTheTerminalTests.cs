@@ -28,9 +28,8 @@ public sealed class MovedToTheTerminalTests
     /// </remarks>
     public static TheoryData<string> Moved =>
     [
-        "retire", "reinstate", "purge", "export", "force-conclude", "prune", "instruct", "start",
+        "retire", "reinstate", "purge", "export", "force-conclude", "prune", "start",
         "archive", "unarchive", "destroy", "refusals", "clarifications", "results", "flags",
-        "instructions",
     ];
 
     [Theory]

@@ -118,11 +118,6 @@ internal static class Pruning
 
         var said = string.Create(CultureInfo.InvariantCulture, $"Removed {pruned.Removed} message(s)");
 
-        if (pruned.InstructionsRemoved > 0)
-        {
-            said += string.Create(CultureInfo.InvariantCulture, $" and {pruned.InstructionsRemoved} instruction(s)");
-        }
-
         said += ".";
 
         if (pruned.HeldByFloor > 0)

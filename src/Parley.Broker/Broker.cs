@@ -31,7 +31,6 @@ public sealed class Broker
     private readonly ExchangeRepository _exchanges;
     private readonly MessageRepository _messages;
     private readonly ConversationRepository _conversations;
-    private readonly InstructionRepository _instructions;
     private readonly Pruner _pruner;
     private readonly BrokerOptions _options;
 
@@ -61,7 +60,6 @@ public sealed class Broker
         _exchanges = new ExchangeRepository(connection);
         _messages = new MessageRepository(connection);
         _conversations = new ConversationRepository(connection);
-        _instructions = new InstructionRepository(connection);
         _pruner = new Pruner(connection);
     }
 
@@ -79,6 +77,9 @@ public sealed class Broker
 
     /// <summary>The namespace §11.3 reserves for the broker's own attributions.</summary>
     public const string ReservedResponderPrefix = Responder.ReservedPrefix;
+
+    /// <summary>The most roadmap notices one collection hands over; the rest wait for the next.</summary>
+    private const int RoadmapNoticesPerCollection = 50;
 
     /// <summary>The longest responder identity storage accepts, per §11.3.</summary>
     private const int MaxResponderLength = 64;
@@ -686,6 +687,51 @@ public sealed class Broker
         return await _agents.ListRoutableAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Puts a roadmap forward for a person to confirm (§5.7).</summary>
+    /// <param name="proposer">The attached caller, which is the only way a proposer is ever named.</param>
+    /// <param name="content">The title and the items.</param>
+    /// <param name="conversationId">Where it came from, or <see langword="null"/>.</param>
+    /// <param name="revises">The title of a roadmap it would change, a hint, or <see langword="null"/>.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal's identifier, or a sentence saying why it was refused.</returns>
+    /// <exception cref="InvalidOperationException">The broker has not started, or the proposer is not registered.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the whole of what an agent can do with a roadmap</b> (principle 2.12). It stores a proposal and
+    /// nothing else: no exchange, no message, no roadmap. There is no operation here, or reachable from here, by
+    /// which an agent reads, changes, reorders, removes from or marks done a roadmap, and none may be added.
+    /// </para>
+    /// <para>
+    /// The person seat and Parley are refused with a sentence here, before storage's trigger would refuse them
+    /// with a constraint's text: neither is an agent, and a roadmap a person confirms is not written for the person
+    /// by the person (§12.3).
+    /// </para>
+    /// </remarks>
+    public async Task<ProposalOutcome> ProposeRoadmapAsync(
+        AgentName proposer,
+        RoadmapContent content,
+        string? conversationId,
+        string? revises,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        RequireStarted("proposing a roadmap");
+        ArgumentNullException.ThrowIfNull(content);
+        await RequireRegisteredAsync(proposer, cancellationToken).ConfigureAwait(false);
+
+        if (PersonSeat.Is(proposer) || Facilitation.Is(proposer))
+        {
+            return new ProposalOutcome(null, "Only an agent proposes a roadmap. The person confirms one; Parley proposes none.");
+        }
+
+        var (id, problem) = await new RoadmapRepository(_connection).ProposeAsync(
+            proposer, conversationId, revises, content, nowUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return new ProposalOutcome(id, problem);
+    }
+
     /// <summary>Says whether the caller is finished with a conversation (§5.0).</summary>
     /// <param name="conversationId">The conversation.</param>
     /// <param name="agent">The participant speaking.</param>
@@ -907,7 +953,7 @@ public sealed class Broker
     /// when a person asks for the flags, derived from each exchange's own thresholds, and changes nothing.
     /// </para>
     /// <para>
-    /// What is left: polls whose last decline lapsed, instructions nothing will ever report on, and
+    /// What is left: polls whose last decline lapsed, and
     /// retention on its own schedule, last because closing a conversation makes its messages prunable.
     /// </para>
     /// </remarks>
@@ -916,12 +962,6 @@ public sealed class Broker
         RequireStarted("ticking");
 
         var concluded = await ConcludeSatisfiedPollsAsync(nowUtc, cancellationToken).ConfigureAwait(false);
-
-        // Presumed dead past the longest turn a machine may run, plus a margin (§14). The threshold is
-        // TurnBudget.PresumedDead rather than a number here, so a sweep cannot reach a turn still in budget.
-        var abandoned = await _instructions
-            .SweepAsync(nowUtc - TurnBudget.PresumedDead, nowUtc, cancellationToken)
-            .ConfigureAwait(false);
 
         var pruned = PruneResult.Nothing;
 
@@ -934,7 +974,7 @@ public sealed class Broker
             _prunedUtc = nowUtc;
         }
 
-        return new TickResult(concluded, pruned, abandoned);
+        return new TickResult(concluded, pruned);
     }
 
     /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3).</summary>
@@ -1029,7 +1069,13 @@ public sealed class Broker
         var notices = await new FileNoticeRepository(_connection).CollectAsync(agent, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        return new Inbox(delivered, polls, notices);
+        // What became of the agent's own proposals. Never a reason to wake anything (SPEC.md §5.7): collected when
+        // the agent next looks, like a change notice for a file.
+        var proposals = await new RoadmapRepository(_connection)
+            .DrainNoticesAsync(agent, RoadmapNoticesPerCollection, nowUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return new Inbox(delivered, polls, notices, proposals);
     }
 
     private async Task RecordCollectionAsync(long exchangeId, DateTimeOffset nowUtc, CancellationToken cancellationToken)

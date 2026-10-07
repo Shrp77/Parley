@@ -13,9 +13,6 @@ namespace Parley.Core;
 /// <param name="Capped">
 /// Whether this pass stopped at its own limit with spent messages still to remove.
 /// </param>
-/// <param name="InstructionsRemoved">
-/// How many operator instructions were removed for age.
-/// </param>
 /// <remarks>
 /// <para>
 /// Three numbers rather than one because they answer different questions and a single total
@@ -49,7 +46,7 @@ namespace Parley.Core;
 /// </para>
 /// </remarks>
 public sealed record PruneResult(
-    int Removed, int HeldByFloor, int Contended, bool Capped, int InstructionsRemoved = 0)
+    int Removed, int HeldByFloor, int Contended, bool Capped)
 {
     /// <summary>
     /// The result of a pass that did nothing, including a tick that did not reach its retention

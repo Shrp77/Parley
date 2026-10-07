@@ -28,13 +28,6 @@ public sealed record BrokerOptions(
     /// </remarks>
     public static TimeSpan DefaultRetentionInterval { get; } = TimeSpan.FromHours(1);
 
-    /// <summary>How long an instruction is waited for before the caller is told it is still running.</summary>
-    public static TimeSpan DefaultInstructionPatience { get; } = TimeSpan.FromSeconds(30);
-
-    /// <summary>Gets how long an instruction is waited for before the caller is told it is still running.</summary>
-    /// <value>Defaults to <see cref="DefaultInstructionPatience"/>.</value>
-    public TimeSpan InstructionPatience { get; init; } = DefaultInstructionPatience;
-
     /// <summary>The options when a deployment configures none.</summary>
     /// <remarks>
     /// <see cref="ResumePolicy.Never"/>, the safe default for interactive use (§14): the surprising outcome

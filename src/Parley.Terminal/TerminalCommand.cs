@@ -174,27 +174,7 @@ public static class TerminalCommand
         // been exercising all along. It was only production that did it the other way.
         var first = shell.RefreshAsync(cancellationToken);
 
-        // **Ctrl+C copies a selection and otherwise does what it always did.** Where the terminal delivers it as an
-        // interrupt rather than a key, this is the only place it can be answered; it takes the interrupt only while
-        // something is selected, so the argument above for letting it end the program stands for every other time.
-        ConsoleCancelEventHandler interrupted = (_, e) =>
-        {
-            if (shell.CopyOnInterrupt())
-            {
-                e.Cancel = true;
-            }
-        };
-
-        Console.CancelKeyPress += interrupted;
-
-        try
-        {
-            app.Run(shell);
-        }
-        finally
-        {
-            Console.CancelKeyPress -= interrupted;
-        }
+        app.Run(shell);
 
         // Observed after the run so a fault is not left unwatched, and swallowed because by now
         // the surface has gone: `RefreshAsync` reports what it could not ask on the message line,

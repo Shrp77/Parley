@@ -58,13 +58,6 @@
 -- and keeping them in a file that creates each table exactly once would be archaeology dressed as
 -- guidance. They are in the git history of the deleted files.
 --
--- **002 — an operator's instruction is not a message, and could not have been one.**
--- `messages.from_agent` is a foreign key to `agents(name)` and an operator is not an agent. That
--- is the key doing its job rather than an obstacle to route around: relaxing it to admit one
--- sender that is not registered would admit every other unregistered sender in the same edit. So
--- `instructions` is its own table, and it cascades on the agent the way `size_refusals` does,
--- because §10.2's purge removes an agent and everything that referred to it.
---
 -- **003 — the message cap is 8,000 and it is the first number here set from measurement.**
 -- §17 question 16 asked for `refusals()` showing "the same agents turned away repeatedly at
 -- similar sizes, rather than one agent once", and that is what it showed: six agents, forty-three
@@ -80,15 +73,6 @@
 -- keys deferred to commit, so a table nobody remembered fails the whole destroy rather than leaving
 -- a message pointing at a conversation that is gone. A cascade would remove that guard while
 -- looking like it strengthened it.
---
--- **005 — an agent's reply to an instruction carries the same cap as the instruction, and the
--- review gate is why.** Lens 2 found `instructions.reply` bounded by nothing at all, on any path:
--- a node — or anything able to reach the broker and claim to be one, which §16 says is anything on
--- the network — could write an arbitrary blob into the operator's own record, and a
--- 200,000-character reply was stored and read back whole. The same number as `text`, because what
--- the cap defends is how much of somebody's context one piece of text can fill and a reply fills
--- the same context an instruction does. Two numbers would also mean two arguments the next time
--- evidence moves one.
 --
 -- **006 and 007 — two caps are off by default, and `2147483647` is how "off" is spelled.**
 -- §7.1's open-question cap and §5.2's clarification cap. Nothing cuts a line of work off before its
@@ -429,36 +413,6 @@ CREATE TABLE destroyed_conversations (
   messages      INTEGER NOT NULL CHECK (messages >= 0),
   participants  TEXT NOT NULL
 ) STRICT;
-
-CREATE TABLE "instructions" (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
-  text         TEXT    NOT NULL,
-  outcome      TEXT    NOT NULL
-               CHECK (outcome IN ('pending', 'taken', 'declined', 'undeliverable', 'failed')),
-  reply        TEXT,
-  issued_utc   TEXT    NOT NULL,
-  settled_utc  TEXT,
-
-  -- The same bound as a message (rule 8.5), and deliberately the same number rather than a
-  -- second one. SpecConsistencyTests holds the two together, because SQLite cannot say "the same
-  -- as that one" and they would otherwise drift at the worst moment -- when evidence moves the
-  -- message cap and this is left behind at a number nobody argued for.
-  CHECK (length(text) <= 8000),
-
-  -- And the agent's half of the same exchange, which had no bound at all. An operator's words are
-  -- typed by a person and an agent's are produced by a model; if either needed the cap less, it
-  -- was the one that already had it.
-  CHECK (reply IS NULL OR length(reply) <= 8000),
-
-  -- Settled and unsettled are one fact, so they move together or the row is lying about one of
-  -- them. A reply belongs to a settled instruction: an agent that has not been given the turn
-  -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.
-  CHECK ((outcome = 'pending') = (settled_utc IS NULL)),
-  CHECK (outcome <> 'pending' OR reply IS NULL)
-) STRICT;
-
-CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
 
 CREATE TABLE "exchanges" (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1048,3 +1002,169 @@ WHEN NEW.source <> 'composed' AND NEW.conversation_id IS NULL
 BEGIN
   SELECT RAISE(ABORT, 'an accepted line names the conversation it was agreed in');
 END;
+
+-- Roadmaps (§5.7). A proposal is what an agent puts forward; nothing in it is a roadmap until a person
+-- confirms it. Titles and items are single-line text with no length bound (principle 2.2 and §16): the
+-- one thing stored here that a line break would break is the line, so a line break is refused.
+
+-- What an agent proposed, apart from messages: it opens no exchange and is owed no answer. The proposer
+-- is an agent that attached, never the person seat or Parley. A purged proposer takes its proposals
+-- with it; a roadmap that came of one keeps the proposer's name as text.
+CREATE TABLE roadmap_proposals (
+  id                  INTEGER PRIMARY KEY,
+  proposer            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  source_conversation TEXT    REFERENCES conversations(id) ON DELETE SET NULL,
+  -- A hint naming the roadmap this would revise. The person resolves it (§5.7); nothing joins on it.
+  target_title        TEXT,
+  title               TEXT    NOT NULL
+                      CHECK (length(trim(title, ' ' || char(9) || char(10) || char(13))) > 0
+                             AND instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  -- Characters in the whole proposal, kept so a bound can later be chosen from evidence.
+  size                INTEGER NOT NULL CHECK (size >= 0),
+  state               TEXT    NOT NULL DEFAULT 'waiting'
+                      CHECK (state IN ('waiting', 'confirmed', 'declined', 'superseded')),
+  created_utc         TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  decided_utc         TEXT    CHECK (decided_utc IS NULL OR unixepoch(decided_utc) IS NOT NULL),
+
+  -- IS rather than =, because a NULL decided_utc makes = yield NULL and a CHECK admits NULL.
+  CHECK ((state = 'waiting') = (decided_utc IS NULL))
+) STRICT;
+
+CREATE INDEX ix_roadmap_proposals_state ON roadmap_proposals(state, created_utc);
+
+-- The reserved roles are not agents and propose nothing (principle 2.11, §12.3).
+CREATE TRIGGER tr_a_proposer_is_an_agent
+BEFORE INSERT ON roadmap_proposals
+WHEN EXISTS (SELECT 1 FROM agents a
+              WHERE a.name = NEW.proposer
+                AND a.adapter IN ('parley-facilitator', 'parley-console'))
+BEGIN
+  SELECT RAISE(ABORT, 'a roadmap is proposed by an agent, never by the person seat or Parley');
+END;
+
+CREATE TABLE roadmap_proposal_items (
+  proposal_id    INTEGER NOT NULL REFERENCES roadmap_proposals(id) ON DELETE CASCADE,
+  position       INTEGER NOT NULL CHECK (position >= 1),
+  text           TEXT    NOT NULL
+                 CHECK (length(trim(text, ' ' || char(9) || char(10) || char(13))) > 0
+                        AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+  -- Who the item is meant for, where the proposer knew. A suggestion to the person and nothing more.
+  intended_agent TEXT    REFERENCES agents(name) ON DELETE SET NULL,
+
+  PRIMARY KEY (proposal_id, position)
+) STRICT;
+
+-- A dependency points only at an earlier item, which makes a cycle impossible rather than checked for.
+CREATE TABLE roadmap_proposal_needs (
+  proposal_id    INTEGER NOT NULL,
+  position       INTEGER NOT NULL,
+  needs_position INTEGER NOT NULL,
+
+  PRIMARY KEY (proposal_id, position, needs_position),
+  CHECK (needs_position >= 1 AND needs_position < position),
+  FOREIGN KEY (proposal_id, position)
+    REFERENCES roadmap_proposal_items(proposal_id, position) ON DELETE CASCADE,
+  FOREIGN KEY (proposal_id, needs_position)
+    REFERENCES roadmap_proposal_items(proposal_id, position) ON DELETE CASCADE
+) STRICT;
+
+-- A roadmap exists only once a person confirmed it. It carries no status: where an item stands is
+-- derived from its conversation when read (§5.7) and is stored nowhere.
+CREATE TABLE roadmaps (
+  id              INTEGER PRIMARY KEY,
+  -- Small, per store, never reused: the 'rm<number>' of every item conversation's name.
+  number          INTEGER NOT NULL UNIQUE CHECK (number >= 1),
+  title           TEXT    NOT NULL
+                  CHECK (length(trim(title, ' ' || char(9) || char(10) || char(13))) > 0
+                         AND instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  origin          TEXT    NOT NULL CHECK (origin IN ('proposed', 'edited')),
+  -- As text, so that neither pruning the proposal nor purging the agent loses who it began with.
+  proposer        TEXT,
+  origin_proposal INTEGER,
+  revision        INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  created_utc     TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  updated_utc     TEXT    NOT NULL CHECK (unixepoch(updated_utc) IS NOT NULL)
+) STRICT;
+
+-- Items are never deleted, because a removed item's conversation stays and says what it was.
+CREATE TABLE roadmap_items (
+  id             INTEGER PRIMARY KEY,
+  roadmap_id     INTEGER NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
+  number         INTEGER NOT NULL CHECK (number >= 1),
+  position       INTEGER NOT NULL CHECK (position >= 1),
+  text           TEXT    NOT NULL
+                 CHECK (length(trim(text, ' ' || char(9) || char(10) || char(13))) > 0
+                        AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+  intended_agent TEXT    REFERENCES agents(name) ON DELETE SET NULL,
+  added_rev      INTEGER NOT NULL CHECK (added_rev >= 1),
+  removed_rev    INTEGER,
+  edited_utc     TEXT    CHECK (edited_utc IS NULL OR unixepoch(edited_utc) IS NOT NULL),
+
+  UNIQUE (roadmap_id, number),
+  CHECK (removed_rev IS NULL OR removed_rev > added_rev)
+) STRICT;
+
+-- Two live items never share a place in one roadmap's order. A removed item keeps the place it had.
+CREATE UNIQUE INDEX ux_live_item_position ON roadmap_items(roadmap_id, position)
+  WHERE removed_rev IS NULL;
+
+CREATE TABLE roadmap_item_needs (
+  item_id       INTEGER NOT NULL REFERENCES roadmap_items(id) ON DELETE CASCADE,
+  needs_item_id INTEGER NOT NULL REFERENCES roadmap_items(id) ON DELETE CASCADE,
+
+  PRIMARY KEY (item_id, needs_item_id),
+  CHECK (item_id <> needs_item_id)
+) STRICT;
+
+-- A second layer, for a writer that forgets: a need names a live item of the same roadmap, earlier in its
+-- order. The broker also checks the person's whole final content, because a reorder is not an insert and
+-- this cannot see one (§5.7).
+CREATE TRIGGER tr_a_need_is_live_and_earlier
+BEFORE INSERT ON roadmap_item_needs
+WHEN NOT EXISTS (SELECT 1
+                   FROM roadmap_items i
+                   JOIN roadmap_items n ON n.roadmap_id = i.roadmap_id
+                  WHERE i.id = NEW.item_id AND n.id = NEW.needs_item_id
+                    AND i.removed_rev IS NULL AND n.removed_rev IS NULL
+                    AND n.position < i.position)
+BEGIN
+  SELECT RAISE(ABORT, 'an item needs only a live item that comes earlier in the same roadmap');
+END;
+
+-- The name an item's conversation will have, reserved when the roadmap is confirmed. No foreign key to
+-- conversations: the conversation does not exist until work on the item starts, and existing is how a
+-- surface knows it has. The name has the same character rules as any conversation's.
+CREATE TABLE roadmap_item_conversations (
+  item_id         INTEGER PRIMARY KEY REFERENCES roadmap_items(id) ON DELETE CASCADE,
+  conversation_id TEXT    NOT NULL UNIQUE
+                  CHECK (length(conversation_id) BETWEEN 1 AND 64
+                         AND conversation_id NOT GLOB '*[^a-zA-Z0-9._-]*'
+                         AND conversation_id NOT GLOB '*..*')
+) STRICT;
+
+-- Without this an agent could open a reserved name first, and the person pressing start would then speak
+-- into a conversation the agent made. Only the first message is held: replies come after.
+CREATE TRIGGER tr_a_reserved_conversation_opens_with_the_person
+BEFORE INSERT ON messages
+WHEN EXISTS (SELECT 1 FROM roadmap_item_conversations c WHERE c.conversation_id = NEW.conversation_id)
+ AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = NEW.conversation_id)
+ AND NOT EXISTS (SELECT 1 FROM agents a
+                  WHERE a.name = NEW.from_agent AND a.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'a roadmap item''s conversation is opened by the person');
+END;
+
+-- What a proposer is told about its proposal. Not a message: it opens nothing, is owed nothing and wakes
+-- nobody, as a change notice for a file does not (§9.5). The title is the agent's own.
+CREATE TABLE roadmap_notices (
+  id            INTEGER PRIMARY KEY,
+  agent         TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  proposal_id   INTEGER NOT NULL,
+  title         TEXT    NOT NULL
+                CHECK (instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  outcome       TEXT    NOT NULL CHECK (outcome IN ('confirmed', 'declined', 'superseded')),
+  created_utc   TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  delivered_utc TEXT    CHECK (delivered_utc IS NULL OR unixepoch(delivered_utc) IS NOT NULL)
+) STRICT;
+
+CREATE INDEX ix_roadmap_notices_collection ON roadmap_notices(agent, delivered_utc);

@@ -55,14 +55,6 @@ public sealed class StartingAConversationTests
     }
 
     [Fact]
-    public void Undeliverable_names_both_causes_and_what_to_do()
-    {
-        Assert.Contains("not running", InstructionWording.Undeliverable, StringComparison.Ordinal);
-        Assert.Contains("not connected", InstructionWording.Undeliverable, StringComparison.Ordinal);
-        Assert.Contains("request", InstructionWording.Undeliverable, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void The_shell_titles_the_terminal_with_its_build_and_a_dialog_does_not_take_the_title()
     {
         using var directory = Directory();

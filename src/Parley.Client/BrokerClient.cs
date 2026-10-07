@@ -100,7 +100,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Read(row.FirstActivityUtc) ?? DateTimeOffset.MinValue,
             Read(row.LastActivityUtc) ?? DateTimeOffset.MinValue,
             row.HasOpenExchange,
-            row.Archived));
+            row.Archived,
+            ItemOf(row.Item)));
 
         return new ConversationPage(
             [.. conversations],
@@ -188,7 +189,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             },
             e.SettledBy == 0 ? null : e.SettledBy));
 
-        return new ConversationExport([.. messages], [.. exchanges], destroyed);
+        return new ConversationExport([.. messages], [.. exchanges], destroyed, ItemOf(reply.Item));
     }
 
     /// <inheritdoc/>
@@ -270,48 +271,6 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 c.ConversationId,
                 [.. c.Path.Where(name => AgentName.TryCreate(name, out _)).Select(AgentName.Create)],
                 Read(c.RecordedUtc) ?? DateTimeOffset.MinValue))]);
-    }
-
-    /// <inheritdoc/>
-    public async Task<InstructionPage> InstructionsAsync(
-        AgentName? agent = null,
-        long? instructionId = null,
-        int pageSize = 0,
-        string? pageToken = null,
-        CancellationToken cancellationToken = default)
-    {
-        var reply = await _operators.InstructionsAsync(
-            new Wire.InstructionsRequest
-            {
-                Agent = agent?.Value ?? string.Empty,
-                InstructionId = instructionId ?? 0,
-                PageSize = pageSize,
-                PageToken = pageToken ?? string.Empty
-            },
-            cancellationToken: cancellationToken);
-
-        return new InstructionPage(
-            [.. reply.Instructions.Select(i => new InstructionRecord(
-                i.Id,
-                AgentName.Create(i.Agent),
-                i.Text,
-                Instruction(i.Outcome),
-                string.IsNullOrEmpty(i.Reply) ? null : i.Reply,
-                DateTimeOffset.Parse(i.IssuedUtc, CultureInfo.InvariantCulture),
-                string.IsNullOrEmpty(i.SettledUtc) ? null : DateTimeOffset.Parse(i.SettledUtc, CultureInfo.InvariantCulture)))],
-            string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken);
-    }
-
-    /// <inheritdoc/>
-    public async Task<InstructionResult> InstructAsync(AgentName agent, string text, CancellationToken cancellationToken = default)
-    {
-        var reply = await _operators.InstructAsync(
-            new Wire.InstructRequest { Agent = agent.Value, Text = text }, cancellationToken: cancellationToken);
-
-        return new InstructionResult(
-            Instruction(reply.Outcome),
-            string.IsNullOrEmpty(reply.Reply) ? null : reply.Reply,
-            reply.InstructionId);
     }
 
     /// <inheritdoc/>
@@ -437,7 +396,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     {
         var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped, reply.InstructionsRemoved);
+        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped);
     }
 
     /// <inheritdoc/>
@@ -626,6 +585,185 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
     };
 
+    // ---- roadmaps (SPEC.md section 5.7)
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoadmapSummary>> RoadmapsAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RoadmapsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return [.. reply.Roadmaps.Select(r => new RoadmapSummary(
+            r.Id, r.Number, r.Title, r.Revision, r.LiveItems, r.StartedItems))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<Roadmap?> RoadmapAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RoadmapAsync(
+            new Wire.RoadmapRequest { Id = id }, cancellationToken: cancellationToken);
+
+        if (reply.Roadmap is not { } roadmap)
+        {
+            return null;
+        }
+
+        return new Roadmap(
+            roadmap.Id,
+            roadmap.Number,
+            roadmap.Title,
+            roadmap.Origin == Wire.RoadmapOrigin.Proposed ? RoadmapOrigin.Proposed : RoadmapOrigin.Edited,
+            string.IsNullOrEmpty(roadmap.Proposer) ? null : roadmap.Proposer,
+            roadmap.Revision,
+            [.. roadmap.Items.Select(i => new RoadmapItem(
+                i.Id,
+                i.Number,
+                i.Position,
+                i.Text,
+                string.IsNullOrEmpty(i.IntendedAgent) ? null : AgentName.Create(i.IntendedAgent),
+                [.. i.Needs],
+                i.ConversationName,
+                i.RemovedRevision == 0 ? null : i.RemovedRevision,
+                i.Facts is { } facts
+                    ? new ItemFacts(
+                        facts.ConversationExists,
+                        facts.OpenExchanges,
+                        facts.Collected,
+                        facts.CompleteExchanges,
+                        facts.BlockedExchanges,
+                        facts.ClosedExchanges,
+                        string.IsNullOrEmpty(facts.Blocker) ? null : facts.Blocker,
+                        string.IsNullOrEmpty(facts.ClosedBy) ? null : facts.ClosedBy,
+                        facts.Destroyed,
+                        string.IsNullOrEmpty(facts.FirstSentText) ? null : facts.FirstSentText,
+                        [.. facts.OpenExchangeIds])
+                    : null))]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ProposalsAsync(
+            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
+            cancellationToken: cancellationToken);
+
+        return [.. reply.Proposals.Select(p => new RoadmapProposal(
+            p.Id,
+            AgentName.Create(p.Proposer),
+            string.IsNullOrEmpty(p.SourceConversation) ? null : p.SourceConversation,
+            string.IsNullOrEmpty(p.TargetTitle) ? null : p.TargetTitle,
+            ContentIn(p.Content),
+            p.Size,
+            ProposalStateIn(p.State),
+            Read(p.CreatedUtc) ?? DateTimeOffset.MinValue,
+            Read(p.DecidedUtc)))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> ConfirmProposalAsync(
+        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = id, Content = ContentOut(content), TargetRoadmap = targetRoadmap ?? 0 },
+            cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> DeclineProposalAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DeclineProposalAsync(
+            new Wire.ProposalRequest { Id = id }, cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> EditRoadmapAsync(
+        long id, int revision, RoadmapContent content, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.EditRoadmapAsync(
+            new Wire.EditRoadmapRequest { Id = id, Revision = revision, Content = ContentOut(content) },
+            cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    private static RoadmapItemRef? ItemOf(Wire.RoadmapItemRef? item) =>
+        item is null
+            ? null
+            : new RoadmapItemRef(item.RoadmapId, item.RoadmapNumber, item.Title, item.ItemNumber, item.Removed);
+
+    private static RoadmapChange ChangeIn(Wire.RoadmapChangeReply reply) => new(
+        reply.Done,
+        string.IsNullOrEmpty(reply.Problem) ? null : reply.Problem,
+        reply.RoadmapId == 0 ? null : reply.RoadmapId,
+        reply.Revision == 0 ? null : reply.Revision,
+        reply.Origin switch
+        {
+            Wire.RoadmapOrigin.Proposed => RoadmapOrigin.Proposed,
+            Wire.RoadmapOrigin.Edited => RoadmapOrigin.Edited,
+            _ => null,
+        });
+
+    private static Wire.RoadmapContent ContentOut(RoadmapContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        var wire = new Wire.RoadmapContent { Title = content.Title };
+
+        foreach (var item in content.Items)
+        {
+            var draft = new Wire.RoadmapItemDraft
+            {
+                Number = item.Number ?? 0,
+                Text = item.Text,
+                IntendedAgent = item.IntendedAgent?.Value ?? string.Empty,
+            };
+
+            draft.Needs.AddRange(item.Needs);
+            wire.Items.Add(draft);
+        }
+
+        return wire;
+    }
+
+    private static RoadmapContent ContentIn(Wire.RoadmapContent content) => new(
+        content.Title,
+        [.. content.Items.Select(i => new RoadmapItemDraft(
+            i.Number == 0 ? null : i.Number,
+            i.Text,
+            string.IsNullOrEmpty(i.IntendedAgent) ? null : AgentName.Create(i.IntendedAgent),
+            [.. i.Needs]))]);
+
+    private static Wire.ProposalState ProposalStateOut(ProposalState state) => state switch
+    {
+        ProposalState.Waiting => Wire.ProposalState.Waiting,
+        ProposalState.Confirmed => Wire.ProposalState.Confirmed,
+        ProposalState.Declined => Wire.ProposalState.Declined,
+        ProposalState.Superseded => Wire.ProposalState.Superseded,
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a proposal state."),
+    };
+
+    /// <summary>Reads a proposal's state from the wire, refusing one this build does not know.</summary>
+    /// <param name="state">The wire value.</param>
+    /// <returns>The state.</returns>
+    /// <exception cref="InvalidOperationException">The broker sent a state this build does not know.</exception>
+    /// <remarks>
+    /// Refused rather than defaulted, as a message type is: a surface that showed an unknown state as a known one would
+    /// be telling a person a proposal was waiting that had been decided, or the reverse.
+    /// </remarks>
+    private static ProposalState ProposalStateIn(Wire.ProposalState state) => state switch
+    {
+        Wire.ProposalState.Waiting => ProposalState.Waiting,
+        Wire.ProposalState.Confirmed => ProposalState.Confirmed,
+        Wire.ProposalState.Declined => ProposalState.Declined,
+        Wire.ProposalState.Superseded => ProposalState.Superseded,
+        _ => throw new InvalidOperationException(
+            $"The broker sent a proposal state this build does not know ({state}). It speaks a different protocol."),
+    };
+
     private static Outcome Outcome(Wire.Outcome outcome) => outcome switch
     {
         Wire.Outcome.Done => Core.Outcome.Done,
@@ -640,14 +778,5 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.BlockerKind.Conflict => BlockerKind.Conflict,
         Wire.BlockerKind.Permission => BlockerKind.Permission,
         _ => BlockerKind.MissingInformation
-    };
-
-    private static InstructionOutcome Instruction(Wire.InstructionOutcome outcome) => outcome switch
-    {
-        Wire.InstructionOutcome.Taken => InstructionOutcome.Taken,
-        Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,
-        Wire.InstructionOutcome.Undeliverable => InstructionOutcome.Undeliverable,
-        Wire.InstructionOutcome.Failed => InstructionOutcome.Failed,
-        _ => InstructionOutcome.Pending
     };
 }

@@ -71,10 +71,6 @@ internal static class Colours
     /// <summary>A conversation being read.</summary>
     internal static Color Transcript { get; } = new(0x4F, 0xAD, 0xC2);
 
-    /// <summary>What text somebody has dragged across in the transcript is drawn in.</summary>
-    /// <remarks>Dark on the transcript's own colour: a selection is a state of the screen and says nothing about anybody.</remarks>
-    internal static Attribute Selected { get; } = new(new Color(0x10, 0x16, 0x1D), Transcript);
-
     /// <summary>The ground the status bar sits on.</summary>
     private static Color Bar { get; } = new(0x1F, 0x27, 0x33);
 

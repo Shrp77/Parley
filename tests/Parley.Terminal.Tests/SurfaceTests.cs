@@ -8,7 +8,7 @@ namespace Parley.Terminal.Tests;
 /// <remarks>
 /// <para>
 /// <c>contracts/operations.md</c> once excluded <c>Retire</c>, <c>Reinstate</c>, <c>Purge</c>,
-/// <c>ForceConclude</c>, <c>Instruct</c> and <c>Prune</c> from this surface, on the argument that
+/// <c>ForceConclude</c> and <c>Prune</c> from this surface (and <c>Instruct</c>, since removed), on the argument that
 /// <b>a destructive action taken by a keystroke in a full-screen application is a different risk from
 /// one taken by a POST behind a page that describes it first.</b> Each was admitted since, the last three
 /// in 0.26.0 on the owner's decision that every surface offers every operator operation — and each on the
@@ -35,7 +35,6 @@ public sealed class SurfaceTests
         "PurgeAsync",
         "DestroyAsync",
         "ForceConcludeAsync",
-        "InstructAsync",
         "PruneAsync",
     ];
 
@@ -140,7 +139,6 @@ public sealed class SurfaceTests
     [Theory]
     [InlineData("ForceConcludeAsync", "Closing.cs", "Type the conversation's identifier")]
     [InlineData("PruneAsync", "Pruning.cs", "Type the project's name")]
-    [InlineData("InstructAsync", "Instructing.cs", "It may decline")]
     [InlineData("RemoveFilesAsync", "FilesRemoving.cs", "whichever agent placed them")]
     [InlineData("PruneFilesAsync", "FilesPruning.cs", "Type the project's name")]
     public void The_remaining_operator_operations_happen_in_one_place_behind_their_door(

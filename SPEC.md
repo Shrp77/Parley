@@ -117,6 +117,14 @@ language they are written in.
     would hold its conversations open for ever). It holds no operator operation. It is never the
     person (principle 2.6, §12.3), never receives anybody's work, and never assigns, directs,
     prioritises, closes or overrides work. It adds *who* asks, never what asking can do.
+12. **A roadmap is the person's, never an agent's plan.** When agents coordinate toward something, the
+    list that results must not be lost in a transcript, so an agent may *propose* one. A proposal is
+    stored apart from messages, and nothing is a roadmap until a person confirms it. Only a person
+    edits, reorders, removes from or declines one, and no agent operation reads, changes or marks done a
+    roadmap: an agent learns only what became of its own proposal. Work reaches an agent as a request
+    from the person, one item at a time, so a roadmap binds no agent. It is the person's map over
+    requests the person chose to send (§5.7). The facilitator (principle 2.11) proposes and confirms
+    nothing.
 
 ## 3. Terminology
 
@@ -140,6 +148,10 @@ language they are written in.
 | **Shared file** | A `.md` or `.txt` file in a conversation's folder: placed by an agent, which alone may replace or remove it, or put there by the person. Fetched onto disk, never into a model's context. |
 | **Content hash** | The SHA-256 of a shared file's current content, computed by the broker. The same hash is the same content; it attests nothing about who wrote it. |
 | **Change notice** | What an agent that fetched a file finds in its inbox when the file later changes or goes. Not a message: it opens nothing and owes nothing. See §9.5. |
+| **Roadmap** | A person-confirmed, ordered list of items of work, held by a project. It exists only once a person has confirmed a proposal, and is the person's: no agent reads, changes or marks done one (principle 2.12). See §5.7. |
+| **Roadmap item** | One step of a roadmap: a single line of text, and optionally the agent it is meant for and the earlier items it needs. Its conversation is its own, and where it stands is derived from that conversation, never stored. |
+| **Proposal** | A roadmap an agent has put forward, apart from messages: it opens no exchange and is owed no answer, and it is nothing until a person confirms it. |
+| **Item conversation** | The conversation that belongs to one roadmap item. Its name is reserved when the roadmap is confirmed, and it comes to exist when work on the item starts. |
 
 Agent names match `^[a-z][a-z0-9-]{0,31}$`. They are **logical names, not repository
 paths and not session identifiers** — this separation is what makes recovery and
@@ -796,6 +808,77 @@ own open questions to the person in that conversation — oldest first, at most 
 exchange, when it was asked, and the first 160 characters of the last thing the agent said in it —
 and a count of any left out. They are the agent's own words returned to it, not a peer's, and they
 are bounded like everything else that crosses (§13).
+
+### 5.7 Roadmaps
+
+**A list the agents arrive at is easily lost.** When agents coordinate toward a goal, the plan
+that results is a message in a transcript, and a transcript scrolls. A roadmap is that list as a
+first-level entity of the project: kept, ordered, and readable at any later time without searching.
+
+**An agent proposes; a person decides** (principle 2.12). `propose_roadmap` (§10.1) stores a
+proposal and nothing else. It opens no exchange and writes no message, so nothing is owed in return and
+nothing appears in any transcript. The person sees it as work waiting on them, with who proposed it and
+where, may reword, reorder, add or remove items, and confirms or declines it. Only confirmation
+creates a roadmap, recording whether it was confirmed as proposed or edited. Declining changes nothing
+else.
+
+**The shape of a proposal is deliberately small.** A title of a few words, and an ordered list of
+items. An item is one line, led by a verb, naming the thing to be done, with — only where the proposer
+knows them — the agent it is meant for and the earlier items it needs. No background, no reasons, no
+narrative: detail belongs in the item's conversation once the person starts it. The tool an agent
+proposes with carries that template, and so do the standing instructions every agent receives. It is
+guidance and not a check, because the person reads the proposal and is the control (§16). What is
+checked is that titles and items are single-line text, since a line break would break the line a
+surface draws, and that a proposal is not empty.
+
+**An item needs only an earlier item.** It may name items that must be done first, each earlier in the
+order and live. A cycle is therefore impossible rather than checked for. Because a reorder or a
+removal can break that, confirming and editing validate the person's whole final content: an intended
+agent must be in the project, and every need must name a live earlier item. A reorder or removal that
+leaves a live item needing a later or removed item is refused, with a sentence. A removed item is
+therefore never a dependency of a live one.
+
+**A revision is proposed by title, and resolved by the person.** An agent never reads a roadmap, so it
+can name one it wants revised only by its title, which is a hint. The person chooses at confirmation
+whether the proposal revises an existing roadmap or becomes a new one, and a proposal whose title
+matches an existing roadmap is shown with that match. Confirming a revision supersedes any other
+waiting proposal whose hint names the same roadmap, and its proposer is told.
+
+**Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
+live item what the broker already holds — whether its conversation exists, how many exchanges in it are
+open, whether every open request was collected, how many closed exchanges ended complete, blocked or with no Result, the blocker named, who closed it —
+and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
+derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
+*blocked* (with the blocker the agent gave), *done*, *closed by the person*, or *could not be read*.
+**A state that could not be read is never shown as not started.** No operation sets a state, so a
+roadmap never shows one that no conversation supports; an item finished or made irrelevant elsewhere is
+removed or reworded by editing the roadmap. A roadmap names its **next item**: the first item, in
+order, that is not started and whose needs are all done; when none qualifies it says whether the
+roadmap is complete or what remains is waiting or blocked. An item whose text was edited after its
+conversation began says so, by comparing its text now with the words first sent.
+
+**Starting an item is the person's request, and adds no operation.** The person chooses the agents —
+the item's intended agent, or any in the project — and the surface sends each one an ordinary Request
+(§5.6, §12.3) from the person's seat, carrying the item's text and any words the person adds, into the
+item's conversation. It is the person's words in the transcript, not an operator instruction. An item
+already with an agent is said to be, and nothing is sent unless the person sends a further line. The
+message cap of rule 8.4 applies to what is sent, whatever a roadmap holds.
+
+**Every item has at most one conversation, and its name is reserved at confirmation.** The name is
+derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
+a legal conversation identifier by construction and unique. The conversation comes to exist when work on
+the item starts. **Storage refuses the first message into a reserved name unless the person sent it**
+(§9.3), so no agent can open the conversation first and have the person speak into it.
+A conversation is recognised as an item's by the reservation and never by anything in a payload, so
+an agent cannot make a conversation look like one (§13).
+
+**Removing an item removes nothing it caused.** Items are never deleted. A removed item's conversation
+stays, belongs to no item, and says it formerly belonged to that one. Destroying a conversation
+(§14) leaves its item reading *closed*, never *not started*.
+
+**An agent is told what became of its proposal and nothing else.** Confirmed, declined or superseded
+reaches the proposer as a notice with its own title, in its inbox beside change notices (§9.5). It
+opens nothing, is owed nothing and wakes nobody.
 
 ## 6. Exchange state machine
 
@@ -1723,60 +1806,6 @@ CREATE TABLE size_refusals (
   CHECK (total >= worst)
 ) STRICT;
 
--- §10.2's `instruct`, and the only text in this store a person wrote.
---
--- Not a message, and it could not have been one. messages.from_agent is a foreign key to
--- agents(name) and an operator is not an agent — which is that key doing its job rather than an
--- obstacle to route around. Relaxing it to admit one sender that is not registered would admit
--- every other unregistered sender in the same edit, and the check that stops a forged peer would
--- be gone to make room for a person.
---
--- A table of its own also keeps the message log worth reading. Its value is that it records what
--- agents said to each other; a person's instructions filed among them, under whatever name was
--- chosen to satisfy the column, would make every later reader ask which rows were really traffic.
---
--- Cascades on the agent like size_refusals does: §10.2's purge removes an agent and everything
--- that referred to it, and an instruction to an agent that no longer exists refers to nothing.
---
--- `pending` is a state a reader will meet, not a transient the writer expects to be brief. A turn
--- may run for as long as the machine hosting it allows, and §10.2 forbids a broker from settling a
--- row because it stopped waiting — so rows sit here unsettled for the length of real work, and
--- anything reading this table has to render that as "still running" rather than as a fault. What
--- bounds it is §14: the machine departing, or the row outliving any permitted turn.
---
--- Read back through §10.2's `instructions()`. The reply column was written long before anything
--- could ask for it, which made every answer here true and unreachable.
-CREATE TABLE instructions (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
-  text         TEXT    NOT NULL,
-  outcome      TEXT    NOT NULL
-               CHECK (outcome IN ('pending', 'taken', 'declined', 'undeliverable', 'failed')),
-  reply        TEXT,
-  issued_utc   TEXT    NOT NULL,
-  settled_utc  TEXT,
-
-  -- The same bound as a message (rule 8.4), and deliberately the same number rather than a
-  -- second one. What the cap defends is how much of somebody else's context one piece of text
-  -- can fill, and an instruction fills the same context a question does. Two numbers would also
-  -- mean two arguments the next time evidence says move it.
-  CHECK (length(text) <= 8000),
-
-  -- And the agent's half of the same exchange, which had no bound at all until it was looked for.
-  -- An operator's words are typed by a person and an agent's are produced by a model; if either
-  -- needed the cap less it was the one that already had it. §16 settles the rest: anything able to
-  -- reach the broker can claim to be the node reporting, so "the node is ours" bounds nothing.
-  CHECK (reply IS NULL OR length(reply) <= 8000),
-
-  -- Settled and unsettled are one fact, so they move together or the row is lying about one of
-  -- them. A reply belongs to a settled instruction: an agent that has not been given the turn
-  -- yet cannot have said anything, and a row claiming otherwise would be read as an answer.
-  CHECK ((outcome = 'pending') = (settled_utc IS NULL)),
-  CHECK (outcome <> 'pending' OR reply IS NULL)
-) STRICT;
-
-CREATE INDEX ix_instructions_agent ON instructions(agent, issued_utc);
-
 -- The triggers below sit after the tables they guard rather than beside the rules they enforce.
 -- SQLite compiles a trigger against a table that must already exist, so the document's order is
 -- the order a database is built in, not a reading order.
@@ -2307,6 +2336,178 @@ BEGIN
 END;
 ```
 
+**Roadmaps.** Proposals, roadmaps, items and what a proposer is told (§5.7). Declared after the
+tables they reference, because a roadmap's reservations and notices point at agents, conversations
+and messages. A roadmap has no status column: where an item stands is derived when read.
+
+```sql
+-- Roadmaps (§5.7). A proposal is what an agent puts forward; nothing in it is a roadmap until a person
+-- confirms it. Titles and items are single-line text with no length bound (principle 2.2 and §16): the
+-- one thing stored here that a line break would break is the line, so a line break is refused.
+
+-- What an agent proposed, apart from messages: it opens no exchange and is owed no answer. The proposer
+-- is an agent that attached, never the person seat or Parley. A purged proposer takes its proposals
+-- with it; a roadmap that came of one keeps the proposer's name as text.
+CREATE TABLE roadmap_proposals (
+  id                  INTEGER PRIMARY KEY,
+  proposer            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  source_conversation TEXT    REFERENCES conversations(id) ON DELETE SET NULL,
+  -- A hint naming the roadmap this would revise. The person resolves it (§5.7); nothing joins on it.
+  target_title        TEXT,
+  title               TEXT    NOT NULL
+                      CHECK (length(trim(title, ' ' || char(9) || char(10) || char(13))) > 0
+                             AND instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  -- Characters in the whole proposal, kept so a bound can later be chosen from evidence.
+  size                INTEGER NOT NULL CHECK (size >= 0),
+  state               TEXT    NOT NULL DEFAULT 'waiting'
+                      CHECK (state IN ('waiting', 'confirmed', 'declined', 'superseded')),
+  created_utc         TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  decided_utc         TEXT    CHECK (decided_utc IS NULL OR unixepoch(decided_utc) IS NOT NULL),
+
+  -- IS rather than =, because a NULL decided_utc makes = yield NULL and a CHECK admits NULL.
+  CHECK ((state = 'waiting') = (decided_utc IS NULL))
+) STRICT;
+
+CREATE INDEX ix_roadmap_proposals_state ON roadmap_proposals(state, created_utc);
+
+-- The reserved roles are not agents and propose nothing (principle 2.11, §12.3).
+CREATE TRIGGER tr_a_proposer_is_an_agent
+BEFORE INSERT ON roadmap_proposals
+WHEN EXISTS (SELECT 1 FROM agents a
+              WHERE a.name = NEW.proposer
+                AND a.adapter IN ('parley-facilitator', 'parley-console'))
+BEGIN
+  SELECT RAISE(ABORT, 'a roadmap is proposed by an agent, never by the person seat or Parley');
+END;
+
+CREATE TABLE roadmap_proposal_items (
+  proposal_id    INTEGER NOT NULL REFERENCES roadmap_proposals(id) ON DELETE CASCADE,
+  position       INTEGER NOT NULL CHECK (position >= 1),
+  text           TEXT    NOT NULL
+                 CHECK (length(trim(text, ' ' || char(9) || char(10) || char(13))) > 0
+                        AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+  -- Who the item is meant for, where the proposer knew. A suggestion to the person and nothing more.
+  intended_agent TEXT    REFERENCES agents(name) ON DELETE SET NULL,
+
+  PRIMARY KEY (proposal_id, position)
+) STRICT;
+
+-- A dependency points only at an earlier item, which makes a cycle impossible rather than checked for.
+CREATE TABLE roadmap_proposal_needs (
+  proposal_id    INTEGER NOT NULL,
+  position       INTEGER NOT NULL,
+  needs_position INTEGER NOT NULL,
+
+  PRIMARY KEY (proposal_id, position, needs_position),
+  CHECK (needs_position >= 1 AND needs_position < position),
+  FOREIGN KEY (proposal_id, position)
+    REFERENCES roadmap_proposal_items(proposal_id, position) ON DELETE CASCADE,
+  FOREIGN KEY (proposal_id, needs_position)
+    REFERENCES roadmap_proposal_items(proposal_id, position) ON DELETE CASCADE
+) STRICT;
+
+-- A roadmap exists only once a person confirmed it. It carries no status: where an item stands is
+-- derived from its conversation when read (§5.7) and is stored nowhere.
+CREATE TABLE roadmaps (
+  id              INTEGER PRIMARY KEY,
+  -- Small, per store, never reused: the 'rm<number>' of every item conversation's name.
+  number          INTEGER NOT NULL UNIQUE CHECK (number >= 1),
+  title           TEXT    NOT NULL
+                  CHECK (length(trim(title, ' ' || char(9) || char(10) || char(13))) > 0
+                         AND instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  origin          TEXT    NOT NULL CHECK (origin IN ('proposed', 'edited')),
+  -- As text, so that neither pruning the proposal nor purging the agent loses who it began with.
+  proposer        TEXT,
+  origin_proposal INTEGER,
+  revision        INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+  created_utc     TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  updated_utc     TEXT    NOT NULL CHECK (unixepoch(updated_utc) IS NOT NULL)
+) STRICT;
+
+-- Items are never deleted, because a removed item's conversation stays and says what it was.
+CREATE TABLE roadmap_items (
+  id             INTEGER PRIMARY KEY,
+  roadmap_id     INTEGER NOT NULL REFERENCES roadmaps(id) ON DELETE CASCADE,
+  number         INTEGER NOT NULL CHECK (number >= 1),
+  position       INTEGER NOT NULL CHECK (position >= 1),
+  text           TEXT    NOT NULL
+                 CHECK (length(trim(text, ' ' || char(9) || char(10) || char(13))) > 0
+                        AND instr(text, char(10)) = 0 AND instr(text, char(13)) = 0),
+  intended_agent TEXT    REFERENCES agents(name) ON DELETE SET NULL,
+  added_rev      INTEGER NOT NULL CHECK (added_rev >= 1),
+  removed_rev    INTEGER,
+  edited_utc     TEXT    CHECK (edited_utc IS NULL OR unixepoch(edited_utc) IS NOT NULL),
+
+  UNIQUE (roadmap_id, number),
+  CHECK (removed_rev IS NULL OR removed_rev > added_rev)
+) STRICT;
+
+-- Two live items never share a place in one roadmap's order. A removed item keeps the place it had.
+CREATE UNIQUE INDEX ux_live_item_position ON roadmap_items(roadmap_id, position)
+  WHERE removed_rev IS NULL;
+
+CREATE TABLE roadmap_item_needs (
+  item_id       INTEGER NOT NULL REFERENCES roadmap_items(id) ON DELETE CASCADE,
+  needs_item_id INTEGER NOT NULL REFERENCES roadmap_items(id) ON DELETE CASCADE,
+
+  PRIMARY KEY (item_id, needs_item_id),
+  CHECK (item_id <> needs_item_id)
+) STRICT;
+
+-- A second layer, for a writer that forgets: a need names a live item of the same roadmap, earlier in its
+-- order. The broker also checks the person's whole final content, because a reorder is not an insert and
+-- this cannot see one (§5.7).
+CREATE TRIGGER tr_a_need_is_live_and_earlier
+BEFORE INSERT ON roadmap_item_needs
+WHEN NOT EXISTS (SELECT 1
+                   FROM roadmap_items i
+                   JOIN roadmap_items n ON n.roadmap_id = i.roadmap_id
+                  WHERE i.id = NEW.item_id AND n.id = NEW.needs_item_id
+                    AND i.removed_rev IS NULL AND n.removed_rev IS NULL
+                    AND n.position < i.position)
+BEGIN
+  SELECT RAISE(ABORT, 'an item needs only a live item that comes earlier in the same roadmap');
+END;
+
+-- The name an item's conversation will have, reserved when the roadmap is confirmed. No foreign key to
+-- conversations: the conversation does not exist until work on the item starts, and existing is how a
+-- surface knows it has. The name has the same character rules as any conversation's.
+CREATE TABLE roadmap_item_conversations (
+  item_id         INTEGER PRIMARY KEY REFERENCES roadmap_items(id) ON DELETE CASCADE,
+  conversation_id TEXT    NOT NULL UNIQUE
+                  CHECK (length(conversation_id) BETWEEN 1 AND 64
+                         AND conversation_id NOT GLOB '*[^a-zA-Z0-9._-]*'
+                         AND conversation_id NOT GLOB '*..*')
+) STRICT;
+
+-- Without this an agent could open a reserved name first, and the person pressing start would then speak
+-- into a conversation the agent made. Only the first message is held: replies come after.
+CREATE TRIGGER tr_a_reserved_conversation_opens_with_the_person
+BEFORE INSERT ON messages
+WHEN EXISTS (SELECT 1 FROM roadmap_item_conversations c WHERE c.conversation_id = NEW.conversation_id)
+ AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = NEW.conversation_id)
+ AND NOT EXISTS (SELECT 1 FROM agents a
+                  WHERE a.name = NEW.from_agent AND a.adapter = 'parley-console')
+BEGIN
+  SELECT RAISE(ABORT, 'a roadmap item''s conversation is opened by the person');
+END;
+
+-- What a proposer is told about its proposal. Not a message: it opens nothing, is owed nothing and wakes
+-- nobody, as a change notice for a file does not (§9.5). The title is the agent's own.
+CREATE TABLE roadmap_notices (
+  id            INTEGER PRIMARY KEY,
+  agent         TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  proposal_id   INTEGER NOT NULL,
+  title         TEXT    NOT NULL
+                CHECK (instr(title, char(10)) = 0 AND instr(title, char(13)) = 0),
+  outcome       TEXT    NOT NULL CHECK (outcome IN ('confirmed', 'declined', 'superseded')),
+  created_utc   TEXT    NOT NULL CHECK (unixepoch(created_utc) IS NOT NULL),
+  delivered_utc TEXT    CHECK (delivered_utc IS NULL OR unixepoch(delivered_utc) IS NOT NULL)
+) STRICT;
+
+CREATE INDEX ix_roadmap_notices_collection ON roadmap_notices(agent, delivered_utc);
+```
+
 ### 9.3 Invariants enforced by storage
 
 Rules that application code could otherwise route around live in the schema, so correctness
@@ -2426,6 +2627,27 @@ applies to the cap trigger as much as to the broker's own checks.
 order, which is what lets the flag thresholds of §6 and the retention rules of §9.4 compare
 timestamps as plain strings and still be correct.
 
+**Roadmaps** (§5.7). Held by storage so that no writer written later can route around them:
+
+- **A proposal is not a roadmap, and has a proposer who is an agent.** Proposals, their items and their
+  notices are tables of their own with no relation to `messages`, so a proposal opens no exchange and can
+  appear in no transcript. `tr_a_proposer_is_an_agent` refuses the person seat and Parley as proposers.
+- **A decision has a time, and a waiting proposal has none.** `CHECK ((state = 'waiting') = (decided_utc IS
+  NULL))`, written with `IS` because a NULL on either side would make `=` yield NULL, which a CHECK admits.
+- **A need points only backwards.** `CHECK (needs_position < position)` makes a cycle impossible, and
+  `tr_a_need_is_live_and_earlier` holds the same for a confirmed roadmap, naming only live items of one
+  roadmap. A reorder is not an insert, so the broker also validates whole final content (§5.7).
+- **Items are never deleted, and two live items never share a place.** `removed_rev` marks one removed, and
+  `ux_live_item_position` is a partial unique index over the live ones.
+- **No stored status.** A roadmap and its items carry none; a document check asserts the schema has no
+  such column, so state cannot be written by one route and derived by another.
+- **An item's conversation is opened by the person.** `tr_a_reserved_conversation_opens_with_the_person`
+  refuses the first message into a reserved name from anybody but the person seat. A conversation that is
+  not reserved is untouched by it.
+- **Titles and items are single-line.** A line break is refused in storage as well as by the broker. The
+  rule against characters that break, hide or reorder a surface's lines is the broker's, and is not
+  relaxed (§13).
+
 ### 9.4 Retention
 
 Parley is a channel, not a store (§16), so the message log is operational rather than a record: it
@@ -2466,19 +2688,6 @@ ghosted and closed an orphan after a grace period. That was a guarantee about th
 ending work on a timer, which is the trade principle 2.8 rules out. A deployment that never closes
 flagged work keeps its text, and is shown that it has not.
 
-**Instructions are bounded too.** The `instructions` table (§9.2) holds a person's own words to
-their own agents and whatever those agents said back, and nothing about the argument above exempts
-it. So an instruction is removed once it is older than the age cap, whatever became of it.
-
-**Age is measured from when it was issued, never from when it settled.** An instruction still
-running has no settled instant at all, so a rule measured from settlement would remove settled rows
-on schedule and never once reach a row that nothing ever settled — precisely the set most in need of
-a bound.
-
-No floor applies. An instruction is not re-delivered, is not deduplicated against, and is nobody's
-inbox: §11.5 gives delivery to the node, and §14 settles the ones nothing reported on. What is left
-at the cap is a record, and this section's whole argument is against permanent records.
-
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
 
@@ -2510,6 +2719,10 @@ what anybody said.
 **Files are outside this policy.** Retention never touches placed files, fetch records or change
 notices (§9.5). A file is not traffic: it goes when somebody removes it, and a pruned conversation's
 files stay where they are.
+
+**Roadmaps are not pruned.** A roadmap, its items and a proposal still waiting are never removed by
+retention. A decided proposal is removed with the rest, and the roadmap that came of it keeps the proposal's
+identifier and its proposer's name as text, so removal loses no provenance.
 
 ### 9.5 The file location
 
@@ -2625,12 +2838,13 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
-| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
+| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
 | `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so change notices follow (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |
 | `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, without preventing the rest. |
+| `propose_roadmap(title, items, conversation_id?, revises?)` | Put forward a roadmap (§5.7): a short title and an ordered list of items, each one line with, where known, the agent it is meant for and the earlier items it needs. `conversation_id` says where it came from, and `revises` names, by title only, a roadmap it would change. Stores a proposal and nothing else: it opens no exchange, writes no message, and creates no roadmap until a person confirms it. Returns the proposal's identifier. Refused, with a sentence the agent can act on, for an empty list, for a line break in the title or an item, for an intended agent that is not in the project, and for the person seat and Parley, which propose nothing. There is no operation by which an agent reads, changes, reorders, removes or marks done a roadmap, and none may be added (principle 2.12). |
 
 `conclude` is one operation rather than two because proposing and answering are the same
 statement. A participant that says it is finished has proposed closure if nobody had yet, and has
@@ -2723,10 +2937,8 @@ other could.
 |---|---|
 | `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. |
-| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. |
-| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, and whether it is archived. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
-| `instruct(agent, text)` | Give an agent an instruction from the operator, delivered as a turn by the machine that holds it. Returns an identifier, what became of it — taken, declined, undeliverable, failed or still running — and whatever the agent said in reply. Recorded as the operator's own, never as a peer's. A turn may outlast any wait a caller can reasonably be held for, so *still running* is an ordinary answer rather than a fault, and `instructions()` is how the rest of it is collected. Refused for the person seat: a person is asked, never instructed. |
-| `instructions(agent?, id?, page)` | What became of the instructions this operator gave, most recent first: the agent, the instruction's own words, the outcome, whatever the agent said, when it was issued and when it settled. Narrowable to one agent or one instruction. Paged, and the broker bounds the page whatever is asked for. The reply is disclosed to the operator who asked for it, which needs no argument — but the *text* is disclosed too, and that is deliberate: they are a person's own words to their own agent, on a surface no agent can reach, and a reply with no question beside it is half a transcript. |
+| `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
+| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as formerly belonging to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set, and, for exchanges opened before 0.7, how often a Result gave their items different outcomes. The evidence §17 question 4 asks for. |
@@ -2751,6 +2963,13 @@ other could.
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
+| `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete, blocked or with no Result and the blocker a blocked one named, who closed the conversation, whether it was destroyed, the text first sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `proposals(state?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Waiting ones are work waiting on the person (§6). |
+| `confirm_proposal(id, content, target)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, supersedes any other waiting proposal whose title hint names the same roadmap, and tells each proposer. |
+| `decline_proposal(id)` | Decline a waiting proposal. Nothing is persisted; the proposer is told it was declined. |
+| `edit_roadmap(id, revision, content)` | Change a confirmed roadmap: reword, reorder, add or remove items. The only way an item changes after confirmation. Refused when `revision` is not current, so two surfaces editing at once cannot overwrite one another, and when the content breaks §5.7's rules. A removed item's conversation is kept. |
+
 
 `force_conclude` is named apart from the participant operation `conclude` on purpose. §10.2 opens by
 saying an adapter that surfaced an operator operation into an agent's tool set would breach §10.1,
@@ -2774,64 +2993,6 @@ It is paged from the first version rather than bounded later. The message log gr
 a deployment runs, and an unbounded operator query is the mistake the message cap of rule 8.4
 prevents one level up: a bound retrofitted is a bound nobody applies. The broker enforces its own
 ceiling rather than trusting the caller's number, for the same reason it enforces every other one.
-
-**`instruct` is the person speaking to one agent directly, outside any conversation.** A person
-taking part in a line of work does it from a seat, with a Request, and that work stays in its
-conversation (principle 2.10). An instruction is for everything else a person says to an agent
-about its own session and repository — stop, start over, re-read your peers — and it arrives marked
-as the person's own words, never as a participant's message (§11.5).
-
-What it must never become is a route by which one agent instructs another. Agents request work from
-each other through §10.1, where every exchange sits in a conversation the person can read. An
-instruction lives here, on the surface no agent can reach, and the obligation it places on the
-receiving side is a separate contract (§11.5) that carries no operator operation at all.
-
-**An instruction returns what became of it, and that is not a courtesy.** A person who cannot see
-whether an instruction was taken has been given a button and no indicator, and the obvious response
-— issue it again — is the one thing that makes the situation worse. So there are five outcomes and
-they are different facts: *taken*, the agent was given the turn and acted; *declined*, it was given
-the turn and named a blocker it could not resolve (principle 2.6); *undeliverable*, nothing was given at
-all, because the machine that holds it is not connected or the agent is not running there — an
-instruction is a turn, and a machine gives turns only to agents it is already running; *failed*, the turn was attempted and did not
-complete; *still running*, the turn was begun and has not finished.
-
-**A broker MUST NOT record an outcome because it stopped waiting for one.** Ceasing to wait is a
-fact about the broker, and *failed* is a claim about the turn. A caller cannot be held for the length
-of a turn — a turn is a model working, and may take as long as the machine hosting it allows — so a
-broker will routinely stop waiting on work that is proceeding perfectly. The answer in that case is
-*still running*, and nothing is written down.
-
-This matters more than it looks, because settlement is first-come: an outcome recorded early is an
-outcome recorded for ever, and the agent's real answer is refused when it arrives. A broker that
-settled on its own impatience would destroy the reply, permanently, for everyone.
-
-**So what settles an instruction is only ever something that knows.** The machine reports what the
-agent did, or the instruction outlives the longest turn that machine is permitted to run and is
-presumed dead (§14). An undeliverable settles at once, because no turn was begun and there is
-nothing to be premature about.
-
-A node's connection ending is deliberately *not* on that list, though it looks as though it belongs
-there. §14 carries the argument: a stream ending is not a process dying, and a broker that settled on
-it would destroy an agent's answer on every network blip.
-
-*Declined* is reported with the blocker the agent named, never as a failure. An agent that declines
-without naming one has not declined in the sense this protocol recognises (principle 2.6), and a
-surface that shows *declined* shows the blocker beside it, so the person can resolve it rather than
-repeat the instruction.
-
-The reply is the agent's own words and is kept beside the instruction rather than in the message
-log. It answers a person directly, outside any conversation, and filing it among the traffic would
-make the log claim an exchange that never happened.
-
-**And it must be readable after the call that asked for it has gone**, which is what `instructions()`
-is for. A reply reachable only through the return value of `instruct` survives exactly as long as one
-connection: a person whose browser closed, whose network dropped, or who asked from one machine and
-looked from another has no way to reach an answer the broker is still holding.
-
-The instruction is recorded as the person's. A log whose worth is that it says who said what stops
-having any the moment a person's words appear under an agent's name.
-
-Neither operation reaches into an agent's context, so neither weakens §16.
 
 **The facilitator's operations are the person's view of what the facilitator did.** The facilitator
 asks each agent that is attached, not retired, not a seat, has no accepted line and **has never been
@@ -3069,40 +3230,12 @@ receive the rules at the start of a turn instead — weaker, and prone to decay 
 an accepted limitation. Measure it through the `blocked` rate, the `sources` Results name, and
 clarification depth, in §15.
 
-### 11.5 What an agent must be able to receive from the operator
+### 11.5 (withdrawn)
 
-The other half of broker V1, and deliberately a different contract from §10.2's.
-
-An adapter that supports it MUST accept an instruction from the person running the deployment and give
-it to the agent as a turn, marked as coming from that person rather than from another participant.
-§13's envelope is not used and would be wrong here: it frames a participant's message, and these are
-the person's own words. What the agent must be able to tell is which of the two it is reading, and an
-instruction that arrived looking like participant traffic would be a forgery in the direction §13 does
-not cover.
-
-**It carries no operator operation, and no adapter may add one.** Nothing that retires, reinstates,
-purges, prunes, force-concludes, or reads another pair's traffic appears on this contract. The
-separation is the point: §10.2 opens by warning that an adapter surfacing an operator operation into an
-agent's tool set would breach §10.1, and the protection offered there is a naming convention. A single
-contract holding both halves would defeat it structurally — whatever bound the half an agent needs
-would bring the rest with it, and no name would be involved for anyone to notice.
-
-**It answers.** An adapter that accepts an instruction MUST report what became of it and return whatever
-the agent said, because §10.2's `instruct` has outcomes to distinguish and only the receiving side knows
-which. Silence is not one of them: an instruction that returns nothing is indistinguishable from one
-that was never delivered, and the person's next move on that reading is to send it again.
-
-**An agent declines only for a blocker it could not resolve.** §8's rules apply to what the agent does
-with an instruction exactly as they apply to a Request: it does the work or resolves what stops it
-(principle 2.6), and a decline names the blocker. A decline without one is not a decline this protocol
-recognises, and the surface that shows *declined* shows the blocker beside it so the person can deal
-with it.
-
-Delivery is the node's, not the broker's. §4 gives a node ownership of its agents' standard input and
-says why: a process's output belongs to whoever spawned it. That is the channel a turn already travels
-down, so an instruction is not a new route into an agent — it is the existing one carrying one more
-kind of thing. An agent on a machine whose node is not connected cannot be instructed, and must be told
-so rather than left to look as though it was.
+This section described what an adapter had to accept from the operator: an instruction, delivered as a
+turn and answered with what became of it. It is withdrawn along with the operator operation that gave one, because a person
+speaks to an agent only by sending it a Request from the seat (§5.6), and every Request is answered. The
+number is kept so that the sections after it, and every reference to them, do not move.
 
 ### 11.6 A node reports the turns it gives
 
@@ -3592,7 +3725,7 @@ which are written when a connection opens and when it closes, and by nothing els
 **The facilitator is none of these, and has no lifecycle an operator can touch.** It is present
 whenever its project is served and absent otherwise — reported as `running` wherever a presence is
 returned for it, since it has no machine to be connected or not — so it is never spawned, never retired, never
-purged, never started, never instructed and never routed to. `agents()` does not list it (§10.1),
+purged, never started and never routed to. `agents()` does not list it (§10.1),
 and every operator operation that takes an agent refuses it. Its question to an agent is ordinary
 open work: flagged like any other when the agent goes quiet (§6), and never timed out.
 
@@ -3829,42 +3962,6 @@ contradicting each other. A Result closes the exchange it belongs to and a `clos
 closed, so neither can require an open exchange. A Clarify is delivered too: it is what a participant said
 inside an exchange the recipient is already party to, and withholding it drops something that was said.
 
-### Instructions nobody comes back for
-
-**An instruction whose turn never finishes is settled, on the same reasoning as everything above run the
-other way.** §10.2 forbids a broker from recording an outcome because it stopped waiting — but something has
-to settle an instruction whose turn genuinely never finishes, or the record says *still running* for ever and
-the person is left with the state the outcomes exist to prevent. Unlike an exchange, an instruction is not
-somebody's work in a conversation: it is one turn, and a turn has a longest permitted length.
-
-**One thing does, and the obvious second one must not.** An instruction still running for longer than the
-longest turn a machine is permitted to run, plus a margin, is presumed dead and settled *failed* on a
-subsequent sweep.
-
-**A node's connection ending MUST NOT settle the instructions it was holding**, and the argument for it is
-worth stating because it is nearly right. §11.5 gives delivery to the node and says a turn travels down the
-channel the node owns, so when a node goes its turns went with it — which would make *failed* exactly true,
-and available immediately rather than a sweep later.
-
-What that reasoning misses is that a *connection* ending is not a *process* ending. A network blip ends the
-stream while the agent carries on working, and a broker cannot tell the two apart from its side. Settling on
-it therefore destroys the answer when the agent finishes: settlement is first-come, so the real report arrives
-to a closed record. That is the same loss §10.2 forbids, reached through a different door — and it gets
-likelier the moment a deployment is reached over a private network rather than loopback, which §16 permits.
-
-So a turn whose node has gone stays *still running* until the sweep. That is an unknown honestly reported
-rather than a false claim that also destroys evidence, and the asymmetry decides it: the cost of waiting is a
-delay, and the cost of guessing is a loss.
-
-**The margin is not optional and the two clocks are why.** A node measures a turn from when it starts the
-process; a broker measures from when it recorded the instruction, which is earlier by however long delivery
-took. A sweep with no margin would reach turns still inside their own budget — which is the defect §10.2
-forbids, arriving by a third route.
-
-**A sweep MUST NOT alter an instruction that has already settled.** Settlement is first-come, and a sweep is
-not evidence about a turn; it is the absence of evidence. This is the same rule that makes a late report safe
-to refuse, applied to the other side.
-
 ### Staleness and liveness
 
 **Staleness guard.** A resumed agent's understanding of its repository is stale if commits landed while it was
@@ -3920,6 +4017,15 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 
 ## 16. Non-goals
 
+- **Not a bound on what an agent may propose.** A roadmap proposal, its title and its items have no length
+  limit, as an agent's ownership line has none (§17 question 10). Nothing in a roadmap is read by an agent,
+  and an item that is sent travels in a Request, which keeps the cap of rule 8.4 in storage whatever a
+  roadmap holds; the character rule that stops text breaking a surface's lines is not relaxed. The risk is
+  stated rather than left to be found: any attached agent can write a very large proposal into the store,
+  which the message cap closes for messages. The size of every proposal is recorded, so a bound can be
+  chosen from what agents write, as the cap's was (§17 question 16). The template an agent proposes with
+  keeps proposals brief by guidance, not by enforcement.
+
 - **Not a protocol for a hostile network.** This is the one that changed when the transport
   did, and it is stated first because a reader who assumes otherwise will assume it silently.
 
@@ -3940,9 +4046,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   node operations of §12 on one address: they are separate services on the wire, and that
   separation is a structural guard against an *adapter* binding the wrong one (§10.2), not a
   boundary anything on a network has to cross. So whatever can reach the port can also export
-  every conversation in the deployment, retire and purge agents, destroy conversations, ask a node
-  to launch an agent, and issue an operator instruction — which is a turn, handed to an agent that
-  acts on it in a repository. Reaching the port is therefore closer to a shell on the machine than
+  every conversation in the deployment, retire and purge agents, destroy conversations and ask a node
+  to launch an agent — a process that acts in a repository. Reaching the port is therefore closer to a shell on the machine than
   to an inbox on it, and an operator confining the transport should be weighing that rather than
   the opening sentence of this section alone.
 
@@ -4030,7 +4135,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    separates an agent from a responder.
 
    An operator is not that seat and must not become one. §10.2 is deliberately not a
-   participant surface: its single asymmetry is `instruct`, and widening it so a person could
+   participant surface, and widening it so a person could
    ask and answer through it would put the one role that may retire and purge inside the
    conversations it is judging. So a human who wants to take part registers like anybody else,
    and the interesting consequence is where the name comes from.
@@ -4045,7 +4150,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
    forgeable, and a launch-time seat would have bought a worse surface for no security.
 
    What a seat does add is the ability to **speak as** somebody, which no operator operation
-   grants. An operator instructing an agent is visibly the operator; a message written under an
+   grants. An operator acting is visibly the operator; a message written under an
    agent's name is that agent's word. So the guard belongs on the name rather than on where it
    was typed: a seat may not take a name the registry holds for something else, and a seat whose
    registry could not be read is refused rather than taken unchecked.
@@ -4627,6 +4732,14 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     often and by a little; it does not say those messages were better long.
 ---
 
+17. **Should Parley ever propose a roadmap?** A facilitator that noticed several agents had agreed a
+    list could propose it for them. Principle 2.11 lets it do three things and a roadmap proposal is a
+    fourth, so it does not, and every proposal today is an agent's own. What would justify it is evidence
+    that agents agree lists in transcripts and never propose them: the proposals a deployment receives,
+    against the conversations in which a list was agreed, which no counter holds today. Not decided, and a
+    change to principle 2.11 if it ever is. A second thing waits on the same evidence: the sizes recorded
+    with every proposal (§16), from which a bound might one day be chosen.
+
 ## 18. Version history
 
 A protocol that expects alternative implementations owes them a record of what moved and when.
@@ -4638,6 +4751,31 @@ The version is `major.minor` and has no patch level, because a protocol change i
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
 §4.0's `Attach` refuses the pairing rather than discovering it later.
+
+### 0.9 — a roadmap is the person's list
+
+**A list agents agreed was lost in the transcript it was agreed in.** When several agents coordinated
+toward something, the plan was a message, and a transcript scrolls. Nothing kept it, ordered it, said
+where each part stood or let a person drive work from it.
+
+What a second implementation will observe:
+
+- **`propose_roadmap`**, a new agent operation (§10.1): a title and ordered one-line items, stored apart
+  from messages. It opens no exchange. An agent can do nothing else with a roadmap (principle 2.12).
+- **Six operator operations** (§10.2): `roadmaps`, `roadmap`, `proposals`, `confirm_proposal`,
+  `decline_proposal` and `edit_roadmap`. `roadmap` returns facts and never states; state is derived by
+  the surface (§5.7).
+- **A roadmap notice** in the inbox, naming what became of an agent's own proposal. It wakes nobody.
+- **Item conversations**, named `rm<n>-<m>` and reserved at confirmation; storage refuses the first
+  message into one unless the person sent it (§9.3).
+- **Eight tables and a trigger on `messages`** (§9.2). Schema 1 is edited in place: nothing has been
+  released.
+- **`instruct` and `instructions` are removed** from §10.2, with §11.5's contract for receiving an
+  instruction, the node's delivery and report of one, the `instructions` table and its retention and
+  sweep (§9.2, §9.5, §14). A person speaks to an agent only by sending it a Request from the seat
+  (§5.6), and every Request is answered, so a second route that was a turn outside any conversation
+  had nothing left to carry. §11.5's number is kept as a stub so no later reference moves.
+- **A 0.8 adapter is refused at attach.** No compatibility is kept before the first release.
 
 ### 0.8 — a person's line is a request, and the agent says what it settled
 
@@ -4730,7 +4868,7 @@ code. What it will observe, in addition to the above:
 - **Every project has a facilitator** (principle 2.11, §3): a participant the broker provides, with
   a registry row the broker writes itself under the reserved role `parley-facilitator` (§12.3).
   Storage refuses that role with any other adapter, and every attach, seat and enrolment refuses it
-  before storage does. `agents()` never lists it. It is never retired, purged, started, instructed
+  before storage does. `agents()` never lists it. It is never retired, purged, started
   or routed to, and a Request addressed to it is refused (§10.1, §14).
 - **It asks each attached agent what it owns, once, with nobody asking.** An agent is asked when it
   is attached, not retired, not a seat, has no accepted line and has never been asked. It is never
@@ -4772,7 +4910,7 @@ why it is recorded here:
 - **Principle 2.6 changes meaning.** "The person seated" is the person seat whether or not anybody is
   at a screen, and waiting for the person's decision is correct; the hand-it-back branch applies only
   where an implementation provides no person seat (§5 *Blocked*, §8 rule 10).
-- **Operator operations refuse the person** (§10.2): `retire`, `purge`, `start` and `instruct`.
+- **Operator operations refuse the person** (§10.2): `retire`, `purge` and `start`.
 
 #### Amended, 2026-10-03: a node reports the turns it gives
 

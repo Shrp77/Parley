@@ -9,8 +9,8 @@ namespace Parley.Server.Tests;
 /// specs/023 T048), with the person row present, as it always is.
 /// </summary>
 /// <remarks>
-/// Before, the five answered five different ways: a raw storage constraint for retire and purge, a node asked to start
-/// somebody no node can, an instruction "undeliverable", and a reinstate that silently changed nothing.
+/// Before, they answered different ways: a raw storage constraint for retire and purge, a node asked to start
+/// somebody no node can, and a reinstate that silently changed nothing.
 /// </remarks>
 public sealed class PersonNameIsReservedTests
 {
@@ -18,7 +18,7 @@ public sealed class PersonNameIsReservedTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    public static TheoryData<string> Operations => ["start", "retire", "reinstate", "purge", "instruct"];
+    public static TheoryData<string> Operations => ["start", "retire", "reinstate", "purge"];
 
     [Theory]
     [MemberData(nameof(Operations))]
@@ -44,9 +44,7 @@ public sealed class PersonNameIsReservedTests
                     _ = await operators.PurgeAsync(new Wire.AgentRequest { Agent = Person }, cancellationToken: Ct);
                     break;
                 default:
-                    _ = await operators.InstructAsync(
-                        new Wire.InstructRequest { Agent = Person, Text = "do something" }, cancellationToken: Ct);
-                    break;
+                    throw new ArgumentOutOfRangeException(nameof(operation));
             }
         });
 

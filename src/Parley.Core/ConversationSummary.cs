@@ -13,6 +13,10 @@ namespace Parley.Core;
 /// Whether an operator has put it out of the way. Defaulted so every existing caller keeps
 /// compiling and reads the truth: nothing was archived before this existed.
 /// </param>
+/// <param name="Item">
+/// The roadmap item it belongs to, or <see langword="null"/> for an ordinary conversation (SPEC.md §5.7). Defaulted
+/// for the same reason as <paramref name="Archived"/>.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>Participation is derived and is not evidence of agreement.</b> SPEC.md §5.0 makes an
@@ -33,7 +37,8 @@ public sealed record ConversationSummary(
     DateTimeOffset FirstActivityUtc,
     DateTimeOffset LastActivityUtc,
     bool HasOpenExchange,
-    bool Archived = false);
+    bool Archived = false,
+    RoadmapItemRef? Item = null);
 
 /// <summary>
 /// One page of conversations, and how many archived ones were left out of it.

@@ -10,8 +10,8 @@ namespace Parley.Web;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The console renders what SPEC.md §10.2 grants a person, and binds the five operations of that
-/// section that change something: retire, reinstate, instruct, purge and force-conclude. Each
+/// The console renders what SPEC.md §10.2 grants a person, and binds the operations of that
+/// section that change something: retire, reinstate, purge and force-conclude. Each
 /// describes what it will do before it does it, and none is reachable by following a link — a GET
 /// describes and only a POST acts, so nothing that crawls a page left open can destroy anything.
 /// </para>
@@ -120,7 +120,7 @@ public static class ConsoleHost
         // allow-list the host accepts any Host header, so a page whose own name an attacker points at 127.0.0.1 — DNS
         // rebinding — is same-origin with this console in the person's browser: it reads a form, takes its antiforgery
         // token and posts it back. Driven: Start reached the broker that way. Antiforgery is the only thing between a
-        // browser and purge, instruct and every transcript, so the Host is checked before anything else. Set only when
+        // browser and purge and every transcript, so the Host is checked before anything else. Set only when
         // the deployment has not chosen its own `AllowedHosts`.
         builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen);
 

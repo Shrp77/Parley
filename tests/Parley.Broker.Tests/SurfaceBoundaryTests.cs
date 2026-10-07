@@ -45,6 +45,12 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.DrainInboxAsync),
         nameof(Broker.ListAgentsAsync),
 
+        // The one roadmap operation an agent has (§10.1, principle 2.12): it stores a proposal and nothing else, so
+        // it opens no exchange and creates no roadmap. Everything else about a roadmap is the person's and is below,
+        // on the console. The names differ loudly: no console method is called Propose, and no broker method
+        // reads, changes or confirms.
+        nameof(Broker.ProposeRoadmapAsync),
+
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
         nameof(Broker.DetachAsync),
@@ -118,22 +124,6 @@ public sealed class SurfaceBoundaryTests
             // beside export for the same reason export does.
             nameof(OperatorConsole.ListConversationsAsync),
 
-            // The operator's own words, recorded and then settled. Here rather than on the agent
-            // surface for the reason §11.5 gives: an agent that could write an instruction could
-            // put a person's words into another agent's turn, and the log's whole worth is that
-            // it says who said what. The receiving half of that contract is a different type
-            // entirely and carries no operator operation at all.
-            nameof(OperatorConsole.RecordInstructionAsync),
-            nameof(OperatorConsole.SettleInstructionAsync),
-
-            // Reading an instruction back, and it belongs here for a stronger reason than the two
-            // above. Writing one is obviously the operator's; *reading* one looks harmless until
-            // you ask who else could. An agent able to read an instruction could learn what the
-            // operator had told a peer to do — which is a disclosure §10.1 withholds even for
-            // ordinary traffic between agents, and this is not ordinary traffic. It is the one
-            // channel where a person's own words are on the record.
-            nameof(OperatorConsole.ListInstructionsAsync),
-
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
 
@@ -171,7 +161,18 @@ public sealed class SurfaceBoundaryTests
             // it is never told anything at all. An agent able to reach this
             // could erase a peer's evidence of having dealt with it, which is the same leak the
             // purge entry above warns about with a smaller blast radius and the same shape.
-            nameof(OperatorConsole.DestroyConversationAsync)
+            nameof(OperatorConsole.DestroyConversationAsync),
+
+            // Roadmaps (§5.7, principle 2.12). All six are a person's: an agent able to read one would learn a plan
+            // it was never sent and could not be told to follow, and one able to confirm, edit or decline would be
+            // an agent deciding what other agents are asked to do. There is deliberately nothing on the broker's
+            // side but ProposeRoadmapAsync, and this list is where that is written down.
+            nameof(OperatorConsole.ListRoadmapsAsync),
+            nameof(OperatorConsole.GetRoadmapAsync),
+            nameof(OperatorConsole.ListProposalsAsync),
+            nameof(OperatorConsole.ConfirmProposalAsync),
+            nameof(OperatorConsole.DeclineProposalAsync),
+            nameof(OperatorConsole.EditRoadmapAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
@@ -303,7 +304,7 @@ public sealed class SurfaceBoundaryTests
         var forbidden = PublicMethodsOf(typeof(Facilitator))
             .Where(n => n is nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync) or nameof(Broker.RequestAsync)
                           or nameof(OperatorConsole.ForceConcludeAsync) or nameof(OperatorConsole.RetireAsync)
-                          or nameof(OperatorConsole.PurgeAsync) or nameof(OperatorConsole.RecordInstructionAsync)
+                          or nameof(OperatorConsole.PurgeAsync)
                           or nameof(OperatorConsole.DestroyConversationAsync));
 
         Assert.Empty(forbidden);

@@ -575,6 +575,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             reply.Destroyed = record;
         }
 
+        if (exported.Item is { } item)
+        {
+            reply.Item = Conversions.Out(item);
+        }
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot
@@ -591,6 +596,101 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.RoadmapsReply> Roadmaps(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var listed = await Console((console, _, ct) => console.ListRoadmapsAsync(ct), context).ConfigureAwait(false);
+
+        var reply = new Wire.RoadmapsReply();
+        reply.Roadmaps.AddRange(listed.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapReply> Roadmap(Wire.RoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var roadmap = await Console((console, _, ct) => console.GetRoadmapAsync(request.Id, ct), context)
+            .ConfigureAwait(false);
+
+        var reply = new Wire.RoadmapReply();
+
+        if (roadmap is not null)
+        {
+            reply.Roadmap = Conversions.Out(roadmap);
+        }
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalsReply> Proposals(Wire.ProposalsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var state = Conversions.In(request.State);
+
+        var listed = await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context)
+            .ConfigureAwait(false);
+
+        var reply = new Wire.ProposalsReply();
+        reply.Proposals.AddRange(listed.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> ConfirmProposal(
+        Wire.ConfirmProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+        long? target = request.TargetRoadmap == 0 ? null : request.TargetRoadmap;
+
+        var change = await Console(
+            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> DeclineProposal(
+        Wire.ProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var change = await Console((console, now, ct) => console.DeclineProposalAsync(request.Id, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> EditRoadmap(
+        Wire.EditRoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+
+        var change = await Console(
+            (console, now, ct) => console.EditRoadmapAsync(request.Id, request.Revision, content, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.WaitingReply> DescribeWaiting(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -603,109 +703,6 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Waiter = e.Waiter.Value,
             WaitedOn = e.WaitedOn.Value,
             ExchangeId = e.ExchangeId
-        }));
-
-        return reply;
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.InstructReply> Instruct(Wire.InstructRequest request, ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        if (!AgentName.TryCreate(request.Agent, out var agent))
-        {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
-        }
-
-        _ = Acted(request.Agent);
-
-        if (request.Text.Length > MessageLimits.MaxPayloadCharacters)
-        {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"An instruction may be at most {MessageLimits.MaxPayloadCharacters} characters and this one is " +
-                $"{request.Text.Length}."));
-        }
-
-        // Written before anybody tries to deliver it: the row records that a person asked.
-        var id = await Console(
-            (console, now, ct) => console.RecordInstructionAsync(agent, request.Text, now, ct),
-            context).ConfigureAwait(false);
-
-        var result = await _runtime.DeliverInstructionAsync(
-            id, agent, request.Text, _runtime.InstructionPatience, context.CancellationToken).ConfigureAwait(false);
-
-        // Nothing is settled here but undeliverable, which is knowledge rather than impatience: no turn was
-        // begun. Ceasing to wait is a fact about the broker, and settling on it would destroy the agent's
-        // answer when it arrives (§10.2). Written with no cancellation token, so whether the record says what
-        // the broker knows does not depend on whether anybody is still listening.
-        if (result.Outcome == InstructionOutcome.Undeliverable)
-        {
-            _ = await _runtime.UseConnectionAsync(
-                (connection, now, ct) => new OperatorConsole(connection)
-                    .SettleInstructionAsync(id, result.Outcome, result.Reply, now, ct),
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
-        return new Wire.InstructReply
-        {
-            Outcome = Conversions.Out(result.Outcome),
-            Reply = result.Reply ?? string.Empty,
-            InstructionId = id
-        };
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.InstructionsReply> Instructions(Wire.InstructionsRequest request, ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        AgentName? agent = null;
-
-        if (!string.IsNullOrEmpty(request.Agent))
-        {
-            if (!AgentName.TryCreate(request.Agent, out var named))
-            {
-                throw new RpcException(new Status(
-                    StatusCode.InvalidArgument,
-                    $"'{request.Agent}' is not an agent name, so it cannot narrow this list. Ask again without it " +
-                    "to see everything."));
-            }
-
-            agent = named;
-        }
-
-        var limit = request.PageSize <= 0 ? DefaultPageSize : Math.Min(request.PageSize, MaximumPageSize);
-
-        var resumeAt = long.TryParse(request.PageToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var before)
-            ? before
-            : (long?)null;
-
-        var found = await Console(
-            (console, _, ct) => console.ListInstructionsAsync(
-                agent, request.InstructionId > 0 ? request.InstructionId : null, limit + 1, resumeAt, ct),
-            context).ConfigureAwait(false);
-
-        var more = found.Count > limit;
-        var page = more ? found.Take(limit).ToList() : found;
-
-        var reply = new Wire.InstructionsReply
-        {
-            NextPageToken = more ? page[^1].Id.ToString(CultureInfo.InvariantCulture) : string.Empty
-        };
-
-        reply.Instructions.AddRange(page.Select(i => new Wire.InstructionRecord
-        {
-            Id = i.Id,
-            Agent = i.Agent.Value,
-            Text = i.Text,
-            Outcome = Conversions.Out(i.Outcome),
-            Reply = i.Reply ?? string.Empty,
-            IssuedUtc = Conversions.Stamp(i.IssuedUtc),
-            SettledUtc = i.SettledUtc is { } settled ? Conversions.Stamp(settled) : string.Empty
         }));
 
         return reply;
@@ -771,6 +768,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 Archived = summary.Archived
             };
 
+            if (summary.Item is { } item)
+            {
+                row.Item = Conversions.Out(item);
+            }
+
             row.Participants.AddRange(summary.Participants.Select(a => a.Value));
             reply.Conversations.Add(row);
         }
@@ -800,7 +802,6 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new Wire.PruneReply
         {
             Removed = result.Removed,
-            InstructionsRemoved = result.InstructionsRemoved,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
             Capped = result.Capped
@@ -900,7 +901,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <param name="value">The name given.</param>
     /// <returns>The name.</returns>
     /// <remarks>
-    /// Retiring, reinstating, purging, starting, instructing and accepting a line for the facilitator are each
+    /// Retiring, reinstating, purging, starting and accepting a line for the facilitator are each
     /// meaningless or harmful: it is never withdrawn, runs on no node, takes no turn and owns nothing (SPEC.md §14).
     /// Storage refuses the withdrawals too, but as a constraint rather than a sentence a person can read.
     /// </remarks>
@@ -916,8 +917,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <returns>The agent.</returns>
     /// <remarks>
     /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2, specs/023 T048). Before, `retire` and `purge`
-    /// failed at a storage trigger with a raw constraint, `start` asked a node to start somebody no node can, `instruct`
-    /// came back undeliverable and `reinstate` changed nothing — five different answers to one fact.
+    /// failed at a storage trigger with a raw constraint, and `start` asked a node to start somebody no node can,
+    /// and `reinstate` changed nothing — four different answers to one fact.
     /// </remarks>
     private static AgentName Acted(string value)
     {
@@ -926,7 +927,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return PersonSeat.Is(agent)
             ? throw new RpcException(new Status(
                 StatusCode.FailedPrecondition,
-                $"'{agent.Value}' is the person's seat. A person is asked, never instructed, started, retired or purged — " +
+                $"'{agent.Value}' is the person's seat. A person is asked, never started, retired or purged — " +
                 "there is nothing to do to it."))
             : agent;
     }

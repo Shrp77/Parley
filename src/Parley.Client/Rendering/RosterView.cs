@@ -16,6 +16,10 @@ public sealed record RosterEntry(AgentName Name, string State);
 /// <param name="Heading">What to call the list here.</param>
 /// <param name="Entries">Who is in it.</param>
 /// <param name="Problem">Why the registry could not be read, when it could not.</param>
+/// <param name="Mark">
+/// A character drawn before each name to say what being in this list means, or <see langword="null"/> for none. A
+/// character rather than a colour, so it survives a page read without styling.
+/// </param>
 /// <remarks>
 /// <para>
 /// One shape and one partial, because two copies of a roster are two rosters that drift: the
@@ -35,4 +39,5 @@ public sealed record RosterView(
     string? Project,
     string Heading,
     IReadOnlyList<RosterEntry> Entries,
-    string? Problem);
+    string? Problem,
+    string? Mark = null);

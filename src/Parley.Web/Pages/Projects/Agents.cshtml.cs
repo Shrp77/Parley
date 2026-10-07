@@ -103,7 +103,7 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
             await broker.RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
 
         // Parley is not an agent, so it is not on the roster (SPEC.md principle 2.11): a row for it would link to a page
-        // offering retire, purge and instruct, each of which the broker refuses. It is shown where it acts — as the sender
+        // offering retire and purge, each of which the broker refuses. It is shown where it acts — as the sender
         // of its questions, and on the ownership review.
         Agents = [.. (roster.Value ?? []).Where(agent => !agent.Facilitator)];
         Problem = roster.Problem;

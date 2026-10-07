@@ -44,6 +44,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// <summary>Everyone party to any exchange in it.</summary>
     public IReadOnlyList<AgentName> Participants { get; private set; } = [];
 
+    /// <summary>The project's agents that have not taken part, offered beside the ones that have (specs/026).</summary>
+    /// <remarks>
+    /// <see cref="Parley.Client.Rendering.RoomRoster.NotInIt"/>, the one rule the terminal's room reads too, so the page and
+    /// the room cannot disagree about who is offered. Ticking one and sending addresses them, which brings them in.
+    /// </remarks>
+    public IReadOnlyList<AgentName> NotInIt { get; private set; } = [];
+
     /// <summary>Where each exchange stands, by identifier.</summary>
     public IReadOnlyDictionary<long, ExchangeSnapshot> Exchanges { get; private set; } =
         new Dictionary<long, ExchangeSnapshot>();
@@ -117,13 +124,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
     /// <summary>The seat this person holds in this project, or null if they hold none.</summary>
     /// <remarks>
-    /// What decides whether the composer speaks or instructs. A person without a seat has no
-    /// name in the registry to send as, and the console must not invent one — SPEC.md §13 rests
-    /// on a name belonging to whoever launched the process claiming it.
+    /// The composer always speaks as the person. A surface without a seat has no name in the
+    /// registry to send as, and the console must not invent one — SPEC.md §13 rests on a name belonging to
+    /// whoever launched the process claiming it.
     /// </remarks>
     public SeatHold? Seat { get; private set; }
 
-    /// <summary>What became of each instruction, once any were sent.</summary>
+    /// <summary>What became of each message, once any were sent.</summary>
     public IReadOnlyList<(string Agent, string Outcome)> Sent { get; private set; } = [];
 
     /// <summary>Why nothing could be sent, when nothing could.</summary>
@@ -331,34 +338,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// <returns>The page, reporting what became of each.</returns>
     /// <remarks>
     /// <para>
-    /// One instruction per agent, because §10.2's <c>instruct</c> takes one and the four outcomes
-    /// it distinguishes are per agent: a machine that is off makes one recipient undeliverable
-    /// and says nothing about the others. Collapsing them into a single "sent" would hide exactly
-    /// the case the operator needs to see.
-    /// </para>
-    /// <para>
-    /// <b>Which of two things this does depends on whether a person has joined.</b>
-    /// </para>
-    /// <para>
-    /// Without a seat it instructs, and puts nothing in the conversation. §5.0 derives
-    /// participants from being party to an exchange, and there is no operator <c>request</c> — an
-    /// operator is not an agent and has no name in the registry to send as.
-    /// What it does is tell agents something, marked as the operator's (§11.5); if one of them
-    /// then speaks to a peer, that message is theirs and appears here as theirs.
-    /// </para>
-    /// <para>
-    /// With a seat it speaks, and the message is in the conversation like any other. The person
-    /// has a registration, an open attachment and an identity of their own (§11.3's
-    /// <c>human:&lt;name&gt;</c>), so this is not the console acting on somebody's behalf — it is
-    /// the surface through which a participant SPEC.md always admitted finally has a way to take
-    /// part. Every §7 refusal applies to them unchanged: saturate a pair and they are refused,
-    /// close a cycle and §6 refuses that too.
-    /// </para>
-    /// <para>
-    /// The conversation is named in the text rather than carried in a field, because the wire has
-    /// nowhere to put it: an instruction is not part of a conversation and §10.2 gives it no such
-    /// parameter. Naming it is the operator telling the agent what they are talking about, which
-    /// is content, and the composer shows the exact words before they are sent.
+    /// One Request per agent, because a refusal is per agent: a pair at its cap, or a close that would make a cycle,
+    /// says nothing about the others, and a single "sent" would hide the case the person needs to see. It is always
+    /// the person's voice: the message is in the conversation like any other, attributed to the seat, and every §7
+    /// refusal applies to it unchanged.
     /// </para>
     /// </remarks>
     public async Task<IActionResult> OnPostAsync()
@@ -446,27 +429,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     public string Compose() =>
         $"About conversation '{Id}'.{Environment.NewLine}{Environment.NewLine}{Says}";
 
-    /// <summary>Puts one instruction's outcome into words.</summary>
-    /// <param name="result">What the broker reported.</param>
-    /// <returns>A sentence.</returns>
-    /// <remarks>
-    /// The last arm was <c>"Still pending."</c> and nothing could reach it: the broker turned its
-    /// own impatience into <c>failed</c>, which told the operator the turn had not completed while
-    /// the agent was still working — and settled the record, so the real answer was refused when it
-    /// arrived. It is now the ordinary outcome for any turn longer than a short wait, and says
-    /// where the answer will be rather than implying something went wrong.
-    /// </remarks>
-    private static string Describe(InstructionResult result) => result.Outcome switch
-    {
-        InstructionOutcome.Taken => $"Taken. {result.Reply}",
-        InstructionOutcome.Declined => $"Declined, which is its right. {result.Reply}",
-        InstructionOutcome.Undeliverable =>
-            InstructionWording.Undeliverable,
-        InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
-        _ => "Given to the agent, and the turn is still running. Its answer will appear on that "
-             + "agent's page."
-    };
-
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>
     /// <param name="problem">What the read reported.</param>
     /// <returns>A refusal carrying the reason.</returns>
@@ -529,6 +491,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             }
 
             Roll = known;
+            NotInIt = Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, Participants, PersonSeat.On(project.Name));
 
             // **What each participant is doing, from the same derivation as the terminal's room** (specs/024 FR-013):
             // working only while a turn runs, stopped with what it was refused, waiting on somebody. Read here, which is

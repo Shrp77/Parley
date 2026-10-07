@@ -106,12 +106,8 @@ public sealed record InvocationCommand(
     /// the next turn can trust what it reads.
     /// </para>
     /// <para>
-    /// <b>Taken from <see cref="TurnBudget.Longest"/> rather than written here, because it was
-    /// written here and the broker wrote a different one.</b> The broker waited five minutes for an
-    /// instruction and this allowed twenty, so every turn between the two was settled failed while
-    /// the agent was still working and its real answer refused on arrival. Neither number was wrong
-    /// alone; nothing compared them. The value is unchanged — what changed is that there is now one
-    /// of it.
+    /// <b>Taken from <see cref="TurnBudget.Longest"/> rather than written here</b>, so the bound
+    /// on a turn is stated once.
     /// </para>
     /// </remarks>
     public static TimeSpan DefaultTimeout { get; } = TurnBudget.Longest;

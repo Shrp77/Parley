@@ -57,18 +57,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, ImmutableArray<AttachedAgent>> _attached =
         new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Callers waiting on a node's report, keyed by instruction.
-    /// </summary>
-    /// <remarks>
-    /// The command stream to a node runs one way, so an instruction's outcome arrives as its own
-    /// call some time later. This is what joins the two: the operator's request parks here, the
-    /// node's report completes it. Keyed by instruction rather than by agent, because an operator
-    /// may reasonably instruct the same agent twice before the first has settled.
-    /// </remarks>
-    private readonly ConcurrentDictionary<long, TaskCompletionSource<InstructionResult>> _awaited =
-        new();
-
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
 
@@ -255,17 +243,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
-
-    /// <summary>
-    /// Gets how long <c>Instruct</c> waits for a turn before answering that it is still running.
-    /// </summary>
-    /// <remarks>
-    /// Surfaced from the options rather than written in the service, because it was written in the
-    /// service and that is most of why it was wrong: nothing could compare it against the turn
-    /// budget it silently contradicted, and nothing could shorten it for a test that needed to
-    /// watch the wait elapse.
-    /// </remarks>
-    public TimeSpan InstructionPatience => _options.InstructionPatience;
 
     /// <summary>
     /// Gets the retention policy this deployment prunes to.
@@ -993,116 +970,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
                     .ConfigureAwait(false);
-
-                // **A departing node does NOT settle the instructions it was holding, and the
-                // temptation to make it do so is why this comment is here.**
-                //
-                // It looks obviously right: §11.5 gives delivery to the node, so when the node goes
-                // its turns went with it, and `failed` is exactly "the turn was attempted and did
-                // not complete". It was built that way and then probed, and the probe is in
-                // `InstructionSurvivesTests`.
-                //
-                // A *stream* ending is not a node process dying. A network blip ends the stream
-                // while the agent carries on working, and settling on that destroys the answer when
-                // it arrives — settlement is first-come, so the real report is refused. That is
-                // precisely the defect this feature exists to remove, reintroduced through a
-                // different door, and it gets likelier the moment a deployment is reached over a
-                // private network rather than loopback, which §16 explicitly permits.
-                //
-                // So the broker does not claim to know. A turn whose node has gone stays *still
-                // running* until the sweep presumes it dead past TurnBudget.PresumedDead — an
-                // unknown honestly reported, rather than a false claim that also destroys evidence.
-
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
     }
-
-    /// <summary>Delivers an operator's instruction, and waits for the agent to have its turn.</summary>
-    /// <param name="instructionId">The instruction being delivered.</param>
-    /// <param name="agent">Who it is for.</param>
-    /// <param name="text">What the operator said.</param>
-    /// <param name="patience">How long to wait for the node's report.</param>
-    /// <param name="cancellationToken">Cancels the wait.</param>
-    /// <returns>What became of it.</returns>
-    /// <remarks>
-    /// <para>
-    /// Undeliverable rather than failed when no node holds the agent's machine, and the
-    /// distinction is the point: §11.5 says an agent whose node is not connected cannot be
-    /// instructed and must be told so rather than left looking as though it was. The remedies
-    /// differ — one is a machine that is switched off, and re-sending will not change it.
-    /// </para>
-    /// <para>
-    /// A turn is a model thinking, so the wait is generous and bounded rather than indefinite. An
-    /// instruction that outlives its patience is reported as failed and the row settles: the
-    /// alternative is an operator holding a page open against a turn that may never end.
-    /// </para>
-    /// </remarks>
-    public async Task<InstructionResult> DeliverInstructionAsync(
-        long instructionId,
-        AgentName agent,
-        string text,
-        TimeSpan patience,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_nodes.TryGetValue(agent.Machine, out var node))
-        {
-            return new InstructionResult(InstructionOutcome.Undeliverable, null);
-        }
-
-        var waiting = new TaskCompletionSource<InstructionResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        if (!_awaited.TryAdd(instructionId, waiting))
-        {
-            return new InstructionResult(InstructionOutcome.Failed, null);
-        }
-
-        try
-        {
-            if (!node.RequestInstruction(instructionId, agent, text))
-            {
-                return new InstructionResult(InstructionOutcome.Undeliverable, null);
-            }
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(patience);
-
-            // **Pending, not failed, and this is the same defect one layer in.** Removing the
-            // settling write stopped the broker *recording* a verdict it had no grounds for; this
-            // stops it *reporting* one. `Failed` is defined as "the turn was attempted and did not
-            // complete", which is a claim about the turn — and while the patience elapses the turn
-            // is simply still running. An operator told `failed` reissues the instruction, which
-            // §10.2 names as the one response that makes the situation worse.
-            //
-            // Note that the linked token covers the caller giving up as well as the patience
-            // elapsing, and both mean the same thing here: this call is over and the turn is not.
-            // Which of the two happened is a fact about the operator, and neither is a fact about
-            // the agent.
-            await using var registration = timeout.Token.Register(
-                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Pending, null)))
-                .ConfigureAwait(false);
-
-            return await waiting.Task.ConfigureAwait(false);
-        }
-        finally
-        {
-            _ = _awaited.TryRemove(instructionId, out _);
-        }
-    }
-
-    /// <summary>Completes whoever is waiting on an instruction's outcome.</summary>
-    /// <param name="instructionId">The instruction.</param>
-    /// <param name="result">What became of it.</param>
-    /// <returns><see langword="true"/> if somebody was waiting.</returns>
-    /// <remarks>
-    /// False is ordinary rather than an error: the operator's request may have given up before
-    /// the node answered, and a node reporting into an empty slot has still done its job. The row
-    /// is settled by the reporting path regardless, so the record does not depend on anybody
-    /// still listening.
-    /// </remarks>
-    public bool CompleteInstruction(long instructionId, InstructionResult result) =>
-        _awaited.TryGetValue(instructionId, out var waiting) && waiting.TrySetResult(result);
 
     /// <summary>
     /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.
@@ -1474,7 +1345,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs the broker's maintenance pass — polls, instructions nothing will report on, and retention — on the
+    /// Runs the broker's maintenance pass — polls and retention — on the
     /// broker the host owns.
     /// </summary>
     /// <param name="cancellationToken">Cancels the pass.</param>

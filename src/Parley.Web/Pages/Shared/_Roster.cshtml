@@ -26,6 +26,10 @@
             @foreach (var entry in Model.Entries)
             {
                 <li class="slot-@Palette.SlotFor(entry.Name)">
+                    @if (Model.Mark is { Length: > 0 } mark)
+                    {
+                        <span class="mark" aria-hidden="true">@mark</span>
+                    }
                     <span class="who" aria-hidden="true">@Palette.BadgeFor(entry.Name)</span>
                     <a class="name" href="/Projects/Agent?project=@Model.Project&amp;agent=@entry.Name.Value">@entry.Name.Value</a>
                     @* Retirement outranks presence, and a name the registry does not hold says

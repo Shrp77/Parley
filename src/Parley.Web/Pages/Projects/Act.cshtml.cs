@@ -17,11 +17,6 @@ namespace Parley.Web.Pages.Projects;
 /// be undone — so an operator who meant retire and clicked purge must have been told, in words,
 /// what they were about to lose.
 /// </para>
-/// <para>
-/// A decline is not a failure and is not shown as one. §11.5 says an agent may refuse an
-/// instruction, and an interface that rendered refusal as malfunction would teach whoever reads
-/// it to work around the agent rather than ask why.
-/// </para>
 /// </remarks>
 /// <param name="directory">
 /// The projects and their brokers. No seat book any more: asking an agent what it owns was the one action here that was a
@@ -34,7 +29,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     public string? Project { get; set; }
 
     /// <summary>
-    /// What to do: retire, reinstate, purge, forceconclude, instruct, prune, ownership, askownership or
+    /// What to do: retire, reinstate, purge, forceconclude, prune, ownership, askownership or
     /// askeveryownership.
     /// </summary>
     /// <remarks>
@@ -49,10 +44,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Subject { get; set; }
 
-    /// <summary>The operator's own words: what to instruct, or the ownership line they are recording.</summary>
+    /// <summary>The operator's own words: the ownership line they are recording.</summary>
     /// <remarks>
-    /// One field for both because both are the person's own text and neither is ever an agent's. What
-    /// makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>, where
+    /// What makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>, where
     /// the argument for leaving it empty is the one distinction 020 exists to keep.
     /// </remarks>
     [BindProperty]
@@ -129,9 +123,6 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                               + "have voted. Every request still open in it is closed with a result saying "
                               + "a person closed it, each participant holding that work is told, and the "
                               + "log records that a person closed it.", false),
-
-            "instruct" => ($"'{Subject}' will be given your words as a turn. It may decline, which "
-                         + "is not a failure. The instruction is recorded as yours.", false),
 
             // The project-level form, which follows `prune` in taking its subject from whatever made the
             // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
@@ -251,9 +242,6 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "start" => DescribeStart(broker.StartAsync(agent, "a person asked from the web UI", token)),
 
                 "purge" => DescribePurge(broker.PurgeAsync(agent, token)),
-
-                "instruct" => DescribeInstruction(
-                    broker.InstructAsync(agent, Text ?? string.Empty, token)),
 
                 // Composed, because what a person types *here* is their own line and is recorded as
                 // theirs. That is still true now the ask exists: a proposal an agent wrote arrives
@@ -508,8 +496,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     {
         var pruned = await action.ConfigureAwait(false);
 
-        var said = $"Removed {pruned.Removed} message(s)"
-                   + (pruned.InstructionsRemoved > 0 ? $" and {pruned.InstructionsRemoved} instruction(s)." : ".");
+        var said = $"Removed {pruned.Removed} message(s).";
 
         if (pruned.HeldByFloor > 0)
         {
@@ -527,44 +514,5 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             ? "There is no such agent."
             : "Purged: " + string.Join(", ",
                 outcome.Destroyed.Select(d => $"{d.Rows} from {d.Table}"));
-    }
-
-    /// <summary>Puts an instruction's outcome into a sentence.</summary>
-    /// <param name="action">The call in flight.</param>
-    /// <returns>What to tell the operator.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Five outcomes, five sentences, and the fifth used to be unreachable.</b> This method
-    /// ended with <c>_ =&gt; "Still pending."</c> — a branch nothing could produce, because the
-    /// broker turned its own impatience into <c>failed</c> and settled the record with it. So the
-    /// operator was told the turn had not completed while the agent was still working, and the real
-    /// answer was refused when it arrived.
-    /// </para>
-    /// <para>
-    /// <b>The page no longer waits for the turn.</b> It waits for the broker's own short patience
-    /// and then says where the answer will appear. A turn is a model working on a repository and
-    /// can run for as long as the machine hosting it allows; a browser request cannot, and tying
-    /// the two together is how a lost connection came to mean a lost answer.
-    /// </para>
-    /// </remarks>
-    private static async Task<string> DescribeInstruction(Task<InstructionResult> action)
-    {
-        var result = await action.ConfigureAwait(false);
-
-        // Declined is deliberately not phrased as a failure. §10.2 requires the two told apart, and
-        // an interface that renders refusal as malfunction teaches whoever reads it to work around
-        // the agent instead of asking why.
-        return result.Outcome switch
-        {
-            InstructionOutcome.Taken => $"Taken. {result.Reply}",
-            InstructionOutcome.Declined => $"The agent declined, which is its right. {result.Reply}",
-            InstructionOutcome.Undeliverable =>
-                InstructionWording.Undeliverable,
-            InstructionOutcome.Failed => $"The turn did not complete. {result.Reply}",
-
-            // The ordinary answer for any real piece of work, and it must not read as a fault.
-            _ => "Given to the agent, and the turn is still running. Its answer will appear under "
-                 + "What you have told it on the agent's page — you can close this."
-        };
     }
 }

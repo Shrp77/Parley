@@ -30,12 +30,12 @@ public sealed class OperatorConsole
     private readonly AgentRepository _agents;
     private readonly MessageRepository _messages;
     private readonly ExchangeRepository _exchanges;
-    private readonly InstructionRepository _instructions;
     private readonly Pruner _pruner;
     private readonly SizeRefusalRepository _refusals;
     private readonly ClarifyReportRepository _clarify;
     private readonly ResultsReportRepository _results;
     private readonly FlagRepository _flags;
+    private readonly RoadmapRepository _roadmaps;
 
     /// <summary>Creates a console over an open connection.</summary>
     /// <param name="connection">An open, already-migrated connection. Borrowed, never closed.</param>
@@ -47,12 +47,12 @@ public sealed class OperatorConsole
         _agents = new AgentRepository(connection);
         _messages = new MessageRepository(connection);
         _exchanges = new ExchangeRepository(connection);
-        _instructions = new InstructionRepository(connection);
         _pruner = new Pruner(connection);
         _refusals = new SizeRefusalRepository(connection);
         _clarify = new ClarifyReportRepository(connection);
         _results = new ResultsReportRepository(connection);
         _flags = new FlagRepository(connection);
+        _roadmaps = new RoadmapRepository(connection);
     }
 
     /// <summary>Closes a conversation on the person's word, regardless of its participants' votes (§5.0).</summary>
@@ -277,56 +277,84 @@ public sealed class OperatorConsole
             ? await _conversations.GetDestroyedAsync(conversationId, cancellationToken).ConfigureAwait(false)
             : null;
 
-        return new ConversationExport(messages, exchanges, destroyed);
+        // By the reservation and by nothing in any message (§5.7).
+        var reserved = await _roadmaps.ReservationOfAsync(conversationId, cancellationToken).ConfigureAwait(false);
+
+        return new ConversationExport(
+            messages,
+            exchanges,
+            destroyed,
+            reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null);
     }
 
-    /// <summary>Records an instruction before anybody tries to deliver it.</summary>
-    /// <param name="agent">Who it is for.</param>
-    /// <param name="text">What the person said.</param>
-    /// <param name="nowUtc">When they said it.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>The instruction's identifier.</returns>
-    public async Task<long> RecordInstructionAsync(
-        AgentName agent,
-        string text,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
-        await _instructions.RecordAsync(agent, text, nowUtc, cancellationToken).ConfigureAwait(false);
-
-    /// <summary>Reads instructions back, newest first (§10.2's <c>instructions()</c>).</summary>
-    /// <param name="agent">Narrow to one agent, or null for every agent.</param>
-    /// <param name="id">Narrow to exactly one instruction, or null for all that match.</param>
-    /// <param name="limit">How many to return.</param>
-    /// <param name="beforeId">Resume before this identifier, or null to start at the newest.</param>
+    /// <summary>Lists the project's roadmaps (§10.2's <c>roadmaps()</c>).</summary>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The instructions.</returns>
+    /// <returns>One summary per roadmap.</returns>
     /// <remarks>
-    /// On this side of the boundary: an agent able to read one could learn what the person told another
-    /// agent to do. It exists because a reply reachable only through the call that issued the instruction
-    /// is lost the moment that call is.
+    /// On this side of §10.2 and never on the agent's: no agent reads a roadmap (principle 2.12), and a method here
+    /// named like one on <see cref="Broker"/> would be the near-miss the boundary tests exist to refuse.
     /// </remarks>
-    public async Task<IReadOnlyList<InstructionRecord>> ListInstructionsAsync(
-        AgentName? agent = null,
-        long? id = null,
-        int limit = 50,
-        long? beforeId = null,
-        CancellationToken cancellationToken = default) =>
-        await _instructions.ListAsync(agent, id, limit, beforeId, cancellationToken).ConfigureAwait(false);
+    public Task<IReadOnlyList<RoadmapSummary>> ListRoadmapsAsync(CancellationToken cancellationToken = default) =>
+        _roadmaps.ListAsync(cancellationToken);
 
-    /// <summary>Records what became of an instruction.</summary>
-    /// <param name="id">Which instruction.</param>
-    /// <param name="outcome">What became of it.</param>
-    /// <param name="reply">What the agent said, if anything.</param>
-    /// <param name="nowUtc">When it settled.</param>
+    /// <summary>Reads one roadmap whole, with facts about each live item's conversation (§10.2's <c>roadmap(id)</c>).</summary>
+    /// <param name="id">The roadmap.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The roadmap, or <see langword="null"/>.</returns>
+    /// <remarks>Facts and never a state: the surface derives where an item stands (§5.7).</remarks>
+    public Task<Roadmap?> GetRoadmapAsync(long id, CancellationToken cancellationToken = default) =>
+        _roadmaps.GetAsync(id, cancellationToken);
+
+    /// <summary>Reads the proposals agents have made (§10.2's <c>proposals(state?)</c>).</summary>
+    /// <param name="state">Which to read, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposals, newest first.</returns>
+    public Task<IReadOnlyList<RoadmapProposal>> ListProposalsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.ListProposalsAsync(state, cancellationToken);
+
+    /// <summary>Turns a proposal into a roadmap, or a revision of one (§10.2's <c>confirm_proposal</c>).</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="content">The person's final content.</param>
+    /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
+    /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>Whether a pending instruction was settled.</returns>
-    public async Task<bool> SettleInstructionAsync(
+    /// <returns>What it came to.</returns>
+    /// <remarks>
+    /// Where a roadmap comes to exist. Only this and <see cref="EditRoadmapAsync"/> write one, and both are a
+    /// person's act: there is no agent route to either (principle 2.12).
+    /// </remarks>
+    public Task<RoadmapChange> ConfirmProposalAsync(
         long id,
-        InstructionOutcome outcome,
-        string? reply,
+        RoadmapContent content,
+        long? targetRoadmap,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default) =>
-        await _instructions.SettleAsync(id, outcome, reply, nowUtc, cancellationToken).ConfigureAwait(false);
+        _roadmaps.ConfirmAsync(id, content, targetRoadmap, nowUtc, cancellationToken: cancellationToken);
+
+    /// <summary>Declines a waiting proposal (§10.2's <c>decline_proposal</c>).</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What it came to.</returns>
+    public Task<RoadmapChange> DeclineProposalAsync(
+        long id, DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>
+        _roadmaps.DeclineAsync(id, nowUtc, cancellationToken: cancellationToken);
+
+    /// <summary>Changes a confirmed roadmap (§10.2's <c>edit_roadmap</c>).</summary>
+    /// <param name="id">The roadmap.</param>
+    /// <param name="revision">The revision the caller read.</param>
+    /// <param name="content">The final content.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>What it came to.</returns>
+    public Task<RoadmapChange> EditRoadmapAsync(
+        long id,
+        int revision,
+        RoadmapContent content,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default) =>
+        _roadmaps.EditAsync(id, revision, content, nowUtc, cancellationToken: cancellationToken);
 
     /// <summary>Lists conversations, most recent activity first (§10.2's <c>conversations()</c>).</summary>
     /// <param name="participant">Restrict to conversations this participant is party to, or null for all.</param>

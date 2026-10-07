@@ -526,18 +526,6 @@ internal sealed class Shell : Window
     internal static string CopiedMessage(int characters) =>
         $"Copied the message to the clipboard ({characters} characters).";
 
-    /// <summary>What is said when somebody has dragged across part of a transcript.</summary>
-    /// <param name="characters">How much is selected.</param>
-    /// <returns>The sentence, which names the key that takes it.</returns>
-    internal static string Selected(int characters) =>
-        $"Selected {characters} characters. Ctrl+C copies them.";
-
-    /// <summary>What is said when the selection went to the clipboard.</summary>
-    /// <param name="characters">How long it was.</param>
-    /// <returns>The sentence.</returns>
-    internal static string CopiedSelection(int characters) =>
-        $"Copied the selection to the clipboard ({characters} characters).";
-
     /// <summary>What is said when the copy went.</summary>
     /// <remarks>
     /// The size is in it because a clipboard gives no other evidence that anything happened: a
@@ -697,15 +685,6 @@ internal sealed class Shell : Window
         Conversations = new ConversationsRegion();
         Transcript = new TranscriptRegion();
 
-        // **A drag in the transcript says what Ctrl+C would take**, because a highlight alone does not say that a key
-        // copies it, and the key is not on any menu: it is the one everybody tries.
-        Transcript.Selecting.SelectionChanged += (_, _) =>
-        {
-            if (Transcript.Selecting.SelectedText() is { Length: > 0 } picked)
-            {
-                Said = Selected(picked.Length);
-            }
-        };
         Room = new RoomRegion();
 
         // **Enter on something owed reads it where it was said.** The primary action of the active control
@@ -1639,6 +1618,32 @@ internal sealed class Shell : Window
     /// <summary>The chord that opens a project's settings.</summary>
     internal static Key ConfigurationKey => Key.F3;
 
+    /// <summary>The key that opens the roadmaps agents have proposed (specs/026).</summary>
+    internal static Key ProposalsKey => Key.F4;
+
+    /// <summary>Opens the proposed roadmaps of the project in view, or of the one selected in the list.</summary>
+    /// <returns>When the list has been queued.</returns>
+    /// <remarks>
+    /// Global rather than a pane's, for the reason the configuration view is: inside a project the focused pane is the
+    /// agents or the conversations, and a list of what agents have put forward is neither. It needs no seat, because
+    /// confirming, editing and declining a proposal speak as nobody (principle 2.12).
+    /// </remarks>
+    private Task OpenProposals()
+    {
+        if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        return Proposing.OpenAsync(
+            app, new BrokerClient(_directory.ClientFor(project)), Queue, said =>
+            {
+                Said = said;
+
+                return Task.CompletedTask;
+            });
+    }
+
     /// <summary>Opens the settings of the project in view, or of the one selected in the list.</summary>
     /// <returns>When the view is on screen and read.</returns>
     private Task OpenConfiguration() =>
@@ -1805,6 +1810,23 @@ internal sealed class Shell : Window
             }
             : Array.Empty<RegionAction>(),
 
+        // **What agents have put forward, from wherever a project is in view** (specs/026). Beside the configuration for the
+        // same reason: it is about the project and not about the pane the cursor is in. A chord rather than a letter,
+        // because a global letter is shadowed by whichever pane already uses it.
+        .. _place.Viewing is not Viewing.Configuration and not Viewing.Conversation
+           && (Current ?? Projects.Selected) is not null
+            ? new[]
+            {
+                new RegionAction(
+                    default,
+                    Proposing.Title,
+                    OpenProposals,
+                    Category: ActionCategory.Project,
+                    Chord: ProposalsKey,
+                    Order: 90),
+            }
+            : Array.Empty<RegionAction>(),
+
         new RegionAction(
             ActionsKey, KeysTitle, Offer, Category: ActionCategory.Help, Order: 1),
 
@@ -1913,35 +1935,17 @@ internal sealed class Shell : Window
                     : new[] { new RegionAction('r', Withdrawing.Title, Withdraw) }
                 : Array.Empty<RegionAction>(),
 
-            // What the operator told this agent, and what it said back. Never for a seat: a seat
-            // is a person, and nobody instructs themselves.
+            // Never for a seat: a seat is a person.
             .. Agents.Selected is { Seat: false } told
                 ? new[]
                 {
-                    // `h`, for history. It was `w`, which is taking delivery wherever a seat is held -- so
-                    // with a seat held and an agent selected this pane named one key twice, and the key ran
-                    // whichever came first. `NoTwoActionsShareAKeyTests` holds it.
-                    new RegionAction('h', ToldTitle + told.Name, ShowTold),
-                    new RegionAction('o', Instructing.Title + told.Name, InstructSelected),
-
-                    // Never for a seat either, and for the same reason: an ownership line is how
-                    // peers decide who to send work to, and a person holding a seat is not somebody
-                    // work is routed to by a roster entry.
-                    new RegionAction('n', Ownership.Title + ": " + told.Name, OwnershipOfSelected),
-
-                    // **Asking is offered whether or not a seat is held, and that is deliberate.**
-                    // An ask is a message and needs one, but hiding the action until somebody has a
-                    // seat is 0.28.2's recorded defect: the owner could not find how to start a
-                    // conversation and reached for an instruction, which is not a message at all.
-                    // So it is always here and says what is missing when it is pressed.
+                    // **One page for what an agent is responsible for**: what it has said, the line in a field to
+                    // change, and asking it to refresh. It was two doors, "say what it owns" and "ask what it owns",
+                    // and a person had to know which they wanted before they opened either. Never for a seat: an
+                    // ownership line is how peers decide who to send work to, and a person is not routed to by one.
                     //
-                    // `k`, as in ask. It was `a`, which is adding an agent, first in this list -- so the key
-                    // always added and the ask could be reached only from the menu.
-                    new RegionAction(
-                        'k',
-                        Ownership.AskTitle + ": " + told.Name,
-                        AskWhatItOwns,
-                        Owing.Requesting),
+                    // Needs no seat, because Parley asks and a person's line is recorded as theirs.
+                    new RegionAction('n', Responsibility.Title, ResponsibilityOfSelected, Owing.Requesting),
                 }
                 : Array.Empty<RegionAction>(),
 
@@ -2169,10 +2173,10 @@ internal sealed class Shell : Window
 
             entries.Add((ConversationsOfTitle(name.Value), () => ShowConversationsOf(name)));
 
-            // The agent's own actions as the table already offers them — ask what it owns, review its line, instruct
-            // it, what it was told — and nothing that withdraws it.
+            // The agent's own actions as the table already offers them — what it is responsible for — and nothing
+            // that withdraws it.
             entries.AddRange(Offered()
-                .Where(action => action.Key is 'k' or 'n' or 'o' or 'h')
+                .Where(action => action.Key is 'n')
                 .Select(action => (action.Label, action.Run)));
 
             if (Agents.SelectedStanding is { Running: false, Retired: false, StartableHere: true })
@@ -2912,7 +2916,7 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
-        // The session token is dropped and Escape closes it, exactly as `Telling` does: a dialog
+        // The session token is dropped and Escape closes it, exactly as the other read-only dialogs do: a dialog
         // that only shows something has one way out and no decision to take.
         Showing = Saying.Open(
             app, _said, Viewport.Width > 0 ? Viewport.Width - 4 : Threshold).View;
@@ -2987,46 +2991,6 @@ internal sealed class Shell : Window
         Said = Copier(app, written) ? Copied(written.Length) : NotCopied;
 
         return Task.CompletedTask;
-    }
-
-    /// <summary>Puts the text dragged across in the transcript on the clipboard.</summary>
-    /// <returns><see langword="true"/> when there was a selection to copy.</returns>
-    /// <remarks>
-    /// The selection stays afterwards: pressing the same key twice by habit would otherwise end the program the second
-    /// time, which is the one thing a person copying did not ask for.
-    /// </remarks>
-    internal bool CopySelection()
-    {
-        if (App is not { } app || Transcript.Selecting.SelectedText() is not { Length: > 0 } text)
-        {
-            return false;
-        }
-
-        Said = Copier(app, text) ? CopiedSelection(text.Length) : NotCopied;
-
-        return true;
-    }
-
-    /// <summary>Takes Ctrl+C when the terminal delivers it as an interrupt and there is a selection to copy.</summary>
-    /// <returns><see langword="true"/> when the interrupt was taken and the program should carry on.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Whether Ctrl+C arrives as a key or as the process's interrupt depends on the terminal and the platform</b>, and
-    /// only the second can end the program, so both are answered the same way: with a selection it copies, without one it
-    /// is not handled here and means what it always meant. It is raised on another thread, so the copy is handed to the
-    /// loop.
-    /// </para>
-    /// </remarks>
-    internal bool CopyOnInterrupt()
-    {
-        if (App is not { } app || !Transcript.Selecting.HasSelection)
-        {
-            return false;
-        }
-
-        app.Invoke(() => CopySelection());
-
-        return true;
     }
 
     /// <summary>Puts the one message under the cursor on the clipboard.</summary>
@@ -3575,58 +3539,6 @@ internal sealed class Shell : Window
                 Reported(project))
             : Task.CompletedTask;
 
-    /// <summary>What showing an agent's instructions is called, before the name.</summary>
-    internal const string ToldTitle = "What you have told ";
-
-    /// <summary>The instructions dialog, while one is open.</summary>
-    internal Telling? Told { get; private set; }
-
-    /// <summary>Shows what the operator told the agent under the cursor.</summary>
-    /// <returns>When the reading has finished.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Read-only, and this surface issues no instruction.</b> What was missing was never a second
-    /// way to give one — it was any way at all to find out what became of one, because a reply
-    /// reachable only through the call that asked for it survives exactly as long as that
-    /// connection. Somebody at a terminal over SSH is precisely the person who cannot open the
-    /// browser surface instead.
-    /// </para>
-    /// <para>
-    /// The project comes from <see cref="Current"/> and never from the projects region's selection.
-    /// That is the defect that has now appeared five times: a project view gives this region the
-    /// screen, so the projects list is off screen and its selection is null.
-    /// </para>
-    /// </remarks>
-    internal Task ShowTold()
-    {
-        if (App is not { } app
-            || Current is not { } project
-            || Agents.Selected is not { Seat: false } row
-            || !AgentName.TryCreate(row.Name, out var agent))
-        {
-            return Task.CompletedTask;
-        }
-
-        Queue(async cancellationToken =>
-        {
-            var told = await BrokerDirectory.ReadAsync(async () =>
-                await new BrokerClient(_directory.ClientFor(project))
-                    .InstructionsAsync(agent, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false)).ConfigureAwait(false);
-
-            if (!told.Reachable)
-            {
-                Said = told.Problem!;
-
-                return;
-            }
-
-            Told = Telling.Open(app, agent, told.Value?.Instructions ?? []).View;
-        });
-
-        return Settled;
-    }
-
     /// <summary>The person's own agent operations, for the project on screen.</summary>
     /// <returns>The voice, or null when they hold no seat here.</returns>
     /// <remarks>
@@ -3909,16 +3821,6 @@ internal sealed class Shell : Window
         if (key == QuitKey)
         {
             Quit();
-
-            return true;
-        }
-
-        // **Ctrl+C copies what is selected, and only then.** With nothing selected it is left alone, so it means what it
-        // always did on a terminal; the selection is what makes it a copy, and it stays after the copy so a second press
-        // does the same thing again instead of ending the program.
-        if (key == Key.C.WithCtrl && Transcript.Selecting.HasSelection)
-        {
-            CopySelection();
 
             return true;
         }
@@ -4380,48 +4282,29 @@ internal sealed class Shell : Window
         });
     }
 
-    /// <summary>Opens the form that instructs the agent under the cursor.</summary>
-    /// <returns>When the form is open.</returns>
-    private Task InstructSelected()
-    {
-        if (App is not { } app
-            || Current is not { } project
-            || Agents.Selected is not { Seat: false } row
-            || !AgentName.TryCreate(row.Name, out var agent))
-        {
-            return Task.CompletedTask;
-        }
-
-        return Instructing.OpenAsync(
-            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
-            {
-                Said = said;
-
-                return Task.CompletedTask;
-            });
-    }
-
-    /// <summary>Opens the form that records what the agent under the cursor owns.</summary>
-    /// <returns>When the form is open.</returns>
+    /// <summary>Opens the page for what the agent under the cursor is responsible for.</summary>
+    /// <returns>When the page has been queued.</returns>
     /// <remarks>
-    /// Guarded the same way <see cref="InstructSelected"/> is, including the seat exclusion: a seat
-    /// is a person, and an ownership line is how peers choose which <em>agent</em> to send work to.
+    /// Refuses the person's own seat: an ownership line is how peers choose which <em>agent</em> to send work to, and
+    /// a person is not routed to by a roster entry. The record is the registry's as last read, so what the page says
+    /// peers read is what this screen was last told and not a second read of its own.
     /// </remarks>
-    private Task OwnershipOfSelected()
+    private Task ResponsibilityOfSelected()
     {
         if (App is not { } app
             || Current is not { } project
             || Agents.Selected is not { Seat: false } row
-            || !AgentName.TryCreate(row.Name, out var agent))
+            || !AgentName.TryCreate(row.Name, out var agent)
+            || Agents.Registry.FirstOrDefault(record => record.Name == agent) is not { } record)
         {
             return Task.CompletedTask;
         }
 
-        return Ownership.OpenAsync(
+        return Responsibility.OpenAsync(
             app,
             new BrokerClient(_directory.ClientFor(project)),
-            agent,
-            row.Workspace,
+            record,
+            Agents.Registry,
             project.Name.Value,
             Queue,
             said =>
@@ -4479,33 +4362,6 @@ internal sealed class Shell : Window
 
         return OwnershipReview.OpenAsync(
             app, new BrokerClient(_directory.ClientFor(project)), Agents.Registry, project.Name.Value, Queue, said =>
-            {
-                Said = said;
-
-                return Task.CompletedTask;
-            });
-    }
-
-    /// <summary>Asks the agent under the cursor what it owns.</summary>
-    /// <returns>When the dialog is open.</returns>
-    /// <remarks>
-    /// The seat is read here and passed in, rather than looked up inside the dialog, for the reason
-    /// <see cref="Voice"/> exists at all: whether somebody can speak is a fact about this view and
-    /// its seat, and a screen that asked a different region would be the defect this file records
-    /// five times.
-    /// </remarks>
-    private Task AskWhatItOwns()
-    {
-        if (App is not { } app
-            || Current is not { } project
-            || Agents.Selected is not { Seat: false } row
-            || !AgentName.TryCreate(row.Name, out var agent))
-        {
-            return Task.CompletedTask;
-        }
-
-        return Ownership.AskAsync(
-            app, new BrokerClient(_directory.ClientFor(project)), agent, Queue, said =>
             {
                 Said = said;
 
@@ -4786,12 +4642,24 @@ internal sealed class Shell : Window
         if (Held is not { } hold)
         {
             // No seat, so there is no "you" for anything to be owed by. The participants are still worth
-            // showing, and the column says a seat is wanted.
+            // showing, and the column says a seat is wanted. **So is everyone else in the project** (specs/026): what the
+            // room lists does not depend on whether a seat is held, only whether anybody can be ticked.
+            var unseatedRegistry = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(_directory.ClientFor(project))
+                    .RegistryAsync(cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            var participants = Pairing.Participants(export).OrderBy(a => a.Value, StringComparer.Ordinal).ToList();
+
             Room.Show(
-                [.. Pairing.Participants(export).OrderBy(a => a.Value, StringComparer.Ordinal)
-                    .Select(a => new PairState(a, null, Turn.Nobody))],
+                [.. participants.Select(a => new PairState(a, null, Turn.Nobody))],
                 [],
-                seated: false);
+                seated: false,
+                me: null,
+                addressed: null,
+                activity: Activities.Of(export, [], unseatedRegistry.Value),
+                now: null,
+                others: RoomRoster.NotInIt(unseatedRegistry.Value, participants, me: null));
 
             return;
         }
@@ -4890,32 +4758,9 @@ internal sealed class Shell : Window
             Drafting.Recipients,
             activity,
             now: null,
-            others: Elsewhere(registry.Value, pairs, hold.Seat.Name));
+            others: RoomRoster.NotInIt(registry.Value, pairs.Select(pair => pair.Peer), hold.Seat.Name));
         Line.Show(Drafting, seated: true, Near());
     }
-
-    /// <summary>The project's agents that are not in the conversation, for the room to offer.</summary>
-    /// <param name="registry">The registry as read, or null when it could not be.</param>
-    /// <param name="pairs">Who is in the conversation.</param>
-    /// <param name="me">The person.</param>
-    /// <returns>Active agents that are neither participants, the person, a person's seat nor Parley.</returns>
-    /// <remarks>
-    /// <b>Being listed is not being able to read the conversation.</b> SPEC.md �10.1 gives an agent no history
-    /// operation, so one brought in later knows only what its own Request says; the room lists them so that choice
-    /// exists, and the box's preview names who a line goes to.
-    /// </remarks>
-    private static IReadOnlyList<AgentName> Elsewhere(
-        IReadOnlyList<AgentRecord>? registry,
-        IReadOnlyList<PairState> pairs,
-        AgentName me) =>
-        [.. (registry ?? [])
-            .Where(agent => agent.Status == AgentStatus.Active
-                && agent.Name != me
-                && !Facilitation.Is(agent.Name)
-                && !string.Equals(agent.Adapter, Seat.Adapter, StringComparison.Ordinal)
-                && pairs.All(pair => pair.Peer != agent.Name))
-            .Select(agent => agent.Name)
-            .OrderBy(name => name.Value, StringComparer.Ordinal)];
 
     /// <summary>What is waiting on this person in the conversation on screen, one item per agent.</summary>
     /// <param name="export">The conversation as it was read.</param>
@@ -5066,8 +4911,13 @@ internal sealed class Shell : Window
                 await client.ConversationsAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
                 .ConfigureAwait(false);
 
+            // What agents have put forward for the person to decide (specs/026), counted with the rest. Null when the broker
+            // cannot say, which a row leaves out rather than showing as none.
+            var proposals = await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(client, cancellationToken)
+                .ConfigureAwait(false);
+
             var figures = registry.Value is { } agents && conversations.Value is { } page
-                ? ProjectFigures.Of(agents, page)
+                ? ProjectFigures.Of(agents, page, proposals)
                 : null;
 
             return (project.Name.Value, Health: health, Figures: figures);

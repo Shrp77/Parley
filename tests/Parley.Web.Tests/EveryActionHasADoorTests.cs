@@ -89,7 +89,7 @@ public sealed class EveryActionHasADoorTests
 
         Assert.Contains("retire", performed);
         Assert.Contains("purge", performed);
-        Assert.Contains("instruct", performed);
+        Assert.Contains("forceconclude", performed);
         Assert.True(performed.Count >= 6, string.Join(", ", performed));
     }
 

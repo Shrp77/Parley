@@ -814,6 +814,11 @@ public sealed class ConversationRepository(SqliteConnection connection)
                     new { row.Id },
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
+            // By the reservation and by nothing else: a payload or a name that merely looks like an item's marks no
+            // conversation as one (SPEC.md §5.7).
+            var reserved = await new RoadmapRepository(_connection)
+                .ReservationOfAsync(row.Id, cancellationToken).ConfigureAwait(false);
+
             summaries.Add(new ConversationSummary(
                 row.Id,
                 [.. participants.Select(AgentName.Create)],
@@ -821,7 +826,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 ExchangeRow.ParseTimestamp(row.FirstActivityUtc),
                 ExchangeRow.ParseTimestamp(row.LastActivityUtc),
                 row.HasOpenExchange,
-                row.Archived));
+                row.Archived,
+                reserved is { } r ? new RoadmapItemRef(r.RoadmapId, r.RoadmapNumber, r.Title, r.ItemNumber, r.Removed) : null));
         }
 
         return summaries;

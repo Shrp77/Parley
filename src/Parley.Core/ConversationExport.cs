@@ -35,6 +35,10 @@ public sealed record ExchangeSnapshot(
 /// What is left of a conversation an operator destroyed, or null when this one was not.
 /// Both lists are empty when it is set.
 /// </param>
+/// <param name="Item">
+/// The roadmap item this conversation belongs to, or null for an ordinary one (SPEC.md §5.7). Carried here so a
+/// surface holding only a conversation can offer its roadmap without asking for every roadmap.
+/// </param>
 /// <remarks>
 /// <para>
 /// The two travel together rather than in two calls, so a client never holds one without the
@@ -51,7 +55,8 @@ public sealed record ExchangeSnapshot(
 public sealed record ConversationExport(
     IReadOnlyList<Message> Messages,
     IReadOnlyList<ExchangeSnapshot> Exchanges,
-    DestroyedConversation? Destroyed = null);
+    DestroyedConversation? Destroyed = null,
+    RoadmapItemRef? Item = null);
 
 /// <summary>
 /// What is left of a conversation an operator destroyed.

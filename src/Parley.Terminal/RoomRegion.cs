@@ -290,14 +290,18 @@ internal sealed class RoomRegion : FrameView
                 continue;
             }
 
+            // The participation mark is a character and not a colour (the owner's call, 2026-10-06): the heading above
+            // says who has taken part and the mark says it on the row, so a row read alone still says so.
             rows.Add(new Row(
-                Mark(pair.Peer) + Glyph(pair.Peer) + " " + Safe.Text(Shown(pair.Peer, pairs)) + Standing(pair),
+                Mark(pair.Peer) + RoomRoster.ParticipantMark + Glyph(pair.Peer) + " " + Safe.Text(Shown(pair.Peer, pairs)) + Standing(pair),
                 null,
                 Palette.SlotFor(pair.Peer),
                 pair.Peer));
         }
 
-        if (seated && _others.Count > 0)
+        // **Listed whether or not a seat is held** (specs/026): every agent of the project is in the room, so what a person
+        // reads here does not depend on whether they have connected. Ticking one is only possible with a seat.
+        if (_others.Count > 0)
         {
             rows.Add(new Row(string.Empty, null, null, null));
             rows.Add(new Row(Elsewhere, null, null, null));
@@ -305,7 +309,7 @@ internal sealed class RoomRegion : FrameView
             foreach (var other in _others)
             {
                 rows.Add(new Row(
-                    Mark(other) + " " + Safe.Text(_others.Count(o => o.Role == other.Role) > 1 ? other.Value : other.Role),
+                    Mark(other) + " " + Glyph(other) + " " + Safe.Text(_others.Count(o => o.Role == other.Role) > 1 ? other.Value : other.Role),
                     null,
                     Palette.SlotFor(other),
                     other));
@@ -340,9 +344,10 @@ internal sealed class RoomRegion : FrameView
 
         // **What the marks mean, said on screen**, because a mark nothing explains is a fact that exists only for the
         // person who wrote it — the same rule that keeps colour from carrying anything alone.
-        if (pairs.Any(pair => !Facilitation.Is(pair.Peer)))
+        if (pairs.Any(pair => !Facilitation.Is(pair.Peer)) || _others.Count > 0)
         {
             rows.Add(new Row(string.Empty, null, null, null));
+            rows.Add(new Row(RoomRoster.ParticipantLegend, null, null, null));
             rows.AddRange(Activities.Legend.Select(line => new Row(line, null, null, null)));
         }
 
@@ -408,7 +413,7 @@ internal sealed class RoomRegion : FrameView
 
             // Under the name, which starts after the tick and the mark; the leading spaces of an owed row otherwise.
             var indent = row.Peer is not null
-                ? Addressed.Length + 2
+                ? Addressed.Length + 3
                 : row.Text.Length - row.Text.TrimStart().Length;
 
             fitted.Add(row with { Text = row.Text[..dash] });

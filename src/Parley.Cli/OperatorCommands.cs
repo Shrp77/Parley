@@ -640,36 +640,6 @@ public sealed class OperatorCommands
         return 0;
     }
 
-    /// <summary>Gives an agent a person's words as a turn.</summary>
-    /// <param name="agent">Who is instructed.</param>
-    /// <param name="text">What it should do.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>Zero unless the instruction could not be delivered or the turn failed.</returns>
-    /// <remarks>
-    /// Declined is zero, not a failure: §11.5 lets an agent refuse, and a command that exits non-zero on a refusal
-    /// teaches a script to treat the agent as broken. Still running is zero too — it is the ordinary answer for
-    /// real work, and <c>parley instructions</c> is where the reply turns up.
-    /// </remarks>
-    public async Task<int> InstructAsync(AgentName agent, string text, CancellationToken cancellationToken)
-    {
-        var reply = await _console.InstructAsync(
-            new Wire.InstructRequest { Agent = agent.Value, Text = text }, cancellationToken: cancellationToken);
-
-        var said = string.IsNullOrEmpty(reply.Reply) ? string.Empty : " " + reply.Reply.ReplaceLineEndings(" ");
-
-        await _output.WriteLineAsync(reply.Outcome switch
-        {
-            Wire.InstructionOutcome.Taken => "Taken." + said,
-            Wire.InstructionOutcome.Declined => "The agent declined, which is its right." + said,
-            Wire.InstructionOutcome.Undeliverable =>
-                InstructionWording.Undeliverable,
-            Wire.InstructionOutcome.Failed => "The turn did not complete." + said,
-            _ => $"Given to the agent, and the turn is still running. `parley instructions {agent.Value}` shows its answer when it comes."
-        }).ConfigureAwait(false);
-
-        return reply.Outcome is Wire.InstructionOutcome.Undeliverable or Wire.InstructionOutcome.Failed ? 1 : 0;
-    }
-
     /// <summary>Asks an agent's machine to start it.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -803,18 +773,6 @@ public sealed class OperatorCommands
         var removed = result.Removed.ToString(CultureInfo.InvariantCulture);
 
         await _output.WriteLineAsync($"Removed {removed} message(s).").ConfigureAwait(false);
-
-        // Counted apart, and said apart. The floors that hold a message back -- an open exchange,
-        // the deduplication window, an unread inbox -- mean nothing for an instruction, so one
-        // number covering both would report a held count that explains nothing about half of it.
-        //
-        // Said even when it is zero, unlike the held and contended lines below. A pass that removed
-        // five hundred instructions and no messages would otherwise print "Removed 0 message(s)."
-        // and stop, which reads as nothing having happened -- and this is the one log that holds a
-        // person's own words.
-        var instructions = result.InstructionsRemoved.ToString(CultureInfo.InvariantCulture);
-
-        await _output.WriteLineAsync($"Removed {instructions} instruction(s).").ConfigureAwait(false);
 
         if (result.Capped)
         {

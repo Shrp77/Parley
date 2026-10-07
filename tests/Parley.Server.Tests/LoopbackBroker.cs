@@ -40,15 +40,10 @@ internal sealed class LoopbackBroker : IAsyncDisposable
 
     /// <summary>Starts a broker over an in-memory store.</summary>
     /// <param name="cancellationToken">Cancels startup.</param>
-    /// <param name="instructionPatience">
-    /// How long the broker waits for a turn before answering that it is still running, or null for
-    /// the shipped default.
-    /// </param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeSpan? instructionPatience = null,
         TimeProvider? clock = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
@@ -57,16 +52,7 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         // reach. Defaults to the system clock, so every existing test is unaffected.
         clock ??= TimeProvider.System;
 
-        // **The wait is settable so a test can watch it elapse, which is the path that used to
-        // destroy an agent's answer.** An operator who gave up cancelled the settling write and
-        // kept the reply; an operator who waited got `failed` written first and lost it. Only the
-        // second is the defect, and at the shipped thirty seconds no test could sit through it —
-        // so the case that mattered was the one nothing could reach.
-        var options = instructionPatience is { } patience
-            ? BrokerOptions.Default with { InstructionPatience = patience }
-            : BrokerOptions.Default;
-
-        var runtime = BrokerRuntime.OpenInMemory(options, clock);
+        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken)

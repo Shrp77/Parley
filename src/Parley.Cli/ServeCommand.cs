@@ -198,7 +198,7 @@ public static class ServeCommand
                 await output.WriteLineAsync(
                     $"{project.Name}: WARNING -- this project answers on {project.Endpoint}, which is not "
                     + "loopback, so anything that can reach that address can claim to be any agent in it, "
-                    + "read its mail, export its conversations and instruct a running agent. The wire "
+                    + "read its mail, export its conversations and start agents. The wire "
                     + "carries no credentials. No command puts a project here; reach a broker from another "
                     + "machine with a tunnel instead (README, \"For an agent on another machine\").")
                     .ConfigureAwait(false);
@@ -769,7 +769,7 @@ public static class ServeCommand
     /// SPEC.md §16 allows a private network the operator controls — and it is also the single most
     /// consequential edit anybody can make to this deployment, because all three services share the
     /// one port: reaching it grants the operator operations, which export conversations, purge
-    /// agents and instruct a running agent.
+    /// agents and start others.
     /// </para>
     /// <para>
     /// <b>Said on every start rather than once at the edit.</b> Whoever made the change is not
@@ -855,8 +855,8 @@ public static class ServeCommand
     /// </para>
     /// <para>
     /// A failing pass is reported and the loop continues. The pass concludes polls whose last
-    /// decline lapsed, settles instructions nothing will report on and applies retention, so
-    /// stopping on the first failure would leave all three undone for as long as the broker ran —
+    /// decline lapsed, and applies retention, so
+    /// stopping on the first failure would leave both undone for as long as the broker ran —
     /// and the failures worth surviving are the transient ones a busy file produces.
     /// </para>
     /// </remarks>

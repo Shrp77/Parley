@@ -121,6 +121,68 @@ public sealed class SpecSchemaTests : IDisposable
                      actual.OrderBy(n => n, StringComparer.Ordinal));
     }
 
+    [Theory]
+    [InlineData("roadmaps")]
+    [InlineData("roadmap_items")]
+    public void A_roadmap_stores_no_status_because_where_an_item_stands_is_derived(string table)
+    {
+        // SPEC.md 5.7: state is derived from the item's conversation when read and written nowhere. A
+        // column for it would be a second route that could disagree with the first, and every surface
+        // would then have to choose which to believe.
+        ApplyWholeSchema();
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT name FROM pragma_table_info('{table}');";
+        using var reader = command.ExecuteReader();
+
+        var columns = new List<string>();
+        while (reader.Read())
+        {
+            columns.Add(reader.GetString(0));
+        }
+
+        Assert.NotEmpty(columns);
+        Assert.DoesNotContain(columns, c => c.Contains("status", StringComparison.OrdinalIgnoreCase)
+                                          || c.Contains("state", StringComparison.OrdinalIgnoreCase)
+                                          || c.Contains("done", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("waiting", "'2026-10-06T10:00:00.0000000Z'", false)]
+    [InlineData("confirmed", "NULL", false)]
+    [InlineData("waiting", "NULL", true)]
+    [InlineData("declined", "'2026-10-06T10:00:00.0000000Z'", true)]
+    public void A_proposal_is_decided_exactly_when_it_has_a_decision_time(
+        string state, string decided, bool accepted)
+    {
+        // The pairing is written with IS rather than =, because a NULL decided_utc makes = yield NULL and
+        // a CHECK admits NULL: confirmed with no decision time would otherwise be stored.
+        ApplyWholeSchema();
+
+        // The proposer is not registered here, so without this every row would be refused by the foreign
+        // key and the rejecting cases would pass for a reason that is not the rule under test.
+        using (var pragma = _connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA foreign_keys = OFF;";
+            pragma.ExecuteNonQuery();
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO roadmap_proposals (proposer, title, size, state, created_utc, decided_utc) " +
+            $"VALUES ('orders@test', 'A roadmap', 9, '{state}', '2026-10-06T09:00:00.0000000Z', {decided});";
+
+        if (accepted)
+        {
+            Assert.Equal(1, command.ExecuteNonQuery());
+        }
+        else
+        {
+            var refused = Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+            Assert.Contains("CHECK", refused.Message, StringComparison.Ordinal);
+        }
+    }
+
     private void ApplyWholeSchema()
     {
         foreach (var (_, _, sql) in SpecDocument.SchemaObjects)
