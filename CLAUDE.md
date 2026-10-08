@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.5, protocol 0.8 in code (SPEC §18 already records 0.9, which feature 026 completes), schema 1. Nothing has been released, so there is **no
+- Version 0.42.7, protocol 0.8 in code (SPEC §18 already records 0.9, which feature 026 completes), schema 1. Nothing has been released, so there is **no
   compatibility to keep**: change the wire, enums and schema 1 in place, and nuke and rebuild.
   From the first release every schema change is a migration.
 - Branch `019-layout` carries features 019–025, all built and unmerged. One combined review
@@ -363,6 +363,11 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   handler, so Enter is taken on the box itself. Enter sends; Shift+Enter, Ctrl+Enter or
   backslash then Enter make a line break. A conversation is tailed only for a reader at its
   end. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the key rules.
+- **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
+  so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set only by `TerminalCommand`); opening one
+  from the pool while the loop draws threw a `NullReferenceException` out of the toolkit's line canvas. The harness never
+  pumps a loop and leaves it unset, so a driven test must not press a key that starts queued work that opens a view and
+  then draw on its own thread in the same breath: call the handler and `await shell.Settled`.
 - **Hold screens to what is drawn, not what is held in memory.** Several defects were a
   property the suite checked while the screen never showed it. Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.

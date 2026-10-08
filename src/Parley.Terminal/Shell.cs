@@ -701,6 +701,7 @@ internal sealed class Shell : Window
         Agents = new AgentsRegion();
         Conversations = new ConversationsRegion();
         Roadmaps = new RoadmapsRegion();
+        Plans = new PlansRegion();
         Transcript = new TranscriptRegion();
 
         Room = new RoomRegion();
@@ -796,14 +797,14 @@ internal sealed class Shell : Window
         // Every region, because this is the list the arrangement hides from. The room and the line were left off it
         // when 017 added them, so after a conversation had given them a size, going back left both drawn over the
         // project view. `LeavingTheRoomTests` asks the regions themselves rather than this list.
-        _regions = [Projects, Agents, Conversations, Roadmaps, Transcript, Room, Line, Configuration];
+        _regions = [Projects, Agents, Conversations, Roadmaps, Plans, Transcript, Room, Line, Configuration];
 
         // **The record of which pane has focus follows focus, however it moved** (the owner's report of 2026-10-03).
         // `FocusedRegion` changed only through `Focus`, so a pane reached by the mouse had focus on screen and not in the
         // record — and every re-arrangement re-applies the record. The mail poll re-arranges every five seconds, so
         // somebody who clicked into the box was moved to the transcript mid-word. The shell's own `Focus` raises this
         // too and finds the record already right.
-        foreach (var region in new View[] { Projects, Agents, Conversations, Roadmaps, Transcript, Room, Line, Configuration })
+        foreach (var region in new View[] { Projects, Agents, Conversations, Roadmaps, Plans, Transcript, Room, Line, Configuration })
         {
             region.HasFocusChanged += (sender, _) => Followed(sender as View);
         }
@@ -813,6 +814,8 @@ internal sealed class Shell : Window
         Projects.Chose += (_, _) => Touched();
         Conversations.Opened += (_, _) => Touched();
         Roadmaps.Opened += (_, _) => Touched();
+        Plans.Opened += (_, _) => Touched();
+        Plans.Opened += (_, summary) => OpenPlan(summary);
 
         // A proposal chosen in the list opens in its own view, the same one a conversation opens it in.
         Roadmaps.Opened += (_, proposal) => ReviewProposal(proposal);
@@ -884,6 +887,7 @@ internal sealed class Shell : Window
         Add(Agents);
         Add(Conversations);
         Add(Roadmaps);
+        Add(Plans);
         Add(Transcript);
         Add(Room);
         Add(Line);
@@ -921,6 +925,9 @@ internal sealed class Shell : Window
 
     /// <summary>The roadmaps agents have proposed, which joins the project view while any is waiting.</summary>
     internal RoadmapsRegion Roadmaps { get; }
+
+    /// <summary>The roadmaps a person has confirmed, which joins the project view above the conversations while any exists.</summary>
+    internal PlansRegion Plans { get; }
 
     /// <summary>The transcript region.</summary>
     internal TranscriptRegion Transcript { get; }
@@ -967,7 +974,13 @@ internal sealed class Shell : Window
     internal IReadOnlyList<View> Panes => _place.Viewing switch
     {
         // The roadmaps pane is there only while something is proposed, and last, so Tab still goes agents, conversations.
-        Viewing.Project => Roadmaps.Proposals.Count > 0 ? [Agents, Conversations, Roadmaps] : [Agents, Conversations],
+        Viewing.Project =>
+        [
+            Agents,
+            .. Plans.Roadmaps.Count > 0 ? new View[] { Plans } : [],
+            Conversations,
+            .. Roadmaps.Proposals.Count > 0 ? new View[] { Roadmaps } : [],
+        ],
         // **Two columns since 0.30.0, and the transcript is the one that did not change.** The room was
         // built around it rather than in place of it: forty-nine test files in this suite drive the
         // conversation view, and almost all of them are about the transcript -- the column-zero rule that
@@ -1187,11 +1200,23 @@ internal sealed class Shell : Window
             // which is the arrangement the owner described -- Claude Code, in a layout.
             if (panes.Count > 2 && _place.Viewing == Viewing.Project)
             {
-                // **Under the agents, in their column.** The proposals are what the project is waiting on from a person, so they sit
-                // with the people-and-agents half rather than across the conversations.
-                panes[2].X = 0;
-                panes[2].Y = Pos.Bottom(panes[0]);
-                panes[2].Width = Dim.Percent(40);
+                // **By name, because the extra panes come and go.** The agents are on the left with the proposals under them:
+                // those are what the project is waiting on from a person. The confirmed roadmaps are on the right above the
+                // conversations, which are what they come out of.
+                Agents.X = 0;
+                Agents.Width = Dim.Percent(40);
+
+                Roadmaps.X = 0;
+                Roadmaps.Y = Pos.Bottom(Agents);
+                Roadmaps.Width = Dim.Percent(40);
+
+                Plans.X = Pos.Right(Agents);
+                Plans.Y = BarRows;
+                Plans.Width = Dim.Fill();
+
+                Conversations.X = Pos.Right(Agents);
+                Conversations.Y = panes.Contains(Plans) ? Pos.Bottom(Plans) : BarRows;
+                Conversations.Width = Dim.Fill();
             }
             else if (panes.Count > 2)
             {
@@ -1233,13 +1258,15 @@ internal sealed class Shell : Window
 
         if (panes.Count > 2 && !_stacked && _place.Viewing == Viewing.Project)
         {
-            // The agents above, the proposals below them: as many rows as there are proposals and the frame, never more than
-            // a third of the screen and never so few that the pane cannot show one.
-            var rows = Math.Clamp(Roadmaps.Proposals.Count + 2, 4, Math.Max(4, usable / 3));
+            // As many rows as there are entries and the frame, never more than a third of the screen and never so few that a
+            // pane cannot show one.
+            var proposed = panes.Contains(Roadmaps) ? Math.Clamp(Roadmaps.Proposals.Count + 2, 4, Math.Max(4, usable / 3)) : 0;
+            var plans = panes.Contains(Plans) ? Math.Clamp(Plans.Roadmaps.Count + 2, 4, Math.Max(4, usable / 3)) : 0;
 
-            panes[0].Height = Dim.Fill(below + rows);
-            panes[1].Height = Dim.Fill(below);
-            panes[2].Height = Dim.Absolute(rows);
+            Agents.Height = Dim.Fill(below + proposed);
+            Roadmaps.Height = Dim.Absolute(proposed);
+            Plans.Height = Dim.Absolute(plans);
+            Conversations.Height = Dim.Fill(below);
 
             return;
         }
@@ -1780,6 +1807,93 @@ internal sealed class Shell : Window
         }
     }
 
+    /// <summary>Puts the confirmed roadmaps in their pane, and the project view's arrangement right about it.</summary>
+    /// <param name="roadmaps">What the project holds.</param>
+    private void ShowPlans(IReadOnlyList<RoadmapSummary> roadmaps)
+    {
+        var changed = (roadmaps.Count > 0) != (Plans.Roadmaps.Count > 0);
+
+        Plans.Show(roadmaps);
+
+        // The pane joins or leaves the project view as the count crosses zero, so the arrangement is redone.
+        if (changed)
+        {
+            Relay();
+        }
+    }
+
+    /// <summary>Opens a confirmed roadmap in its own view.</summary>
+    /// <param name="summary">What was chosen.</param>
+    private void OpenPlan(RoadmapSummary summary)
+    {
+        if (App is not { } app || Current is not { } project)
+        {
+            return;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+        var me = Held?.Seat.Name ?? PersonSeat.On(project.Name);
+
+        Queue(async token =>
+        {
+            var read = await BrokerDirectory.ReadAsync(async () =>
+                await client.RoadmapAsync(summary.Id, token).ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (read.Value is not { } roadmap)
+            {
+                Said = Safe.Text(read.Problem ?? "That roadmap could not be read.");
+
+                return;
+            }
+
+            // The wait-for graph says whose move an open exchange is; without it the standing is "could not be read",
+            // which is said as that and never as not started.
+            var waiting = await BrokerDirectory.ReadAsync(async () =>
+                await client.WaitingAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
+
+            var view = new PlanView(roadmap, Parley.Client.Roadmaps.ItemStates.Of(roadmap, waiting.Value, me));
+            var open = Prompting.Open(app, view);
+
+            view.Closed += (_, _) => Prompting.Close(app, open);
+
+            view.ItemChosen += (_, item) =>
+            {
+                Prompting.Close(app, open);
+                Queue(_ => OpenItemAsync(project, item));
+            };
+        });
+    }
+
+    /// <summary>Goes to an item's conversation, ready to start it when it has not been.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="item">The item.</param>
+    /// <returns>When the conversation is open and the box is focused.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Starting an item is the person's request and adds no operation</b> (SPEC.md §5.7). A conversation that does not
+    /// exist yet is opened the way a new one is: named, with its agents recorded as the people it is for, and the box
+    /// holding the item's text. Nothing is sent until the person sends it, so it is their words in the transcript.
+    /// </para>
+    /// </remarks>
+    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item)
+    {
+        var started = item.Facts is { ConversationExists: true };
+
+        if (!started)
+        {
+            _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
+        }
+
+        await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
+
+        if (!started)
+        {
+            Line.Written = item.Text;
+        }
+
+        Focus(Panes.ToList().IndexOf(Line));
+    }
+
     /// <summary>Opens one proposal in its own view, and reads the pane again once it is decided.</summary>
     /// <param name="proposal">What was chosen.</param>
     private void ReviewProposal(RoadmapProposal proposal)
@@ -1801,6 +1915,15 @@ internal sealed class Shell : Window
                 // Whatever was decided, the pane is true afterwards: a confirmed or declined proposal leaves it.
                 await SelectAsync(project, CancellationToken.None).ConfigureAwait(false);
             });
+    }
+
+    /// <summary>Opens the confirmed roadmap under the cursor.</summary>
+    /// <returns>When the view is open.</returns>
+    private Task OpenSelectedPlan()
+    {
+        _ = Plans.OpenSelected();
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Opens the proposal under the cursor in the roadmaps pane.</summary>
@@ -2158,6 +2281,13 @@ internal sealed class Shell : Window
         ],
 
         // Enter on a proposal opens it. Named, since a key the surface takes and does not name is one nobody finds.
+        PlansRegion =>
+        [
+            .. Plans.Selected is not null
+                ? new[] { new RegionAction(default, PlansRegion.OpenTitle, OpenSelectedPlan, Chord: Key.Enter) }
+                : Array.Empty<RegionAction>(),
+        ],
+
         RoadmapsRegion =>
         [
             .. Roadmaps.Selected is not null
@@ -2833,6 +2963,7 @@ internal sealed class Shell : Window
     /// </para>
     /// </remarks>
     internal Func<Action<string>, string, bool> Opener { get; set; } = Launch.Open;
+
 
     /// <summary>Opens placed files and folders on this machine (SPEC.md §10.2).</summary>
     /// <remarks>
@@ -3529,6 +3660,16 @@ internal sealed class Shell : Window
             else
             {
                 Proposals = null;
+            }
+
+            // The confirmed roadmaps on the same poll: one confirmed from the web console, or by a revision, would otherwise
+            // not appear here until the project was opened again.
+            if (Current is { } holding
+                && await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(holding)).RoadmapsAsync(cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false) is { Value: { } plans })
+            {
+                ShowPlans(plans);
             }
 
             Relay();
@@ -4241,6 +4382,14 @@ internal sealed class Shell : Window
         if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
         {
             ShowProposals(waiting);
+        }
+
+        // The roadmaps already confirmed, listed above the conversations (the owner's report of 2026-10-08: confirming one
+        // made it vanish). Unknown leaves what was shown.
+        if (await BrokerDirectory.ReadAsync(async () =>
+                await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed })
+        {
+            ShowPlans(confirmed);
         }
 
         Agents.Show(registry.Value, Catalogue(), registry.Problem);

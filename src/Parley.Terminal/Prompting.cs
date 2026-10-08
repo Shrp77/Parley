@@ -114,6 +114,47 @@ internal static class Prompting
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(dialog);
 
+        // **On the thread that draws, when there is a loop** (the owner's report of 2026-10-08). Most dialogs are opened after a
+        // read, from the work queue's thread-pool thread, while the loop is drawing; the toolkit's draw is not safe to enter
+        // twice at once, and it threw a NullReferenceException out of its line canvas on a real terminal. Invoke runs inline
+        // when this is already the loop's thread, so the waiting below only ever waits for the loop to get to it. The harness
+        // never sets this, because it never pumps a loop: work posted to one would not run.
+        if (Marshal is { } onTheLoop)
+        {
+            SessionToken? opened = null;
+            using var done = new ManualResetEventSlim();
+
+            onTheLoop(() =>
+            {
+                try
+                {
+                    opened = OpenHere(app, dialog);
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+
+            // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
+            _ = done.Wait(TimeSpan.FromSeconds(5));
+
+            return opened;
+        }
+
+        return OpenHere(app, dialog);
+    }
+
+    /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
+    /// <remarks>
+    /// Set once, by the program, to the loop's own <c>Invoke</c>; never by a test. Static because every dialog goes through
+    /// <see cref="Open"/> and a seam threaded through all of them would be a parameter on each.
+    /// </remarks>
+    internal static Action<Action>? Marshal { get; set; }
+
+    private static SessionToken? OpenHere(IApplication app, View dialog)
+    {
+
         // A dialog does not rename the terminal. The toolkit writes a modal runnable's title to the terminal's own, so the
         // owner's tab read "What this region can do" while a menu was open, in place of the build the shell names there.
         dialog.Border.Settings &= ~BorderSettings.TerminalTitle;

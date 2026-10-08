@@ -1,6 +1,5 @@
 using Parley.Client.Roadmaps;
 using Parley.Core;
-using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -95,23 +94,28 @@ internal sealed class ProposalView : Dialog
 
         heading.TextFormatter.WordWrap = true;
 
+        // **Headings above the paragraphs, and no borders on them.** The paragraphs had bordered frames with titles, which
+        // draw through the toolkit's line canvas; the owner's terminal threw a NullReferenceException out of it on the first
+        // real draw of the roadmaps view, and the driven suite failed intermittently inside the same machinery. A dialog
+        // is opened from the queue's thread while the loop draws, and a canvas of merged border lines is what that race
+        // corrupts. The dialogs that have always worked here have one border, their own.
+        var itemsHeading = new Plain { Text = "The roadmap", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(AgentsWidth + 3), Height = 1 };
+
         // The roadmap takes everything the heading, the hint and the buttons leave.
         _items = Entry.Reader(Safe.Lines(ProposalText.Items(proposal)), Choose);
         _items.X = 1;
-        _items.Y = Pos.Bottom(heading);
+        _items.Y = Pos.Bottom(itemsHeading);
         _items.Width = Dim.Fill(AgentsWidth + 3);
         _items.Height = Dim.Fill(Reserved);
-        _items.Title = "The roadmap";
-        _items.BorderStyle = LineStyle.Single;
 
         // Who it names, on the side, for the same rows.
+        var agentsHeading = new Plain { Text = "Who it names", X = Pos.Right(_items) + 1, Y = Pos.Bottom(heading), Width = Dim.Fill(1), Height = 1 };
+
         _agents = Entry.Reader(Safe.Lines(ProposalText.Agents(proposal)), Choose);
         _agents.X = Pos.Right(_items) + 1;
-        _agents.Y = Pos.Bottom(heading);
+        _agents.Y = Pos.Bottom(agentsHeading);
         _agents.Width = Dim.Fill(1);
         _agents.Height = Dim.Fill(Reserved);
-        _agents.Title = "Who it names";
-        _agents.BorderStyle = LineStyle.Single;
 
         var hint = new Plain
         {
@@ -134,7 +138,7 @@ internal sealed class ProposalView : Dialog
         decline.X = Pos.Right(edit) + 1;
         leave.X = Pos.Right(decline) + 1;
 
-        Add(heading, _items, _agents, hint, confirm, edit, decline, leave);
+        Add(heading, itemsHeading, _items, agentsHeading, _agents, hint, confirm, edit, decline, leave);
     }
 
     /// <summary>Rows kept for the hint and the buttons below the roadmap.</summary>

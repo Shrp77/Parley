@@ -185,6 +185,17 @@ internal sealed class Entry
         return box;
     }
 
+    /// <summary>Replaces what a view built by <see cref="Reader"/> holds.</summary>
+    /// <param name="reader">The view.</param>
+    /// <param name="text">The new text, already made safe to draw.</param>
+    internal static void SetReaderText(View reader, string text)
+    {
+        if (reader is TextView box)
+        {
+            box.Text = text ?? string.Empty;
+        }
+    }
+
     /// <summary>What a view built by <see cref="Reader"/> holds.</summary>
     /// <param name="reader">The view.</param>
     /// <returns>Its text, or empty for a view this class did not build.</returns>
