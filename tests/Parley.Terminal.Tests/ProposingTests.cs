@@ -2,7 +2,6 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
-using Parley.Client.Roadmaps;
 using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
@@ -164,7 +163,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
 
         // By the key written on the button, which is the way the view says to choose.
@@ -192,7 +192,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
         driving.Press(Key.E);
         await shell.Settled;
@@ -223,7 +224,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
         driving.Press(Key.E);
         await shell.Settled;
@@ -250,7 +252,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
         driving.Press(Key.D);
         await shell.Settled;
@@ -285,7 +288,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
 
         // Escape leaves it, as it does everywhere on this surface, and changes nothing.
@@ -311,7 +315,8 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(revision!)));
+        // The proposals are a pane of the project, and Enter on one opens it.
+        driving.Enter();
         await shell.Settled;
         driving.Press(Key.C);
         await shell.Settled;
@@ -345,7 +350,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         // Deciding speaks as nobody (principle 2.12), so the review is available to a person who has not connected.
         Assert.Null(shell.Held);
-        Assert.NotNull(driving.Find(Proposing.Title));
+        Assert.Single(shell.Roadmaps.Proposals);
     }
 
     [Fact]
@@ -541,5 +546,102 @@ public sealed class ProposingTests : IAsyncDisposable
         driving.App.LayoutAndDraw(true);
 
         Assert.Contains("1 roadmap proposed (F4)", shell.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_proposed_roadmap_is_listed_in_the_project_view_and_only_while_one_is_waiting()
+    {
+        // The report: "if it's a proposed roadmap, it should be listed in the Project view". Must fail against a menu that
+        // opens a pop-up, and against an empty pane taking a third of the screen in a project with nothing proposed.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        Assert.DoesNotContain(shell.Roadmaps, shell.Panes);
+
+        await ProposeAsync();
+        await OpenProposalsAsync(shell);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains(shell.Roadmaps, shell.Panes);
+        Assert.Contains(RoadmapsRegion.RegionTitle, driving.Text(), StringComparison.Ordinal);
+        Assert.Contains("Billing export", driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_menu_entry_goes_to_the_pane_rather_than_opening_a_pop_up_list()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ProposeAsync();
+        await OpenProposalsAsync(shell);
+
+        Assert.Same(shell.Roadmaps, shell.Panes[shell.FocusedRegion]);
+        // The pane carries the same title, so a title search cannot tell; what is on top of the screen can.
+        Assert.IsNotType<ChoiceDialog>(driving.App.TopRunnableView);
+    }
+
+    [Fact]
+    public async Task A_decided_proposal_leaves_the_pane_and_the_pane_leaves_the_view_when_it_was_the_last()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ProposeAsync();
+        await OpenProposalsAsync(shell);
+
+        driving.Enter();
+        await shell.Settled;
+        driving.Press(Key.C);
+        await shell.Settled;
+
+        Assert.Empty(shell.Roadmaps.Proposals);
+        Assert.DoesNotContain(shell.Roadmaps, shell.Panes);
+    }
+
+    [Fact]
+    public async Task Enter_on_the_roadmap_does_not_confirm_it()
+    {
+        // The first button was the default and the roadmap does not take Enter, so Enter with the roadmap in front of
+        // you confirmed it. Real data showed it: Enter gave Confirm. Must fail against a default button.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        var proposal = await Repository.GetProposalAsync(await ProposeAsync(), Ct);
+
+        var view = new ProposalView(proposal!);
+        var chose = new List<ProposalChoice>();
+
+        view.Done += (_, choice) => chose.Add(choice);
+
+        Prompting.Open(driving.App, view);
+        driving.Enter();
+
+        Assert.Empty(chose);
+    }
+
+    [Theory]
+    [InlineData(140, 40)]
+    [InlineData(100, 30)]
+    [InlineData(80, 24)]
+    public async Task Every_button_is_on_screen_at_the_sizes_a_terminal_has(int width, int height)
+    {
+        // Real data at eighty columns drew "Decline" cut off and no "Leave" at all.
+        using var driving = Driving.Open(width: width, height: height);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        var proposal = await Repository.GetProposalAsync(await ProposeAsync(), Ct);
+
+        Prompting.Open(driving.App, new ProposalView(proposal!));
+
+        var screen = driving.Text();
+
+        foreach (var label in new[] { ProposalView.ConfirmLabel, ProposalView.EditLabel, ProposalView.DeclineLabel, ProposalView.LeaveLabel })
+        {
+            Assert.Contains(label, screen, StringComparison.Ordinal);
+        }
     }
 }

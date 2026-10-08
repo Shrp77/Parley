@@ -156,7 +156,7 @@ internal static class Proposing
     /// a menu whose description was the roadmap. Declining still passes through its own confirmation, since it tells the
     /// agent and cannot be taken back.
     /// </remarks>
-    private static void Review(
+    internal static void Review(
         IApplication app,
         BrokerClient client,
         RoadmapProposal proposal,

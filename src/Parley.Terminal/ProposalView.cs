@@ -47,22 +47,22 @@ internal enum ProposalChoice
 internal sealed class ProposalView : Dialog
 {
     /// <summary>The label of the button that confirms as proposed.</summary>
-    internal const string ConfirmLabel = "Confirm as proposed (c)";
+    internal const string ConfirmLabel = "Confirm (c)";
 
     /// <summary>The label of the button that edits first.</summary>
-    internal const string EditLabel = "Edit, then confirm (e)";
+    internal const string EditLabel = "Edit (e)";
 
     /// <summary>The label of the button that declines.</summary>
     internal const string DeclineLabel = "Decline (d)";
 
     /// <summary>The label of the button that leaves it.</summary>
-    internal const string LeaveLabel = "Leave it (Esc)";
+    internal const string LeaveLabel = "Leave (Esc)";
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
-        "Up and Down scroll the roadmap, Tab moves between the roadmap, who it names and the buttons, and the key on each "
-        + "button chooses it. Nothing is a roadmap until you confirm it, and it assigns nobody: work still goes to an agent "
-        + "as a request from you.";
+        "Up and Down scroll the roadmap. Tab moves between the roadmap, who it names and the buttons; the key on a button "
+        + "chooses it. Edit lets you change it before you confirm. Nothing is a roadmap until you confirm it, and it "
+        + "assigns nobody: work still goes to an agent as a request from you.";
 
     /// <summary>How wide the column of agents is.</summary>
     private const int AgentsWidth = 30;
@@ -124,7 +124,7 @@ internal sealed class ProposalView : Dialog
 
         hint.TextFormatter.WordWrap = true;
 
-        var confirm = Choice(ConfirmLabel, ProposalChoice.Confirm, first: true);
+        var confirm = Choice(ConfirmLabel, ProposalChoice.Confirm);
         var edit = Choice(EditLabel, ProposalChoice.Edit);
         var decline = Choice(DeclineLabel, ProposalChoice.Decline);
         var leave = Choice(LeaveLabel, ProposalChoice.Leave);
@@ -190,13 +190,17 @@ internal sealed class ProposalView : Dialog
         return true;
     }
 
-    private Button Choice(string label, ProposalChoice choice, bool first = false)
+    private Button Choice(string label, ProposalChoice choice)
     {
         var button = new Button
         {
             Title = label,
             Y = Pos.AnchorEnd(2),
-            IsDefault = first,
+
+            // **No default button.** Enter with the roadmap in front of you used to confirm it: the first button was the default
+            // and the roadmap does not take Enter. A decision that is hard to take back is chosen by its key or by Enter on
+            // its own button, never by a key that was meant for something else.
+            IsDefault = false,
         };
 
         button.Accepting += (_, args) =>

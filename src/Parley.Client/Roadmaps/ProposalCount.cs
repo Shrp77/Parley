@@ -39,6 +39,29 @@ public static class ProposalCount
         }
     }
 
+    /// <summary>The proposals awaiting a decision, or null when they could not be read.</summary>
+    /// <param name="broker">The project's operator client.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposals, which may be none; null when the broker could not say.</returns>
+    /// <remarks>
+    /// Null is not none, for the reason <see cref="WaitingAsync"/> returns null: a surface that could not ask must not
+    /// empty the list it was showing.
+    /// </remarks>
+    public static async Task<IReadOnlyList<RoadmapProposal>?> ListAsync(
+        BrokerClient broker, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(broker);
+
+        try
+        {
+            return await broker.ProposalsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RpcException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>What a count says, in words, beside the figures of a project.</summary>
     /// <param name="waiting">The count, or <see langword="null"/> when unknown.</param>
     /// <returns>An empty string when there is nothing to say, else a short phrase.</returns>
