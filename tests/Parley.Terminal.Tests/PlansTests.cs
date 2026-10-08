@@ -187,6 +187,9 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("rm1-1", shell.Place.Title);
         Assert.Equal("Add CSV export", shell.Line.Written);
+        var room = string.Join(' ', shell.Room.Written);
+        Assert.Contains("billing", room, StringComparison.Ordinal);
+        Assert.Contains("orders", room, StringComparison.Ordinal);
         Assert.Empty((await new BrokerClient(_broker.Operators).ConversationsAsync(cancellationToken: Ct)).Items);
     }
 

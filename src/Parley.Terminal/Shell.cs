@@ -1859,7 +1859,7 @@ internal sealed class Shell : Window
             view.ItemChosen += (_, item) =>
             {
                 Prompting.Close(app, open);
-                Queue(_ => OpenItemAsync(project, item));
+                Queue(_ => OpenItemAsync(project, item, roadmap));
             };
         });
     }
@@ -1867,6 +1867,7 @@ internal sealed class Shell : Window
     /// <summary>Goes to an item's conversation, ready to start it when it has not been.</summary>
     /// <param name="project">The project.</param>
     /// <param name="item">The item.</param>
+    /// <param name="roadmap">The roadmap it belongs to; every agent it names is in the new conversation.</param>
     /// <returns>When the conversation is open and the box is focused.</returns>
     /// <remarks>
     /// <para>
@@ -1875,13 +1876,13 @@ internal sealed class Shell : Window
     /// holding the item's text. Nothing is sent until the person sends it, so it is their words in the transcript.
     /// </para>
     /// </remarks>
-    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item)
+    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item, Roadmap roadmap)
     {
         var started = item.Facts is { ConversationExists: true };
 
         if (!started)
         {
-            _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
+            _pending = (project.Name.Value, item.ConversationName, [.. roadmap.Items.Select(i => i.IntendedAgent).OfType<AgentName>().Distinct()]);
         }
 
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
