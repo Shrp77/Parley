@@ -190,6 +190,23 @@ internal sealed class Shell : Window
             // read lands there is no plan to send by. This was folded into the message above, which is how the owner
             // was told on 0.36.0 that a project they were looking at did not resolve. The read is asked for here, so
             // "in a moment" is true rather than hopeful.
+            //
+            // **And with no seat held, "still being read" is untrue, and saying it sent a person round in a loop**: the room
+            // is built only through a seat, so the read lands and still leaves no plan, for as long as the seat cannot be
+            // taken. Said as what it is, with the broker's reason when it gave one, and the seat asked for again here.
+            if (Held is null)
+            {
+                Said = Unconnected(NotConnected);
+
+                Queue(async token =>
+                {
+                    await EnsureSeatAsync(place, null, token).ConfigureAwait(false);
+                    await OpenAsync(place, conversation, token).ConfigureAwait(false);
+                });
+
+                return Task.CompletedTask;
+            }
+
             Said = NotReadYet;
             Queue(token => OpenAsync(place, conversation, token));
 
