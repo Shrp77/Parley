@@ -1610,8 +1610,45 @@ internal sealed class Shell : Window
             return Settled;
         }
 
-        return _place.CanGoBack ? GoAsync(_place.Back()) : Task.CompletedTask;
+        if (!_place.CanGoBack)
+        {
+            return Task.CompletedTask;
+        }
+
+        // **A line being written is not thrown away by one stray key** (the owner's report of 2026-10-08: Escape lost a long
+        // reply). Asked first, with the safe answer first; the words stay in the box when they keep writing.
+        if (_place.Viewing == Viewing.Conversation && !string.IsNullOrWhiteSpace(Line.Written) && App is { } app)
+        {
+            var asking = Prompting.Choose(DiscardTitle, DiscardDescription, [KeepWriting, Discard]);
+            var token = Prompting.Open(app, asking);
+
+            asking.Done += (_, chosen) =>
+            {
+                Prompting.Close(app, token);
+
+                if (chosen == Discard)
+                {
+                    Queue(_ => GoAsync(_place.Back()));
+                }
+            };
+
+            return Task.CompletedTask;
+        }
+
+        return GoAsync(_place.Back());
     }
+
+    /// <summary>The title of the question asked before leaving a conversation with a line in the box.</summary>
+    internal const string DiscardTitle = "Leave this conversation?";
+
+    /// <summary>What the question says is at stake.</summary>
+    private const string DiscardDescription = "The box holds a line you have not sent. Leaving throws it away.";
+
+    /// <summary>The answer that stays, and keeps the line.</summary>
+    internal const string KeepWriting = "Keep writing";
+
+    /// <summary>The answer that leaves, and throws the line away.</summary>
+    internal const string Discard = "Leave and discard the line";
 
     /// <summary>The agent the conversations list is filtered to, or null when it shows every conversation.</summary>
     internal AgentName? ConversationsOf { get; private set; }
@@ -1686,6 +1723,14 @@ internal sealed class Shell : Window
             // having picked it up. Everything waiting is taken, not only this conversation's: the broker's inbox has no
             // narrower drain, and said so on the message line when anything was.
             await CollectOnArrivalAsync(Reading).ConfigureAwait(false);
+        }
+
+        // **Arriving at a project reads it too** (the owner's report of 2026-10-08: conversations begun from a roadmap were
+        // not listed). Coming back from a conversation showed the lists as they were when the project was last read, so a
+        // conversation made meanwhile was missing until something else happened to read the project.
+        if (place.Viewing == Viewing.Project && Current is { } here)
+        {
+            await SelectAsync(here, Reading).ConfigureAwait(false);
         }
 
         // The same rule for settings: the view is never on screen showing values it has not read.

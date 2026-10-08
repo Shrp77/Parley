@@ -2,6 +2,7 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
@@ -214,5 +215,40 @@ public sealed class PlansTests : IAsyncDisposable
 
         Assert.IsNotType<PlanView>(driving.App.TopRunnableView);
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
+    }
+
+    [Fact]
+    public async Task An_item_conversation_that_has_been_written_in_is_listed_with_the_other_conversations()
+    {
+        // The report: conversations begun from a roadmap were not in the conversations list.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null, Seats = new SeatBook(directory.AgentsFor) };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+        Assert.IsType<PlanView>(driving.App.TopRunnableView).OpenSelected();
+        await shell.Settled;
+
+        shell.Line.Accept();
+        await shell.Settled;
+
+        var page = await new BrokerClient(_broker.Operators).ConversationsAsync(cancellationToken: Ct);
+
+        Assert.True(page.Items.Any(c => c.Id == "rm1-1"), $"said: {shell.Said}");
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+
+        Assert.Contains(shell.Conversations.Conversations, c => c.Id == "rm1-1");
     }
 }

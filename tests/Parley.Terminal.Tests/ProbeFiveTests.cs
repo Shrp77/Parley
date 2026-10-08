@@ -129,7 +129,8 @@ public sealed class ProbeFiveTests : IAsyncDisposable
         using var driving = Driving.Open();
         using var shell = await OpenInsideProjectAsync(driving);
 
-        if (shell.Agents.Selected is null)
+        // Arriving at a project reads it, so the list holds the seats the broker provides, which cannot be withdrawn.
+        if (shell.Agents.Selected is not { } chosen || PersonSeat.Is(AgentName.Create(chosen.Name)) || Facilitation.Is(AgentName.Create(chosen.Name)))
         {
             // An empty deployment has nothing to withdraw. The probe above drives the same
             // `Current`-versus-selection decision through Add, and asserting on an empty list here

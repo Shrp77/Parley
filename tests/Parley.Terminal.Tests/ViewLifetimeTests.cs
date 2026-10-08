@@ -90,8 +90,8 @@ public sealed class ViewLifetimeTests
                 "alpha-talk", [], 1, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, false)],
             null);
 
+        // Off screen on the conversation view; arriving at a project reads it again, so the check is made before that.
         await Walking.GoAsync(shell, Viewing.Conversation);
-        await Walking.GoAsync(shell, Viewing.Project);
 
         Assert.Equal("alpha-talk", shell.Conversations.Selected?.Id);
     }
