@@ -915,6 +915,8 @@ message ExchangeSnapshot {
 
 message ImplementsReply {
   string protocol_version = 1;
+  string broker_version = 2;          // the build serving this, so a surface can say when it is not from the same release
+  repeated string store_problems = 3; // how this broker's store differs from the shape the build expects; empty when it matches
 }
 
 // Deliberately carries no project. Section 4.1: membership is which endpoint the caller connected to.

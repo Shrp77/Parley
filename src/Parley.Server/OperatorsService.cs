@@ -709,8 +709,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.ImplementsReply> Implements(Wire.Empty request, ServerCallContext context) =>
-        Task.FromResult(new Wire.ImplementsReply { ProtocolVersion = ProtocolVersion.Current });
+    public override Task<Wire.ImplementsReply> Implements(Wire.Empty request, ServerCallContext context)
+    {
+        var reply = new Wire.ImplementsReply
+        {
+            ProtocolVersion = ProtocolVersion.Current,
+            BrokerVersion = Compatibility.VersionOf(typeof(OperatorsService).Assembly),
+        };
+
+        reply.StoreProblems.AddRange(_runtime.StoreProblems);
+
+        return Task.FromResult(reply);
+    }
 
     /// <inheritdoc/>
     public override async Task<Wire.ListConversationsReply> ListConversations(

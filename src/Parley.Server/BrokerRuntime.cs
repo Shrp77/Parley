@@ -244,6 +244,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
 
+    /// <summary>Gets how the store this runtime serves differs from the shape this build expects.</summary>
+    /// <value>Empty when it matches, and for an in-memory store, which is made by this build.</value>
+    public IReadOnlyList<string> StoreProblems { get; init; } = [];
+
     /// <summary>
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
@@ -344,11 +348,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
             var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
             files.Prepare();
 
+            // **Looked at after the migration, and only reported** (the owner's call of 2026-10-08). The schema number is
+            // not a witness while it is edited in place, so the shape is compared directly; `StoreShape` says why a
+            // difference is never repaired here.
+            var shape = StoreShape.Problems(connection);
+
             return new BrokerRuntime(
                 project, connection, options, clock,
                 retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable),
                 files,
-                storeLock: held);
+                storeLock: held)
+            {
+                StoreProblems = shape,
+            };
         }
         catch
         {

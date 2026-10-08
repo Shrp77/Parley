@@ -130,7 +130,8 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
                     .ImplementsAsync(HttpContext.RequestAborted).ConfigureAwait(false))
                 .ConfigureAwait(false);
 
-            return (project.Name.Value, Health: new ProjectHealth(read.Value, read.Problem));
+            return (project.Name.Value, Health: new ProjectHealth(
+                read.Value?.Protocol, read.Problem, read.Value?.BrokerVersion, read.Value?.StoreProblems));
         });
 
         var answers = await Task.WhenAll(asked).ConfigureAwait(false);

@@ -40,6 +40,25 @@ public sealed class BrokerV1Tests
     }
 
     [Fact]
+    public async Task A_broker_says_which_build_it_is_and_that_its_store_has_the_shape_the_build_expects()
+    {
+        // The two things the protocol number cannot say, asked in the same call. Must fail against a reply that carries
+        // neither: a surface could not then tell a broker from another release from one that did not answer the question.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var broker = await LoopbackBroker.StartAsync(token);
+
+        var said = await broker.ConnectAsOperator()
+            .ImplementsAsync(new Wire.Empty(), cancellationToken: token);
+
+        Assert.True(
+            Compatibility.Agree(said.BrokerVersion, Compatibility.VersionOf(typeof(Wire.Operators).Assembly)),
+            $"the broker named its build as '{said.BrokerVersion}'");
+
+        Assert.Empty(said.StoreProblems);
+    }
+
+    [Fact]
     public async Task A_listing_answers_before_anybody_knows_an_identifier()
     {
         // The whole reason the operation exists. An identifier is opaque and chosen by an agent

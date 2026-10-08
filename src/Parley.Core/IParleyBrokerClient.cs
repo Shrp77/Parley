@@ -32,10 +32,10 @@ namespace Parley.Core;
 /// </remarks>
 public interface IParleyBrokerClient
 {
-    /// <summary>Which protocol version this broker speaks.</summary>
+    /// <summary>Which protocol this broker speaks, which build it is, and whether its store has the shape that build expects.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The version, as <see cref="ProtocolVersion"/> renders one.</returns>
-    Task<string> ImplementsAsync(CancellationToken cancellationToken = default);
+    /// <returns>What the broker said about itself; the protocol is rendered as <see cref="ProtocolVersion"/> renders one.</returns>
+    Task<BrokerIdentity> ImplementsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>The whole registry, including the workspace each agent works in.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>

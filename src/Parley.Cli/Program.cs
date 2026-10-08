@@ -1028,7 +1028,8 @@ if (verb == "serve" && rest.Length == 0)
             hostNode ? HostingNodeFor : null,
             hostWebUi ? HostingWebUi : null,
             watching ? rereadManifest : null,
-            token);
+            checkInstall: true,
+            cancellationToken: token);
         }).ConfigureAwait(false);
     }
     finally

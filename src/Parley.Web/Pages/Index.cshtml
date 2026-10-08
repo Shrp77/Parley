@@ -64,6 +64,12 @@ else if (Model.Projects.Count > 0)
                         open; what they show may be incomplete.
                     </p>
                 }
+                @foreach (var warning in health.Warnings(Parley.Web.WebBuild.Version))
+                {
+                    @* Shown whatever else the row says: a deployment whose parts are not from one release, or whose store
+                       is not the shape its broker expects, is wrong in a way no protocol number reports. *@
+                    <p class="unreachable" role="alert">@warning</p>
+                }
             </li>
         }
     </ul>

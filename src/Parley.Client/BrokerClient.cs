@@ -24,10 +24,11 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         ?? throw new ArgumentNullException(nameof(operators));
 
     /// <inheritdoc/>
-    public async Task<string> ImplementsAsync(CancellationToken cancellationToken = default)
+    public async Task<BrokerIdentity> ImplementsAsync(CancellationToken cancellationToken = default)
     {
         var said = await _operators.ImplementsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
-        return said.ProtocolVersion;
+
+        return new BrokerIdentity(said.ProtocolVersion, said.BrokerVersion, [.. said.StoreProblems]);
     }
 
     /// <inheritdoc/>

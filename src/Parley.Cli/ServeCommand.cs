@@ -55,6 +55,10 @@ public static class ServeCommand
     /// <see langword="null"/> to serve only what was given. Given, a project named while this
     /// runs gets its broker within <see cref="WatchInterval"/>.
     /// </param>
+    /// <param name="checkInstall">
+    /// Whether to ask the other Parley programs on this machine what release they are, and warn about any that is
+    /// not the broker's. Off by default so a test's broker starts no processes.
+    /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -95,6 +99,7 @@ public static class ServeCommand
         Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         Func<IReadOnlyList<ProjectSettings>?>? reread = null,
+        bool checkInstall = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
@@ -120,6 +125,14 @@ public static class ServeCommand
         // and a line repeated per project would read as though it could differ. Before the first
         // store is opened, for the reason the single-store overload gives.
         await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
+
+        // **Asked of the other programs on this machine, in the background** (the owner's call of 2026-10-08): the parts of a
+        // deployment are installed one at a time and a release can change what they share. Off for a test's broker, which
+        // must not start processes, and never awaited here, so it cannot be why a broker does not start.
+        if (checkInstall)
+        {
+            _ = Task.Run(() => InstalledTools.CheckAsync(output, cancellationToken), CancellationToken.None);
+        }
 
         // Every project serving right now. Grows when the watcher starts one named since the
         // process began and shrinks when it stops one removed, so it is read under its own lock.
@@ -192,6 +205,19 @@ public static class ServeCommand
                 CultureInfo.InvariantCulture,
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
+
+            // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
+            // to every surface that asks what this broker speaks. The schema number cannot say it while the schema is
+            // edited in place, which is how a broker came to log one missing table per sweep for as long as it ran.
+            if (runtime.StoreProblems.Count > 0)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: WARNING -- its store is not the shape this build expects: "
+                    + string.Join("; ", runtime.StoreProblems.Take(5))
+                    + (runtime.StoreProblems.Count > 5 ? $"; and {runtime.StoreProblems.Count - 5} more" : string.Empty)
+                    + ". It was made by another build. Reset the project's store, or add what is missing.")
+                    .ConfigureAwait(false);
+            }
 
             if (!OnlyThisMachine(project.Endpoint))
             {

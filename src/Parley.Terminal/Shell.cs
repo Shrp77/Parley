@@ -2475,6 +2475,9 @@ internal sealed class Shell : Window
     /// <summary>The last reason a seat could not be taken, so the same one is not said again on every refresh.</summary>
     private string? _seatProblem;
 
+    /// <summary>The compatibility warning last said, so an unchanged one is not said again on every refresh.</summary>
+    private string _lastWarning = string.Empty;
+
     /// <summary>Whether a seat is already being taken again after an idle drop, so a burst of keys asks once.</summary>
     private int _retaking;
 
@@ -4914,7 +4917,8 @@ internal sealed class Shell : Window
             var read = await BrokerDirectory.ReadAsync(async () =>
                 await client.ImplementsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
 
-            var health = new ProjectHealth(read.Value, read.Problem);
+            var health = new ProjectHealth(
+                read.Value?.Protocol, read.Problem, read.Value?.BrokerVersion, read.Value?.StoreProblems);
 
             if (!health.Agrees)
             {
@@ -4941,6 +4945,23 @@ internal sealed class Shell : Window
         });
 
         var answers = await Task.WhenAll(asked).ConfigureAwait(false);
+
+        // **A deployment whose parts are not from one release is said on the message line, once** (the owner's call of
+        // 2026-10-08): the version numbers do not move for a store edited in place, so nothing else would have told
+        // them. Said again only when the words change, because this runs on every refresh and a warning repeated every
+        // few seconds stops being read.
+        var warned = answers
+            .SelectMany(a => a.Health.Warnings(BuildIdentity.Version).Select(w => $"{a.Value}: {w}"))
+            .ToList();
+
+        var warning = string.Join(" ", warned);
+
+        if (warning.Length > 0 && !string.Equals(warning, _lastWarning, StringComparison.Ordinal))
+        {
+            Said = Safe.Text(warning);
+        }
+
+        _lastWarning = warning;
 
         return (
             answers.ToDictionary(a => a.Value, a => a.Health, StringComparer.Ordinal),
