@@ -6,6 +6,7 @@ using Parley.Client.Roadmaps;
 using Parley.Client.Views;
 using Parley.Core;
 using Parley.Store;
+using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -67,11 +68,25 @@ public sealed class ProposingTests : IAsyncDisposable
             [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 
-    private async Task<long> ProposeAsync(string title = "Billing export", string? target = null)
+    /// <summary>Starts a conversation, because a proposal can only name one that exists.</summary>
+    private async Task StartConversationAsync(string name)
+    {
+        var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await speaking.StartAsync(Orders, T0, Ct);
+
+        var sent = await speaking.RequestAsync(
+            Orders, Billing, "model-a", $$"""{"ask":"how do we export, in {{name}}?"}""", T0, name, Ct);
+
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
+    }
+
+    private async Task<long> ProposeAsync(
+        string title = "Billing export", string? target = null, string? source = null)
     {
         var (id, problem) = await Repository.ProposeAsync(
             Orders,
-            null,
+            source,
             target,
             new RoadmapContent(title,
             [
@@ -152,7 +167,8 @@ public sealed class ProposingTests : IAsyncDisposable
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
         await shell.Settled;
 
-        Pick(driving, Proposing.Title, Proposing.ConfirmAsProposed);
+        // By the key written on the button, which is the way the view says to choose.
+        driving.Press(Key.C);
         await shell.Settled;
 
         var roadmap = Assert.Single(await Client.RoadmapsAsync(Ct));
@@ -178,7 +194,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
         await shell.Settled;
-        Pick(driving, Proposing.Title, Proposing.EditThenConfirm);
+        driving.Press(Key.E);
         await shell.Settled;
 
         var form = (FormDialog)driving.Find(Proposing.Title);
@@ -209,7 +225,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
         await shell.Settled;
-        Pick(driving, Proposing.Title, Proposing.EditThenConfirm);
+        driving.Press(Key.E);
         await shell.Settled;
 
         var form = (FormDialog)driving.Find(Proposing.Title);
@@ -236,7 +252,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
         await shell.Settled;
-        Pick(driving, Proposing.Title, Proposing.Decline);
+        driving.Press(Key.D);
         await shell.Settled;
 
         // The deliberate act: a second dialog that says what declining does, with the safe answer first.
@@ -272,8 +288,8 @@ public sealed class ProposingTests : IAsyncDisposable
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(proposal!)));
         await shell.Settled;
 
-        // Enter on the first row, which is the safe one, changes nothing.
-        driving.Enter();
+        // Escape leaves it, as it does everywhere on this surface, and changes nothing.
+        driving.Escape();
         await shell.Settled;
 
         Assert.Equal(Proposing.Left, shell.Said);
@@ -297,7 +313,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         Pick(driving, Proposing.Title, Parley.Terminal.Safe.Text(ProposalText.Row(revision!)));
         await shell.Settled;
-        Pick(driving, Proposing.Title, Proposing.ConfirmAsProposed);
+        driving.Press(Key.C);
         await shell.Settled;
 
         // Shown with the match, and nothing is decided for the person (spec FR-009b).
@@ -340,5 +356,190 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.EndsWith("· 2 roadmaps proposed, for you to decide", ProjectFigures.Of([], page, proposals: 2).ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("proposed", ProjectFigures.Of([], page, proposals: 0).ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("proposed", ProjectFigures.Of([], page, proposals: null).ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_proposal_from_the_conversation_a_person_is_in_opens_straight_to_its_view()
+    {
+        // The report: a person had to leave the conversation for the project overview to decide a roadmap agreed in it. Must
+        // fail against the chord being withheld in a conversation, or against a list being put in front of the one thing.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await StartConversationAsync("some-discussion");
+        await StartConversationAsync("elsewhere");
+        await ProposeAsync(source: "some-discussion");
+        await ProposeAsync("Unrelated", source: "elsewhere");
+        await Walking.GoAsync(shell, Viewing.Conversation, "some-discussion");
+
+        await OpenProposalsAsync(shell);
+
+        var view = Assert.IsType<ProposalView>(driving.Find(Proposing.Title));
+
+        Assert.Contains("Billing export", view.Header, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task In_a_conversation_with_no_proposal_of_its_own_the_list_is_shown_as_before()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await StartConversationAsync("elsewhere");
+        await ProposeAsync(source: "elsewhere");
+        await Walking.GoAsync(shell, Viewing.Conversation, "some-discussion");
+
+        await OpenProposalsAsync(shell);
+
+        Assert.IsType<ChoiceDialog>(driving.Find(Proposing.Title));
+    }
+
+    [Fact]
+    public async Task The_proposal_view_shows_the_roadmap_who_it_names_and_every_choice_at_once()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        var proposal = await Repository.GetProposalAsync(await ProposeAsync(), Ct);
+
+        var view = new ProposalView(proposal!);
+
+        Prompting.Open(driving.App, view);
+
+        var screen = driving.Text();
+
+        Assert.Contains("1. Add CSV export", screen, StringComparison.Ordinal);
+        Assert.Contains("billing@test", screen, StringComparison.Ordinal);
+        Assert.Contains(ProposalView.ConfirmLabel, screen, StringComparison.Ordinal);
+        Assert.Contains(ProposalView.EditLabel, screen, StringComparison.Ordinal);
+        Assert.Contains(ProposalView.DeclineLabel, screen, StringComparison.Ordinal);
+        Assert.Contains(ProposalView.LeaveLabel, screen, StringComparison.Ordinal);
+        Assert.Contains("Up and Down scroll", screen, StringComparison.Ordinal);
+        Assert.StartsWith("Up and Down scroll", ProposalView.Hint, StringComparison.Ordinal);
+
+        // Who the proposal names, grouped by agent, so which agent is meant for what reads from either side.
+        var agents = view.AgentsText.ReplaceLineEndings("|");
+
+        Assert.Contains("billing@test|  item 1", agents, StringComparison.Ordinal);
+        Assert.Contains("orders@test|  item 2", agents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_roadmap_longer_than_the_screen_scrolls_to_its_last_item()
+    {
+        // The report: it did not scroll. Must fail against a description in a menu, which has one screenful and no more.
+        using var driving = Driving.Open(width: 120, height: 30);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        var items = Enumerable.Range(1, 40)
+            .Select(n => new RoadmapItemDraft(null, $"Step number {n} of the long roadmap", Billing, []))
+            .ToList();
+
+        var (id, problem) = await Repository.ProposeAsync(Orders, null, null, new RoadmapContent("Long", items), T0, cancellationToken: Ct);
+
+        Assert.Null(problem);
+
+        var proposal = await Repository.GetProposalAsync(id!.Value, Ct);
+
+        Prompting.Open(driving.App, new ProposalView(proposal!));
+
+        Assert.DoesNotContain("40. Step number 40", driving.Text(), StringComparison.Ordinal);
+
+        for (var press = 0; press < 160; press++)
+        {
+            driving.Press(Key.CursorDown);
+        }
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("40. Step number 40", driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Each_buttons_key_chooses_whether_the_roadmap_or_a_button_has_focus(bool onTheButtons)
+    {
+        // Must fail against the roadmap eating the letter: a focused view is offered a key before the dialog around it.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        var proposal = await Repository.GetProposalAsync(await ProposeAsync(), Ct);
+
+        var chosen = new List<ProposalChoice>();
+
+        foreach (var (key, expected) in new[]
+                 {
+                     (Key.C, ProposalChoice.Confirm),
+                     (Key.E, ProposalChoice.Edit),
+                     (Key.D, ProposalChoice.Decline),
+                     (Key.Esc, ProposalChoice.Leave),
+                 })
+        {
+            var view = new ProposalView(proposal!);
+
+            view.Done += (_, choice) => chosen.Add(choice);
+
+            var token = Prompting.Open(driving.App, view);
+
+            if (onTheButtons)
+            {
+                driving.Tab();
+                driving.Tab();
+            }
+
+            driving.Press(key);
+
+            Prompting.Close(driving.App, token);
+
+            Assert.Equal(expected, chosen[^1]);
+        }
+    }
+
+    [Fact]
+    public void An_agents_words_are_neutralised_before_they_are_drawn_in_the_view()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+
+        var content = new RoadmapContent(
+            "Billing" + (char)0x1b + "[2J",
+            [new RoadmapItemDraft(null, "Do it" + (char)0x1b + "[31m", Billing, [])]);
+
+        var proposal = new RoadmapProposal(1, Orders, null, null, content, 10, ProposalState.Waiting, T0, null);
+
+        var view = new ProposalView(proposal);
+
+        Assert.DoesNotContain((char)0x1b, view.Header);
+        Assert.DoesNotContain((char)0x1b, view.ItemsText);
+    }
+
+    [Fact]
+    public async Task What_is_proposed_is_on_the_status_line_with_the_key_that_opens_it()
+    {
+        // Must fail against the count being known only to the projects list: in a conversation nothing said a roadmap had
+        // been put forward.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var seats = new Parley.Client.Seating.SeatBook(directory.AgentsFor);
+
+        await StartConversationAsync("some-discussion");
+        await ProposeAsync(source: "some-discussion");
+
+        using var shell = new Shell(directory) { Seats = seats, MailEvery = TimeSpan.FromMilliseconds(100), FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Conversation, "some-discussion");
+
+        await Eventually.UntilAsync(() => shell.Proposals == 1, "the count of proposals was never read", Ct);
+
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("1 roadmap proposed (F4)", shell.Status, StringComparison.Ordinal);
     }
 }

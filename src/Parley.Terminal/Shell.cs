@@ -1400,6 +1400,13 @@ internal sealed class Shell : Window
             ? $"  {held.Waiting} waiting"
             : string.Empty;
 
+        // **Roadmaps proposed, with the key that opens them**: it is what a person acts on, and the key was named only on the
+        // menu. Beside the mail because it is the same kind of thing, and ahead of everything else for the same reason.
+        if (Proposals is > 0 and var proposed)
+        {
+            mail += $"  {proposed} roadmap{(proposed == 1 ? string.Empty : "s")} proposed ({ProposalsKey})";
+        }
+
         // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
         // wider than two hundred columns, so a build said only beside all of them was said on no terminal anybody has.
         _status.Text = Fits(
@@ -1686,13 +1693,18 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
+        // In a conversation, the proposals that came out of it come first, and one of them goes straight to its view.
         return Proposing.OpenAsync(
-            app, new BrokerClient(_directory.ClientFor(project)), Queue, said =>
+            app,
+            new BrokerClient(_directory.ClientFor(project)),
+            Queue,
+            said =>
             {
                 Said = said;
 
                 return Task.CompletedTask;
-            });
+            },
+            _place.Viewing == Viewing.Conversation ? _place.Title : null);
     }
 
     /// <summary>Opens the settings of the project in view, or of the one selected in the list.</summary>
@@ -1861,10 +1873,11 @@ internal sealed class Shell : Window
             }
             : Array.Empty<RegionAction>(),
 
-        // **What agents have put forward, from wherever a project is in view** (specs/026). Beside the configuration for the
-        // same reason: it is about the project and not about the pane the cursor is in. A chord rather than a letter,
-        // because a global letter is shadowed by whichever pane already uses it.
-        .. _place.Viewing is not Viewing.Configuration and not Viewing.Conversation
+        // **What agents have put forward, from wherever a project is in view** (specs/026) -- a conversation included, which
+        // is where a roadmap is most often agreed, so a person never has to leave one to decide it (the owner's report of
+        // 2026-10-08). Beside the configuration for the same reason: it is about the project and not about the pane the
+        // cursor is in. A chord rather than a letter, because a global letter is shadowed by whichever pane already uses it.
+        .. _place.Viewing is not Viewing.Configuration
            && (Current ?? Projects.Selected) is not null
             ? new[]
             {
@@ -3129,6 +3142,14 @@ internal sealed class Shell : Window
     /// </remarks>
     internal (int Waiting, bool Certain)? Mail { get; private set; }
 
+    /// <summary>How many roadmaps agents have proposed that are waiting for this person, or null when it is not known.</summary>
+    /// <remarks>
+    /// Read with the mail, on the same poll, and shown beside it: a roadmap agreed in a conversation is work waiting for a
+    /// person like any other, and nothing on the screen said so until they went looking for it. Unknown is never shown as
+    /// none.
+    /// </remarks>
+    internal int? Proposals { get; private set; }
+
     /// <summary>What is said when an open transcript could not be read again.</summary>
     /// <param name="problem">What the read reported, which is a broker's words and neutralised.</param>
     /// <returns>The sentence.</returns>
@@ -3383,6 +3404,13 @@ internal sealed class Shell : Window
                 Mail = null;
 
                 return;
+            }
+
+            if (Current is { } where)
+            {
+                Proposals = await Parley.Client.Roadmaps.ProposalCount
+                    .WaitingAsync(new BrokerClient(_directory.ClientFor(where)), cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             Relay();

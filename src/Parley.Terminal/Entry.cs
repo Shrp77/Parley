@@ -142,6 +142,54 @@ internal sealed class Entry
         return new Entry(box);
     }
 
+    /// <summary>Builds a paragraph somebody reads and scrolls but cannot change.</summary>
+    /// <param name="text">What it holds.</param>
+    /// <param name="takes">Offered every key first; returns whether it took it.</param>
+    /// <returns>The view, wrapping at its own width and showing a scrollbar once there is more than fits.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Here so the deprecation stays suppressed in one file</b>, which is what this file is for. The proposal view draws
+    /// an agent's roadmap and who it names, and a list would have shown one row per line and cut every long item off at
+    /// the edge; a paragraph wraps, and the arrow keys scroll it.
+    /// </para>
+    /// <para>
+    /// The caller passes text that has already been made safe to draw. This view displays what it is given.
+    /// </para>
+    /// </remarks>
+    internal static View Reader(string text, Func<Key, bool>? takes = null)
+    {
+        var box = new TextView
+        {
+            Multiline = true,
+            WordWrap = true,
+            ReadOnly = true,
+            Text = text ?? string.Empty,
+        };
+
+        box.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+
+        // **Offered the key first, because a focused view is.** Without this a letter a screen binds to a choice is eaten
+        // by the paragraph that has focus and never reaches the screen's own handler, which is what made a button's key do
+        // nothing while the roadmap was selected.
+        if (takes is not null)
+        {
+            box.KeyDown += (_, key) =>
+            {
+                if (takes(key))
+                {
+                    key.Handled = true;
+                }
+            };
+        }
+
+        return box;
+    }
+
+    /// <summary>What a view built by <see cref="Reader"/> holds.</summary>
+    /// <param name="reader">The view.</param>
+    /// <returns>Its text, or empty for a view this class did not build.</returns>
+    internal static string ReaderText(View reader) => (reader as TextView)?.Text ?? string.Empty;
+
     /// <summary>The view itself.</summary>
     internal View View => (View?)_line ?? _paragraph!;
 

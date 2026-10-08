@@ -35,12 +35,6 @@ internal static class Proposing
     /// <summary>Leaves a proposal as it is, and is where every dialog here opens.</summary>
     internal const string Leave = "Leave it as it is";
 
-    /// <summary>Confirms it exactly as the agent wrote it.</summary>
-    internal const string ConfirmAsProposed = "Confirm it as proposed";
-
-    /// <summary>Opens it for editing before it is confirmed.</summary>
-    internal const string EditThenConfirm = "Edit it, then confirm";
-
     /// <summary>Declines it.</summary>
     internal const string Decline = "Decline it";
 
@@ -63,12 +57,18 @@ internal static class Proposing
     /// <param name="client">The operator's client for this project.</param>
     /// <param name="queue">Runs reads and decisions, so the caller can wait for them.</param>
     /// <param name="done">Told what to say when it is over.</param>
+    /// <param name="conversation">
+    /// The conversation the person is in, or null. A proposal that came from it is shown first, and when exactly one did
+    /// the list is skipped: they are looking at the discussion it came out of, and asking them to choose between a list
+    /// and the thing in front of them is a step nobody wanted.
+    /// </param>
     /// <returns>When the read has been queued.</returns>
     internal static Task OpenAsync(
         IApplication app,
         BrokerClient client,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        string? conversation = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(client);
@@ -94,6 +94,25 @@ internal static class Proposing
                 await done(NoneWaiting).ConfigureAwait(false);
 
                 return;
+            }
+
+            // From here: the proposals that came out of the conversation the person is in. One of them goes straight to its
+            // view; several are listed first, ahead of the rest.
+            if (conversation is { Length: > 0 })
+            {
+                var here = waiting.Where(p => string.Equals(p.SourceConversation, conversation, StringComparison.Ordinal)).ToList();
+
+                if (here.Count == 1)
+                {
+                    Review(app, client, here[0], queue, done);
+
+                    return;
+                }
+
+                if (here.Count > 1)
+                {
+                    waiting = [.. here, .. waiting.Where(p => !here.Contains(p))];
+                }
             }
 
             var rows = new List<string> { Leave };
@@ -126,7 +145,17 @@ internal static class Proposing
         return Task.CompletedTask;
     }
 
-    /// <summary>Describes one proposal and offers what can be done with it.</summary>
+    /// <summary>Shows one proposal in its own view and does what the person chooses.</summary>
+    /// <param name="app">The application the dialogs open in.</param>
+    /// <param name="client">The operator's client for this project.</param>
+    /// <param name="proposal">What was proposed.</param>
+    /// <param name="queue">Runs the decision.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <remarks>
+    /// The view is <see cref="ProposalView"/>: the roadmap, who it names and the choices all on screen, where this used to be
+    /// a menu whose description was the roadmap. Declining still passes through its own confirmation, since it tells the
+    /// agent and cannot be taken back.
+    /// </remarks>
     private static void Review(
         IApplication app,
         BrokerClient client,
@@ -134,25 +163,24 @@ internal static class Proposing
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
-        var choices = new[] { Leave, ConfirmAsProposed, EditThenConfirm, Decline };
-        var choosing = Prompting.Choose(Title, Safe.Lines(ProposalText.Describe(proposal)), choices);
-        var open = Prompting.Open(app, choosing);
+        var view = new ProposalView(proposal);
+        var open = Prompting.Open(app, view);
 
-        choosing.Done += (_, chosen) =>
+        view.Done += (_, chosen) =>
         {
             Prompting.Close(app, open);
 
             switch (chosen)
             {
-                case ConfirmAsProposed:
+                case ProposalChoice.Confirm:
                     queue(t => ConfirmAsync(app, client, proposal, proposal.Content, queue, done, t));
                     break;
 
-                case EditThenConfirm:
+                case ProposalChoice.Edit:
                     Edit(app, client, proposal, queue, done);
                     break;
 
-                case Decline:
+                case ProposalChoice.Decline:
                     ConfirmDecline(app, client, proposal, queue, done);
                     break;
 
