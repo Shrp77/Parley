@@ -73,9 +73,6 @@ public sealed class BrokerRestartTests
         Assert.Empty(seats.Seats());
         Assert.Null(shell.Held);
 
-        // Since specs/023 there is no Join to offer instead; what must not be offered is anything that speaks as the
-        // person, which is what a seat is for.
-        Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.DeliveryTitle);
     }
 
     [Fact]

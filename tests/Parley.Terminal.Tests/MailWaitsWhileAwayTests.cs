@@ -27,14 +27,14 @@ public sealed class MailWaitsWhileAwayTests
 
         _ = await seated.AsksAsync(Seated.Billing, seated.Person, "are you there?", "elsewhere", ct);
 
-        // The fixture's own request is uncollected too, so two are waiting.
-        for (var tries = 0; tries < 100 && shell.Mail is not { Waiting: >= 2 }; tries++)
+        // The fixture's own request was taken when it opened its conversation, so one is waiting.
+        for (var tries = 0; tries < 100 && shell.Mail is not { Waiting: >= 1 }; tries++)
         {
             await Task.Delay(50, ct);
             await shell.Settled;
         }
 
         Assert.Null(shell.Held);
-        Assert.Equal((2, true), shell.Mail);
+        Assert.Equal((1, true), shell.Mail);
     }
 }

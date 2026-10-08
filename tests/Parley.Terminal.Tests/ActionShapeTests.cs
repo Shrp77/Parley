@@ -114,7 +114,6 @@ public sealed class ActionShapeTests
             Onboarding.Title,
             Participation.ResultTitle,
             Participation.RequestTitle,
-            Participation.DeliveryTitle,
             Participation.StartTitle,
             Removing.Title,
             Removing.Destroy,

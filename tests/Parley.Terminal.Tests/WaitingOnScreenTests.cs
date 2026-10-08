@@ -79,54 +79,6 @@ public sealed class WaitingOnScreenTests : IDisposable
         Assert.Contains("1 waiting", driving.Text(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task The_count_says_which_key_collects_it()
-    {
-        // A number with no way to act on it is worse than no number: it tells somebody they are behind and
-        // leaves them hunting. The key it names is the one the agents pane offers.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open(width: 160, height: 40);
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await SendAsync(shell, ct);
-
-        await Eventually.UntilAsync(
-            () => shell.Mail is { Certain: true, Waiting: > 0 }, "nothing was ever counted", ct);
-
-        await shell.Settled;
-        driving.App.LayoutAndDraw(true);
-
-        Assert.Contains(Participation.DeliveryTitle, driving.Text(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Taking_delivery_is_offered_where_the_seat_is_rather_than_only_inside_a_transcript()
-    {
-        // It was offered only in the transcript region, so collecting meant opening a conversation first --
-        // and what is waiting is often in one nobody has seen.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open();
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        // Focused where the seat is listed, which is the pane a person sits in rather than a transcript.
-        var pane = Enumerable.Range(0, shell.Panes.Count)
-            .First(at => shell.Panes[at] is AgentsRegion);
-
-        shell.Focus(pane);
-
-        Assert.Contains(
-            shell.Actions(),
-            action => action.Label == Participation.DeliveryTitle);
-    }
-
     // `The_count_goes_when_the_seat_does` was here, and specs/023 turns it round. It left the seat and expected the
     // count to go with it, because mail under nobody's name was somebody else's. Now the seat is never left — the broker
     // provides it — and the count must survive the person being away, which is exactly when it matters (T041).

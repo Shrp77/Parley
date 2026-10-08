@@ -1081,11 +1081,6 @@ internal sealed class Shell : Window
     /// </remarks>
     private void Relay() => Arrange();
 
-    /// <summary>The action the waiting count points at, so the line and the pane cannot name different keys.</summary>
-    /// <returns>Taking delivery.</returns>
-    private RegionAction DeliveryAction() =>
-        new('w', Participation.DeliveryTitle, TakeDelivery);
-
     /// <summary>Puts the current view's panes on screen and takes the others off.</summary>
     private void Arrange()
     {
@@ -1402,7 +1397,7 @@ internal sealed class Shell : Window
         // key inside a transcript they had no reason to open. So it survives every rung the focus survives:
         // it is the one thing here that is about them rather than about the screen.
         var mail = Mail is { Certain: true, Waiting: > 0 } held
-            ? $"  {held.Waiting} waiting ({Caption(DeliveryAction())})"
+            ? $"  {held.Waiting} waiting"
             : string.Empty;
 
         // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
@@ -1620,12 +1615,51 @@ internal sealed class Shell : Window
         if (place.Viewing == Viewing.Conversation && place.Title is { } conversation && Current is { } project)
         {
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
+
+            // **Opening a conversation takes delivery** (the owner's call of 2026-10-08). It was a key to press, which a
+            // person met as a count that never went down, and reading a Request they had been sent was not counting as
+            // having picked it up. Everything waiting is taken, not only this conversation's: the broker's inbox has no
+            // narrower drain, and said so on the message line when anything was.
+            await CollectOnArrivalAsync(Reading).ConfigureAwait(false);
         }
 
         // The same rule for settings: the view is never on screen showing values it has not read.
         if (place.Viewing == Viewing.Configuration)
         {
             await ReadConfigurationAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Takes delivery on arriving at a conversation, when this terminal is connected as the person.</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>When it has been taken, or there was nothing to take.</returns>
+    /// <remarks>
+    /// Quiet, always: the count leaving the status line says it, and a message line sentence on every conversation opened
+    /// is noise that costs the status line its actions. A broker that cannot be reached is left to the other reads to say, for the reason a failed follow keeps
+    /// the transcript and says so once: this is not what the person asked for.
+    /// </remarks>
+    private async Task CollectOnArrivalAsync(CancellationToken cancellationToken)
+    {
+        if (Held is not { } hold || Voice() is not { } voice)
+        {
+            return;
+        }
+
+        try
+        {
+            var (taken, polls) = await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
+
+            if (taken.Count > 0 || polls > 0)
+            {
+                // Not said on the message line. The count leaving the status line is the feedback, and a sentence there
+                // pushes the actions off a narrow status line until somebody clears it.
+                Mail = (0, true);
+                Relay();
+            }
+        }
+        catch (Grpc.Core.RpcException)
+        {
+            // Left to the reads that already say when the broker is not answering.
         }
     }
 
@@ -1990,13 +2024,8 @@ internal sealed class Shell : Window
             // **No join and no leave** (specs/023). The broker provides the person's seat in every project and this
             // terminal takes it on its own; there is nothing to join, and closing the terminal is how a person leaves.
 
-            // **Taking delivery lives here as well as in a transcript, and that is the correction.** It
-            // was offered only inside a conversation, so collecting what you had been sent meant opening
-            // one -- and what is waiting is frequently in a conversation you have never seen, which is
-            // exactly the one you would not think to open. This pane is where the seat is.
-            .. Held is not null
-                ? new[] { new RegionAction('w', Participation.DeliveryTitle, TakeDelivery) }
-                : Array.Empty<RegionAction>(),
+            // Taking delivery is `Global()`'s now: it was registered here and in a transcript only, while the status line
+            // named its key on every view, so the key was advertised where nothing answered it.
         ],
 
         // **The room column.** A list is somewhere a letter is free — which the box beside it is not, since every
@@ -2074,7 +2103,6 @@ internal sealed class Shell : Window
             .. Held is not null
                 ? new[]
                 {
-                    new RegionAction('w', Participation.DeliveryTitle, TakeDelivery),
                     new RegionAction('a', Participation.ResultTitle, SendResult),
                     new RegionAction('q', Participation.ClarifyTitle, Clarify),
                     new RegionAction('k', Participation.RequestTitle, SendRequest, Owing.Requesting),
@@ -2176,10 +2204,6 @@ internal sealed class Shell : Window
 
             entries.Add((YourConversationsTitle, () => ShowConversationsOf(name)));
 
-            if (Held is not null)
-            {
-                entries.Add((Participation.DeliveryTitle, TakeDelivery));
-            }
         }
         else if (!row.Seat)
         {
@@ -3599,48 +3623,6 @@ internal sealed class Shell : Window
         "again, which rebuilds both. If it keeps happening, it is a defect worth reporting rather " +
         "than anything you did.";
 
-    /// <summary>Takes delivery of what is waiting, after saying what that does.</summary>
-    /// <returns>When the dialog has been opened.</returns>
-    private Task TakeDelivery()
-    {
-        if (App is not { } app || Held is null || Voice() is null)
-        {
-            return Task.CompletedTask;
-        }
-
-        var dialog = Prompting.Choose(
-            Participation.DeliveryTitle,
-            Participation.DeliveryWarning
-            + Environment.NewLine
-            + Environment.NewLine
-            + string.Join(Environment.NewLine, Participation.Held(Held)),
-            ["Not now", Participation.DeliveryTitle]);
-
-        var token = Prompting.Open(app, dialog);
-
-        dialog.Done += (_, chosen) =>
-        {
-            Prompting.Close(app, token);
-
-            if (chosen != Participation.DeliveryTitle)
-            {
-                return;
-            }
-
-            Queue(async cancellationToken =>
-            {
-                if (Voice() is { } voice && Held is { } hold)
-                {
-                    Said = await Participation
-                        .TakeDeliveryAsync(voice, hold, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            });
-        };
-
-        return Task.CompletedTask;
-    }
-
     /// <summary>Sends the Result of one of the Requests this person owes.</summary>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
@@ -3659,7 +3641,7 @@ internal sealed class Shell : Window
 
         if (owed.Count == 0)
         {
-            Said = "You owe no result. Take delivery to see what is waiting.";
+            Said = "You owe no result. Opening a conversation takes what is waiting in it.";
 
             return Task.CompletedTask;
         }
@@ -4533,7 +4515,7 @@ internal sealed class Shell : Window
 
         if (held.Count == 0)
         {
-            Said = "You hold nothing to clarify. Take delivery to see what is waiting.";
+            Said = "You hold nothing to clarify. Opening a conversation takes what is waiting in it.";
 
             return Task.CompletedTask;
         }

@@ -30,7 +30,7 @@ public sealed class RowMenuTests
         var offered = Open(seated, seated.Shell.Held!.Seat.Name.Value);
 
         Assert.Equal(
-            [Participation.StartTitle, Shell.YourConversationsTitle, Participation.DeliveryTitle],
+            [Participation.StartTitle, Shell.YourConversationsTitle],
             offered);
     }
 

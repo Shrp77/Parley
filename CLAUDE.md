@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.2, protocol 0.8 in code (SPEC §18 already records 0.9, which feature 026 completes), schema 1. Nothing has been released, so there is **no
+- Version 0.42.3, protocol 0.8 in code (SPEC §18 already records 0.9, which feature 026 completes), schema 1. Nothing has been released, so there is **no
   compatibility to keep**: change the wire, enums and schema 1 in place, and nuke and rebuild.
   From the first release every schema change is a migration.
 - Branch `019-layout` carries features 019–025, all built and unmerged. One combined review
@@ -373,3 +373,20 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   expression, anchored with `\z` (`$` matches before a trailing line feed in .NET).
   `Parley.Core.NameCorrection` is the only place it is corrected as typed; a space becomes a
   hyphen.
+
+## Peers
+
+Other repositories have their own agents, reachable through Parley. They cannot see this
+repository and this repository cannot see theirs: only the text of a request and its result
+crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
+and again when you are waiting on a result.
+
+To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
+request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
+placed, so code travels as `Name.cs.txt`.
+
+- The roster has not been read yet. Run `/parley:write-peers` to fill this in.
+
+**Do not guess at what these repositories do, and do not edit them.** When you need work done
+in one, or something it knows, send its agent a `parley_request` saying why and what done
+looks like. Do the work other agents request of this repository.

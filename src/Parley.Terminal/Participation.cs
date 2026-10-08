@@ -28,15 +28,6 @@ namespace Parley.Terminal;
 /// </remarks>
 internal static class Participation
 {
-    /// <summary>What taking delivery does, said before it is done.</summary>
-    /// <remarks>
-    /// Collecting a Request is where §6's second stage begins, so it is not a look at an inbox — work
-    /// collected and left is flagged as stalled rather than as never picked up.
-    /// </remarks>
-    internal const string DeliveryWarning =
-        "Taking delivery marks these messages collected. Anything you are asked to do then counts as picked up, "
-        + "and is shown to the person running the deployment if it goes untouched. It is not a look at the inbox.";
-
     /// <summary>What is said when the connection went while somebody was still writing.</summary>
     /// <remarks>
     /// Not "your seat was released" (specs/023): the seat is the broker's and is never released. What went is this
@@ -47,9 +38,6 @@ internal static class Participation
 
     /// <summary>What the dialog that names a conversation is called.</summary>
     internal const string NameTitle = "Name the conversation";
-
-    /// <summary>What the dialog offering delivery is called.</summary>
-    internal const string DeliveryTitle = "Take delivery";
 
     /// <summary>What the peer picker asks.</summary>
     internal const string WhichPeer = "Who are you sending this to?";
@@ -96,63 +84,8 @@ internal static class Participation
     /// </remarks>
     internal const string ClarifyTitle = "Ask for, or give, a clarification";
 
-    private const string NothingWaiting = "Nothing was waiting.";
-
-    private const string HoldingNothing = "You are holding nothing. Take delivery to see what is waiting.";
-
     /// <summary>What is said beside a Request a Result is owed on.</summary>
     internal const string Owes = "you owe a result";
-
-    /// <summary>What is said beside a clarification a reply is owed on.</summary>
-    private const string OwesReply = "you owe a reply";
-
-    private const string OwesNothing = "nothing owed";
-
-    /// <summary>Takes delivery, and says what that did.</summary>
-    /// <param name="voice">The person's own participant operations.</param>
-    /// <param name="hold">The seat to record against.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>What to say about it.</returns>
-    internal static async Task<string> TakeDeliveryAsync(SeatVoice voice, SeatHold hold, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(voice);
-
-        var (taken, polls) = await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
-
-        return taken.Count == 0 && polls == 0
-            ? NothingWaiting
-            : $"{taken.Count} taken. Anything you were asked to do now counts as picked up.";
-    }
-
-    /// <summary>What the person is already holding, one line each.</summary>
-    /// <param name="hold">The seat.</param>
-    /// <returns>The lines, what is owed first.</returns>
-    /// <remarks>
-    /// The owed column is a word before it is a position, so the distinction survives without the ordering.
-    /// </remarks>
-    internal static IReadOnlyList<string> Held(SeatHold hold)
-    {
-        ArgumentNullException.ThrowIfNull(hold);
-
-        if (hold.Delivered.Count == 0)
-        {
-            return [HoldingNothing];
-        }
-
-        return
-        [
-            .. hold.Delivered
-                .OrderByDescending(one => one.Owes)
-                .Select(one =>
-                {
-                    var payload = Payload.Read(one.Message.PayloadJson);
-                    var said = payload.Raw is { Length: > 0 } raw ? raw : payload.Said;
-                    var owed = one.OwesResult ? Owes : one.OwesReply ? OwesReply : OwesNothing;
-
-                    return Safe.Text($"{one.Message.From.Value}  [{one.Message.Type.ToString().ToLowerInvariant()}]  [{owed}]  {Shorten(said)}");
-                }),
-        ];
-    }
 
     /// <summary>How one owed message reads in a chooser.</summary>
     /// <param name="owed">The delivered message.</param>

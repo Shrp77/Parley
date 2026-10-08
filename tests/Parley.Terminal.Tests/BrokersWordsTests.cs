@@ -39,16 +39,6 @@ public sealed class BrokersWordsTests
     }
 
     [Fact]
-    public void Taking_delivery_says_what_it_marks_before_it_marks_it()
-    {
-        // A drain marks messages collected, and work collected and left is flagged to the person
-        // running the deployment as stalled (§15). Somebody who discovered that afterwards would have
-        // picked up work they did not know they had, which is why the sentence comes before the choice.
-        Assert.Contains("counts as picked up", Participation.DeliveryWarning, StringComparison.Ordinal);
-        Assert.Contains("not a look at the inbox", Participation.DeliveryWarning, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void Destroying_a_project_says_what_goes_with_the_store()
     {
         Assert.Contains("Every conversation in it", Removing.Destroying, StringComparison.Ordinal);
