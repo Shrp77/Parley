@@ -96,6 +96,33 @@ public sealed class EnrolmentSummaryTests
     }
 
     [Fact]
+    public void An_agent_being_added_is_said_above_the_rows_and_gone_when_it_is_over()
+    {
+        // The owner's report of 2026-10-09: adding an agent showed nothing in the Agents box while it waited to register.
+        // Must fail against an Agents pane that says nothing of an add in progress.
+        using var driving = Driving.Open();
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+
+        shell.Agents.Enrolling = "Adding 'billing': waiting up to 30 seconds for it to register...";
+        shell.Agents.Show([], NodeCatalogue.Empty, null);
+
+        var rows = Drawn.Rows(shell.Agents.List);
+
+        Assert.Contains(rows, row => row.Contains("Adding 'billing'", StringComparison.Ordinal));
+        Assert.DoesNotContain(rows, row => row.Contains("No agents", StringComparison.OrdinalIgnoreCase));
+
+        shell.Agents.Enrolling = null;
+        shell.Agents.Show([], NodeCatalogue.Empty, null);
+
+        Assert.DoesNotContain(Drawn.Rows(shell.Agents.List), row => row.Contains("Adding 'billing'", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Every_agent_chosen_is_queued_the_moment_it_is_agreed_to()
     {
         // So the screen is never silent between the person agreeing and the first agent starting.

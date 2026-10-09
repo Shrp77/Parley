@@ -156,6 +156,9 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     internal IReadOnlyList<AgentRecord> Registry { get; private set; } = [];
 
+    /// <summary>What is said above the rows while an agent is being added, or null when none is.</summary>
+    internal string? Enrolling { get; set; }
+
     /// <summary>Whichever row the person is on, or null when they are on a heading.</summary>
     /// <remarks>
     /// Read through <see cref="_at"/> rather than by arithmetic. Headings and a broker's complaint
@@ -355,9 +358,19 @@ internal sealed class AgentsRegion : FrameView
             tone.Add(Colours.Bad);
         }
 
+        // **An agent being added is on this pane while it is added** (the owner's report of 2026-10-09: enrolling one showed
+        // nothing here for the half minute it takes to register). A line above the rows, not a row: it has no name the
+        // broker knows yet, so nothing can be done to it, and it is gone as soon as the add is over.
+        if (Enrolling is { } enrolling)
+        {
+            lines.Add(Safe.Text(enrolling));
+            map.Add(null);
+            tone.Add(Colours.Warn);
+        }
+
         if (rows.Count == 0)
         {
-            if (problem is null)
+            if (problem is null && Enrolling is null)
             {
                 lines.Add(Nothing);
                 map.Add(null);

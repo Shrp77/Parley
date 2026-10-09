@@ -3313,7 +3313,20 @@ internal sealed class Shell : Window
             },
                 _lastAdded,
                 workspace => _lastAdded = workspace,
-                StartedIn)
+                StartedIn,
+                async progress =>
+                {
+                    // On the status line and above the agents, so the half minute spent waiting for the agent to register is
+                    // never a screen saying nothing. The agents are read again so the line is drawn now.
+                    Agents.Enrolling = progress;
+
+                    if (progress is not null)
+                    {
+                        Said = progress;
+                    }
+
+                    await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+                })
             : Task.CompletedTask;
 
     /// <summary>Puts the open conversation on the clipboard.</summary>

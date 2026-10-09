@@ -209,6 +209,10 @@ internal static class Adding
     /// </param>
     /// <param name="remember">Told which repository was added, once the files are written.</param>
     /// <param name="startedIn">The folder the terminal was started from, where the picker opens before anything is added.</param>
+    /// <param name="enrolling">
+    /// Told what is happening to the agent being added, at each step, and null when it is over. Adding waits up to
+    /// <see cref="Starting.Patience"/> for the agent to register, and without this the screen said nothing for all of it.
+    /// </param>
     /// <returns>When the first dialog is open.</returns>
     /// <remarks>
     /// <b>The folder is found before it is named.</b> The owner was typing an absolute path per
@@ -226,7 +230,8 @@ internal static class Adding
         Func<string, Task> done,
         string? lastAdded = null,
         Action<string>? remember = null,
-        string? startedIn = null)
+        string? startedIn = null,
+        Func<string?, Task>? enrolling = null)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(project);
@@ -248,7 +253,7 @@ internal static class Adding
                 return;
             }
 
-            Ask(app, project, catalogue, folder, start, registered, queue, done, remember);
+            Ask(app, project, catalogue, folder, start, registered, queue, done, remember, enrolling);
         };
 
         return Task.CompletedTask;
@@ -264,7 +269,8 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
-        Action<string>? remember)
+        Action<string>? remember,
+        Func<string?, Task>? enrolling)
     {
         var form = new FormDialog(
             Title,
@@ -296,7 +302,7 @@ internal static class Adding
                 return;
             }
 
-            Confirm(app, project, catalogue, values, start, registered, queue, done, remember);
+            Confirm(app, project, catalogue, values, start, registered, queue, done, remember, enrolling);
         };
     }
 
@@ -310,7 +316,8 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
-        Action<string>? remember)
+        Action<string>? remember,
+        Func<string?, Task>? enrolling)
     {
         var workspace = Path.GetFullPath(values[0].Trim());
         var role = values[1].Trim();
@@ -342,7 +349,7 @@ internal static class Adding
 
             queue(token2 => WriteAsync(
                 project, catalogue, workspace, role, values[2].Trim(), start, registered, token2,
-                done, remember));
+                done, remember, enrolling));
         };
     }
 
@@ -492,13 +499,16 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         CancellationToken cancellationToken,
         Func<string, Task> done,
-        Action<string>? remember)
+        Action<string>? remember,
+        Func<string?, Task>? enrolling)
     {
         var said = new List<string>();
         var deployment = catalogue.Deployment();
 
         try
         {
+            await Telling($"Adding '{role}': writing its files...").ConfigureAwait(false);
+
             var file = await catalogue.EnsureAsync(said, cancellationToken).ConfigureAwait(false);
 
             // **Unattended only when nothing else starts this repository.** FR-013 admits the
@@ -538,6 +548,10 @@ internal static class Adding
             //
             // Nothing here claims to be anybody. The start is a request; the registration is the
             // agent's own act.
+            await Telling(
+                $"Adding '{role}': its files are written. Starting it and waiting up to "
+                + $"{(int)Starting.Patience.TotalSeconds} seconds for it to register...").ConfigureAwait(false);
+
             said.Add(await StartAsync(start, registered, role, project, deployment, cancellationToken)
                 .ConfigureAwait(false));
         }
@@ -563,7 +577,15 @@ internal static class Adding
             said.Add(NothingWritten);
         }
 
+        // Over, whichever way it ended: the line above the agents goes before the result is said.
+        if (enrolling is not null)
+        {
+            await enrolling(null).ConfigureAwait(false);
+        }
+
         await done(Reports.Sentences(said)).ConfigureAwait(false);
+
+        Task Telling(string progress) => enrolling is null ? Task.CompletedTask : enrolling(progress);
     }
 }
 
