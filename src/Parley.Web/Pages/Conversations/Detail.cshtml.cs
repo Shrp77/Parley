@@ -118,9 +118,18 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public bool Everyone { get; set; }
 
-    /// <summary>What the operator wrote.</summary>
-    [BindProperty]
+    /// <summary>What the operator wrote, or what a link left in the box for them to read before they send it.</summary>
+    /// <remarks>
+    /// Bound on a GET too, so a roadmap item can open its conversation with its own words ready. A link only fills the
+    /// box: nothing is sent until the person presses Send, so it is still their words in the transcript.
+    /// </remarks>
+    [BindProperty(SupportsGet = true)]
     public string? Says { get; set; }
+
+    /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
+    /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
+    [BindProperty(SupportsGet = true)]
+    public IList<string> With { get; set; } = [];
 
     /// <summary>The seat this person holds in this project, or null if they hold none.</summary>
     /// <remarks>

@@ -1,0 +1,51 @@
+@page
+@model Parley.Web.Pages.Roadmaps.RoadmapModel
+@using Parley.Client.Roadmaps
+@{
+    ViewData["Title"] = Model.Roadmap is { } shown ? $"Roadmap: {shown.Title}" : "Roadmap";
+}
+
+<h1>@(Model.Roadmap is { } named ? $"#{named.Number} {named.Title}" : "Roadmap")</h1>
+
+<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
+{
+    @* Every word below an agent wrote, or the person did, is escaped by Razor. Where an item stands is derived from its
+       conversation and never set here. *@
+    <p role="status">@ItemWording.Next(standing)</p>
+
+    @if (Model.Agents.Count > 0)
+    {
+        <p>Agents on this roadmap: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
+    }
+
+    <ol class="roadmap-items">
+        @foreach (var state in standing.Items)
+        {
+            <li value="@state.Item.Number" class="@(state.IsNext ? "next" : null)">
+                <strong>@(state.IsNext ? "Next: " : "")@state.Item.Text</strong>
+                <br />
+                <small>
+                    @ItemWording.Standing(state)
+                    @if (state.Item.IntendedAgent is { } agent)
+                    {
+                        <text> · for @agent.Value</text>
+                    }
+                    @if (state.Item.Needs.Count > 0)
+                    {
+                        <text> · needs @string.Join(", ", state.Item.Needs.Order())</text>
+                    }
+                </small>
+                <br />
+                <a href="@Model.OpenPath(state)">@(state.Item.Facts is { ConversationExists: true } ? "Open its conversation" : "Start it: open an empty conversation with its text ready")</a>
+            </li>
+        }
+    </ol>
+
+    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words in the box and the agents ticked; you press Send.</small></p>
+}

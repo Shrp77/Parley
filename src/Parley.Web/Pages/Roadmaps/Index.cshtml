@@ -50,7 +50,7 @@ else
                 @foreach (var roadmap in Model.Roadmaps)
                 {
                     <li>
-                        @roadmap.Title
+                        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">@roadmap.Title</a>
                         — @roadmap.LiveItems item@(roadmap.LiveItems == 1 ? "" : "s"), @roadmap.StartedItems started
                     </li>
                 }

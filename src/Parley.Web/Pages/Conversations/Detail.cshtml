@@ -111,7 +111,7 @@ else
         @foreach (var who in Model.Participants)
         {
             <label class="target slot-@Palette.SlotFor(who)">
-                <input type="checkbox" name="Targets" value="@who.Value" />
+                <input type="checkbox" name="Targets" value="@who.Value" checked="@(Model.With.Contains(who.Value, StringComparer.Ordinal) ? "checked" : null)" />
                 <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
                 <span><span class="mark" aria-hidden="true">@Parley.Client.Rendering.RoomRoster.ParticipantMark</span> @who.Value</span>
             </label>
@@ -123,7 +123,7 @@ else
                listed after the participants, which carry the mark, so the difference is on the row as well as in the
                order. *@
             <label class="target not-in-it slot-@Palette.SlotFor(who)">
-                <input type="checkbox" name="Targets" value="@who.Value" />
+                <input type="checkbox" name="Targets" value="@who.Value" checked="@(Model.With.Contains(who.Value, StringComparer.Ordinal) ? "checked" : null)" />
                 <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
                 <span>@who.Value <small>(not in it yet)</small></span>
             </label>
