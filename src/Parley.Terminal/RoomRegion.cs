@@ -130,8 +130,8 @@ internal sealed class RoomRegion : FrameView
     /// </remarks>
     internal IReadOnlyList<string> Unstarted { get; set; } = [];
 
-    /// <summary>What follows the name of an agent that has not registered, and cannot be ticked.</summary>
-    internal const string NotStarted = " -- not started yet";
+    /// <summary>What follows the name of an agent that has not registered. Short, since the column is narrow.</summary>
+    internal const string NotStarted = " (not started)";
     private IReadOnlyList<OutstandingItem> _outstanding = [];
     private IReadOnlyList<AgentName> _addressed = [];
     private AgentName? _me;
@@ -149,6 +149,16 @@ internal sealed class RoomRegion : FrameView
         // `contracts/views.md` means by nothing existing only as a key.
         _list.Accepting += (_, args) =>
         {
+            // **An agent that has not registered cannot be ticked or written to, so choosing it starts it** (the owner's
+            // report of 2026-10-09: it was listed and could not be selected). Once it has registered it is an ordinary row.
+            if (SelectedUnstarted is { } role)
+            {
+                args.Handled = true;
+                StartRequested?.Invoke(this, role);
+
+                return;
+            }
+
             // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: on a
             // participant it is going to say something, and on a thing owed it is going to read it.
             //
@@ -178,6 +188,12 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>Raised when somebody included or excluded a participant from what they are writing.</summary>
     internal event EventHandler<AgentName>? Toggling;
+
+    /// <summary>Raised with the role of an agent that has not registered when somebody chose it, which means start it.</summary>
+    internal event EventHandler<string>? StartRequested;
+
+    /// <summary>The role of the agent that has not registered under the cursor, or null when the cursor is not on one.</summary>
+    internal string? SelectedUnstarted => Under?.Role;
 
     /// <summary>Raised when somebody pressed Enter on a participant, which means they are about to write.</summary>
     internal event EventHandler<AgentName>? Choosing;
@@ -211,6 +227,13 @@ internal sealed class RoomRegion : FrameView
     /// </remarks>
     internal void Toggle()
     {
+        if (SelectedUnstarted is { } role)
+        {
+            StartRequested?.Invoke(this, role);
+
+            return;
+        }
+
         if (SelectedPeer is { } peer)
         {
             Toggling?.Invoke(this, peer);
@@ -330,7 +353,7 @@ internal sealed class RoomRegion : FrameView
 
             foreach (var role in Unstarted)
             {
-                rows.Add(new Row("    " + Safe.Text(role) + NotStarted, null, null, null));
+                rows.Add(new Row("  " + Safe.Text(role) + NotStarted, null, null, null, role));
             }
         }
 
@@ -567,12 +590,13 @@ internal sealed class RoomRegion : FrameView
     /// <param name="Item">The thing owed this row activates, or null.</param>
     /// <param name="Slot">The colour slot, or null for a heading.</param>
     /// <param name="Peer">The participant this row is a checkbox for, or null.</param>
+    /// <param name="Role">The role of an agent that has not registered, which choosing starts, or null.</param>
     /// <remarks>
     /// <b>At most one of <paramref name="Item"/> and <paramref name="Peer"/> is ever set</b>, and which one
     /// decides what Enter does. A row that was both would be a keystroke whose meaning depended on the order
     /// two branches were written in.
     /// </remarks>
-    private sealed record Row(string Text, OutstandingItem? Item, int? Slot, AgentName? Peer);
+    private sealed record Row(string Text, OutstandingItem? Item, int? Slot, AgentName? Peer, string? Role = null);
 }
 
 /// <summary>

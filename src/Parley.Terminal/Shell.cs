@@ -712,6 +712,8 @@ internal sealed class Shell : Window
         // **The checklist is the draft's recipients, drawn.** `@` and this column are two ways at one thing,
         // so neither may keep its own idea of who a message is going to -- the preview above the box and the
         // ticks beside it would be two answers to one question, and only one of them would be sent.
+        Room.StartRequested += (_, role) => StartUnstarted(role);
+
         Room.Toggling += (_, peer) =>
         {
             if (Held is null)
@@ -2547,6 +2549,35 @@ internal sealed class Shell : Window
         };
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Starts an agent the room named as not started, and says whether it registered.</summary>
+    /// <param name="role">The role the catalogue knows it by.</param>
+    private void StartUnstarted(string role)
+    {
+        if (Current is not { } project || _place.Title is not { } conversation)
+        {
+            return;
+        }
+
+        Said = $"Starting '{role}' and waiting up to {(int)Starting.Patience.TotalSeconds} seconds for it to register...";
+
+        Queue(async token =>
+        {
+            Said = await Adding.StartAsync(
+                async (asked, agent, t) => await BrokerDirectory.ReadAsync(async () =>
+                    await new BrokerClient(_directory.ClientFor(asked))
+                        .StartAsync(agent, "a person started it from the room", t).ConfigureAwait(false))
+                    .ConfigureAwait(false),
+                RegisteredIn,
+                role,
+                project,
+                [project],
+                token).ConfigureAwait(false);
+
+            // The room again, so it moves from "not started" to an agent that can be ticked once it has registered.
+            await OpenAsync(project, conversation, token).ConfigureAwait(false);
+        });
     }
 
     /// <summary>Asks this agent's machine to start it, from its row.</summary>

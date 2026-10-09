@@ -147,6 +147,36 @@ public sealed class EnrolmentSummaryTests
     }
 
     [Fact]
+    public void Choosing_an_agent_that_has_not_registered_asks_to_start_it()
+    {
+        // The owner's report of 2026-10-09: the row was listed and could not be selected. Must fail against a row that
+        // does nothing when chosen, by Space or by Enter.
+        using var driving = Driving.Open();
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+
+        shell.Room.Unstarted = ["billing"];
+        shell.Room.Show([], [], seated: false);
+
+        var asked = new List<string>();
+
+        shell.Room.StartRequested += (_, role) => asked.Add(role);
+
+        driving.Row(shell.Room.List, "billing");
+
+        Assert.Equal("billing", shell.Room.SelectedUnstarted);
+
+        shell.Room.Toggle();
+        shell.Room.List.NewKeyDownEvent(global::Terminal.Gui.Input.Key.Enter);
+
+        Assert.Equal(["billing", "billing"], asked);
+    }
+
+    [Fact]
     public void Every_agent_chosen_is_queued_the_moment_it_is_agreed_to()
     {
         // So the screen is never silent between the person agreeing and the first agent starting.
