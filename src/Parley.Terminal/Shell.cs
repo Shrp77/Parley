@@ -153,6 +153,9 @@ internal sealed class Shell : Window
     /// <summary>What including or excluding a participant is called.</summary>
     internal const string IncludeTitle = "Include or exclude this agent";
 
+    /// <summary>What Space does on an agent that has never run.</summary>
+    internal const string StartFromRoomTitle = "Start this agent and include it";
+
     /// <summary>Includes or excludes the participant under the cursor.</summary>
     /// <returns>When the column has been redrawn.</returns>
     /// <remarks>
@@ -2325,6 +2328,12 @@ internal sealed class Shell : Window
             // to -- and a key named where it does nothing is the fault this surface keeps a rule about.
             .. Held is not null && Room.SelectedPeer is not null
                 ? new[] { new RegionAction(default, IncludeTitle, ToggleOne, null, Key.Space) }
+                : Array.Empty<RegionAction>(),
+
+            // **On an agent that has never run, Space starts it** (the owner's report of 2026-10-09: the row had a box and
+            // could not be chosen — Space was offered only on a participant, so on this row it was swallowed and named nowhere).
+            .. Room.SelectedUnstarted is not null
+                ? new[] { new RegionAction(default, StartFromRoomTitle, ToggleOne, null, Key.Space) }
                 : Array.Empty<RegionAction>(),
         ],
 
