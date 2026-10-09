@@ -123,6 +123,30 @@ public sealed class EnrolmentSummaryTests
     }
 
     [Fact]
+    public void An_agent_that_has_not_registered_is_named_in_the_room_and_not_offered_to_tick()
+    {
+        // The owner's report of 2026-10-09: an agent just added was missing from the room. It is catalogued and has never
+        // run, so the registry does not hold it. Must fail against a room that lists only registered agents.
+        using var driving = Driving.Open();
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        driving.Show(shell);
+
+        shell.Room.Unstarted = ["billing"];
+        shell.Room.Show([], [], seated: false);
+
+        var rows = shell.Room.Written;
+
+        Assert.Contains(RoomRegion.Elsewhere, rows);
+        Assert.Contains(rows, row => row.Contains("billing", StringComparison.Ordinal)
+                                     && row.Contains(RoomRegion.NotStarted.Trim(), StringComparison.Ordinal));
+        Assert.DoesNotContain(rows, row => row.Contains("[ ] ", StringComparison.Ordinal) && row.Contains("billing", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Every_agent_chosen_is_queued_the_moment_it_is_agreed_to()
     {
         // So the screen is never silent between the person agreeing and the first agent starting.

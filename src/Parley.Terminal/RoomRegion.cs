@@ -119,6 +119,19 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>The project's agents that are not in the conversation on screen.</summary>
     private IReadOnlyList<AgentName> _others = [];
+
+    /// <summary>
+    /// The agents this machine can start that have not registered yet, by role, for the room to name.
+    /// </summary>
+    /// <remarks>
+    /// <b>Named, never ticked</b> (the owner's report of 2026-10-09: an agent just added was missing from the room). A name
+    /// nothing has registered is not one a message can be addressed to, so there is nothing to tick; but leaving it out
+    /// said the agent did not exist. It is listed so it can be seen, and says what is wrong with it.
+    /// </remarks>
+    internal IReadOnlyList<string> Unstarted { get; set; } = [];
+
+    /// <summary>What follows the name of an agent that has not registered, and cannot be ticked.</summary>
+    internal const string NotStarted = " -- not started yet";
     private IReadOnlyList<OutstandingItem> _outstanding = [];
     private IReadOnlyList<AgentName> _addressed = [];
     private AgentName? _me;
@@ -301,7 +314,7 @@ internal sealed class RoomRegion : FrameView
 
         // **Listed whether or not a seat is held** (specs/026): every agent of the project is in the room, so what a person
         // reads here does not depend on whether they have connected. Ticking one is only possible with a seat.
-        if (_others.Count > 0)
+        if (_others.Count > 0 || Unstarted.Count > 0)
         {
             rows.Add(new Row(string.Empty, null, null, null));
             rows.Add(new Row(Elsewhere, null, null, null));
@@ -313,6 +326,11 @@ internal sealed class RoomRegion : FrameView
                     null,
                     Palette.SlotFor(other),
                     other));
+            }
+
+            foreach (var role in Unstarted)
+            {
+                rows.Add(new Row("    " + Safe.Text(role) + NotStarted, null, null, null));
             }
         }
 

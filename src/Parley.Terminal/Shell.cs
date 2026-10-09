@@ -4995,6 +4995,13 @@ internal sealed class Shell : Window
         ConversationExport? export,
         CancellationToken cancellationToken)
     {
+        // The agents this machine can start that have not registered: named in the room, since an agent just added is not in
+        // the registry until it has run once, and leaving it out said it did not exist.
+        Room.Unstarted =
+        [
+            .. Agents.Rows.Where(row => row.State == AgentsRegion.CataloguedOnly).Select(row => row.Name),
+        ];
+
         if (export is null)
         {
             Room.Show([], [], Held is not null);
