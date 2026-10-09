@@ -5048,10 +5048,7 @@ internal sealed class Shell : Window
     {
         // The agents this machine can start that have not registered: named in the room, since an agent just added is not in
         // the registry until it has run once, and leaving it out said it did not exist.
-        Room.Unstarted =
-        [
-            .. Agents.Rows.Where(row => row.State == AgentsRegion.CataloguedOnly).Select(row => row.Name),
-        ];
+        Room.Unstarted = UnstartedIn(null);
 
         if (export is null)
         {
@@ -5071,6 +5068,8 @@ internal sealed class Shell : Window
                 .ConfigureAwait(false);
 
             var participants = Pairing.Participants(export).OrderBy(a => a.Value, StringComparer.Ordinal).ToList();
+
+            Room.Unstarted = UnstartedIn(unseatedRegistry.Value);
 
             Room.Show(
                 [.. participants.Select(a => new PairState(a, null, Turn.Nobody))],
@@ -5098,6 +5097,8 @@ internal sealed class Shell : Window
             .ConfigureAwait(false);
 
         var activity = Activities.Of(export, waiting.Value ?? [], registry.Value);
+
+        Room.Unstarted = UnstartedIn(registry.Value);
 
         var pairs = Pairing.From(export, waiting.Value ?? [], hold.Seat.Name);
 
@@ -5182,6 +5183,24 @@ internal sealed class Shell : Window
             others: RoomRoster.NotInIt(registry.Value, pairs.Select(pair => pair.Peer), hold.Seat.Name));
         Line.Show(Drafting, seated: true, Near());
     }
+
+    /// <summary>The agents this machine can start that have not registered, by role.</summary>
+    /// <param name="registry">The registry as just read, or null to go by what the agents pane last held.</param>
+    /// <returns>The roles the room names as never run.</returns>
+    /// <remarks>
+    /// <b>Checked against the registry read for the room, not the agents pane's older read</b> (the owner's report of
+    /// 2026-10-09: an agent was started from the room and listed twice, once registered and once as never run). The pane
+    /// is read when the project is, and a start from the room does not read the project again.
+    /// </remarks>
+    private IReadOnlyList<string> UnstartedIn(IReadOnlyList<AgentRecord>? registry) =>
+    [
+        .. Agents.Rows
+            .Where(row => row.State == AgentsRegion.CataloguedOnly)
+            .Select(row => row.Name)
+            .Where(role => registry is null
+                           || !registry.Any(a => a.Name.Role == role
+                                                 && string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))),
+    ];
 
     /// <summary>What is waiting on this person in the conversation on screen, one item per agent.</summary>
     /// <param name="export">The conversation as it was read.</param>

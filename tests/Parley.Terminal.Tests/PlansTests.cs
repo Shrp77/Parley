@@ -323,4 +323,41 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Contains(RoomRegion.Elsewhere, room, StringComparison.Ordinal);
         Assert.Contains("inventory", room, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task An_agent_that_registers_is_not_also_listed_as_never_run_in_the_room()
+    {
+        // The owner's report of 2026-10-09: started from the room, the agent was listed twice, once registered and once as
+        // never run. Must fail against a room that trusts the agents pane's older read of what is catalogued only.
+        using var machine = Catalogued.Offering("zeta");
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null, Seats = new SeatBook(directory.AgentsFor) };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+
+        // The pane has read the project when zeta was catalogued and had not registered.
+        shell.Agents.Show([], machine.Catalogue, null, Catalogued.Project);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "talk");
+        Assert.Contains("zeta (never run)", string.Join('|', shell.Room.Written), StringComparison.Ordinal);
+
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(
+                AgentName.Create($"zeta@{Parley.Configuration.NodeCatalogue.Machine}"),
+                "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+            Ct);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "talk");
+        await shell.Settled;
+
+        var room = shell.Room.Written;
+
+        Assert.DoesNotContain(room, row => row.Contains("never run", StringComparison.Ordinal));
+        Assert.Single(room, row => row.Contains("zeta", StringComparison.Ordinal));
+    }
 }
