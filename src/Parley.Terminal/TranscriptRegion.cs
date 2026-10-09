@@ -57,7 +57,7 @@ internal sealed class TranscriptRegion : FrameView
     /// transcript of very short messages, and a reader who does not know a fold is on reads missing words as
     /// missing messages. The title is on screen whatever the width and survives colour being stripped.
     /// </remarks>
-    internal const string FoldedTitle = "Transcript (folded — Enter opens one)";
+    private const string FoldedTitle = "Transcript (folded — Enter opens one)";
 
     private readonly GuardedList _lines = Lists.Filling(Colours.Transcript);
 
@@ -146,6 +146,7 @@ internal sealed class TranscriptRegion : FrameView
         var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
+        Retitle();
 
         // **Read on screen rather than exported to it.** What was here was `Transcript.Write`,
         // which is the export -- one flattened line of JSON per message, times in UTC, no breaks
@@ -510,7 +511,7 @@ internal sealed class TranscriptRegion : FrameView
     internal void Fold()
     {
         _folded = !_folded;
-        Title = _folded ? FoldedTitle : RegionTitle;
+        Retitle();
 
         Redraw();
 
@@ -647,7 +648,20 @@ internal sealed class TranscriptRegion : FrameView
     internal void Clear()
     {
         Open = null;
+        Retitle();
         Say(Nothing, LineKind.Annotation);
+    }
+
+    /// <summary>Names the conversation in the box's title, and says when the box is folded.</summary>
+    /// <remarks>
+    /// The owner's call of 2026-10-09: the name of the conversation belongs in the title, since the status line is the only
+    /// other place it is, and a person reading a long transcript has lost sight of it by then.
+    /// </remarks>
+    private void Retitle()
+    {
+        var named = Open is { } open ? $"{RegionTitle} — {Safe.Text(open)}" : RegionTitle;
+
+        Title = _folded ? FoldedTitle.Replace(RegionTitle, named, StringComparison.Ordinal) : named;
     }
 
     /// <summary>Wraps a line to a width, breaking between words where it can.</summary>

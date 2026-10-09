@@ -43,15 +43,16 @@ public sealed class FoldingTests
         await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
         var transcript = seated.Shell.Transcript;
 
-        Assert.Equal(TranscriptRegion.RegionTitle, transcript.Title);
+        Assert.DoesNotContain("folded", transcript.Title, StringComparison.Ordinal);
 
         transcript.Fold();
 
-        Assert.Equal(TranscriptRegion.FoldedTitle, transcript.Title);
+        Assert.Contains("folded", transcript.Title, StringComparison.Ordinal);
+        Assert.Contains(Seated.Conversation, transcript.Title, StringComparison.Ordinal);
 
         transcript.Fold();
 
-        Assert.Equal(TranscriptRegion.RegionTitle, transcript.Title);
+        Assert.DoesNotContain("folded", transcript.Title, StringComparison.Ordinal);
     }
 
     [Fact]

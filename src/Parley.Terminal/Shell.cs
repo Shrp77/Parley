@@ -2551,7 +2551,7 @@ internal sealed class Shell : Window
         return Task.CompletedTask;
     }
 
-    /// <summary>Starts an agent the room named as not started, and says whether it registered.</summary>
+    /// <summary>Starts an agent the room named as never run, says whether it registered, and includes it in the line once it has.</summary>
     /// <param name="role">The role the catalogue knows it by.</param>
     private void StartUnstarted(string role)
     {
@@ -2575,8 +2575,19 @@ internal sealed class Shell : Window
                 [project],
                 token).ConfigureAwait(false);
 
-            // The room again, so it moves from "not started" to an agent that can be ticked once it has registered.
+            // The room again, so it moves from "never run" to an agent in the list once it has registered.
             await OpenAsync(project, conversation, token).ConfigureAwait(false);
+
+            // **Ticking it was asking for it to be in the line, so it is once it can be.** The tick on its row meant include
+            // it; starting it was only the step that made that possible. An agent that did not register stays unticked and
+            // the status line has said so.
+            if (AgentName.TryCreate($"{role}@{MachineName.Current}", out var started)
+                && Drafting is { } draft
+                && (await RegisteredIn(project, started, token).ConfigureAwait(false)).Value)
+            {
+                draft.Widen(started);
+                Room.Address(draft.Recipients);
+            }
         });
     }
 

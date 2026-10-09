@@ -123,7 +123,7 @@ public sealed class EnrolmentSummaryTests
     }
 
     [Fact]
-    public void An_agent_that_has_not_registered_is_named_in_the_room_and_not_offered_to_tick()
+    public void An_agent_that_has_not_registered_is_named_in_the_room_with_a_box_to_tick()
     {
         // The owner's report of 2026-10-09: an agent just added was missing from the room. It is catalogued and has never
         // run, so the registry does not hold it. Must fail against a room that lists only registered agents.
@@ -143,7 +143,7 @@ public sealed class EnrolmentSummaryTests
         Assert.Contains(RoomRegion.Elsewhere, rows);
         Assert.Contains(rows, row => row.Contains("billing", StringComparison.Ordinal)
                                      && row.Contains(RoomRegion.NotStarted.Trim(), StringComparison.Ordinal));
-        Assert.DoesNotContain(rows, row => row.Contains("[ ] ", StringComparison.Ordinal) && row.Contains("billing", StringComparison.Ordinal));
+        Assert.Contains(rows, row => row.StartsWith("[ ] ", StringComparison.Ordinal) && row.Contains("billing", StringComparison.Ordinal));
     }
 
     [Fact]

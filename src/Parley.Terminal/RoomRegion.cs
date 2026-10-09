@@ -131,7 +131,7 @@ internal sealed class RoomRegion : FrameView
     internal IReadOnlyList<string> Unstarted { get; set; } = [];
 
     /// <summary>What follows the name of an agent that has not registered. Short, since the column is narrow.</summary>
-    internal const string NotStarted = " (not started)";
+    internal const string NotStarted = " (never run)";
     private IReadOnlyList<OutstandingItem> _outstanding = [];
     private IReadOnlyList<AgentName> _addressed = [];
     private AgentName? _me;
@@ -353,7 +353,7 @@ internal sealed class RoomRegion : FrameView
 
             foreach (var role in Unstarted)
             {
-                rows.Add(new Row("  " + Safe.Text(role) + NotStarted, null, null, null, role));
+                rows.Add(new Row("[ ] " + Safe.Text(role) + NotStarted, null, null, null, role));
             }
         }
 
