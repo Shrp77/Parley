@@ -251,4 +251,76 @@ public sealed class PlansTests : IAsyncDisposable
 
         Assert.Contains(shell.Conversations.Conversations, c => c.Id == "rm1-1");
     }
+
+    [Fact]
+    public async Task An_agent_added_after_the_roadmap_is_offered_in_an_item_conversation_that_has_not_started()
+    {
+        // The owner's report of 2026-10-09: an agent added to the project was not listed under "not in it yet" in the
+        // first roadmap conversation. Must fail against a room that offers nobody until the conversation has a message.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null, Seats = new SeatBook(directory.AgentsFor) };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await ConfirmedAsync();
+
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(AgentName.Create("inventory@test"), "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+            Ct);
+
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+        Assert.IsType<PlanView>(driving.App.TopRunnableView).OpenSelected();
+        await shell.Settled;
+
+        var room = string.Join('|', shell.Room.Written);
+
+        Assert.Contains(RoomRegion.Elsewhere, room, StringComparison.Ordinal);
+        Assert.Contains("inventory", room, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agent_added_after_an_item_conversation_began_is_offered_when_it_is_opened_again()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null, Seats = new SeatBook(directory.AgentsFor) };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(Ct);
+        await shell.Settled;
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+        Assert.IsType<PlanView>(driving.App.TopRunnableView).OpenSelected();
+        await shell.Settled;
+
+        shell.Line.Accept();
+        await shell.Settled;
+
+        await new AgentRepository(_connection).UpsertAsync(
+            new AgentRecord(AgentName.Create("inventory@test"), "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+            Ct);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await Walking.GoAsync(shell, Viewing.Conversation, "rm1-1");
+        await shell.Settled;
+
+        var room = string.Join('|', shell.Room.Written);
+
+        Assert.Contains(RoomRegion.Elsewhere, room, StringComparison.Ordinal);
+        Assert.Contains("inventory", room, StringComparison.Ordinal);
+    }
 }
