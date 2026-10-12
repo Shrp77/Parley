@@ -156,7 +156,7 @@ public sealed record AutostartPlan(
         }
 
         // The console, for the same reason as the node and with the same shape. A person's own
-        // window is the one attachment nothing can give a turn to (SPEC.md §17 question 15), so
+        // window is the one attachment nothing can give a turn to, so
         // the console is not a convenience beside the deployment — it is how a person takes part
         // in one without falling into that hole. An entry that started the broker and left the
         // console to be remembered would be an entry that works for agents and not for people.

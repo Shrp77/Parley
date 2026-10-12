@@ -5,8 +5,8 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That no operator operation acts on the person's seat, and each says why in the same sentence (SPEC.md §10.2,
-/// specs/023 T048), with the person row present, as it always is.
+/// That no operator operation acts on the person's seat, and each says why in the same sentence (SPEC.md §10.2),
+/// with the person row present, as it always is.
 /// </summary>
 /// <remarks>
 /// Before, they answered different ways: a raw storage constraint for retire and purge, a node asked to start

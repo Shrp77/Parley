@@ -292,7 +292,7 @@ CREATE TABLE agent_ownership_accepted (
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
   -- The discussion, so FR-011 is answerable from the agent rather than from somebody's memory.
   -- Cleared, not refused, when that conversation is destroyed: the line is what peers route by and the
-  -- conversation is evidence of how it was reached (research finding 14 of specs/022).
+  -- conversation is evidence of how it was reached.
   conversation_id  TEXT             REFERENCES conversations(id) ON DELETE SET NULL,
   accepted_utc     TEXT    NOT NULL,
 

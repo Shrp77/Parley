@@ -5,7 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That nothing an agent can call returns anything about anybody's turns (SPEC.md §11.6, §10.1, specs/024 FR-005).
+/// That nothing an agent can call returns anything about anybody's turns (SPEC.md §11.6, §10.1).
 /// </summary>
 /// <remarks>
 /// <para>

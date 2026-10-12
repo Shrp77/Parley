@@ -45,6 +45,17 @@ public sealed class NamingModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
 
+    /// <summary>A new name the reader typed in the project page's title box, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// Only carried here. Nothing is written: the box on the project page hands the name to the page that
+    /// describes what a rename does, so the console still never writes the layout.
+    /// </remarks>
+    [BindProperty(SupportsGet = true)]
+    public string? NewName { get; set; }
+
+    /// <summary>Whether <see cref="NewName"/> is a name a project can have.</summary>
+    public bool NewNameValid => Parley.Core.ProjectName.TryCreate(NewName, out _);
+
     /// <summary>Where that project's broker listens.</summary>
     public string Endpoint { get; private set; } = string.Empty;
 

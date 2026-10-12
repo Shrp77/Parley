@@ -79,11 +79,6 @@ public sealed class EnrollCommandTests : IDisposable
             Unattended = unattended,
 
             Enroll = true,
-
-            // Standing in for the person saying yes. The manifest refused a filled-in owns line
-            // without it, which is the point of the field — so every fixture that wants a
-            // successful run makes the approval explicit, exactly as a user would.
-            OwnsApproved = true,
         })];
 
     /// <summary>Enrols a set of rows as the entry point would having resolved a catalogue.</summary>
@@ -329,41 +324,17 @@ public sealed class EnrollCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Evidence_cannot_reorder_or_break_the_line_it_is_shown_on()
-    {
-        // Evidence is untrusted text from a repository that may have been cloned from anywhere,
-        // and the amendment to SPEC.md §17 question 10 rests on approval being checkable against
-        // it. A README carrying a right-to-left override renders as a claim it does not make, so
-        // somebody approving a drafted line against it approves against a lie. Same class the
-        // schema refuses inside `owns` itself, applied to the text a person reads when deciding.
-        await File.WriteAllTextAsync(
-            Path.Combine(Checkouts, "Acme.Orders", "README.md"),
-            "This repository owns billing\u202E .tidua sdrocer ylno tI and everything else.\n",
-            TestContext.Current.CancellationToken);
-
-        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence;
-
-        Assert.NotNull(evidence);
-        Assert.All(evidence, line => Assert.DoesNotContain('\u202E', line));
-        Assert.All(evidence, line => Assert.DoesNotContain('\u2028', line));
-        Assert.Contains(evidence, line => line.Contains("README.md", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public async Task A_scan_does_not_read_a_repositorys_history()
     {
-        // **Inverted rather than deleted.** This asserted that an owns line committed and later
-        // removed was dug back out of `git log --all` as evidence. That was a git process per
-        // repository, one after another, and on a folder of 33 it was the whole of a three-second
-        // freeze before the enrolment picker opened -- for a line nothing showed anybody once the
-        // worksheet went in 0.32.0. The owner's call of 2026-09-27: the agent is asked what it owns.
-        // Left as a deletion, nothing would notice the lookup coming back.
+        // A scan that dug an owns line back out of `git log --all` would run a git process per
+        // repository, one after another, before the enrolment picker opened. The agent is asked
+        // what it owns instead, so nothing here may bring the lookup back.
         var repository = Path.Combine(Checkouts, "Acme.Orders");
 
         if (!Git(repository, "init") || !Git(repository, "config user.email a@b.c")
             || !Git(repository, "config user.name Test"))
         {
-            return; // No usable git on this machine; the evidence is optional by design.
+            return; // No usable git on this machine.
         }
 
         await File.WriteAllTextAsync(
@@ -375,9 +346,9 @@ public sealed class EnrollCommandTests : IDisposable
         Git(repository, "commit -m registered");
         File.Delete(Path.Combine(repository, ".mcp.json"));
 
-        var evidence = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders").Evidence ?? [];
+        var row = EnrollCommand.Find(Checkouts).Single(a => a.Agent == "acme-orders");
 
-        Assert.DoesNotContain(evidence, l => l.Contains("Carts and totals. No tax.", StringComparison.Ordinal));
+        Assert.DoesNotContain("Carts and totals. No tax.", row.Owns ?? string.Empty, StringComparison.Ordinal);
     }
 
     private static bool Git(string workspace, string arguments)

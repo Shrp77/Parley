@@ -5,7 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a node's turn reports are recorded when they check out and ignored when they do not (SPEC.md §11.6, specs/024).
+/// That a node's turn reports are recorded when they check out and ignored when they do not (SPEC.md §11.6).
 /// </summary>
 /// <remarks>
 /// <para>

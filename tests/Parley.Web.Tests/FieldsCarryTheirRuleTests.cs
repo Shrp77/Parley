@@ -52,7 +52,7 @@ public sealed class FieldsCarryTheirRuleTests
         Assert.DoesNotContain("placeholder=\"what it is about\"", body, StringComparison.Ordinal);
     }
 
-    // `Joining_says_what_may_name_a_person` was here. The Join page and its name field went in specs/023: the broker
+    // `Joining_says_what_may_name_a_person` was here. The Join page and its name field are gone: the broker
     // provides the person seat, so no name is typed.
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class FieldsCarryTheirRuleTests
         var body = await client.GetStringAsync(
             new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        // Read from the projects page since specs/023 removed the Join page this used to read: the script is the frame's,
+        // Read from the projects page, as there is no Join page: the script is the frame's,
         // so every page carries it.
         Assert.Contains("querySelectorAll('[data-correct]')", body, StringComparison.Ordinal);
 

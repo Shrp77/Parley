@@ -21,8 +21,8 @@ installs a global .NET tool and edits configuration the user may already have, a
 in the normal permission flow.
 
 **Do not assume the repository is clean.** Every file below may already exist, and the ways it
-can be wrong are not the same: `.mcp.json` may carry variables from an older shape that nothing
-reads any more, `node.json` may still hold consent to start a repository whose registration was
+can be wrong are not the same: `.mcp.json` may carry variables that nothing
+reads, `node.json` may still hold consent to start a repository whose registration was
 deleted, and a `## Peers` section may carry project rules this command did not write and cannot
 recreate. Being told to treat the setup as new says nothing about the files - a purge clears the
 broker's store and touches neither the repository nor the machine. So read each one before
@@ -58,7 +58,7 @@ dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
 
 If the user already has a clone, skip the `git clone` and run the rest from it.
 
-## 2. Ask for the three things only the user knows
+## 2. Ask for the name, and settle the broker
 
 **The agent name for this repository.** Lowercase letters, digits and hyphens, starting with a
 letter, up to 32 characters. It should name the domain this repository owns - `orders`,
@@ -71,49 +71,26 @@ unforgeable, and it does that by taking the name from the launch environment and
 tool that mentions it - which is worth nothing if two servers claim the same name, because
 either one may then collect the other's mail.
 
-**What this repository owns.** One line that every other agent sees beside this one's name when
-it lists the roster. It is how a peer decides whether a question is this repository's, so say
-what you own **and** what you do not - the exclusion is the half that stops somebody asking the
-wrong agent:
+**What this repository owns.** The agent provides this line and the user verifies it. Do not ask
+the user to write it, and do not put a guess of your own in `.mcp.json` (step 3 says why). Once
+this repository's agent attaches, Parley asks it what it owns, and its answer is the line. With
+the project's Auto Accept switch on (the default) the answer is recorded at once as `automatic`;
+with it off the user accepts it from the ownership review. Either way the user sees it on every
+surface and can correct it, so tell them to check it once the agent has answered.
+
+The line is how a peer decides whether a question is this repository's, so a good one says what
+the repository owns **and** what it does not - the exclusion is the half that stops somebody
+asking the wrong agent:
 
 > `Carts, orders and line totals. No tax, no stock.`
 >
 > `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
 
-**Keep it to about a line, even though nothing enforces that any more.** The length bound came
-off so that an agent asked what it owns can answer in two halves and name a peer. What has not
-changed is the cost: this text is read far more often than it is written - once per peer, every
-time anybody lists the roster - and it is charged against the working memory of every agent that
-reads it. Both examples above are under eighty characters, and neither is short at the expense of
-saying what it means.
-
-**Put the repository's own words in front of them first, and do not write the line.** A cold
-prompt gets a vague answer or none, and there is something honest to offer instead: quote what
-the project already says about itself - the description line of its `README`, the `description`
-field of its package manifest, the top-level directories - and name where each came from, so
-the user is reading their own project rather than this agent's reading of it. Then ask.
-
-The distinction is not a nicety. Evidence invites them to write a line; a draft invites them to
-approve one, and an approved draft is model-written text that looks person-written from every
-other repository in the deployment - nobody on the far side can tell. SPEC.md §17 question 10
-closes this deliberately: *"It is not self-declared, and that is the whole of why it is worth
-reading. A field a model could write would be no more trustworthy than the prose it replaces,
-merely centralised."* The field is worth routing by because a person meant it.
-
-**Never propose the exclusion half.** A repository cannot supply it: no tax code in the tree
-does not mean this repository does not own tax, only that it has not been written yet - and
-that half is the one that stops somebody asking the wrong agent. Suggesting it is inventing the
-load-bearing part with confidence. Ask, and take "I don't know yet" for an answer; a name and
-no line still leaves a requester the name to go on, and a receiver that does not own the work
-asks the agent that does - which is what §17 question 10 says it falls back to.
-
-It must be one line and it is refused at start-up if it is not, so do not paste prose with a
-line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
-user's wording has one - an unescaped one makes the whole launch configuration unreadable and
-the server simply never starts. Ask the user; do not write it for them from what you can see in the
-repository, because a boundary is a decision somebody made rather than something a directory
-listing implies. If they are unsure, leaving it out is better than guessing - an agent with
-none is listed with none, and askers fall back to its name.
+It is one line with no line break, and it should stay about that long even though nothing
+enforces it. The cost is real: this text is read far more often than it is written - once per
+peer, every time anybody lists the roster - and it is charged against the working memory of every
+agent that reads it. Both examples above are under eighty characters, and neither is short at the
+expense of saying what it means.
 
 **The broker.** One process owns the store and everything else connects to it, so what this
 repository needs is an address rather than a path. `127.0.0.1:51707` is the default and needs no
@@ -137,8 +114,8 @@ serves every project this machine names, so what is usually missing is a project
 parley
 ```
 
-That is the only place a project is created - `parley project add` was removed on 2026-09-25, so
-do not offer it. The broker starts the project within seconds. Naming it is the whole of creating
+That is the only place a project is created - there is no command-line verb for it, so do not
+offer one. The broker starts the project within seconds. Naming it is the whole of creating
 it: the project gets a
 folder of its own, a `parley.db` inside it, and a port claimed for it. **You do not choose where
 the store goes, and that is the point** - it is one SQLite file shared by every repository that
@@ -186,16 +163,11 @@ Substitute the real values. Four notes on the shape:
   `.mcp.json` is usually committed and both paths are machine-specific, so the default is what
   this machine uses and a teammate overrides it by setting the variable rather than by editing
   a shared file.
-- The clarify cap is **not** here. It used to be, set per repository, which meant one
-  deployment could admit forty clarifications on one exchange and three on another with nothing
-  to say why. It belongs to the broker now, and it is still the measurement SPEC.md 17 question
-  4 asks for rather than a considered limit - the terminal's health view is what says where depth
-  actually settles.
 - `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
   every machine, because they name what this repository is rather than where it lives. **Omit
   `PARLEY_OWNS` rather than guessing at it.** An empty string means the same as absent, and a
   placeholder left in by accident is a claim the user did not make -- but the reason to leave it
-  out is stronger than that now: **the line is obtained by asking the agent, and Parley does the
+  out is stronger than that: **the line is obtained by asking the agent, and Parley does the
   asking.** Once this repository's agent attaches, Parley asks it what it owns; with the project's
   Auto Accept switch on (the default) the answer is written into this file for them, and with it
   off a person accepts it from the ownership review. A line invented
@@ -210,11 +182,9 @@ These are optional and can be left out: `PARLEY_RESPONDER` (what to record as ha
 message, `unknown-model` if unset), `PARLEY_BROKER` (where the broker is, the local default if
 unset), `PARLEY_MACHINE` (this machine's name, detected if unset).
 
-The sweep cadence and the retention pair are **not** here any more, and that is worth saying to
-a user who has seen an older configuration. They describe the deployment rather than this
-repository, and they now belong to `parley serve` - one process applies them, so there is one
-answer. Setting them per agent used to mean a deployment could enforce different numbers on one
-file with nothing to show which was in force.
+The sweep cadence and the retention pair are **not** set here. They describe the deployment rather
+than this repository, and they belong to `parley serve` - one process applies them, so there is
+one answer.
 
 ### The file is per branch, and that is a trap
 
@@ -240,15 +210,20 @@ Everything so far needs a person to take a turn: this agent answers when its ses
 its session acts when the user sends it something. So an exchange with a peer needs a human at
 both ends unless this machine offers otherwise.
 
-**The offer is not in `.mcp.json` any more.** How to start a repository is configuration
-belonging to the machine it is on, so it lives in `node.json` - beside where `parley up` is run,
-or wherever `PARLEY_NODE_CONFIG` points - and never reaches the broker at all. The store holds no
-executable command line, and an agent that has never run still has a record of how to start it.
+**The offer is not in `.mcp.json`.** How to start a repository is configuration belonging to the
+machine it is on, so it lives in `node.json` - one for the whole machine, in the same folder as
+the projects (`parley project list` says where), or wherever `PARLEY_NODE_CONFIG` points - and
+never reaches the broker at all. The store holds no executable command line, and an agent that
+has never run still has a record of how to start it.
+
+Each entry is keyed by the repository's identity: a GUID held in `.mcp.json` as `parleyAgentId`,
+beside `mcpServers` rather than inside an entry, because a checkout answering in two projects has
+one identity and two entries. `parley enroll` writes both the identity and the entry.
 
 ```json
 {
   "agents": {
-    "<the agent's role>": {
+    "<the repository's parleyAgentId>": {
       "command": "claude",
       "workspace": "<absolute path to this repository>"
     }
@@ -268,16 +243,13 @@ directory from a registration would be taking a path from the network.
 **Ask the user before adding this repository to that file, and take no for an answer.** Listing
 it here is the permission: it says the node may start this repository when a peer asks it
 something,
-which spends their tokens with nobody watching. There is no second flag, and there used to be —
-recording *how* to start a repository had been read as consent to run it unwatched, so the two
-had to be prised apart. When starting is the machine's own configuration the question does not
-arise.
+which spends their tokens with nobody watching. There is no second flag.
 
 Withdrawing it later means removing that entry. Nothing else, and nowhere else.
 
-**One thing to check while editing it:** `node.json` is keyed by *role*, not by the full agent
-name. An agent is `role@machine` and the machine half is detected, so this file describes this
-machine and an entry here can only ever mean an agent on it.
+**One thing to check while editing it:** `node.json` is keyed by the repository's identity, not by
+the agent's name. This file describes this machine, so an entry here can only ever mean an agent
+on it.
 
 ## 5. Check the broker is reachable
 
@@ -354,8 +326,8 @@ refused to a caller with no open stream, so a roster that came back at all is th
 this agent attached, and an agent is registered at the moment it attaches.
 
 This step is seventh rather than last because everything below it needs the tools, and nothing
-above it did. Naming the peers used to come first here, which could not work: it calls
-`parley_agents`, and until the restart there is no such tool to call.
+above it did. Naming the peers calls `parley_agents`, and until the restart there is no such tool
+to call.
 
 ## 8. Name the peers, in the session that comes back
 

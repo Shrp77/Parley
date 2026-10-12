@@ -44,9 +44,6 @@ wrong one leaves every repository answering in a deployment nobody meant. With o
 configured, or none, nothing needs saying.
 
 Consent to run unattended lives in **one catalogue per machine**, keyed by identity, at the root.
-This step used to warn that there was one per project and that writing to the wrong one recorded
-repositories as startable that nothing would ever start; 018 removed the per-project catalogue,
-so that hazard is gone.
 
 ## 2. Enrol them
 
@@ -58,12 +55,6 @@ One verb. It lists every git repository directly under that directory and **asks
 enroll** - arrow keys to move, space to tick, `a` all, `n` none, enter to confirm, escape to back
 out. Then it configures the ticked ones, catalogues them, and starts each so that it registers
 itself.
-
-**There was a file in the middle of this until 0.32.0.** `scan` wrote `parley-agents.json`, the
-user filled in what each repository owns, `plan` said what would change and `apply` changed it.
-That file was a round trip through the disk between two halves of one operation, and the one
-thing it bought was somewhere to type an owns line - which Parley now asks the agent itself,
-rather than having a person answer it from memory. Do not look for the manifest; there is none.
 
 **Nothing is ticked to begin with.** A scan finds every checkout under a directory and most are
 usually not meant to be agents. Repositories that already have an `.mcp.json` are marked so,
@@ -88,16 +79,7 @@ run. Three behaviours are worth knowing so the output is not surprising:
 
 **Enrolling is the consent to start it.** A catalogued repository can be started by a peer's
 request with nobody watching, which spends whatever that agent costs to run. The command says so,
-and names how many it is about to start, before it configures anything. This reverses a
-per-repository opt-in that defaulted to off - which produced, on a real machine, nineteen
-repositories that were enrolled, addressable and unstartable.
-
-**Enrolment does not read a repository's git history.** It used to: it searched each repository's
-history for an `owns` line it had been registered with before, and put that line in `_evidence`.
-That stopped in 0.34.2. It cost a process per repository before the picker could open, and the
-worksheet it filled in was removed in 0.32.0. Now the agent is asked what it owns, and an agent
-that already knows says so.
-
+and names how many it is about to start, before it configures anything.
 
 ## 3. Read the roster once
 
@@ -109,13 +91,7 @@ Enrolment prints this, and it is the part that has to be done in order:
    startable and never started. (`parley serve --project <name>` serves one project alone and is
    for testing only.)
 
-   **There is nothing to point at a catalogue, and this step used to say otherwise.** It told you
-   to run `project set <name> --node-config <path to node.json>` so that a project's entry
-   carried its own catalogue. 018 made there be **one catalogue per machine**, keyed by identity,
-   at the root - so a project cannot name a different one - and 019 removed the field that
-   sentence wrote. The paragraph that followed it, about naming the catalogue explicitly rather
-   than relying on `PARLEY_NODE_CONFIG`, was advice about a per-project entry that no longer
-   exists. `node.json` sits beside the projects at the root and every project starts from it.
+   `node.json` sits beside the projects at the root and every project starts from it.
 2. Each repository started by the enrolment, and **registered**. Enrolment starts them itself and
    reports which ones registered - one reported as *not known* has not failed, it simply had not
    registered by the time the command stopped waiting. A session already open in a repository

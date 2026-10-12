@@ -15,46 +15,5 @@
 }
 else
 {
-    <section class="waiting-proposals" aria-label="Proposed roadmaps">
-        <h2>Proposed by agents, awaiting your decision (@Model.Waiting.Count)</h2>
-
-        @if (Model.Waiting.Count == 0)
-        {
-            <p>No roadmap is awaiting your decision.</p>
-        }
-        else
-        {
-            @* An agent's words, escaped like every other agent-written text. Each is a link to a page that describes the
-               proposal whole and what confirming or declining it would do. *@
-            <ul>
-                @foreach (var proposal in Model.Waiting)
-                {
-                    <li>
-                        <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id">@ProposalText.Row(proposal)</a>
-                    </li>
-                }
-            </ul>
-        }
-    </section>
-
-    <section class="roadmaps" aria-label="Roadmaps">
-        <h2>Roadmaps (@Model.Roadmaps.Count)</h2>
-
-        @if (Model.Roadmaps.Count == 0)
-        {
-            <p>There is no roadmap in this project yet. An agent proposes one, and it exists once you confirm it.</p>
-        }
-        else
-        {
-            <ul>
-                @foreach (var roadmap in Model.Roadmaps)
-                {
-                    <li>
-                        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">@roadmap.Title</a>
-                        — @roadmap.LiveItems item@(roadmap.LiveItems == 1 ? "" : "s"), @roadmap.StartedItems started
-                    </li>
-                }
-            </ul>
-        }
-    </section>
+    <partial name="_RoadmapSummary" model="@(new Parley.Web.Pages.Shared.RoadmapSummaryView(Model.Project ?? "", Model.Waiting, Model.Roadmaps))" />
 }

@@ -51,7 +51,6 @@ public sealed class ProbeFourteenTests : IDisposable
         new(workspace, "orders", "Carts and totals.", Unattended: true)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>Links <paramref name="at"/> to <paramref name="target"/>, or says it cannot.</summary>

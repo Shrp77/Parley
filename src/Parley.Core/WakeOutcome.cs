@@ -35,8 +35,7 @@ public enum WakeOutcome
     /// <remarks>
     /// Asking is not the same as its happening. A node gives a turn only to a resident of its own,
     /// so an agent attached through somebody's editor window is left alone — nothing can make a
-    /// person's window take a turn, which is the case SPEC.md section 17 question 15 was written
-    /// about.
+    /// person's window take a turn.
     /// </remarks>
     AlreadyRunning = 1,
 
@@ -70,7 +69,7 @@ public enum WakeOutcome
     /// <para>
     /// <b>Not <see cref="AlreadyComing"/>, though that is the nearest.</b> Nothing is coming by itself: a person has to
     /// decide, and an agent told a turn is on its way would wait for something no machine will do. And never
-    /// <see cref="Unreachable"/>, which is what the person seat was told before specs/023 — every wake asked a node to
+    /// <see cref="Unreachable"/>, which is what the person seat was once told — every wake asked a node to
     /// start the person, no node can, and an agent told "unreachable" behaves as if its question will never be read,
     /// when it waits in the person's mail for as long as it takes.
     /// </para>

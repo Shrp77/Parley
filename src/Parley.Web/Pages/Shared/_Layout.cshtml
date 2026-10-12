@@ -8,7 +8,7 @@
 @inject Parley.Client.Seating.SeatBook Seats
 @inject Parley.Client.BrokerDirectory Directory
 @{
-    // **The person's seat in every project, taken here with nothing typed** (specs/023). The broker provides the seat
+    // **The person's seat in every project, taken here with nothing typed**. The broker provides the seat
     // and never releases it; what this does is attach as it, if nothing holds it now, and mark the person here. It
     // replaced a Join page and a cookie remembering a typed name, which parted company from the seat on every broker
     // restart and twenty minutes after anybody walked away — and a frame that had to reconcile the two.
@@ -76,6 +76,9 @@
             }
         }
 
+        /* Room for the scrollbar on every page, so a short page and a long one lay out alike and nothing shifts sideways */
+        /* when one gains or loses it. */
+        html { scrollbar-gutter: stable; }
         * { box-sizing: border-box; }
 
         body {
@@ -89,6 +92,66 @@
         }
 
         header, main, footer { margin: 0 auto; max-width: 100rem; }
+
+        /* The side rail: navigation on the left, the page on the right, collapsible to icons. The choice is the browser's
+           alone (localStorage, guarded) and the page is complete without it. Expanded is the default so that nothing is
+           hidden from somebody with no script. */
+        .shell { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: var(--gap); align-items: start; max-width: 100rem; margin: 0 auto; }
+        html[data-nav="collapsed"] .shell { grid-template-columns: 3.9rem minmax(0, 1fr); }
+        .content { min-width: 0; }
+        .content main, .content footer { max-width: none; }
+
+        .side {
+            position: sticky;
+            top: calc(var(--frame) + 0.75rem);
+            margin-top: 0.75rem;
+            max-height: calc(100vh - var(--frame) - 1.5rem);
+            overflow-y: auto;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: 20px;
+            box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04);
+            padding: 0.6rem;
+        }
+
+        .side-toggle {
+            display: flex; align-items: center; gap: 0.7rem; width: 100%;
+            background: none; border: 0; box-shadow: none; color: var(--ink-soft);
+            padding: 0.55rem 0.7rem; border-radius: 12px; cursor: pointer; font: inherit;
+        }
+        .side-toggle:hover { background: var(--quiet-wash); color: var(--ink); }
+        .side-toggle svg { transition: transform 0.15s; }
+        html[data-nav="collapsed"] .side-toggle svg { transform: rotate(180deg); }
+
+        .side nav { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.4rem 0 0; align-items: stretch; }
+        .side nav a {
+            display: flex; align-items: center; gap: 0.7rem;
+            padding: 0.55rem 0.7rem; border: 0; border-radius: 12px;
+            color: var(--ink-soft); position: relative; white-space: nowrap;
+        }
+        .side nav a:hover, .side nav a:focus { background: var(--quiet-wash); color: var(--ink); border: 0; }
+        .side nav a[aria-current] { color: var(--ink); font-weight: 600; background: var(--quiet-wash); }
+        .side nav a[aria-current]::before {
+            content: ""; position: absolute; left: -0.6rem; top: 50%; transform: translateY(-50%);
+            border: 6px solid transparent; border-left-color: var(--accent); border-right-width: 0;
+        }
+        .side svg { flex: none; width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .side-label { overflow: hidden; text-overflow: ellipsis; }
+        .side-heading { margin: 0.9rem 0.7rem 0.2rem; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); overflow-wrap: anywhere; }
+        .side .seat-waiting { margin-left: auto; }
+
+        html[data-nav="collapsed"] .side-label,
+        html[data-nav="collapsed"] .side-heading { position: absolute; left: -100rem; }
+        html[data-nav="collapsed"] .side nav a { justify-content: center; padding-inline: 0; }
+        html[data-nav="collapsed"] .side-toggle { justify-content: center; padding-inline: 0; }
+        html[data-nav="collapsed"] .side nav a[aria-current]::before { left: -0.45rem; }
+
+        @@media (max-width: 700px) {
+            .shell { grid-template-columns: 3.9rem minmax(0, 1fr); gap: 0.6rem; }
+            .side-label, .side-heading { position: absolute; left: -100rem; }
+            .side nav a { justify-content: center; padding-inline: 0; }
+            .side-toggle { display: none; }
+        }
 
         /* Skipping is for somebody navigating by keyboard, so it has to become visible when it
            is focused rather than merely exist. */
@@ -139,6 +202,19 @@
         }
 
         .brand span { color: var(--ink-faint); font-weight: 400; }
+
+        .crumb {
+            margin-left: 1rem;
+            padding-left: 1rem;
+            border-left: 1px solid var(--rule);
+            font-weight: 650;
+            color: var(--ink);
+            text-decoration: none;
+            overflow-wrap: anywhere;
+        }
+
+        /* A hint beside the name, not part of it: faint and italic so it reads as a gloss and not as the heading. */
+        h1 .item-title { font-size: 0.7em; font-weight: 400; font-style: italic; color: var(--ink-faint); margin-left: 0.6rem; }
 
         /* Drawn in black on transparency, so on a dark ground it is inverted rather than
            swapped for a second file. One asset, and it cannot fall out of step with itself. */
@@ -620,10 +696,24 @@
            Collapses above the conversation on a narrow screen rather than squeezing it. */
         .conversation {
             display: grid;
-            grid-template-columns: clamp(13rem, 15vw, 18rem) minmax(0, 1fr) 4rem;
+            grid-template-columns: clamp(15rem, 17vw, 20rem) minmax(0, 1fr) 4rem;
             gap: 1.5rem;
             align-items: start;
         }
+
+        /* The conversation page's left column: both rosters, the legend and what is waiting. The column
+           is what sticks, so the rosters inside it do not; its own height is capped so a long roster
+           scrolls inside it rather than past the bottom of the window. */
+        .side {
+            position: sticky;
+            top: calc(var(--frame) + 1rem);
+            display: grid;
+            gap: 1rem;
+            max-height: calc(100vh - var(--frame) - 2rem);
+            overflow-y: auto;
+        }
+
+        .side .roster { position: static; }
 
         .roster {
             position: sticky;
@@ -721,6 +811,89 @@
 
         .project > section { margin: 0; }
         .project .roster h2, .project > section > h2 { margin-top: 0; }
+
+        .project-main { order: 2; min-width: 0; }
+        .agents-card { order: 1; }
+        .agents-card .tree { list-style: none; margin: 0; padding: 0; }
+        .agents-card .tree ul { list-style: none; }
+        .agents-card .tree li.group, .agents-card .tree li.divider { display: block; }
+        .agents-card .tree details > ul { margin: 0.2rem 0 0.5rem 0.55rem; padding-left: 0.6rem; border-left: 1px solid var(--rule); display: grid; gap: 0.5rem; }
+        .agents-card .tree summary { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+        .agents-card .tree .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+        .agents-card .tree li[class*="slot-"] { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); column-gap: 0.4rem; align-items: center; }
+        .agents-card .tree .who { grid-row: 1 / span 2; width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: #fff; background: var(--agent); }
+        .agents-card .tree .name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+        .agents-card .tree .state { font-size: 0.72rem; color: var(--ink-faint); }
+        .settings-section { margin: 0 0 2rem; max-width: 52rem; }
+        .settings-section fieldset { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.8rem 1rem 1rem; }
+        .settings-section legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.4rem; }
+        .settings-section .toolbar { margin: 0 0 0.6rem; }
+        .settings-tree .tree { list-style: none; margin: 0; padding: 0; }
+        .settings-tree .tree ul { list-style: none; }
+        .settings-tree .tree details > ul { margin: 0.2rem 0 0.5rem 0.55rem; padding-left: 0.6rem; border-left: 1px solid var(--rule); display: grid; gap: 0.4rem; }
+        .settings-tree .tree summary { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+        .settings-tree .tree .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+        .settings-tree .tree li.group { display: block; }
+        .settings-tree .tree li[class*="slot-"] { display: flex; align-items: center; gap: 0.5rem; }
+        .settings-tree .pick-name { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+        .settings-tree .who { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: #fff; background: var(--agent); }
+        .settings-tree .name { font-size: 0.85rem; font-weight: 600; }
+        .settings-tree .state { font-size: 0.72rem; color: var(--ink-faint); }
+        .settings-tree input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+        /* The form only holds the pieces; the expander is the box. */
+        form.default-agent { display: block; background: none; border: 0; padding: 0; margin: 0; box-shadow: none; }
+        .default-expander { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.6rem 1rem; }
+        .default-expander > summary { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+        .default-title { font-weight: 650; }
+        .default-expander .count { font-size: 0.75rem; color: var(--ink-faint); }
+        .select-agents { margin-left: auto; }
+        .chips { list-style: none; margin: 0.7rem 0 0.2rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .chips:empty::before { content: "None chosen."; font-size: 0.85rem; color: var(--ink-faint); }
+        .chip { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--quiet-wash); border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.7rem; font-size: 0.85rem; }
+        .chip-x { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 50%; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1; font-size: 1rem; }
+        .chip-x:hover, .chip-x:focus { color: var(--alarm); background: var(--alarm-wash); }
+        .default-dialog { position: fixed; inset: 0; margin: auto; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); padding: 1rem 1.2rem; width: min(30rem, 92vw); max-height: 80vh; overflow-y: auto; }
+        .default-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+        .default-dialog h3 { margin: 0 0 0.6rem; }
+        .dialog-actions { text-align: right; margin: 0.8rem 0 0; }
+        .act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+        .act-cards li { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; }
+        .act-cards li.costly { background: var(--alarm-wash); }
+        .act-cards .act-title { font-weight: 650; }
+        .act-cards p { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+        .drawer { margin-top: 0.8rem; font-size: 0.85rem; }
+        .drawer summary { cursor: pointer; font-weight: 600; }
+        .drawer ul { margin: 0.4rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+        .project-title { display: flex; align-items: baseline; gap: 0.8rem; }
+        .project-title .title-link { color: inherit; text-decoration: none; }
+        .project-title .title-edit input { font: inherit; font-weight: inherit; width: min(24rem, 70vw); }
+        .project-title .edit { font-size: 0.8rem; font-weight: 400; }
+
+        /* The conversations as a grid: name, messages, last active. A row opens to show who is in it and the acts. */
+        .grid { margin: 0.5rem 0 1rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); }
+        .grid-head, .grid-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(10rem, 14rem); gap: 0.8rem; align-items: baseline; padding: 0.55rem 1rem; }
+        .grid-head { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); border-bottom: 1px solid var(--rule); }
+        .roadmap-grid .grid-head, .roadmap-grid .grid-row > summary { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
+        .roadmap-grid .grid-head span:not(:first-child) { text-align: right; }
+        .items-grid .grid-head, .items-grid .grid-row > summary { grid-template-columns: 3.5rem minmax(0, 1fr) minmax(10rem, 16rem); }
+        .items-grid .num { text-align: left; white-space: nowrap; }
+        .grid.items-grid .name { font-weight: 400; }
+        .chev { display: inline-block; width: 1em; color: var(--ink-faint); transition: transform 0.12s; }
+        details[open] > summary .chev { transform: rotate(90deg); }
+        .items-grid .grid-row.next { background: var(--quiet-wash); }
+        .grid-row + .grid-row { border-top: 1px solid var(--rule); }
+        .grid-row > summary { cursor: pointer; list-style: none; }
+        .grid-row > summary::-webkit-details-marker { display: none; }
+        .grid .name { font-weight: 650; overflow-wrap: anywhere; }
+        .grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .grid .when { font-size: 0.82rem; color: var(--ink-soft); }
+        .grid-detail { padding: 0.2rem 1rem 0.8rem; display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
+        .grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+        .grid-detail form { margin: 0; }
+        @@media (max-width: 40rem) {
+            .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
+            .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
+        }
 
         ul.threads {
             list-style: none;
@@ -934,46 +1107,137 @@
             color: var(--ink-soft);
         }
 
-        fieldset.targets {
-            border: none;
+        .composer-to {
             margin: 0 0 0.6rem;
-            padding: 0;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-            align-items: center;
+            font-size: 0.8rem;
+            color: var(--ink-soft);
+            overflow-wrap: anywhere;
         }
 
-        fieldset.targets legend {
-            float: left;
-            width: 100%;
-            font-size: 0.68rem;
+        /* Who to talk to: one group per machine, the person's first. A name is the role alone, so a row
+           is a box, a badge, a name and a state and does not wrap. */
+        .recipients {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.9rem 1rem;
+        }
+
+        .recipients h2 {
+            margin: 0 0 0.6rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.07em;
             color: var(--ink-faint);
-            padding: 0 0 0.35rem;
         }
 
-        label.target {
-            display: inline-flex;
+        .recipients ul { list-style: none; margin: 0; padding: 0; }
+        .recipients .everyone { display: flex; gap: 0.4rem; align-items: center; font-size: 0.8rem; margin: 0 0 0.6rem; }
+
+        .recipients summary {
+            display: flex;
             align-items: center;
-            gap: 0.35rem;
-            font-size: 0.8rem;
-            border: 1px solid var(--rule);
-            border-radius: 999px;
-            padding: 0.2rem 0.65rem 0.2rem 0.4rem;
+            gap: 0.45rem;
             cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 0.2rem 0;
         }
 
-        /* Checked reads as checked without the tint: the box itself stays visible, and the
-           whole chip takes the agent's edge. */
-        label.target:has(input:checked) {
-            border-color: var(--agent);
-            border-width: 2px;
-            padding: calc(0.2rem - 1px) calc(0.65rem - 1px) calc(0.2rem - 1px) calc(0.4rem - 1px);
+        .recipients .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+
+        .recipients details > ul {
+            margin: 0.2rem 0 0.5rem 0.55rem;
+            padding-left: 0.6rem;
+            border-left: 1px solid var(--rule);
+            display: grid;
+            gap: 0.5rem;
         }
 
-        label.target .who { width: 1.4rem; height: 1.4rem; font-size: 0.55rem; }
+        .recipients li.divider {
+            font-size: 0.66rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ink-faint);
+        }
+
+        .recipients li[class*="slot-"] {
+            display: grid;
+            grid-template-columns: auto auto 1.5rem minmax(0, 1fr);
+            grid-template-rows: auto auto;
+            column-gap: 0.4rem;
+            align-items: center;
+        }
+
+        .recipients li.not-in-it { grid-template-columns: auto 1.5rem minmax(0, 1fr); }
+
+        .recipients li .to-box { grid-row: 1 / span 2; }
+
+        .recipients .who {
+            grid-row: 1 / span 2;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 0.55rem;
+            font-weight: 700;
+            color: #fff;
+            background: var(--agent);
+        }
+
+        .recipients .mark { grid-row: 1 / span 2; font-size: 0.7rem; color: var(--agent); }
+        .recipients .name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+        .recipients .state { font-size: 0.72rem; color: var(--ink-faint); }
+
+        /* Filtering the transcript. Hidden rather than removed, so following can replace the transcript and the
+           choice is simply applied again. */
+        .filtered-out { display: none !important; }
+
+        .filter {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 1rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.6rem 1rem;
+            margin: 0.6rem 0 0;
+            font-size: 0.85rem;
+        }
+
+        .filter[hidden] { display: none; }
+        .filter-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+        .only-me { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+        .pick { position: relative; }
+
+        .pick summary {
+            cursor: pointer;
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 0.2rem 0.6rem;
+            min-width: 8rem;
+        }
+
+        .pick .menu {
+            position: absolute;
+            z-index: 5;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 100%;
+            max-height: 16rem;
+            overflow-y: auto;
+            display: grid;
+            gap: 0.3rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: 6px;
+            padding: 0.5rem 0.7rem;
+            box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.45);
+            white-space: nowrap;
+        }
 
         .composer textarea { width: 100%; min-height: 4.5rem; }
 
@@ -1052,7 +1316,8 @@
         @@media (max-width: 60rem) {
             .conversation, .project { grid-template-columns: minmax(0, 1fr); }
 
-            .roster { position: static; }
+            .roster, .side { position: static; }
+            .side { max-height: none; overflow-y: visible; }
             .roster ul { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
 
             /* Horizontal above the conversation, where a vertical rail beside it
@@ -1134,6 +1399,9 @@
     }
 </head>
 <body>
+    <script>
+        try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
+    </script>
     <a class="skip" href="#main">Skip to content</a>
     <header>
         <a class="brand" href="/">
@@ -1142,12 +1410,16 @@
             <img src="/brand/icon.png" alt="" width="128" height="125" />
             Parley <span>console</span>
         </a>
+        @if ((ViewData["Project"] as string ?? Context.Request.Query["project"].ToString()) is { Length: > 0 } inProject)
+        {
+            @* Where in the deployment the page is, on every page, so a conversation is never without its project. *@
+            <a class="crumb" href="/Projects/Agents?project=@Uri.EscapeDataString(inProject)" title="This project">@inProject</a>
+        }
         <nav aria-label="Console">
-            <a href="/">Projects</a>
             @if (here.Count > 0)
             {
                 @* The count goes to the inbox, where what is waiting can be collected. There is no Leave beside it any
-                   more (specs/023): the seat is the broker's and is never given back, and closing the console is how a
+                   more: the seat is the broker's and is never given back, and closing the console is how a
                    person stops being here. *@
                 <a class="seat-who" href="/Inbox" title="Your messages">
                     <span class="seat-dot" aria-hidden="true"></span>@here[0].Seat.Person
@@ -1173,7 +1445,65 @@
             }
         </nav>
     </header>
+    @{
+        var path = Context.Request.Path.Value ?? "/";
+        var onAgentsTab = path == "/" && Context.Request.Query["tab"] == "agents";
+        var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
+        var q = Uri.EscapeDataString(project);
+        var rail = new List<(string Href, string Label, string Icon, bool Current)>
+        {
+            ("/", "Projects", "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", path == "/" && !onAgentsTab),
+            ("/?tab=agents", "Agents", "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", onAgentsTab),
+            ("/Inbox", "Inbox", "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z", path.StartsWith("/Inbox", StringComparison.Ordinal)),
+        };
+        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
+
+        if (project.Length > 0)
+        {
+            inProjectRail =
+            [
+                ($"/Projects/Agents?project={q}", "Conversations", "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
+                ($"/Roadmaps?project={q}", "Roadmaps", "M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
+                ($"/Projects/Files?project={q}", "Files", "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", path == "/Projects/Files"),
+                ($"/Projects/Health?project={q}", "Health", "M22 12h-4l-3 9L9 3l-3 9H2", path == "/Projects/Health"),
+                ($"/Projects/Settings?project={q}", "Settings", "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6", path == "/Projects/Settings"),
+            ];
+        }
+    }
+    <div class="shell">
+    <aside class="side" id="side" aria-label="Navigation">
+        <button type="button" class="side-toggle" id="side-toggle" aria-controls="side" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+            <span class="side-label">Collapse</span>
+        </button>
+        <nav aria-label="Sections">
+            @foreach (var item in rail)
+            {
+                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
+                    <span class="side-label">@item.Label</span>
+                    @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden"> messages waiting for you</span></span>
+                    }
+                </a>
+            }
+            @if (inProjectRail.Count > 0)
+            {
+                <p class="side-heading">@project</p>
+                @foreach (var item in inProjectRail)
+                {
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
+                        <span class="side-label">@item.Label</span>
+                    </a>
+                }
+            }
+        </nav>
+    </aside>
+    <div class="content">
     <main id="main">
+
         @if (ViewData["AsOf"] is string asOf)
         {
             <p class="as-of" role="status">Showing what the broker reported at @asOf.</p>
@@ -1188,6 +1518,8 @@
            force-conclude, and each of those says what it will do before it does it.</p>
         <p class="build">parley-web-ui @Parley.Web.WebBuild.Version</p>
     </footer>
+    </div>
+    </div>
     <script>
         // --frame is what the sticky frame occupies, and three other things are positioned
         // against it: the roster, the minimap, and where an anchor lands. A constant is a guess,
@@ -1219,7 +1551,7 @@
         // The owner named a broadcast `tell everybody test` in the terminal, wrote the whole
         // message, sent it, and got the rule back with their words gone. This console's
         // "Start a conversation called" field had the identical defect and a placeholder that
-        // invited prose into it, and the Join field it had until specs/023 had the quieter half: a
+        // invited prose into it, and the Join field it once had had the quieter half: a
         // capital was lowered after the form closed, with nothing on screen having said so.
         //
         // Every rule here is written once, in C#, and reaches this page as the attributes a field
@@ -1302,6 +1634,33 @@
                     }
                 });
             });
+        })();
+    </script>
+    <script>
+        // The rail's collapse. Remembered in this browser only, and every access is guarded: storage can be absent or
+        // refuse, and the rail must still work for the life of the page.
+        (function () {
+            var button = document.getElementById('side-toggle');
+            var root = document.documentElement;
+
+            if (!button) { return; }
+
+            var sync = function () {
+                var collapsed = root.getAttribute('data-nav') === 'collapsed';
+                button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                button.title = collapsed ? 'Expand the navigation' : 'Collapse the navigation';
+            };
+
+            button.addEventListener('click', function () {
+                var collapsed = root.getAttribute('data-nav') === 'collapsed';
+
+                if (collapsed) { root.removeAttribute('data-nav'); } else { root.setAttribute('data-nav', 'collapsed'); }
+
+                try { localStorage.setItem('parley.nav', collapsed ? 'expanded' : 'collapsed'); } catch (e) { }
+                sync();
+            });
+
+            sync();
         })();
     </script>
     @await RenderSectionAsync("Scripts", required: false)

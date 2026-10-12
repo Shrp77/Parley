@@ -33,7 +33,7 @@ public sealed class MultiProjectEnrolmentTests
     private const string Workspace = "/srv/checkouts/inventory";
 
     private static EnrollmentEntry Entry(string agent, string owns) =>
-        new(Workspace, agent, owns, false) { OwnsApproved = true };
+        new(Workspace, agent, owns, false);
 
     private static JsonObject Servers(string launch) =>
         (JsonObject)JsonNode.Parse(launch)!["mcpServers"]!;

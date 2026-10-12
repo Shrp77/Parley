@@ -10,7 +10,7 @@ namespace Parley.Client.Tests;
 /// <remarks>
 /// <para>
 /// <b>This suite used to be about which act a line became</b> — a Result where the person held an agent's request, a
-/// Clarify where the agent had asked back, a Request otherwise. specs/025 removed the derivation: every line is a
+/// Clarify where the agent had asked back, a Request otherwise. That derivation is gone: every line is a
 /// Request (SPEC.md §5.6), because with several of an agent's questions open the surface filed the owner's reply
 /// against whichever one the broker listed first. Seven tests asserted the old acts and went with it; what a line now
 /// becomes is held over a real socket by <c>LineIsARequestOverTheWireTests</c> in the terminal's suite, where the broker

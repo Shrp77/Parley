@@ -68,7 +68,6 @@ public sealed class DescribedWritesTests : IDisposable
         var entry = new EnrollmentEntry(workspace, "orders", "the orders service", Unattended: true)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         _ = await Enrolment.AddAsync(

@@ -118,7 +118,7 @@ public sealed class ConcludedUnderfootTests : IAsyncDisposable
     /// <returns>The voice.</returns>
     private async Task<SeatVoice> SeatedAsync(CancellationToken cancellationToken)
     {
-        // The person seat the broker provides (specs/023), read from its registry as a surface reads it. The book is a
+        // The person seat the broker provides, read from its registry as a surface reads it. The book is a
         // field rather than a local: disposing it here would drop the attachment before anything was sent.
         var registry = await new BrokerClient(_broker.Operators).RegistryAsync(cancellationToken);
 

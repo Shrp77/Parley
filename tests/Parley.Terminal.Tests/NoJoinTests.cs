@@ -10,8 +10,7 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That a terminal opened on two projects can send in each with no key pressed first, as the person the registry names
-/// (specs/023 T029, FR-001a).
+/// That a terminal opened on two projects can send in each with no key pressed first, as the person the registry names.
 /// </summary>
 /// <remarks>
 /// <para>

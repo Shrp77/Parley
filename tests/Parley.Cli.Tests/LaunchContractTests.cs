@@ -11,14 +11,11 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 4. <c>specs/009-multi-project-enrolment/contracts/launch-configuration.md</c>
-/// shows a launch configuration with two entries and names every variable in each, and nothing checked
-/// it. <c>Parley.Spec.Tests</c> exists because the same was true of SPEC.md — every schema fragment in
-/// that document executes, and the argument for it applies here word for word: a contract nobody
-/// verifies is prose, and prose drifts.
+/// <c>docs/launch-configuration.md</c> shows a launch configuration with two entries and names every
+/// variable in each. A contract nobody verifies is prose, and prose drifts, so this checks it.
 /// </para>
 /// <para>
-/// <b>The drift runs both ways and both are worth catching.</b> A variable added to the writer and not
+/// The drift runs both ways. A variable added to the writer and not
 /// to the document leaves the document lying to whoever reads it before hand-editing a file; a
 /// variable shown and never written sends somebody looking for something that was never there.
 /// </para>
@@ -27,7 +24,7 @@ public sealed class LaunchContractTests
 {
     private static readonly string Contract = Path.GetFullPath(Path.Combine(
         AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-        "specs", "009-multi-project-enrolment", "contracts", "launch-configuration.md"));
+        "docs", "launch-configuration.md"));
 
     /// <summary>The first fenced JSON block in the contract, as the document shows it.</summary>
     /// <remarks>
@@ -92,7 +89,6 @@ public sealed class LaunchContractTests
         var entry = new EnrollmentEntry("/src/inventory", "inventory", "Stock levels. Not pricing.", false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         var plan = EnrollmentPlan.Describe(entry, null, null, false, "alpha");

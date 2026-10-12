@@ -12,10 +12,8 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Which words were whose is recorded, and that is the whole of what §17 question 10's amendment
-/// rests on.</b> The amendment permits a line an agent drafted only on the condition that approval is
-/// a recorded positive act, so a surface that could not tell a person's words from an agent's would
-/// make the record worth nothing. There are three routes and this file holds all three: a line typed
+/// <b>Which words were whose is recorded.</b> A surface that could not tell a person's words from
+/// an agent's would make the record worth nothing. There are three routes and this file holds all three: a line typed
 /// here with no ask is <see cref="OwnershipSource.Composed"/>; a line an agent proposed and somebody
 /// accepted unchanged is <see cref="OwnershipSource.Proposed"/>, carrying the conversation it was
 /// agreed in; the same line changed before accepting is <see cref="OwnershipSource.Edited"/>.
@@ -581,7 +579,7 @@ internal static class Ownership
     /// <returns>The description.</returns>
     /// <remarks>
     /// <b>Attributed, and marked as the agent's own words</b> (FR-013). The sender and the time are
-    /// both said, because the whole of question 10's amendment turns on a reader being able to tell
+    /// both said, because a reader has to be able to tell
     /// a model's sentence from a person's — and a screen that showed the text alone would make the
     /// record of <c>proposed</c> versus <c>composed</c> a claim nobody could check.
     /// </remarks>
@@ -654,9 +652,8 @@ internal static class Ownership
     /// <para>
     /// <b>Ordinal, and deliberately strict about everything except the surrounding whitespace.</b>
     /// The field trims, so a trailing space is the dialog's doing rather than the person's — but a
-    /// changed letter, a changed case or a changed dash is an edit, because what §17 question 10's
-    /// amendment rests on is being able to say the words are the agent's, and words that were altered
-    /// are not.
+    /// changed letter, a changed case or a changed dash is an edit, because it must be possible
+    /// to say the words are the agent's, and words that were altered are not.
     /// </para>
     /// <para>
     /// A comparison rather than a flag, so that no path can record <c>proposed</c> for something

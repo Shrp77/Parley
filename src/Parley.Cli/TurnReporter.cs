@@ -11,7 +11,7 @@ namespace Parley.Cli;
 /// <param name="output">Where a report that could not be sent is noted.</param>
 /// <remarks>
 /// <para>
-/// <b>Why it exists</b> (specs/024): a turn ended with a command refused for want of permission and nothing reached the
+/// <b>Why it exists</b>: a turn ended with a command refused for want of permission and nothing reached the
 /// broker, so the person's screen read "working" for nearly three hours. The node had measured all of it — how long, how it
 /// ended, what was refused — and kept it to its own log.
 /// </para>

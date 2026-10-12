@@ -83,7 +83,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>Shows what is waiting, and whatever has already been taken.</summary>
     /// <returns>The page.</returns>
     /// <remarks>
-    /// It redirected to a Join page when nobody had typed a name. Since specs/023 the seats are taken on every render
+    /// It redirected to a Join page when nobody had typed a name. Now the seats are taken on every render
     /// (<see cref="PersonSeats"/>), so there is always somebody this page is about.
     /// </remarks>
     public async Task<IActionResult> OnGetAsync()
@@ -105,7 +105,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
             return RedirectToPage("/Inbox");
         }
 
@@ -131,7 +131,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
             return RedirectToPage("/Inbox");
         }
 
@@ -156,7 +156,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
             return RedirectToPage("/Inbox");
         }
 
@@ -196,7 +196,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (specs/023: there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
             return RedirectToPage("/Inbox");
         }
 

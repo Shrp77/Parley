@@ -54,7 +54,6 @@ public sealed class DocumentedClaimsTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project ?? "alpha",
             Path.Combine(_root, "node.json"),

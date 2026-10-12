@@ -80,7 +80,7 @@ public sealed class SayingWhatAnAgentOwnsTests
     public void What_the_person_reads_first_says_it_records_their_own_words()
     {
         // This screen has no ask, so what it writes is `composed` and it must not look like an
-        // agent's proposal. §17 question 10's amendment turns on being able to tell the two apart.
+        // agent's proposal. A reader has to be able to tell the two apart.
         Assert.Contains("your words as yours", Ownership.Described(Orders), StringComparison.Ordinal);
     }
 

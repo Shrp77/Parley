@@ -75,7 +75,6 @@ public sealed class ProbeSixTests : IDisposable
                 Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             };
 
             try

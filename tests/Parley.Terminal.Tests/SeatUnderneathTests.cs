@@ -163,7 +163,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
 
         Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.RequestTitle);
 
-        // And nothing says the seat was released, because since specs/023 it was not: only the stream went, and the
+        // And nothing says the seat was released, because it was not: only the stream went, and the
         // next key brings it back.
         Assert.DoesNotContain("released", shell.Said ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
@@ -180,7 +180,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
     public async Task After_a_sweep_the_next_key_takes_the_seat_back_the_way_it_was_first_taken()
     {
         // A dropped stream must leave nothing behind that the retake trips over -- the book, the registry and the region
-        // all have to agree the person was away before they can be here again. It was a second Join until specs/023.
+        // all have to agree the person was away before they can be here again.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);

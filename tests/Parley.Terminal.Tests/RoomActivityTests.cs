@@ -71,7 +71,7 @@ public sealed class RoomActivityTests
     [Fact]
     public void An_agent_whose_turn_ended_owing_work_reads_as_stopped_with_what_it_was_refused()
     {
-        // **The owner's report, specs/024**: nearly three hours of "working" after a refused command ended the turn. Picked
+        // **The owner's report**: nearly three hours of "working" after a refused command ended the turn. Picked
         // up at 9:01, its turn ended at 9:05 with one call refused, and it has said nothing since.
         var room = new RoomRegion();
 
@@ -151,7 +151,7 @@ public sealed class RoomActivityTests
     [Fact]
     public void A_status_with_a_second_dash_wraps_instead_of_being_cut_on_its_own_row()
     {
-        // **The owner's screenshot of 2026-10-06**: "stopped <1m — 2 permissi" at the edge. Splitting at the first dash
+        // **The owner's screenshot of 2026-10-06**: "stopped <1m ï¿½ 2 permissi" at the edge. Splitting at the first dash
         // put the status under the name, and the status was itself wider than the column and went off the edge.
         var stopped = AgentName.Create("timetracker@here");
         var room = new RoomRegion { Frame = new System.Drawing.Rectangle(0, 0, 30, 40) };

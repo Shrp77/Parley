@@ -57,7 +57,6 @@ public sealed class ProbeSixteenTests : IDisposable
             new EnrollmentEntry(workspace, agent, "What it owns. Not what it does not.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Catalogue,

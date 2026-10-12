@@ -43,7 +43,7 @@ public sealed class ProbeTwelveTests : IDisposable
     }
 
     private static EnrollmentEntry Entry(string workspace, string owns = "Carts and totals.") =>
-        new(workspace, "orders", owns, Unattended: false) { Enroll = true, OwnsApproved = true };
+        new(workspace, "orders", owns, Unattended: false) { Enroll = true };
 
     [Theory]
     [InlineData("/src/orders}")]

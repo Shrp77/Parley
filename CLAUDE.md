@@ -10,20 +10,18 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.16, protocol 0.8 in code (SPEC §18 already records 0.9, which feature 026 completes), schema 1. Nothing has been released, so there is **no
-  compatibility to keep**: change the wire, enums and schema 1 in place, and nuke and rebuild.
-  From the first release every schema change is a migration.
-- Branch `019-layout` carries features 019–025, all built and unmerged. One combined review
-  gate covers them (the owner's call); `REVIEW-LEDGER.md` has the count. Owed: 025's walk and
-  live check, and the rest of the gate.
-- `specs/026-roadmaps/` is in progress and uncommitted: 0.42.0, protocol 0.9. Spec, plan and
+- Version 0.42.37, protocol 0.8 (feature 026 moves it to 0.9),
+  schema 1. Nothing has been released, so there is **no compatibility to keep**: change the wire,
+  enums and schema 1 in place, and nuke and rebuild. From the first release every schema change is
+  a migration.
+- Branch `019-layout` carries features 019–025, built and unmerged. One combined review gate
+  covers them; `REVIEW-LEDGER.md` has the count. Owed: 025's walk and live check, and the rest of
+  the gate.
+- `specs/026-roadmaps/` is in progress (protocol 0.9). Spec, plan and
   contracts are written; `tasks.md` and the rest of the code are owed, and `ProtocolVersion.Current`
-  moves to 0.9 with it. The constitution is already at 6.0.0 for it. `.specify/feature.json` points
-  at it.
-- The `instruct` and `instructions` operations are removed everywhere (SPEC §10.2, §11.5 withdrawn,
-  proto, store, node, CLI, web, terminal): a person speaks to an agent only with a Request. An
-  agent's row menu in the terminal has one ownership entry, *What this agent is responsible for*
-  (`Alt+n`).
+  moves to 0.9 with it. `.specify/feature.json` points at it.
+- A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
+  ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`
   write `specs/<n>-<slug>/`. Read a feature's plan before implementing it. The constitution in
   `.specify/memory/constitution.md` restates the standing constraints below; this file wins
@@ -35,8 +33,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 src/Parley.Core          Domain vocabulary and the broker contracts. No I/O, no package
                          dependencies — a `using` that pulls I/O in is a review finding.
                          Holds IParleyBrokerClient (SPEC §10.2, what a broker owes an
-                         operator) and IAcceptsOperatorInstructions (§11.5, what an agent
-                         must accept from one). WorkspacePath is string comparison on
+                         operator). WorkspacePath is string comparison on
                          purpose: the broker compares workspaces from machines it is not on.
 src/Parley.Store         SQLite via Dapper: ParleyDatabase, SchemaMigrator, WriteScope and
                          the repositories.
@@ -109,7 +106,7 @@ verbs the installers and plugin need.
   performed, or done on a POST and described on no GET.
 - The web UI answers only loopback host names and the host it binds (DNS rebinding defence).
 - A repository may be enrolled in several projects. Its launch key in `.mcp.json` is `parley`
-  (legacy, read always) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
+  (always read) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
   implementation. An agent's identity is `parleyAgentId` in `.mcp.json`, and the per-machine
   catalogue (`node.json`) is keyed by it.
 - No surface writes a launch configuration for an agent whose machine is not this one.
@@ -294,26 +291,26 @@ implementation detail, and needs to be argued.
   context-poisoning defence and lives in the schema so no code path can route around it;
   changing it is a table rebuild. The number is provisional and moves on the evidence in
   SPEC.md §17 question 16, not because a message did not fit.
-  - **Exception: `agents.owns` has no bound by default** (constitution 3.0.0). The constraint
+  - **Exception: `agents.owns` has no bound by default**. The constraint
     stays in storage and stands down at its top, so a deployment may reinstate one. The
     character class that stops a roster entry breaking, hiding or reordering its own line is
     not relaxed. This is a recorded reduction in the control: until evidence exists, a roster
     may be the largest thing an agent reads.
-  - **Exception: roadmap text has no bound by default** (constitution 6.0.0). Nothing in a
+  - **Exception: roadmap text has no bound by default**. Nothing in a
     roadmap is read by an agent; an item that is sent travels in a Request and keeps the cap.
     The line-breaking character class is not relaxed. Sizes are recorded so a bound can be
     set from evidence.
 - **No agent has authority over another.** No orchestrator, no lead. Two asymmetries exist
   and are bounded:
   - **The operator** (a person) holds the §10.2 operations.
-  - **The facilitator** (constitution 4.0.0) is Parley, a participant the broker provides in
+  - **The facilitator** is Parley, a participant the broker provides in
     every project. It may ask a question, send a reply a person wrote (recorded as theirs),
     and propose and agree that its own conversation is done. It has no operator operation, is
     never the person seated, never receives anybody's work, and may not assign, direct,
     prioritise, close or override work. It adds who asks, never what asking can do. **Auto
     Accept** (on by default) makes an agent's answer to the ownership question its ownership
     line with no person in the loop, recorded as `automatic` and reviewable on every surface.
-- **A roadmap is the person's, never an agent's plan** (constitution 6.0.0). An agent may
+- **A roadmap is the person's, never an agent's plan**. An agent may
   only propose one; a person confirms, edits and declines it. No agent operation reads,
   changes or marks done a roadmap, and the facilitator may not propose or confirm one. Work
   reaches an agent as a request from the person, one item at a time.
@@ -325,7 +322,7 @@ implementation detail, and needs to be argued.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
   resolves them at invocation and never persists or logs them.
 - **No network bind; tunnel only.** All three gRPC services share one port, so a reachable
-  port is the control plane (`Export`, `Purge`, `Start`, `Instruct`) with no authentication
+  port is the control plane (`Export`, `Purge`, `Start`) with no authentication
   on the wire (§16). Brokers bind loopback. The supported remote path is an SSH port-forward
   with `PARLEY_BROKER` pointed at the local end. A hand-edited non-loopback endpoint in
   `project.json` is permitted by §16 and warned about on every broker start.
@@ -364,12 +361,11 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   backslash then Enter make a line break. A conversation is tailed only for a reader at its
   end. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the key rules.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
-  so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set only by `TerminalCommand`); opening one
-  from the pool while the loop draws threw a `NullReferenceException` out of the toolkit's line canvas. The harness never
-  pumps a loop and leaves it unset, so a driven test must not press a key that starts queued work that opens a view and
-  then draw on its own thread in the same breath: call the handler and `await shell.Settled`.
-- **Hold screens to what is drawn, not what is held in memory.** Several defects were a
-  property the suite checked while the screen never showed it. Read the laid-out screen or
+  so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set only by `TerminalCommand`). Never open one
+  from the pool directly. The harness never pumps a loop and leaves `Marshal` unset, so a driven test must not press a
+  key that starts queued work that opens a view and then draw on its own thread in the same breath: call the handler
+  and `await shell.Settled`.
+- **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)
   neutralises control characters one for one and keeps every header at column zero with

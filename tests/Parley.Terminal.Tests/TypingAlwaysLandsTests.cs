@@ -18,7 +18,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// <para>
 /// <b>Against a real broker, because the refusals were the broker's and correct.</b> These drive it through
-/// each state a pair can be in. They used to assert which act the surface derived for each; specs/025 removed the
+/// each state a pair can be in. They used to assert which act the surface derived for each; the surface no longer makes the
 /// derivation, since every line is now a Request (SPEC.md §5.6), so what they hold is the pair state the room still
 /// reads — whose move it is, and who opened it — and that a new Request is admitted whatever is open.
 /// </para>

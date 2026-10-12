@@ -722,7 +722,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// <b>Found by its adapter, never by its name</b>, so a row written under an earlier name — a machine's, before
-    /// specs/023 named it for the project — is reused rather than doubled. Storage ties the adapter to the reserved role
+    /// the seat was named for the project — is reused rather than doubled. Storage ties the adapter to the reserved role
     /// in both directions, so there is nothing else a row with that adapter could be.
     /// </para>
     /// </remarks>
@@ -796,7 +796,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// (principle 2.6). It is never retired, purged or released; storage refuses the first two.
     /// </para>
     /// <para>
-    /// <b>Found by its role, never by its adapter.</b> A seat taken under a typed name before specs/023 carried the
+    /// <b>Found by its role, never by its adapter.</b> A seat taken under a typed name before the seat was the broker's carried the
     /// same adapter, so finding by adapter could adopt somebody's old typed seat as the person. The role is the one
     /// fact only the person seat has, and <c>ux_one_person</c> holds that there is at most one.
     /// </para>

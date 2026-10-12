@@ -59,7 +59,6 @@ public sealed class OneEntryPerProjectTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             Path.Combine(_root, "node.json"),

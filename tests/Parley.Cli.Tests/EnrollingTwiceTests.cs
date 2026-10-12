@@ -71,7 +71,6 @@ public sealed class EnrollingTwiceTests : IDisposable
             new EnrollmentEntry(workspace, role, "What is on hand.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             Catalogue,

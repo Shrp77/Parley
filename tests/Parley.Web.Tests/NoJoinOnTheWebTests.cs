@@ -11,7 +11,7 @@ namespace Parley.Web.Tests;
 /// <para>
 /// <b>Was <c>JoiningTests</c> (T032).</b> It probed joining and leaving through the console: a Leave no link could
 /// reach, a join that seated nobody not remembering the name, a hand-edited cookie, the frame offering a way in on every
-/// page. specs/023 removed all of it — the broker provides the person seat, every page takes it, and the cookie that
+/// page. All of it is gone — the broker provides the person seat, every page takes it, and the cookie that
 /// remembered a typed name is gone — so those properties have nothing left to hold.
 /// </para>
 /// <para>
@@ -81,7 +81,8 @@ public sealed class NoJoinOnTheWebTests
             TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("as an instruction from you", body, StringComparison.Ordinal);
-        Assert.Contains("Not connected to this project as you", body, StringComparison.Ordinal);
+        // The note about the seat is gone: sending takes it and says why if it cannot.
+        Assert.DoesNotContain("Not connected to this project as you", body, StringComparison.Ordinal);
     }
 
     [Fact]

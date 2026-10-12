@@ -79,7 +79,7 @@ public sealed class WaitingOnScreenTests : IDisposable
         Assert.Contains("1 waiting", driving.Text(), StringComparison.Ordinal);
     }
 
-    // `The_count_goes_when_the_seat_does` was here, and specs/023 turns it round. It left the seat and expected the
+    // `The_count_goes_when_the_seat_does` was here, and it is turned round. It left the seat and expected the
     // count to go with it, because mail under nobody's name was somebody else's. Now the seat is never left — the broker
     // provides it — and the count must survive the person being away, which is exactly when it matters (T041).
 
@@ -141,7 +141,7 @@ public sealed class WaitingOnScreenTests : IDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
         // there is no Join dialog to drive.
         await shell.Settled;
 

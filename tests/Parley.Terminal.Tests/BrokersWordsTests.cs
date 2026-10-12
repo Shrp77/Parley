@@ -57,7 +57,7 @@ public sealed class BrokersWordsTests
     [Fact]
     public void Adding_says_the_agent_will_not_be_startable_until_it_registers_itself()
     {
-        // The honest half of SC-003 as amended. A surface that said "added" and stopped would have
+        // The honest half. A surface that said "added" and stopped would have
         // promised something §12.3 does not allow it to deliver.
         Assert.Equal("catalogued, not yet registered", AgentsRegion.CataloguedOnly);
     }

@@ -54,7 +54,7 @@ public sealed class ASilentBrokerIsGivenUpOnTests
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "specs")))
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Parley.slnx")))
         {
             directory = directory.Parent;
         }

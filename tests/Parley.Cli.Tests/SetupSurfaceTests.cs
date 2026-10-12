@@ -90,6 +90,10 @@ public sealed class SetupSurfaceTests
                 "InstalledEntry",
                 "InterruptedEnrolment",
 
+                // Handing a web address to the platform's browser, which `parley web-ui --open` and the terminal's
+                // "Open the web console" both do. Here so there is one guard on what the shell is asked to open.
+                "Launch",
+
                 // One agent that was enrolled and did not register, with why. `EnrolmentOutcome` lists them.
                 "NotStarted",
 

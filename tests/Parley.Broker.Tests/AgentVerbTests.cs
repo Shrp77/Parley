@@ -279,20 +279,6 @@ public sealed class AgentVerbTests : IDisposable
         Assert.Equal(ExchangeOutcome.Blocked, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.Outcome);
     }
 
-    [Fact]
-    public async Task A_result_answers_the_ask_and_is_told_so_when_it_names_something_else()
-    {
-        // A Request is answered whole (§5.3), under the identifier the protocol already used for one carrying no
-        // items a Result could name. A Result naming anything else is refused and told what to send.
-        var sent = await Send();
-
-        var elsewhere = await Result(sent.Exchange!.Id, Requests.Result(("q1", "done")));
-
-        Assert.Equal(TransitionError.OutcomesDoNotMatchItems, elsewhere.Error);
-        Assert.Equal([PayloadShape.WholeRequest], elsewhere.ExpectedItems);
-        Assert.Equal(ExchangeState.Open, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.State);
-    }
-
     [Theory]
     [InlineData("""{"text":"net"}""")]
     [InlineData("""{"outcomes":[]}""")]

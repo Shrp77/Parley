@@ -150,6 +150,6 @@ public sealed class GroupedAgentsTests
         Assert.All(groups, group => Assert.Single(group.Rows));
     }
 
-    // `A_withdrawn_seat_is_not_filed_with_the_ones_that_can_be_taken` was here. Its group, "seats — withdrawn", went in
-    // specs/023: the person seat cannot be retired, so the group could never hold anything.
+    // `A_withdrawn_seat_is_not_filed_with_the_ones_that_can_be_taken` was here. Its group, "seats — withdrawn", went:
+    // the person seat cannot be retired, so the group could never hold anything.
 }

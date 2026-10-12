@@ -4,8 +4,7 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That Enter on an agents-list row opens what can be done with that row, and nothing that withdraws anybody (specs/023
-/// User Story 6).
+/// That Enter on an agents-list row opens what can be done with that row, and nothing that withdraws anybody.
 /// </summary>
 /// <remarks>
 /// <para>

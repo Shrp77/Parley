@@ -1,7 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Core;
 using Parley.Client;
 using Parley.Client.Views;
+using Parley.Setup;
 
 namespace Parley.Web.Pages;
 
@@ -46,6 +48,37 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
     public IReadOnlyDictionary<string, ProjectSummary> Summaries { get; private set; } =
         new Dictionary<string, ProjectSummary>(StringComparer.Ordinal);
 
+    /// <summary>Which tab is showing: <c>projects</c> (the default) or <c>agents</c>.</summary>
+    /// <remarks>
+    /// A query value rather than script, so a tab is a link that works with none, survives the page's own
+    /// reload and can be bookmarked.
+    /// </remarks>
+    [BindProperty(SupportsGet = true)]
+    public string? Tab { get; set; }
+
+    /// <summary>Whether the agents tab is the one showing.</summary>
+    public bool AgentsTab => string.Equals(Tab, "agents", StringComparison.Ordinal);
+
+    /// <summary>The name typed in the create form.</summary>
+    [BindProperty]
+    public string? NewProject { get; set; }
+
+    /// <summary>The description typed in the create form, or empty.</summary>
+    [BindProperty]
+    public string? NewDescription { get; set; }
+
+    /// <summary>What creating a project said, when one was tried.</summary>
+    [TempData]
+    public string? Outcome { get; set; }
+
+    /// <summary>Whether <see cref="Outcome"/> is a refusal.</summary>
+    [TempData]
+    public bool Refused { get; set; }
+
+    /// <summary>The agents of each reachable project, keyed by project name; null when the registry could not be read. The person and Parley are left out.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<AgentRecord>?> Agents { get; private set; } =
+        new Dictionary<string, IReadOnlyList<AgentRecord>?>(StringComparer.Ordinal);
+
     /// <summary>When this page was built.</summary>
     /// <remarks>
     /// A page that refreshes itself and does not say when it last did leaves a reader unable to
@@ -89,6 +122,7 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
         ManifestProblem = directory.ManifestProblem;
 
         var summaries = new Dictionary<string, ProjectSummary>(StringComparer.Ordinal);
+        var agents = new Dictionary<string, IReadOnlyList<AgentRecord>?>(StringComparer.Ordinal);
 
         // Asked at once with the version check below rather than after it, for the same reason
         // that one is concurrent: in sequence the cost of the page is the sum of the timeouts.
@@ -108,7 +142,15 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
             // when the broker cannot say, which is not the same as none.
             var proposals = await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(broker, token).ConfigureAwait(false);
 
-            return (project.Name.Value, Summary: ProjectsView.Summarise(
+            IReadOnlyList<AgentRecord>? mine = registry.Value is null ? null :
+            [
+                .. (registry.Value ?? [])
+                    .Where(agent => !agent.Facilitator && agent.Name.Role != "human-user")
+                    .OrderBy(agent => agent.Name.Machine, StringComparer.Ordinal)
+                    .ThenBy(agent => agent.Name.Role, StringComparer.Ordinal)
+            ];
+
+            return (project.Name.Value, Agents: mine, Summary: ProjectsView.Summarise(
                 registry.Value,
                 conversations.Value?.Items.Count,
                 conversations.Value?.Items.Count(c => c.Archived) ?? 0,
@@ -116,12 +158,14 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
                 proposals));
         });
 
-        foreach (var (name, summary) in await Task.WhenAll(counting).ConfigureAwait(false))
+        foreach (var (name, mine, summary) in await Task.WhenAll(counting).ConfigureAwait(false))
         {
             summaries[name] = summary;
+            agents[name] = mine;
         }
 
         Summaries = summaries;
+        Agents = agents;
 
         var asked = Projects.Select(async project =>
         {
@@ -147,5 +191,52 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
 
         Health = health;
         AsOf = DateTimeOffset.Now;
+    }
+
+    /// <summary>Names a new project on this machine.</summary>
+    /// <returns>A redirect back to the projects tab, saying what came of it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Through <see cref="ProjectCommand"/>, the one implementation <c>parley</c> and <c>parley-terminal</c> share, so
+    /// the console cannot disagree with them about what a project is. Creating is not destructive, so it takes no typed
+    /// name; removing and renaming stay in the terminal.
+    /// </para>
+    /// <para>
+    /// A refusal comes back in the command's own words, as the terminal does, because a summary of "invalid" would
+    /// drop the rule that was broken.
+    /// </para>
+    /// </remarks>
+    public async Task<IActionResult> OnPostCreateAsync()
+    {
+        var manifest = directory.ManifestPath;
+
+        if (!ProjectName.TryCreate(NewProject, out var name))
+        {
+            Refused = true;
+            Outcome = $"{NewProject} is not a name a project can have. Nothing has been created.";
+        }
+        else if (manifest is null)
+        {
+            Refused = true;
+            Outcome = "This console is not reading a project manifest, so it has nowhere to name a project.";
+        }
+        else
+        {
+            var said = new StringWriter();
+            var complained = new StringWriter();
+            var description = string.IsNullOrWhiteSpace(NewDescription) ? null : NewDescription.Trim();
+
+            var code = await ProjectCommand.RunAsync(
+                ["add", name.Value], manifest, new ProjectFields(description), said, complained,
+                cancellationToken: HttpContext.RequestAborted).ConfigureAwait(false);
+
+            Refused = code != 0;
+            Outcome = code == 0
+                ? $"Created {name.Value}. The broker starts it within seconds."
+                : string.Join(' ', complained.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim()));
+        }
+
+        return RedirectToPage("/Index");
     }
 }

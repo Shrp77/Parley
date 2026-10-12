@@ -80,7 +80,6 @@ public sealed class IllustrationsAgreeTests
             new EnrollmentEntry("/src/orders", "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             null,
             null,

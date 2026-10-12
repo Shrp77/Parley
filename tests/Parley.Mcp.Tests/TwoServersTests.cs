@@ -58,7 +58,7 @@ public sealed class TwoServersTests
             ["billing@test"],
             listed.Select(a => a!["name"]!.GetValue<string>()).Order(StringComparer.Ordinal));
 
-        // And the person, whom the broker provides in every project (specs/023) so an agent always has somebody to ask
+        // And the person, whom the broker provides in every project, so an agent always has somebody to ask
         // when no agent can help — listed apart, as the person rather than as an agent (SPEC.md §10.1).
         Assert.Equal("human-user@test", roster["person"]!["name"]!.GetValue<string>());
         Assert.Null(roster["person"]!["adapter"]);

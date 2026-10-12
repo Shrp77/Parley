@@ -5,7 +5,7 @@ using Parley.Core;
 namespace Parley.Web.Seating;
 
 /// <summary>
-/// The person's seat in every project this console shows, taken without a word from them (specs/023).
+/// The person's seat in every project this console shows, taken without a word from them.
 /// </summary>
 /// <remarks>
 /// <para>

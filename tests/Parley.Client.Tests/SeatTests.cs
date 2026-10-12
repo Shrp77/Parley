@@ -11,7 +11,7 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Rewritten for specs/023, and T024's tests are these.</b> Until then this file probed a person typing a name: an
+/// <b>Rewritten for the broker-provided seat.</b> This file once probed a person typing a name: an
 /// agent's name refused, capitals folded, a malformed name refused with the rule, a person leaving every project at
 /// once. There is no typed name now. The broker provides <c>human-user@&lt;project&gt;</c> and the book attaches as the
 /// row its registry names — so the attack those tests were written against, a person speaking as <c>orders</c>, is
@@ -186,17 +186,17 @@ public sealed class SeatTests
     }
 
     [Fact]
-    public void A_seat_reports_a_human_responder()
+    public void A_seat_reports_its_own_name_as_the_responder()
     {
-        // SPEC.md §11.3: identity uses a scheme rather than a model name, and `human:<name>` is the one for a person.
+        // SPEC.md §11.3: the responder is a label, and the person's is the seat's own name like any participant's.
         var seat = new Seat(PersonSeat.On(ProjectName.Create("alpha")));
 
-        Assert.Equal("human:human-user", seat.Responder);
+        Assert.Equal("human-user", seat.Responder);
         Assert.Equal(PersonSeat.Role, seat.Person);
         Assert.DoesNotContain("parley:", seat.Responder, StringComparison.Ordinal);
     }
 
-    /// <summary>The person seat a broker writes for a project (specs/023).</summary>
+    /// <summary>The person seat a broker writes for a project.</summary>
     private static AgentRecord Person(ProjectSettings project) =>
         new(PersonSeat.On(project.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, Connected: false,
             AgentStatus.Active);

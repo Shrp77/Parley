@@ -77,7 +77,6 @@ public sealed class ProbeThreeTests : IAsyncDisposable
         new(workspace, agent, "What it owns. Not what it does not.", unattended)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     // **A six-round race stood here and 018 removed the thing it raced for.** Two projects granting one
@@ -133,12 +132,10 @@ public sealed class ProbeThreeTests : IAsyncDisposable
             new EnrollmentEntry(first, "orders", "Carts.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             new EnrollmentEntry(second, "stock", "Stock.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
         };
 

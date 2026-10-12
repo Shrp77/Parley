@@ -24,7 +24,7 @@ internal static class Walking
     /// <summary>A project name every fixture can use.</summary>
     internal static ProjectName Alpha { get; } = ProjectName.Create("alpha");
 
-    /// <summary>A registry holding only the person seat, as a broker from 0.36.0 on reports it (specs/023).</summary>
+    /// <summary>A registry holding only the person seat, as a broker from 0.36.0 on reports it.</summary>
     /// <remarks>
     /// For a test that takes a seat through the book without a broker behind it. One definition, because a fixture per
     /// file is how two of them come to seat somebody differently.

@@ -239,7 +239,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <b>A turn begins when it holds the agent, not when it is asked for.</b> A second wake while a turn runs queues
     /// behind it, and a start reported at the asking put the turn's end — start plus <see cref="TurnOutcome.Elapsed"/>,
     /// which is measured from here — before the work it picked up, so a turn stopped on a refused permission was never
-    /// flagged or shown stopped (the review gate's finding, specs/024).
+    /// flagged or shown stopped (the review gate's finding).
     /// </remarks>
     public async Task<TurnOutcome> TakeTurnAsync(
         string text, TimeSpan timeout, Func<Task> began, CancellationToken cancellationToken = default)

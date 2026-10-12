@@ -14,7 +14,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Rewritten for specs/023, and what changed is the point.</b> This file asserted that an idle terminal
+/// <b>Rewritten, and what changed is the point.</b> This file asserted that an idle terminal
 /// <i>released the seat and said so</i> — "your seat was released" — and forgot who the person was. That ran two things
 /// together: having a seat and being in it. The broker now provides the person seat and never releases it, so an idle
 /// terminal only drops its stream: the broker reads the person as away, an agent that asks meanwhile is told they will

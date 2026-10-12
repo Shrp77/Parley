@@ -19,7 +19,7 @@ public sealed record SeatOutcome(SeatHold? Hold, string? Problem)
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Having a seat and being in it are separate</b> (specs/023). The broker provides the person seat in every project
+/// <b>Having a seat and being in it are separate</b>. The broker provides the person seat in every project
 /// and never releases it, so a surface never has to ask for one: it attaches as the seat the registry names. What this
 /// book holds is the other half — whether somebody is at this screen now. A hold is the open stream, and SPEC.md §4.0
 /// makes that stream the evidence of <c>here</c>; after <see cref="IdleAfter"/> with nothing touched it is dropped, the

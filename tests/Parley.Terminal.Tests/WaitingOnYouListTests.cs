@@ -14,7 +14,7 @@ namespace Parley.Terminal.Tests;
 
 /// <summary>
 /// The room's <i>waiting on you</i>: each agent once with a count, and Enter for a list that takes the person to each
-/// question in its context (the owner's design of 2026-10-05, specs/025).
+/// question in its context (the owner's design of 2026-10-05).
 /// </summary>
 /// <remarks>
 /// <b>Read off the drawn rows and driven by keys</b>, over a real socket. Each fails against 0.40.1, which showed one row

@@ -64,7 +64,6 @@ public sealed class ProbeTwentyFiveTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             catalogue,

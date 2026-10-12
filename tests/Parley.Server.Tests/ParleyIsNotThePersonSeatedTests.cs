@@ -15,9 +15,9 @@ namespace Parley.Server.Tests;
 /// halves are asserted, so the one that broke is named.
 /// </para>
 /// <para>
-/// <b>This test asserted the opposite until specs/023, and the change is the point.</b> It was called
+/// <b>This test once asserted the opposite, and the change is the point.</b> It was called
 /// <c>With_nobody_seated_an_agent_finds_no_person_to_ask</c>: with nobody seated the need went back to the originator,
-/// and a facilitator counted as a person would have quietly taken that away. From 023 the broker provides the person
+/// and a facilitator counted as a person would have quietly taken that away. Now the broker provides the person
 /// seat in every project, so an agent always finds exactly one person — and the half worth keeping is that it is never
 /// Parley.
 /// </para>

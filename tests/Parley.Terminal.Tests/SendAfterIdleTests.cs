@@ -13,7 +13,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// <para>
 /// Going idle drops the stream, which set <c>Held</c> to null, and that setter also threw the draft away — right while
-/// the seat went with the stream, and wrong since specs/023, where only the connection goes. The next key took the stream
+/// the seat went with the stream, and wrong now, where only the connection goes. The next key took the stream
 /// back and nothing rebuilt the draft, so the send found a seat and no draft, and the guard that folds three absences
 /// into one blamed the project.
 /// </para>

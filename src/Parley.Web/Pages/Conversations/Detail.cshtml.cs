@@ -65,7 +65,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     public IReadOnlyDictionary<string, AgentRecord> Roll { get; private set; } =
         new Dictionary<string, AgentRecord>(StringComparer.Ordinal);
 
-    /// <summary>What is waiting on the person here, one entry per agent, as the terminal's room lists it (specs/025).</summary>
+    /// <summary>What is waiting on the person here, one entry per agent, as the terminal's room lists it.</summary>
     /// <remarks>
     /// <see cref="Parley.Client.Seating.WaitingOnYou"/>, the one derivation both surfaces read, so the page and the room
     /// cannot disagree about who is waiting on the person or how many questions each has.
@@ -86,7 +86,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             : string.Concat(flat.AsSpan(0, char.IsHighSurrogate(flat[98]) ? 98 : 99), "\u2026");
     }
 
-    /// <summary>What each participant is doing, as the terminal's room says it (specs/024).</summary>
+    /// <summary>What each participant is doing, as the terminal's room says it.</summary>
     public IReadOnlyDictionary<AgentName, Activity> ParticipantActivity { get; private set; } =
         new Dictionary<AgentName, Activity>();
 
@@ -118,13 +118,21 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     [BindProperty]
     public bool Everyone { get; set; }
 
-    /// <summary>What the operator wrote, or what a link left in the box for them to read before they send it.</summary>
+    /// <summary>What the operator wrote.</summary>
     /// <remarks>
-    /// Bound on a GET too, so a roadmap item can open its conversation with its own words ready. A link only fills the
-    /// box: nothing is sent until the person presses Send, so it is still their words in the transcript.
+    /// Bound on a POST only. A link can no longer leave words in the box, so a stale link that still carries
+    /// <c>Says=</c> opens an empty one: what is in the box is only ever what the person typed.
+    /// </remarks>
+    [BindProperty]
+    public string? Says { get; set; }
+
+    /// <summary>Words a link suggests, shown as the box's hint and never put in it.</summary>
+    /// <remarks>
+    /// A roadmap item opens its conversation with its own text as the hint, so the person sees what the item is and
+    /// writes their own words. A hint is not something they have said: the box stays empty until they type.
     /// </remarks>
     [BindProperty(SupportsGet = true)]
-    public string? Says { get; set; }
+    public string? Hint { get; set; }
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
@@ -391,7 +399,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         var token = HttpContext.RequestAborted;
         var sent = new List<(string, string)>();
 
-        // **Always the person's voice, never the operator's** (specs/023). Until then a composer with no seat behind it
+        // **Always the person's voice, never the operator's**. A composer with no seat behind it
         // fell back to sending an instruction — a different kind of thing, reported differently, and absent from the
         // transcript — so what a person wrote here depended on whether they had remembered to join. The broker provides
         // the seat now and this takes it; when it cannot be taken, nothing is sent and the reason is said.
@@ -462,8 +470,47 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         Seat = seats.Held(project.Name.Value);
 
         await ReadAsync(project, Id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project, Id).ConfigureAwait(false);
 
         return Page();
+    }
+
+    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// So a person who is inside <c>rm1-3</c> is told what rm1-3 is. Taken from the roadmap by the conversation name the
+    /// item carries, never parsed out of a message.
+    /// </remarks>
+    public string? ItemTitle { get; private set; }
+
+    /// <summary>Finds the roadmap item whose conversation this is, when its name is a roadmap item's.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="id">The conversation.</param>
+    /// <returns>When it has been looked for. A broker that cannot answer leaves the title out and costs nothing else.</returns>
+    private async Task ReadItemTitleAsync(ProjectSettings project, string id)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            id, @"\Arm(\d+)-\d+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var number))
+        {
+            return;
+        }
+
+        var broker = new BrokerClient(directory.ClientFor(project));
+
+        var found = await BrokerDirectory.ReadAsync(async () =>
+        {
+            var list = await broker.RoadmapsAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+            var which = list.FirstOrDefault(r => r.Number == number);
+
+            return which is null
+                ? null
+                : await broker.RoadmapAsync(which.Id, HttpContext.RequestAborted).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+
+        ItemTitle = found.Value?.Items
+            .FirstOrDefault(i => !i.Removed && string.Equals(i.ConversationName, id, StringComparison.Ordinal))?.Text;
     }
 
     /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
@@ -502,7 +549,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             Roll = known;
             NotInIt = Parley.Client.Rendering.RoomRoster.NotInIt(roll.Value, Participants, PersonSeat.On(project.Name));
 
-            // **What each participant is doing, from the same derivation as the terminal's room** (specs/024 FR-013):
+            // **What each participant is doing, from the same derivation as the terminal's room**:
             // working only while a turn runs, stopped with what it was refused, waiting on somebody. Read here, which is
             // the follow's path too, so it refreshes with the transcript rather than freezing at page load.
             var waiting = await BrokerDirectory.ReadAsync(async () =>

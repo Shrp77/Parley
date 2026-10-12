@@ -36,14 +36,12 @@ public sealed record Delivered(Message Message)
     /// <returns>The item ids, in order; empty when this is not a Request.</returns>
     /// <remarks>
     /// <para>
-    /// Read from the Request itself rather than asked of the broker: the broker checks the Result against
-    /// the same stored document and names the items it expected when they do not match, so a second round
-    /// trip would add a second opinion and no safety.
+    /// Read from the Request itself rather than asked of the broker.
     /// </para>
     /// <para>
     /// <b>A Request with no item a Result can name is answered as a whole</b>, under
-    /// <see cref="PayloadShape.WholeRequest"/>, as the broker's own close answers one — and the broker requires exactly
-    /// that item of such a Request (SPEC.md §5.1). Returning none left a person holding it with no form to answer it by.
+    /// <see cref="PayloadShape.WholeRequest"/>, as the broker's own close answers one (SPEC.md §5.1). Returning none
+    /// left a person holding it with no form to answer it by.
     /// </para>
     /// </remarks>
     public IReadOnlyList<string> Items()

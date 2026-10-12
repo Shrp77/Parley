@@ -25,7 +25,7 @@ namespace Parley.Web.Tests;
 /// would see rather than what the source says.
 /// </para>
 /// <para>
-/// <b>specs/023 kept every one of these and removed their premise.</b> There is no typed name, no cookie and no Join:
+/// <b>These once carried a typed name and a Join page; neither exists.</b> There is no typed name, no cookie and no Join:
 /// the broker provides <c>human-user@&lt;project&gt;</c> and every page takes it. What a broker answering only
 /// <c>Waiting</c> now stands for is a console that could not attach as the person — so these assert the count is still
 /// said, by the name §12.3 gives the person, and that nothing marks the person present.
@@ -35,7 +35,7 @@ public sealed class AwayFromTheSeatTests
 {
     private static readonly Uri InboxUri = new("/Inbox", UriKind.Relative);
 
-    /// <summary>A client of the console. There is no name to carry since specs/023.</summary>
+    /// <summary>A client of the console. There is no name to carry.</summary>
     private static HttpClient Seated(WaitingConsole console) => console.CreateClient();
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class AwayFromTheSeatTests
     public async Task The_frame_shows_the_count_while_not_connected()
     {
         // On every page rather than only the inbox: somebody who has been away lands wherever they left off, and
-        // a count they have to go looking for is one that did not tell them anything. Beside Join until specs/023.
+        // a count they have to go looking for is one that did not tell them anything.
         using var console = new WaitingConsole();
         console.Broker.Messages = 3;
 
@@ -121,7 +121,7 @@ public sealed class AwayFromTheSeatTests
     public async Task A_count_shown_while_not_connected_marks_nobody_present()
     {
         // The line this must not cross. A count is a reason to come back; it is never a claim that somebody is here.
-        // Since specs/023 a page render does try to take the seat — being at the console is being here — but when it
+        // A page render does try to take the seat — being at the console is being here — but when it
         // cannot, the mark that says "here" must not be drawn beside the count.
         using var console = new WaitingConsole();
         console.Broker.Messages = 1;

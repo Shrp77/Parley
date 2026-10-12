@@ -309,7 +309,7 @@ public sealed class CompletingTests : IAsyncDisposable
     {
         // **Removed on the owner's call of 2026-10-02.** F2 took "the other side of the one choice a draft offers" —
         // answer, or ask back instead — and the owner's reading was that it made no sense: a conversation never really
-        // stops. And since specs/025 what somebody types is a Request whatever they hold (SPEC.md §5.6), so there is
+        // stops. And what somebody types is a Request whatever they hold (SPEC.md §5.6), so there is
         // nothing left to flip.
         var ct = TestContext.Current.CancellationToken;
         var (shell, _) = await SeatedAsync(ct);
@@ -353,7 +353,7 @@ public sealed class CompletingTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
         // there is no Join dialog to drive.
         await shell.Settled;
 
@@ -450,7 +450,7 @@ public sealed class CompletingTests : IAsyncDisposable
 
         driving.App.LayoutAndDraw(true);
 
-        // **One row for the agent, with how many questions are waiting** (specs/025): "orders (1)", where it said
+        // **One row for the agent, with how many questions are waiting**: "orders (1)", where it said
         // "orders@test — waiting for your reply" and repeated the heading above it.
         Assert.DoesNotContain(shell.Room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
         Assert.Single(shell.Room.Written, row => row.Trim() == "orders (1)");

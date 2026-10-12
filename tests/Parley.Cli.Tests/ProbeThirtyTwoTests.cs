@@ -61,7 +61,6 @@ public sealed class ProbeThirtyTwoTests : IDisposable
             new EnrollmentEntry(workspace, agent, "Carts and totals.", unattended)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             CataloguePath,

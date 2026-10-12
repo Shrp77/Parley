@@ -18,7 +18,7 @@
 
     References Client for all of that, plus Transport for the wire and Configuration for the
     project manifest, which it still uses directly. There is no SQLite here and there must never
-    be one; see specs/003-parley-web-console and specs/004-terminal-surface.
+    be one.
   -->
   <PropertyGroup>
     <RootNamespace>Parley.Web</RootNamespace>

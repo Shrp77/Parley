@@ -18,48 +18,32 @@
 }
 else if (Model.Messages.Count == 0)
 {
-    <p>Nothing was recorded under this identifier.</p>
+    @* Still offers who to write to: a conversation that has no messages yet is how one begins, and the tree is
+       what the composer addresses. *@
+    <div class="conversation">
+        <div class="side">
+            <partial name="_Recipients" model="Model" />
+        </div>
+        <p>Nothing was recorded under this identifier.</p>
+    </div>
 }
 else
 {
     <div class="conversation">
-    @* The same roster the project shows, so a reader who has learned it in one place has
-       learned it in the other. A participant is derived from the traffic (§5.0), so one may have
-       been retired or purged since it spoke -- the registry's word is asked for, and its absence
-       is reported rather than filled in. *@
-    <partial name="_Roster" model="@(new RosterView(
-        Model.Project,
-        "In this conversation",
-        [.. Model.Participants.Select(who => new RosterEntry(
-            who,
-            Model.Doing(who)
-                ?? (Model.Roll.TryGetValue(who.Value, out var known)
-                    ? Roster.State(known)
-                    : "not in the registry")))],
-        null,
-        Parley.Client.Rendering.RoomRoster.ParticipantMark))" />
-
-    @if (Model.NotInIt.Count > 0)
-    {
-        @* **Everyone else in the project** (specs/026), so a person can bring somebody in without leaving the
-           conversation. Listed from the same rule as the terminal's room. A participant carries the mark above and
-           these do not; the legend below says what it means, in words as well as the character. *@
-        <partial name="_Roster" model="@(new RosterView(
-            Model.Project,
-            "Not in it yet",
-            [.. Model.NotInIt.Select(who => new RosterEntry(
-                who,
-                Model.Doing(who)
-                    ?? (Model.Roll.TryGetValue(who.Value, out var other) ? Roster.State(other) : "not in the registry")))],
-            null))" />
-    }
+    @* A participant is derived from the traffic (§5.0), so one may have been retired or purged since it spoke --
+       the registry's word is asked for, and its absence is reported rather than filled in. *@
+    @* **One column for everything beside the transcript.** `.conversation` is a three-column grid -- this, the
+       transcript, the rail -- so each of these as a child of its own took a cell and pushed the transcript into
+       a narrow one beneath the first roster. They stack here instead. *@
+    <div class="side">
+    <partial name="_Recipients" model="Model" />
 
     <p class="roster-legend">@Parley.Client.Rendering.RoomRoster.ParticipantLegend</p>
 
     @if (Model.WaitingOnYou.Count > 0)
     {
         @* What is waiting on the person, each agent once with how many of its questions, and each question a link to
-           where it was asked -- the terminal's room list, from the same derivation (specs/025). The words are the
+           where it was asked -- the terminal's room list, from the same derivation. The words are the
            agent's and are escaped like every other agent-written text. *@
         <section class="waiting-on-you" aria-label="Waiting on you">
             <h2>Waiting on you</h2>
@@ -88,6 +72,7 @@ else
             </ul>
         </section>
     }
+    </div>
 
     <ol class="transcript">
         @{ var day = default(DateOnly?); }
@@ -108,7 +93,7 @@ else
                 <li class="day">@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
             }
 
-            <li id="@($"m{message.Id}")" data-agent="@message.From.Value"
+            <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@message.To.Value"
                 class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
 

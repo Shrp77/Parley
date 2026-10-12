@@ -142,12 +142,8 @@ public static class EnrollCommand
     /// and starts, so it is not a scan and is not called one.
     /// </para>
     /// <para>
-    /// <b>What the removed file actually carried was nothing this needed.</b> Scanning built these
-    /// rows in memory, wrote them out, and applying read them straight back. The one thing the round
-    /// trip bought was a place for a person to type what each repository owns — and that is 020's
-    /// question to ask the repository, not a worksheet to fill in from memory. What a launch
-    /// configuration already says is carried forward by <see cref="Discover"/> reading it, which is
-    /// where it came from before the file existed.
+    /// <b>What a repository owns is asked of the agent, not typed in here.</b> What a launch
+    /// configuration already says is carried forward by <see cref="Discover"/> reading it.
     /// </para>
     /// </remarks>
     private static async Task<int> EnrollAsync(
@@ -250,8 +246,7 @@ public static class EnrollCommand
     /// <returns>The exit code.</returns>
     /// <remarks>
     /// The other half of <see cref="Find"/>: a surface that drew its own picker hands the rows back
-    /// and this writes them. No approval of an <c>owns</c> line is asked for, because there is no
-    /// worksheet to tick — what a repository is responsible for is asked of the agent itself.
+    /// and this writes them. What a repository is responsible for is asked of the agent itself.
     /// </remarks>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> EnrolAsync(
@@ -294,8 +289,8 @@ public static class EnrollCommand
     /// <summary>The git repositories directly under a directory, as enrolment rows.</summary>
     /// <param name="root">The directory holding the checkouts.</param>
     /// <param name="previous">
-    /// Rows from a previous run, keyed by workspace, so that what somebody has already typed or
-    /// approved survives. Empty when there is nothing to carry.
+    /// Rows from a previous run, keyed by workspace, so that what somebody has already typed
+    /// survives. Empty when there is nothing to carry.
     /// </param>
     /// <returns>One row per repository, in a stable order.</returns>
     /// <remarks>
@@ -347,11 +342,6 @@ public static class EnrollCommand
                 Note = Noted(
                     workspace,
                     carried?.Owns is { Length: > 0 } had ? had : owns ?? string.Empty),
-
-                // An approval already given survives a re-scan; one never given is not invented
-                // by re-running the command that would have asked for it.
-                OwnsApproved = carried?.OwnsApproved ?? false,
-                Evidence = Evidence(directory),
             });
         }
 
@@ -450,136 +440,6 @@ public static class EnrollCommand
 
         return File.Exists(marker) && !Directory.Exists(marker);
     }
-
-    /// <summary>
-    /// Gathers what a repository already says about itself, for somebody to write from.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Condition 1 of the amendment to SPEC.md §17 question 10: a suggested <c>owns</c> line
-    /// travels with the material it was drawn from, each piece quoted and attributed, so that
-    /// approving it is checkable against something rather than against nothing.
-    /// </para>
-    /// <para>
-    /// <b>Quoted, never summarised.</b> A summary is one more thing to take on trust, and the
-    /// point of this list is to be the part that does not have to be. Everything here is read
-    /// off disk.
-    /// </para>
-    /// <para>
-    /// <b>The repository's history is not read, and it was.</b> An <c>owns</c> line the repository had been
-    /// registered with before was dug out of <c>git log --all</c> for every repository under the folder —
-    /// a process per repository, one after another, before the picker could open. On a folder of 33 it was
-    /// the whole of a three-second freeze, and what it recovered went into a worksheet 0.32.0 removed. The
-    /// owner's call of 2026-09-27: the agent is asked what it owns, and an agent that already knows says so.
-    /// </para>
-    /// </remarks>
-    private static IReadOnlyList<string>? Evidence(string workspace)
-    {
-        var found = new List<string>();
-
-        foreach (var name in (string[])["README.md", "README", "readme.md"])
-        {
-            var path = Path.Combine(workspace, name);
-
-            if (!File.Exists(path))
-            {
-                continue;
-            }
-
-            // **Said rather than silently skipped.** The evidence exists so that approving a
-            // suggested line is checkable against something, and a repository whose README points
-            // out of the checkout is a fact about that repository worth putting in front of the
-            // person — where an absent line would just look like a repository that says nothing
-            // about itself.
-            if (Enrolment.Linked(path) is not null)
-            {
-                found.Add($"{name} — not read: it is a link out of the repository");
-
-                break;
-            }
-
-            try
-            {
-                var line = File.ReadLines(path).FirstOrDefault(l =>
-                    l.Trim().Length > 20
-                    && !l.StartsWith('#')
-                    && !l.StartsWith('[')
-                    && !l.StartsWith("!["));
-
-                if (line is { Length: > 0 })
-                {
-                    found.Add($"{name} — \"{Present(line.Trim())}\"");
-                }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // Evidence is optional by definition: the person can still write the line.
-            }
-
-            break;
-        }
-
-        try
-        {
-            var directories = Directory.EnumerateDirectories(workspace)
-                .Select(Path.GetFileName)
-                .Where(n => n is { Length: > 0 } && !n.StartsWith('.'))
-                .Order(StringComparer.Ordinal)
-                .Take(8)
-                .ToArray();
-
-            if (directories.Length > 0)
-            {
-                found.Add("top-level — " + Present(string.Join(' ', directories)));
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
-
-        // FR-012. A repository already in one project is the one somebody is most likely to enrol
-        // into a second by accident, having seen no sign of the first.
-        switch (Existing(workspace))
-        {
-            case null:
-                found.Add("its .mcp.json could not be read");
-                break;
-
-            case { Count: > 0 } enrolled:
-                found.Add("answers in: " + string.Join(
-                    ", ",
-                    enrolled.Select(entry =>
-                        $"{entry.Project ?? "no project"} (as `{entry.Agent ?? "unnamed"}`)")));
-                break;
-
-            default:
-                break;
-        }
-
-        return found.Count > 0 ? found : null;
-    }
-
-    /// <summary>
-    /// Makes a line of somebody else's file safe to show to a person who is deciding by it.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Evidence is untrusted text — a README from a repository that may have been cloned from
-    /// anywhere — and the amendment to SPEC.md §17 question 10 rests on approval being
-    /// <i>checkable against it</i>. Evidence that can reorder its own display or break its own
-    /// line is not checkable: a README reading
-    /// <c>owns billing&#x202E; .tidua sdrocer ylno tI</c> renders as a claim it does not make,
-    /// and somebody approving a drafted line against it is approving against a lie.
-    /// </para>
-    /// <para>
-    /// The same class the schema refuses in <c>owns</c> itself, for the same stated reason:
-    /// anything able to break the line, hide itself, or reorder what follows lets one entry
-    /// imitate the ones around it. Stripped rather than refused, because unlike an <c>owns</c>
-    /// line this text is nobody's statement — dropping the character loses nothing a reader
-    /// wanted.
-    /// </para>
-    /// </remarks>
-    private static string Present(string line) => Quoting.Flat(line);
 
     /// <summary>Every enrolment a repository already has, or null when the file cannot be read.</summary>
     /// <param name="workspace">The repository.</param>
@@ -947,12 +807,8 @@ public static class EnrollCommand
         await output.WriteLineAsync(
             EnrolmentConsent.Says(entries.Length, project?.Name)).ConfigureAwait(false);
 
-        // **Approval is asked for only where somebody could give it**, which is the manifest. The one
-        // verb has no file to tick, and the owns line it carries came out of the repository's own
-        // launch configuration; 020 asks the agent what it is responsible for rather than having a
-        // person affirm a line they did not write.
         var problems = new List<string>(
-            EnrollmentPlan.Validate(entries, Directory.Exists, row: null, requireOwnsApproval: fromManifest));
+            EnrollmentPlan.Validate(entries, Directory.Exists, row: null));
 
         // **FR-013's check was here, and 018 removed the rule it enforced.**
         //

@@ -58,7 +58,7 @@ public static class Facilitation
     /// <param name="project">The project the broker serves.</param>
     /// <returns><c>parley-facilitator@project</c>.</returns>
     /// <remarks>
-    /// Named for the project rather than a machine since specs/023, the same rule as <see cref="PersonSeat"/>: the
+    /// Named for the project rather than a machine, the same rule as <see cref="PersonSeat"/>: the
     /// facilitator runs inside the broker and is hosted on nothing, so a machine after the <c>@</c> said something
     /// untrue, and storage recorded a machine that never connects.
     /// </remarks>

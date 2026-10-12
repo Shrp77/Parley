@@ -48,7 +48,7 @@ public enum FlagKind
 
     /// <summary>
     /// The owing agent's last turn ended with tool calls refused for want of permission, and it has said nothing in the
-    /// conversation since (SPEC.md §6, specs/024).
+    /// conversation since (SPEC.md §6).
     /// </summary>
     /// <remarks>
     /// Flagged at once, like <see cref="NotVoted"/> and for the opposite reason: there the work is done, here it cannot be

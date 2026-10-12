@@ -20,7 +20,7 @@ namespace Parley.Terminal.Tests;
 /// about a question.
 /// </para>
 /// <para>
-/// <b>Rewritten for specs/023 against the book directly.</b> These went through <c>AgentsRegion.Refresh</c> and a seat
+/// <b>Rewritten against the book directly.</b> These went through <c>AgentsRegion.Refresh</c> and a seat
 /// per typed name; both went. What a sweep does changed too: it drops the stream and the person reads as away, but the
 /// seat is the broker's and is remembered here (<see cref="SeatBook.Known"/>), so the waiting count survives and the
 /// next key takes the stream back.
@@ -69,7 +69,7 @@ public sealed class SeatLifetimeTests
     [Fact]
     public async Task Nobody_at_the_terminal_drops_the_stream_and_the_seat_is_still_known()
     {
-        // The other direction, and the reason sweeping happens at all — with specs/023's half: the seat is not forgotten,
+        // The other direction, and the reason sweeping happens at all — with this half: the seat is not forgotten,
         // because the broker never releases it and the count of what is waiting has to go on working while away.
         using var book = new SeatBook(_ => new StubAgents());
         var start = DateTimeOffset.UtcNow;

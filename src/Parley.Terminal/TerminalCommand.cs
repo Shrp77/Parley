@@ -11,7 +11,7 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SPEC.md §17 question 15 records what this is for. A node hands turns to the agents it started;
+/// A node hands turns to the agents it started;
 /// an agent attached through somebody's own editor window was started by nobody, so nothing can
 /// hand it one. The consequence is not that such an agent is inconvenient — it is that a person
 /// has nowhere to take part from. Everything they can do otherwise either goes through a session

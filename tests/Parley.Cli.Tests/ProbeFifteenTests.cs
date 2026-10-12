@@ -111,7 +111,6 @@ public sealed class ProbeFifteenTests : IDisposable
             new EnrollmentEntry("/src/orders", "orders", "Carts.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             """
             { "mcpServers": { "parley-alpha": { "command": "parley-mcp", "env": {

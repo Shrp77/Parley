@@ -84,7 +84,7 @@ public sealed class DialogStackTests
         // matters.** A project's name may hold letters, digits and hyphens, so this field corrects
         // what is typed into it — and what is being checked here is that the keystroke was the
         // field's to refuse: had the surface taken it first, the actions menu would be on top of
-        // a half-typed name. (The seat's Join dialog was the example here until specs/023 removed it.)
+        // a half-typed name. (The seat's Join dialog was the example here until it was removed.)
         Assert.Equal("who", dialog.Values[0]);
         Assert.False(driving.Has(Shell.ActionsTitle), "the actions menu opened over the dialog");
         Assert.True(driving.Has(Naming.CreateTitle), "the dialog is no longer on screen");

@@ -6,10 +6,9 @@ namespace Parley.Core;
 /// <remarks>
 /// <para>
 /// Recorded because the three are different evidence, not because a surface needs to draw them
-/// differently. Question 10's amendment permits a model-drafted line on the condition that approval
-/// is a recorded positive act — so what is worth keeping is *which* act it was, and the answer
-/// narrows what the field can be claimed to mean: a <see cref="Proposed"/> line is an agent's words
-/// that a person read and agreed to, and a <see cref="Composed"/> one is a person's own.
+/// differently. What is worth keeping is *which* act it was, and the answer narrows what the
+/// field can be claimed to mean: a <see cref="Proposed"/> line is an agent's words that were
+/// accepted, and a <see cref="Composed"/> one is a person's own.
 /// </para>
 /// <para>
 /// <b>It is also what keeps a person's characters from being attributed to a model.</b> The length
@@ -32,7 +31,7 @@ public enum OwnershipSource
 
     /// <summary>
     /// The agent's own words, made its line by the project's Auto Accept switch with no person involved
-    /// (SPEC.md §10.2, specs/022). Only runs of whitespace were collapsed.
+    /// (SPEC.md §10.2). Only runs of whitespace were collapsed.
     /// </summary>
     /// <remarks>
     /// <b>Recorded only by the broker itself, and refused from any operator call.</b> The three routes above

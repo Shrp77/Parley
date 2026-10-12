@@ -95,16 +95,16 @@ repeating the claims here invites somebody to act on a description that has not 
 Two files survive a purge and a re-run, and both are the class of thing that looks like a fresh
 install and is not:
 
-- **`.mcp.json`** may carry variables from an older shape. A `parley` or `parley-<project>` entry naming a store path,
-  a sweep cadence, a retention pair or a clarify cap predates the broker, and nothing reads them
-  now - they belong to the broker process. Report them; they are not harmful, but they are
-  evidence that this repository was configured against a Parley that no longer exists.
-- **`node.json`**, beside where the node is started or wherever `PARLEY_NODE_CONFIG` points, may
-  hold an entry for a role that is not registered. That entry is standing consent for this
+- **`.mcp.json`** may carry variables nothing reads. A `parley` or `parley-<project>` entry naming a store path,
+  a sweep cadence, a retention pair or a clarify cap carries settings that belong to the broker
+  process. Report them; they are not harmful, but they are evidence that this repository was
+  configured against a different Parley.
+- **`node.json`**, in the same folder as the projects or wherever `PARLEY_NODE_CONFIG` points, may
+  hold an entry for an identity that is not registered. That entry is standing consent for this
   machine to start a repository unattended, and it outlives the registration it was written for
   - a purge clears the broker's store and touches neither the repository nor the machine.
 
-  **This repository's own role is not evidence of anything here.** The roster omits the caller,
+  **This repository's own identity is not evidence of anything here.** The roster omits the caller,
   so its entry looks unregistered from inside and always will; judging it by what step 1 returned
   reports a stale consent that is nothing of the kind. Check the other entries and leave this
   one alone.

@@ -73,7 +73,6 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
             unattended)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         var output = new StringWriter();

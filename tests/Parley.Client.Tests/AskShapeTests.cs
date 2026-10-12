@@ -123,7 +123,7 @@ public sealed class AskShapeTests
                 .ToArray());
     }
 
-    /// <summary>The project's person seat, as the broker names it (specs/023).</summary>
+    /// <summary>The project's person seat, as the broker names it.</summary>
     private static Seat Seated() => new(PersonSeat.On(Alpha.Name));
 
     /// <summary>The project's registry, holding only its person seat.</summary>

@@ -56,7 +56,6 @@ public sealed class ProbeThirtyOneTests : IDisposable
             new EnrollmentEntry(Workspace, agent, owns, Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Path.Combine(_root, "node.json"),
@@ -143,7 +142,6 @@ public sealed class ProbeThirtyOneTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Path.Combine(_root, "node.json"),

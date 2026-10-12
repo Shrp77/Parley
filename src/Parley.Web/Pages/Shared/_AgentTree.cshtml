@@ -1,0 +1,74 @@
+@model Parley.Web.Pages.Shared.AgentTreeView
+@using Parley.Core
+@*
+    The agents as a tree: one group per machine, the person's own group first. Used by the project page, which
+    only browses it, and by the conversation page, where each agent also carries a box that belongs to the
+    composer's form (`form="composer"`) so choosing one here is choosing it there.
+
+    `name`, `value` and `checked` stay adjacent and in that order: tests and the form both read them that way.
+*@
+@{
+    var groups = Model.Entries
+        .GroupBy(e => e.Name.Machine, StringComparer.Ordinal)
+        .OrderByDescending(g => g.Any(e => e.Name.Role == "human-user"))
+        .ThenBy(g => g.Key, StringComparer.Ordinal)
+        .ToList();
+}
+<ul class="tree">
+    @foreach (var group in groups)
+    {
+        <li class="group">
+            <details open data-group="@group.Key">
+                <summary>
+                    @if (Model.Pick || Model.ForDefaults)
+                    {
+                        <input type="checkbox" class="group-box" aria-label="Everyone at @group.Key" />
+                    }
+                    <span class="group-name">@@@group.Key</span>
+                    <span class="count">@group.Count()</span>
+                </summary>
+                <ul>
+                    @{ var dividerShown = false; }
+                    @foreach (var entry in group.OrderBy(e => e.Name.Role != "human-user").ThenBy(e => e.InIt ? 0 : 1).ThenBy(e => e.Name.Role, StringComparer.Ordinal))
+                    {
+                        var who = entry.Name;
+
+                        @if (!entry.InIt && !dividerShown)
+                        {
+                            dividerShown = true;
+                            @* Said in words as well as by the mark the others carry. *@
+                            <li class="divider">Not in it yet</li>
+                        }
+
+                        @if (Model.ForDefaults)
+                        {
+                            <li class="slot-@Palette.SlotFor(who)">
+                                <input type="checkbox" class="default-box" id="default-@who.Value" name="default" value="@who.Value" aria-label="@who.Value" />
+                                <label for="default-@who.Value" class="pick-name">
+                                    <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                                    <span class="name">@who.Role</span>
+                                </label>
+                                <span class="state">@entry.State</span>
+                            </li>
+                            continue;
+                        }
+
+                        <li class="slot-@Palette.SlotFor(who)@(entry.InIt ? null : " not-in-it")">
+                            @if (Model.Pick)
+                            {
+                                <input type="checkbox" class="to-box" name="Targets" value="@who.Value" checked="@(entry.Ticked ? "checked" : null)" form="composer" aria-label="@who.Value" />
+                            }
+                            @if (Model.Pick && entry.InIt)
+                            {
+                                <span class="mark" aria-hidden="true">@Parley.Client.Rendering.RoomRoster.ParticipantMark</span>
+                            }
+                            <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                            <a class="name" title="@who.Value" href="/Projects/Agent?project=@Model.Project&amp;agent=@who.Value">@who.Role</a>
+                            <span class="state">@entry.State</span>
+                        </li>
+                    }
+                </ul>
+            </details>
+        </li>
+    }
+</ul>

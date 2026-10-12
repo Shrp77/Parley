@@ -148,7 +148,7 @@ public static class ProjectManifest
     /// one that matters more now that a bad folder sits beside good ones rather than inside one file.
     /// </para>
     /// <para>
-    /// <b>One bad folder costs that project and no other</b> (specs/019 <c>contracts/layout.md</c>). This returned
+    /// <b>One bad folder costs that project and no other</b>. This returned
     /// nothing at all for any problem, so an empty folder with a space in its name stopped every command and the broker
     /// for every project on the machine — the combined review gate drove it. A folder that is not a project, or whose
     /// configuration does not read, is left out and said; two projects claiming one endpoint are both left out, since

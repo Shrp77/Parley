@@ -51,7 +51,6 @@ public sealed class ProbeSeventeenTests : IDisposable
             new EnrollmentEntry(Workspace, agent, "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             Path.Combine(_root, $"{project}-node.json"),

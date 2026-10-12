@@ -62,7 +62,7 @@ public sealed class HealthReadTests
         var operators = broker.ConnectAsOperator();
 
         // Empty of agents: the only rows an empty store holds are the two the broker writes itself (SPEC.md §12.3) —
-        // the facilitator, which the adapter marks as Parley, and since specs/023 the person seat.
+        // the facilitator, which the adapter marks as Parley, and the person seat.
         var rows = (await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows;
 
         Assert.Equal(

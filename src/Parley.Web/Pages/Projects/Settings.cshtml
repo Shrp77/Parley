@@ -1,0 +1,248 @@
+@page
+@model Parley.Web.Pages.Projects.SettingsModel
+@using Parley.Core
+@using Parley.Web.Pages.Shared
+@{
+    ViewData["Title"] = $"Settings for {Model.Project}";
+    ViewData["Project"] = Model.Project;
+}
+
+<h1>Settings</h1>
+
+<p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+
+<section aria-labelledby="defaults-heading" class="settings-section">
+    <h2 id="defaults-heading">New conversations</h2>
+
+    <p>
+        The agents ticked here are ticked in the To list whenever you open a conversation that has no messages yet. You can
+        still change them before you send. This is kept in this browser and is not sent anywhere, so another browser or
+        machine has its own.
+    </p>
+
+    @if (Model.Problem is { Length: > 0 } problem)
+    {
+        <p class="unreachable" role="alert">@problem</p>
+    }
+    else if (Model.Agents.Count == 0)
+    {
+        <p>No agents are registered yet. <a href="#agent-acts-heading">Register one below.</a></p>
+    }
+    else
+    {
+        @* Hidden until script runs: the boxes only mean something to script, and a form that does nothing is worse than none. *@
+        <form id="default-agent" class="default-agent" data-project="@Model.Project" onsubmit="return false" hidden>
+            <details class="default-expander" open>
+                <summary>
+                    <span class="default-title">Default conversation agent:</span>
+                    <span id="default-count" class="count"></span>
+                    <button type="button" id="default-select" class="select-agents">Select agents</button>
+                </summary>
+
+                @* The chosen agents, each a chip that takes itself out with its x. *@
+                <ul id="default-chips" class="chips" aria-label="Default agents"></ul>
+            </details>
+
+            <p id="default-saved" class="composer-note" role="status" aria-live="polite"></p>
+
+            @* The list to choose from. A modal dialog is outside the expander so closing that never hides it. *@
+            <dialog id="default-dialog" class="default-dialog" aria-labelledby="default-dialog-title">
+                <h3 id="default-dialog-title">Select agents</h3>
+
+                <p class="toolbar">
+                    <button type="button" id="default-none" disabled>Select none</button>
+                </p>
+
+                <div class="settings-tree">
+                    <partial name="_AgentTree" model="@(new AgentTreeView(
+                        Model.Project ?? "",
+                        [.. Model.Agents.Select(a => new AgentTreeEntry(a.Name, true, false, Roster.State(a)))],
+                        Pick: false,
+                        ForDefaults: true))" />
+                </div>
+
+                <p class="dialog-actions"><button type="button" id="default-done">Done</button></p>
+            </dialog>
+        </form>
+
+        <noscript>
+            <p class="unreachable">Choosing default agents needs script, because the choice is kept in this browser.</p>
+        </noscript>
+    }
+</section>
+
+<section aria-labelledby="agent-acts-heading" class="settings-section">
+    <h2 id="agent-acts-heading">Agents in this project</h2>
+
+    @* Moved here from the project page: they are things done to the roster, not part of reading it. Each is a link
+       because each describes what it does, or what it costs, before anything is sent. *@
+    <ul class="act-cards">
+        <li>
+            <a class="act-title" href="/Projects/Register?project=@Model.Project">Register an agent</a>
+            <p>Bring a repository's agent into this project so it can be reached and can answer.</p>
+        </li>
+        <li>
+            <a class="act-title" href="/Projects/Ownership?project=@Model.Project">Review ownership</a>
+            <p>See what each agent says it is responsible for, and accept or argue with it.</p>
+        </li>
+        <li class="costly">
+            <a class="act-title" href="/Projects/Act?project=@Model.Project&amp;action=askeveryownership&amp;subject=@Model.Project">Ask every agent again what it owns</a>
+            <p>
+                Sends every agent the ownership question again.
+                <strong>
+                    Costs one turn per agent@(Model.Problem is { Length: > 0 } ? " (the count is unknown just now)" : $" ({Model.Agents.Count} now)").
+                    That cannot be undone.
+                </strong>
+                The next page describes it before anything is sent.
+            </p>
+        </li>
+    </ul>
+</section>
+
+@section Scripts {
+    <script>
+        // Ticked means saved: there is no button, and the sentence says what was kept. The choice is a list of
+        // full agent names in this browser's storage, under the same key the conversation page reads.
+        (function () {
+            var form = document.getElementById("default-agent");
+
+            if (!form) { return; }
+
+            var key = "parley-default-to:" + form.getAttribute("data-project");
+            var said = document.getElementById("default-saved");
+            var count = document.getElementById("default-count");
+            var none = document.getElementById("default-none");
+            var chips = document.getElementById("default-chips");
+            var dialog = document.getElementById("default-dialog");
+            var openIt = document.getElementById("default-select");
+            var done = document.getElementById("default-done");
+            var boxes = [].slice.call(form.querySelectorAll(".default-box"));
+            var known = boxes.map(function (b) { return b.value; });
+            var stale = 0;
+
+            // An older version kept one name as plain text; a list is the form now.
+            function read() {
+                var raw = window.localStorage.getItem(key);
+
+                if (!raw) { return []; }
+
+                if (raw.charAt(0) === "[") {
+                    var list = JSON.parse(raw);
+
+                    return Array.isArray(list) ? list.filter(function (n) { return typeof n === "string"; }) : [];
+                }
+
+                return [raw];
+            }
+
+            function chosen() {
+                return boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+            }
+
+            function groups() {
+                form.querySelectorAll("details[data-group]").forEach(function (group) {
+                    var members = [].slice.call(group.querySelectorAll(".default-box"));
+                    var box = group.querySelector(".group-box");
+                    var on = members.filter(function (m) { return m.checked; }).length;
+
+                    if (!box) { return; }
+
+                    box.checked = members.length > 0 && on === members.length;
+                    box.indeterminate = on > 0 && on < members.length;
+                });
+            }
+
+            function describe(names) {
+                // The role alone, with the machine added only where two roles would read the same.
+                var roles = names.map(function (n) { return n.split("@@")[0]; });
+
+                return names.map(function (n, i) {
+                    return roles.indexOf(roles[i]) === roles.lastIndexOf(roles[i]) ? roles[i] : n;
+                }).join(", ");
+            }
+
+            function chip(name, label) {
+                var item = document.createElement("li");
+                var text = document.createElement("span");
+                var x = document.createElement("button");
+
+                item.className = "chip";
+                text.textContent = label;
+                x.type = "button";
+                x.className = "chip-x";
+                x.textContent = "×";
+                x.setAttribute("aria-label", "Remove " + name + " from the default agents");
+                x.addEventListener("click", function () {
+                    boxes.forEach(function (b) { if (b.value === name) { b.checked = false; } });
+                    save();
+                });
+                item.appendChild(text);
+                item.appendChild(x);
+
+                return item;
+            }
+
+            function show(names, extra) {
+                var labels = describe(names).split(", ");
+
+                chips.replaceChildren.apply(chips, names.map(function (n, i) { return chip(n, labels[i]); }));
+                count.textContent = "(" + names.length + " of " + boxes.length + " selected)";
+                none.disabled = names.length === 0;
+                said.textContent = (names.length
+                    ? "New conversations will be addressed to " + describe(names) + "."
+                    : "New conversations will have nobody ticked.") + (extra ? " " + extra : "");
+            }
+
+            try {
+                var saved = read();
+                var present = saved.filter(function (n) { return known.indexOf(n) >= 0; });
+
+                stale = saved.length - present.length;
+                boxes.forEach(function (b) { b.checked = present.indexOf(b.value) >= 0; });
+            } catch (e) { }
+
+            groups();
+            show(chosen(), stale
+                ? stale + " saved " + (stale === 1 ? "agent is" : "agents are") + " no longer registered."
+                : "");
+            form.hidden = false;
+
+            function save() {
+                var names = chosen();
+
+                groups();
+
+                try {
+                    if (names.length) { window.localStorage.setItem(key, JSON.stringify(names)); }
+                    else { window.localStorage.removeItem(key); }
+                    show(names, "");
+                } catch (x) {
+                    show(names, "This browser would not keep the choice.");
+                }
+            }
+
+            form.addEventListener("change", function (e) {
+                var t = e.target;
+
+                if (t.classList.contains("group-box")) {
+                    t.closest("details").querySelectorAll(".default-box").forEach(function (m) { m.checked = t.checked; });
+                }
+
+                save();
+            });
+
+            // The button sits in the expander's header, so it must not also fold the expander.
+            openIt.addEventListener("click", function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                dialog.showModal();
+            });
+            done.addEventListener("click", function () { dialog.close(); });
+
+            none.addEventListener("click", function () {
+                boxes.forEach(function (b) { b.checked = false; });
+                save();
+            });
+        })();
+    </script>
+}

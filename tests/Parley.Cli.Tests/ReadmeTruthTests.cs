@@ -51,18 +51,4 @@ public sealed class ReadmeTruthTests
                 "the README says a removed spelling still works:\n" + paragraph);
         }
     }
-
-    [Fact]
-    public void The_readme_names_the_version_that_removed_them()
-    {
-        // A deprecation note with no version is one nobody can act on: the question somebody has is
-        // always "does mine still work", and only the number answers it.
-        var text = File.ReadAllText(Readme).ReplaceLineEndings("\n");
-
-        var paragraph = text.Split("\n\n")
-            .FirstOrDefault(part => part.Contains("--with-console", StringComparison.Ordinal));
-
-        Assert.NotNull(paragraph);
-        Assert.Contains("0.22.0", paragraph, StringComparison.Ordinal);
-    }
 }

@@ -121,7 +121,7 @@ public sealed class FieldsCorrectAsTypedTests
     }
 
     // Two tests of the seat's Join field were here — a name corrected as typed, and one the correction cannot save.
-    // specs/023 removed the field: nothing is typed to take a seat. The correction machinery in `Prompting.Text` has no
+    // The field is gone: nothing is typed to take a seat. The correction machinery in `Prompting.Text` has no
     // caller now either; it is left in place and recorded in tasks.md rather than removed inside this change.
 
     private static BrokerDirectory Directory() =>

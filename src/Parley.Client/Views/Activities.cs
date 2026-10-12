@@ -43,7 +43,7 @@ public sealed record Activity(
     AgentName? WaitingOn = null);
 
 /// <summary>
-/// Derives what each participant in a conversation is doing, and how both surfaces say it (specs/024).
+/// Derives what each participant in a conversation is doing, and how both surfaces say it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -175,7 +175,7 @@ public static class Activities
                 + span.Minutes.ToString("00", CultureInfo.InvariantCulture) + "m";
     }
 
-    /// <summary>What both surfaces say about work stopped by a refused permission (SPEC.md §6, specs/024).</summary>
+    /// <summary>What both surfaces say about work stopped by a refused permission (SPEC.md §6).</summary>
     /// <param name="waitingOn">The agent that stopped.</param>
     /// <param name="waiting">Who is waiting on it.</param>
     /// <param name="since">When its turn ended, already written for the surface.</param>

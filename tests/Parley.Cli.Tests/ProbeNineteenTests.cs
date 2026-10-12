@@ -51,7 +51,6 @@ public sealed class ProbeNineteenTests : IDisposable
         new("/src/orders", "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>Every note a plan produces, joined.</summary>

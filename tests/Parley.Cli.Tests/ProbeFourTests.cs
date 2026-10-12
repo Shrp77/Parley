@@ -70,7 +70,6 @@ public sealed class ProbeFourTests : IDisposable
             new EnrollmentEntry(workspace, "orders", "Carts.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "acme",
             CatalogueFor("acme"),
@@ -158,12 +157,10 @@ public sealed class ProbeFourTests : IDisposable
                 new EnrollmentEntry(workspace, "inventory", "Stock.", Unattended: true)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
                 new EnrollmentEntry(workspace, "stock", "Stock again.", Unattended: true)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
             ],
             Directory.Exists);
@@ -187,7 +184,6 @@ public sealed class ProbeFourTests : IDisposable
             new EnrollmentEntry(workspace, "orders", "Carts.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "acme",
             CatalogueFor("acme"),

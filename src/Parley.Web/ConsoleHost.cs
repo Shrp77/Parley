@@ -75,7 +75,7 @@ public static class ConsoleHost
 
         // Requests and errors, never message text or payloads. §9.4's retention governs the
         // store; a copy of a message in a web log is governed by nothing and would outlive the
-        // prune meant to reclaim it. See specs/003-parley-web-console FR-031.
+        // prune meant to reclaim it.
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole();
 

@@ -220,7 +220,7 @@ public sealed class AddressingFromTheRoomTests
 
         seated.Lay();
         seated.Focus<RoomRegion>();
-        // One row per agent with its count (specs/025); Enter lists its questions and choosing one reads it.
+        // One row per agent with its count; Enter lists its questions and choosing one reads it.
         seated.Row(shell.Room.List, "orders (1)");
 
         Assert.Null(shell.Room.SelectedPeer);

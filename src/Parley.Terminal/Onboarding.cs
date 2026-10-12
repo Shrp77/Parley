@@ -177,9 +177,7 @@ internal static class Onboarding
     /// <remarks>
     /// <para>
     /// Read off the row the command produced rather than worked out here, so the note and what the
-    /// command will do cannot disagree. **That sentence was aspirational until 2026-09-26**: this
-    /// read <c>Owns</c> and nothing else, so the command's own picker said "worktree of another
-    /// checkout" and this surface said nothing. The evidence a scan gathers is the repository's own
+    /// command will do cannot disagree. What a scan reads is the repository's own
     /// text, so it is neutralised: <see cref="Safe"/> exists because a control character in somebody
     /// else's file can otherwise draw whatever it likes on this screen.
     /// </para>

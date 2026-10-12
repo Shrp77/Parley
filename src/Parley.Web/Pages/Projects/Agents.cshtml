@@ -1,37 +1,38 @@
 @page
 @model Parley.Web.Pages.Projects.AgentsModel
 @using Parley.Core
+@using Parley.Web.Pages.Shared
 @{
     ViewData["Refresh"] = "30";
     ViewData["Title"] = Model.Project;
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<h1>@Model.Project</h1>
+<h1 class="project-title">
+    @* The title is the way to rename. Renaming is not a label edit: it forgets the old name and names a new
+       project with a folder and store of its own, and the page it leads to says what that does. *@
+    <a class="title-link" href="/Projects/Naming?project=@Model.Project" title="Rename this project">@Model.Project</a>
+    <a class="edit" href="/Projects/Naming?project=@Model.Project">Edit</a>
+</h1>
 
 <nav aria-label="This project">
     <a href="/Projects/Health?project=@Model.Project">Health</a>
-    @* What agents have put forward for a person to decide, and the roadmaps that came of it (specs/026). *@
-    <a href="/Roadmaps?project=@Model.Project">Roadmaps</a>
     <a href="/Projects/Files?project=@Model.Project">Files</a>
-    <a href="/Projects/Register?project=@Model.Project">Register an agent</a>
-    @* Beside the roster because that is what it is about, and a link rather than a button because it
-       describes what it costs before anything is sent -- a turn per agent, which nobody can un-spend.
-       Linked from here since 0.34.1; it was performed and unreachable before that. *@
-    <a href="/Projects/Ownership?project=@Model.Project">Review ownership</a>
-    <a href="/Projects/Act?project=@Model.Project&amp;action=askeveryownership&amp;subject=@Model.Project">Ask every agent again what it owns</a>
-    <a href="/Projects/Naming?project=@Model.Project">Rename this project</a>
+    <a href="/Projects/Settings?project=@Model.Project">Settings</a>
 </nav>
 
 <div class="project">
-    @* The roster. Compact on purpose: a name, what it is doing, and a way in. Everything else
-       about an agent is on its own page, because a column wide enough to hold the owns line is a
-       column that pushes the conversations off the screen. *@
-    <partial name="_Roster" model="@(new RosterView(
-        Model.Project,
-        "Agents",
-        [.. Model.Agents.Select(a => new RosterEntry(a.Name, Roster.State(a)))],
-        Model.Problem))" />
+    @* Roadmaps first: they are what the person came to decide and to start work from. *@
+    <div class="project-main">
+        @if (Model.RoadmapProblem is { Length: > 0 } roadmapProblem)
+        {
+            <p class="unreachable" role="alert">@roadmapProblem</p>
+        }
+        else
+        {
+            <partial name="_RoadmapSummary" model="@(new RoadmapSummaryView(Model.Project ?? "", Model.Waiting, Model.Roadmaps))" />
+            <p><a href="/Roadmaps?project=@Model.Project">All roadmaps</a></p>
+        }
 
     <section aria-label="Conversations in this project">
         <h2>Conversations</h2>
@@ -94,41 +95,51 @@
         }
         else
         {
-            <ul class="threads">
+            <div class="grid" role="table" aria-label="Conversations">
+                <div class="grid-head" role="row">
+                    <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")&amp;sort=name">Name</a>
+                    <span role="columnheader">Messages</span>
+                    <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")">Last active</a>
+                </div>
                 @foreach (var conversation in Model.Conversations)
                 {
-                    <li>
-                        <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
-                        <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
-                        <p class="meta">
-                            @conversation.Messages messages ·
-                            last active @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
-                            @if (conversation.HasOpenExchange)
-                            {
-                                @* A question somebody still owes an answer to. Said in words;
-                                   the tint is only how you find it. *@
-                                <span class="tag open">still open</span>
-                            }
-                            @if (conversation.Archived)
-                            {
-                                <span class="tag">archived</span>
-                            }
-                        </p>
-                        @* Filing away and destroying, linked from here since the combined review gate found both
-                           performed by this console and reached from no page. Archiving is one click because one
-                           click reverses it; destroying goes to a page that describes it and takes the name typed. *@
-                        <form method="post" asp-page-handler="Archive">
-                            <input type="hidden" name="project" value="@Model.Project" />
-                            <input type="hidden" name="id" value="@conversation.Id" />
-                            <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
-                            <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
-                            <input type="hidden" name="sort" value="@Model.Sort" />
-                            <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
-                        </form>
-                        <a href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
-                    </li>
+                    @* A row opens to show who is in it and what can be done to it. A native details element, so
+                       it works with no script. *@
+                    <details class="grid-row" role="row">
+                        <summary>
+                            <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
+                            <span class="num">@conversation.Messages</span>
+                            <span class="when">
+                                @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
+                                @if (conversation.HasOpenExchange)
+                                {
+                                    @* A question somebody still owes an answer to. Said in words; the tint is only how you find it. *@
+                                    <span class="tag open">still open</span>
+                                }
+                                @if (conversation.Archived)
+                                {
+                                    <span class="tag">archived</span>
+                                }
+                            </span>
+                        </summary>
+                        <div class="grid-detail">
+                            <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
+                            @* Filing away and destroying, linked from here since the combined review gate found both
+                               performed by this console and reached from no page. Archiving is one click because one
+                               click reverses it; destroying goes to a page that describes it and takes the name typed. *@
+                            <form method="post" asp-page-handler="Archive">
+                                <input type="hidden" name="project" value="@Model.Project" />
+                                <input type="hidden" name="id" value="@conversation.Id" />
+                                <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
+                                <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
+                                <input type="hidden" name="sort" value="@Model.Sort" />
+                                <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
+                            </form>
+                            <a href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
+                        </div>
+                    </details>
                 }
-            </ul>
+            </div>
 
             @if (Model.NextPageToken is { Length: > 0 } next)
             {
@@ -138,4 +149,75 @@
             }
         }
     </section>
+    </div>
+
+    <aside class="roster agents-card" aria-label="Agents">
+        <h2>Agents</h2>
+
+        @if (Model.Problem is { Length: > 0 } problem)
+        {
+            <p class="unreachable" role="alert">@problem</p>
+        }
+        else if (Model.Agents.Count == 0)
+        {
+            <p>
+                None registered yet.
+                <a href="/Projects/Register?project=@Model.Project">Add one.</a>
+            </p>
+        }
+        else
+        {
+            <partial name="_AgentTree" model="@(new AgentTreeView(
+                Model.Project ?? "",
+                [.. Model.Agents.Select(a => new AgentTreeEntry(a.Name, true, false, Roster.State(a)))],
+                Pick: false))" />
+        }
+    </aside>
 </div>
+
+@section Scripts {
+    <script>
+        // The title is a text box when it is clicked. Enter takes the typed name to the page that describes
+        // what a rename does -- the console does not rename, so nothing is written here -- and Escape puts the
+        // title back. Without script the title is simply a link to that page.
+        (function () {
+            var link = document.querySelector(".project-title .title-link");
+
+            if (!link) { return; }
+
+            link.addEventListener("click", function (e) {
+                e.preventDefault();
+
+                var project = new URL(link.href).searchParams.get("project");
+                var form = document.createElement("form");
+                var box = document.createElement("input");
+                var hidden = document.createElement("input");
+
+                form.method = "get";
+                form.action = "/Projects/Naming";
+                form.className = "title-edit";
+                hidden.type = "hidden";
+                hidden.name = "project";
+                hidden.value = project;
+                box.name = "newName";
+                box.value = project;
+                box.setAttribute("aria-label", "New name for this project");
+                box.maxLength = 64;
+                box.autocomplete = "off";
+                box.spellcheck = false;
+                form.appendChild(hidden);
+                form.appendChild(box);
+                link.replaceWith(form);
+                box.focus();
+                box.select();
+
+                box.addEventListener("keydown", function (k) {
+                    if (k.key === "Escape") { form.replaceWith(link); }
+                });
+                box.addEventListener("blur", function () {
+                    if (form.parentNode) { form.replaceWith(link); }
+                });
+            });
+        })();
+    </script>
+}

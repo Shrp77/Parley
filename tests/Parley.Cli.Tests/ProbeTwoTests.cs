@@ -56,7 +56,6 @@ public sealed class ProbeTwoTests : IDisposable
         new(workspace, agent, "What it owns. Not what it does not.", unattended)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     private Task AddAsync(string workspace, string agent, string project = "acme") =>

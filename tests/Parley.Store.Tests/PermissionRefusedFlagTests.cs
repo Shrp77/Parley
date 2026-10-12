@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// That work stopped by a refused permission is flagged at once, and only then (SPEC.md §6, specs/024).
+/// That work stopped by a refused permission is flagged at once, and only then (SPEC.md §6).
 /// </summary>
 /// <remarks>
 /// <para>

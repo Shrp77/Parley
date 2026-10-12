@@ -28,7 +28,7 @@ namespace Parley.Mcp;
 /// "working" for nearly three hours, because a request picked up and not answered is all the broker could see. The
 /// protocol already had the answer, a Result <c>blocked</c> with blocker <c>permission</c>; what was missing was telling
 /// an agent that a refusal is not a pause and that silence strands whoever asked. Reporting turns to the broker, so a
-/// surface can tell a stopped agent from a working one whether or not the agent says so, is specs/024.
+/// surface can tell a stopped agent from a working one whether or not the agent says so, was the answer to that.
 /// </para>
 /// </remarks>
 public static class ParleyInstructions

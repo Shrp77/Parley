@@ -519,7 +519,6 @@ internal static class Adding
                 workspace, role, owns.Length == 0 ? null : owns, Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = owns.Length > 0,
             };
 
             var outcome = await Enrolment.AddAsync(

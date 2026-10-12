@@ -4,6 +4,7 @@ using Parley.Core;
 using Parley.Client;
 using Parley.Client.Views;
 
+
 namespace Parley.Web.Pages.Projects;
 
 /// <summary>
@@ -81,6 +82,16 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// </remarks>
     public string? FilterProblem { get; private set; }
 
+    /// <summary>The proposals agents have put forward that nobody has decided.</summary>
+    public IReadOnlyList<RoadmapProposal> Waiting { get; private set; } = [];
+
+    /// <summary>The project's roadmaps.</summary>
+    public IReadOnlyList<RoadmapSummary> Roadmaps { get; private set; } = [];
+
+    /// <summary>Why the roadmaps could not be read, when they could not.</summary>
+    /// <remarks>A third contained read: a broker that cannot answer about roadmaps costs that section only.</remarks>
+    public string? RoadmapProblem { get; private set; }
+
     /// <summary>When the broker answered.</summary>
     public DateTimeOffset AsOf { get; private set; }
 
@@ -107,6 +118,19 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
         // of its questions, and on the ownership review.
         Agents = [.. (roster.Value ?? []).Where(agent => !agent.Facilitator)];
         Problem = roster.Problem;
+
+        var roadmaps = await BrokerDirectory.ReadAsync(async () =>
+            (await broker.ProposalsAsync(ProposalState.Waiting, token).ConfigureAwait(false),
+             await broker.RoadmapsAsync(token).ConfigureAwait(false))).ConfigureAwait(false);
+
+        if (roadmaps.Reachable)
+        {
+            (Waiting, Roadmaps) = roadmaps.Value;
+        }
+        else
+        {
+            RoadmapProblem = roadmaps.Problem;
+        }
 
         AgentName? participant = null;
 

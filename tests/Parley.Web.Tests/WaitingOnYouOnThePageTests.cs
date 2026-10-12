@@ -6,7 +6,7 @@ namespace Parley.Web.Tests;
 
 /// <summary>
 /// That the web page lists what is waiting on the person as the terminal's room does: each agent once with a count, and
-/// each question a link to where it was asked (specs/025, SPEC.md §5.6).
+/// each question a link to where it was asked (SPEC.md §5.6).
 /// </summary>
 /// <remarks>
 /// The page and the room read one derivation, <see cref="WaitingOnYou"/>; these hold the page to drawing it, with links

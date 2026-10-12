@@ -5,8 +5,7 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// That a flag owed by the person reads as their own to-do, and one owed by an agent reads as it always did (SPEC.md §6,
-/// specs/023 US5).
+/// That a flag owed by the person reads as their own to-do, and one owed by an agent reads as it always did (SPEC.md §6).
 /// </summary>
 public sealed class FlagWordingTests
 {

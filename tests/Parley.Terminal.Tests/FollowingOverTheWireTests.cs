@@ -160,7 +160,7 @@ public sealed class FollowingOverTheWireTests : IDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
         // there is no Join dialog to drive.
         await shell.Settled;
 

@@ -827,7 +827,7 @@ if [ -n "$skew" ]; then
     echo "    bring it up, or with --uninstall to remove everything." >&2
 fi
 
-# 0.36.0 edited the store's schema in place without moving its number (specs/023), because nothing
+# 0.36.0 edited the store's schema in place without moving its number, because nothing
 # had been released. So a store made by an older broker is opened without complaint and keeps its
 # old shape. Nothing in the broker says so -- the owner's call was to say it here rather than
 # refuse the store -- which makes this the only warning there is. Said only when an older broker was

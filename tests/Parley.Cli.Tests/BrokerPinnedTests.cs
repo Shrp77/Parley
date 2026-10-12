@@ -25,7 +25,7 @@ namespace Parley.Cli.Tests;
 public sealed class BrokerPinnedTests
 {
     private static EnrollmentEntry Entry() =>
-        new("/srv/checkouts/orders", "orders", "Carts and totals.", false) { OwnsApproved = true };
+        new("/srv/checkouts/orders", "orders", "Carts and totals.", false);
 
     private const string PinnedToPort7777 = """
         {

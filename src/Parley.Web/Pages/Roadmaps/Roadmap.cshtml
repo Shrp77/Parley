@@ -24,28 +24,36 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         <p>Agents on this roadmap: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
     }
 
-    <ol class="roadmap-items">
+    @* The same grid as the conversations. The item to do next starts open, because it is the one a person came to act on. *@
+    <div class="grid items-grid roadmap-items" role="table" aria-label="Items">
+        <div class="grid-head" role="row">
+            <span role="columnheader">#</span>
+            <span role="columnheader">Item</span>
+            <span role="columnheader">Where it stands</span>
+        </div>
         @foreach (var state in standing.Items)
         {
-            <li value="@state.Item.Number" class="@(state.IsNext ? "next" : null)">
-                <strong>@(state.IsNext ? "Next: " : "")@state.Item.Text</strong>
-                <br />
-                <small>
-                    @ItemWording.Standing(state)
+            <details class="grid-row@(state.IsNext ? " next" : null)" role="row" open="@(state.IsNext ? "open" : null)">
+                <summary>
+                    <span class="num"><span class="chev" aria-hidden="true">&#9656;</span> @state.Item.Number</span>
+                    @* The title opens the conversation; the arrow, or the rest of the row, opens the details. *@
+                    <a class="name" href="@Model.OpenPath(state)">@(state.IsNext ? "Next: " : "")@state.Item.Text</a>
+                    <span class="when">@ItemWording.Standing(state)</span>
+                </summary>
+                <div class="grid-detail">
                     @if (state.Item.IntendedAgent is { } agent)
                     {
-                        <text> · for @agent.Value</text>
+                        <p class="between">for @agent.Value</p>
                     }
                     @if (state.Item.Needs.Count > 0)
                     {
-                        <text> · needs @string.Join(", ", state.Item.Needs.Order())</text>
+                        <p class="between">needs @string.Join(", ", state.Item.Needs.Order())</p>
                     }
-                </small>
-                <br />
-                <a href="@Model.OpenPath(state)">@(state.Item.Facts is { ConversationExists: true } ? "Open its conversation" : "Start it: open an empty conversation with its text ready")</a>
-            </li>
+                    <a href="@Model.OpenPath(state)">@(state.Item.Facts is { ConversationExists: true } ? "Open its conversation" : "Start it: open an empty conversation with its text ready")</a>
+                </div>
+            </details>
         }
-    </ol>
+    </div>
 
     <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words in the box and the agents ticked; you press Send.</small></p>
 }

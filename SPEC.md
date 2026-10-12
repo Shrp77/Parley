@@ -32,7 +32,7 @@ them — get work done together.** Any participant can ask the agent that owns a
 do work there, ask it for what they need to know, and hand parts of a job on to others. Every
 request is carried to an outcome: done, or blocked by something the participants have tried
 and failed to resolve between them. Each agent changes only its own repository. What crosses
-between them is messages — requests, clarifications and results — and, from protocol 0.6, files
+between them is messages — requests, clarifications and results — and files
 an agent places in its project's file location for others to fetch onto disk in their own
 repositories. Never session history, and never one agent's context poured into another's: a
 file's contents are not delivered into any model's context.
@@ -136,7 +136,7 @@ language they are written in.
 | **Broker** | The single long-lived process that owns routing, state, locking, and lifecycle. |
 | **Facilitator** | Parley's own participant in a project, provided by the broker and shown as **Parley**. Neither an agent nor a person, and not a seat. Asks each agent what it owns, and nothing else (principle 2.11). Its identity is the reserved role `parley-facilitator`, which no agent, seat or enrolment may take (§12.3), and its name is `parley-facilitator@<project>`. |
 | **Adapter** | The vendor-specific glue that attaches an agent to the broker. |
-| **Responder** | Whatever produced the text of one message — a model, a script, or a person. An agent has a responder; a responder need not have an agent. See §11.2. |
+| **Responder** | Whatever produced the text of one message. An agent has a responder; a responder need not have an agent. See §11.2. |
 | **Request** | A message asking an agent to do something: work in its repository, or information it holds. |
 | **Result** | What a request came to: the work done, the information given, or the blocker that could not be resolved. |
 | **Exchange** | One request and its result, including every clarification between them. |
@@ -223,9 +223,8 @@ gRPC over HTTP/2, and what earns it is not efficiency but the held connection.
 
 **A connection is evidence.** Everything that has to be known about whether an agent can be
 reached is a fact about a socket: the node is connected or it is not, the agent's process is
-running or it is not. Both are things the node knows for certain and can say. The
-alternative — and what this document specified until it was tried — is to write a timestamp
-down and have every reader guess how stale is too stale, which produces a registry that
+running or it is not. Both are things the node knows for certain and can say. A timestamp
+written down would have every reader guess how stale is too stale, and a registry built on one
 reports a session killed on Tuesday as healthy on Friday.
 
 **For the person, a connection is evidence of presence, not of reachability.** The person seat
@@ -295,10 +294,8 @@ mean without repeating paths and without inferring any of them from a working di
 Naming a project is therefore the whole of creating one: there is no path for a person to
 supply and none for them to get wrong.
 
-**A deployment configured by explicit paths was a supported way to run, and is not any
-more.** That sentence stood here while a store and an endpoint could be named on a command
-line. Both spellings are gone — a machine's deployment is the set of folders under its
-root, and nothing outside a project names its store or its port.
+**A machine's deployment is the set of folders under its root.** Nothing outside a project
+names its store or its port.
 
 **The protocol has no concept of a project, and must not acquire one.** Membership is
 which endpoint an agent connects to. There is no group column, no scoped query, and no
@@ -311,14 +308,11 @@ It also means agent names collide freely across projects. Two projects may each 
 forced a global naming convention across unrelated codebases, which is exactly the
 coupling §1 exists to prevent.
 
-**The manifest used to bind each project to its own catalogue of startable agents, and no
-longer does.** That binding made "which agents this machine can start" a per-project fact, and
-one checkout may answer in several projects under a different name in each — so a checkout was
-startable in whichever project's catalogue named it and unstartable in the others, while being
-addressable in all of them. A request to the unstartable name was accepted, queued, and waited
-for a person to open that repository, and nothing on any screen said so. There is one catalogue
-per machine now, keyed as §12 describes; the manifest names stores and endpoints and says
-nothing about starting anything.
+**The manifest names stores and endpoints and says nothing about starting anything.** There
+is one catalogue of startable agents per machine, keyed as §12 describes. "Which agents this
+machine can start" is therefore not a per-project fact: one checkout may answer in several
+projects under a different name in each, and a per-project catalogue would leave it startable
+in some and unstartable in others while addressable in all of them.
 
 **One process may host many brokers.** Separate databases do not imply separate
 processes. A single service constructs one broker per configured project, each with its
@@ -364,10 +358,8 @@ why `owns` (§10.1) stays per agent and says nothing about the role.
 every agent registered with it — see §5.5.
 
 **Registration refuses a collision.** Two repositories on one machine claiming the same role
-is a mistake, and until this document required a machine part it was an invisible one: both
-wrote to the same registry row and silently shared an identity. The broker now refuses the
-second and says which node holds the first. This costs nothing and removes a class of
-confusion nobody could have diagnosed from the symptoms.
+is a mistake, and an invisible one if allowed: both would write to the same registry row and
+silently share an identity. The broker refuses the second and says which node holds the first.
 
 **Two registrations are the same repository when their workspaces match, and matching is
 defined here because two implementations comparing differently would admit different
@@ -414,13 +406,12 @@ talking — see §7.2.
 **The requester's context will have moved on.** Hours may pass, during which the agent has done
 other work and may have been compacted or restarted. An identifier alone is worthless to it:
 exchange 47 means nothing to a model that no longer remembers sending it. So a Result delivered to its
-requester carries the original Request's `items` and `done_when` back with it — to the requester and
+requester carries the original Request's ask back with it — to the requester and
 nobody else: the `closed` Result a person's close writes to a receiver carries no Request, since
-presenting the requester's words to the receiver as its own request would misstate who wrote them (§13). The requester wrote
-`done_when` to tell the receiver what finished looks like (§5.1); on delivery it does a second job,
-as the requester's own note to itself about what it was waiting for. Reconstituting that is the
+presenting the requester's words to the receiver as its own request would misstate who wrote them (§13).
+The ask is the requester's own note to itself about what it was waiting for. Reconstituting that is the
 broker's responsibility and not something an agent is asked to remember, because remembering is
-the thing that failed.
+what fails.
 
 **Files follow the same rule.** Placing a file returns once the broker holds all of it, and fetching
 one returns once it is written into the fetching agent's repository; neither waits on another
@@ -441,9 +432,8 @@ is an ordinary attachment (§4.0) and speaks the same protocol.
 
 **Nothing is sent that expects nothing back.** A Request always ends in a Result. A Clarify
 always gets a reply in the same exchange. A Result closes its exchange, and the requester
-collects it. The two message types that existed only to carry no reply are gone: an
-announcement is a Request like any other (§5.4), and nothing times out, so there is no notice
-that an answer will never come (§14).
+collects it. An announcement is a Request like any other (§5.4), and nothing times out, so
+there is no notice that an answer will never come (§14).
 
 **The broker writes no message on anyone's behalf,** with one exception: when the person
 running the deployment closes a conversation, the broker records a `closed` result on every
@@ -569,22 +559,16 @@ Work worth resuming after a conversation closed is new work, and starts a new co
 A Request carries **one ask**: what the sender wants, in its own words, bounded by rule 8.4's cap.
 It opens one exchange, and its conversation is decided by §5.0 rather than carried in the payload.
 
-**The ask is the whole of it, and that is a decision rather than an omission.** Until 0.7 a Request
-also carried an intent, a list of items each marked *work* or *question* and each with an identifier,
-gates between those items, and a `done_when` of at least twenty characters. Every one of them said
-the same thing again in a different place: the reason for the ask is the ask, and a receiver that
-cannot tell how far the work goes has a question rather than a missing field. §18 records what went
-and why; the fields survive in messages already stored, which still read exactly as they were written.
+**The ask is the whole of it.** A Request has no intent, no list of items, no gates and no finish
+line: the reason for the ask is the ask, and a receiver that cannot tell how far the work goes has a
+question rather than a missing field.
 
-**What replaced them is already here.** A receiver that needs the scope, the reason, or anything else
-sends a Clarify (§5.2) and the turn goes back; it may also send other agents Requests of its own in
-the same conversation. That is the protocol working as people do, and it is the reason §5.2 is
-uncapped by default.
+**A receiver that needs the scope, the reason, or anything else** sends a Clarify (§5.2) and the
+turn goes back; it may also send other agents Requests of its own in the same conversation. That is
+the protocol working as people do, and it is the reason §5.2 is uncapped by default.
 
 **A Request is answered whole.** The Result closes the exchange with one outcome (§5.3), because
-there is one thing to answer. A Request written under an earlier version carried items, and its
-Result still answers each of them by identifier — nothing times out (§14), so an exchange opened
-before the change may still be open after it.
+there is one thing to answer.
 
 **A Request to a role opens one exchange per registered agent** under that role, each carrying this
 same ask (§5.5). Nothing about the ask changes with the number of receivers.
@@ -599,8 +583,7 @@ flips it back.
 receiver that cannot tell what the ask is for, how far it goes, or when to stop asks — and the
 requester answers in the same exchange. That is the move a form cannot make: the receiver knows what
 it is missing and the requester does not, so the question is the receiver's to put. A receiver that
-guesses instead is acting in a world it invented, which is the failure §5.1's removed fields were
-reaching for and never fixed.
+guesses instead is acting in a world it invented.
 
 **A Clarify is for the requester; anyone else gets a Request.** When what the receiver needs is
 held by a third participant — another agent, or the person (§12.3) — it sends
@@ -638,10 +621,8 @@ Closes the exchange. Carries **one outcome**, for the ask as a whole:
 | `closed` | The person running the deployment closed the conversation first | the broker, for the person |
 | `settled` | An agent's question to the person was settled by something the person said later, in the agent's judgement (§5.6) | the requester, in its reply to the person |
 
-The outcome is recorded against the item `request`, which is the identifier a Request answered as a
-whole has always used — a person's close writes it too. **A Request stored under 0.5 or 0.6 carried
-items, and its Result answers each of them by identifier**, as it did then; the receiver is told which
-identifiers the Request it holds carried.
+The outcome is recorded against the item `request`, the one identifier a Request answered as a
+whole has — a person's close writes it too.
 
 **Pursue; do not refer.** When another agent owns part of the work or holds part of what the
 receiver needs, the receiver sends that agent a Request in the same conversation, waits for its
@@ -651,8 +632,7 @@ and it does not send the requester off to ask someone else.
 **A Result names its sources.** Where the outcome relied on another participant's Result,
 `sources` lists who. Every one of those exchanges is in the same conversation under its own
 author's identity (§11.3), so the person running the deployment can see exactly whose claim is
-whose, how confident each was, and where two disagreed — which is what a relayed answer used to
-lose. A source must name a registered participant, and the schema enforces it (§9.3).
+whose, how confident each was, and where two disagreed. A source must name a registered participant, and the schema enforces it (§9.3).
 
 ```jsonc
 {
@@ -683,15 +663,14 @@ concrete blocker it could not resolve, and it must say what the blocker is and w
 `blocked` never means "this is too big", "someone else should decide", or "I was not told I
 could". Those are not blockers.
 
-**The exchange carries one rolled-up outcome** (§9.2): `blocked` or `closed` if the outcome was —
-or, for an exchange opened before 0.7, if any of its items was — otherwise complete; or `settled`,
-which no Result writes (§5.6). It is what
+**The exchange carries one rolled-up outcome** (§9.2): `blocked` or `closed` if the outcome was,
+otherwise complete; or `settled`, which no Result writes (§5.6). It is what
 survives once retention prunes the message text (§9.4), so it is deliberately the least favourable
 reading.
 
 ### 5.4 Announcements are requests
 
-What used to be a Notify — *"the `OrderLine` contract gained a `PriceSnapshot` field"* — is a
+News — *"the `OrderLine` contract gained a `PriceSnapshot` field"* — is a
 Request. The receiver answers it: `acknowledged` if the news needs nothing from it, `done` if it
 acted on it, `blocked` if it cannot. The sender learns that the news arrived and what became of
 it, which a message expecting nothing back never told anybody (principle 2.7).
@@ -763,9 +742,9 @@ all done" is an answer that looks like success.
 **Everything a person writes to an agent is a Request.** A surface never decides which of the
 agent's open questions a person's words answer, because it cannot know: the agent may have asked
 something days ago while the person moved on, and what the person types may be an answer, a
-question back, or about something else entirely. A surface that guessed filed a person's question
-as the answer to an unrelated, older one, closing it, and left the agent owing nothing — so it said
-nothing (§18, 0.8). A Request is owed a reply, so the agent always answers what the person said.
+question back, or about something else entirely. A surface that guessed could file a person's question
+as the answer to an unrelated, older one, closing it and leaving the agent owing nothing, so it would say
+nothing. A Request is owed a reply, so the agent always answers what the person said.
 
 **The agent decides what that settled.** Only the agent knows what its own questions were for. When
 it sends a Clarify or a Result on a Request the person opened with it, it may name, in `settles`,
@@ -873,7 +852,7 @@ A conversation is recognised as an item's by the reservation and never by anythi
 an agent cannot make a conversation look like one (§13).
 
 **Removing an item removes nothing it caused.** Items are never deleted. A removed item's conversation
-stays, belongs to no item, and says it formerly belonged to that one. Destroying a conversation
+stays, belongs to no item, and says which item it belonged to. Destroying a conversation
 (§14) leaves its item reading *closed*, never *not started*.
 
 **An agent is told what became of its proposal and nothing else.** Confirmed, declined or superseded
@@ -1027,8 +1006,7 @@ version of zero**. It has to be: the value is written as the exchange is created
 identifier yet, and folding one in afterwards would make every hash unique and silently disable the
 index.
 
-The whole payload is hashed — `intent`, every item and `done_when` — not the item text alone.
-The same words with a different finish line ask the receiver for a different piece of work.
+The whole payload is hashed, not part of it.
 
 The scope differs from §13.1, deliberately: deduplication there guards *delivery* over a window
 of seconds, absorbing transport retries. This guards *intent* for as long as the exchange stays
@@ -1051,11 +1029,10 @@ Nobody is blocked. `orders` can answer `inventory` while its own Request to `bil
 because answering a question about its own repository does not depend on the work it asked
 for. Principle 2.10 describes precisely this: a question coming back to the first.
 
-**So cycles are admitted.** An earlier version of this section refused any Request that would
-close a cycle in the wait-for graph, on the argument that a cycle is a set of questions none of
-which can be answered. That is true only when each answer depends on its own outcome, and nothing
-at admission can tell that case from the ordinary one above. Refusing every cycle refused the
-communication principle 2.6 says resolves blockers.
+**So cycles are admitted.** A cycle is a set of questions none of which can be answered only when
+each answer depends on its own outcome, and nothing at admission can tell that case from the
+ordinary one above. Refusing every cycle would refuse the communication principle 2.6 says
+resolves blockers.
 
 **A genuine circular dependency is a blocker, and it is resolved like one.** When a participant
 cannot finish its part until a Request it sent comes back, and that Request cannot finish until
@@ -1096,7 +1073,7 @@ the sender can act on immediately:
 | Receiver retired (§14) | That the receiver is gone for good, so the sender finds who now owns that work. |
 | Duplicate of an open Request | The exchange already carrying it. |
 | Role with no registered agents (§5.5) | That nothing answers to that role, which is almost always a misspelling. |
-| No `done_when` (§5.1) | What the Request lacks. |
+| No ask (§5.1) | What the Request lacks. |
 
 None of these ask the participant to do anything later. Each either lets it send correctly now
 or tells it where the work has to go instead.
@@ -1146,13 +1123,12 @@ and five of the ten are held by storage, the API or the broker rather than reque
 4. **Hard size cap.** 8,000 characters per message, enforced by the broker. Truncation is a
    protocol error, not a warning.
 
-   **This is the first value here that was measured.** What the cap defends is how much of one
+   **The number is set from evidence.** What the cap defends is how much of one
    agent's context can be poured into another's in a single message; at eight thousand
    characters that is roughly two thousand tokens, small beside any modern context and far too
-   small to paste a file into. It was 2,000, then 4,000, both chosen because they sounded like
-   enough. Refusals were instrumented (§10.2, `refusals`) so the next move would not have to be,
-   and 8,000 is that move: §17 question 16 carries the record it was set from. Set the one after
-   it the same way.
+   small to paste a file into. Refusals are instrumented (§10.2, `refusals`) so the number moves
+   on what they show, and §17 question 16 carries the record. It does not move because one
+   message did not fit.
 
    **It bounds one message, not an exchange.** With the clarification cap off by default (§5.2),
    an exchange that goes back and forth fifty times can carry fifty messages of this size in each
@@ -1292,15 +1268,13 @@ CREATE TABLE agents (
   --
   -- A count rather than a flag, because an agent may have two sessions open. With a flag the
   -- second one closing says the agent is gone while the first is still mid-answer, and the
-  -- next attach releases work somebody is doing -- which is exactly the failure the timestamp
-  -- lease this replaced was invented to avoid. Counting keeps that property without needing an
+  -- next attach releases work somebody is doing. Counting avoids that without needing an
   -- expiry to guess at.
   connected       INTEGER NOT NULL DEFAULT 0 CHECK (connected >= 0),
   -- When that last changed. For reports, never for decisions; nothing routes on it.
   changed_utc     TEXT,
   -- Two values, because there are only two judgements a person makes about a registration:
-  -- it stands, or it is finished. Everything else that used to live here was a description
-  -- of reachability, which is now observed rather than stored -- see §14.
+  -- it stands, or it is finished. Reachability is observed rather than stored -- see §14.
   status          TEXT    NOT NULL CHECK (status IN ('active', 'retired')),
 
   CHECK (adapter_config IS NULL
@@ -1325,23 +1299,23 @@ CREATE TABLE agents (
   -- What this agent owns, in one line, written by whoever configured its launch.
   --
   -- NOT BOUNDED BY DEFAULT, and 2147483647 is how that is spelled -- the same spelling the
-  -- open-question cap and the clarification cap already use. It was 100, and the number was
-  -- measured rather than chosen: a roster entry costs about 75 characters of structure before
-  -- the statement, so ten peers at 100 cost roughly what one message is allowed to.
+  -- open-question cap and the clarification cap use. A roster entry costs about 75 characters
+  -- of structure before the statement, so ten peers at a bound of 100 would cost roughly what
+  -- one message is allowed to.
   --
-  -- The bound came off in protocol 0.7, so that an agent asked what it owns can answer in two
-  -- halves -- what it owns, and what it does not, naming who it believes does -- which a
-  -- hundred characters frequently will not hold. See §17 question 10.
+  -- The bound is off so that an agent asked what it owns can answer in two halves -- what it
+  -- owns, and what it does not, naming who it believes does -- which a hundred characters
+  -- frequently will not hold. See §17 question 10.
   --
-  -- THIS IS A REDUCTION IN A CONTROL AND NOT A TIDY-UP. Principle 2.2 makes terseness a
-  -- security control and this text is charged against every agent's working memory once per
-  -- peer, every time the roster is listed. The reasoning for removing it is the one used for
-  -- the two caps above -- a cap censors the evidence that would justify it -- and that
-  -- precedent is weaker here, because both of those capped counts rather than text. What
-  -- replaces the number is evidence: what agents propose and what people accept is recorded,
-  -- so a bound can be chosen the way rule 8.4's 8,000 was. Until then a roster may be the
-  -- largest thing an agent reads. A deployment that wants a bound writes one here, and it is
-  -- still enforced in storage where no code path can route around it (§9.3).
+  -- THIS IS A REDUCTION IN A CONTROL. Principle 2.2 makes terseness a security control and
+  -- this text is charged against every agent's working memory once per peer, every time the
+  -- roster is listed. The reasoning for leaving it unbounded is the one used for the two caps
+  -- above -- a cap censors the evidence that would justify it -- and that precedent is weaker
+  -- here, because both of those capped counts rather than text. What replaces the number is
+  -- evidence: what agents propose and what people accept is recorded, so a bound can be chosen
+  -- the way rule 8.4's 8,000 was. Until then a roster may be the largest thing an agent reads.
+  -- A deployment that wants a bound writes one here, and it is enforced in storage where no
+  -- code path can route around it (§9.3).
   --
   -- It must also render as what it says, on one line, because it is put into a list
   -- of peers that every agent reads: anything able to break the line, hide itself, or
@@ -1350,11 +1324,11 @@ CREATE TABLE agents (
   -- The class below is every code point .NET reports as Control, Format, LineSeparator or
   -- ParagraphSeparator, collapsed into ranges. It is exact rather than approximate because
   -- it was derived by sweeping the whole of Unicode and comparing against OwnershipStatement,
-  -- and OwnershipTests re-runs that sweep so the two cannot drift. Testing C0 alone did not
-  -- hold and neither did guessing at blocks: probing found U+2028 and U+2029, which are line
+  -- and OwnershipTests re-runs that sweep so the two cannot drift. C0 alone does not hold and
+  -- neither does guessing at blocks: the class must cover U+2028 and U+2029, which are line
   -- breaks wherever this is rendered; U+202E and U+061C, which reorder the display of what
   -- follows; U+00AD and U+FEFF, which are invisible; and U+E0020-U+E007F, the tag characters
-  -- used to smuggle text past a reader entirely. Every one of them was accepted before.
+  -- used to smuggle text past a reader entirely.
   --
   -- The last clause catches an embedded NUL, which no range can: char(0) is the empty string
   -- in SQLite, so a class built from it matches everything and would refuse every statement.
@@ -1410,13 +1384,13 @@ CREATE TABLE agent_ownership_accepted (
   -- person, 'composed' is a line written with no ask at all.
   source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed', 'automatic')),
   -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is the
-  -- evidence the removed bound on agents.owns has to be chosen against, the way rule 8.4's
-  -- 8,000 was chosen from size_refusals.
+  -- evidence a bound on agents.owns has to be chosen against, the way rule 8.4's 8,000 was
+  -- chosen from size_refusals.
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
   -- The discussion, so how a line was arrived at is answerable from the agent rather than from
   -- somebody's memory.
   -- Cleared, not refused, when that conversation is destroyed: the line is what peers route by and the
-  -- conversation is evidence of how it was reached (research finding 14 of specs/022).
+  -- conversation is evidence of how it was reached.
   conversation_id  TEXT             REFERENCES conversations(id) ON DELETE SET NULL,
   accepted_utc     TEXT    NOT NULL,
 
@@ -1455,16 +1429,14 @@ CREATE TABLE invocations (
   -- Before and after, so the record can say whether the turn changed anything. An agent that
   -- ran and is still owed as much as it was is the one worth noticing.
   --
-  -- "Waiting" rather than "owed", because the two stopped being the same thing: a Result for a
-  -- Request this agent sent leaves no debt at all, and an uncollected message is a reason to
-  -- give an agent a turn that no count of debts can see. That distinction is what let an agent
-  -- sit connected beside an uncollected message for twenty minutes with nothing wrong anywhere.
+  -- "Waiting" rather than "owed", because the two differ: a Result for a Request this agent
+  -- sent leaves no debt at all, and an uncollected message is a reason to give an agent a turn
+  -- that no count of debts can see.
   waiting_before INTEGER NOT NULL CHECK (waiting_before >= 0),
   waiting_after  INTEGER NOT NULL CHECK (waiting_after >= 0),
   started_utc   TEXT    NOT NULL,
   elapsed_ms    INTEGER NOT NULL CHECK (elapsed_ms >= 0),
-  -- The turn's verdict: zero when it ran to a clean finish. Named for a process exit code
-  -- because it once was one, back when a turn and a process were the same thing.
+  -- The turn's verdict: zero when it ran to a clean finish, as a process exit code is.
   exit_code     INTEGER NOT NULL,
   -- A timeout is not a failure of the agent: it is a turn that took longer than the supervisor
   -- was willing to wait for, and the two need different responses. It does not end the agent --
@@ -1507,20 +1479,6 @@ BEGIN
   VALUES (substr(NEW.name, instr(NEW.name, '@') + 1), 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   ON CONFLICT(machine) DO NOTHING;
 END;
-
--- Two trigger pairs stood here and both are gone, which is worth recording rather than
--- silently dropping.
---
--- The first refused a row that consented to unattended invocation without recording how to
--- start it. Neither column exists now: how to start an agent is the node's local
--- configuration and never leaves the machine it applies to (§4), so the broker holds no
--- executable command line at all -- a smaller trusted surface than the trigger was
--- protecting.
---
--- The second refused a status that was really a reading of a timestamp. There are now two
--- statuses and both are judgements a person made, so the CHECK on the column says everything
--- the trigger used to. Reachability is observed on a connection (§4.0) instead of inferred,
--- and lives in `connected` where it cannot be mistaken for a decision somebody recorded.
 ```
 
 **Exchanges and conversations.** An exchange is one Request and its Result (§6), and it always
@@ -1564,7 +1522,7 @@ CREATE TABLE exchanges (
   closed_utc          TEXT,
   request_hash        TEXT    NOT NULL,      -- content identity, §7.1 and §13.1
   -- NULL while open. The rolled-up outcome of §5.3: 'closed' if the conversation was closed
-  -- first, 'blocked' if any item was, otherwise 'complete'. It outlives the message text §9.4
+  -- first, 'blocked' if the Result was, otherwise 'complete'. It outlives the message text §9.4
   -- prunes, so it is deliberately the least favourable reading of the Result. 'settled' is an
   -- agent's question to the person, closed by the agent because something the person wrote later
   -- answered it (§5.6); no Result is written for it.
@@ -1608,8 +1566,7 @@ CREATE TABLE conversations (
   -- still open, and closing one does not file it.
   archived_utc TEXT,
   -- Whether the participants agreed or the person closed it (§5.0). They are opposite facts
-  -- about how the work went, and §15 counts them apart. NULL on a conversation closed before
-  -- this was recorded, and on one still open.
+  -- about how the work went, and §15 counts them apart. NULL while the conversation is open.
   closed_by    TEXT CHECK (closed_by IS NULL OR closed_by IN ('consensus', 'person')),
 
   CHECK ((state = 'CLOSED') = (closed_utc IS NOT NULL)),
@@ -1812,16 +1769,8 @@ CREATE TABLE size_refusals (
 
 -- Rule 1 (§8): a Request carries an ask, and that is the whole of its shape.
 --
--- **What was here until 0.7, and why it went.** A Request had to carry a done_when of at least twenty
--- characters, an items array, a kind of 'work' or 'question' on every item, distinct ids of 1 to 64
--- characters, and gates naming only earlier items -- which made the dependency graph acyclic by
--- construction. Every one of them enforced a shape §5.1 no longer has. Messages written under them are
--- still stored exactly as they were and are still read: a trigger fires on insert and a message is
--- never updated, so removing these changed nothing already written.
---
--- The floor on the ask is emptiness alone. A twenty-character floor on a done_when did real work,
--- because "n/a" satisfies a presence check and says nothing about when to stop; here the field *is*
--- the message, and a sender with nothing to say has nothing to send.
+-- The floor on the ask is emptiness alone: the field *is* the message, and a sender with nothing to
+-- say has nothing to send.
 --
 -- **Blank is spelled out, because SQL's one-argument trim() removes the space character and nothing
 -- else.** Left at that, an ask of one tab or one no-break space is admitted -- a Request that says
@@ -1838,8 +1787,10 @@ BEGIN
                           8232, 8233, 8239, 8287, 12288))) = 0;
 END;
 
--- A Result (§5.3) carries an outcome per item; a blocked item names its kind of blocker; every
--- source is a registered participant other than the sender; and only the broker writes 'closed'.
+-- A Result (§5.3) carries a non-empty outcomes array, each entry with a distinct id and a known
+-- outcome (the agent tool writes one entry, id 'request'); a blocked outcome names its kind of
+-- blocker; every source is a registered participant other than the sender; and only the broker
+-- writes 'closed'.
 --
 -- That last pair is the one authorship rule storage can enforce. §11.3 is explicit that
 -- responder_model cannot tell the broker writing its own name from the broker recording what an
@@ -2200,8 +2151,8 @@ CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
 
 -- The role and the seat's adapter are tied in both directions (§12.3), as the facilitator's are. A row with the role and
 -- another adapter is an agent claiming to be the person; a row with the adapter and another role is an agent the broker
--- would treat as a person, who may always name a conversation (principle 2.10). Added at the combined review gate, which
--- found the second direction admitted at attach; the door refuses both first, with a sentence.
+-- would treat as a person, who may always name a conversation (principle 2.10). The door refuses both first, with a
+-- sentence.
 CREATE TRIGGER tr_person_role_is_reserved
 BEFORE INSERT ON agents
 WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
@@ -2269,8 +2220,8 @@ WHERE state IN ('asked', 'asked_back', 'answered', 'waiting');
 -- Refreshed once, ever (§11.1).
 CREATE UNIQUE INDEX ux_one_refresh ON ownership_questions(agent) WHERE restart_sent = 1;
 
--- A question is the facilitator's own Request to the agent it names, and starts asked. Research finding
--- 11: an agent can open an `owns-` conversation itself, so recognising a question by its conversation's
+-- A question is the facilitator's own Request to the agent it names, and starts asked. An agent can open
+-- an `owns-` conversation itself, so recognising a question by its conversation's
 -- name would let an agent answer itself and have the answer accepted with nobody looking. Neither the
 -- facilitator nor a seat is asked: one owns nothing and the other is a person.
 CREATE TRIGGER tr_question_is_the_facilitators
@@ -2308,17 +2259,17 @@ END;
 
 -- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
 -- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
--- row reads as on: a project created before this switch existed behaves as a new one does.
+-- row reads as on.
 CREATE TABLE facilitation (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   auto_accept  INTEGER NOT NULL DEFAULT 1 CHECK (auto_accept IN (0, 1)),
   changed_utc  TEXT    NOT NULL
 ) STRICT;
 
--- Every route but a composed line names the discussion it came from. This was a CHECK on
--- agent_ownership_accepted, and it moved here because that column is now cleared when the conversation is
--- destroyed (research finding 14): a CHECK applies to that clearing too and would refuse the destroy. A
--- line agreed in a conversation that was later destroyed keeps the line and loses only the link.
+-- Every route but a composed line names the discussion it came from. A trigger and not a CHECK on
+-- agent_ownership_accepted, because that column is cleared when the conversation is destroyed: a CHECK
+-- applies to that clearing too and would refuse the destroy. A line agreed in a conversation that was
+-- later destroyed keeps the line and loses only the link.
 --
 -- Checked on insert, and on an update that changes the route. Clearing the link alone is not a new route.
 CREATE TRIGGER tr_accepted_line_names_its_discussion
@@ -2519,8 +2470,7 @@ that needed it; an enumeration written as prose has already decayed.
 
 - **A Request carries an ask.** The trigger above. It is the whole of a Request's shape (§5.1), and
   an empty one is refused rather than discouraged — a message with nothing in it is a turn spent on
-  nothing at the other end. Until 0.7 this trigger also required a `done_when`, items, kinds, ids and
-  gates; §18 records why they went, and messages carrying them are still stored and still read.
+  nothing at the other end.
 - **A Result carries an outcome, and a `blocked` outcome names its blocker.** The trigger
   above. `blocked` is the last resort (§5.3), and one that does not say what blocks it gives
   nobody anything to resolve.
@@ -2546,8 +2496,8 @@ that needed it; an enumeration written as prose has already decayed.
   acceptance nothing holds, or reopening an answer somebody discarded. `ux_one_refresh` sends a refresh at most
   once per agent, ever (§11.1).
 - **An accepted line names the discussion it came from, and outlives it.** `tr_accepted_line_names_its_discussion`
-  holds what a CHECK held before 022: every route but a composed line names its conversation. It moved to a trigger
-  because destroying that conversation now clears the link rather than being refused by it.
+  holds that every route but a composed line names its conversation. It is a trigger and not a CHECK because
+  destroying that conversation clears the link rather than being refused by it.
 - **An exchange closes only on a Result.** `tr_an_outcome_has_its_result`. An exchange closed
   with no Result written tells the requester its work is settled and leaves it no way to find
   out how (§10.1). **The one exception is `settled`**, and the same trigger holds it: only an
@@ -2565,9 +2515,7 @@ that needed it; an enumeration written as prose has already decayed.
 - **The request cap (§7.1), where a deployment sets one.** A `BEFORE INSERT` trigger, because a
   cap of *n* cannot be written as a `CHECK`: reaching it requires counting other rows. A trigger
   constrains only the statements it is written against, and the only route into `OPEN` is an
-  insert — which `tr_closed_exchange_stays_closed` keeps true. That was not always so: an earlier
-  design reached `OPEN` by update when it resumed an orphan, and a pair at its cap accepted the
-  resume and went over until a second trigger was added.
+  insert — which `tr_closed_exchange_stays_closed` keeps true.
 - **`pair_key` is genuinely derived from its participants.** Every rule built on it would
   otherwise see two unrelated pairs as one.
 - **Message size cap.** Terseness is the context-poisoning defence (rule 8.4), so 8,000
@@ -2681,12 +2629,8 @@ removes the two together rather than the older Request first. The open-exchange 
 rather than an oversight: nothing ends a piece of work but its participants or its person
 (principle 2.8), so nothing may delete the text of work still owed on a schedule. What bounds it is
 §6. An exchange that stops moving is flagged, and the person running the deployment closes the
-conversation it sits in, at which point the floor stops applying and the ordinary rules resume.
-
-An earlier version of this section called the age cap absolute, because the design it described
-ghosted and closed an orphan after a grace period. That was a guarantee about the log bought by
-ending work on a timer, which is the trade principle 2.8 rules out. A deployment that never closes
-flagged work keeps its text, and is shown that it has not.
+conversation it sits in, at which point the floor stops applying and the ordinary rules resume. A
+deployment that never closes flagged work keeps its text, and is shown that it has not.
 
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
@@ -2820,7 +2764,7 @@ the conversations holding an ambiguous name, with a count of the rest; and one r
 **Nothing removes a file on a schedule.** A file goes when its placer removes it, when the person
 removes or prunes, when its conversation is destroyed, when an agent that took part in its conversation
 is purged (§14), or with the store. Placements are counted per agent — how many, and how many bytes —
-because this version sets no size limit, and a limit set later should be set from evidence, as rule
+because no size limit is set, and a limit set later should be set from evidence, as rule
 8.4's cap was.
 
 ## 10. Operations
@@ -2837,7 +2781,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `agents()` | List registered agents: what each one owns (§17 q10), their adapters, and liveness. The project's person seat (§12.3) is listed too, as the person rather than as an agent, with `here` or `away` in place of liveness (§14), so an agent can find who to ask when no agent can help (principle 2.6). |
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
-| `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). An exchange opened before 0.7 carries items, and is answered by them. `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
+| `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
 | `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
@@ -2938,10 +2882,10 @@ other could.
 | `registry()` | The whole registry, including the workspace directory each agent works in, and — beside the line each agent states — the line a person has accepted for it, when one has been accepted and differs. Both halves travel because "accepted but not yet read by peers" is those two differing rather than a flag anybody maintains (see `record_ownership` below): an agent's own line is refreshed from its launch environment on every attach (§12.3), so the two agree again on its next start with nothing to clear. A surface showing the line therefore has what it needs to say which is which. Each row's adapter says **whether it is the facilitator** (principle 2.11) — `parley-facilitator`, which storage ties to the reserved role in both directions, so no second field states it — and a surface shows that row as Parley rather than among agents or seats. Each row also says **how the accepted line was arrived at** (`record_ownership`'s source), so a surface can show a line accepted automatically apart from one a person decided. And each row carries the agent's **turn standing** (§11.6): whether its turns are reported at all, whether a turn is running and since when, and how its last turn ended — when, whether cleanly, and how many tool calls were refused for want of permission — so a surface can say *working* only while a turn runs and *stopped* when one ended with work still owed, and says neither for an agent whose turns nobody reports. Each row also says whether a running agent is **open outside Parley** (§11.7), so a surface can say that Parley cannot give it turns. Deliberately not named `agents`: §10.1 has an `agents()` an agent may call, and that one withholds the workspace. Two operations differing only in what they disclose, sharing a name across this boundary, is the mistake this section opens by warning about — so the name differs, as `force_conclude` differs from `conclude`. |
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
-| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as formerly belonging to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
+| `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
-| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set, and, for exchanges opened before 0.7, how often a Result gave their items different outcomes. The evidence §17 question 4 asks for. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set. The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
@@ -3062,10 +3006,9 @@ cover. **A notice may say how much is waiting; it must not say what any of it sa
 **A notice must be safe to ignore.** The same trust that makes a notice work makes it dangerous
 when it cannot be acted on. A notice arrives in the channel a model treats as the host speaking,
 so an agent told to collect will try, and an agent that cannot — the adapter is not loaded, the
-server failed to start, the tools are absent — does not shrug and carry on. It goes looking.
-Observed: an agent spent four tool batches hunting for a tool that was not there, then asked the
-operator to run it by hand, and never did the work it had been given. The notice did not merely
-fail; it took the turn.
+server failed to start, the tools are absent — does not shrug and carry on. It goes looking, and
+can spend its whole turn hunting for a tool that is not there without doing the work it was given.
+The notice then does not merely fail; it takes the turn.
 
 So a notice states its own escape: what to do if the means of collecting is unavailable. This
 costs a clause and it is not optional, because the failure is invisible from the side that sends
@@ -3073,7 +3016,7 @@ it — the broker records a message waiting, the registry reports the agent live
 person running the deployment asked for silently does not happen.
 
 **A Headless agent is resident, not re-created.** This is worth stating flatly because the obvious
-design is the wrong one, and this document specified the wrong one until it was tried. Starting a
+design is the wrong one. Starting a
 process per waiting message produces an agent that cannot hold anything across turns: it cannot
 carry a piece of work through the several turns it takes, cannot remember why it asked for a
 clarification or who it is waiting on, and cannot get better at its own repository by working in
@@ -3137,8 +3080,7 @@ the reply that eventually arrives is discarded rather than read as the answer to
 configuration on the machine it applies to, and it stays there. The broker asks a node to start one
 of its agents; the node decides whether it knows how, and refuses if it does not. Nothing in the
 store holds an executable command line, which is a smaller trusted surface than any arrangement
-where it does — and it removes the older design's chicken-and-egg, where an agent that had never run
-had no record of how to start it because the record was written by the agent itself.
+where it does — and an agent that has never run needs no record of how to start it.
 
 **Consent is installing the node.** A machine runs a node because somebody put it there and listed
 the repositories on it, and that listing is the permission: these agents may be started when a
@@ -3185,8 +3127,9 @@ identically.
 This applies to every message, not only Results. A Request from a small local model deserves the same
 calibration as a Result from one, and the envelope renders the identity either way.
 
-Not every responder is a model. §11.2 admits scripts and people, so identity uses a scheme rather than
-assuming a model name:
+Not every responder is a model, so identity is a label the adapter reports rather than a model name.
+The broker draws no distinction between kinds of participant; the label says what produced the text,
+not what sort of thing the participant is:
 
 | Form | Responder |
 |---|---|
@@ -3194,8 +3137,6 @@ assuming a model name:
 | `parley:broker` | the broker itself, for a `closed` result written when the person closes a conversation (§5.3) |
 | `parley:facilitator` | the facilitator's own question (§5, principle 2.11) |
 | `parley:person` | a reply a person wrote, sent through the facilitator to an agent that asked it something back (§5). A person's words, shown as a person's |
-| `script:<name>` | a deterministic responder |
-| `human:<name>` | a person taking part directly |
 
 **The `parley:` prefix is reserved, and the broker MUST refuse an adapter that claims it** — all
 three forms, not only the first. An adapter reporting its responder as `parley:broker` would forge a close the person running the
@@ -3230,12 +3171,10 @@ receive the rules at the start of a turn instead — weaker, and prone to decay 
 an accepted limitation. Measure it through the `blocked` rate, the `sources` Results name, and
 clarification depth, in §15.
 
-### 11.5 (withdrawn)
+### 11.5 Not used
 
-This section described what an adapter had to accept from the operator: an instruction, delivered as a
-turn and answered with what became of it. It is withdrawn along with the operator operation that gave one, because a person
-speaks to an agent only by sending it a Request from the seat (§5.6), and every Request is answered. The
-number is kept so that the sections after it, and every reference to them, do not move.
+A person speaks to an agent only by sending it a Request from the seat (§5.6), and every Request is
+answered.
 
 ### 11.6 A node reports the turns it gives
 
@@ -3354,9 +3293,8 @@ one thing this protocol makes unforgeable, and starting either would be guessing
 
 **This entails one running process per identifier.** Two projects asking at once for a checkout
 both name find the process the first ask started, rather than launching a second in the same
-working directory. Entries used to be keyed by the role and held one file per project, which made
-"one working directory, two launched processes" reachable and had to be forbidden by a rule;
-keying by the checkout removes the state rather than the permission.
+working directory. Keying by the checkout makes "one working directory, two launched processes"
+unrepresentable rather than forbidden.
 
 Supported reference schemes: `env:`, `file:` (a path readable only by the broker's user),
 and `keychain:` (an OS credential store — declared, but see §12.2).
@@ -3373,13 +3311,11 @@ Rationale:
 
 Because the manifest holds only references, it is safe to commit.
 
-**Expiry needs no special handling, and it is now visible rather than inferred.** When an
+**Expiry needs no special handling, and it is visible rather than inferred.** When an
 agent's own authentication lapses, the node's attempt to start it fails, and the node says so
-— naming the agent and the failure. Nothing has to conclude anything from silence, which is
-what the older design did: repeated failures marked the agent `unreachable`, a status that
-also meant four other things, so an expired credential and a switched-off laptop were reported
-identically. The operator re-authenticates out of band and the next start succeeds. No
-credential machinery is involved.
+— naming the agent and the failure. Nothing has to conclude anything from silence, so an expired
+credential and a switched-off laptop are never reported identically. The operator
+re-authenticates out of band and the next start succeeds. No credential machinery is involved.
 
 ### 12.1 What an adapter needs, and who decides
 
@@ -3488,7 +3424,7 @@ The facilitator (principle 2.11) sends, so it has a row. That row is the broker'
 own participant exists, the same kind of fact as a `closed` result being the broker's (§5), and not
 a claim that an agent exists and has spoken. It is written when the broker opens a store, if absent,
 as `parley-facilitator@<project>` under the adapter of the same name. It is found by its adapter,
-never by its name, so a row written under an earlier name is reused rather than doubled.
+never by its name.
 
 **The broker writes one more: the person seat.** A person is not launched either, and every project
 needs a person that agents can ask (principle 2.6) from the moment it is served, before anybody has
@@ -3516,8 +3452,7 @@ The limit belongs here rather than in a footnote. The person seat exists before 
 so an attach under its name writes no new row and **no storage rule sees it**. What refuses a
 claimant is code comparing the adapter the caller reports, and a caller that reports the seat's
 adapter is admitted as the person. That is §16's concession — anything able to reach a broker can
-claim any name — applied to this one, and §17 question 2 carries whether peers should rely on "a
-person wrote this" at all. What storage does guarantee, whoever attaches, is that neither the person
+claim any name — applied to this one. What storage does guarantee, whoever attaches, is that neither the person
 seat nor the facilitator carries an ownership line, so no claimant can put its own line in every
 agent's roster as the person's.
 
@@ -3532,8 +3467,7 @@ standing instructions, or reach outside the agent's own repository (principle 2.
 Both halves of that framing are load-bearing. Without the second, Parley is a prompt-injection channel
 wired directly between repositories. Without the first — every message marked inert — it is a channel
 through which no work can be requested, and agents told on every delivery that nothing a participant
-says may direct their work will, reasonably, decline the work. An earlier version of this section said
-exactly that, and it is the reason this one was rewritten.
+says may direct their work will, reasonably, decline the work.
 
 Every delivered message is wrapped:
 
@@ -3667,7 +3601,7 @@ traffic rather than argued about in advance.
 Deduplication guards *delivery*, not intent, and the two need different scopes. A repeated Request is
 refused by the distinctness rule in §7.1, which shares this section's content hash but applies it for as
 long as the exchange stays open rather than for sixty seconds. A repeated Clarify is refused by the turn
-check, and a repeated Result by the exchange no longer being open. Every message type now has a guard of
+check, and a repeated Result by the exchange no longer being open. Every message type has a guard of
 its own, so this control is the backstop for transport retries rather than the only guard any type has.
 
 ## 14. Lifecycle and recovery
@@ -3682,19 +3616,11 @@ sends a Result or the person closes its conversation (§6), and attaching, detac
 restarting and a machine switching off are none of those. What a restart changes is who is
 available to do the work, never whether the work exists.
 
-This reverses the design this section used to carry, and the reasons are worth keeping because
-each looked right on its own terms.
+Ending work because of silence is the one thing principle 2.8 forbids: a laptop closed overnight
+must come back to every Request it was working on, and a requester must never be told *nobody will
+answer* when somebody later does.
 
-An exchange owed by an agent that went away used to become `ORPHANED`, releasing the requester to
-ask somebody else; after a grace period nobody came back for, the broker closed it as `ghosted` and
-handed the question back. Both steps ended work because of silence. That is the one thing principle
-2.8 forbids, and it was not a theoretical cost: a laptop closed overnight came back to find every
-Request it had been working on handed back to requesters that had already moved on, and a requester
-that had been told *nobody will answer* was not told when somebody did. Orphaning also had to be
-scoped with great care — the second session to start in a deployment once orphaned the first's live
-work — and every refinement of that scope was a way of making a rule that ended work end less of it.
-
-What replaces both is the flag of §6. An exchange whose receiver has gone quiet is shown to the
+What stands in for it is the flag of §6. An exchange whose receiver has gone quiet is shown to the
 person with the stage it stalled at and the participant it is waiting on, and the person — who can
 see why, which the broker cannot — starts the agent, asks it, or closes the conversation.
 
@@ -3729,18 +3655,11 @@ purged, never started and never routed to. `agents()` does not list it (§10.1),
 and every operator operation that takes an agent refuses it. Its question to an agent is ordinary
 open work: flagged like any other when the agent goes quiet (§6), and never timed out.
 
-This replaced two designs, and both failures are worth keeping.
-
-The first stored liveness outright: `live` was written on attach and again on every sweep, and
-nothing at all wrote the way out. A session that was killed, crashed, or lost its machine is
-exactly the case where nothing is left running to withdraw the claim — so a dead agent's row read
-`live` for ever, and every reader believed it.
-
-The second derived liveness from a timestamp, which fixed that, because a timestamp stops advancing
-when the process stops however impolitely. But it could only ever produce a guess dressed as a
-status: three sweeps of silence meant `not_responding` and five minutes meant `unreachable`, and
-both were really "we have not heard anything and are estimating what that implies." Every reader
-had to assume the deployment's sweep cadence to interpret them, which no reader could see.
+Liveness is neither a stored flag nor a reading of a timestamp. A flag written on attach has
+nothing to withdraw it when a session is killed, crashes or loses its machine — exactly the case
+where nothing is left running — so a dead agent would read live for ever. A timestamp can only
+produce a guess dressed as a status ("we have not heard anything and are estimating what that
+implies"), and every reader would have to assume the deployment's sweep cadence to interpret it.
 
 A connection needs no estimate. It is open or it is not, and the process holding it says so.
 
@@ -3981,7 +3900,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   the two stages §6 distinguishes, because they point at different fixes: *not collected* means the
   agent is not being reached — a machine switched off, a start failing, a credential expired; *collected
   with no Result* means it has the work and is stalled, or is genuinely doing something long. Nothing is
-  ghosted, so how often and for how long an agent is flagged is the most direct evidence of an unhealthy
+  closed for silence, so how often and for how long an agent is flagged is the most direct evidence of an unhealthy
   deployment the system produces.
 - **`blocked` Results per agent, by kind of blocker** → missing information that keeps coming back to
   the same agent means the ownership map is wrong; a conflict that recurs between the same two agents is
@@ -4026,23 +3945,20 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   chosen from what agents write, as the cap's was (§17 question 16). The template an agent proposes with
   keeps proposals brief by guidance, not by enforcement.
 
-- **Not a protocol for a hostile network.** This is the one that changed when the transport
-  did, and it is stated first because a reader who assumes otherwise will assume it silently.
+- **Not a protocol for a hostile network.** This is stated first because a reader who assumes
+  otherwise will assume it silently.
 
   An agent's identity is the name it presents when it connects. The broker checks that the
   name is well formed (§4.1.1) and that nobody else holds it, and that is the whole of it —
   anything able to reach the broker can claim to be any agent, read its mail, and answer in
   its name.
 
-  That was always true and used to be enforced by something physical: the store was a file on
-  one machine, so the only processes that could speak were ones a person had launched there.
-  Reaching over a network removes that floor without replacing it. **So the transport must be
-  confined to a trusted path** — a loopback connection, a private network somebody controls,
+  Nothing physical enforces it: a broker is reachable by whatever can reach its port.
+  **So the transport must be confined to a trusted path** — a loopback connection, a private network somebody controls,
   or a tunnel authenticated outside this protocol, such as key-based SSH. It must not be
   exposed to anything else.
 
-  **The reach is wider than an agent's mail, and this paragraph used to stop short of saying
-  so.** A broker serves the agent operations of §10.1, the operator operations of §10.2 and the
+  **The reach is wider than an agent's mail.** A broker serves the agent operations of §10.1, the operator operations of §10.2 and the
   node operations of §12 on one address: they are separate services on the wire, and that
   separation is a structural guard against an *adapter* binding the wrong one (§10.2), not a
   boundary anything on a network has to cross. So whatever can reach the port can also export
@@ -4092,363 +4008,128 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 
 ## 17. Open questions
 
-1. What bounds how much one participant can put in front of another? This question used to ask
-   what bounds Notify, and the answer changed shape when Notify did: every message is now a Request
-   and every Request is owed a Result (principle 2.7), so the least-bounded path into an agent's
-   context is now also a path into its work.
+Each is decided from evidence, not argument. Question numbers are identifiers: a question that is
+decided is removed and its number is not reused, so the list has gaps.
 
-   **The request cap is off by default, deliberately.** §7.1's per-pair cap was a cost control with
-   an arbitrary number, and it ended work before its participants had finished — which principle 2.8
-   counts as the larger harm. What is left against volume is §13.1's deduplication, which catches a
+1. What bounds how much one participant can put in front of another? Every message is a Request or
+   is owed a reply (principle 2.7), so the least-bounded path into an agent's context is also a path
+   into its work.
+
+   **The request cap is off by default, deliberately.** §7.1's per-pair cap is a cost control with an
+   arbitrary number, and it ends work before its participants have finished, which principle 2.8
+   counts as the larger harm. What stands against volume is §13.1's deduplication, which catches a
    byte-identical repeat and nothing else; §7.1's distinctness rule, which refuses a Request identical
    to one still open; and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
    recipient until it collects, but not the volume collected in that turn. Per-sender rate limits do
    not exist, and §13 says so.
 
-   Probed rather than argued, under the old types: sixty notifications differing by one digit, from
-   one agent to one peer, were all accepted in a tenth of a second, putting about 29,000 characters
-   into the recipient's next turn — seven times what rule 8.4 permits in one message, arriving in one
-   collection. Nothing refused anything and nothing was misbehaving. As Requests they would also be
-   sixty pieces of work owed.
-
-   **Terseness is a security control (principle 2.2), and there is now no volume control at all.**
-   That is a decision rather than an oversight, and it is recorded here so the evidence against it has
+   **Terseness is a security control (principle 2.2), and there is no volume control at all.**
+   That is a decision rather than an oversight, recorded here so the evidence against it has
    somewhere to accumulate. The candidates, if it comes to that, are a per-sender window — the direct
    answer — and a recipient-side budget. Either must refuse visibly rather than drop, because a limit
    that silently loses a request for work is worse than the flood.
 
-   What would decide it is already collected: inbox depth per agent, sustained (§15), and
-   `invocations`, which records every turn with its duration and cost — so "what did one participant's
-   requests spend on another's machine" has an answer in the same place as every other turn's.
+   What would decide it is collected: inbox depth per agent, sustained (§15), and `invocations`,
+   which records every turn with its duration and cost (§11.6), so what one participant's requests
+   spend on another's machine has an answer in the same place as every other turn's.
+2. §6's clock does not know whether a participant is working or has gone home,
+   and flags the second on the same schedule as the first. A flag waiting on an away person reads as
+   the person's own to-do (§6); a flag waiting on an agent that is asleep does not.
 
-   **That was untrue for every deployment run through a node until 2026-10-03, and is recorded rather
-   than tidied.** Only the old in-process fleet wrote `invocations`; a node ran each turn, measured it,
-   and told the broker nothing. Which artifact was wrong was decided, not assumed: the claim stands and
-   the code was the defect, since the evidence this question relies on had simply not been collected.
-   §11.6 makes it true.
-2. Should the human be a first-class Headless agent, or a distinct escalation path?
+   Everyone using a project is the one `human-user`, a deliberate choice for a protocol used by one
+   person running many agents.
+4. What, if anything, bounds clarification? Clarifications are uncapped unless a deployment sets a
+   cap (§5.2), because an exchange cut off before its two sides converge leaves the work undone, which
+   principle 2.1 counts as the failure. A cap censors its own evidence: depths pile up at the cap
+   whether the true need was one more or forty more, so no report over capped data can say what a cap
+   should be.
 
-   **Being answered in the affirmative, from use rather than from argument.** §11.2 already
-   admits a human as a responder and §11.3 already gives them an identity — `human:<name>` sits
-   in the table beside a model and a script. What was missing is not permission but a seat: a
-   person had no way to *hold a position across turns*, which §11.2 is careful to say is what
-   separates an agent from a responder.
+   **Two things a cap would do are done by nothing, and they are the open part.**
 
-   An operator is not that seat and must not become one. §10.2 is deliberately not a
-   participant surface, and widening it so a person could
-   ask and answer through it would put the one role that may retire and purge inside the
-   conversations it is judging. So a human who wants to take part registers like anybody else,
-   and the interesting consequence is where the name comes from.
-
-   **An earlier draft of this answer required the identity to be a launch-time fact, and it was
-   wrong.** The argument was that §13 rests on a sender being unable to forge the agent it
-   claims to be, which holds because a name arrives in the configuration a process was started
-   with rather than in a call — so a seat typed into a form would break exactly that. The
-   premise is right and the conclusion does not follow. §16 already concedes that anything able
-   to reach a broker can claim to be any agent, and the console reaching it can already retire
-   and purge every agent through §10.2. A form there forges nothing that was not already
-   forgeable, and a launch-time seat would have bought a worse surface for no security.
-
-   What a seat does add is the ability to **speak as** somebody, which no operator operation
-   grants. An operator acting is visibly the operator; a message written under an
-   agent's name is that agent's word. So the guard belongs on the name rather than on where it
-   was typed: a seat may not take a name the registry holds for something else, and a seat whose
-   registry could not be read is refused rather than taken unchecked.
-
-   **The tier is Pull.** A person has no turn to interrupt, which rules out Full, and holds a
-   position across turns, which is what Headless cannot do. What remains open is what a flag means
-   when the receiver is asleep — §6's clock does not know the difference between a participant that
-   is working and one that has gone home, and flags the second on the same schedule as the first. A
-   seat also made `startable` read oddly: presence was derived from whether a node is connected
-   (§4), and nothing can start a person, so a peer was told an absent human could be woken.
-
-   **The second of those is closed, by separating having a seat from being in it** (0.7's third
-   amendment, specs/023). The owner's words: *"There is a difference between having a seat and
-   being in a seat … The seat is still there for a reason — agents may actually need the person to
-   arbitrate or make a decision and they are stalled until that decision is made."* A seat that was
-   released after twenty idle minutes took the first away because the second had stopped, and
-   every agent waiting on a person's decision was left with nobody to ask — principle 2.6 sent the
-   need back to its originator instead. So the broker now provides the person seat in every project
-   (§12.3), `human-user@<project>`, and never releases it; presence is `here` or `away` (§14), and a
-   message to the person is answered *with the person*, never unreachable. Everyone using a project
-   is the one `human-user` — a deliberate choice for a protocol used by one person running many
-   agents, not an oversight. **The first is still open**: a flag waiting on an away person now reads
-   as the person's own to-do (§6), but §6's clock still does not know whether a participant is
-   working or has gone home.
-
-   **Evidence, from asking a peer through the seat rather than reasoning about it.** A first
-   seated question asked whether a person's message is distinguishable from an agent's. Two
-   findings, and the second is the one that matters.
-
-   Legibility already works and needs nothing. The envelope carries the responder identity as
-   §11.3 requires, so the peer read `responder: human:arvind` and calibrated on it exactly as
-   the section intends — the same way it would calibrate on a small local model. No new field is
-   needed for a person to be visible as one.
-
-   Attestation does not exist, and cannot be added as a field. Responder identity is per-message
-   and adapter-supplied, and this section constrains only the `parley:` prefix — so any adapter
-   may report `human:anyone` and nothing declines it. A peer can tell that a message *claims* a
-   person wrote it; it cannot tell that one did. The peer's own conclusion is the useful part:
-   an envelope field would not deliver attestation either unless it derived from the launch-time
-   identity rather than from per-message text. So the launch-time argument struck out above is
-   wrong about impersonation and right about attestation — which is a narrower claim than the
-   one it was making, and belongs to whoever decides whether peers should be able to rely on
-   "a person wrote this" at all.
-
-   **And then the peer demonstrated it rather than leaving it argued.** It sent a Notify whose
-   text says it is from an agent and that no person wrote a word of it, reporting its responder
-   as `human:arvind` — the name of the seated person it was talking to. The message was
-   accepted, stored, and delivered with that identity intact:
-
-   | From | Type | `responder_model` recorded |
-   |---|---|---|
-   | `arvind@matrixmaster` | Question | `human:arvind` |
-   | `parley@matrixmaster` | Answer | `claude-opus-5` |
-   | `parley@matrixmaster` | Notify | `human:arvind` |
-
-   The third row is an agent successfully claiming to be a specific person. Nothing is wrong
-   with the implementation: it is doing what this section specifies. What the row shows is that
-   `human:` reads as an identity while being no more than a self-report, which is the failure
-   §11.3 opens by describing for model identifiers and does not close for this scheme.
-
-   The candidate fix is the one already used by the console and would be worth more in the
-   broker, where it could not be routed around: refuse `human:` from an agent whose registration
-   says something other than a person's seat is running it. That is a real constraint the
-   registry can express, unlike the `parley:` prefix, which §11.3 explains cannot be a schema
-   check because the broker writes every row itself. It is recorded here and not adopted —
-   reserving a second namespace is a protocol change, and the question of whether peers should
-   rely on this at all is still open above it. The reserved role `human-user` (§12.3) now gives the
-   registry the fact that check would read — which row is the person — so adopting it later is a
-   rule rather than a redesign. It is still not adopted: an attach that reports the seat's adapter
-   is admitted as the person, so the check would move the trust rather than remove it.
-
-   **The facilitator is not a seat, and a seat is still a person** (principle 2.11, from 0.7's
-   second amendment). A seat exists so a person can hold a position across turns and speak as
-   somebody. The facilitator is neither a person nor an agent. It holds no position and speaks
-   only its own question. So it is not the person that principle 2.6 sends needs to, and storage
-   now says so too: the two roles are reserved to different adapters, so neither row can become
-   the other. When a person does speak through it — replying to an agent that asked it back —
-   the reply carries `parley:person` rather than `parley:facilitator`, so the one thing a seat
-   exists to guard, whose words these are, is not lost on the way through.
-3. *(Closed.)* What promotes a decision, and who is entitled to declare one? **Nothing promotes one;
-   the agent that owns it writes it down.** A decision about a repository goes into that repository
-   (rule 8.7), where the next agent to work there reads it with everything else it knows, and Parley
-   is not where decisions live (§16).
-
-   The question was open because the old design gave an Answer a `decision: true` flag that *"emits a
-   decision record into the project's coordination repository"*, and nothing emitted anything:
-   `is_decision` was stored and `decision_ref` was never written. The flag was also set by one party —
-   the answerer — without the asker being consulted, while §5.0 would not let one participant end a
-   conversation without consent.
-
-   Both findings stand as the reason the flag goes rather than being built. A record the broker holds
-   about a repository is a second copy of that repository's truth, drifting independently, and only the
-   repository's owner can keep it right. The columns go with §9's schema change.
-4. *(Answered for now.)* Is a clarify cap needed at all? **Not by default.** Clarifications are
-   uncapped unless a deployment sets a cap (§5.2), because an exchange cut off before its two sides
-   converge leaves the work undone — which principle 2.1 counts as the failure, and which a cap
-   produces by design.
-
-   How it got here is worth keeping. The cap was 3, set on taste, and a cap censors its own evidence:
-   depths pile up at the cap whether the true need was one more or forty more, so no report over capped
-   data can say what the cap should be. It was raised to 200 so the distribution could be measured, and
-   removed when the premise changed — a clarification is how a receiver gets what it needs to do
-   requested work, and the protocol's job is to let that finish.
-
-   **Three things the cap was quietly doing are done by nothing now, and they are the open part.**
-
-   - It bounded a channel. A Clarify reaches the requester with up to 8,000 characters (rule 8.4) and
-     takes no request slot, so without a cap one exchange can put an unbounded amount in front of a
-     requester. Question 1 is the same problem by the main door.
-   - It guarded the Headless tier, where agents clarify with nobody watching and every turn costs money
-     (§11.1). A per-tier default, bounded for Headless and lifted where a person is present, is the
-     shape an answer probably takes, and it waits for the distribution that would set the number.
-   - It conflated two things: repeated clarification of one point, and several genuinely different
-     missing facts. A count cannot tell them apart; a Clarify that named the item of the Request it
-     concerns (§5.1) could. Decide that alongside question 11.
+   - It would bound a channel. A Clarify reaches the requester with up to 8,000 characters (rule 8.4)
+     and takes no request slot, so one exchange can put an unbounded amount in front of a requester.
+     Question 1 is the same problem by the main door.
+   - It would guard the Headless tier, where agents clarify with nobody watching and every turn costs
+     money (§11.1). A per-tier default, bounded for Headless and lifted where a person is present, is
+     the shape an answer probably takes, and it waits for the distribution that would set the number.
 
    `clarifications()` in §10.2 reports the distribution, how often a cap in force was reached, and the
    range of caps in force. **The cap on an exchange is the requester's** (§5.2), so a deployment that
-   sets one on some agents and not others produces a distribution shaped by the number being measured —
-   which is why the range is printed.
+   sets one on some agents and not others produces a distribution shaped by the number being measured
+   — which is why the range is printed.
 5. Should a Request carry a deadline, so a requester can say when the work stops being useful? A
    deadline must not close anything — principle 2.8 lets nothing end work but its participants and the
    person — so what it could do is bring §6's flag forward and tell the receiver what the requester's
-   clock is. Whether that is worth a field, or belongs in `done_when` as words, is open.
+   clock is. Whether that is worth a field, or belongs in the ask as words, is open.
 6. Where does resume gate state live, and who reports the usage a budget gate reads?
-   The broker has no view of token consumption today, so it would have to be
+   The broker has no view of token consumption, so it would have to be
    adapter-reported — which makes it a term in the adapter contract (§14) rather than
    broker-local configuration.
-7. *(Reopened and reversed.)* What becomes of work nobody comes back for? **It stays open and is
-   flagged.** This used to be closed the other way: after a grace period the broker closed an orphan as
-   `ghosted` and handed the question back with the asker's own consequences. That ended work because of
-   silence, which principle 2.8 forbids, and it told requesters *nobody will answer* at moments when
-   somebody was about to. §6's flag puts the stalled exchange in front of the person, who can see why
-   and decide. See §14.
-8. *(Closed.)* Which credential-store implementation to depend on: none. Most agents
-   authenticate out of band and need nothing from the broker, and the rest are served by
-   `env:` and `file:`, which require no dependency. `keychain:` remains declared and
-   unimplemented; see §12.2.
-9. *(Closed by removal.)* Re-asking a question whose original was orphaned. There are no orphans
-   (§14): the original stays open, and an identical Request is refused by §7.1's distinctness rule for
-   as long as it does. The incentive this question recorded — a re-ask starting at clarify depth zero,
-   so an agent cycling through orphan and re-ask got a fresh budget for going in circles — went with the
-   state that created it, and with the default clarify cap (question 4).
+10. What should bound an agent's ownership line? An asker chooses a recipient from an `owns` line in
+    the registry, returned by `agents()` beside the name (§10.1): a statement of what the agent owns
+    and what it does not.
 
-10. *(Closed.)* How does an asker choose a recipient? From an `owns` line in the registry,
-    written by whoever configured that agent's launch and returned by `agents()` beside the
-    name. One line, capped at 100 characters, refusing control characters, enforced in the
-    schema. It is optional, and an agent that has none is listed without one — a requester then
-    falls back to the name and to asking, exactly as before.
+    **The line is not self-declared, and that is the whole of why it is worth reading.** A field a
+    model could write would be no more trustworthy than the prose it replaces, merely centralised. It
+    is filled from the launch environment, in the file that already fixes the agent's name, and no
+    operation accepts one from the agent it describes — an agent can no more edit its charter than its
+    identity (§13). It is refreshed on every launch, and cleared when a launch stops supplying it,
+    because a statement that cannot be corrected is worse than none when every peer routes by it.
 
-    **It is not self-declared, and that is the whole of why it is worth reading.** A field a
-    model could write would be no more trustworthy than the prose it replaces, merely
-    centralised. Sourced from the launch environment it is written by a person, in the file
-    that already fixes the agent's name, and no operation accepts one — an agent can no more
-    edit its charter than its identity (§13). It is refreshed on every launch, and cleared
-    when a launch stops supplying it, because a statement that cannot be corrected is worse
-    than none when every peer routes by it.
+    **The agent is asked what it owns and what it does not.** The answer is discussed to agreement and
+    a person accepts it with `record_ownership` (§10.2), which records which route produced it — the
+    agent's words, its words edited, or a line composed with no ask — and the conversation it was
+    agreed in. The launch configuration is written before the record, so a record never claims a line
+    peers will not read.
 
-    **Amended: a person may start from a draft, and must still affirm it.** The original
-    reading of the paragraph above was that setup tooling must offer evidence and never a
-    sentence — that a draft invites approval where evidence invites authorship. That is true
-    and it is not the whole picture: a blank field is not neutral either. Onboarding a
-    deployment of eleven repositories asks for eleven statements in one sitting, and the
-    field that gets left empty routes nothing at all, which is strictly worse for peers than
-    an imperfect line somebody corrected.
+    **Auto Accept removes the person from that loop, and is a reduction in a control.** Every project
+    has a facilitator (principle 2.11) that asks each agent what it owns, once, with nobody asking.
+    With the project's Auto Accept switch on, which it is by default, the answer becomes the agent's
+    line with no person involved, recorded with the source `automatic`. A line nobody gets round to
+    accepting routes nothing, and a blank field is not neutral. What stands in the person's place is
+    evidence and correction rather than a gate:
 
-    So a tool may put a suggested line in front of the person, provided all three hold:
+    - **Provenance is truthful.** `automatic` is a route of its own, never recorded by a person's
+      call, and a surface shows it apart from the three a person takes.
+    - **Every line can be reviewed and corrected at any time**, from every surface (§10.2
+      `facilitation`).
+    - **The words are the agent's own.** Only whitespace is collapsed, an answer that breaks the
+      character class waits for a person whatever the switch says, and an agent on another machine
+      always waits, because nothing here may write a file there.
 
-    1. **The suggestion is carried beside its evidence**, each piece quoted with where it came
-       from — the repository's own README, its manifest, its directories, an earlier
-       registration in its history. What is being approved is checkable against the material
-       it was drawn from, rather than against nothing.
-    2. **Approval is a recorded positive act, not a default.** A drafted line that nobody has
-       affirmed must not reach a launch configuration; tooling refuses it rather than shipping
-       it. This is what keeps *not self-declared* true — the value in the registry is one a
-       person assented to, and the assent is written down.
-    3. **The exclusion half is never invented.** A repository can show what it contains and
-       cannot show what it has decided not to own; absence of tax code does not mean tax is
-       somebody else's. A draft may leave that half unwritten and say so, and must not guess
-       at it.
+    A project that wants every line affirmed turns the switch off, and nothing then reaches a launch
+    configuration without a person's recorded act.
 
-    The residual risk is accepted rather than solved, and is recorded here so a later change
-    knows it was weighed: **anchoring**. Somebody shown a plausible sentence agrees more
-    readily than somebody facing a blank, and the agreement is cheaper than the authorship it
-    replaces. Condition 1 is what makes that agreement checkable and condition 3 is what keeps
-    the anchoring away from the half that cannot be derived — but neither makes an approved
-    draft identical to a written line, and the difference is invisible from the far side of a
-    message. What is claimed after this amendment is narrower than before: not that the field
-    was composed by a person, but that a person read it and said yes.
+    **The line has no bound by default.** The constraint stays in storage and stands down at its top, so
+    a deployment may reinstate a bound and it is enforced below anything that could route around it
+    (§9.3). The character class that stops a line breaking, hiding or reordering its own roster row is
+    not relaxed. The bound is off so that an agent asked what it owns can answer in two halves and name
+    a peer. This text is read by every agent, repeatedly, so until evidence exists a roster may be the
+    largest thing an agent reads. The one recorded answer to the ownership question was 713 characters,
+    about seven times a hundred-character cap, and every sentence of it was routing information: what to
+    send here, what to send elsewhere, and the one standing instruction a peer needs. One agent's answer
+    is not a measurement of all of them. What is open is the number, and the evidence for it is what
+    agents propose and what people accept, recorded with the length of each proposal.
 
-    Nothing in the protocol changes. The broker still receives one value from a launch
-    environment, still refuses it in the same schema, and still cannot tell how it was
-    composed — as it could not before. This paragraph binds the tools that write launch
-    configurations, which is where the guarantee always actually lived.
+    **It stays advisory.** Nothing is routed by it, refused because of it, or compared against it; there
+    is no uniqueness constraint and no arbitration, so two agents may claim the same ground and the
+    broker will not say which is right. Principle 2.5 leaves that to the people who own the
+    repositories, and pursuing remains the correction: an agent asked for work it does not own finds who
+    does and asks them, in the same conversation (§5.3). Making it enforceable is rejected: a registry
+    that could refuse a question because the recipient's `owns` did not cover it would be an authority
+    over what an agent may be asked, which no agent has over another (principle 2.5), and would make a
+    one-line description into a routing table that has to be right.
 
-    It stays advisory. Nothing is routed by it, refused because of it, or compared against
-    it; there is no uniqueness constraint and no arbitration, so two agents may claim the
-    same ground and the broker will not say which is right. Principle 2.5 leaves that to the people
-    who own the repositories, and pursuing remains the correction: an agent asked for work it does
-    not own finds who does and asks them, in the same conversation (§5.3).
-
-    The argument against it was real and is recorded rather than discarded, because a later
-    change needs to know it was weighed. A roster describing every agent's domain hands each
-    agent a map of the whole system, which is the disclosure §10.1 withholds the workspace
-    path to avoid, in softer form; the answer is that an operator writes this text for the
-    express purpose of peers reading it, whereas nobody writes a filesystem path for that. And
-    a free-text field that can hold a paragraph will eventually hold one, which is why the cap
-    is an order of magnitude below the message cap rather than near it: a message is read once
-    by one agent, while this is read by all of them, repeatedly.
-
-    What was rejected: making it enforceable. A registry that could refuse a question because
-    the recipient's `owns` did not cover it would be an authority over what an agent may be
-    asked, which no agent has over another (principle 2.5), and would make a one-line description into
-    a routing table that has to be right.
-
-    The state this replaces, kept because it is what an implementation without the field
-    still does: `agents()` returns a name, an adapter, a tier and a status, so the only
-    routing signal inside the protocol is the name, and everything else lives in a file the
-    protocol never sees, written once per repository and maintained by hand. That was
-    survivable because a wrong guess is cheap — the agent asked finds the owner and asks it, inside
-    the same conversation — but it is still one copy of the same
-    ownership map per repository, drifting independently.
-
-    **Amended, 2026-09-26 (0.7, specs/020): the agent is asked, and a person accepts.** Two things
-    above stopped being true, and this amendment was owed by 020 and made by 022. The line is no
-    longer capped at 100 by default: the bound stands down at the top of its range, the character
-    class stays, and the constitution records that as a reduction in a control. And the line is no
-    longer drafted from evidence and affirmed. **The agent is asked what it owns and what it does
-    not**, the answer is discussed to agreement, and a person accepts it with `record_ownership`
-    (§10.2), which records which of three routes produced it — the agent's words, its words edited,
-    or a line composed with no ask — and the conversation it was agreed in. The file is written
-    before the record, so a record never claims a line peers will not read.
-
-    That turns *not self-declared* into something narrower, and the cost is written down rather than
-    hidden. The words are now usually the agent's own. What stayed true is condition 2: nothing
-    reached a launch configuration without a person's recorded act. Condition 3 is kept by asking
-    for the exclusion half rather than inventing it, which is the half only the agent can supply.
-    Anchoring gets worse, not better: a person shown an agent's confident sentence agrees more
-    readily than one shown a draft beside its evidence.
-
-    **Amended, 2026-09-28 (0.7, specs/022): Auto Accept removes the person from that loop, and is
-    a reduction in this control.** Every project has a facilitator (principle 2.11) that asks each
-    agent what it owns, once, with nobody asking. With the project's Auto Accept switch on, which
-    it is by default, the answer becomes the agent's line with no person involved, recorded with
-    the source `automatic`. **So condition 2 above no longer holds when the switch is on**, and the
-    registry may carry a line nobody affirmed. That is the owner's decision, taken because a line
-    nobody gets round to accepting routes nothing — the blank-field argument this question's first
-    amendment made, one step further.
-
-    What stands in the person's place is recorded in the terms this document uses for its other
-    reductions: evidence and correction rather than a gate. **Provenance is truthful**: `automatic`
-    is a route of its own, never recorded by a person's call, and a surface shows it apart from the
-    three a person takes. **Every line can be reviewed and corrected at any time**, from every
-    surface (§10.2 `facilitation`). And the words are the agent's own: only whitespace is collapsed,
-    an answer that breaks the character class waits for a person whatever the switch says, and an
-    agent on another machine always waits, because nothing here may write a file there. A project
-    that wants every line affirmed turns the switch off, and the conditions above hold again.
-
-    It stays advisory, and the facilitator's asking changes nothing about that: a line accepted
-    automatically is routed by exactly as much, and refused on exactly as little, as one a person
-    wrote.
-
-    **Evidence, 2026-10-04: this repository's own agent, asked by the built feature (0.40.0).** It was
-    enrolled into a live deployment; the facilitator asked it within seconds of its registering, with
-    nobody asking, and Auto Accept took its answer as its line (`automatic`, 713 characters). The answer,
-    verbatim except one phrase replaced to keep another project's name out of this document:
-
-    > I own the Parley repository: SPEC.md (the protocol, the primary artifact), the .NET reference
-    > implementation (core domain, SQLite store, broker, gRPC transport, MCP adapter, node/fleet, CLI,
-    > terminal and web UI), the Claude Code plugin, installers and the Spec Kit design record. I do not
-    > own any other repository's code, its agent configuration or its launch settings, so ask the owning
-    > agent for those. I do not own what an agent does with Parley once it is attached, and I do not
-    > decide who works on what: no agent has authority over another. Ask me about how Parley behaves (I
-    > answer from SPEC.md) or to change Parley itself, not about *[another project's]* application logic
-    > or anything else outside this repository.
-
-    What it shows, for the bound this question keeps open: a model asked plainly writes a line about
-    seven times the old hundred-character cap, and every sentence of it is routing information — what to
-    send here, what to send elsewhere, and the one standing instruction (answer from SPEC.md) a peer
-    needs. Nothing in it is padding a cap would have removed without losing a routing fact. One agent's
-    answer is not a measurement of all of them; it is the first.
-
-11. Should a Clarify say what turns on it? A Request used to be made to say what done looks like — a
-    `done_when`, removed at 0.7 (§18) — on the ground that a receiver who knows what the work is for
-    does better work. A Clarify is the receiver asking the requester for something it needs, and the
-    same argument applies to it unchanged: a
-    requester told *if the price is tax-inclusive I change the invoice, otherwise I change the report*
-    gives a better reply than one asked a bare question.
+    A roster describing every agent's domain hands each agent a map of the whole system, which is the
+    disclosure §10.1 withholds the workspace path to avoid, in softer form. An operator writes this text
+    for the express purpose of peers reading it, whereas nobody writes a filesystem path for that.
+11. Should a Clarify say what turns on it? A Clarify is the receiver asking the requester for
+    something it needs, and a requester told *if the price is tax-inclusive I change the invoice,
+    otherwise I change the report* gives a better reply than one asked a bare question.
 
     The case against is cost. A Clarify is often a single short request where the framing would be
     longer than the question, and a required field that produced ceremony would be satisfied by writing
-    something that states nothing — the failure a length floor exists to prevent, reintroduced at a
-    smaller scale.
-
-    Worth deciding alongside question 4. A Clarify that named the item of the Request it concerns and
-    what turns on the reply would make any per-item budget fall out of the message shape, and would make
-    a clarification look, in the log, like what it is.
-
+    something that states nothing.
 12. What bounds a Request to a role? §5.5 opens one exchange per agent registered under a role, so the
     cost of asking `infra` is set by how many machines somebody installed rather than by any judgement
     about the work. Five is fine. Fifty is fifty agents each started, each spending a turn, and each
@@ -4456,17 +4137,13 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     day a routine request started costing twenty turns.
 
     The obvious bound is a cap on group size, refused past it. What is not obvious is the number, and
-    this document has learnt not to guess one: §5.2's clarify cap was set to 3 on taste, defended at
-    length, and turned out wrong by nearly two orders of magnitude once anybody measured.
-
-    So: instrument first. Record the size of every role Request and how many of its Results were
-    `blocked` or said the work belongs elsewhere, which is the number that says whether the fan-out
-    bought anything — work done by one agent and passed on by nineteen should have named its agent. Set
-    the cap from that evidence, and record the evidence here.
+    none is guessed: instrument first. Record the size of every role Request and how many of its
+    Results were `blocked` or said the work belongs elsewhere, which is the number that says whether the
+    fan-out bought anything — work done by one agent and passed on by nineteen should have named its
+    agent. Set the cap from that evidence, and record the evidence here.
 
     Related to question 1, for the same underlying reason: both are paths by which one participant can
     put work in front of many without anything bounding how much.
-
 13. Should `startable` be per agent rather than per machine? §14 reads an agent's presence from
     two connections: its own, and its machine's node. An agent that is not running on a machine
     whose node is connected therefore reads as `startable` — which is right about the machine and
@@ -4474,230 +4151,51 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     broker never sees. A repository registered on a machine but absent from that machine's
     `node.json` is reported as startable and will never start.
 
-    The information exists. A node names the roles it can launch when it joins, and the broker
-    already refuses to send a start command for a role that was not named — so the registry could
-    say `unstartable` instead of `startable` for exactly those agents. What stops it today is
-    that presence is computed in storage from two columns, and the roles a node offers are held
-    only in the process.
+    The information exists. A node names the roles it can launch when it joins, rejoins when they
+    differ from its catalogue, and the broker refuses to send a start command for a role that was not
+    named — so the registry could say `unstartable` instead of `startable` for exactly those agents.
+    What stops it is that presence is computed in storage from two columns, and the roles a node offers
+    are held only in the process.
 
-    The cost of leaving it is one misleading word in one operator report, mitigated by the node
-    printing the mismatch at join. The cost of fixing it is another column that a node writes and
-    the schema derives from, which is the shape §9.3 prefers but is not free: it makes what a
-    machine can launch a durable fact in a shared store, and §4 has kept that firmly local until
-    now. Decide it when somebody has been misled by the word, not before.
+    An operator's terminal reads the project's catalogue beside the registry — allowed because the
+    catalogue is the one fact about a deployment the broker never sees, so reading it is not a second
+    answer to a question the broker answers — and shows three states in words: the registry's presence
+    for an agent in both, *catalogued, not yet registered* for one the node could start that has never
+    attached, and the presence followed by *not in this catalogue* for exactly the case above. The
+    registry itself is unchanged: a plain read of it still says `startable`.
 
-    **Two things narrowed this on 2026-09-05, and neither answers it.** The first was a defect
-    rather than a design: a node announced its roles once, at join, so a role added to a running
-    node's catalogue was announced *never* — which produced this question's exact state by a route
-    nobody had noticed, and produced it for an agent somebody had just deliberately enrolled. A
-    node now compares its roles against its catalogue and rejoins when they differ, so the window
-    is a poll rather than a session.
-
-    The second is that a surface can say it. An operator's terminal reads the project's catalogue
-    beside the registry — allowed because the catalogue is the one fact about a deployment the
-    broker never sees, so reading it is not a second answer to a question the broker answers —
-    and shows three states in words: the registry's presence for an agent in both, *catalogued,
-    not yet registered* for one the node could start that has never attached, and the presence
-    followed by *not in this catalogue* for exactly the case above. The misleading word is now
-    said out loud somewhere, which lowers the cost of leaving it further.
-
-    What neither does is make the registry itself honest, which is what the question asks. An
-    operator reading `parley registry` in a pipe still sees `startable`.
-
+    The cost of leaving it is one misleading word in one operator report. The cost of fixing it is
+    another column that a node writes and the schema derives from, which is the shape §9.3 prefers but
+    is not free: it makes what a machine can launch a durable fact in a shared store, and §4 keeps that
+    local. Decide it when somebody has been misled by the word, not before.
 14. Should the broker say which agent it recorded, on attach? The acknowledgement of §4.0's
     stream carries almost nothing — whether the agent was marked connected — so an adapter learns
-    that its attach succeeded and never learns what it
-    attached as. §12.3 makes the name safe to return: identity comes from the launch
-    configuration and §13 has the adapter fix it before the model gets a turn, so a name on the
-    acknowledgement discloses nothing the adapter did not itself supply.
+    that its attach succeeded and never learns what it attached as. §12.3 makes the name safe to
+    return: identity comes from the launch configuration and §13 has the adapter fix it before the
+    model gets a turn, so a name on the acknowledgement discloses nothing the adapter did not itself
+    supply.
 
-    The half that is genuinely not in hand is the machine. §4.1.1 names an agent `role@machine`
-    and detects the machine rather than reading it from configuration, so a repository can
-    register as `billing@some-unexpected-host` and nothing in that agent's own view would show
-    it. The diagnostic that exists says exactly this and stops: the adapter's status report gives
-    registration as a yes rather than a name, on the ground that printing the configured name
-    back would report what was asked for rather than what the broker recorded. That reasoning is
-    right, and it is the argument for putting the name on the acknowledgement rather than in the
-    adapter — a name that arrives from the broker is the record, not the intent.
+    The half that is not in hand is the machine. §4.1.1 names an agent `role@machine` and detects the
+    machine rather than reading it from configuration, so a repository can register as
+    `billing@some-unexpected-host` and nothing in that agent's own view would show it. The adapter's
+    status report gives registration as a yes rather than a name, on the ground that printing the
+    configured name back would report what was asked for rather than what the broker recorded. That is
+    the argument for putting the name on the acknowledgement rather than in the adapter: a name that
+    arrives from the broker is the record, not the intent.
 
-    **Evidence, 2026-08-29.** During a nineteen-repository rollout an operator restarted the
-    session in the wrong repository, saw the server bound and the agent registered, and concluded
-    that the repository they meant had registered. Every check available from inside was true,
-    and none of them named the repository they were true about. The mistake was visible only from
-    another agent's roster — which is the deployment-wide view §10.1 withholds from an agent on
-    purpose — so the one party who could see it was the one party not looking. A single
-    `role@machine` on the acknowledgement would have made it self-evident where the confusion
-    was.
+    The cost of leaving it is that a misdirected launch is indistinguishable from a correct one at the
+    only point somebody is watching, and the view that settles it — another agent's roster — is one
+    §10.1 withholds from an agent on purpose. The cost of fixing it is a field on a message the broker
+    already sends first, saying what it has just written about the caller and nothing about anybody
+    else. Related to question 13: both are places where the registry holds something an agent is left
+    to infer.
+16. Is 8,000 the right cap? §9.3 keeps a count of what the cap refuses "because a limit nobody
+    measures is a limit that gets changed on the strength of whoever complains most recently". This is
+    where that evidence accumulates. The number is provisional and moves on it, not because one message
+    did not fit.
 
-    The cost of leaving it is that a misdirected launch is indistinguishable from a correct one
-    at the only point somebody is watching, and the view that settles it belongs to an operator.
-    The cost of fixing it is a field on a message the broker already sends first, saying what it
-    has just written about the caller and nothing about anybody else.
-
-    Related to question 13. Both are places where the registry holds something an agent is left
-    to infer, and both were found by somebody being misled rather than by reading this document.
-
-15. **A start and a turn are different requests, and the broker only ever makes one of them.**
-    §14 has the broker start an agent when something is waiting on it. A machine's node
-    implements both halves of that correctly: asked for an agent it already holds, it gives that
-    resident a turn; asked for one it does not, it starts a process and gives the new agent a turn.
-    Its own code says why — a process that launched and sat there would have attached, drained
-    nothing and answered nothing, because waking an adapter is not the model taking a turn.
-
-    The broker asks only when the agent is not attached. When a session is already attached it is
-    silent, and that silence is defensible on its face: asking for a *start* would duplicate a
-    process for an agent that already has one.
-
-    But the thing needed for the second Question was never a start. It was a turn — and there is no
-    request for one. So each half behaves sensibly alone and the seam between them drops the work:
-    a Question to an attached agent is written, reaches nobody, and under the protocol at the time
-    was eventually ghosted. **One question per agent, then silence** — silent in exactly the way
-    §11.1 warns of,
-    because the registry reports the agent live, the broker records messages waiting, and the
-    deployment looks like it is working.
-
-    **Evidence, 2026-08-31.** A nineteen-agent deployment on one machine, hosted by one node. One
-    agent asked five peers. Four were started, answered once, and went quiet; every later ask went
-    unanswered, and one peer accumulated four uncollected messages behind a session reported as
-    running. Killing that session's process restored it: with nothing attached, the next Question
-    became a start again, and it answered. The remedy was killing a process to turn a turn into a
-    start, which is the shape of a defect rather than of a misconfiguration.
-
-    **The mechanism is settled and built.** The broker asks for a turn when the agent is attached
-    and a start when it is not; the node gives the turn only to a resident of its own, and does
-    nothing for an agent attached through somebody's editor window, because nothing can make a
-    person's window take a turn. It is a separate command rather than a flag on the start,
-    because only the node knows which sessions are its own — a broker that asked for a start
-    instead would produce exactly the duplicate process that suppression existed to prevent.
-
-    **A person's window can be told, where its host offers a way, and that is the adapter's to
-    do.** The broker already pushes a count down the attach stream (§4). An adapter whose host
-    accepts events from a server — Claude Code's channels are one — MAY pass that on as an event
-    the session reacts to, which gives an open window its turn without anybody typing. Two rules
-    carry over unchanged. The event carries counts and never words, for the reason §4 gives a
-    notice, since it reaches the model outside §13's envelope; and being told is not delivery
-    (§12), so the model still collects with `inbox()`. It changes nothing for a window nobody has
-    open, and nothing about the tier the adapter declares.
-
-    What remains open is the bound.
-
-    A turn is not free. It is a model taking a turn, charged to whoever hosts the agent rather than
-    to whoever asked, so anything that can cause a turn is a way for one agent to spend another
-    deployment's compute. What bounds it today is that only a Question, a Clarify and an Answer
-    ask for one — a Notify nudges and never asks — so the volume is held by §7.1's per-pair
-    question cap rather than by anything chosen for this purpose. That is a bound by accident,
-    and it is worth saying out loud that it is the *uncapped* message type which happens not to
-    reach this path. Wiring Notify to it later, for the obvious-looking reason that a notified
-    agent should read its mail, would make it unbounded and would be question 1's problem reached
-    by a second route.
-
-    §11.1 already carries a policy of the right shape for the resident tier: an agent whose most
-    recent turn left as much waiting as it found is not given another until the count rises.
-    Whatever is chosen here should be at least that strict. An agent mid-turn must also not be
-    given a second concurrently, which each node enforces for its own residents and no broker can
-    see.
-
-    So: the mechanism is a small change and the policy is not. Decide the policy first, and record
-    what a turn costs when somebody has measured one.
-
-    **Answered at protocol 0.4, and the policy came first as this asked.** A Notify now asks for a
-    turn like everything else (§5.4). The objection above is met rather than overruled, and it is
-    met out of question 1's own evidence: that question records sixty notifications accepted in a
-    tenth of a second, and records that `inbox` with no limit "collects everything pending". One
-    turn therefore drains all sixty. **The paragraph above assumed that wiring Notify here meant one
-    turn per notification. It does not have to, and that assumption was the whole of the
-    objection.**
-
-    So the policy is coalescing rather than a cap: attention is asked for once per recipient until
-    that recipient drains. A hundred notifications cost one turn, which is not a rationed number but
-    the right one. The bound is at least as strict as §11.1's, which this asked for — that rule
-    withholds a further turn from an agent whose last one collected nothing, and this withholds one
-    from an agent whose last asking has not been answered at all.
-
-    **Two things were established by reading an implementation rather than by reasoning, and both
-    would have been got wrong.** A node asked to start an agent it already holds gives that resident
-    a turn — so bounding *processes* bounds nothing, and the count that matters is turns. And the
-    asking must be cleared by the recipient *draining*, not by its attaching: the first notification
-    starts the agent, it attaches within a second, and every notification after that would find it
-    attached and buy a turn apiece. An implementation clearing on the attach satisfies the letter of
-    the bound and has no effect.
-
-    **Evidence, 2026-09-01, and it is the editor-window case rather than the seam above.** An
-    agent asked a peer, went idle, and never learned that the answer had arrived. The wake path
-    worked: the broker asked for attention on delivery and the log records other agents being
-    started for exactly that reason. This one was not started, because it was already attached —
-    through a window a person had opened. The node gives a turn only to a resident of its own, so
-    it correctly did nothing, and the notice reached the adapter and stopped there. The agent was
-    reported live, held no uncollected mail the operator could see, and was waiting on nothing.
-
-    Nothing was broken. Every part behaved as designed, which is what makes it worth recording
-    separately from the seam: the seam was a defect and this is the documented cost of a correct
-    decision. What it costs is that an agent in a person's window is reachable by a question —
-    which starts nothing and needs nothing started — and unreachable by an answer to its own
-    question, until a person happens to give it a turn.
-
-    **And there is no way to tell the two apart.** This is the part that turns the cost into an
-    operational blind spot. An agent attached through a window and one started by a node register
-    identically: the same `adapter`, and `session_ref` empty for both. §12 defines that field as
-    what an adapter needs to reach an agent again, and an adapter the agent launched itself has
-    nothing to hand back — so it is empty by design rather than by omission. The node knows which
-    sessions are its own, because it holds them; that knowledge reaches no broker and therefore no
-    §10.2 read. So an operator cannot list which of their agents are in the class that cannot be
-    given a turn, and neither can the broker deciding whether to ask for one.
-
-    Outside the protocol the two are trivially distinguishable — one process was launched with a
-    headless flag and the other was not — which is worth stating only to make the point that the
-    distinction exists everywhere except where it is needed.
-
-    A node-started agent could report its own session in `session_ref` on attach, which would make
-    the class visible in the registry and to the broker. That is a small change and it is not a
-    guarantee: a window could set the field too, and this document has just recorded what happens
-    when an unattested claim is read as an identity (question 2). It would be a hint good enough
-    for a report and not good enough for a decision, and whoever builds it should say which of
-    those they are building.
-
-    **Answered in part, 2026-09-02: a person now has somewhere to take part from.** The cost above
-    is that an agent in somebody's window is unreachable by an answer until a person gives it a
-    turn. That leaves the person as the mechanism, and until now the only places a person could
-    act were an editor session nothing can wake and single-shot commands that report and exit --
-    neither of which is somewhere to hold a conversation.
-
-    `parley top` -- `parley terminal` since 0.27.0 -- is a terminal a person takes part from: it lists the projects a machine knows,
-    shows who is in each and what has been said, seats the person as the project's person seat, and lets
-    them read what is waiting and answer it. The web console already did this in a browser; what
-    is new is that it no longer needs one, which matters because the machine running a broker is
-    frequently not the machine somebody has a browser open on.
-
-    **This does not close the question, and it is worth being exact about what it does not do.**
-    It does not make an editor-window agent reachable -- nothing can, and that is still the
-    documented cost of a correct decision. It does not make the class visible in the registry:
-    `session_ref` is still empty for both kinds, so an operator still cannot list which of their
-    agents cannot be given a turn. What it changes is who has to be at a keyboard for the
-    deployment to make progress, and where they have to be sitting.
-
-16. **Is 8,000 the right cap? It was 4,000, and the move is the first one this document can
-    show its working for.** §9.3 keeps a count of what the cap refused "because a limit nobody
-    measures is a limit that gets changed on the strength of whoever complains most recently".
-    This is where that evidence accumulates, and it is what the number was changed on.
-
-    *Evidence, 2026-08-31.* One deployment reported an answer refused at roughly 4,600 characters —
-    an agent describing the schema it owns to a peer that had asked. That is one refusal, a little
-    over the line, from a domain where the honest answer is a list. It is the first row of a case
-    rather than a case: what would make it one is `refusals()` showing the same agents turned away
-    repeatedly at similar sizes, rather than one agent once.
-
-    Worth stating before the number moves, because it is easy to reach for the wrong measure. A
-    raised cap does not admit longer answers; it admits longer *everything*, and volume is bounded
-    separately and far more weakly, if at all — question 1 records what is left. Doubling the cap
-    doubles the worst case that §8's own arithmetic
-    works through, and that arithmetic is what decided four thousand.
-
-    The other half of the evidence is not in the count. A refusal says a message was too long; it
-    does not say whether the text above the line was worth carrying. The agent that was refused is
-    the only party that knows, and asking costs one question.
-
-    *Evidence, 2026-09-01. This is what the number moved on.* `refusals` on a nineteen-agent
-    deployment:
+    `refusals` on a nineteen-agent deployment running a 4,000-character cap, which is what 8,000 was set
+    from:
 
     | Agent | Type | Refusals | Worst | Mean |
     |---|---|---|---|---|
@@ -4708,393 +4206,38 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
     | fifth | answer | 3 | 4,714 | 4,358 |
     | sixth | question | 2 | 4,563 | 4,328 |
 
-    The agents are numbered rather than named because the deployment they ran in is private. What
-    the evidence turns on is the shape — how many, how often, how far over, and in which
-    direction — and none of that needs a name.
+    Forty-three refusals across six agents: the same agents turned away repeatedly, at sizes clustered
+    tightly between 4,328 and 4,556 on average, with a worst case of 6,195. Nothing was refused at
+    twice the cap or ten times it — the population is not agents pasting files, it is agents a few
+    hundred characters over a line. Five of the six were refused on answers, which is the direction that
+    costs something: an asker that has already decided it needs an answer gets a worse one, or none,
+    while a refused question can simply be asked again more briefly.
 
-    Forty-three refusals across six agents. That is the shape the paragraph above said would
-    make a case rather than a first row: the same agents turned away repeatedly, at sizes
-    clustered tightly between 4,328 and 4,556 on average, with a worst case of 6,195. Nothing
-    was refused at twice the cap or ten times it — the population is not agents pasting files,
-    it is agents a few hundred characters over a line.
+    8,000 clears every refusal recorded, with the worst case at 77% of the limit. It is a doubling
+    rather than a fit to the data, because a cap set to the observed maximum would be refusing again on
+    the next long answer — and the number is still, deliberately, round.
 
-    **Five of the six were refused on answers**, which is the direction that costs something. An
-    asker that has already decided it needs an answer gets a worse one, or none; a refused
-    question can simply be asked again more briefly. The one question-side entry is the smallest
-    row in the table.
+    A raised cap does not admit longer answers; it admits longer *everything*, and volume is bounded
+    separately and far more weakly, if at all — question 1 records what there is. Doubling the cap
+    doubles the worst case that §8's own arithmetic works through.
 
-    8,000 clears every refusal ever recorded, with the worst case at 77% of the new limit. It is
-    a doubling rather than a fit to the data, because a cap set to the observed maximum would be
-    refusing again on the next long answer — and the number is still, deliberately, round.
-
-    What this evidence does not settle is the half named above: whether the text over the line
-    was worth carrying. Nobody asked the refused agents. The count says the cap was binding
-    often and by a little; it does not say those messages were better long.
----
-
+    What the evidence does not settle is whether the text over the line was worth carrying. A refusal
+    says a message was too long; it does not say whether it was better long. The refused agent is the
+    only party that knows, and asking costs one question.
 17. **Should Parley ever propose a roadmap?** A facilitator that noticed several agents had agreed a
     list could propose it for them. Principle 2.11 lets it do three things and a roadmap proposal is a
-    fourth, so it does not, and every proposal today is an agent's own. What would justify it is evidence
+    fourth, so it does not, and every proposal is an agent's own. What would justify it is evidence
     that agents agree lists in transcripts and never propose them: the proposals a deployment receives,
-    against the conversations in which a list was agreed, which no counter holds today. Not decided, and a
+    against the conversations in which a list was agreed, which no counter holds. Not decided, and a
     change to principle 2.11 if it ever is. A second thing waits on the same evidence: the sizes recorded
     with every proposal (§16), from which a bound might one day be chosen.
 
-## 18. Version history
+## 18. Protocol version
 
-A protocol that expects alternative implementations owes them a record of what moved and when.
-This is that record, and it is deliberately about the wire rather than about the reference
-implementation: a change that no second implementation could observe does not belong here, and
-does not move the number.
+The protocol version is **0.8** and the storage schema version is **1**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
 carries breaking changes.** Two implementations whose minors differ do not interoperate, and
-§4.0's `Attach` refuses the pairing rather than discovering it later.
-
-### 0.9 — a roadmap is the person's list
-
-**A list agents agreed was lost in the transcript it was agreed in.** When several agents coordinated
-toward something, the plan was a message, and a transcript scrolls. Nothing kept it, ordered it, said
-where each part stood or let a person drive work from it.
-
-What a second implementation will observe:
-
-- **`propose_roadmap`**, a new agent operation (§10.1): a title and ordered one-line items, stored apart
-  from messages. It opens no exchange. An agent can do nothing else with a roadmap (principle 2.12).
-- **Six operator operations** (§10.2): `roadmaps`, `roadmap`, `proposals`, `confirm_proposal`,
-  `decline_proposal` and `edit_roadmap`. `roadmap` returns facts and never states; state is derived by
-  the surface (§5.7).
-- **A roadmap notice** in the inbox, naming what became of an agent's own proposal. It wakes nobody.
-- **Item conversations**, named `rm<n>-<m>` and reserved at confirmation; storage refuses the first
-  message into one unless the person sent it (§9.3).
-- **Eight tables and a trigger on `messages`** (§9.2). Schema 1 is edited in place: nothing has been
-  released.
-- **`instruct` and `instructions` are removed** from §10.2, with §11.5's contract for receiving an
-  instruction, the node's delivery and report of one, the `instructions` table and its retention and
-  sweep (§9.2, §9.5, §14). A person speaks to an agent only by sending it a Request from the seat
-  (§5.6), and every Request is answered, so a second route that was a turn outside any conversation
-  had nothing left to carry. §11.5's number is kept as a stub so no later reference moves.
-- **`implements` also names the serving build and how the store differs from the shape that build expects**, so a surface can warn when the parts of a deployment are not from one release, or when a store was made by an earlier build (§10.2). A broker also checks this when it opens a store, and the installed tools when it starts.
-- **A 0.8 adapter is refused at attach.** No compatibility is kept before the first release.
-
-### 0.8 — a person's line is a request, and the agent says what it settled
-
-**A person's reply was filed as the answer to the wrong question.** An agent had asked the person
-several things in one conversation. The person read the newest, typed a question back, and the
-surface — which had to tie the line to one open exchange — took whichever the broker happened to
-list first, an unrelated question two days old, and sent the line as its Result. A Result closes an
-exchange and asks nothing back, so the agent read it, owed nothing and said nothing; the questions it
-had really asked stayed open, and the person's question was never answered.
-
-What a second implementation will observe:
-
-- **A surface sends what a person types to an agent as a Request**, whatever is open between them
-  (§5.6, §12.3). The act is no longer derived from who owes whom.
-- **`result` and `clarify` take `settles`**: exchanges the person's Request settled, named by the
-  agent replying to it (§5.6, §10.1). The agent's own questions to the person close as `settled`,
-  a new rolled-up outcome with no Result written; the person's own Request, asked back, returns to
-  the agent. Any name that cannot be settled refuses the whole call, with a reason per exchange.
-- **A Request from the person is delivered with the agent's open questions to the person** in that
-  conversation, bounded (§5.6, §13).
-- **`exchanges` gains `settled_by`**, and `outcome` admits `settled` (§9.2), held by
-  `tr_an_outcome_has_its_result` (§9.3). Schema 1 is edited in place: nothing has been released.
-- **A 0.7 adapter is refused at attach.** No compatibility is kept before the first release.
-
-### 0.7 — a request is the ask
-
-**A Request carried four things where one was meant.** Until this version it had an `intent`, an
-`items` array whose every element was marked `work` or `question` and carried an identifier, optional
-`gate`s between those items, and a `done_when` of at least twenty characters that storage refused a
-Request without. The owner met all four in one composer and read them as the same thing asked four
-times, which they were: the reason for an ask is the ask; *work* and *question* are both work the
-receiver does; and a receiver that cannot tell how far the work goes has a question rather than a
-missing field — and the protocol has had the move for asking since 0.1.
-
-What a second implementation will observe:
-
-- **A Request carries `ask`**, one text bounded by rule 8.4's cap, and nothing else (§5.1). One
-  carrying the removed fields is refused by storage (§9.3).
-- **A Result carries one outcome** for the exchange, recorded against the item `request` — the
-  identifier the protocol already used for a Request answered as a whole (§5.3). The outcome set,
-  `sources` and the blocker rules are unchanged.
-- **Clarify is unchanged**, and is where an unclear or unbounded ask is settled (§5.2). It was
-  already uncapped by default.
-- **§8 has ten rules where it had eleven**, and they renumbered: *say what done looks like* and *gate
-  explicitly* are gone, *ask when you cannot tell how far it goes* is new, *batch* went with the
-  items it batched, and the size cap is rule 8.4 where it was rule 8.5.
-- **Nothing stored changes.** A message is never updated, so the storage rules that went applied only
-  to what is written next. A Request written under 0.5 or 0.6 keeps its intent, items and `done_when`,
-  still renders whole, and — since nothing times out (§14) — an exchange it opened may still be open,
-  and is still answered by its own item identifiers.
-- **Schema 1**, and that number is not a typo. See the amendment below.
-
-#### Amended, 2026-09-26: an agent is asked what it owns, and the schema became one file
-
-**0.7 has never been released**, so rather than spend a version number on a change nobody can
-have deployed, these fold into it — the practice this section already used for 0.6, whose own
-entry records the same thing. What a second implementation will observe, in addition to the
-above:
-
-- **`agents.owns` is not bounded by default.** The constraint stays in storage and stands down at
-  `2147483647`, the spelling the open-question and clarification caps already use, so a deployment
-  may reinstate a bound and it is still enforced below anything that could route around it (§9.3).
-  **The character rule is unchanged**: a statement that could break, hide or reorder its own roster
-  row is still refused. §17 question 10 carries the argument and the cost, and the bound is off so
-  that an agent *asked* what it owns can answer in two halves and name a peer.
-- **One new operator operation**, `record_ownership` (§10.2). It records that a person accepted a
-  statement, which conversation it came from, and how long the agent's own proposal was. **It does
-  not write `owns`**: the registry is still filled from the launch environment on attach (§12.3),
-  so what peers read still comes from a launch configuration and no operation accepts a line from
-  the agent it describes. Nothing is added to §10.1.
-- **One new table**, `agent_ownership_accepted` (§9.2). What a person agreed, kept apart from what
-  peers read, so that "accepted but not yet live" is a comparison of two facts rather than a flag.
-- **The schema is version 1, where it was 11.** The eleven migrations were folded into one initial
-  schema and deleted. **This is available exactly once and has now been used**: nothing had been
-  released, so no store outside a test process held anything worth keeping. A store written by an
-  earlier build is not upgraded and is not readable — there is no path from 11 to 1 and deliberately
-  no attempt at one. **From the first release, every schema change is a migration again.**
-
-  **The schema numbers in the entries below are historical.** Each says what that protocol version
-  did to the schema at the time, and those numbers no longer name anything a build can reach: there
-  is one schema and it is 1. They are left as written because this section is a record of how the
-  protocol got here, and rewriting them would make it a record of something that did not happen.
-
-#### Amended, 2026-09-28: the facilitator
-
-**Still unreleased, so still 0.7**, on the practice of the amendment above. A second implementation
-can observe the broker sending a Request, which is why this is recorded here rather than left to the
-code. What it will observe, in addition to the above:
-
-- **Every project has a facilitator** (principle 2.11, §3): a participant the broker provides, with
-  a registry row the broker writes itself under the reserved role `parley-facilitator` (§12.3).
-  Storage refuses that role with any other adapter, and every attach, seat and enrolment refuses it
-  before storage does. `agents()` never lists it. It is never retired, purged, started
-  or routed to, and a Request addressed to it is refused (§10.1, §14).
-- **It asks each attached agent what it owns, once, with nobody asking.** An agent is asked when it
-  is attached, not retired, not a seat, has no accepted line and has never been asked. It is never
-  started just to be asked. Its question does not count as a request the agent holds when the broker
-  assigns the agent's own Requests to a conversation (principle 2.10).
-- **Two reserved attributions** join `parley:broker` (§11.3): `parley:facilitator` for its question,
-  and `parley:person` for a reply a person wrote, which every surface shows as a person's words.
-- **Auto Accept**, per project, held in the project's store and on by default. With it on, an answer
-  whose collapsed whitespace is a valid ownership line, from an agent on the broker's own machine,
-  becomes the agent's line with the new source `automatic` (§10.2, §17 question 10). Otherwise it
-  waits for a person.
-- **Five new operator operations** (§10.2): `facilitation`, `set_auto_accept`, `ask_again`,
-  `reply_to_asked_back` and `discard_answer`. `registry()` rows gain the source of the accepted line;
-  the facilitator's row is the one whose adapter is `parley-facilitator`. `record_ownership` refuses `automatic`. Nothing is added to
-  §10.1.
-- **A fourth thing may end a resident agent** (§11.1): the node refreshes an agent, once, when its
-  first line was accepted automatically, after its turn ends and only if the node started it.
-- **Two new tables and one changed** (§9.2): `ownership_questions` holds each question and its
-  state, with at most one live question per agent enforced by an index; `facilitation` holds the
-  switch; and `agent_ownership_accepted` admits `automatic`, and keeps a line when the conversation
-  it was agreed in is destroyed.
-
-#### Amended, 2026-09-30: the person always has a seat
-
-**Still unreleased, so still 0.7.** A second implementation can observe every item below, which is
-why it is recorded here:
-
-- **Every project has a person seat** (§3, §12.3): `human-user@<project>`, a registry row the broker
-  writes when it opens a store, under the seat adapter `parley-console`. It is never retired, purged
-  or released, and no surface registers a person of its own. The role `human-user` is reserved as
-  `parley-facilitator` is, with the limit §12.3 states.
-- **The facilitator is renamed `parley-facilitator@<project>`.** Neither broker-provided participant
-  has a machine: for both, the part after `@` is the project (§4.1.1), and `agents.machine` is NULL
-  (§9.2). Neither may carry an ownership line.
-- **Two presence values**, `here` and `away`, for the person seat only (§14). The facilitator reports
-  `running` wherever its presence is returned. `agents()` lists the person (§10.1).
-- **A fifth wake outcome, `with the person`** (§5): a Request to the person is never answered
-  *unreachable*, and no machine is ever asked to start the person.
-- **Principle 2.6 changes meaning.** "The person seated" is the person seat whether or not anybody is
-  at a screen, and waiting for the person's decision is correct; the hand-it-back branch applies only
-  where an implementation provides no person seat (§5 *Blocked*, §8 rule 10).
-- **Operator operations refuse the person** (§10.2): `retire`, `purge` and `start`.
-
-#### Amended, 2026-10-03: a node reports the turns it gives
-
-**Still 0.7, and it would be even if 0.7 had shipped.** The protocol version is what an agent's adapter
-announces, and a broker refuses an adapter announcing another; nothing below reaches an agent, so moving the
-number would refuse every adapter for a change none of them can observe. What a second implementation's
-node and operator surfaces will observe:
-
-- **A node reports each turn's start and end** (§11.6), and says when it joins that it does. A turn's end
-  carries its duration, whether it finished cleanly, was cut off or died, its cost and model turns, and how
-  many tool calls were refused for want of permission. Reports for an agent on another machine, or from a
-  node not joined, are ignored.
-- **`registry()` rows carry each agent's turn standing** (§10.2): reported or not, running since, and the last
-  turn's end, cleanness and permission refusals. `agents()` (§10.1) carries none of it.
-- **A new flag** (§6, §10.2 `flags()`): an exchange whose owing agent's last turn ended with a refused
-  permission and who has said nothing since, raised at once.
-- **`invocations` is written for every turn a node gives**, which §17 question 1 had claimed all along.
-
-#### Amended, 2026-10-03: the person reads here or away, and the text catches up with the code
-
-**Still 0.7**: nothing has been released, so nothing is kept compatible and no number is spent.
-- `agents()` and `registry()` report the person seat as `here` or `away` (§14), two values added to the presence
-  enumeration; the facilitator reads `running`.
-- `agents()` lists the person apart from the agents (§10.1).
-- A flag owed by the person reads *waiting on you* on every surface (§6).
-- Every operation that acts on an agent refuses the person seat with one sentence (§10.2).
-- A participant's turns are reported only when a node that reports turns can start it (§11.6), never the person's or
-  Parley's.
-- **A node names each launch** (§11.7): `Nodes.ReportLaunch` carries the agent and a one-launch token, the
-  process gets the token in its environment, and the adapter presents it on attach. An attachment without it is
-  open outside Parley: the registry says so, a wake on it asks nobody and tells the sender `open outside Parley`
-  (§5), `start` refuses it, and its turns are not reported (§11.6). The owner's question of 2026-10-03 — what an
-  agent started outside Parley does — and their choice of a token over asking the model.
-- §10.2 named the command line as a third operator surface that MUST offer every operation. 019 moved every operation
-  a person decides off the command line, on the owner's call, and the section now says so; §4.1 now says a different
-  root may be named; §17 q15 no longer describes a typed name.
-
-### 0.6 — files cross between repositories
-
-**What crosses between agents gains files, and still never contexts** (§1, principle 2.2). Work product
-one repository makes and another needs — a class, a schema, a fixture, a note — had no route but a
-person copying it or an agent pasting it into a message the cap refuses. An agent now places a file in
-the file location and another fetches it onto disk in its own repository; what crosses about the file
-is a bounded name and a hash, and its contents never enter a model's context.
-
-What a second implementation will observe:
-
-- **Four agent operations and four operator operations** (§10.1, §10.2): `file_place`, `file_fetch`,
-  `file_list` and `file_remove`; `list_shared_files`, `remove_files`, `prune_files` and
-  `describe_file_location`. Placing and fetching stream the bytes in pieces over the connection the
-  agent already holds.
-- **`inbox()` returns change notices** beside messages and closure polls, at most 200 at once with a
-  count of the rest, and the waiting count includes them. A notice wakes nothing (§9.5).
-- **A conversation can be started by placing a file**, and placing makes the placer a participant (§5.0).
-- **Only `.md` and `.txt` names made of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-` are stored**, compared
-  by their upper case, and a file's folder and name are at most 255 characters together (§9.5). A
-  placement asking for any other character is renamed, each such character becoming `_`, and refused when
-  that spelling is already a file's name. This was narrowed from a list of characters some disk refuses
-  before 0.6 was released, so no released implementation stores anything else.
-- **The broker computes every content hash.** A fetch may state the hash it expects, and is recorded only
-  when its adapter reports the content the broker streamed to it.
-- **Destroying a conversation and purging an agent remove files** (§14), reported with the other rows.
-- **A download holds its file**, refusing an editor's save where the operating system can and failing the
-  download where it cannot (§9.5).
-- **Schema 9 adds five tables** (§9.2): `conversation_folders`, `shared_files`, `file_fetches`,
-  `file_notices` and `file_placements`. **Schema 10 rebuilds `shared_files`** to the narrower names; a
-  row a store at schema 9 held under any other name is dropped, its file left on disk and every agent
-  that fetched it told it is gone.
-
-### 0.5 — work across repositories
-
-**This is a change of purpose rather than of mechanism.** 0.4 specified a question-and-answer
-channel: agents asked each other about their repositories, were told on every delivery that a
-message could not direct their work, and were instructed to refer rather than do. Agents followed
-that faithfully and declined the work they were asked for, which is the opposite of what the
-protocol exists for (principle 2.1). §1 to §16 were rewritten against that premise.
-
-**The document was rewritten first and the code followed in one change**, header, §9's schema and
-§10's operation tables included. The version is what an implementation announces at attach, and a
-test binds the two, so the number moved only when there was an implementation to announce it.
-A store at 0.4's schema is migrated in place: an orphan becomes an open exchange again, a ghosted
-one becomes `closed`, work left open in a conversation a person had closed is closed with it, a
-standalone notification is dropped, and a size refusal is kept under its new type. A carried
-question's ids too long for a Result to name are not required of the Result that finishes it (§5.1).
-
-What a second implementation will observe:
-
-- **Question, Answer and Notify become Request, Clarify and Result** (§5). A Request carries items of
-  work or questions and a required `done_when`; a Result reports `done`, `answered`, `acknowledged`,
-  `blocked` or `closed`, and names its `sources`. An announcement is a Request answered
-  `acknowledged`: nothing is sent without being owed a reply (principle 2.7).
-- **The broker assigns the conversation** (§5.0). A sender holding requests from one conversation
-  names nothing; holding several, it names one; only a sender holding none, or a person, starts a new one.
-- **`ORPHANED` and `ghosted` are gone** (§6, §14). An exchange has two states, and silence is flagged
-  to the person at two stages rather than ending anything.
-- **Cycles are admitted and recorded** (§7.2), and the request and clarify caps are off by default
-  (§7.1, §5.2).
-- **`out_of_scope` and referral are gone** (§5.3). An agent pursues what it cannot do alone inside the
-  same conversation, and reports `blocked` only for a concrete blocker it could not resolve.
-- **The envelope says a participant may request work** (§13), and still says it cannot grant
-  permissions, change configuration or standing instructions, or reach outside the agent's repository.
-- **Every operator surface offers every operator operation** (§10.2).
-- **A message's identity hashes the exchange's `version`** (§13.1), after `exchange_id`, so the same
-  words at a later point in one exchange are a different message. Implementations sharing a database
-  must compute it identically, and a hash stored under 0.4 does not match one computed now.
-- **An item's `id` is text of 1 to 64 characters** (§5.1), and a Request carrying any other is refused.
-- **A Result carries its Request back to its requester and nobody else** (§4.2): the `closed` Result a
-  person's close writes to a receiver carries none.
-- **The broker's own notices are wrapped as notices** (§13), saying the exchange's other party did not
-  write them, rather than as a message from that party.
-- **A conversation waiting only on a vote is flagged** (§6), and each participant it is waiting on is
-  woken at most once for each poll.
-- **The wake bound is satisfied when a collection begins, not when it ends** (§5.4). 0.4 cleared it after
-  the drain, and a message stored in between was neither read nor asked for; a message stored after a
-  collection begins now asks for a turn of its own.
-- **A collection that leaves messages behind asks again** (§5.4). One its caller limited to fewer than are
-  waiting is followed by a wake for the rest.
-- **A Request with no item a Result can name is answered under the item `request`** (§5.1). Only a question
-  carried from 0.4 can be one; a Result naming anything else is refused, and the refusal says so.
-
-### 0.4 — a notification wakes its recipient
-
-**A `notify` now causes its recipient to be started, as a Question does.** 0.3 and earlier
-delivered one only to an agent that was already attached, so a notification to a closed session was
-stored and collected whenever somebody next opened that repository — which, for a repository nobody
-opens, is never. §5.4 carries the rule; §17 question 15 carries the reversal and the argument that
-was made against it.
-
-**Bounded by coalescing rather than by a cap.** Attention is asked for once per recipient until that
-recipient drains, so a hundred notifications cost one turn. That is the correct number rather than a
-rationed one: draining an inbox collects everything pending, so the second ask would buy nothing.
-The bound is per recipient across every sender, because the recipient is the party whose machine
-pays.
-
-**The mark is cleared by a drain and not by an attachment.** They differ, and the difference is
-load-bearing: §4.2 already separates waking an adapter from the model taking a turn, and only the
-second reads anything. An implementation clearing on attachment would bound nothing — the first
-notification starts the agent, it attaches, and every notification after it buys a turn apiece.
-
-**`NotifyReply` gains `wake`**, saying what became of the recipient: started, already running,
-already coming, or unreachable from here. **None of them is a refusal.** The message is stored
-before any of it is decided, and §17 question 1 requires that whatever bounds this must not make an
-event undeliverable. A sender told only that its message was stored cannot tell delivery from
-silence, which is the half of this that is not about waking at all.
-
-### 0.3 — the message cap
-
-**The message cap is 8,000 characters, having been 4,000.** (It is rule 8.4 today; it was rule 8.5
-when this version shipped, and §8 was renumbered at 0.7.) No mechanism moved: no service, no
-message, no field. What moved is a number two implementations have to agree about, because it
-decides what one will accept from the other — and a build that refuses at 4,000 while its peer
-accepts 8,000 is precisely the disagreement this version exists to make impossible. It is the
-smallest change that can qualify as a protocol change, and it qualifies.
-
-The number was set from `refusals` rather than from judgement, which is a first for it. §17
-question 16 carries the evidence.
-
-Storage moves with it. The cap is a `CHECK` because §9.3 puts invariants where application code
-cannot route around them, and SQLite cannot alter one — so an existing database is migrated by
-rebuilding `messages` and `instructions`. An implementation storing this some other way owes
-its own users the same guarantee and not the same method.
-
-### 0.2 — the transport
-
-**There is a wire.** 0.1 had none: agents reached the broker by opening its database, so the
-whole of the protocol that could be spoken between processes was a SQLite schema. A second
-implementation had nothing to implement. `proto/parley.proto` is the contract now, and this
-document remains the authority over it.
-
-- **Three services**, splitting §10.1, §10.2 and §4 at the wire rather than by convention.
-  An adapter binds `Agents`, and `Agents` has no method that retires anybody.
-- **`Attach` and `Join` are held streams**, and holding one is what "connected" means (§4.0).
-  There is no `Detach`: a clean shutdown, a killed process and a severed cable are one event.
-- **Liveness is observed**, replacing the timestamp of 0.1 that every reader had to interpret
-  against a sweep cadence it could not see (§14).
-- **The broker speaks first.** A notice carries counts and never words, so §13's envelope stays
-  the only path a peer's text travels.
-- **Names carry a machine** (§4.1.1), and a bare role addresses every agent under it (§5.5).
-- **One process owns the store.** §4 states it as a constraint on deployment rather than a
-  preference: WAL requires coherent shared memory, so a store on a share is corrupt rather than
-  slow.
-
-### 0.1 — the protocol without a transport
-
-Exchanges, the state machine of §6, admission control, cycle detection, the ownership model and
-the storage schema of §9. Everything a single machine needs, and nothing that crosses one.
+§4.0's `Attach` refuses the pairing rather than discovering it later. The number moves only for a
+change a second implementation could observe on the wire.

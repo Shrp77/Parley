@@ -52,7 +52,6 @@ public sealed class ProbeTwentyOneTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Path.Combine(_root, "node.json"),
@@ -150,7 +149,6 @@ public sealed class ProbeTwentyOneTests : IDisposable
         var entry = new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         await Enrolment.WriteAsync(

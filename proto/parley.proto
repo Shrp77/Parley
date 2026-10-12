@@ -182,10 +182,9 @@ message ResultRequest {
   int64 exchange_id = 2;
   string responder_model = 3;
 
-  // One outcome for the exchange (section 5.3), recorded against the item "request"; a Request stored under
-  // 0.5 or 0.6 carried items and is answered by them. The exchange's rolled-up outcome is derived by the
-  // broker from this and is deliberately not a field: a sender that could state it separately could state one
-  // its own outcome contradicts.
+  // One outcome for the ask as a whole (section 5.3), recorded against the id "request". The exchange's
+  // rolled-up outcome is derived by the broker from this and is deliberately not a field: a sender that could
+  // state it separately could state one its own outcome contradicts.
   string payload_json = 4;
 
   // As on ClarifyRequest (section 5.6).
@@ -197,11 +196,6 @@ message SayReply {
   TransitionError refusal = 2;
   bool deduplicated = 3;
   int64 message_id = 4;
-
-  // On OUTCOMES_DO_NOT_MATCH_ITEMS, what the Result must answer, so the sender can correct it in one move:
-  // the single id "request" for a Request written under 0.7, and the stored ids of one written earlier --
-  // section 5.1.
-  repeated string expected_items = 5;
 
   // On CANNOT_SETTLE, each exchange named that could not be settled and why. Nothing was stored (section 5.6).
   repeated SettleRefusal cannot_settle = 6;
@@ -510,7 +504,7 @@ service Nodes {
   // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
 
-  // A turn this node gave an agent began or ended (section 11.6, specs/024). Ignored unless the agent is on this
+  // A turn this node gave an agent began or ended (section 11.6). Ignored unless the agent is on this
   // node's machine and the node is joined. A failure here never fails the turn.
   rpc ReportTurn(TurnReport) returns (Empty);
 
@@ -646,7 +640,7 @@ service Operators {
   // attaches (section 12.3), so the reply carries what peers read now beside what was accepted.
   rpc RecordOwnership(RecordOwnershipRequest) returns (RecordOwnershipReply);
 
-  // Parley's questions (section 10.2, specs/022). Every one is the person's view of what the facilitator did or a
+  // Parley's questions (section 10.2). Every one is the person's view of what the facilitator did or a
   // decision about an answer it read back; none lets anybody speak as the facilitator except through
   // ReplyToAskedBack, whose words are recorded as the person's (`parley:person`), never as Parley's.
   rpc Facilitation(Empty) returns (FacilitationReply);
@@ -774,14 +768,14 @@ message RegistryRow {
   // and say which is which. A flag would carry the comparison and lose the thing being compared.
   string owns_accepted = 10;
   // How that accepted line was arrived at, so a surface can show a line accepted automatically apart from one a
-  // person decided (section 10.2, specs/022). UNSPECIFIED when nobody has accepted a line.
+  // person decided (section 10.2). UNSPECIFIED when nobody has accepted a line.
   //
   // There is no `facilitator` field beside it on purpose. The facilitator's row is the one whose adapter is
   // `parley-facilitator`, and storage ties that adapter to the reserved role in both directions -- so a flag would be
   // a second statement of one fact, free to disagree with the first.
   OwnershipSource owns_source = 11;
 
-  // The agent's turn standing (section 11.6, specs/024): what its node said about the turns it gives. Operator-only --
+  // The agent's turn standing (section 11.6): what its node said about the turns it gives. Operator-only --
   // the agent roster (`ListAgentsReply`) carries none of it, because how another agent's turns went is not a peer's to
   // read (section 10.1).
   //
@@ -1087,7 +1081,6 @@ enum TransitionError {
   TRANSITION_ERROR_NOT_YOUR_TURN = 4;
   TRANSITION_ERROR_ONLY_RECEIVER_SENDS_RESULT = 5;
   TRANSITION_ERROR_CLARIFY_DEPTH_EXCEEDED = 6;
-  TRANSITION_ERROR_OUTCOMES_DO_NOT_MATCH_ITEMS = 7;
   TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 8;
   TRANSITION_ERROR_CANNOT_SETTLE = 9;
 }
@@ -1156,7 +1149,7 @@ enum ExchangeOutcome {
   EXCHANGE_OUTCOME_SETTLED = 4;       // an agent's question to the person, settled by the agent (section 5.6)
 }
 
-// What one item of a Request came to (section 5.3).
+// What a Request came to (section 5.3).
 enum Outcome {
   OUTCOME_UNSPECIFIED = 0;
   OUTCOME_DONE = 1;
@@ -1187,7 +1180,7 @@ enum FlagKind {
   FLAG_KIND_RETIRED = 3;
   FLAG_KIND_NOT_VOTED = 4;
   // The owing agent's last turn ended with tool calls refused for want of permission, and it has said nothing since
-  // (section 6, specs/024). Raised at once, not after a threshold.
+  // (section 6). Raised at once, not after a threshold.
   FLAG_KIND_PERMISSION_REFUSED = 5;
 }
 

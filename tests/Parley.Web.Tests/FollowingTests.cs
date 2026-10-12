@@ -151,7 +151,7 @@ public sealed partial class FollowingTests
             .Select(path => Path.GetFileName(path))
             .ToList();
 
-        // One file touches a seat since specs/023, and it is not the frame: `PersonSeats` takes the person's seat and
+        // One file touches a seat, and it is not the frame: `PersonSeats` takes the person's seat and
         // marks them here, and the frame and the pages that speak call it. The half this test exists for is the follow,
         // which is a timer rather than a person and must reach none of it.
         Assert.Equal(["PersonSeats.cs"], touching);

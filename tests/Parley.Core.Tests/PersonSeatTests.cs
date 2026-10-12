@@ -27,7 +27,7 @@ public sealed class PersonSeatTests
     [Fact]
     public void The_facilitator_is_named_by_the_same_rule()
     {
-        // Two broker-provided participants, one rule (specs/023 D7). If one of them went back to a machine the other
+        // Two broker-provided participants, one rule. If one of them went back to a machine the other
         // would be the odd one out, and a reader would have to learn two conventions for one kind of thing.
         Assert.Equal("parley-facilitator@alpha", Facilitation.On(Alpha).Value);
     }

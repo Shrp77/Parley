@@ -97,9 +97,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The bound that makes waking every message's recipient affordable.</b> SPEC.md §17
-    /// question 15 once refused a wake on the grounds that it would be unbounded, and the answer is
-    /// in question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
+    /// <b>The bound that makes waking every message's recipient affordable.</b> A wake
+    /// might be thought unbounded, and the answer is
+    /// in SPEC.md §17 question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
     /// turn drains sixty messages and asking a second time buys nothing.
     /// </para>
     /// <para>
@@ -887,7 +887,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="agent">The agent.</param>
     /// <returns>True when it is attached and no attachment presented its node's token.</returns>
     /// <remarks>
-    /// <b>Never the person or Parley</b> (specs/025). Open outside Parley means a process Parley could have started and did
+    /// <b>Never the person or Parley</b>. Open outside Parley means a process Parley could have started and did
     /// not, and no node ever starts either of them: the person's attachment is a surface, which is always "not started by
     /// Parley", so the registry was reporting the person as open outside — a surface reading the flag for every row
     /// would have marked them with the agents' warning.
@@ -970,7 +970,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     {
         _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(joined.Machine, joined));
 
-        // **Nothing a departed node said is running is claimed to be running any more** (§11.6, specs/024 FR-006). A turn
+        // **Nothing a departed node said is running is claimed to be running any more** (§11.6). A turn
         // reported as begun and never as ended would otherwise read as working for ever.
         foreach (var turn in _turns.Where(entry => entry.Value.Machine == joined.Machine).ToList())
         {

@@ -102,7 +102,7 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
         }
 
         return path
-            + $"&Says={Uri.EscapeDataString(state.Item.Text)}"
+            + $"&Hint={Uri.EscapeDataString(state.Item.Text)}"
             + string.Concat(Agents.Select(a => $"&With={Uri.EscapeDataString(a.Value)}"));
     }
 }

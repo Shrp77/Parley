@@ -14,7 +14,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-002, and the reason the whole feature exists. SPEC.md §17 question 15 records that an agent
+/// The reason the whole feature exists: an agent
 /// attached through somebody's editor window can never be handed a turn — so until a person can
 /// hold a seat and answer from somewhere that is not an editor, a deployment has a participant it
 /// cannot reach.
@@ -178,7 +178,7 @@ public sealed class ParticipationTests : IAsyncDisposable
     }
 
     // `A_name_an_agent_holds_is_refused_before_anything_attaches` was here. It typed `orders` into the seat and expected
-    // the book to refuse a name an agent holds. Since specs/023 nothing is typed: the book attaches as the person row its
+    // the book to refuse a name an agent holds. Nothing is typed now: the book attaches as the person row its
     // registry names, and storage refuses any other role under the seat's adapter.
 
     [Fact]

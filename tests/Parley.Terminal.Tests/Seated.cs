@@ -32,7 +32,7 @@ internal sealed class Seated : IAsyncDisposable
     /// <summary>The conversation the fixture opens.</summary>
     internal const string Conversation = "room";
 
-    /// <summary>Who the person is: the role of the seat the broker provides (specs/023).</summary>
+    /// <summary>Who the person is: the role of the seat the broker provides.</summary>
     /// <remarks>
     /// It was <c>arvind</c>, typed into the Join dialog. There is no dialog now and no name to type: the broker writes
     /// <c>human-user@&lt;project&gt;</c> and the shell attaches as it when the project opens.
@@ -137,7 +137,7 @@ internal sealed class Seated : IAsyncDisposable
         await Walking.GoAsync(shell, Viewing.Project).ConfigureAwait(false);
         await shell.Settled.ConfigureAwait(false);
 
-        // **Seated by opening the project, with no key pressed** (specs/023): the broker provides the person seat and
+        // **Seated by opening the project, with no key pressed**: the broker provides the person seat and
         // the shell takes it. This fixture typed a name into a Join dialog until then; that the seat is here without one
         // is itself the property FR-014 asks for.
         Assert.NotNull(shell.Held);

@@ -62,7 +62,7 @@ public sealed class OperatorCommands
             .ToList();
 
         // The person seat is listed (FR-006: every listing shows the person) but is not an agent, so it does not count
-        // towards "no agents registered" — every store holds one from the moment it is served (specs/023), and counting it
+        // towards "no agents registered" — every store holds one from the moment it is served, and counting it
         // would make that sentence impossible to say, exactly as counting Parley would.
         if (!agents.Any(a => !PersonSeat.Is(a.Name)))
         {
@@ -95,7 +95,7 @@ public sealed class OperatorCommands
             // append, rather than a wording of its own: three spellings of one state is three
             // chances for a reader to think they mean different things.
             //
-            // Not for the person, who owns no repository and whom storage refuses a line (specs/023): telling somebody
+            // Not for the person, who owns no repository and whom storage refuses a line: telling somebody
             // to set PARLEY_OWNS for themselves would send them to do something that cannot be done.
             if (PersonSeat.Is(agent.Name))
             {
@@ -284,7 +284,7 @@ public sealed class OperatorCommands
                 Wire.FlagKind.NotCollected => "has not collected it",
                 Wire.FlagKind.NoProgress => "collected it and has done nothing since",
 
-                // SPEC.md §6, specs/024: raised at once, because only a person can get it past this.
+                // SPEC.md §6: raised at once, because only a person can get it past this.
                 Wire.FlagKind.PermissionRefused =>
                     "stopped after a tool call it needed was refused for want of permission; allow it in that " +
                     "repository's settings, then start the agent again",

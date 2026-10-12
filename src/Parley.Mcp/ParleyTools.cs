@@ -303,53 +303,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             var sent = await SendResultAsync([answer], exchangeId, responderModel, settles, cancellationToken)
                 .ConfigureAwait(false);
 
-            // **An exchange opened under 0.5 or 0.6 is still owed its own items**, and nothing times out, so one
-            // can outlive the upgrade by weeks. The broker names what it expected (SPEC.md §5.3), which is the
-            // one move that turns this into an answer rather than a refusal the model has to decode: the same
-            // answer is recorded against each id the stored Request declared. Honest, because what those ids
-            // divided is now one ask.
-            if (sent.Reply is { Ok: false } stale
-                && stale.Refusal == Wire.TransitionError.OutcomesDoNotMatchItems
-                && stale.ExpectedItems.Count > 0
-                && !(stale.ExpectedItems.Count == 1 && stale.ExpectedItems[0] == PayloadShape.WholeRequest))
-            {
-                // **Measured before it is sent, and that is the whole of this branch's care.** Recording one
-                // answer against ten identifiers writes it ten times, so an answer well under the cap can put the
-                // retry far over it. Found by probe, twice over:
-                //
-                // The first version let the send refuse it, and the agent was told "that message is 30405
-                // characters" — a number it never wrote and cannot act on, leaving it to shorten to something
-                // arbitrary or abandon an exchange nothing will time out. So the real constraint is named, with
-                // the length that would fit.
-                //
-                // **And letting the send refuse it also wrote that number into `size_refusals`**, which is the
-                // record SPEC.md §17 question 16 sets the cap from, and the only value in this protocol chosen
-                // from evidence rather than judgement. One agent's three-thousand-character answer became
-                // evidence of a thirty-thousand-character one. Nothing this branch assembles is a message an
-                // agent composed, so nothing this branch assembles belongs in that record.
-                var multiplied = Framed(answer, stale.ExpectedItems);
-
-                if (multiplied.Length > MessageLimits.MaxPayloadCharacters)
-                {
-                    var room = MessageLimits.MaxPayloadCharacters
-                        - Framed(answer with { Text = string.Empty }, stale.ExpectedItems).Length;
-
-                    return Malformed(
-                        $"That exchange was opened under an older version of the protocol, which asked for one "
-                        + $"outcome per item: {string.Join(", ", stale.ExpectedItems)}. Your answer is recorded "
-                        + $"against each, so it has to fit {Math.Max(room / stale.ExpectedItems.Count, 0)} "
-                        + $"characters rather than {MessageLimits.MaxPayloadCharacters}. Say the shorter thing, "
-                        + "or send what does not fit as its own request.");
-                }
-
-                sent = await SendResultAsync(
-                    [.. stale.ExpectedItems.Select(id => answer with { Id = id })],
-                    exchangeId,
-                    responderModel,
-                    settles,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
             return sent.Refused
                 ?? (sent.Reply!.Ok
                     ? WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply)
@@ -368,10 +321,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="settles">The person's questions it says were settled, if any.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The broker's reply, or the refusal that stopped it being sent at all.</returns>
-    /// <remarks>
-    /// Separate so the 0.6 retry above assembles and measures its payload the same way the first attempt did.
-    /// A second copy of this would be a second opinion about the cap.
-    /// </remarks>
     private async Task<(Wire.SayReply? Reply, JsonNode? Refused)> SendResultAsync(
         IReadOnlyList<ItemOutcome> outcomes,
         long exchangeId,
@@ -430,17 +379,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         {
             ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
         }.ToJsonString();
-
-    /// <summary>The payload one outcome would produce against several identifiers, for measuring the room left.</summary>
-    /// <param name="shape">The outcome, with whatever text is to be measured around.</param>
-    /// <param name="ids">The identifiers it would be recorded against.</param>
-    /// <returns>The payload.</returns>
-    /// <remarks>
-    /// Measured by building the real document rather than by arithmetic on it: the blocker, the sources and the
-    /// identifiers are all part of what the cap counts, and a formula would go stale the first time one of them moved.
-    /// </remarks>
-    private static string Framed(ItemOutcome shape, IEnumerable<string> ids) =>
-        Framed([.. ids.Select(id => shape with { Id = id })]);
 
     /// <summary>Collects what is waiting, and any closure poll outstanding.</summary>
     /// <param name="limit">The most messages to collect at once.</param>
@@ -1678,7 +1616,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             ? null
             : Malformed(
                 $"'{responderModel}' is not a responder identity. Use up to 64 characters of letters, digits and " +
-                "'. _ : / -' — a model name, or 'script:something' or 'human:someone'.");
+                "'. _ : / -' — a model name or any other label for what produced the text.");
     }
 
     /// <summary>Validates a conversation identifier.</summary>
@@ -1895,8 +1833,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     "This exchange has reached the clarification cap its deployment set. Send your Result with " +
                     "what you have — blocked with missing_information, naming what you still need, if that is " +
                     "the truth.",
-                Wire.TransitionError.OutcomesDoNotMatchItems =>
-                    "Give exactly one outcome for each item of the request; see expected_items.",
                 Wire.TransitionError.ClosedIsTheBrokers =>
                     "\"closed\" is recorded only when a conversation is closed. Choose done, answered, " +
                     "acknowledged or blocked.",
@@ -1924,17 +1860,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             })]);
         }
 
-        if (reply.ExpectedItems.Count > 0)
-        {
-            refusal["expected_items"] = new JsonArray([.. reply.ExpectedItems.Select(id => (JsonNode?)JsonValue.Create(id))]);
-        }
-
         return refusal;
     }
 }
 
 /// <summary>One entry of a Result's <c>outcomes</c> array, per SPEC.md §5.3.</summary>
-/// <param name="Id">The item's id: <c>request</c>, or an identifier a Request stored before 0.7 declared.</param>
+/// <param name="Id">The item's id: always <c>request</c>, because a Request is answered whole.</param>
 /// <param name="Outcome"><c>done</c>, <c>answered</c>, <c>acknowledged</c> or <c>blocked</c>.</param>
 /// <param name="Text">What was done, the answer, or exactly what blocks it and what was tried.</param>
 /// <param name="Blocker">On <c>blocked</c>: <c>missing_information</c>, <c>conflict</c> or <c>permission</c>.</param>

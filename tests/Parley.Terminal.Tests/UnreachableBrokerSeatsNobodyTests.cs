@@ -12,7 +12,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Was <c>JoinGuardTests</c></b>, which drove the Join dialog. There is no dialog since specs/023 — the terminal
+/// <b>Was <c>JoinGuardTests</c></b>, which drove the Join dialog. There is no dialog now — the terminal
 /// takes the person seat its registry names — but the property it guarded is unchanged and matters more now, since
 /// nothing typed stands between the screen and the attach: <b>an unreadable registry must arrive as null, not as an
 /// empty list.</b> A read contained into an empty list would look like "this broker has no person seat" and, with a

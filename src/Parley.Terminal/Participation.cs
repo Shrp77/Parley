@@ -30,7 +30,7 @@ internal static class Participation
 {
     /// <summary>What is said when the connection went while somebody was still writing.</summary>
     /// <remarks>
-    /// Not "your seat was released" (specs/023): the seat is the broker's and is never released. What went is this
+    /// Not "your seat was released": the seat is the broker's and is never released. What went is this
     /// terminal's stream, and the key that asked has already started taking it back.
     /// </remarks>
     internal const string Gone =

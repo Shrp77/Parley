@@ -50,6 +50,9 @@ internal static class DeploymentVariables
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
             .Select(f => (string)f.GetRawConstantValue()!)
             .Where(v => v.StartsWith("PARLEY_", StringComparison.Ordinal))
+
+            // Named so that tests can assert it is ignored; nothing reads it, so nothing documents it.
+            .Where(v => v != DeploymentEnvironment.DatabaseVariable)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToArray();
@@ -118,7 +121,6 @@ internal static class DeploymentVariables
     /// <returns>The names `parley serve` reads from its own environment.</returns>
     public static IReadOnlyList<string> Broker() =>
     [
-        DeploymentEnvironment.DatabaseVariable,
         RetentionPolicyEnvironment.IdleVariable,
         RetentionPolicyEnvironment.MaximumAgeVariable,
         "PARLEY_TICK_SECONDS"

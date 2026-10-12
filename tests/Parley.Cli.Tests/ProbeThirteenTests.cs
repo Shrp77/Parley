@@ -50,7 +50,6 @@ public sealed class ProbeThirteenTests : IDisposable
         new(workspace, "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     [Fact]

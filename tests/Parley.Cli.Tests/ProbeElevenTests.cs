@@ -78,7 +78,6 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             new EnrollmentEntry(Workspace(name), agent, "What it owns. Not what it does not.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Catalogue,
@@ -100,7 +99,6 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>What the command does: the same repository, in bulk.</summary>

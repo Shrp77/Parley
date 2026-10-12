@@ -100,8 +100,7 @@
     It was bought knowingly, by the owner, after using the prompt-driven surface on a real
     deployment: four regions, focus that moves with Tab, dialogs and a mouse are what a windowing
     toolkit makes possible, and Spectre.Console has no focus model, no widgets and no mouse.
-    Building those on it is writing a toolkit. specs/005-tabbed-terminal-agents/plan.md records
-    the trade in its Complexity Tracking table and research.md R1 records the graph as measured on
+    Building those on it is writing a toolkit. The graph was measured on
     2026-09-04, when it carried no advisory at any severity.
 
     **No transitive pin binds today, and that is a fact about how CPM works rather than luck.**

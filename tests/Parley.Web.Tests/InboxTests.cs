@@ -54,7 +54,7 @@ public sealed class InboxTests
         Assert.Contains("cannot put them back", Page, StringComparison.Ordinal);
     }
 
-    // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. Since specs/023 there is no
+    // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no
     // Join and the inbox is always about the person — `NoJoinOnTheWebTests` asserts the page answers with no name.
 
     [Fact]
@@ -92,9 +92,7 @@ public sealed class InboxTests
     [Fact]
     public void The_items_a_result_covers_are_the_ones_the_request_carried()
     {
-        // §5.3 resolves by item id, and the broker refuses a Result that does not give exactly one
-        // outcome per item — naming the ones it expected. So the form is built from the Request
-        // as stored, and a Result is never offered for anything else.
+        // The form is built from the Request as stored, and a Result is never offered for anything else.
         var request = new Delivered(
             new Message(
                 1, 7, MessageType.Request,

@@ -50,7 +50,7 @@ public sealed class ProbeOneTests : IDisposable
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
     private static EnrollmentEntry Entry(string workspace, string agent) =>
-        new(workspace, agent, "What is on hand.", Unattended: false) { Enroll = true, OwnsApproved = true };
+        new(workspace, agent, "What is on hand.", Unattended: false) { Enroll = true };
 
     [Fact]
     public async Task Two_enrolments_of_one_repository_at_once_do_not_lose_an_entry()

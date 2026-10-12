@@ -275,7 +275,7 @@ public sealed class LineTests : IAsyncDisposable
         // this surface says, which ends a sentence with a full stop.
         Assert.Contains(LineRegion.NoSeat, shell.Line.Preview, StringComparison.Ordinal);
 
-        // It went on to assert that a Join was offered in the room. There is no Join since specs/023 — the terminal
+        // It went on to assert that a Join was offered in the room. There is no Join now — the terminal
         // takes the person seat on its own — so what is left of 0.28.2's rule is the half above: the box says why it
         // cannot send rather than hiding itself.
     }
@@ -299,7 +299,7 @@ public sealed class LineTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        // Seated by opening the project (specs/023): the broker provides the person seat and the shell takes it, so
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
         // there is no Join dialog to drive.
         await shell.Settled;
 

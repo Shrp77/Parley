@@ -126,7 +126,7 @@ public sealed class RoomTests
         var room = Filled(true, new PairState(Billing, 3, Turn.Mine));
 
         Assert.Contains(RoomRegion.ToAddress, room.Written);
-        // One row for the agent with how many questions are waiting (specs/025), not the heading said again.
+        // One row for the agent with how many questions are waiting, not the heading said again.
         Assert.Contains("  billing (1)", room.Written);
         Assert.DoesNotContain(room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
     }

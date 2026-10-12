@@ -245,7 +245,7 @@ public sealed class AskingWhatItOwnsTests
     [Fact]
     public void The_proposal_is_shown_as_the_agents_words_with_who_said_it_and_when()
     {
-        // **FR-013.** Question 10's amendment turns on a reader being able to tell a model's sentence
+        // **FR-013.** A reader has to be able to tell a model's sentence
         // from a person's, so must fail against a screen that shows the text alone: the record of
         // `proposed` against `composed` would then be a claim nobody could check.
         var reviewed = Ownership.Reviewed(
@@ -304,7 +304,7 @@ public sealed class AskingWhatItOwnsTests
     {
         // The field opens holding the agent's sentence, so Enter accepts and typing edits -- and the
         // screen has to say that the two are recorded differently, because the difference is the
-        // whole of what question 10's amendment rests on.
+        // whole of what the record is for.
         var reviewed = Ownership.Reviewed(
             Orders,
             null,
@@ -374,8 +374,8 @@ public sealed class AskingWhatItOwnsTests
     public void Accepting_it_unchanged_is_recorded_as_the_agents_words()
     {
         // **Must fail against recording every acceptance as one thing**, which is the obvious
-        // implementation and the one that makes the record worth nothing: §17 question 10's amendment
-        // permits an agent-drafted line only because a reader can tell it from a person's.
+        // implementation and the one that makes the record worth nothing: a reader has to be
+        // able to tell an agent's line from a person's.
         Assert.Equal(
             OwnershipSource.Proposed,
             Ownership.Chosen("Orders and invoicing.", "Orders and invoicing."));

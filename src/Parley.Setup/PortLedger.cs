@@ -220,7 +220,7 @@ internal static class PortLedger
         // changes something else, and handing out a second port would strand the first.
         if (Recorded(document).TryGetValue(name.Value, out var already))
         {
-            // **The project wins where the two disagree** (specs/019 contracts/layout.md). Its own file is what its
+            // **The project wins where the two disagree**. Its own file is what its
             // broker binds, so handing back the record's number gave the project a second, different port — found by
             // the combined review gate. The record is corrected rather than believed.
             if (ProjectFolder.TryRead(root, name, out var own, out _)

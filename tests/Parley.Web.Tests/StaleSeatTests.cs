@@ -8,8 +8,8 @@ namespace Parley.Web.Tests;
 /// <remarks>
 /// <para>
 /// Found in use, on the first restart after an upgrade: the frame believed a cookie remembering a typed name and drew
-/// that name with a live mark beside it, while the inbox one click away said nobody was seated. The cookie is gone since
-/// specs/023 — the broker provides the seat and every page takes it — but the property this held is unchanged: <b>the
+/// that name with a live mark beside it, while the inbox one click away said nobody was seated. The cookie is gone
+/// — the broker provides the seat and every page takes it — but the property this held is unchanged: <b>the
 /// mark means a stream is open now</b>, and a console whose broker cannot be reached has none.
 /// </para>
 /// </remarks>

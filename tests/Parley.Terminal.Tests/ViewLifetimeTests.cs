@@ -29,7 +29,7 @@ public sealed class ViewLifetimeTests
             [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
-    // `Moving_between_views_counts_as_being_here` was here until specs/023. It built a shell with no seat book, so the
+    // `Moving_between_views_counts_as_being_here` was here once. It built a shell with no seat book, so the
     // "seat released" sentence it asserted against could never have been said and the test could not fail; that
     // sentence is gone now too. `IdleSeatTests` holds the idle rule with a real seat.
 

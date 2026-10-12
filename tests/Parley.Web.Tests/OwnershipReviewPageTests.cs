@@ -16,13 +16,13 @@ namespace Parley.Web.Tests;
 public sealed class OwnershipReviewPageTests
 {
     [Fact]
-    public async Task The_review_is_linked_from_the_projects_page()
+    public async Task The_review_is_linked_from_the_projects_settings()
     {
         using var console = new DeadBrokerConsole();
         using var client = console.CreateStubbornClient();
 
         var page = await client.GetStringAsync(
-            new Uri($"/Projects/Agents?project={DeadBrokerConsole.Project}", UriKind.Relative),
+            new Uri($"/Projects/Settings?project={DeadBrokerConsole.Project}", UriKind.Relative),
             TestContext.Current.CancellationToken);
 
         Assert.Contains($"/Projects/Ownership?project={DeadBrokerConsole.Project}", page, StringComparison.Ordinal);

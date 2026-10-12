@@ -117,7 +117,7 @@ public sealed class FlagRepository(SqliteConnection connection)
                 progress = said;
             }
 
-            // **Stopped on a refused permission: at once, not after the threshold** (SPEC.md §6, specs/024). The owing
+            // **Stopped on a refused permission: at once, not after the threshold** (SPEC.md §6). The owing
             // agent's most recent turn ended after it took this work and after it last said anything here, and refused
             // at least one tool call for want of permission. A resident agent runs with nobody at the keyboard, so such a
             // call is refused rather than paused, and nothing the agent can do gets it further — there is nothing to be

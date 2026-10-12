@@ -29,33 +29,16 @@ public sealed class EnrollmentPlanTests
         string agent = "orders",
         string? owns = "Carts and order totals. No tax, no stock.",
         bool unattended = false) =>
-        new(Workspace, agent, owns, unattended) { OwnsApproved = true };
+        new(Workspace, agent, owns, unattended);
 
     private static IReadOnlyList<string> Validate(params EnrollmentEntry[] entries) =>
         EnrollmentPlan.Validate(entries, _ => true);
 
     [Fact]
-    public void An_owns_line_nobody_has_approved_is_refused()
+    public void A_well_formed_owns_line_passes()
     {
-        // Condition 2 of the amendment to SPEC.md §17 question 10. Suggesting a line is allowed;
-        // shipping one nobody affirmed is not, because what the registry promises after that
-        // amendment is that a person read it and said yes. Without this the promise is vacuous:
-        // a draft nobody looked at reaches every peer's roster indistinguishable from a written
-        // line.
         var problems = Validate(
             new EnrollmentEntry(Workspace, "orders", "Carts and totals. No tax.", false));
-
-        Assert.Contains(problems, p => p.Contains("not approved", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void An_approved_owns_line_passes()
-    {
-        var problems = Validate(
-            new EnrollmentEntry(Workspace, "orders", "Carts and totals. No tax.", false)
-            {
-                OwnsApproved = true,
-            });
 
         Assert.Empty(problems);
     }
@@ -243,8 +226,8 @@ public sealed class EnrollmentPlanTests
         // from the launch environment — which is worth nothing if two servers claim one name,
         // because either may then collect the other's mail.
         var problems = Validate(
-            new EnrollmentEntry("/srv/a", "orders", "A.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/b", "orders", "B.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/a", "orders", "A.", false),
+            new EnrollmentEntry("/srv/b", "orders", "B.", false));
 
         Assert.Contains(problems, p => p.Contains("collect the other's mail", StringComparison.Ordinal));
     }
@@ -307,7 +290,7 @@ public sealed class EnrollmentPlanTests
         // Only an operator ever sees this value, and it is how `parley registry` tells two
         // similarly named agents apart. A relative path resolves against whatever directory the
         // reader happens to be in, which makes it worse than blank.
-        var problems = Validate(new EnrollmentEntry("checkouts/orders", "orders", "A.", false) { OwnsApproved = true });
+        var problems = Validate(new EnrollmentEntry("checkouts/orders", "orders", "A.", false));
 
         Assert.Contains(problems, p => p.Contains("absolute path", StringComparison.Ordinal));
     }
@@ -320,8 +303,8 @@ public sealed class EnrollmentPlanTests
         // first while the run reports "Enrolled 2 repositories". One agent exists, two were
         // promised, and nothing afterwards says which.
         var problems = Validate(
-            new EnrollmentEntry("/srv/orders", "first", "One.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/orders", "second", "Two.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/orders", "first", "One.", false),
+            new EnrollmentEntry("/srv/orders", "second", "Two.", false));
 
         Assert.Contains(problems, p => p.Contains("workspace is also claimed", StringComparison.Ordinal));
     }
@@ -334,8 +317,8 @@ public sealed class EnrollmentPlanTests
         // would reject a legitimate manifest. A single hard-coded comparer is a bug on whichever
         // platform it was not written for — and CI runs all three.
         var problems = Validate(
-            new EnrollmentEntry("/srv/Orders", "first", "One.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/orders", "second", "Two.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/Orders", "first", "One.", false),
+            new EnrollmentEntry("/srv/orders", "second", "Two.", false));
 
         if (OperatingSystem.IsLinux())
         {
@@ -368,9 +351,9 @@ public sealed class EnrollmentPlanTests
         // roster rule refuses instead, which is the fault that is left -- and keeping three faults
         // is the point, since what is being measured is that all of them are reported at once.
         var problems = Validate(
-            new EnrollmentEntry("/srv/a", "Orders", "A.", false) { OwnsApproved = true },
-            new EnrollmentEntry("relative", "billing", "B.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/c", "stock", "Stock." + (char)0x2028 + "All of it.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/a", "Orders", "A.", false),
+            new EnrollmentEntry("relative", "billing", "B.", false),
+            new EnrollmentEntry("/srv/c", "stock", "Stock." + (char)0x2028 + "All of it.", false));
 
         Assert.Equal(3, problems.Count);
     }

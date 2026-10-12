@@ -127,8 +127,8 @@ public sealed class TheConsoleWritesForItsProjectTests
     [Fact]
     public async Task The_file_is_written_before_the_record_and_the_record_says_it_was_composed()
     {
-        // What a person types on this page is their own line, so it is recorded as theirs (§17 q10's
-        // amendment turns on telling a person's words from a model's) — with no conversation and no
+        // What a person types on this page is their own line, so it is recorded as theirs (the record
+        // turns on telling a person's words from a model's) — with no conversation and no
         // proposed length, because there was no proposal. 0.29.0's lens 2 is the reason the length field
         // must stay empty rather than carry the person's characters.
         var workspace = Repository($"parley-{OwnershipConsole.Project}", "orders");

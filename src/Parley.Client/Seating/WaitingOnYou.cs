@@ -15,7 +15,7 @@ public sealed record WaitingQuestion(long Exchange, DateTimeOffset AskedUtc, lon
 public sealed record WaitingOn(AgentName Peer, IReadOnlyList<WaitingQuestion> Questions);
 
 /// <summary>
-/// What is waiting on the person in one conversation, one entry per agent (specs/025, SPEC.md §5.6).
+/// What is waiting on the person in one conversation, one entry per agent (SPEC.md §5.6).
 /// </summary>
 /// <remarks>
 /// <para>

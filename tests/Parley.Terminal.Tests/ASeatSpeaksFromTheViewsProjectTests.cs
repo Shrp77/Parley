@@ -72,7 +72,7 @@ public sealed class ASeatSpeaksFromTheViewsProjectTests
 
         Assert.NotNull(seated.Shell.Held);
 
-        // What matters is that the tick did not decide the seat had gone. Since specs/023 no tick says so at all, so the
+        // What matters is that the tick did not decide the seat had gone. No tick says so at all now, so the
         // sentences it could have produced are the not-connected one and the no-project one.
         Assert.NotEqual(Shell.NotConnected, seated.Shell.Said);
         Assert.NotEqual(Shell.SeatWithoutProject, seated.Shell.Said);

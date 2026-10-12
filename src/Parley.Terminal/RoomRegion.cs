@@ -79,7 +79,7 @@ internal sealed class RoomRegion : FrameView
     internal const string NothingOwed = "nothing owed by you";
 
     /// <summary>What is said while this terminal is not connected to the project as the person.</summary>
-    /// <remarks>Not "take a seat" (specs/023): there is no seat to take, only a connection coming back.</remarks>
+    /// <remarks>Not "take a seat": there is no seat to take, only a connection coming back.</remarks>
     internal const string NoSeat = "you are not connected to this project";
 
     /// <summary>What is said when somebody tries to exclude the last recipient left.</summary>
@@ -372,7 +372,7 @@ internal sealed class RoomRegion : FrameView
         {
             // **One row per agent, with how many of its questions are waiting** (the owner's call of 2026-10-05). It was
             // one row per agent reading "orders@host — waiting for your reply", which repeated the heading above it and
-            // hid how many there were; Enter on the row now lists them (specs/025).
+            // hid how many there were; Enter on the row now lists them.
             foreach (var item in outstanding)
             {
                 rows.Add(new Row(
@@ -459,7 +459,7 @@ internal sealed class RoomRegion : FrameView
 
             fitted.Add(row with { Text = row.Text[..dash] });
 
-            // What follows the dash can be wider than the column too ("stopped <1m � 2 permission refusals ..."), and a
+            // What follows the dash can be wider than the column too ("stopped <1m � 2 permission refusals ..."), and a
             // row that is cut hides the half somebody opened the screen to read. It wraps at words, every row indented.
             var pad = new string(' ', indent + 2);
 
@@ -528,7 +528,7 @@ internal sealed class RoomRegion : FrameView
     /// <param name="peer">The participant.</param>
     /// <returns>One character; a space when nothing is known, so nothing is claimed.</returns>
     /// <remarks>
-    /// <see cref="Activities"/>' own, since specs/024, so the web UI marks the same agent the same way.
+    /// <see cref="Activities"/>' own, so the web UI marks the same agent the same way.
     /// </remarks>
     private string Glyph(AgentName peer) => Activities.Mark(_activity.GetValueOrDefault(peer));
 
@@ -561,7 +561,7 @@ internal sealed class RoomRegion : FrameView
     /// <remarks>
     /// Written out rather than left to the colour, and phrased from this person's side: "owes you" and "waiting on
     /// you" are the two facts somebody reads this column to learn. Then what the participant is doing, in
-    /// <see cref="Activities.Says"/>' words (specs/024): working while a turn runs, waiting on somebody, or stopped with
+    /// <see cref="Activities.Says"/>' words: working while a turn runs, waiting on somebody, or stopped with
     /// what it was refused — unless the turn is this person's, which wins.
     /// </remarks>
     private string Standing(PairState pair)

@@ -131,7 +131,7 @@ public sealed class TwiceTests : IAsyncDisposable
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
     }
 
-    // `Leaving_a_seat_twice_is_not_an_error_and_leaves_it_gone` was here. There is no leaving since specs/023: the broker
+    // `Leaving_a_seat_twice_is_not_an_error_and_leaves_it_gone` was here. There is no leaving now: the broker
     // provides the seat and never releases it.
 
     /// <summary>A seat with one question waiting on it, and the voice to answer through.</summary>

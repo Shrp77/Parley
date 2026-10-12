@@ -62,7 +62,7 @@
                 <span class="tag">@item.Message.Type.ToString().ToLowerInvariant()</span>
                 @* The name above is the attested half and this is not: §11.3 constrains only
                    the `parley:` prefix, so an agent may report any responder it likes — a peer
-                   demonstrated it by sending a message here claiming `human:` and having it
+                   demonstrated it by sending a message here claiming a person's label and having it
                    stored. Shown because §11.3 exists so a reader can calibrate on what produced
                    the words, and worded as a claim because that is all it is. *@
                 <span class="claims" title="What that agent says produced this. Not verified.">
@@ -174,7 +174,7 @@
 
 @if (Model.Projects.Count == 0)
 {
-    @* **Not connected, never "not joined"** (specs/023). There is nothing to join: the broker provides the person seat
+    @* **Not connected, never "not joined"**. There is nothing to join: the broker provides the person seat
        and this console takes it on every page. What this branch means now is that no project's broker could be reached
        as the person just then — down, or older than 0.36.0 — and the next page load tries again. Mail waits against the
        name regardless, which is why the count below is still asked for. *@

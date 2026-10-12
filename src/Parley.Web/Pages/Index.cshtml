@@ -1,76 +1,183 @@
-﻿@page
+@page
 @model Parley.Web.Pages.IndexModel
+@using Parley.Web.Pages.Shared
 @{
     ViewData["Refresh"] = "30";
     ViewData["Title"] = "Projects";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<h1>Projects</h1>
+@* Soft cards: rounded tiles lifted off the page by a wide, faint shadow, and pills for what can be pressed. Every colour is
+   one of the frame's tokens, so the dark scheme follows for free; the shadow is the only thing added, and it is the only
+   thing that makes a card a card, so the border stays as well for anyone whose screen drops shadows. *@
+<style>
+    .home-card {
+        background: var(--card);
+        border: 1px solid var(--rule);
+        border-radius: 20px;
+        box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04);
+        padding: 1.1rem 1.25rem;
+    }
 
-@* Said beside the projects that did read, not instead of them: one bad folder costs that project and no other. *@
-@if (Model.ManifestProblem is { Length: > 0 } problem)
+    .home-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+        gap: var(--gap);
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+
+    .home-grid > li { display: flex; flex-direction: column; gap: 0.35rem; min-height: 8.5rem; }
+
+    .home-grid .project-name {
+        margin-top: auto;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--ink);
+        text-decoration: none;
+    }
+
+    .home-grid .endpoint { color: var(--ink-faint); font-size: 0.85em; overflow-wrap: anywhere; }
+    .home-grid p { margin: 0; }
+    .home-grid .summary { color: var(--accent); font-weight: 500; }
+
+    .home-create { max-width: 34rem; margin-bottom: var(--gap); }
+    .home-create form { display: flex; flex-direction: column; align-items: stretch; gap: 0.4rem; border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
+    .home-create label { text-align: left; }
+    .home-create input { width: 100%; box-sizing: border-box; border-radius: 999px; padding: 0.5rem 1rem; }
+    .home-create button { align-self: flex-start; border-radius: 999px; padding: 0.5rem 1.6rem; margin-top: 0.4rem; }
+    .home-create h2, .home-card h3 { margin-top: 0; }
+</style>
+
+<h1>Parley</h1>
+
+@* The two tabs live in the side rail (Projects, Agents), as links: each is a page the server renders, so they work with no script and survive the page's reload. *@
+
+@if (Model.Outcome is { Length: > 0 } outcome)
 {
-    <p class="unreachable" role="alert">Some of this machine's projects could not be read: @problem</p>
+    <p class="@(Model.Refused ? "unreachable" : "outcome")" role="@(Model.Refused ? "alert" : "status")">@outcome</p>
 }
 
-@if (Model.Projects.Count == 0 && Model.ManifestProblem is not { Length: > 0 })
+@if (Model.AgentsTab)
 {
-    @* An ordinary machine, not a broken one -- and the two must not render alike. *@
-    <p>
-        No projects are named on this machine yet. Name the first one from
-        <code>parley</code>; the broker starts it within seconds and it appears here.
-    </p>
-}
-else if (Model.Projects.Count > 0)
-{
-    <ul>
-        @foreach (var project in Model.Projects)
+    <section aria-label="Agents on this machine's projects">
+        @if (Model.Projects.Count == 0)
         {
-            var health = Model.Health.TryGetValue(project.Name.Value, out var said)
-                ? said
-                : new ProjectHealth(null, "This project was not asked.");
-
-            <li>
-                <a href="/Projects/Agents?project=@project.Name.Value">@project.Name.Value</a>
-                <span> — @project.Endpoint</span>
-                @if (project.Description is { Length: > 0 } description)
-                {
-                    <p>@description</p>
-                }
-                @if (Model.Summaries.TryGetValue(project.Name.Value, out var summary) && summary.Reachable)
-                {
-                    @* What is in it, so "which project do I want" is answered before anything is
-                       opened. Unreachable projects say so above instead; a count of zero there
-                       would read as a project somebody has emptied. *@
-                    <p class="summary">@summary.Line()</p>
-                }
-                @if (!health.Reachable)
-                {
-                    @* Contained here: one broker being down says nothing about the others, and
-                       the row stays clickable because the operator may know something the
-                       console does not. *@
-                    <p class="unreachable" role="alert">@health.Problem</p>
-                }
-                else if (!health.Agrees)
-                {
-                    @* Named, never refused. What a version disagreement means for any particular
-                       read is not knowable from the two numbers, and a console that locked the
-                       operator out would remove the view at the moment it is most needed. Both
-                       numbers are given, because "incompatible" alone cannot be acted on. *@
-                    <p class="unreachable" role="alert">
-                        This project's broker speaks @health.Speaks and this console was built
-                        against @IndexModel.ConsoleSpeaks. The pages below still
-                        open; what they show may be incomplete.
-                    </p>
-                }
-                @foreach (var warning in health.Warnings(Parley.Web.WebBuild.Version))
-                {
-                    @* Shown whatever else the row says: a deployment whose parts are not from one release, or whose store
-                       is not the shape its broker expects, is wrong in a way no protocol number reports. *@
-                    <p class="unreachable" role="alert">@warning</p>
-                }
-            </li>
+            <p>No projects are named on this machine yet, so there are no agents. Create one on the Projects tab.</p>
         }
-    </ul>
+
+        <div class="home-grid">
+            @foreach (var project in Model.Projects)
+            {
+                var name = project.Name.Value;
+                Model.Agents.TryGetValue(name, out var mine);
+
+                <div class="home-card">
+                    <h3><a href="/Projects/Agents?project=@name">@name</a></h3>
+
+                    @if (mine is null)
+                    {
+                        @* Unreachable is not empty: saying "none" here would read as a project somebody has emptied. *@
+                        <p class="unreachable" role="alert">This project's broker did not answer, so its agents are not known.</p>
+                    }
+                    else if (mine.Count == 0)
+                    {
+                        <p>None registered yet. <a href="/Projects/Register?project=@name">Add one.</a></p>
+                    }
+                    else
+                    {
+                        <partial name="_AgentTree" model="@(new AgentTreeView(
+                            name,
+                            [.. mine.Select(a => new AgentTreeEntry(a.Name, true, false, Roster.State(a)))],
+                            Pick: false))" />
+                    }
+                </div>
+            }
+        </div>
+    </section>
+}
+else
+{
+    <section class="home-card home-create" aria-label="Create a project">
+        <h2>Create a project</h2>
+        <form method="post" asp-page-handler="Create">
+            <label for="new-project">Name</label>
+            <input id="new-project" name="NewProject" required maxlength="64" autocomplete="off" spellcheck="false" />
+            <label for="new-description">Description (optional)</label>
+            <input id="new-description" name="NewDescription" autocomplete="off" />
+            <button type="submit">Create</button>
+            <p class="composer-note">
+                Naming a project is the whole of creating it: it gets a folder, a store and a port of its own.
+                Removing or renaming one is done in the terminal.
+            </p>
+        </form>
+    </section>
+
+    @* Said beside the projects that did read, not instead of them: one bad folder costs that project and no other. *@
+    @if (Model.ManifestProblem is { Length: > 0 } problem)
+    {
+        <p class="unreachable" role="alert">Some of this machine's projects could not be read: @problem</p>
+    }
+
+    @if (Model.Projects.Count == 0 && Model.ManifestProblem is not { Length: > 0 })
+    {
+        @* An ordinary machine, not a broken one -- and the two must not render alike. *@
+        <p>
+            No projects are named on this machine yet. Name the first one above; the broker starts it within seconds
+            and it appears here.
+        </p>
+    }
+    else if (Model.Projects.Count > 0)
+    {
+        <ul class="home-grid">
+            @foreach (var project in Model.Projects)
+            {
+                var health = Model.Health.TryGetValue(project.Name.Value, out var said)
+                    ? said
+                    : new ProjectHealth(null, "This project was not asked.");
+
+                <li class="home-card">
+                    @if (project.Description is { Length: > 0 } description)
+                    {
+                        <p>@description</p>
+                    }
+                    @if (Model.Summaries.TryGetValue(project.Name.Value, out var summary) && summary.Reachable)
+                    {
+                        @* What is in it, so "which project do I want" is answered before anything is
+                           opened. Unreachable projects say so below instead; a count of zero there
+                           would read as a project somebody has emptied. *@
+                        <p class="summary">@summary.Line()</p>
+                    }
+                    @if (!health.Reachable)
+                    {
+                        @* Contained here: one broker being down says nothing about the others, and
+                           the card stays clickable because the operator may know something the
+                           console does not. *@
+                        <p class="unreachable" role="alert">@health.Problem</p>
+                    }
+                    else if (!health.Agrees)
+                    {
+                        @* Named, never refused. What a version disagreement means for any particular
+                           read is not knowable from the two numbers, and a console that locked the
+                           operator out would remove the view at the moment it is most needed. Both
+                           numbers are given, because "incompatible" alone cannot be acted on. *@
+                        <p class="unreachable" role="alert">
+                            This project's broker speaks @health.Speaks and this console was built
+                            against @IndexModel.ConsoleSpeaks. The pages below still
+                            open; what they show may be incomplete.
+                        </p>
+                    }
+                    @foreach (var warning in health.Warnings(Parley.Web.WebBuild.Version))
+                    {
+                        @* Shown whatever else the card says: a deployment whose parts are not from one release, or whose store
+                           is not the shape its broker expects, is wrong in a way no protocol number reports. *@
+                        <p class="unreachable" role="alert">@warning</p>
+                    }
+                    <a class="project-name" href="/Projects/Agents?project=@project.Name.Value">@project.Name.Value</a>
+                    <span class="endpoint">@project.Endpoint</span>
+                </li>
+            }
+        </ul>
+    }
 }

@@ -71,7 +71,6 @@ public sealed class ProbeTwentyEightTests : IDisposable
             Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         })];
 
     private async Task<(int Code, string Output, string Error)> ApplyAsync(params string[] names)

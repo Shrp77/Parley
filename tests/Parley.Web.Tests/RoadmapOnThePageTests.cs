@@ -95,8 +95,36 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
-        Assert.Contains("id=rm1-1&amp;Says=Add%20CSV%20export", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export", page, StringComparison.Ordinal);
         Assert.Contains("&amp;With=billing%40test&amp;With=orders%40test", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_items_conversation_names_the_item_and_every_page_names_the_project()
+    {
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("<span class=\"item-title\">Add CSV export</span>", page, StringComparison.Ordinal);
+        Assert.Contains($"class=\"crumb\" href=\"/Projects/Agents?project={RoadmapConsole.Project}\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_link_carrying_words_never_puts_them_in_the_box()
+    {
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&Says=Add%20CSV%20export", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -108,7 +136,7 @@ public sealed class RoadmapOnThePageTests
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
         Assert.Contains("Open its conversation", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("Says=", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Hint=", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -164,11 +192,13 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(
             new Uri(
-                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=rm1-1&Says=Add%20CSV%20export&With=billing%40test",
+                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=rm1-1&Hint=Add%20CSV%20export&With=billing%40test",
                 UriKind.Relative),
             TestContext.Current.CancellationToken);
 
-        Assert.Contains(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+        // A hint, not words: the box itself is empty.
+        Assert.Contains("placeholder=\"Add CSV export\"", page, StringComparison.Ordinal);
+        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
         Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", page);
         Assert.DoesNotMatch("name=\"Targets\" value=\"orders@test\" checked", page);
     }

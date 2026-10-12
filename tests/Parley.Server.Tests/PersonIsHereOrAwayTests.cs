@@ -5,7 +5,7 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That everyone sees the person as here while a surface holds their stream and away once it is dropped — never stranded,
-/// never startable — and that being away changes nothing about asking them (SPEC.md §14, specs/023 US3).
+/// never startable — and that being away changes nothing about asking them (SPEC.md §14).
 /// </summary>
 /// <remarks>
 /// Read back through both services, the operator's registry and the roster an agent is shown, because the defect this

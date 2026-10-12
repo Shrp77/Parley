@@ -122,7 +122,7 @@ public sealed class LostSeatTests
     }
 
 
-    /// <summary>The person seat the broker writes for this project (specs/023).</summary>
+    /// <summary>The person seat the broker writes for this project.</summary>
     private static IReadOnlyList<AgentRecord> Person { get; } =
     [
         new AgentRecord(

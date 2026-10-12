@@ -4,7 +4,7 @@ namespace Parley.Core.Tests;
 
 /// <summary>
 /// That the person reads here or away and nothing else, the facilitator reads running, and no agent reads either of the
-/// person's words (SPEC.md §14, specs/023 US3).
+/// person's words (SPEC.md §14).
 /// </summary>
 public sealed class PersonPresenceTests
 {

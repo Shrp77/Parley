@@ -62,7 +62,7 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void Where_the_record_and_the_project_disagree_the_project_wins()
     {
-        // specs/019 contracts/layout.md, and missed until the combined review gate: the record's number was handed back
+        // Missed until the combined review gate: the record's number was handed back
         // although the project's own file — what its broker binds — names another, giving it a second port.
         var orders = ProjectName.Create("orders");
 

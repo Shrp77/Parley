@@ -9,7 +9,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// That the conversation page says what a participant is doing in the terminal's words (specs/024 FR-013).
+/// That the conversation page says what a participant is doing in the terminal's words.
 /// </summary>
 /// <remarks>
 /// <para>

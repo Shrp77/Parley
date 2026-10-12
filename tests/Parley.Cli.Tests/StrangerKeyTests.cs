@@ -26,7 +26,7 @@ namespace Parley.Cli.Tests;
 public sealed class StrangerKeyTests
 {
     private static EnrollmentEntry Entry() =>
-        new("/srv/checkouts/orders", "orders", "Carts and totals.", false) { OwnsApproved = true };
+        new("/srv/checkouts/orders", "orders", "Carts and totals.", false);
 
     [Fact]
     public void A_hand_written_server_at_our_key_is_refused_and_named()

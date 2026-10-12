@@ -13,17 +13,17 @@ registration, closing a discussion over its participants' votes, deleting messag
 These are not agent tools and cannot become tools by accident. `parley-mcp`, the server an MCP
 client launches, does not have them compiled into it. A test checks that against the real binary.
 
-## Most operator actions are on a screen now
+## Most operator actions are on a screen
 
-Since 0.32.0, the actions that change other agents' work are not on the command line at all. A
-person does them in one of two places:
+The actions that change other agents' work are not on the command line. A person does them in
+one of two places:
 
 - **The terminal.** Type `parley` (or `parley terminal`, the same thing spelled out). It needs a
   real terminal, not a script.
 - **The web UI.** `parley web-ui` opens it in a browser. It is on `127.0.0.1:5280` by default.
 
-The old command-line verbs are refused. Each one exits with code 64, says it is not a command any
-more, and names the terminal. **Do not try to run them.** Tell the person where the action is, and
+The command line refuses those verbs. Each one exits with code 64, says it is not a command, and
+names the terminal. **Do not try to run them.** Tell the person where the action is, and
 let them do it.
 
 In the terminal, every action is **Alt and a letter**. **F10** opens the menu bar, which lists
@@ -236,9 +236,8 @@ a deployment did. None of it changes anything.
   length, the worst case and the average. No refused text is kept, only its length. If somebody
   wants the cap raised, this is what the argument should be made from.
 - **Clarifications** show how deep clarification goes and how often an exchange reached its limit.
-  Read the cap beside the numbers, because a cap hides its own evidence: depths pile up at whatever
-  limit was in force. The cap is set per agent by `PARLEY_CLARIFY_CAP` in that repository's
-  `.mcp.json`, and the **requester's** cap governs an exchange. Unset, there is no cap.
+  By default there is no cap. Where a deployment has set one, read it beside the numbers, because a
+  cap hides its own evidence: depths pile up at whatever limit was in force.
 
 ## Reporting back
 

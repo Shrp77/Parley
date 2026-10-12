@@ -91,7 +91,6 @@ public sealed class ProbeThirtyFiveTests : IDisposable
             new EnrollmentEntry(Workspace, "infra", "Pipelines and images. Not the product.", unattended)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             MachineCatalogue,

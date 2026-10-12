@@ -69,7 +69,6 @@ public sealed class ProbeSevenTests : IDisposable
             Unattended: true)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     private async Task<int> RunAsync(bool describe) =>

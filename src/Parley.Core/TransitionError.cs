@@ -31,16 +31,6 @@ public enum TransitionError
     /// </remarks>
     ClarifyDepthExceeded,
 
-    /// <summary>
-    /// The Result does not give exactly one outcome for each item the Request carried.
-    /// </summary>
-    /// <remarks>
-    /// Checked by the broker against the stored Request, because an answer to some items closes an
-    /// exchange just as firmly as an answer to all of them, and the rest would be gone with no record
-    /// that they were skipped.
-    /// </remarks>
-    OutcomesDoNotMatchItems,
-
     /// <summary>A participant tried to record <c>closed</c>, which only the broker writes.</summary>
     ClosedIsTheBrokers,
 

@@ -11,7 +11,7 @@ namespace Parley.Client.Rendering;
 /// shape for every kind.
 /// </para>
 /// <para>
-/// <b>A flag owed by the person is their own to-do and says so</b> (specs/023 US5, SPEC.md §6): <i>waiting on you</i>,
+/// <b>A flag owed by the person is their own to-do and says so</b> (SPEC.md §6): <i>waiting on you</i>,
 /// naming who asked, and never a remedy for an agent — nothing starts a person, and "ask it" would be asking yourself.
 /// </para>
 /// </remarks>

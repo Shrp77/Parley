@@ -4,7 +4,7 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That what is waiting for the person is counted while they are away, not only while a stream is held (specs/023 T041).
+/// That what is waiting for the person is counted while they are away, not only while a stream is held.
 /// </summary>
 /// <remarks>
 /// The terminal stopped asking, and cleared the count, the moment the idle sweep took the stream — so somebody coming back

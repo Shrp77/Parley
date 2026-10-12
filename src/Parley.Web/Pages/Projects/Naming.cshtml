@@ -6,6 +6,23 @@
 
 <h1>Naming @Model.Project</h1>
 
+@if (Model.NewName is { Length: > 0 } wanted)
+{
+    @if (Model.NewNameValid)
+    {
+        <p class="outcome" role="status">
+            You asked for the name <strong>@wanted</strong>. Nothing has been changed. To use it, follow the steps
+            below and give the terminal that name.
+        </p>
+    }
+    else
+    {
+        <p class="unreachable" role="alert">
+            <strong>@wanted</strong> is not a name a project can have. Nothing has been changed.
+        </p>
+    }
+}
+
 <p>
     A project name is a fact about this machine and nothing else. SPEC.md §4.1 gives the protocol
     no concept of a project — membership is which endpoint an agent connected to — so renaming one

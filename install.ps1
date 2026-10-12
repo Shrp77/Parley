@@ -914,7 +914,7 @@ if ($stale.Count -gt 0) {
     Write-Warning "$(($stale | ForEach-Object { $_.Command }) -join ', ') is installed and was not updated to $built. Re-run with -Surfaces both to bring it up, or with -Uninstall to remove everything."
 }
 
-# 0.36.0 edited the store's schema in place without moving its number (specs/023), because nothing
+# 0.36.0 edited the store's schema in place without moving its number, because nothing
 # had been released. So a store made by an older broker is opened without complaint and keeps its
 # old shape: no person seat rules, and a machine recorded for each project. Nothing in the broker
 # says so -- the owner's call was to say it here rather than refuse the store -- which makes this

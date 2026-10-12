@@ -11,7 +11,7 @@ namespace Parley.Core;
 /// <param name="LastPermissionDenials">How many tool calls that turn had refused for want of permission.</param>
 /// <remarks>
 /// <para>
-/// <b>Why it exists</b> (specs/024): an agent tried a command nobody was there to approve, its turn ended without a word,
+/// <b>Why it exists</b>: an agent tried a command nobody was there to approve, its turn ended without a word,
 /// and the room said <i>working</i> for nearly three hours — because "picked up and not answered" was all a surface could
 /// see, and it is what an agent mid-task and an agent that has stopped both look like. The node knew the difference and
 /// told nobody.

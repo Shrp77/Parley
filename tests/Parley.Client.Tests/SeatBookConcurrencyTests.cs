@@ -61,7 +61,7 @@ public sealed class SeatBookConcurrencyTests
         var agents = new CountingAgents();
         var book = new SeatBook(_ => agents);
 
-        // Twelve projects rather than twelve people: since specs/023 a book holds one person seat per project.
+        // Twelve projects rather than twelve people: a book holds one person seat per project.
         var projects = Enumerable.Range(0, 12).Select(Project).ToArray();
 
         await Task.WhenAll(projects.Select(project => Task.Run(async () =>
@@ -151,7 +151,7 @@ public sealed class SeatBookConcurrencyTests
     }
 
 
-    /// <summary>The person seat the broker writes for the one project most of these use (specs/023).</summary>
+    /// <summary>The person seat the broker writes for the one project most of these use.</summary>
     private static IReadOnlyList<AgentRecord> Person => Registry(Alpha);
 
     /// <summary>One of the crowd of projects, by index.</summary>

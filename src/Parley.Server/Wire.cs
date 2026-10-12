@@ -321,7 +321,6 @@ internal static class Conversions
         TransitionError.NotYourTurn => Wire.TransitionError.NotYourTurn,
         TransitionError.OnlyReceiverSendsResult => Wire.TransitionError.OnlyReceiverSendsResult,
         TransitionError.ClarifyDepthExceeded => Wire.TransitionError.ClarifyDepthExceeded,
-        TransitionError.OutcomesDoNotMatchItems => Wire.TransitionError.OutcomesDoNotMatchItems,
         TransitionError.ClosedIsTheBrokers => Wire.TransitionError.ClosedIsTheBrokers,
         TransitionError.CannotSettle => Wire.TransitionError.CannotSettle,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")

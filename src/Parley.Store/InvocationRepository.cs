@@ -334,7 +334,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One per agent that has a recorded turn.</returns>
     /// <remarks>
-    /// <b>The most recently recorded, not the most recently started</b> (specs/024): a node reports a turn when it ends,
+    /// <b>The most recently recorded, not the most recently started</b>: a node reports a turn when it ends,
     /// so the order rows arrive in is the order turns finished, and that is what "the last turn" means to somebody asking
     /// why an agent has stopped. The read the registry makes on every room refresh, so it is one statement.
     /// </remarks>

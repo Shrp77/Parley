@@ -70,8 +70,8 @@ public sealed class DoubleSeatTests
         await browser.TakeAsync(Alpha, [Person], token);
         await screen.TakeAsync(Alpha, [Person], token);
 
-        // The browser's person walks away: its hold is dropped after the idle window. There is no Leave since
-        // specs/023, so this is how one surface stops being here while another goes on.
+        // The browser's person walks away: its hold is dropped after the idle window. There is no Leave,
+        // so this is how one surface stops being here while another goes on.
         Assert.Equal(1, browser.Sweep(DateTimeOffset.UtcNow + SeatBook.IdleAfter + TimeSpan.FromMinutes(1)));
 
         Assert.Empty(browser.Seats());
@@ -117,7 +117,7 @@ public sealed class DoubleSeatTests
         Assert.Null(outcome.Problem);
     }
 
-    /// <summary>The person seat the broker writes for this project (specs/023).</summary>
+    /// <summary>The person seat the broker writes for this project.</summary>
     private static AgentRecord Person { get; } =
         new(PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active);
 

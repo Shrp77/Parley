@@ -162,7 +162,6 @@ public sealed class ProbeEighteenTests : IDisposable
                 new EnrollmentEntry("/src/orders", "orders", $"Carts.{Escape}[2JSomething else.", false)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
             ],
             _ => true);

@@ -16,7 +16,7 @@ namespace Parley.Mcp;
 /// §4), and until now the count stopped here: an agent attached through somebody's open session learned of it only at
 /// the next hook, which is to say the next time a person typed. Claude Code channels let an MCP server push an event
 /// into a running session — <c>notifications/claude/channel</c>, behind the <c>claude/channel</c> capability — and the
-/// session reacts to it. That is the step §17 question 15 records as missing, for every session that is open.
+/// session reacts to it. That is the missing step, for every session that is open.
 /// </para>
 /// <para>
 /// <b>Counts, never words.</b> §4: a notice carries how much is waiting and the adapter drains to learn what. A channel

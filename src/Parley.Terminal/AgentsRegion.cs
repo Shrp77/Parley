@@ -65,7 +65,7 @@ internal sealed class AgentsRegion : FrameView
     internal const string Seats = "you — the person, not an agent";
 
     // **There was a second group, "seats — withdrawn, take one to put it back"**, for seats an operator had retired.
-    // From specs/023 the person seat cannot be retired — storage refuses it — so the group could never hold anything,
+    // The person seat cannot be retired — storage refuses it — so the group could never hold anything,
     // and a heading that is always empty is a promise of something the surface cannot show.
 
     /// <summary>What is shown before anything has been read.</summary>

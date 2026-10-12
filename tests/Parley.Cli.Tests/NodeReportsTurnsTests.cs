@@ -12,7 +12,7 @@ namespace Parley.Cli.Tests;
 /// That a node's turns reach the broker, over a real socket, and that reporting them never costs the turn (SPEC.md §11.6).
 /// </summary>
 /// <remarks>
-/// <b>The defect, specs/024</b>: an agent's command was refused for want of approval, its turn ended without a word, and
+/// <b>The defect</b>: an agent's command was refused for want of approval, its turn ended without a word, and
 /// the room said <i>working</i> for nearly three hours. The node had measured the turn and told nobody. These drive the
 /// node's own reporter against a loopback broker and read the result back through the operator's registry.
 /// </remarks>

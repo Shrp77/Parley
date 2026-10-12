@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That a line sent on coming back from being away goes where the conversation is now, not where it was (specs/023).
+/// That a line sent on coming back from being away goes where the conversation is now, not where it was.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,7 +15,7 @@ namespace Parley.Terminal.Tests;
 /// on a new exchange, the agent's question left open and the person shown as owing it, under "Sent to 1 of 1".
 /// </para>
 /// <para>
-/// <b>specs/025 reversed what the first test holds.</b> It asserted the line on return answered the Request that arrived
+/// <b>What the first test holds was reversed.</b> It asserted the line on return answered the Request that arrived
 /// while away; since 0.41.0 every line is a new Request and the agent decides what it settled (SPEC.md §5.6), so it
 /// asserts that instead. What is left of 0.38.2's finding is the second test: a changed room is shown, not sent to.
 /// </para>

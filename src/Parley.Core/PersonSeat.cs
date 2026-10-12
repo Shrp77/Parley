@@ -23,7 +23,7 @@ namespace Parley.Core;
 /// line.
 /// </para>
 /// <para>
-/// <b>Everyone using a project is the one <c>human-user</c></b> (specs/023 D4) — a deliberate choice for a protocol
+/// <b>Everyone using a project is the one <c>human-user</c></b> — a deliberate choice for a protocol
 /// used by one person running many agents. <c>user</c> was not chosen because an agent may legitimately be called
 /// that.
 /// </para>

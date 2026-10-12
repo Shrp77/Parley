@@ -23,7 +23,7 @@ public static class Owing
     /// person running the deployment (§6).
     /// </para>
     /// <para>
-    /// <b>Plain words since specs/023, on the owner's report.</b> It read "opens an exchange they owe a result on",
+    /// <b>Plain words, on the owner's report.</b> It read "opens an exchange they owe a result on",
     /// which says the same thing in the protocol's vocabulary — exchange, Result — to a person who is not reading the
     /// protocol. The cost is unchanged; only the words a person has to translate went.
     /// </para>

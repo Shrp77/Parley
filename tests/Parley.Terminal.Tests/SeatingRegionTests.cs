@@ -15,7 +15,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Rewritten for specs/023.</b> This file tested taking a seat from the agents region by typing a name, a name held
+/// <b>Rewritten.</b> This file tested taking a seat from the agents region by typing a name, a name held
 /// by a real agent being refused, leaving, and a malformed name refused as it was typed. All of that was a person
 /// choosing who they were; the broker decides now, providing <c>human-user@&lt;project&gt;</c>, and a surface on any
 /// machine attaches as the row its registry names. What survives is the property the first test was for — the

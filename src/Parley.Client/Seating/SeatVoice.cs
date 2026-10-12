@@ -380,7 +380,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <summary>What is said when the connection went part way through a Request to several.</summary>
     /// <remarks>
     /// It names what did go rather than only what did not, so a person knows what to send again. Not "your seat was
-    /// released" (specs/023): the seat is the broker's and never released; only this surface's connection went.
+    /// released": the seat is the broker's and never released; only this surface's connection went.
     /// </remarks>
     internal const string Left =
         "The connection to the broker went part way through, so the rest were not sent. Send them again.";
@@ -669,7 +669,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> or <paramref name="draft"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>Always a Request, whatever is open between them</b> (specs/025). This used to derive a Result or a Clarify from
+    /// <b>Always a Request, whatever is open between them</b>. This used to derive a Result or a Clarify from
     /// who owed whom and, with several of an agent's questions open, filed the person's words against whichever one the
     /// broker happened to list first. The agent decides what the words settle; this delivers them so it must answer.
     /// That also retires 0.30.7's fallback, which turned a refused derived act into a Request: nothing is derived now.
@@ -840,8 +840,6 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         Wire.TransitionError.NotYourTurn => "The other side holds the next move on that exchange.",
         Wire.TransitionError.NotAParticipant => "That exchange is not yours.",
         Wire.TransitionError.OnlyReceiverSendsResult => "You sent that request, so its receiver sends the Result.",
-        Wire.TransitionError.OutcomesDoNotMatchItems =>
-            $"That request asked {string.Join(", ", reply.ExpectedItems)}; give each exactly one outcome.",
         Wire.TransitionError.ClarifyDepthExceeded => "This exchange has reached the clarification cap its deployment set.",
         _ => "The broker refused it and did not say why."
     };

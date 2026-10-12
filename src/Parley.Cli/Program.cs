@@ -53,6 +53,9 @@ const string Help = """
                                                        not stop the broker. parley terminal
                                                        is the same thing, spelled out
 
+      parley web-ui --open [<url>]                     open the web UI a broker is already serving in your
+                                                       browser, and exit. Hosts nothing
+
       parley web-ui [<url>]                            the operator's web UI in a browser:
                                                        every project, the agents in each, and
                                                        conversations as a transcript that says
@@ -606,6 +609,37 @@ if (verb == "web-ui")
 
     forwarded.Remove(verb);
 
+    // **`--open` is answered here, not forwarded: it hosts nothing.** A broker started with
+    // `--with-web-ui`, or by an autostart entry that is `--hidden`, already serves the UI and
+    // prints its address where nobody is looking. Forwarding would start a second host on a port
+    // the first holds. The address is the one given, else the default; an entry installed with
+    // `--web-ui <url>` is not consulted, so that case names its address here.
+    if (forwarded.Remove("--open"))
+    {
+        if (forwarded.Count > 1 || forwarded.Exists(a => a.StartsWith('-')))
+        {
+            await Console.Error.WriteLineAsync(
+                "parley web-ui --open takes at most one address, and no other option.")
+                .ConfigureAwait(false);
+
+            return Usage;
+        }
+
+        var openAt = forwarded.Count == 1 ? forwarded[0] : WebUiAddress.Loopback;
+
+        if (Launch.IsWebAddress(openAt) && !Launch.IsListening(openAt))
+        {
+            await Console.Error.WriteLineAsync(
+                $"Nothing is listening at {openAt}, so the web UI is not running. "
+                + "Start it with `parley web-ui`, or restart the broker with --with-web-ui.")
+                .ConfigureAwait(false);
+
+            return Unavailable;
+        }
+
+        return Launch.Open(said => Console.Error.WriteLine(said), openAt) ? 0 : Unavailable;
+    }
+
     return await Forwarding
         .RunAsync(WebUiTool, "Parley.WebUi", $"parley {verb}", forwarded, Console.Error)
         .ConfigureAwait(false);
@@ -617,7 +651,7 @@ if (verb == "web-ui")
 //
 // The difference from `console` is where it draws. A console needs a browser, which is a thing a
 // machine may not have and a person may not be at; this needs a terminal, which is where the
-// operator already is. SPEC.md §17 question 15 is why either exists: an agent attached through
+// operator already is. Either exists because an agent attached through
 // somebody's editor window was started by nobody, so nothing can hand it a turn, and a person
 // needs somewhere to take part that is not an editor.
 // **This forwards now, and parses nothing on the way.** The terminal is its own tool, because
@@ -1103,7 +1137,7 @@ if (verb == "autostart" && rest.Length == 1)
             : entryCatalogue.Value;
 
     // On by default, which is the whole point of it being here. A person taking part in a
-    // deployment does it through the web UI: SPEC.md §17 question 15 records that an agent
+    // deployment does it through the web UI: an agent
     // attached through somebody's window is the one thing nothing can give a turn to, so a
     // web UI that has to be remembered separately is the half of the deployment that works
     // for agents and not for people. `--no-web-ui` is the way out, and it is a flag rather

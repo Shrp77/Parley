@@ -242,7 +242,7 @@ internal sealed class Shell : Window
 
         Queue(async token =>
         {
-            // **Enter is a key, so a person who was away is back** (specs/023). The idle sweep dropped only the stream;
+            // **Enter is a key, so a person who was away is back**. The idle sweep dropped only the stream;
             // the seat is the broker's and was never released, so refusing with "not connected" would make somebody
             // press Enter twice to send once. Taken back here, in the queue, rather than trusted to `Touched` having
             // finished first.
@@ -734,7 +734,7 @@ internal sealed class Shell : Window
             if (draft.Pairs.All(pair => pair.Peer != peer))
             {
                 // **Not in the conversation yet: ticking adds, and unticking takes back.** It widens whatever is
-                // addressed rather than replacing it, as `/add` does � somebody who ticks an agent from the
+                // addressed rather than replacing it, as `/add` does � somebody who ticks an agent from the
                 // "not in it yet" list means the room and that agent, not that agent alone.
                 if (draft.Recipients.Contains(peer))
                 {
@@ -1603,7 +1603,7 @@ internal sealed class Shell : Window
     /// </remarks>
     internal Task BackAsync()
     {
-        // **A filter is cleared before anything is left** (specs/023 User Story 6, FR-020): Esc on a list showing only one
+        // **A filter is cleared before anything is left**: Esc on a list showing only one
         // agent's conversations shows them all again, which is what the note under the list promises. Going back a view
         // with the filter still set would bring somebody back to a list quietly missing most of its rows.
         if (ConversationsOf is not null)
@@ -2248,7 +2248,7 @@ internal sealed class Shell : Window
 
         AgentsRegion =>
         [
-            // Enter's meaning here, named where the others are (specs/023 T066): a key the surface takes and does not
+            // Enter's meaning here, named where the others are: a key the surface takes and does not
             // name is one nobody finds. Offered only on a row, since that is what it acts on.
             .. Agents.Selected is not null
                 ? new[] { new RegionAction(default, RowMenuTitle, RowMenu, Chord: Key.Enter) }
@@ -2313,7 +2313,7 @@ internal sealed class Shell : Window
                 }
                 : Array.Empty<RegionAction>(),
 
-            // **No join and no leave** (specs/023). The broker provides the person's seat in every project and this
+            // **No join and no leave**. The broker provides the person's seat in every project and this
             // terminal takes it on its own; there is nothing to join, and closing the terminal is how a person leaves.
 
             // Taking delivery is `Global()`'s now: it was registered here and in a transcript only, while the status line
@@ -2383,7 +2383,7 @@ internal sealed class Shell : Window
             new RegionAction('v', _showArchived ? HideArchivedTitle : ShowArchivedTitle, ToggleArchived),
 
             // Starting one belongs here rather than in a transcript of a different one, which is this method's own
-            // rule read straight. **Offered whenever this terminal can speak as the person at all** (specs/023): there
+            // rule read straight. **Offered whenever this terminal can speak as the person at all**: there
             // is no seat to take first any more, so there is no second spelling of this action that says so.
             .. Seats is not null
                 ? new[] { new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting) }
@@ -2478,7 +2478,7 @@ internal sealed class Shell : Window
     private const string StartThisTitle = "Start ";
 
     /// <summary>
-    /// Opens what can be done with the row under the cursor in the agents list (specs/023 User Story 6).
+    /// Opens what can be done with the row under the cursor in the agents list.
     /// </summary>
     /// <returns>When the menu is open.</returns>
     /// <remarks>
@@ -2710,7 +2710,7 @@ internal sealed class Shell : Window
             field = value;
 
             // **The draft is kept.** It is who a line goes to in this conversation, read from the conversation, and the
-            // seat it is drafted as is the broker's and outlives a dropped stream (specs/023). Dropping it here was right
+            // seat it is drafted as is the broker's and outlives a dropped stream. Dropping it here was right
             // while a seat went with its stream; after that it left a person back from the idle window holding a seat and
             // no draft, and their first Enter refused (the owner's report of 0.36.0, `SendAfterIdleTests`).
             // **Nor is the count.** It is the person's mail, which waits for them whether or not this surface holds a
@@ -2734,7 +2734,7 @@ internal sealed class Shell : Window
     /// all night — the false presence <c>SeatBook.IdleAfter</c> exists to prevent.
     /// </para>
     /// <para>
-    /// <b>Nothing is said when the stream is dropped, because nothing was taken from the person</b> (specs/023). This
+    /// <b>Nothing is said when the stream is dropped, because nothing was taken from the person</b>. This
     /// used to announce "your seat was released" and forget who the person was, since the seat went with the stream.
     /// The broker never releases the seat now: an agent that asks meanwhile is told the person has it, the mail waits,
     /// and the next key takes the stream back (<see cref="Touched"/>).
@@ -2776,7 +2776,7 @@ internal sealed class Shell : Window
     /// <returns>When the seat is held, or its absence has been said.</returns>
     /// <remarks>
     /// <para>
-    /// <b>No name is asked for and none is typed</b> (specs/023). The broker provides the person seat in every project
+    /// <b>No name is asked for and none is typed</b>. The broker provides the person seat in every project
     /// it serves, and this attaches as the row its registry names. It runs when the terminal opens, for every project,
     /// and again on the next key after an idle drop.
     /// </para>
@@ -4143,7 +4143,7 @@ internal sealed class Shell : Window
     /// alive for ever. The instant is a parameter for the same reason <see cref="Tick"/>'s is —
     /// a test moves twenty minutes rather than waiting them.
     /// <para>
-    /// <b>It is also what brings the person back</b> (specs/023). An idle drop lets the broker read them as away; the
+    /// <b>It is also what brings the person back</b>. An idle drop lets the broker read them as away; the
     /// first key afterwards takes the stream again, silently, because nothing was taken from them. Only one retake is
     /// queued however many keys arrive while it runs.
     /// </para>
@@ -4294,7 +4294,7 @@ internal sealed class Shell : Window
             return true;
         }
 
-        // **Enter on an agents-list row opens what can be done with it** (specs/023 User Story 6). It took a seat until
+        // **Enter on an agents-list row opens what can be done with it**. It took a seat until
         // then, which went with the typed name. The agents list raises no `Accepting` of its own, so nothing is preempted.
         if (key == Key.Enter && Panes[FocusedRegion] is AgentsRegion && Agents.Selected is not null)
         {
@@ -4512,7 +4512,7 @@ internal sealed class Shell : Window
             ConversationsOf);
         Transcript.Clear();
 
-        // The person's seat, from the registry just read (specs/023). No name is asked for: the broker provides it.
+        // The person's seat, from the registry just read. No name is asked for: the broker provides it.
         await EnsureSeatAsync(project, registry.Value, cancellationToken).ConfigureAwait(false);
     }
 
@@ -5208,8 +5208,8 @@ internal sealed class Shell : Window
     /// <param name="me">The person.</param>
     /// <returns>One item per agent with questions waiting on the person.</returns>
     /// <remarks>
-    /// <see cref="WaitingOnYou"/>, which the web page reads too. Until specs/025 this kept one exchange per agent, the one
-    /// <see cref="Pairing"/> happened to pick, so a person with five of an agent's questions waiting was shown one.
+    /// <see cref="WaitingOnYou"/>, which the web page reads too. It lists every exchange waiting, not
+    /// one per agent, so a person with five of an agent's questions waiting is shown five.
     /// </remarks>
     private static IReadOnlyList<OutstandingItem> Outstanding(
         ConversationExport export,
@@ -5491,7 +5491,7 @@ internal sealed class Shell : Window
     /// </param>
     /// <param name="to">
     /// The agent the Request is for, when the person already chose it on its row, or null to ask. Asking again for
-    /// an agent somebody has just picked is the picker contradicting the row (specs/023 FR-018).
+    /// an agent somebody has just picked is the picker contradicting the row.
     /// </param>
     /// <returns>When the dialog has been opened.</returns>
     /// <remarks>
@@ -5510,7 +5510,7 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
-        // **Already chosen, from the row it was started on** (specs/023 User Story 6): Enter on an agent's row offers to
+        // **Already chosen, from the row it was started on**: Enter on an agent's row offers to
         // start a conversation with that agent, and asking which peer again would be asking a question just answered.
         if (to is { } chosenAlready)
         {
@@ -5738,7 +5738,7 @@ internal sealed class Shell : Window
     /// <returns>Their rows' names, in the order the roster shows them.</returns>
     /// <remarks>
     /// The person is left out because nobody asks themselves — recognised by role, since the person seat is the one
-    /// row a surface speaks as (specs/023), whichever machine this terminal is on. Every other row is offered,
+    /// row a surface speaks as, whichever machine this terminal is on. Every other row is offered,
     /// including one that has never run — §12.3 routes spawn-on-demand through the catalogue, so a
     /// never-run-but-startable row is a legitimate thing to ask, and leaving it out would hide the
     /// agents a person most needs to wake.

@@ -17,7 +17,7 @@ public sealed record Sent(int Count, string Says);
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The surface no longer decides what a line answers</b> (specs/025, the owner's call of 2026-10-05). Until then this
+/// <b>The surface no longer decides what a line answers</b> (the owner's call of 2026-10-05). Until then this
 /// derived an act per recipient from who owed whom: a Result where the agent had asked the person something, a Clarify
 /// where the agent had asked back. With several of an agent's questions open, it took whichever exchange the wait-for
 /// graph listed first — the store's order, nobody's choice — and the owner's reply to the newest question was filed as

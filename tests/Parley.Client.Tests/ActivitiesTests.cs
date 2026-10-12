@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// That what a participant is doing is derived from its reported turns, and never guessed (specs/024).
+/// That what a participant is doing is derived from its reported turns, and never guessed.
 /// </summary>
 /// <remarks>
 /// <b>The owner's report of 2026-10-03</b>: an agent read as working for nearly three hours after a refused command ended its

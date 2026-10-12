@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SPEC.md §17 question 15 records the reason. An agent attached through somebody's own editor
+/// An agent attached through somebody's own editor
 /// window is the one attachment nothing can hand a turn to — the node gives turns only to
 /// residents it started, and nothing can make a person's window take one. So a person takes part
 /// through the console, and a console that had to be remembered separately would be the half of

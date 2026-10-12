@@ -218,7 +218,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <param name="owns">What the launch environment says this agent owns, or null for nothing.</param>
     /// <param name="adapter">
     /// The adapter it attaches through. <c>test</c> unless a test is attaching as the person, whose seat adapter is
-    /// what a surface reports (specs/023).
+    /// what a surface reports.
     /// </param>
     /// <param name="launchToken">The token a node put in its environment, when a node started it (SPEC.md §11.7).</param>
     /// <param name="startedBy">

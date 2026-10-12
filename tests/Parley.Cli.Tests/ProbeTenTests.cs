@@ -85,7 +85,6 @@ public sealed class ProbeTenTests : IAsyncDisposable
         new(Workspace.Replace(Path.DirectorySeparatorChar, '/'), agent, owns, Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     private async Task<(int Code, string Output)> ApplyAsync(string project, EnrollmentEntry chosen)
@@ -152,22 +151,6 @@ public sealed class ProbeTenTests : IAsyncDisposable
         Assert.NotEqual(
             servers["parley-alpha"]!["env"]!["PARLEY_OWNS"]!.GetValue<string>(),
             servers["parley-beta"]!["env"]!["PARLEY_OWNS"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task A_later_scan_reports_both_projects()
-    {
-        // FR-012 through the surface. A scan that reported one of them is how a repository comes to
-        // be enrolled twice in the project it is already in.
-        await ApplyAsync("alpha", Chosen("inventory", "Stock levels. Not pricing."));
-        await ApplyAsync("beta", Chosen("stock", "What is on hand."));
-
-        var row = Assert.Single(EnrollCommand.Find(Checkouts));
-        var text = string.Join("\n", row.Evidence ?? []);
-
-        Assert.Contains("alpha", text, StringComparison.Ordinal);
-        Assert.Contains("beta", text, StringComparison.Ordinal);
-        Assert.Contains("stock", text, StringComparison.Ordinal);
     }
 
     [Fact]

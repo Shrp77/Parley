@@ -10,10 +10,9 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// <para>
 /// <b>This is the guard SPEC.md §17 question 10 exists for, and it is structural rather than
-/// documentary.</b> Question 10 is closed and says the field is not self-declared; 020 amends it to
-/// permit a line an agent <em>drafted</em>, on the condition that a person accepts it. An agent that
-/// could write the field itself would make the amendment meaningless, and the narrowing question 10
-/// records would have been given away for nothing.
+/// documentary.</b> The field is not self-declared: an agent is
+/// asked what it owns and the answer is accepted by Auto Accept or by a person. An agent that
+/// could write the field itself would give away the narrowing question 10 records for nothing.
 /// </para>
 /// <para>
 /// <b>Reflection over the generated clients rather than a reading of the proto.</b> §10.2 warns that

@@ -15,11 +15,9 @@ namespace Parley.Setup;
 /// refusals, and a refusal is what somebody reads before deciding a file is safe to point a tool at.
 /// </para>
 /// <para>
-/// <b>This is the third place in the repository to need it and the first to be shared.</b> The
-/// terminal has <c>Safe</c> for what it draws, the console neutralises what it renders, and the
-/// enrolment scan had a private copy of exactly this for the evidence it prints. The scan's copy is
-/// now this one; the other two belong to surfaces that draw rather than print, and are left where
-/// they are.
+/// <b>The terminal has <c>Safe</c> for what it draws and the console neutralises what it
+/// renders;</b> those belong to surfaces that draw rather than print, and this is the shared copy
+/// for what is printed.
 /// </para>
 /// <para>
 /// <b>Removed rather than replaced, and bounded.</b> A replacement character is still a character

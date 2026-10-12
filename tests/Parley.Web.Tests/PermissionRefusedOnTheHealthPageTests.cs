@@ -6,7 +6,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// That the health page says what a permission-refused flag means and what to do (SPEC.md §6, specs/024).
+/// That the health page says what a permission-refused flag means and what to do (SPEC.md §6).
 /// </summary>
 /// <remarks>
 /// Every flag kind this page did not name fell through to "is retired and still holds it" — so the flag added for an agent
@@ -36,7 +36,7 @@ public sealed class PermissionRefusedOnTheHealthPageTests
     [Fact]
     public void A_flag_the_person_owes_reads_as_waiting_on_them()
     {
-        // specs/023 US5: the person's own to-do, naming who asked, with no remedy for an agent.
+        // The person's own to-do, naming who asked, with no remedy for an agent.
         var flag = new Flag(
             FlagKind.NoProgress,
             7,

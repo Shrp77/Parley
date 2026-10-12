@@ -11,7 +11,7 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Instruction text is the only way an agent learns this.</b> Before specs/023 both texts said "if nobody is seated,
+/// <b>Instruction text is the only way an agent learns this.</b> Both texts once said "if nobody is seated,
 /// report blocked" — and since a seat was released after twenty idle minutes, "nobody is seated" was true every time
 /// the person stepped away, so an agent waiting on their decision was told to give up on it. The broker now always
 /// provides the person; the words have to stop contradicting it.

@@ -61,8 +61,9 @@ the message is waiting when it does.
 
 **Nothing times out.** Work that stops moving is shown to the person running the deployment
 rather than ended: a request nobody collected, or one collected and left, is flagged, and so
-is a conversation waiting only on somebody's vote. A conversation ends when everyone asked whether it is finished agrees — including anyone that has
-already sent its Result — or when that person closes it.
+is a conversation waiting only on somebody's vote. A conversation ends when everyone asked
+whether it is finished agrees — including anyone that has already sent its Result — or when
+that person closes it.
 
 **Refusal returns work, not a retry instruction.** If you owe someone a Result, the broker
 hands you their request instead of telling you to try again later. Telling a language model
@@ -101,6 +102,12 @@ at it, say what each agent owns, and **tell each agent that it has a peer**. The
 the ones people skip, and without them nothing happens — an agent with the tools bound but no
 idea a peer exists will answer from its own repository and guess at the rest.
 
+An agent learns how to use Parley from three places. The server describes itself to every
+client that connects: that peers exist in other repositories, that guessing at their code is
+the mistake to avoid, that the inbox is pull rather than push, and what a request has to
+carry. Each tool carries its own description. And the repository's standing instructions
+(step 5) name the peers and the boundary, which only the repository's owner can say.
+
 ### In Claude Code
 
 Parley ships a plugin, and this repository is its marketplace:
@@ -120,7 +127,7 @@ the very tools the restart binds, so there is nothing for it to read before then
 also carries the operator commands as a skill, so you can ask for a roster or an export in
 words rather than remembering the flags.
 
-It stops short of supplying the server itself, and that is deliberate: Claude Code stores a
+The plugin does not supply the server itself, and that is deliberate: Claude Code stores a
 plugin's configuration per user, so a plugin-supplied server would give every repository the
 same agent name. Identity belongs to the repository, so the launch configuration does too.
 [The plugin's own README](plugins/parley/README.md) has the detail.
@@ -138,8 +145,7 @@ Without the flag nothing is pushed, and the plugin's hook still says what is wai
 type. The event never carries what anybody said: that arrives only through `parley_inbox`.
 
 **While Parley is in alpha the first step is not one command.** Nothing is published to
-NuGet yet, so setup asks you to clone this repository and build the tool. Publishing is what
-the first release is for.
+NuGet yet, so setup asks you to clone this repository and build the tool.
 
 The rest of this section is the general path: what the plugin does for you, and what to do
 in any other client.
@@ -154,15 +160,15 @@ cd Parley
 ./install.sh         # Linux, macOS
 ```
 
-That is the whole of it. The script packs the tools and installs them, registers the broker to
-start when you log in, starts it, and then checks that it answers. It never asks where a store
-goes: that is a project's to say. The broker serves every project this machine names, and on a
-machine that names none yet it waits for the first — so the script ends by telling you what to do
-next: run `parley`, create a project with `Alt+c`, then open it and choose **Agent > Enroll agents from
-folders** (`Alt+f`) to add the repositories that should answer in it. The broker starts a new project
-within seconds, and the web UI shows it.
+The script packs the tools and installs them, registers the broker to start when you log in,
+starts it, and then checks that it answers. It never asks where a store goes: that is a
+project's to say. The broker serves every project this machine names, and on a machine that
+names none yet it waits for the first — so the script ends by telling you what to do next: run
+`parley`, create a project with `Alt+c`, then open it and choose **Agent > Enroll agents from
+folders** (`Alt+f`) to add the repositories that should answer in it. The broker starts a new
+project within seconds, and the web UI shows it.
 
-There are four tools, and which of them a machine wants is a real question:
+There are four tools:
 
 | Tool | What it is | Installed by default |
 |---|---|---|
@@ -177,62 +183,52 @@ usually runs on has nobody sitting at it — though it can still serve a web UI 
 tunnel, which is why the default there is not `none`.
 
 **The surfaces are separate tools so that changing one does not stop the broker.** Windows
-cannot replace a running executable, so while the terminal lived inside `parley` every change
-to it meant stopping the broker — and stopping a broker tells every agent it started to quit,
+cannot replace a running executable, and stopping a broker tells every agent it started to quit,
 losing everything each of them had learned. `-Only parley-terminal` (or `--only parley-terminal`)
 replaces just the terminal: nothing being unlinked is the broker's, so it is not stopped, no
 autostart entry is re-registered, and nothing in flight is interrupted.
 
 A surface you do not select is not removed. It stays at the version it had, and the script says
-so on the way out — a skipped surface going quietly is how a machine ends up running a terminal
-several versions behind its broker.
+so on the way out.
 
-**The two checks are the point of the script rather than a flourish.** Each guards a failure
-that otherwise reports success:
+**The script makes two checks, because each guards a failure that otherwise reports success:**
 
 - **What is on PATH afterwards**, because `dotnet tool update` does nothing at all when the
-  version has not changed. It reports success, at some length, and replaces nothing — so a
-  rebuilt tool appears to install and does not, on the machine most likely to be running the
-  old one. The script uninstalls first, which makes the install unconditional. It also clears
-  `bin/Release` before packing, because `--add-source` treats a directory as a feed and NuGet
-  takes the highest version it finds there rather than the newest build.
+  version has not changed. It reports success and replaces nothing. The script uninstalls first,
+  which makes the install unconditional. It also clears `bin/Release` before packing, because
+  `--add-source` treats a directory as a feed and NuGet takes the highest version it finds there
+  rather than the newest build.
 - **Whether the broker answers**, which is a different claim from whether it was registered.
   Installing the tools is not the same as having Parley working, and the gap between the two
-  shows up as agents failing to attach — in an editor, days later, a long way from here.
+  shows up as agents failing to attach, a long way from here.
 
-**A protocol change upgrades the whole deployment at once, and 0.23.0 is one.** The protocol has
-no patch level: a change is either visible across the boundary or is not a protocol change, and
-while the major is zero the minor carries breaking changes. So a broker and an adapter whose
-protocol versions differ **do not interoperate**, and the broker refuses the attach rather than
-letting it fail later as questions nobody answers.
+**A protocol change upgrades the whole deployment at once.** The protocol has no patch level: a
+change is either visible across the boundary or is not a protocol change, and while the major is
+zero the minor carries breaking changes. A broker and an adapter whose protocol versions differ
+**do not interoperate**, and the broker refuses the attach rather than letting it fail later as
+questions nobody answers.
 
-What that means in practice, when the protocol number moves:
+When the protocol number moves:
 
 - Install on the machine running the broker **and** on every machine running agents, before
   expecting anything to work. One machine left behind is one set of agents that silently stop
   attaching.
 - Sessions already attached keep their old connection until they end. Close and reopen the
   editor windows that have Parley configured; nothing else forces it.
-- The failure is diagnosable but only from the broker's log, which names the version it speaks
-  and the one it was offered. An agent that has quietly stopped answering looks like a broken
-  agent from every other angle.
+- The failure is diagnosable only from the broker's log, which names the version it speaks
+  and the one it was offered.
 
 The script refuses to replace a file something is holding, and names what to close: an editor
 session with Parley configured, a terminal somebody has open, or a broker somebody started by
-hand. That is the right default —
-ending a process a person launched themselves is their decision — and it is also, on a machine
-with three editors open, an instruction to go and find three windows. `-Force` on Windows, or
-`--force` elsewhere, is that decision made deliberately: it ends them and carries on. Those
-editor sessions keep running and lose Parley until each editor restarts, which is the cost. It
-weakens no check — everything is waited for and then looked for again, and anything still holding
-the files is still a refusal.
+hand. `-Force` on Windows, or `--force` elsewhere, ends them and carries on. Those editor
+sessions keep running and lose Parley until each editor restarts, which is the cost. It weakens
+no check — everything is waited for and then looked for again, and anything still holding the
+files is still a refusal.
 
 `./install.ps1 -Uninstall` (or `./install.sh --uninstall`) stops the broker, removes the
-autostart entry, removes every tool — `-Surfaces` and `-Only` are not consulted, because an
-uninstall that honoured them would leave a tool nothing installs and nothing removes — and then
-checks that they are actually gone. It leaves the
-store and any `.mcp.json` alone: those are the deployment rather than the installation, and
-somebody reinstalling a tool has not asked to lose their history or their launch configurations.
+autostart entry, removes every tool, and then checks that they are actually gone. `-Surfaces` and
+`-Only` are not consulted. It leaves the store and any `.mcp.json` alone: those are the
+deployment rather than the installation.
 
 ### 2. Know what the broker is
 
@@ -261,45 +257,30 @@ already running alone.
 **It serves every project, not one store.** Each project gets its own broker from that one
 process. The process also runs this machine's node in every project. The node reads one catalogue
 for the whole machine: `node.json`, in the same folder as the projects. `parley autostart install
---node-config <path>` names a different file. The entry does not read `PARLEY_NODE_CONFIG`, because
-nothing sets that variable at logon. A project named later gets its broker within seconds, because the process watches the manifest; nothing is
-reinstalled and nothing restarts. A machine that names no project yet is served the same way: the
-process waits, with the web UI up, for the first one.
+--node-config <path>` names a different file. The entry does not read `PARLEY_NODE_CONFIG`,
+because nothing sets that variable at logon. A project named later gets its broker within
+seconds, because the process watches the manifest; nothing is reinstalled and nothing restarts. A
+machine that names no project yet is served the same way: the process waits, with the web UI up,
+for the first one.
 
 **It starts the web UI too**, on `127.0.0.1:5280`, because that is how a person takes part
-rather than only watches — see [Taking part yourself](#taking-part-yourself). An agent attached
-through your own editor window is the one thing nothing can hand a turn to, so a web UI you had
-to remember to start separately would be the half of a deployment that works for agents and not
-for people. `--web-ui <url>` moves it and `--no-web-ui` leaves it out.
+rather than only watches — see [Taking part yourself](#taking-part-yourself). `--web-ui <url>`
+moves it and `--no-web-ui` leaves it out.
 
 The broker starts it as a child process rather than hosting it, because it is `parley-web-ui`, a
 tool of its own. If the address is already taken, or the tool is not installed on this machine,
 the broker says so and carries on serving: a web page that cannot bind must never cost you a
 deployment, and it names `parley` in the same breath so you are never told there is no way in.
 
-`--with-console`, `--console` and `--no-console` were the old spellings. They were **removed** in
-0.22.0. A broker given one of them does not start: it says the flag is not an option it takes, and
-exits with code 64. So an autostart entry written before 0.19.0 that still names one starts no
-broker at logon. The fix is to register the entry again:
-
-```
-parley autostart install
-```
-
-That writes an entry this version understands. Add `--no-web-ui` to leave the web UI out, or
-`--web-ui <url>` to move it.
-
 **`parley` is the same deployment without a browser**, and the broker names both when it
 starts. The machine running a broker is frequently not the machine you have a browser open on —
-a server you are in over SSH, a box in a cupboard — and on those the web UI's address is an
-instruction you cannot follow. Both surfaces show the same projects, agents and conversations,
-and you can take part from either.
+a server you are in over SSH, a box in a cupboard. Both surfaces show the same projects, agents
+and conversations, and you can take part from either.
 
 **More than one deployment on one machine.** Separate stores and separate ports are all a
-second deployment is — the protocol has no concept of a project and does not acquire one, agent
-names collide freely across them, and one process may host several brokers. What that used to
-cost was carrying three paths on every command line. Naming a project is the whole of creating one,
-and it is done on the terminal's first screen:
+second deployment is — the protocol has no concept of a project, agent names collide freely
+across them, and one process may host several brokers. Naming a project is the whole of creating
+one, and it is done on the terminal's first screen:
 
 ```
 parley
@@ -309,16 +290,15 @@ parley --project acme registry
 The projects live in one folder per machine, under your own configuration directory: each
 project is a folder of its own inside it. `parley project list` says where that folder is and
 reports which brokers are answering. `--config`, or `PARLEY_CONFIG`, names a different folder.
-It names the folder, not a file: since 0.32.0, pointing it at the old `projects.json` file is
-refused. Use it for a test rig or a second account, not for one repository to have its own, which
-would be the disagreement this ends rather than a use of it. A command acts on the project
-`--project` names; failing that, on `PARLEY_PROJECT`, which `parley use <name>` prints the line to
-set for one terminal; failing that, on the one the repository you run it in names in its
-`.mcp.json`, when exactly one of the projects it names is on this machine; and failing that, on the
-only project there is. On a machine naming several it says on standard error which project it acted
-on and what chose it. Otherwise it **refuses and lists them** rather than choosing — acting on a
-deployment nobody asked for produces output that looks entirely normal. `parley serve` is the
-exception, and starts them all.
+It names the folder, not a file. Use it for a test rig or a second account, not for one
+repository to have its own. A command acts on the project `--project` names; failing that, on
+`PARLEY_PROJECT`, which `parley use <name>` prints the line to set for one terminal; failing
+that, on the one the repository you run it in names in its `.mcp.json`, when exactly one of the
+projects it names is on this machine; and failing that, on the only project there is. On a
+machine naming several it says on standard error which project it acted on and what chose it.
+Otherwise it **refuses and lists them** rather than choosing — acting on a deployment nobody
+asked for produces output that looks entirely normal. `parley serve` is the exception, and starts
+them all.
 
 ```
 parley use acme                     # prints the line for PowerShell, bash and cmd
@@ -327,33 +307,31 @@ eval "$(parley use acme --shell posix)"
 parley use                          # which project a command here would act on, and why
 ```
 
-The choice lasts until the terminal closes. There is deliberately no saved "current project": chosen
-in one window, it would quietly apply to a purge in another.
+The choice lasts until the terminal closes. There is no saved "current project": chosen in one
+window, it would quietly apply to a purge in another.
 
 **A project's store and port are its own, and nothing outside it names either.** `--broker`
 overrides which broker a *client* talks to; nothing overrides where a project keeps its data or
-what port it holds. There is no `--db`, no `--listen` and no `PARLEY_DB`: the store is `parley.db`
-inside the project's folder and the port was claimed when the project was named. A broker is
-reached from another machine through a tunnel rather than by binding a network address — there is
-no command for the latter, which is deliberate and is explained where the tunnel is set up below.
+what port it holds. The store is `parley.db` inside the project's folder and the port was
+claimed when the project was named. A broker is reached from another machine through a tunnel
+rather than by binding a network address — there is no command for the latter, which is
+deliberate and is explained where the tunnel is set up below.
 
 **Creating, changing and removing a project are done in the terminal, and not on the command line
-at all.** `parley project add`, `set` and `remove` were removed together on 2026-09-25: if a
-deployment is set up on a screen, it is set up on a screen. `parley project list` stays, because it
-reads and changes nothing — and because both install scripts call it.
+at all.** `parley project list` is the one project command: it reads and changes nothing, and both
+install scripts call it.
 
 A project's description is the one thing about it that is yours to choose. Removing a project
 forgets it and deletes nothing — not the store, not any repository's `.mcp.json` — and the screen
 says so every time; the process serving this machine stops that project's broker within seconds and
 leaves the rest running. Destroying one is the deliberate version: it waits for the broker to stop,
 deletes the store and everything beside it, and lists the repositories that were agents in it,
-whose `.mcp.json` still names it. It takes the project's own name typed back, which is a door a
-command line could not offer and is most of why this moved.
+whose `.mcp.json` still names it. It takes the project's own name typed back.
 
-The trade is that a user-level supervisor stops the broker at logout. For a machine somebody
-works at that is right — the agents are editor sessions, and there are none when nobody is
-signed in. A server that must answer with nobody signed in wants a real service, and that does
-need privilege. Nothing else opens the file, which is what lets agents live on other machines: SQLite
+A user-level supervisor stops the broker at logout. For a machine somebody works at that is
+right — the agents are editor sessions, and there are none when nobody is signed in. A server
+that must answer with nobody signed in wants a real service, and that does need privilege.
+Nothing else opens the store file, which is what lets agents live on other machines: SQLite
 in WAL mode needs coherent shared memory between every process touching the database, so a
 store on a network share is corrupt rather than slow.
 
@@ -366,13 +344,9 @@ PARLEY_RETENTION_MAX_AGE_HOURS=720
 PARLEY_TICK_SECONDS=5                   # how often deadlines are swept
 ```
 
-Each of these used to be set per repository, which meant one store could be swept on three
-cadences and pruned to two floors with nothing anywhere to say which was in force.
-
 Clarifications are not capped: an exchange can go back and forth for as long as its two sides
-need to converge, because cutting that off before they are finished leaves the work undone.
-The terminal's health view reports how deep exchanges actually go, which is the evidence a
-deployment would set a cap from.
+need to converge. The terminal's health view reports how deep exchanges actually go, which is
+the evidence a deployment would set a cap from.
 
 ### 3. Point each agent at the broker
 
@@ -399,11 +373,9 @@ different `PARLEY_AGENT`:
 ```
 
 **One entry per project, and the key says which.** A repository that several deployments need to
-ask holds one entry for each, with its own name and its own `owns` line — brokers do not federate,
-so the alternative is picking one set of peers and being unreachable to the rest. A deployment that
-names no projects writes the bare key `parley`, which is also what every repository enrolled before
-this existed has; those are read exactly as they always were and are never renamed, because the key
-is part of every tool name the agent behind it already sees.
+ask holds one entry for each, with its own name and its own `owns` line — brokers do not federate.
+A deployment that names no projects uses the bare key `parley`. The key is part of every tool
+name the agent behind it sees, so it is never renamed.
 
 A repository may answer in as many projects as you like and may be *started unattended* by only
 one. A node starts an agent with the repository as its working directory, so two of them would be
@@ -412,10 +384,8 @@ two models editing one checkout.
 The same committed file works on every machine: the role is configured and the machine half is
 detected, so `orders` becomes `orders@server-b` on one box and `orders@server-a` on another.
 `PARLEY_PROJECT` is an alternative to `PARLEY_BROKER` for a machine running more than one
-deployment: it names a project from `parley project list` and takes that project's address. Worth
-preferring there, because an address is a port number and ports move — a committed `.mcp.json`
-naming a project survives a change that would otherwise have to land in every repository at once,
-and the one that got missed would connect to whatever now answers. It says *where to connect* and
+deployment: it names a project from `parley project list` and takes that project's address. Prefer
+it there, because an address is a port number and ports move. It says *where to connect* and
 nothing else; identity still comes from `PARLEY_AGENT` alone. If both are set the address wins and
 the server says so on the way up, and a project this machine does not describe stops the launch
 rather than falling back to the default — an agent in the wrong deployment looks entirely normal
@@ -423,8 +393,7 @@ from both ends of a message.
 
 For an agent on another machine, **tunnel to the broker rather than exposing it**, and point
 `PARLEY_BROKER` at your end of the tunnel. A project keeps the loopback port it was handed when it
-was named, and there is no command that puts it on a network — that is a decision rather than a
-gap, and the reason is below.
+was named, and there is no command that puts it on a network.
 
 Key-based SSH is the supported path. One command on the machine that needs the agent:
 
@@ -443,14 +412,12 @@ PARLEY_BROKER=http://127.0.0.1:19100 PARLEY_AGENT=orders claude
 **Why there is no flag for binding a network address.** The wire carries no credentials of any
 kind, so a reachable port *is* the whole of the authentication. Everything answers on that one
 port: not only the agent operations, but the operator ones — which export whole conversations,
-purge agents, and start agents, which is to say launch something that executes
-code in a repository. Anything able to open a connection can do all of it, as any agent it cares
-to name. A tunnel adds the authentication and encryption the protocol does not have and leaves no
-listening socket on the network; a bind address adds neither and removes the last thing standing
-between a deployment and whatever else is on the wire. The threat model puts a hostile network out
+purge agents, and start agents, which is to say launch something that executes code in a
+repository. Anything able to open a connection can do all of it, as any agent it cares to name. A
+tunnel adds the authentication and encryption the protocol does not have and leaves no listening
+socket on the network; a bind address adds neither. The threat model puts a hostile network out
 of scope and says the transport **must not** be exposed to one, so confining it is the operator's
-job — and a command that chose an interface for you would be this tool making that call on a
-machine whose networks it cannot see.
+job.
 
 For Claude Code that file is `.mcp.json` in the repository root; other clients have
 their own location for the same JSON.
@@ -464,30 +431,26 @@ does nothing for a session already open. `claude mcp list` will say the server i
 while that session still has no Parley tools, because the two are different processes reading
 at different times. Get the entry onto the branch everything else is cut from, then restart.
 
-Agents that are not open have no process, which is the point: closing the last window on a
-repository leaves nothing running for it. What does run is the broker — one process per
-project, holding the store and the port every agent connects to. It is the single thing that
-has to be up, and an agent whose broker is not listening does not start degraded, it refuses
-to start at all.
+Agents that are not open have no process: closing the last window on a repository leaves
+nothing running for it. What does run is the broker — one process per project, holding the store
+and the port every agent connects to. It is the single thing that has to be up, and an agent
+whose broker is not listening does not start degraded, it refuses to start at all.
 
-So it is supervised, and `parley autostart install` is what registers it — a scheduled task,
-a user systemd unit, or a launch agent, depending on the machine. That is what makes a
-reboot uneventful: the broker comes back at logon and each agent's server starts when
-somebody opens its repository. Skipping that step is the one failure that looks like a broken
-install, because every agent then fails to attach with *no broker is listening* and nothing
-says why.
+So it is supervised, and `parley autostart install` is what registers it. That is what makes a
+reboot uneventful: the broker comes back at logon and each agent's server starts when somebody
+opens its repository. Skipping that step is the one failure that looks like a broken install,
+because every agent then fails to attach with *no broker is listening* and nothing says why.
 
 An agent registers itself the first time its server starts, so no roster has to be maintained
 by hand.
 
-`parley up` is separate and is still a command you run in a terminal rather than a service:
-it keeps agents alive for as long as it runs and stops all of them when you stop it. It is
-how agents converse unattended, and stopping it stops that — the broker is unaffected.
+`parley up` is a command you run in a terminal rather than a service: it keeps agents alive for
+as long as it runs and stops all of them when you stop it. It is how agents converse unattended,
+and stopping it stops that — the broker is unaffected.
 
 **Identity comes from `PARLEY_AGENT` and from nowhere else.** No tool takes a "from"
-parameter, so no tool call can change who the caller is. Had it been a parameter, every
-agent could impersonate every other and the guarantee would rest on a model choosing not
-to.
+parameter, so no tool call can change who the caller is. Were it a parameter, every agent could
+impersonate every other and the guarantee would rest on a model choosing not to.
 
 ### 4. Say what each agent owns
 
@@ -521,17 +484,14 @@ accept, edit or discard its answer, write a line yourself, reply if it asked Par
 or, when nothing is waiting on it, have Parley ask it again. Outside the review, on the agents pane,
 `Alt+n` opens what that agent is responsible for: what it has said, the line in a field you can
 change and save in place, and a button that has Parley ask it to refresh. `Alt+e` asks every agent at
-once. None of it needs a seat. Turn Auto Accept
-off (in *Configuration*, `F3`, or the Project menu) and every answer waits for you.
+once. None of it needs a seat. Turn Auto Accept off (in *Configuration*, `F3`, or the Project menu)
+and every answer waits for you.
 
-**There is no length limit any more, and that is a deliberate reduction in a control.** Earlier
-versions capped it at a hundred characters, measured: a roster entry costs about seventy-five
-characters of structure, so ten peers at a hundred cost roughly what one message is allowed to.
-The cap was removed at 0.33.0 so that an agent asked what it owns can answer in two halves
-instead of being truncated into one. The reason to be brief has not changed — this text lands in
-every agent's working memory once per peer, every time somebody lists the roster, so **a roster
-may be the largest thing an agent reads**. A deployment can put a bound back: the constraint is
-still in storage and simply stands down at the top of its range.
+**The line has no length limit by default, and that is a deliberate reduction in a control.** A
+roster entry costs about seventy-five characters of structure, and this text lands in every
+agent's working memory once per peer, every time somebody lists the roster, so **a roster may be
+the largest thing an agent reads**. Keep it brief. A deployment can put a bound back: the
+constraint is still in storage and simply stands down at the top of its range.
 
 It comes from the launch configuration and **no tool an agent has can set it**, which is the
 point. A field an agent could write would be worth no more than a model's opinion of itself;
@@ -546,11 +506,6 @@ part of the work asks the agent that does, in the same conversation, rather than
 `parley registry` shows you which of your agents have not set it.
 
 ### 5. Name the peers and the boundary
-
-The server introduces itself. When a client connects, Parley sends it a short description
-of what it is for — that peers exist in other repositories, that guessing at their code is
-the mistake to avoid, that the inbox is pull rather than push, and what a question has to
-carry. That arrives through the protocol, so it works in any MCP client without a file.
 
 What the server cannot know is **which** peers this repository has and **which** boundary
 it does not own. That part is yours, and it goes in whatever file your client reads as
@@ -573,7 +528,7 @@ exists to prevent — the tools being bound is not enough on its own.
 
 ### What the agent can do
 
-Ten tools, and no way to say who it is:
+Eleven tools, and no way to say who it is:
 
 | Tool | What it does |
 |---|---|
@@ -583,10 +538,15 @@ Ten tools, and no way to say who it is:
 | `parley_inbox` | Collect what is waiting, work you owe first. |
 | `parley_agents` | List the agents that exist, what each owns, and whether it is running. |
 | `parley_conclude` | Say whether you are finished with a conversation. |
+| `parley_propose_roadmap` | Put forward a short list of work for the person to confirm as a roadmap. It only proposes; you are told what became of it in `parley_inbox`. |
 | `parley_file_place` | Put a `.md` or `.txt` file from your repository where other agents can fetch it. Returns its name and sha256; the contents go into nobody's context. |
 | `parley_file_fetch` | Write a file another agent placed into your own repository, checked against its sha256. |
 | `parley_file_list` | List the files placed so far: names, sizes, hashes, and who placed each. |
 | `parley_file_remove` | Take back files you placed. |
+
+A roadmap is the person's, never an agent's plan. An agent may propose one; the person confirms,
+edits and declines it. No agent tool reads, changes or marks done a roadmap. Work reaches an agent
+as a request from the person, one item at a time.
 
 A file is how something too large or too exact for a message crosses: a schema, a price list, a
 generated client. Only `.md` and `.txt` files can be placed, so code travels as
@@ -611,12 +571,10 @@ the deployment closes it. Messages are capped at 8,000
 characters, which is a context-poisoning defence rather than a buffer size: what you
 send lands in somebody else's working memory.
 
-The number is a judgement, and it is the only one in the protocol that now leaves a
-record: every refusal for length is counted, and the terminal's health view tells you how
-often agents hit the ceiling and by how much. Change it from that rather than from
-whoever complained most recently. No refused text is kept anywhere — only how long it
-was — because storing what was refused for being too long would retain exactly what the
-cap exists to keep out.
+The number is a judgement, and the protocol keeps a record to change it from: every refusal for
+length is counted, and the terminal's health view tells you how often agents hit the ceiling and
+by how much. No refused text is kept anywhere — only how long it was — because storing what was
+refused for being too long would retain exactly what the cap exists to keep out.
 
 ### A worked example
 
@@ -689,43 +647,34 @@ Each key is an agent's identity: a GUID that enrolment writes once into the repo
 the folder to start it in. It says nothing about projects or names. Those come from the
 repository's `.mcp.json`, which has one entry per project it answers in. So one checkout enrolled
 in two projects is one entry here, and it can be started from either project. An entry keyed by
-anything other than an identity, such as a role name from an older version, is skipped and
-reported.
+anything other than an identity is skipped and reported.
 
 Listing a repository there is the permission. `parley up` may start it when a peer needs one,
 kept alive so it remembers the conversations it is in; leave it out and nothing starts that
 repository unless a person asks.
 
-That the broker holds no launch command at all is the point rather than a detail. It is a
-smaller trusted surface, it stays smaller as a deployment spreads across machines, and it
-removes a chicken-and-egg the previous design never escaped: the command used to be written into
-the registry by the agent's own server, so an agent that had never run had no record of how to
-start it — the one case where knowing would have mattered.
+The broker holds no launch command at all. That is a smaller trusted surface, and it stays
+smaller as a deployment spreads across machines.
 
 ```
 parley up
 ```
 
 Run it in a terminal and leave it. Ctrl+C stops the fleet and every agent in it. An agent
-is also told to quit when you retire it in the terminal or the web UI, or when you remove the variable and open that
-repository once — a withdrawal has to reach a process that is already running, or the
-register says one thing while the deployment does another.
+is also told to quit when you retire it in the terminal or the web UI, or when you remove the
+variable and open that repository once — a withdrawal has to reach a process that is already
+running, or the register says one thing while the deployment does another.
 
 **It responds; it does not initiate.** The fleet starts agents that have something *waiting*
-— a Result they owe, or a message they have not collected — so with nothing waiting it starts
-nobody. The first request still comes from an agent or a person with a reason to ask, and
-reasons come from work; an idle agent inventing work would be worse than useless. After that
-first request the loop needs no one: the receiver is started to do the work, a clarification
-hands the turn back to the requester, and it is started in its turn.
-
-The rule used to be narrower — an open exchange you owed, and nothing else — and that excluded
-the one participant with the strongest claim to a turn. A Result closes the exchange it
-reports on, so the agent that sent the request ends up owing nothing and was never started to
-read the Result it was waiting for. Anything uncollected now counts, whatever its type.
+— a Result they owe, or any message they have not collected, whatever its type — so with nothing
+waiting it starts nobody. The first request still comes from an agent or a person with a reason
+to ask, and reasons come from work; an idle agent inventing work would be worse than useless.
+After that first request the loop needs no one: the receiver is started to do the work, a
+clarification hands the turn back to the requester, and it is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one
 sentence. Every turn is a real session on your account, so `parley up` prints what each
-one cost, and `invocations` keeps the same numbers — count, duration, cost, and how often
+one cost, and the broker keeps the same numbers — count, duration, cost, and how often
 an agent ran and still owed exactly what it owed. That last figure is the shape a runaway
 takes before it looks like one.
 
@@ -738,6 +687,8 @@ deployment where the two disagree is one where the adapter cannot attach at all.
 ```
 parley registry                     every agent, what it owns, and the workspace a peer
                                     never sees
+parley open                         every conversation with an exchange still open, and who
+                                    is in it: what a broker restart would interrupt
 parley                              everything else: retiring and purging agents,
                                     exporting, archiving and destroying conversations,
                                     pruning, and the health reports. They
@@ -751,12 +702,16 @@ parley files remove <name>...       remove files whoever placed them, after sayi
 parley files prune                  remove every file, behind the project's name typed back
 parley files open <name>...         open a file in its editor, on the broker's machine
 parley files folder                 open a conversation's folder, or the whole location
+parley enroll <dir>                 find the repositories under a directory, tick the ones to
+                                    enroll, and configure and start them
 parley web-ui [<url>]               the web UI in a browser: every project, the agents in
                                     each, and conversations as a transcript that says who
                                     did not see what. You take part as yourself with
                                     nothing to join. Binds loopback unless you give it an
-                                    address.
-                                    Its own tool, parley-web-ui, installed separately
+                                    address. Its own tool, parley-web-ui, installed
+                                    separately
+parley web-ui --open [<url>]        open the web UI a broker is already serving in your
+                                    browser, and exit
 parley serve                        run the broker: the one process that opens the store
 parley up                           run this machine's node, so its agents can be started
 parley project list                 the deployments this machine is configured for; creating
@@ -770,7 +725,7 @@ Every one of these except `serve`, `up` and `project` is a client: they connect 
 instead, and falls back to that same broker when none are named. **None of them opens a store, and
 none of them can be pointed at one**: there is no option anywhere that names a database file, so a
 client cannot be aimed at the wrong one. `prune` applies the policy the broker was started with,
-which is the only policy in the deployment; your shell no longer has an opinion about it.
+which is the only policy in the deployment.
 
 Placed files live in a folder beside the broker's store, one folder for each conversation, and they
 are yours to read and change there: an edit is the file's new content and every agent that fetched
@@ -803,8 +758,6 @@ too. Everything still waiting on you is listed in the room, one row per agent wi
 Enter on a row lists the questions and takes you to the one you choose. The web UI shows the same
 list above the transcript.
 
-Two things about that are worth knowing before you use it.
-
 Having a seat and being at it are different. Being here is an open connection, and nothing else
 counts: there is no heartbeat. A surface nobody has touched for twenty minutes drops its
 connection, because a tab left open is not a person at a desk. Your seat stays. The next key you
@@ -812,9 +765,9 @@ press, or the next page you load, connects you again. While you are away, messag
 for you, and an agent that sends one is told it is with the person rather than that you cannot be
 reached.
 
-And the seat is always yours, never an agent's. No agent can take the name `human-user`, and no
-surface lets you speak as `orders` or any other agent. A console has always been able to retire or
-purge an agent; it has never been able to write words recorded as an agent's own.
+The seat is always yours, never an agent's. No agent can take the name `human-user`, and no
+surface lets you speak as `orders` or any other agent. A console can retire or purge an agent;
+it cannot write words recorded as an agent's own.
 
 ### From a terminal
 
@@ -826,23 +779,19 @@ parley
 ```
 
 That is `parley-terminal`, a tool of its own. `parley` on its own opens it, `parley terminal` forwards
-to it without reading the arguments, and `parley-terminal` works identically if you would rather type it. The two are installed
-separately on purpose: Windows cannot replace a running executable, so a terminal inside `parley`
-would mean stopping the broker to change it, and stopping a broker ends every agent it started
-along with everything each had learned. On a machine that does not have it, `parley` says
-which tool provides the command and how to install it.
+to it without reading the arguments, and `parley-terminal` works identically if you would rather type it.
+On a machine that does not have it, `parley` says which tool provides the command and how to install it.
 
 Three views, one thing at a time. It opens on the projects this machine names, one row each: the
 address it answers on, whether it is answering, how many agents it has and how many are running,
 and how many conversations and how many still have work open — so which project you want is
 answered before anything is opened. Enter goes into a
 project and shows its agents and its conversations; Enter again opens a conversation and reads it.
-Escape comes back, and lands on what you were looking at rather than at the top, so reading three
-conversations in turn costs three keystrokes. The status line says where you are and where Escape
-leads, and the same entry heads the `Alt+?` menu, so the way out is never only a key. `Ctrl+Q` leaves
-altogether, from any view, and sits on that line beside it — on a terminal too narrow to hold
-both, the line keeps `Alt+?` and the menu keeps them. Escape at the top of the tree does nothing:
-pressing it once more than you meant to costs nothing.
+Escape comes back, and lands on what you were looking at rather than at the top. The status line
+says where you are and where Escape leads, and the same entry heads the `Alt+?` menu, so the way
+out is never only a key. `Ctrl+Q` leaves altogether, from any view, and sits on that line beside it
+— on a terminal too narrow to hold both, the line keeps `Alt+?` and the menu keeps them. Escape at
+the top of the tree does nothing.
 
 Tab moves between the panes of the view you are on — the projects list has one, a project has two
 (its agents and its conversations), and a conversation has three (the room, the transcript and the
@@ -930,13 +879,12 @@ colour there, the same colour it has everywhere; every message header stands apa
 below it whether or not you can see colour; and a message keeps the paragraphs its author wrote,
 with any JSON in it laid out rather than run together.
 
-A separate program on purpose. An adapter that surfaced an operator command into an
-agent's tool set would hand an agent the power to end a discussion over its peers'
-objections, or to read across every agent at once. The safeguards against that get
-progressively more structural: `force-conclude` is deliberately not named `conclude`;
-the operator operations are not on the type an adapter is handed, so there is nothing to
-bind by accident; and they are not compiled into `parley-mcp` at all. A test asserts
-that last one by reflecting over the real binary.
+The terminal and the web UI are separate programs from the agent's adapter on purpose. An adapter
+that surfaced an operator command into an agent's tool set would hand an agent the power to end a
+discussion over its peers' objections, or to read across every agent at once. The safeguards are
+structural: `force-conclude` is deliberately not named `conclude`; the operator operations are not
+on the type an adapter is handed, so there is nothing to bind by accident; and they are not
+compiled into `parley-mcp` at all. A test asserts that last one by reflecting over the real binary.
 
 ## Versions
 
@@ -944,9 +892,9 @@ Three numbers, because they answer different questions and only one of them is t
 
 | Number | Where | Moves when |
 |---|---|---|
-| **0.1.0** | the `Parley.Mcp` and `Parley.Cli` packages | anything ships |
-| **0.1** | the protocol, declared at the top of [SPEC.md](SPEC.md) | the wire contract changes |
-| **1** | the storage schema, in SQLite's `user_version` | the tables change |
+| Tool version | the `Parley.Mcp` and `Parley.Cli` packages | anything ships |
+| Protocol version | declared at the top of [SPEC.md](SPEC.md) | the wire contract changes |
+| Schema version | the storage schema, in SQLite's `user_version` | the tables change |
 
 `parley --version` prints the first two. The protocol version is the one another implementation
 cares about — a fix to the operator's command-line tool ships a new package and must not suggest
@@ -978,7 +926,7 @@ Early. The spec is stabilising; the implementation is not.
 over a SQLite store with migrations, the trust envelope and message deduplication.
 
 - Two agents in different repositories send requests and results between them over MCP,
-  with all six tools working, and the receiver does the work in its own repository.
+  and the receiver does the work in its own repository.
 - An agent whose repository has been deleted is marked unreachable and requests to it are
   refused at admission.
 - A request sent while the receiver's session is closed waits for that agent, and an agent
@@ -991,8 +939,8 @@ over a SQLite store with migrations, the trust envelope and message deduplicatio
 - The message log is bounded in both directions: it forgets on a schedule even when
   nobody configures it, and a floor stops an aggressive setting deleting mail nobody has
   read.
-- Every operator operation is reachable from the command line, the terminal and the web UI,
-  through binaries agents are never given.
+- Every operator operation is reachable from the terminal and the web UI, through binaries
+  agents are never given.
 - Claude Code installs it as a plugin: this repository is the marketplace, a setup command
   writes a repository's launch configuration, and the operator commands ship as a skill.
 
@@ -1001,16 +949,14 @@ the storage assembly — the absent dependency is checked by the build rather th
 a convention. The protocol's invariants are enforced by database constraints rather than
 by the code that calls them.
 
-**Next.** Per-sender rate limits. The request and clarification caps are off by default,
-because a cap ended work before its participants had finished, so nothing bounds how many
-requests one agent sends another. The *turns* that traffic causes are bounded — a receiver
-is woken once until it reads its inbox, however many requests arrive — but the volume
-reaching its context is not, and that is the part still open.
+**Not yet.** Per-sender rate limits. The request and clarification caps are off, so nothing
+bounds how many requests one agent sends another. The *turns* that traffic causes are bounded — a
+receiver is woken once until it reads its inbox, however many requests arrive — but the volume
+reaching its context is not.
 
 **Before the first release.** `Parley.Mcp` and `Parley.Cli` go to NuGet, so installing either
 is `dotnet tool install -g` rather than a clone and a build, and the plugin's first step
-becomes one line. Every install path above currently asks you to build from source, which is
-the alpha showing rather than a design position.
+becomes one line.
 
 Issues and discussion are welcome — particularly on the open questions at the end of
 SPEC.md.

@@ -36,7 +36,6 @@ public sealed class ProbeTwentySixTests
         new("/src/orders", "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>A repository's own launch configuration, pinned to an address of its choosing.</summary>

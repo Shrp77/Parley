@@ -562,7 +562,6 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             MessageId = outcome.Message?.Id ?? 0
         };
 
-        reply.ExpectedItems.AddRange(outcome.ExpectedItems);
         reply.CannotSettle.AddRange(outcome.CannotSettle.Select(c => new Wire.SettleRefusal
         {
             ExchangeId = c.Exchange,

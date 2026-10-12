@@ -4,7 +4,7 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// That the store can say how each agent's most recent turn ended (SPEC.md §11.6, specs/024).
+/// That the store can say how each agent's most recent turn ended (SPEC.md §11.6).
 /// </summary>
 /// <remarks>
 /// The read the operator registry makes on every refresh of a conversation, so a surface can tell an agent that stopped

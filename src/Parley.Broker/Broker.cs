@@ -383,18 +383,18 @@ public sealed class Broker
         IReadOnlyList<long>? settles = null) =>
         SayAsync(
             exchangeId, from, MessageType.Clarify, responderModel, payloadJson, nowUtc,
-            (exchange, speaker) => exchange.Clarify(speaker, nowUtc), expectedItems: null,
+            (exchange, speaker) => exchange.Clarify(speaker, nowUtc),
             settles ?? [], cancellationToken);
 
     /// <summary>Sends the Result of a Request, closing its exchange (§5.3).</summary>
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="from">The receiver, holding the turn.</param>
     /// <param name="responderModel">What produced it (§11.3).</param>
-    /// <param name="payloadJson">The Result document: an outcome for each item of the Request.</param>
+    /// <param name="payloadJson">The Result document: one outcome for the ask as a whole.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the Result.</param>
     /// <param name="settles">Exchanges the person's Request settled, on a reply to one (SPEC.md §5.6); empty otherwise.</param>
-    /// <returns>The Result as stored, or why the exchange refused it — with the item ids it expected.</returns>
+    /// <returns>The Result as stored, or why the exchange refused it.</returns>
     /// <exception cref="ArgumentException">The payload has no readable outcomes.</exception>
     /// <remarks>
     /// <para>
@@ -402,11 +402,8 @@ public sealed class Broker
     /// under an exchange recorded complete would make §15 describe a deployment that does not exist.
     /// </para>
     /// <para>
-    /// <b>What the Result must answer is checked against the stored Request.</b> Since 0.7 that is one outcome
-    /// for the ask, recorded under <see cref="PayloadShape.WholeRequest"/>. A Request stored under 0.5 or 0.6
-    /// carried items and is still answered by all of them: answering some would close the exchange as firmly as
-    /// answering all, and the rest would be gone with no record they were skipped. The refusal names what is
-    /// expected, so the sender can correct it in one move.
+    /// A Request is answered whole: the Result carries one outcome for the ask, recorded under
+    /// <see cref="PayloadShape.WholeRequest"/> (SPEC.md §5.1, §5.3).
     /// </para>
     /// </remarks>
     public async Task<SayOutcome> ResultAsync(
@@ -433,7 +430,6 @@ public sealed class Broker
         return await SayAsync(
             exchangeId, from, MessageType.Result, responderModel, payloadJson, nowUtc,
             (exchange, speaker) => exchange.Close(speaker, nowUtc, rollup),
-            expectedItems: [.. outcomes.Select(o => o.Id)],
             settles ?? [],
             cancellationToken).ConfigureAwait(false);
     }
@@ -446,7 +442,6 @@ public sealed class Broker
     /// <param name="payloadJson">The document.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="transition">The domain transition to attempt.</param>
-    /// <param name="expectedItems">For a Result, the item ids it gives outcomes for; otherwise null.</param>
     /// <param name="settles">Exchanges the person's Request settled (SPEC.md §5.6).</param>
     /// <param name="cancellationToken">Cancels the move.</param>
     /// <returns>The message as stored, or why the move was refused.</returns>
@@ -475,7 +470,6 @@ public sealed class Broker
         string payloadJson,
         DateTimeOffset nowUtc,
         Func<Exchange, AgentName, TransitionResult> transition,
-        IReadOnlyList<string>? expectedItems,
         IReadOnlyList<long> settles,
         CancellationToken cancellationToken)
     {
@@ -499,30 +493,6 @@ public sealed class Broker
         if (!moved.Succeeded)
         {
             return SayOutcome.Refused(moved.Error);
-        }
-
-        if (expectedItems is not null)
-        {
-            var request = await _messages.GetRequestAsync(exchangeId, scope.Transaction, cancellationToken)
-                .ConfigureAwait(false);
-
-            var readable = PayloadShape.ItemIds(request?.PayloadJson);
-
-            // A Request none of whose items a Result can name is answered as a whole, under PayloadShape.WholeRequest
-            // (SPEC.md §5.1), as a person's close answers it. That is every Request written under 0.7, which carries no
-            // items at all -- and it was already the path for a question 0.4 wrote, which is why the change needed
-            // nothing here. Ids too long to store are not among those read, so they are never required.
-            //
-            // **Required, not merely allowed.** The first version accepted any ids here, and an agent's natural reply —
-            // the question's own ids — was then refused by storage with no expected_items to say what to send instead.
-            // Found by the review gate (lens 3 run 3.10).
-            IReadOnlyList<string> asked = readable.Count > 0 ? readable : [PayloadShape.WholeRequest];
-
-            if (expectedItems.Count != asked.Count
-                || !expectedItems.Order(StringComparer.Ordinal).SequenceEqual(asked.Order(StringComparer.Ordinal)))
-            {
-                return SayOutcome.Refused(TransitionError.OutcomesDoNotMatchItems, asked);
-            }
         }
 
         var to = from == exchange.Requester ? exchange.Receiver : exchange.Requester;

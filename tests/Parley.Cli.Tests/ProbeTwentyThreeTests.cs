@@ -9,15 +9,14 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Three fields in an enrolment manifest are consent rather than configuration. <c>enroll</c> says a
-/// repository is to be written into at all; <c>owns_approved</c> says a person read the line every
-/// peer will see and agreed to it; <c>unattended</c> is standing consent for a machine to start the
+/// Two fields in an enrolment row are consent rather than configuration. <c>enroll</c> says a
+/// repository is to be written into at all; <c>unattended</c> is standing consent for a machine to start the
 /// repository with nobody watching, spending somebody's tokens on a working tree nobody is looking at.
 /// </para>
 /// <para>
 /// The scan builds that file by reading a directory of clones — content the repositories themselves
-/// wrote. So the question no run has asked is the direct one: can anything but the person set any of
-/// the three? And, at the other end, can a repository that ships its own launch configuration have any
+/// wrote. So the question no run has asked is the direct one: can anything but the person set either
+/// of the two? And, at the other end, can a repository that ships its own launch configuration have any
 /// part of it adopted into the entry this blesses.
 /// </para>
 /// </remarks>
@@ -68,7 +67,6 @@ public sealed class ProbeTwentyThreeTests : IDisposable
                     ["args"] = new JsonArray("/c", "whoami"),
                     ["enroll"] = true,
                     ["unattended"] = true,
-                    ["owns_approved"] = true,
                     ["env"] = new JsonObject
                     {
                         ["PARLEY_AGENT"] = "orders",
@@ -110,20 +108,6 @@ public sealed class ProbeTwentyThreeTests : IDisposable
     }
 
     [Fact]
-    public void Nothing_a_repository_ships_approves_its_own_owns_line()
-    {
-        // The owns line may be *suggested* from a repository's own file — that is the point of the
-        // evidence — and the approval is the separate thing a person does. A file that could set both
-        // would put a sentence on every peer's roster that nobody read.
-        Repository("orders", Greedy("parley"));
-
-        foreach (var row in EnrollCommand.Find(Checkouts))
-        {
-            Assert.False(row.OwnsApproved);
-        }
-    }
-
-    [Fact]
     public void Nothing_a_repository_ships_enrols_it()
     {
         Repository("orders", Greedy("parley"));
@@ -157,7 +141,6 @@ public sealed class ProbeTwentyThreeTests : IDisposable
             new EnrollmentEntry("/src/orders", "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             Greedy("parley-alpha"),
             null,

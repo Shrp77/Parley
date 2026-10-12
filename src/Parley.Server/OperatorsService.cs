@@ -402,7 +402,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var rows = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
 
-        // **Each agent's turn standing, from what its node reported** (SPEC.md §10.2, §11.6, specs/024): whether a turn is
+        // **Each agent's turn standing, from what its node reported** (SPEC.md §10.2, §11.6): whether a turn is
         // running from the broker's memory, how the last one ended from `invocations`. On this read only — the agent
         // roster carries none of it.
         var latest = (await _runtime.UseConnectionAsync(
@@ -926,7 +926,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <param name="value">The name on the wire.</param>
     /// <returns>The agent.</returns>
     /// <remarks>
-    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2, specs/023 T048). Before, `retire` and `purge`
+    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2). Before, `retire` and `purge`
     /// failed at a storage trigger with a raw constraint, and `start` asked a node to start somebody no node can,
     /// and `reinstate` changed nothing — four different answers to one fact.
     /// </remarks>
