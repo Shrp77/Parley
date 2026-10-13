@@ -75,10 +75,10 @@ public sealed class VersionTests
     {
         // The behaviour, not the wording: a mismatch is a warning and not a gate. A console that
         // refused would take the view away at the moment it is most needed.
-        var markup = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Index.cshtml"));
+        var markup = File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Shared/_ProjectRow.cshtml"));
 
         Assert.Contains("The pages below still", markup, StringComparison.Ordinal);
-        Assert.Contains("health.Speaks", markup, StringComparison.Ordinal);
+        Assert.Contains(".Speaks", markup, StringComparison.Ordinal);
         Assert.Contains("ConsoleSpeaks", markup, StringComparison.Ordinal);
     }
 

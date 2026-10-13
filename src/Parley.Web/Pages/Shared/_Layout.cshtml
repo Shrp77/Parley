@@ -16,16 +16,22 @@
     // A page render is evidence the person is at the console, and that is the whole of what keeps them marked here:
     // SPEC.md §4.0 has no heartbeat. Doing it in the frame means every page counts, including ones nobody instrumented.
     // **Except a page reloading itself**, which carries `reloaded` and is a timer, not a person (SPEC.md §14).
-    await PersonSeats.EnsureAsync(
-        Seats, Directory, Context.RequestAborted,
-        person: !Context.Request.Query.ContainsKey(PersonSeats.Reloaded));
-
-    var here = Seats.Seats();
-
+    //
     // Asked, not remembered, and **counted from every seat this console knows, held or not**. Mail waits against the
     // name, not the stream, so the count must work while the person is away — which is exactly when it matters. A count
     // nobody could confirm shows nothing rather than a zero: "no messages" and "could not ask" are different things.
-    var waiting = await Seats.WaitingAsync(Directory.Projects, Context.RequestAborted);
+    //
+    // **A page that sets `Deferred` does not wait for either.** Both are answers from brokers, and a broker that is down
+    // costs the page its timeout; the page asks afterwards (`?handler=Presence`) and fills the badge in.
+    var deferred = ViewData["Deferred"] is true;
+
+    (int Waiting, bool Certain) waiting = deferred
+        ? (0, false)
+        : await PersonSeats.PresenceAsync(
+            Seats, Directory, Context.RequestAborted,
+            person: !Context.Request.Query.ContainsKey(PersonSeats.Reloaded));
+
+    var here = Seats.Seats();
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -88,69 +94,83 @@
             color: var(--ink);
             background: var(--page);
             margin: 0;
-            padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem;
+            padding: 0;
         }
 
         header, main, footer { margin: 0 auto; max-width: 100rem; }
 
-        /* The side rail: navigation on the left, the page on the right, collapsible to icons. The choice is the browser's
-           alone (localStorage, guarded) and the page is complete without it. Expanded is the default so that nothing is
-           hidden from somebody with no script. */
-        .shell { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: var(--gap); align-items: start; max-width: 100rem; margin: 0 auto; }
-        html[data-nav="collapsed"] .shell { grid-template-columns: 3.9rem minmax(0, 1fr); }
-        .content { min-width: 0; }
-        .content main, .content footer { max-width: none; }
+        /* The rail: a navigation bar the full height of the window, fixed to its left edge, with the page to its right.
+           Collapsible to icons; the choice is the browser's alone (localStorage, guarded) and the page is complete
+           without it. Expanded is the default so that nothing is hidden from somebody with no script. */
+        :root { --rail-w: 14.5rem; }
+        /* Collapsed is exactly wide enough for an icon with the same padding it has expanded: the icons never move
+           when the bar opens or closes, only the labels beside them appear. */
+        html[data-nav="collapsed"] { --rail-w: 3.85rem; }
 
-        .side {
-            position: sticky;
-            top: calc(var(--frame) + 0.75rem);
-            margin-top: 0.75rem;
-            max-height: calc(100vh - var(--frame) - 1.5rem);
+        .rail {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 30;
+            width: var(--rail-w);
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            overflow-x: hidden;
             overflow-y: auto;
+            padding: 0.9rem 0.6rem;
             background: var(--card);
-            border: 1px solid var(--rule);
-            border-radius: 20px;
-            box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04);
-            padding: 0.6rem;
+            border-right: 1px solid var(--rule);
+            box-shadow: 8px 0 28px -18px rgb(0 0 0 / 0.25);
         }
 
-        .side-toggle {
+        .page { margin-left: var(--rail-w); padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem; min-width: 0; }
+
+        /* Its mark is wider than a link's icon, so it starts further left to share their centre line. */
+        .rail .brand { padding: 0.2rem 0.375rem 0.9rem; border-bottom: 1px solid var(--rule); margin-bottom: 0.4rem; white-space: nowrap; }
+
+        .rail .brand img { flex: none; }
+        .rail .brand .rail-label { color: var(--ink); font-weight: 650; }
+        .rail .brand .rail-label span { color: var(--ink-faint); font-weight: 400; }
+
+        .rail-toggle {
             display: flex; align-items: center; gap: 0.7rem; width: 100%;
             background: none; border: 0; box-shadow: none; color: var(--ink-soft);
-            padding: 0.55rem 0.7rem; border-radius: 12px; cursor: pointer; font: inherit;
+            height: 2.6rem; padding: 0 0.7rem; border-radius: 12px; cursor: pointer; font: inherit; margin-top: auto; order: 2;
         }
-        .side-toggle:hover { background: var(--quiet-wash); color: var(--ink); }
-        .side-toggle svg { transition: transform 0.15s; }
-        html[data-nav="collapsed"] .side-toggle svg { transform: rotate(180deg); }
+        .rail-toggle:hover { background: var(--quiet-wash); color: var(--ink); filter: none; }
+        .rail-toggle svg { transition: transform 0.15s; }
+        html[data-nav="collapsed"] .rail-toggle svg { transform: rotate(180deg); }
 
-        .side nav { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.4rem 0 0; align-items: stretch; }
-        .side nav a {
+        .rail nav { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0.15rem; margin: 0; align-items: stretch; }
+        .rail nav a {
             display: flex; align-items: center; gap: 0.7rem;
-            padding: 0.55rem 0.7rem; border: 0; border-radius: 12px;
+            height: 2.6rem; padding: 0 0.7rem; border: 0; border-radius: 12px;
             color: var(--ink-soft); position: relative; white-space: nowrap;
         }
-        .side nav a:hover, .side nav a:focus { background: var(--quiet-wash); color: var(--ink); border: 0; }
-        .side nav a[aria-current] { color: var(--ink); font-weight: 600; background: var(--quiet-wash); }
-        .side nav a[aria-current]::before {
-            content: ""; position: absolute; left: -0.6rem; top: 50%; transform: translateY(-50%);
-            border: 6px solid transparent; border-left-color: var(--accent); border-right-width: 0;
+        .rail nav a:hover, .rail nav a:focus { background: var(--quiet-wash); color: var(--ink); border: 0; }
+        .rail nav a[aria-current] { color: var(--ink); font-weight: 600; background: var(--quiet-wash); }
+        .rail nav a[aria-current]::before {
+            content: ""; position: absolute; left: -0.6rem; top: 18%; bottom: 18%; width: 3px;
+            background: var(--accent); border-radius: 0 3px 3px 0;
         }
-        .side svg { flex: none; width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-        .side-label { overflow: hidden; text-overflow: ellipsis; }
-        .side-heading { margin: 0.9rem 0.7rem 0.2rem; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); overflow-wrap: anywhere; }
-        .side .seat-waiting { margin-left: auto; }
+        .rail svg { flex: none; width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .rail-label { overflow: hidden; text-overflow: ellipsis; }
+        /* The same height in both states, so nothing below it moves when the bar collapses: collapsed, the name goes and
+           a rule stays in its place. */
+        .rail-heading { height: 2.2rem; line-height: 2.2rem; margin: 0.4rem 0.7rem 0; border-top: 1px solid transparent; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rail .seat-waiting { margin-left: auto; }
 
-        html[data-nav="collapsed"] .side-label,
-        html[data-nav="collapsed"] .side-heading { position: absolute; left: -100rem; }
-        html[data-nav="collapsed"] .side nav a { justify-content: center; padding-inline: 0; }
-        html[data-nav="collapsed"] .side-toggle { justify-content: center; padding-inline: 0; }
-        html[data-nav="collapsed"] .side nav a[aria-current]::before { left: -0.45rem; }
+        html[data-nav="collapsed"] .rail-label,
+        html[data-nav="collapsed"] .rail .brand span { position: absolute; left: -100rem; }
+        html[data-nav="collapsed"] .rail-heading { color: transparent; border-top-color: var(--rule); }
+        html[data-nav="collapsed"] .rail .seat-waiting { position: absolute; top: 0.2rem; right: 0.3rem; margin: 0; }
 
         @@media (max-width: 700px) {
-            .shell { grid-template-columns: 3.9rem minmax(0, 1fr); gap: 0.6rem; }
-            .side-label, .side-heading { position: absolute; left: -100rem; }
-            .side nav a { justify-content: center; padding-inline: 0; }
-            .side-toggle { display: none; }
+            :root { --rail-w: 3.85rem; }
+            .rail-label, .rail .brand span { position: absolute; left: -100rem; }
+            .rail-heading { color: transparent; border-top-color: var(--rule); }
+            .rail-toggle { display: none; }
+            .rail .seat-waiting { position: absolute; top: 0.2rem; right: 0.3rem; margin: 0; }
         }
 
         /* Skipping is for somebody navigating by keyboard, so it has to become visible when it
@@ -204,9 +224,6 @@
         .brand span { color: var(--ink-faint); font-weight: 400; }
 
         .crumb {
-            margin-left: 1rem;
-            padding-left: 1rem;
-            border-left: 1px solid var(--rule);
             font-weight: 650;
             color: var(--ink);
             text-decoration: none;
@@ -325,6 +342,8 @@
             background: #1c7c48;
             box-shadow: 0 0 0 2px color-mix(in srgb, #1c7c48 25%, transparent);
         }
+
+        .seat-waiting[hidden] { display: none; }
 
         .seat-waiting {
             font-size: 0.75rem;
@@ -864,10 +883,85 @@
         .drawer { margin-top: 0.8rem; font-size: 0.85rem; }
         .drawer summary { cursor: pointer; font-weight: 600; }
         .drawer ul { margin: 0.4rem 0 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
-        .project-title { display: flex; align-items: baseline; gap: 0.8rem; }
-        .project-title .title-link { color: inherit; text-decoration: none; }
-        .project-title .title-edit input { font: inherit; font-weight: inherit; width: min(24rem, 70vw); }
-        .project-title .edit { font-size: 0.8rem; font-weight: 400; }
+
+        /* The data-grid views (Projects, Agents, Inbox): a title, then Create, Filters and the grid as one stack that fills
+           the window. The first three never scroll away; the grid is the only thing that scrolls, and its header row sticks
+           to its top. Each grid names its columns once, in --cols, and the header and every row read the same value, so
+           they cannot disagree about where a column is. */
+        .view { display: flex; flex-direction: column; gap: 0.75rem; height: calc(100vh - var(--frame) - 3rem); min-height: 26rem; }
+        .view > * { margin: 0; }
+        .view-title { display: flex; align-items: baseline; gap: 1rem; flex: none; }
+        .view-title h1 { margin: 0; }
+        .view-title .as-of { margin: 0 0 0 auto; }
+        .view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: 20px; box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04); }
+        .view-card .composer-note { margin: 0; }
+
+        .view-create > summary { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.1rem; font-weight: 650; cursor: pointer; list-style: none; }
+        .view-create > summary::-webkit-details-marker { display: none; }
+        .view-create > summary::before { content: "+"; display: inline-grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; line-height: 1; }
+        .view-create[open] > summary::before { content: "\2212"; }
+        .view-create form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; border: 0; background: none; box-shadow: none; padding: 0.1rem 1.1rem 1rem; margin: 0; }
+        .view-create .composer-note { flex: 1 1 100%; }
+
+        .view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
+        .view-filters .tally { margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--ink-faint); }
+
+        .view .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
+        .view .field.wide { flex-grow: 3; }
+        .view .field select { appearance: none; -webkit-appearance: none; padding-right: 2.4rem; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23878e9c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 1rem center; }
+        .view .field input, .view .field select { width: 100%; border-radius: 999px; padding: 0.45rem 1rem; font: inherit; color: var(--ink); background-color: var(--page); border: 1px solid var(--rule); }
+        .view button, .view .button { border-radius: 999px; padding: 0.5rem 1.4rem; }
+        .view .button { display: inline-block; font-weight: 600; color: #fff; background: var(--accent); text-decoration: none; border: 1px solid transparent; }
+        .view button.quiet, .view .button.quiet { color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
+        .view .view-filters button, .view .view-filters .button { align-self: flex-end; }
+        .view .button.danger, .view button.danger { color: #fff; background: var(--alarm); border-color: transparent; }
+        .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
+        .new-conversation { margin: 0; }
+        #new-conversation-dialog form { display: block; border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
+        .view .new-button { border-radius: 999px; padding: 0.5rem 1.4rem; font-weight: 600; color: #fff; background: var(--accent); border: 1px solid transparent; cursor: pointer; }
+        .new-conversation-dialog .field, #new-conversation-dialog .field { display: flex; flex-direction: column; gap: 0.2rem; }
+        #new-conversation-dialog input { width: 100%; border-radius: 999px; padding: 0.45rem 1rem; font: inherit; color: var(--ink); background-color: var(--page); border: 1px solid var(--rule); }
+        #new-conversation-dialog .composer-note { margin: 0.9rem 0.3rem 0; line-height: 1.5; }
+        #new-conversation-dialog .dialog-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin: 1.2rem 0 0; }
+        #new-conversation-dialog button { border-radius: 999px; padding: 0.5rem 1.4rem; font: inherit; font-weight: 600; cursor: pointer; }
+        #new-conversation-dialog button.new-button { color: #fff; background: var(--accent); border: 1px solid transparent; }
+        #new-conversation-dialog button.quiet { color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
+        .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.6rem; align-self: flex-end; padding: 0.45rem 1rem; border-radius: 999px; border: 1px solid var(--rule); background: var(--page); color: var(--ink-soft); font-size: 0.95rem; cursor: pointer; white-space: nowrap; }
+        .view .view-filters .toggle input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 2rem; height: 1.15rem; margin: 0; border-radius: 999px; background: var(--rule); cursor: pointer; transition: background 0.15s; }
+        .view .view-filters .toggle input::before { content: ""; position: absolute; top: 0.15rem; left: 0.15rem; width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #fff; transition: transform 0.15s; }
+        .view .view-filters .toggle input:checked { background: var(--accent); }
+        .view .view-filters .toggle input:checked::before { transform: translateX(0.85rem); }
+        .view .view-filters .toggle:has(input:checked) { color: var(--ink); border-color: var(--accent); }
+        .view .view-filters .toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        /* On these pages the grid is the scroller, so the page itself must not be: the footer is held to a line or two
+           under it and the window is divided between the frame, the view and the footer. */
+        .grid-page .page { padding-bottom: 0.5rem; }
+        .grid-page footer { margin-top: 0.6rem; padding-top: 0.5rem; }
+        .grid-page footer p { margin: 0.1rem 0; font-size: 0.78rem; }
+        .grid-page .view { height: calc(100vh - var(--frame) - 1.5rem - 5.2rem); }
+
+        .dgrid { flex: 1 1 auto; min-height: 0; overflow: auto; border-radius: 20px; }
+        .dgrid-inner { min-width: var(--min, 40rem); }
+        .dgrid-head, .dgrid-line { display: grid; grid-template-columns: var(--cols); gap: 0.8rem; align-items: baseline; padding: 0.6rem 1.1rem; }
+        .dgrid-head { position: sticky; top: 0; z-index: 2; background: var(--quiet-wash); border-bottom: 1px solid var(--rule); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+        .dgrid-row + .dgrid-row { border-top: 1px solid var(--rule); }
+        .dgrid-line > * { min-width: 0; overflow-wrap: anywhere; }
+        details.dgrid-row > summary { list-style: none; cursor: pointer; }
+        details.dgrid-row > summary::-webkit-details-marker { display: none; }
+        details.dgrid-row[open] > summary { background: var(--quiet-wash); }
+        .dgrid-detail { padding: 0.4rem 1.1rem 1rem; border-top: 1px solid var(--rule); }
+        .dgrid-detail .letter { margin-top: 0; }
+        .dgrid-detail .facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.3rem 1rem; margin: 0.6rem 0 0; }
+        .dgrid-detail .facts dt { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); padding-top: 0.15rem; }
+        .dgrid-detail .facts dd { margin: 0; overflow-wrap: anywhere; }
+        .dgrid-detail .note { margin: 0.6rem 0 0; }
+        .dgrid .status-cell .alarm + .alarm, .dgrid .status-cell span + .alarm { margin-left: 0.5rem; }
+        .dgrid .name { font-weight: 650; }
+        .dgrid .faint { color: var(--ink-faint); font-size: 0.85rem; }
+        .dgrid .alarm { color: var(--alarm); font-weight: 600; }
+        .dgrid .note { display: block; margin: 0.25rem 0 0; font-size: 0.82rem; }
+        .dgrid-empty { padding: 1.4rem 1.1rem; color: var(--ink-soft); }
 
         /* The conversations as a grid: name, messages, last active. A row opens to show who is in it and the acts. */
         .grid { margin: 0.5rem 0 1rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); }
@@ -887,6 +981,15 @@
         .grid .name { font-weight: 650; overflow-wrap: anywhere; }
         .grid .num { text-align: right; font-variant-numeric: tabular-nums; }
         .grid .when { font-size: 0.82rem; color: var(--ink-soft); }
+        /* A page shown inside another (a roadmap item's conversation) drops the console's frame and keeps its content. */
+        html:has(body.embed) { --frame: 0px; }
+        body.embed .rail, body.embed header, body.embed footer, body.embed .as-of, body.embed .skip { display: none !important; }
+        body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
+        .item-bar { flex: 1 1 100%; display: flex; align-items: center; gap: 0.8rem; }
+        .item-bar .between { flex: 1; }
+        .grid-detail .button { display: inline-block; border-radius: 999px; padding: 0.35rem 1.1rem; font-weight: 600; text-decoration: none; color: #fff; background: var(--accent); border: 1px solid transparent; }
+        .grid-detail .button.quiet { color: var(--ink-soft); background: none; border-color: var(--rule); }
+        .item-frame { flex: 1 1 100%; width: 100%; height: 70vh; min-height: 24rem; border: 1px solid var(--rule); border-radius: 14px; background: var(--page); }
         .grid-detail { padding: 0.2rem 1rem 0.8rem; display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
         .grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
         .grid-detail form { margin: 0; }
@@ -1029,6 +1132,8 @@
 
         .kin-note:empty { display: none; }
 
+        header .build { margin-left: 0.8rem; font-size: 0.72rem; color: var(--ink-faint); white-space: nowrap; }
+
         footer {
             margin-top: 3rem;
             padding-top: 1rem;
@@ -1163,13 +1268,13 @@
 
         .recipients li[class*="slot-"] {
             display: grid;
-            grid-template-columns: auto auto 1.5rem minmax(0, 1fr);
+            grid-template-columns: auto auto 1.5rem minmax(0, 1fr) auto;
             grid-template-rows: auto auto;
             column-gap: 0.4rem;
             align-items: center;
         }
 
-        .recipients li.not-in-it { grid-template-columns: auto 1.5rem minmax(0, 1fr); }
+        .recipients li.not-in-it { grid-template-columns: auto 1.5rem minmax(0, 1fr) auto; }
 
         .recipients li .to-box { grid-row: 1 / span 2; }
 
@@ -1189,6 +1294,27 @@
         .recipients .mark { grid-row: 1 / span 2; font-size: 0.7rem; color: var(--agent); }
         .recipients .name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
         .recipients .state { font-size: 0.72rem; color: var(--ink-faint); }
+        .recipients li.subgroup > details > summary { font-weight: 500; font-size: 0.78rem; color: var(--ink-soft); }
+        .recipients li.subgroup > details > ul { margin-left: 0.3rem; padding-left: 0.5rem; gap: 0.35rem; }
+        .recipients .msgs { grid-column: -1; grid-row: 1 / span 2; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); background: var(--page); border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.5rem; min-width: 1.4rem; text-align: center; }
+        .convo-head { position: relative; margin: 0 0 0.8rem; }
+        .convo-frame { background: var(--card); border: 1px solid var(--rule); border-radius: 0.9rem; padding: 0.5rem 1rem; }
+        .convo-frame summary { cursor: pointer; list-style: none; display: flex; align-items: center; min-height: 2.4rem; padding-right: 11rem; }
+        .convo-frame summary::-webkit-details-marker { display: none; }
+        .convo-frame summary::before { content: "\25B8"; margin-right: 0.7rem; font-size: 1.1rem; color: var(--ink); }
+        .convo-frame[open] summary::before { content: "\25BE"; }
+        .convo-frame h1 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .convo-frame .item-title { margin: 0.5rem 0 0; font-size: 1rem; font-style: normal; color: var(--ink); }
+        .convo-frame .as-of { margin: 0.4rem 0 0.2rem; }
+        .convo-actions { position: absolute; top: 0.5rem; right: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
+        .convo-actions .file-button { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem; border-radius: 999px; font-weight: 600; font-size: 0.9rem; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--rule); cursor: pointer; list-style: none; }
+        .convo-actions .file-button::-webkit-details-marker { display: none; }
+        .convo-actions .file-button:hover { border-color: var(--accent); }
+        .convo-actions .file-button svg { width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+        .export-menu { position: relative; }
+        .export-list { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: 0.6rem; box-shadow: 0 6px 18px rgba(0,0,0,0.18); overflow: hidden; }
+        .export-list a { padding: 0.5rem 0.9rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
+        .export-list a:hover { background: var(--rule); }
 
         /* Filtering the transcript. Hidden rather than removed, so following can replace the transcript and the
            choice is simply applied again. */
@@ -1395,26 +1521,105 @@
                 .Where(pair => pair.Key != PersonSeats.Reloaded)
                 .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)))
                 .Append(new KeyValuePair<string, string?>(PersonSeats.Reloaded, "1")));
-        <meta http-equiv="refresh" content="@($"{seconds};url={Context.Request.Path}{query}")" />
+        @* The reload waits while a dialog is open: it would close the dialog under whoever is typing in it. Without script
+           the page reloads on the timer as before. *@
+        var target = $"{Context.Request.Path}{query}";
+        <noscript><meta http-equiv="refresh" content="@($"{seconds};url={target}")" /></noscript>
+        <meta name="parley-reload" content="@seconds" data-url="@target" />
+        <script>
+            (function () {
+                var m = document.querySelector("meta[name=parley-reload]");
+                var every = Number(m.content) * 1000;
+                (function tick() {
+                    setTimeout(function () {
+                        if (document.querySelector("dialog[open]")) { tick(); } else { location.replace(m.getAttribute("data-url")); }
+                    }, every);
+                })();
+            })();
+        </script>
     }
 </head>
-<body>
+<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Context.Request.Query.ContainsKey("embed") ? "embed" : null)">
     <script>
         try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
     </script>
     <a class="skip" href="#main">Skip to content</a>
-    <header>
+    @{
+        var path = Context.Request.Path.Value ?? "/";
+        var agentsView = path == "/" && Context.Request.Query["tab"] == "agents";
+        var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
+        var onAgentsTab = agentsView && project.Length == 0;
+        var q = Uri.EscapeDataString(project);
+        var rail = new List<(string Href, string Label, string Icon, bool Current)>
+        {
+            ("/", "Projects", "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", path == "/" && !agentsView),
+            ("/?tab=agents", "All Agents", "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", onAgentsTab),
+            ("/Inbox", "Inbox", "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z", path.StartsWith("/Inbox", StringComparison.Ordinal)),
+        };
+        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
+
+        if (project.Length > 0)
+        {
+            inProjectRail =
+            [
+                ($"/Projects/Agents?project={q}", "Conversations", "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
+                ($"/?tab=agents&project={q}", "Agents", "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", agentsView),
+                ($"/Roadmaps?project={q}", "Roadmaps", "M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
+                ($"/Projects/Files?project={q}", "Files", "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", path == "/Projects/Files"),
+                ($"/Projects/Health?project={q}", "Health", "M22 12h-4l-3 9L9 3l-3 9H2", path == "/Projects/Health"),
+                ($"/Projects/Settings?project={q}", "Settings", "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6", path == "/Projects/Settings"),
+            ];
+        }
+    }
+    <aside class="rail" id="rail" aria-label="Navigation">
         <a class="brand" href="/">
             @* Decorative: the word beside it says the same thing, so a reader who cannot see
                the image loses nothing and a screen reader is not told it twice. *@
             <img src="/brand/icon.png" alt="" width="128" height="125" />
-            Parley <span>console</span>
+            <span class="rail-label">Parley <span>console</span></span>
         </a>
+        <nav aria-label="Sections">
+            @foreach (var item in rail)
+            {
+                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
+                    <span class="rail-label">@item.Label</span>
+                    @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden"> messages waiting for you</span></span>
+                    }
+                    else if (item.Label == "Inbox" && deferred)
+                    {
+                        <span class="seat-waiting" data-inbox-badge hidden></span>
+                    }
+                </a>
+            }
+            @if (inProjectRail.Count > 0)
+            {
+                <p class="rail-heading">@project</p>
+                @foreach (var item in inProjectRail)
+                {
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
+                        <span class="rail-label">@item.Label</span>
+                    </a>
+                }
+            }
+        </nav>
+        <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" aria-expanded="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+            <span class="rail-label">Collapse</span>
+        </button>
+    </aside>
+    <div class="page">
+    <header>
         @if ((ViewData["Project"] as string ?? Context.Request.Query["project"].ToString()) is { Length: > 0 } inProject)
         {
             @* Where in the deployment the page is, on every page, so a conversation is never without its project. *@
             <a class="crumb" href="/Projects/Agents?project=@Uri.EscapeDataString(inProject)" title="This project">@inProject</a>
         }
+        @* Which build is running, small and out of the way: it is how a person tells an install has taken. *@
+        <span class="build" title="The web console build">parley-web-ui @Parley.Web.WebBuild.Version</span>
         <nav aria-label="Console">
             @if (here.Count > 0)
             {
@@ -1445,80 +1650,14 @@
             }
         </nav>
     </header>
-    @{
-        var path = Context.Request.Path.Value ?? "/";
-        var onAgentsTab = path == "/" && Context.Request.Query["tab"] == "agents";
-        var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
-        var q = Uri.EscapeDataString(project);
-        var rail = new List<(string Href, string Label, string Icon, bool Current)>
-        {
-            ("/", "Projects", "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", path == "/" && !onAgentsTab),
-            ("/?tab=agents", "Agents", "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75", onAgentsTab),
-            ("/Inbox", "Inbox", "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z", path.StartsWith("/Inbox", StringComparison.Ordinal)),
-        };
-        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
-
-        if (project.Length > 0)
-        {
-            inProjectRail =
-            [
-                ($"/Projects/Agents?project={q}", "Conversations", "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
-                ($"/Roadmaps?project={q}", "Roadmaps", "M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
-                ($"/Projects/Files?project={q}", "Files", "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7", path == "/Projects/Files"),
-                ($"/Projects/Health?project={q}", "Health", "M22 12h-4l-3 9L9 3l-3 9H2", path == "/Projects/Health"),
-                ($"/Projects/Settings?project={q}", "Settings", "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6", path == "/Projects/Settings"),
-            ];
-        }
-    }
-    <div class="shell">
-    <aside class="side" id="side" aria-label="Navigation">
-        <button type="button" class="side-toggle" id="side-toggle" aria-controls="side" aria-expanded="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-            <span class="side-label">Collapse</span>
-        </button>
-        <nav aria-label="Sections">
-            @foreach (var item in rail)
-            {
-                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
-                    <span class="side-label">@item.Label</span>
-                    @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
-                    {
-                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden"> messages waiting for you</span></span>
-                    }
-                </a>
-            }
-            @if (inProjectRail.Count > 0)
-            {
-                <p class="side-heading">@project</p>
-                @foreach (var item in inProjectRail)
-                {
-                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="@item.Icon" /></svg>
-                        <span class="side-label">@item.Label</span>
-                    </a>
-                }
-            }
-        </nav>
-    </aside>
-    <div class="content">
     <main id="main">
 
-        @if (ViewData["AsOf"] is string asOf)
+        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true)
         {
             <p class="as-of" role="status">Showing what the broker reported at @asOf.</p>
         }
         @RenderBody()
     </main>
-    <footer>
-        @* Reading is free; the four operations that are not are each described before they
-           happen and none of them is reachable by following a link. Saying "read-only" here
-           would be the more comforting sentence and the false one. *@
-        <p>Operator view. Everything is a read except retire, reinstate, purge and
-           force-conclude, and each of those says what it will do before it does it.</p>
-        <p class="build">parley-web-ui @Parley.Web.WebBuild.Version</p>
-    </footer>
-    </div>
     </div>
     <script>
         // --frame is what the sticky frame occupies, and three other things are positioned
@@ -1640,7 +1779,7 @@
         // The rail's collapse. Remembered in this browser only, and every access is guarded: storage can be absent or
         // refuse, and the rail must still work for the life of the page.
         (function () {
-            var button = document.getElementById('side-toggle');
+            var button = document.getElementById('rail-toggle');
             var root = document.documentElement;
 
             if (!button) { return; }

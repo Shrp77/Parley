@@ -109,7 +109,7 @@ public sealed class RoadmapOnThePageTests
             new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
             TestContext.Current.CancellationToken);
 
-        Assert.Contains("<span class=\"item-title\">Add CSV export</span>", page, StringComparison.Ordinal);
+        Assert.Contains("<p class=\"item-title\">Add CSV export</p>", page, StringComparison.Ordinal);
         Assert.Contains($"class=\"crumb\" href=\"/Projects/Agents?project={RoadmapConsole.Project}\"", page, StringComparison.Ordinal);
     }
 
@@ -135,8 +135,33 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
-        Assert.Contains("Open its conversation", page, StringComparison.Ordinal);
+        // Shown in the roadmap, with a way out to the conversation page.
+        Assert.Contains("class=\"item-frame\"", page, StringComparison.Ordinal);
+        Assert.Contains("&amp;embed=1", page, StringComparison.Ordinal);
+        Assert.Contains(">Pop out</a>", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Hint=", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_conversation_asked_for_embedded_drops_the_consoles_frame_and_a_roadmap_item_embeds_it()
+    {
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var embedded = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&embed=1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        var plain = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        var roadmap = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
+
+        Assert.Matches("<body class=\"[^\"]* embed", embedded);
+        Assert.DoesNotMatch("<body class=\"[^\"]* embed", plain);
+        Assert.Contains("data-src=\"/Conversations/Detail?project=" + RoadmapConsole.Project + "&amp;id=rm1-1&amp;Hint=", roadmap, StringComparison.Ordinal);
+        Assert.Contains("&amp;embed=1\"", roadmap, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -201,5 +226,14 @@ public sealed class RoadmapOnThePageTests
         Assert.Contains("></textarea>", page, StringComparison.Ordinal);
         Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", page);
         Assert.DoesNotMatch("name=\"Targets\" value=\"orders@test\" checked", page);
+    }
+
+    [Fact]
+    public void The_first_message_on_an_item_says_which_item_and_roadmap_it_is_about()
+    {
+        var sent = Parley.Web.Pages.Conversations.DetailModel.Lead("Add CSV export", "Billing export", "Start with the header row.");
+
+        Assert.Equal(
+            "This is about \"Add CSV export\" in the roadmap \"Billing export\": Start with the header row.", sent);
     }
 }

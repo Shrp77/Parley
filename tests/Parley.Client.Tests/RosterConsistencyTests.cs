@@ -43,13 +43,12 @@ public sealed class RosterConsistencyTests
     }
 
     [Fact]
-    public void Both_pages_that_show_one_use_it()
+    public void Every_page_that_shows_one_uses_it()
     {
         // The other direction. A partial nothing renders is a partial that stops being kept up,
         // and the check above would still pass with every roster deleted.
         foreach (var page in new[]
         {
-            "src/Parley.Web/Pages/Projects/Agents.cshtml",
             "src/Parley.Web/Pages/Conversations/_Recipients.cshtml"
         })
         {

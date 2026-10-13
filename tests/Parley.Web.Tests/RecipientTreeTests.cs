@@ -42,6 +42,20 @@ public sealed class RecipientTreeTests
     }
 
     [Fact]
+    public async Task Under_a_machine_the_agents_sit_in_a_subgroup_for_their_state_rather_than_each_saying_it()
+    {
+        using var console = Project();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri, TestContext.Current.CancellationToken);
+        var to = page[page.IndexOf("aria-label=\"Who to talk to\"", StringComparison.Ordinal)..];
+
+        Assert.Contains("data-group=\"beta/", to, StringComparison.Ordinal);
+        Assert.Contains("class=\"group subgroup\"", to, StringComparison.Ordinal);
+        Assert.DoesNotContain("<span class=\"state\">", to, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Agents_are_grouped_by_machine_with_the_persons_group_first_and_named_by_role()
     {
         using var console = Project();

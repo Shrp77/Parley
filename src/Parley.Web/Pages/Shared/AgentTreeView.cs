@@ -7,7 +7,8 @@ namespace Parley.Web.Pages.Shared;
 /// <param name="InIt">Whether it is a party to the conversation being shown; true everywhere there is none.</param>
 /// <param name="Ticked">Whether its box is ticked. Only meaningful when the tree is picking.</param>
 /// <param name="State">What it is doing, in words.</param>
-public sealed record AgentTreeEntry(AgentName Name, bool InIt, bool Ticked, string State);
+/// <param name="Messages">How many messages in the conversation being shown were sent by it or to it; null where there is none.</param>
+public sealed record AgentTreeEntry(AgentName Name, bool InIt, bool Ticked, string State, int? Messages = null);
 
 /// <summary>What the shared tree of agents is drawn from.</summary>
 /// <remarks>

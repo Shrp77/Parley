@@ -9,10 +9,9 @@ namespace Parley.Web.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The load-bearing distinction is between looking and taking. Delivery is recorded by the inbox
-/// drain, and what is delivered is what the flags of §15 measure progress from, so a page that
-/// drained while rendering would mark work collected for somebody who only followed a link. The
-/// count is free; the contents are not.
+/// Delivery is recorded by the inbox drain, and what is delivered is what the flags of §15 measure progress from.
+/// Showing a message to the person is what counts it as picked up, so the page drains as it renders, as the terminal
+/// does on opening a conversation.
 /// </para>
 /// <para>
 /// Reading and resolving shipped together on purpose. An inbox that could take a Request and not
@@ -29,29 +28,13 @@ public sealed class InboxTests
         File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Inbox.cshtml.cs"));
 
     [Fact]
-    public void Opening_the_inbox_does_not_take_delivery()
+    public void Showing_the_inbox_takes_delivery_and_there_is_no_button_for_it()
     {
-        // The GET reads counts and nothing else. Draining from OnGet would be indistinguishable
-        // on the page and would start everybody's clock the moment they glanced at it.
-        var get = Model[Model.IndexOf("OnGetAsync()", StringComparison.Ordinal)..];
-        var body = get[..get.IndexOf("public async Task<IActionResult> OnPostTake", StringComparison.Ordinal)];
-
-        Assert.DoesNotContain("Drain", body, StringComparison.Ordinal);
-
-        // And the thing it does call is the one documented as changing nothing.
-        Assert.Contains("WaitingAsync", Model, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Taking_delivery_is_a_post_that_says_what_it_costs()
-    {
-        Assert.Contains("asp-page-handler=\"Take\"", Page, StringComparison.Ordinal);
-        Assert.Contains("OnPostTakeAsync", Model, StringComparison.Ordinal);
-
-        // Described before it happens, like every other operation in this console that changes
-        // something. "You cannot put them back" is the part somebody needs before clicking.
-        Assert.Contains("marks them collected", Page, StringComparison.Ordinal);
-        Assert.Contains("cannot put them back", Page, StringComparison.Ordinal);
+        // Delivered as it is drawn, like the terminal. A button for it was a count that never went down.
+        Assert.Contains("TakeDeliveryAsync", Model, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnPostTakeAsync", Model, StringComparison.Ordinal);
+        Assert.DoesNotContain("asp-page-handler=\"Take\"", Page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Take delivery", Page, StringComparison.Ordinal);
     }
 
     // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no
@@ -180,7 +163,7 @@ public sealed class InboxTests
         var layout = File.ReadAllText(
             RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
 
-        Assert.Contains("Seats.WaitingAsync(Directory.Projects, Context.RequestAborted)", layout, StringComparison.Ordinal);
+        Assert.Contains("PersonSeats.PresenceAsync(", layout, StringComparison.Ordinal);
 
         // And nowhere else renders one, so a third source cannot appear by being added.
         var pages = Directory.GetFiles(

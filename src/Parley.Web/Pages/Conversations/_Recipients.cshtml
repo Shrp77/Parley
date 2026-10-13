@@ -26,7 +26,8 @@
             who,
             inIt.Contains(who.Value),
             Model.With.Contains(who.Value, StringComparer.Ordinal),
-            Model.Doing(who) ?? (Model.Roll.TryGetValue(who.Value, out var known) ? Roster.State(known) : "not in the registry")))],
+            Model.Doing(who) ?? (Model.Roll.TryGetValue(who.Value, out var known) ? Roster.State(known) : "not in the registry"),
+            Model.Messages.Count(m => m.From == who || m.To == who)))],
         Pick: true);
 }
 <aside class="recipients" aria-label="Who to talk to" data-new="@(Model.Messages.Count == 0 ? "true" : null)">

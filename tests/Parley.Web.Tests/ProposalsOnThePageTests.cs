@@ -236,7 +236,7 @@ public sealed class ProposalsOnThePageTests
         console.Broker.Propose(8, "billing@test", "Another", ["One"]);
         using var client = console.CreateClient();
 
-        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync(new Uri("/?handler=Row&name=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.Contains("2 roadmaps proposed, for you to decide", page, StringComparison.Ordinal);
     }
@@ -250,7 +250,7 @@ public sealed class ProposalsOnThePageTests
         console.Broker.Old = true;
         using var client = console.CreateClient();
 
-        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync(new Uri("/?handler=Row&name=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("proposed, for you to decide", page, StringComparison.Ordinal);
         Assert.DoesNotContain("0 roadmaps", page, StringComparison.Ordinal);

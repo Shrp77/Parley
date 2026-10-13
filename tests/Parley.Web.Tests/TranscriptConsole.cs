@@ -155,6 +155,7 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/Export" => Export(),
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
+                "/parley.v1.Operators/ListConversations" => Conversations(),
                 _ => null
             };
         }
@@ -188,6 +189,17 @@ public sealed class ScriptedExport : HttpMessageHandler
         var reply = new Wire.RegistryReply();
 
         reply.Rows.AddRange(Registry);
+
+        return reply;
+    }
+
+    private Wire.ListConversationsReply Conversations()
+    {
+        var reply = new Wire.ListConversationsReply();
+        var row = new Wire.ConversationSummary { ConversationId = "shared", HasOpenExchange = true };
+
+        row.Participants.AddRange(Edges.SelectMany(e => new[] { e.Waiter, e.WaitedOn }).Distinct());
+        reply.Conversations.Add(row);
 
         return reply;
     }

@@ -36,8 +36,8 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
             <details class="grid-row@(state.IsNext ? " next" : null)" role="row" open="@(state.IsNext ? "open" : null)">
                 <summary>
                     <span class="num"><span class="chev" aria-hidden="true">&#9656;</span> @state.Item.Number</span>
-                    @* The title opens the conversation; the arrow, or the rest of the row, opens the details. *@
-                    <a class="name" href="@Model.OpenPath(state)">@(state.IsNext ? "Next: " : "")@state.Item.Text</a>
+                    @* The row opens the item, and with it its conversation. *@
+                    <span class="name">@(state.IsNext ? "Next: " : "")@state.Item.Text</span>
                     <span class="when">@ItemWording.Standing(state)</span>
                 </summary>
                 <div class="grid-detail">
@@ -49,11 +49,34 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
                     {
                         <p class="between">needs @string.Join(", ", state.Item.Needs.Order())</p>
                     }
-                    <a href="@Model.OpenPath(state)">@(state.Item.Facts is { ConversationExists: true } ? "Open its conversation" : "Start it: open an empty conversation with its text ready")</a>
+                    @* The conversation is shown here, in the roadmap's context, and is loaded when the item is first opened
+                       so that a long roadmap does not open every conversation at once. Pop out takes it to the conversation
+                       page, where it is the whole of the screen. *@
+                    <div class="item-bar">
+                        <span class="between">@(state.Item.Facts is { ConversationExists: true } ? "Its conversation" : "Not started: the conversation is empty, with the item's text ready")</span>
+                        <a class="button quiet" href="@Model.OpenPath(state)" title="Open this conversation on its own page">Pop out</a>
+                    </div>
+                    <iframe class="item-frame" title="Conversation for item @state.Item.Number" data-src="@Model.OpenPath(state, embedded: true)"></iframe>
                 </div>
             </details>
         }
     </div>
+
+    <script>
+        // A conversation is loaded the first time its item is open, and the item to do next starts open.
+        (function () {
+            function load(row) {
+                var frame = row.querySelector(".item-frame");
+
+                if (frame && !frame.getAttribute("src")) { frame.setAttribute("src", frame.getAttribute("data-src")); }
+            }
+
+            document.querySelectorAll(".roadmap-items details.grid-row").forEach(function (row) {
+                if (row.open) { load(row); }
+                row.addEventListener("toggle", function () { if (row.open) { load(row); } });
+            });
+        })();
+    </script>
 
     <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words in the box and the agents ticked; you press Send.</small></p>
 }

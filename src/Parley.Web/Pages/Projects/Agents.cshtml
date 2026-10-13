@@ -8,68 +8,68 @@
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<h1 class="project-title">
-    @* The title is the way to rename. Renaming is not a label edit: it forgets the old name and names a new
-       project with a folder and store of its own, and the page it leads to says what that does. *@
-    <a class="title-link" href="/Projects/Naming?project=@Model.Project" title="Rename this project">@Model.Project</a>
-    <a class="edit" href="/Projects/Naming?project=@Model.Project">Edit</a>
-</h1>
+<div class="view" style="height:auto;min-height:0;">
+    <div class="view-title">
+        <h1>Conversations</h1>
+        <p class="as-of" role="status">What the agents of <strong>@Model.Project</strong> have been talking about.</p>
+    </div>
 
-<nav aria-label="This project">
-    <a href="/Projects/Health?project=@Model.Project">Health</a>
-    <a href="/Projects/Files?project=@Model.Project">Files</a>
-    <a href="/Projects/Settings?project=@Model.Project">Settings</a>
-</nav>
+    <section aria-label="Conversations in this project" class="conversations">
+        @* Starting one belongs beside the list of them. The composer has always been able to open a conversation that
+           does not exist yet -- naming one is what creates it -- and nothing led anybody to it: every route in was a link
+           to a conversation already there, so a project with none had no way in at all. *@
+        <p class="new-conversation"><button type="button" id="new-conversation-open" class="new-button">New conversation</button></p>
 
-<div class="project">
-    @* Roadmaps first: they are what the person came to decide and to start work from. *@
-    <div class="project-main">
-        @if (Model.RoadmapProblem is { Length: > 0 } roadmapProblem)
-        {
-            <p class="unreachable" role="alert">@roadmapProblem</p>
-        }
-        else
-        {
-            <partial name="_RoadmapSummary" model="@(new RoadmapSummaryView(Model.Project ?? "", Model.Waiting, Model.Roadmaps))" />
-            <p><a href="/Roadmaps?project=@Model.Project">All roadmaps</a></p>
-        }
+        <dialog id="new-conversation-dialog" class="default-dialog" aria-labelledby="new-conversation-title">
+            <form method="get" action="/Conversations/Detail">
+                <h3 id="new-conversation-title">New conversation</h3>
+                <input type="hidden" name="project" value="@Model.Project" />
+                <div class="field">
+                    <input id="new-conversation" name="id" aria-label="Name of the conversation" placeholder="what-it-is-about" required
+                           maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
+                           data-correct="@ConversationName.Allowed"
+                           autocomplete="off" spellcheck="false"
+                           aria-describedby="new-conversation-rule" />
+                </div>
 
-    <section aria-label="Conversations in this project">
-        <h2>Conversations</h2>
+                @* The rule is applied as it is typed rather than reported afterwards. *@
+                <p id="new-conversation-rule" class="composer-note">
+                    @ConversationName.Rule It reaches a filename when the discussion is exported.
+                    <span id="new-conversation-corrected" role="status" hidden>
+                        @ConversationName.WasCorrected.
+                    </span>
+                </p>
+                <p class="dialog-actions">
+                    <button type="submit" class="new-button">Start</button>
+                    <button type="button" id="new-conversation-cancel" class="quiet">Cancel</button>
+                </p>
+            </form>
+        </dialog>
 
-        <form method="get">
+        @* Filtered by who is party to them. The agents come from the roster; a name that is not on it (an agent since
+           retired, or one typed into a link) stays in the list so that the filter says what it is applying. *@
+        <form method="get" class="view-card view-filters" aria-label="Filter the conversations">
             <input type="hidden" name="project" value="@Model.Project" />
-            <label for="participant">Party to</label>
-            <input id="participant" name="participant" value="@Model.Participant" />
-            <button type="submit">Search this project</button>
+            <input type="hidden" name="sort" value="@Model.Sort" />
+            <div class="field wide">
+                <label for="participant">Agent</label>
+                <select id="participant" name="participant">
+                    <option value="">Any agent</option>
+                    @foreach (var name in Model.ParticipantChoices)
+                    {
+                        <option value="@name" selected="@(string.Equals(Model.Participant, name, StringComparison.Ordinal) ? "selected" : null)">@name</option>
+                    }
+                </select>
+            </div>
+            <label class="toggle"><input type="checkbox" name="showArchived" value="true" checked="@(Model.ShowArchived ? "checked" : null)" /> <span>Include archived</span></label>
+            <button type="submit">Filter</button>
+            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Clear</a>
         </form>
 
-        @* **Starting one belongs beside the list of them.** The composer has always been able to open
-           a conversation that does not exist yet -- naming one is what creates it -- and nothing led
-           anybody to it: every route in was a link to a conversation already there, so a project with
-           none had no way in at all and the first was the hardest to start. Reported by the owner
-           against the terminal, which had the same gap in the same shape. *@
-        <form method="get" action="/Conversations/Detail">
-            <input type="hidden" name="project" value="@Model.Project" />
-            <label for="new-conversation">Start a conversation called</label>
-            <input id="new-conversation" name="id" placeholder="what-it-is-about" required
-                   maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
-                   data-correct="@ConversationName.Allowed"
-                   autocomplete="off" spellcheck="false"
-                   aria-describedby="new-conversation-rule" />
-            <button type="submit">Start</button>
-
-            @* **The rule is applied as it is typed rather than reported afterwards**, and the
-               placeholder no longer invites prose into a field that cannot hold it: it read
-               "what it is about", which is a sentence, and a sentence is exactly what the owner
-               typed into the terminal's version of this field before being refused. *@
-            <p id="new-conversation-rule" class="composer-note">
-                @ConversationName.Rule It reaches a filename when the discussion is exported.
-                <span id="new-conversation-corrected" role="status" hidden>
-                    @ConversationName.WasCorrected.
-                </span>
-            </p>
-        </form>
+        @if (Model.Problem is { Length: > 0 } rosterProblem && Model.ConversationProblem is not { Length: > 0 })
+        {
+            <p class="unreachable" role="alert">The agents could not be listed to filter by: @rosterProblem</p>
+        }
 
         @if (Model.FilterProblem is { Length: > 0 } filter)
         {
@@ -135,7 +135,7 @@
                                 <input type="hidden" name="sort" value="@Model.Sort" />
                                 <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
                             </form>
-                            <a href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
+                            <a class="button danger" href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
                         </div>
                     </details>
                 }
@@ -149,75 +149,23 @@
             }
         }
     </section>
-    </div>
-
-    <aside class="roster agents-card" aria-label="Agents">
-        <h2>Agents</h2>
-
-        @if (Model.Problem is { Length: > 0 } problem)
-        {
-            <p class="unreachable" role="alert">@problem</p>
-        }
-        else if (Model.Agents.Count == 0)
-        {
-            <p>
-                None registered yet.
-                <a href="/Projects/Register?project=@Model.Project">Add one.</a>
-            </p>
-        }
-        else
-        {
-            <partial name="_AgentTree" model="@(new AgentTreeView(
-                Model.Project ?? "",
-                [.. Model.Agents.Select(a => new AgentTreeEntry(a.Name, true, false, Roster.State(a)))],
-                Pick: false))" />
-        }
-    </aside>
 </div>
 
 @section Scripts {
     <script>
-        // The title is a text box when it is clicked. Enter takes the typed name to the page that describes
-        // what a rename does -- the console does not rename, so nothing is written here -- and Escape puts the
-        // title back. Without script the title is simply a link to that page.
+        // A name is asked for in a dialog rather than in the page, so that the list keeps its place.
         (function () {
-            var link = document.querySelector(".project-title .title-link");
+            var dialog = document.getElementById("new-conversation-dialog");
+            var open = document.getElementById("new-conversation-open");
+            var cancel = document.getElementById("new-conversation-cancel");
 
-            if (!link) { return; }
+            if (!dialog || !open) { return; }
 
-            link.addEventListener("click", function (e) {
-                e.preventDefault();
-
-                var project = new URL(link.href).searchParams.get("project");
-                var form = document.createElement("form");
-                var box = document.createElement("input");
-                var hidden = document.createElement("input");
-
-                form.method = "get";
-                form.action = "/Projects/Naming";
-                form.className = "title-edit";
-                hidden.type = "hidden";
-                hidden.name = "project";
-                hidden.value = project;
-                box.name = "newName";
-                box.value = project;
-                box.setAttribute("aria-label", "New name for this project");
-                box.maxLength = 64;
-                box.autocomplete = "off";
-                box.spellcheck = false;
-                form.appendChild(hidden);
-                form.appendChild(box);
-                link.replaceWith(form);
-                box.focus();
-                box.select();
-
-                box.addEventListener("keydown", function (k) {
-                    if (k.key === "Escape") { form.replaceWith(link); }
-                });
-                box.addEventListener("blur", function () {
-                    if (form.parentNode) { form.replaceWith(link); }
-                });
+            open.addEventListener("click", function () {
+                dialog.showModal();
+                document.getElementById("new-conversation").focus();
             });
+            cancel.addEventListener("click", function () { dialog.close(); });
         })();
     </script>
 }

@@ -7,38 +7,45 @@
     ViewData["Project"] = Model.Project;
 }
 
-<h1>
-    @Model.Id
-    @if (Model.ItemTitle is { Length: > 0 } itemTitle)
-    {
-        @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on. *@
-        <span class="item-title">@itemTitle</span>
-    }
-</h1>
+@* The header is one frame. Its title takes the room the two controls leave, and opening it shows what the conversation
+   is. Ordering is said once, plainly: it is the broker's record and not a wall clock, because the agents run on different
+   machines and a timeline sorted on their clocks would misorder itself. *@
+<div class="convo-head">
+    <details class="convo-frame">
+        <summary>
+            <h1>@Model.Id</h1>
+        </summary>
+        @if (Model.ItemTitle is { Length: > 0 } itemTitle)
+        {
+            @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on. *@
+            <p class="item-title">@itemTitle</p>
+        }
+        <p class="as-of">
+            In the order the broker recorded them. Times are shown for information; they come from the
+            machines the agents run on and are not what the order follows.
+            @Parley.Client.Rendering.LocalTime.Note()
+        </p>
+    </details>
 
-<p>
-    In @Model.Project, between <span id="between">@string.Join(", ", Model.Participants.Select(p => p.Value))</span>.
-</p>
-
-@* Said once, plainly. Ordering is the broker's record and not a wall clock: the agents run on
-   different machines, and a timeline sorted on their clocks would misorder itself. *@
-<p class="as-of">
-    In the order the broker recorded them. Times are shown for information; they come from the
-    machines the agents run on and are not what the order follows.
-    @Parley.Client.Rendering.LocalTime.Note()
-</p>
-
-<p>
-    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript">
-        Take this away as text
-    </a>
-    <span> · </span>
-    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw">
-        or as the messages the broker returned
-    </a>
-    <span> · </span>
-    <a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Id">Files in this conversation</a>
-</p>
+    <div class="convo-actions">
+        @* The project's Files page, already narrowed to this conversation. *@
+        <a class="file-button" href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Id" title="Files placed in this conversation" aria-label="Files placed in this conversation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7" /></svg>
+        </a>
+        @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
+           and the other is the broker's own records, for another program to read. *@
+        <details class="export-menu">
+            <summary class="file-button" title="Export this conversation">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                Export
+            </summary>
+            <div class="export-list">
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript" title="The conversation as a text file, with who saw what noted on it">Export TXT</a>
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw" title="The messages and exchanges as the broker holds them, as JSON for another program">Export JSON</a>
+            </div>
+        </details>
+    </div>
+</div>
 
 @* The transcript follows the conversation, and this is what it says when it cannot. Kept on screen
    rather than replacing the transcript: a moment's trouble reaching the broker must not take the
@@ -136,6 +143,7 @@ else
     }
 
     <div class="composer-send">
+        <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>
         <button type="submit">Send</button>
     </div>
 </form>
@@ -718,6 +726,23 @@ else
 
             document.addEventListener("parley:followed", run);
             document.addEventListener("parley:filtered", run);
+        })();
+
+        // Enter sends and Shift+Enter makes a line break, as the terminal does. Ctrl+Enter sends too, for anyone used to it.
+        // Left alone while an input method is composing, where Enter confirms the text and is not the person's send.
+        (function () {
+            var form = document.getElementById("composer");
+            var box = form ? form.querySelector("textarea[name=Says]") : null;
+
+            if (!box) { return; }
+
+            box.addEventListener("keydown", function (e) {
+                if (e.key !== "Enter" || e.isComposing || e.shiftKey || e.altKey) { return; }
+
+                e.preventDefault();
+
+                if (box.value.trim() !== "" && form.requestSubmit) { form.requestSubmit(); }
+            });
         })();
     </script>
 }

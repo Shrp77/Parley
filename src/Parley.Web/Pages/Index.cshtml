@@ -3,181 +3,315 @@
 @using Parley.Web.Pages.Shared
 @{
     ViewData["Refresh"] = "30";
-    ViewData["Title"] = "Projects";
+    ViewData["Title"] = Model.AgentsTab ? (Model.InProject is null ? "All Agents" : "Agents") : "Projects";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+
+    // Stamped in the title row below rather than above the grid, where the frame would put it and cost the grid a line.
+    ViewData["Grid"] = true;
+    ViewData["Deferred"] = true;
 }
 
-@* Soft cards: rounded tiles lifted off the page by a wide, faint shadow, and pills for what can be pressed. Every colour is
-   one of the frame's tokens, so the dark scheme follows for free; the shadow is the only thing added, and it is the only
-   thing that makes a card a card, so the border stays as well for anyone whose screen drops shadows. *@
-<style>
-    .home-card {
-        background: var(--card);
-        border: 1px solid var(--rule);
-        border-radius: 20px;
-        box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04);
-        padding: 1.1rem 1.25rem;
+@* The page is a data grid: a title, then Create, Filters and the grid, in that order. The first three stay where they
+   are and the grid is what scrolls, with its header row held at its top (see `.view` and `.dgrid` in the frame). The
+   Projects and Agents views are the two the side rail links to; each is a page the server renders, so they work with
+   no script and survive the page's reload. Filtering is a form that asks for the page again, for the same reason. *@
+
+<div class="view">
+    <div class="view-title">
+        <h1>@(Model.AgentsTab ? (Model.InProject is null ? "All Agents" : "Agents") : "Projects")</h1>
+        <p class="as-of" role="status">Showing what the broker reported at @ViewData["AsOf"].</p>
+    </div>
+
+    @if (Model.Outcome is { Length: > 0 } outcome)
+    {
+        <p class="@(Model.Refused ? "unreachable" : "outcome")" role="@(Model.Refused ? "alert" : "status")">@outcome</p>
     }
 
-    .home-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-        gap: var(--gap);
-        list-style: none;
-        margin: 0;
-        padding: 0;
-    }
-
-    .home-grid > li { display: flex; flex-direction: column; gap: 0.35rem; min-height: 8.5rem; }
-
-    .home-grid .project-name {
-        margin-top: auto;
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: var(--ink);
-        text-decoration: none;
-    }
-
-    .home-grid .endpoint { color: var(--ink-faint); font-size: 0.85em; overflow-wrap: anywhere; }
-    .home-grid p { margin: 0; }
-    .home-grid .summary { color: var(--accent); font-weight: 500; }
-
-    .home-create { max-width: 34rem; margin-bottom: var(--gap); }
-    .home-create form { display: flex; flex-direction: column; align-items: stretch; gap: 0.4rem; border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
-    .home-create label { text-align: left; }
-    .home-create input { width: 100%; box-sizing: border-box; border-radius: 999px; padding: 0.5rem 1rem; }
-    .home-create button { align-self: flex-start; border-radius: 999px; padding: 0.5rem 1.6rem; margin-top: 0.4rem; }
-    .home-create h2, .home-card h3 { margin-top: 0; }
-</style>
-
-<h1>Parley</h1>
-
-@* The two tabs live in the side rail (Projects, Agents), as links: each is a page the server renders, so they work with no script and survive the page's reload. *@
-
-@if (Model.Outcome is { Length: > 0 } outcome)
-{
-    <p class="@(Model.Refused ? "unreachable" : "outcome")" role="@(Model.Refused ? "alert" : "status")">@outcome</p>
-}
-
-@if (Model.AgentsTab)
-{
-    <section aria-label="Agents on this machine's projects">
-        @if (Model.Projects.Count == 0)
+    @if (Model.AgentsTab)
+    {
+        @if (Model.InProject is { } here)
         {
-            <p>No projects are named on this machine yet, so there are no agents. Create one on the Projects tab.</p>
+            @* Making a repository on this machine an agent of this project, as the terminal does it: one repository named here, or
+               every repository in a folder. Both lead to a page that says what would be written and writes nothing until it is
+               confirmed. *@
+            <details class="view-card view-create">
+                <summary>Register an agent in @here.Name.Value</summary>
+                <form method="get" action="/Projects/Enrol">
+                    <input type="hidden" name="project" value="@here.Name.Value" />
+                    <div class="field wide">
+                        <label for="register-workspace">Repository directory on this machine</label>
+                        <input id="register-workspace" name="workspace" required autocomplete="off" spellcheck="false" placeholder="C:\src\shipping" />
+                    </div>
+                    <div class="field">
+                        <label for="register-role">Role peers address it by</label>
+                        <input id="register-role" name="role" required autocomplete="off" spellcheck="false" placeholder="shipping" />
+                    </div>
+                    <div class="field wide">
+                        <label for="register-owns">What it owns, and does not (optional)</label>
+                        <input id="register-owns" name="owns" autocomplete="off" />
+                    </div>
+                    <button type="submit">Review</button>
+                    <p class="composer-note">
+                        Writes the repository's launch configuration and instructions and a line in this machine's catalogue, then
+                        starts it once so it registers itself. You see exactly what first, and nothing is written until you confirm.
+                        <a href="/Projects/Register?project=@here.Name.Value">Prefer to do it by hand?</a>
+                    </p>
+                </form>
+                <form method="get" action="/Projects/Enrol">
+                    <input type="hidden" name="project" value="@here.Name.Value" />
+                    <div class="field wide">
+                        <label for="register-folder">Or a folder holding several repositories</label>
+                        <input id="register-folder" name="folder" required autocomplete="off" spellcheck="false" placeholder="C:\src" />
+                    </div>
+                    <button type="submit">Find repositories</button>
+                </form>
+            </details>
         }
 
-        <div class="home-grid">
-            @foreach (var project in Model.Projects)
+        <form method="get" class="view-card view-filters" aria-label="Filter the agents">
+            <input type="hidden" name="tab" value="agents" />
+            @if (Model.InProject is { } inside)
             {
-                var name = project.Name.Value;
-                Model.Agents.TryGetValue(name, out var mine);
-
-                <div class="home-card">
-                    <h3><a href="/Projects/Agents?project=@name">@name</a></h3>
-
-                    @if (mine is null)
-                    {
-                        @* Unreachable is not empty: saying "none" here would read as a project somebody has emptied. *@
-                        <p class="unreachable" role="alert">This project's broker did not answer, so its agents are not known.</p>
-                    }
-                    else if (mine.Count == 0)
-                    {
-                        <p>None registered yet. <a href="/Projects/Register?project=@name">Add one.</a></p>
-                    }
-                    else
-                    {
-                        <partial name="_AgentTree" model="@(new AgentTreeView(
-                            name,
-                            [.. mine.Select(a => new AgentTreeEntry(a.Name, true, false, Roster.State(a)))],
-                            Pick: false))" />
-                    }
-                </div>
+                <input type="hidden" name="project" value="@inside.Name.Value" />
             }
-        </div>
-    </section>
-}
-else
-{
-    <section class="home-card home-create" aria-label="Create a project">
-        <h2>Create a project</h2>
-        <form method="post" asp-page-handler="Create">
-            <label for="new-project">Name</label>
-            <input id="new-project" name="NewProject" required maxlength="64" autocomplete="off" spellcheck="false" />
-            <label for="new-description">Description (optional)</label>
-            <input id="new-description" name="NewDescription" autocomplete="off" />
-            <button type="submit">Create</button>
-            <p class="composer-note">
-                Naming a project is the whole of creating it: it gets a folder, a store and a port of its own.
-                Removing or renaming one is done in the terminal.
-            </p>
+            <div class="field wide">
+                <label for="f-q">Search</label>
+                <input id="f-q" name="q" value="@Model.Q" placeholder="name, project or what it owns" autocomplete="off" />
+            </div>
+            @if (Model.InProject is null)
+            {
+            <div class="field">
+                <label for="f-scope">Project</label>
+                <select id="f-scope" name="scope">
+                    <option value="">All projects</option>
+                    @foreach (var project in Model.Projects)
+                    {
+                        <option value="@project.Name.Value" selected="@(Model.Scope == project.Name.Value ? "selected" : null)">@project.Name.Value</option>
+                    }
+                </select>
+            </div>
+            }
+            <div class="field">
+                <label for="f-state">State</label>
+                <select id="f-state" name="state">
+                    <option value="">Any state</option>
+                    @foreach (var state in IndexModel.States)
+                    {
+                        <option value="@state" selected="@(Model.State == state ? "selected" : null)">@state</option>
+                    }
+                </select>
+            </div>
+            <button type="submit">Filter</button>
+            <a class="button quiet" href="/?tab=agents@(Model.InProject is { } cleared ? "&amp;project=" + Uri.EscapeDataString(cleared.Name.Value) : "")">Clear</a>
+            <span class="tally" id="tally" role="status"></span>
         </form>
-    </section>
 
-    @* Said beside the projects that did read, not instead of them: one bad folder costs that project and no other. *@
-    @if (Model.ManifestProblem is { Length: > 0 } problem)
-    {
-        <p class="unreachable" role="alert">Some of this machine's projects could not be read: @problem</p>
+        <section class="view-card dgrid" data-load="agents" style="--cols: minmax(10rem, 1.4fr) minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(8rem, 1fr); --min: 36rem;" aria-label="Agents">
+            <div class="dgrid-inner" role="table">
+                <div class="dgrid-head" role="row">
+                    <span role="columnheader">Agent</span>
+                    <span role="columnheader">Machine</span>
+                    <span role="columnheader">Project</span>
+                    <span role="columnheader">State</span>
+                </div>
+
+                @* The page is drawn before any broker is asked. Each project has a place held for its agents, in the
+                   machine's order, and the page fills it when that project answers: a broker that is down delays its own
+                   place and no other. *@
+                @foreach (var project in Model.ScopedProjects)
+                {
+                    <div class="dgrid-group" style="display: contents;" data-agents-of="@project.Name.Value">
+                        <p class="dgrid-empty faint" role="status">Reading @project.Name.Value…</p>
+                    </div>
+                }
+
+                @if (Model.Projects.Count == 0)
+                {
+                    <p class="dgrid-empty">No projects are named on this machine yet, so there are no agents. Create one on the Projects view.</p>
+                }
+                else
+                {
+                    <p class="dgrid-empty" id="none-shown" hidden>@(string.IsNullOrWhiteSpace(Model.Q) && string.IsNullOrEmpty(Model.State) && string.IsNullOrEmpty(Model.Scope) ? "No agents are registered yet." : "No agent matches these filters.")</p>
+                }
+            </div>
+        </section>
     }
-
-    @if (Model.Projects.Count == 0 && Model.ManifestProblem is not { Length: > 0 })
+    else
     {
-        @* An ordinary machine, not a broken one -- and the two must not render alike. *@
-        <p>
-            No projects are named on this machine yet. Name the first one above; the broker starts it within seconds
-            and it appears here.
-        </p>
+        var shown = Model.ShownProjects;
+
+        <details class="view-card view-create" open="@(Model.Refused ? "open" : null)">
+            <summary>Create a project</summary>
+            <form method="post" asp-page-handler="Create">
+                <div class="field wide">
+                    <label for="new-project">Name</label>
+                    <input id="new-project" name="NewProject" required maxlength="64" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="field wide">
+                    <label for="new-description">Description (optional)</label>
+                    <input id="new-description" name="NewDescription" autocomplete="off" />
+                </div>
+                <button type="submit">Create</button>
+                <p class="composer-note">
+                    Naming a project is the whole of creating it: it gets a folder, a store and a port of its own.
+                    Removing or renaming one is done in the terminal.
+                </p>
+            </form>
+        </details>
+
+        <form method="get" class="view-card view-filters" aria-label="Filter the projects">
+            <div class="field wide">
+                <label for="f-q">Search</label>
+                <input id="f-q" name="q" value="@Model.Q" placeholder="name, description or address" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label for="f-status">Status</label>
+                <select id="f-status" name="status">
+                    <option value="">Any status</option>
+                    <option value="up" selected="@(Model.Status == "up" ? "selected" : null)">Answering</option>
+                    <option value="down" selected="@(Model.Status == "down" ? "selected" : null)">Not answering</option>
+                </select>
+            </div>
+            <button type="submit">Filter</button>
+            <a class="button quiet" href="/">Clear</a>
+            <span class="tally" id="tally" role="status"></span>
+        </form>
+
+        @* Said beside the projects that did read, not instead of them: one bad folder costs that project and no other. *@
+        @if (Model.ManifestProblem is { Length: > 0 } problem)
+        {
+            <p class="unreachable" role="alert">Some of this machine's projects could not be read: @problem</p>
+        }
+
+        <section class="view-card dgrid" data-load="projects" style="--cols: minmax(10rem, 1.4fr) minmax(8rem, 1fr) minmax(10rem, 1.4fr) minmax(10rem, 1.2fr); --min: 44rem;" aria-label="Projects">
+            <div class="dgrid-inner" role="table">
+                <div class="dgrid-head" role="row">
+                    <span role="columnheader">Project</span>
+                    <span role="columnheader">Agents</span>
+                    <span role="columnheader">Conversations</span>
+                    <span role="columnheader">Status</span>
+                </div>
+
+                @* Drawn from the manifest alone, with "Checking…" for the status; the page asks each project's broker
+                   afterwards and puts that project's answer in place of its row. *@
+                @foreach (var project in shown)
+                {
+                    <partial name="_ProjectRow" model="new ProjectRowState(project, null, null)" />
+                }
+
+                @if (shown.Count == 0)
+                {
+                    @* An ordinary machine, not a broken one -- and the two must not render alike. *@
+                    <p class="dgrid-empty">
+                        @if (Model.Projects.Count == 0 && Model.ManifestProblem is not { Length: > 0 })
+                        {
+                            <text>No projects are named on this machine yet. Name the first one above; the broker starts it within seconds and it appears here.</text>
+                        }
+                        else if (Model.Projects.Count > 0)
+                        {
+                            <text>No project matches these filters.</text>
+                        }
+                    </p>
+                }
+                <p class="dgrid-empty" id="none-shown" hidden>No project matches these filters.</p>
+            </div>
+        </section>
     }
-    else if (Model.Projects.Count > 0)
-    {
-        <ul class="home-grid">
-            @foreach (var project in Model.Projects)
-            {
-                var health = Model.Health.TryGetValue(project.Name.Value, out var said)
-                    ? said
-                    : new ProjectHealth(null, "This project was not asked.");
+</div>
 
-                <li class="home-card">
-                    @if (project.Description is { Length: > 0 } description)
-                    {
-                        <p>@description</p>
-                    }
-                    @if (Model.Summaries.TryGetValue(project.Name.Value, out var summary) && summary.Reachable)
-                    {
-                        @* What is in it, so "which project do I want" is answered before anything is
-                           opened. Unreachable projects say so below instead; a count of zero there
-                           would read as a project somebody has emptied. *@
-                        <p class="summary">@summary.Line()</p>
-                    }
-                    @if (!health.Reachable)
-                    {
-                        @* Contained here: one broker being down says nothing about the others, and
-                           the card stays clickable because the operator may know something the
-                           console does not. *@
-                        <p class="unreachable" role="alert">@health.Problem</p>
-                    }
-                    else if (!health.Agrees)
-                    {
-                        @* Named, never refused. What a version disagreement means for any particular
-                           read is not knowable from the two numbers, and a console that locked the
-                           operator out would remove the view at the moment it is most needed. Both
-                           numbers are given, because "incompatible" alone cannot be acted on. *@
-                        <p class="unreachable" role="alert">
-                            This project's broker speaks @health.Speaks and this console was built
-                            against @IndexModel.ConsoleSpeaks. The pages below still
-                            open; what they show may be incomplete.
-                        </p>
-                    }
-                    @foreach (var warning in health.Warnings(Parley.Web.WebBuild.Version))
-                    {
-                        @* Shown whatever else the card says: a deployment whose parts are not from one release, or whose store
-                           is not the shape its broker expects, is wrong in a way no protocol number reports. *@
-                        <p class="unreachable" role="alert">@warning</p>
-                    }
-                    <a class="project-name" href="/Projects/Agents?project=@project.Name.Value">@project.Name.Value</a>
-                    <span class="endpoint">@project.Endpoint</span>
-                </li>
+@* The page above is drawn from the manifest and holds its places; this asks each project's broker and fills them in as
+   the answers come, all at once, so one project that is down delays only its own place. With no script the rows stay as
+   drawn, which says "Checking…" and not a status nobody has checked. *@
+<script>
+    (function () {
+        var grid = document.querySelector('[data-load]');
+        if (!grid) { return; }
+
+        var kind = grid.getAttribute('data-load');
+        var tally = document.getElementById('tally');
+        var none = document.getElementById('none-shown');
+        var want = new URLSearchParams(location.search).get('status');
+
+        function ask(handler, name) {
+            var q = new URLSearchParams(location.search);
+            q.set('handler', handler);
+            q.set('name', name);
+            return fetch(location.pathname + '?' + q.toString()).then(function (r) {
+                if (!r.ok) { throw new Error(r.status); }
+                return r.text();
+            });
+        }
+
+        function parse(text) {
+            var t = document.createElement('template');
+            t.innerHTML = text.trim();
+            return t.content;
+        }
+
+        // The count on the Inbox entry, which the frame leaves for this page to ask for. This also takes the person's seat.
+        var badge = document.querySelector('[data-inbox-badge]');
+        var presence = new URLSearchParams(location.search);
+        presence.set('handler', 'Presence');
+        fetch(location.pathname + '?' + presence.toString()).then(function (r) { return r.json(); }).then(function (said) {
+            if (badge && said.certain && said.waiting > 0) {
+                badge.textContent = said.waiting;
+                badge.title = said.waiting + ' in your inbox';
+                badge.hidden = false;
             }
-        </ul>
-    }
-}
+        }).catch(function () { });
+
+        if (kind === 'projects') {
+            // A status filter hides a row until its answer is known: showing it meanwhile would claim it passed.
+            var settle = function () {
+                var rows = grid.querySelectorAll('details.dgrid-row');
+                var shown = 0, waiting = 0;
+                rows.forEach(function (row) {
+                    var state = row.getAttribute('data-state');
+                    var keep = !want || state === want;
+                    row.hidden = !keep;
+                    if (keep) { shown++; }
+                    if (state === 'pending') { waiting++; }
+                });
+                tally.textContent = shown + ' of ' + rows.length;
+                if (none) { none.hidden = !(rows.length > 0 && shown === 0 && waiting === 0); }
+            };
+
+            grid.querySelectorAll('details.dgrid-row[data-project]').forEach(function (row) {
+                ask('Row', row.getAttribute('data-project')).then(function (text) {
+                    var fresh = parse(text).firstElementChild;
+                    if (row.open) { fresh.open = true; }
+                    row.replaceWith(fresh);
+                }).catch(function () {
+                    row.setAttribute('data-state', 'unknown');
+                    var cell = row.querySelector('.status-cell');
+                    if (cell) { cell.textContent = 'Could not be asked'; }
+                }).then(settle);
+            });
+
+            settle();
+        } else {
+            var groups = grid.querySelectorAll('[data-agents-of]');
+            var left = groups.length;
+
+            var count = function () {
+                var rows = grid.querySelectorAll('[data-agent]').length;
+                tally.textContent = rows + (rows === 1 ? ' agent' : ' agents') + (left > 0 ? ', still reading' : '');
+                if (none) { none.hidden = !(left === 0 && rows === 0 && !grid.querySelector('[data-unread]')); }
+            };
+
+            groups.forEach(function (group) {
+                ask('Agents', group.getAttribute('data-agents-of')).then(function (text) {
+                    group.replaceChildren(parse(text));
+                }).catch(function () {
+                    var p = document.createElement('p');
+                    p.className = 'dgrid-empty';
+                    p.setAttribute('data-unread', group.getAttribute('data-agents-of'));
+                    p.textContent = group.getAttribute('data-agents-of') + ': could not be asked, so its agents are not known.';
+                    group.replaceChildren(p);
+                }).then(function () { left--; count(); });
+            });
+
+            count();
+        }
+    })();
+</script>

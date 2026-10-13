@@ -88,21 +88,21 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
 
     /// <summary>Where an item's conversation is, with its text and agents ready when it has not started.</summary>
     /// <param name="state">The item.</param>
+    /// <param name="embedded">Whether the path is for showing the conversation inside this page, without the console's frame.</param>
     /// <returns>A path on this console.</returns>
-    public string OpenPath(ItemState state)
+    public string OpenPath(ItemState state, bool embedded = false)
     {
         ArgumentNullException.ThrowIfNull(state);
 
         var path = $"/Conversations/Detail?project={Uri.EscapeDataString(Project ?? string.Empty)}"
             + $"&id={Uri.EscapeDataString(state.Item.ConversationName)}";
 
-        if (state.Item.Facts is { ConversationExists: true })
+        if (state.Item.Facts is not { ConversationExists: true })
         {
-            return path;
+            path += $"&Hint={Uri.EscapeDataString(state.Item.Text)}"
+                + string.Concat(Agents.Select(a => $"&With={Uri.EscapeDataString(a.Value)}"));
         }
 
-        return path
-            + $"&Hint={Uri.EscapeDataString(state.Item.Text)}"
-            + string.Concat(Agents.Select(a => $"&With={Uri.EscapeDataString(a.Value)}"));
+        return embedded ? path + "&embed=1" : path;
     }
 }

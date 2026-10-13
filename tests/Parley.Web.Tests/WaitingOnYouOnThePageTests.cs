@@ -64,6 +64,23 @@ public sealed class WaitingOnYouOnThePageTests
         Assert.DoesNotContain("href=\"#m4\"", list, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_inbox_lists_what_is_waiting_on_the_person_from_the_broker()
+    {
+        using var console = Asked();
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(new Uri("/Inbox", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Contains("Which invoice schema should the export target?", page, StringComparison.Ordinal);
+        Assert.Contains("Which currency?", page, StringComparison.Ordinal);
+        Assert.Contains("Owes a result", page, StringComparison.Ordinal);
+
+        // An exchange the person is not the one owing is not theirs to answer.
+        Assert.DoesNotContain("Not the person", page, StringComparison.Ordinal);
+        Assert.Contains("&lt;b&gt;bold&lt;/b&gt;", page, StringComparison.Ordinal);
+    }
+
     private static string Section(string page)
     {
         var start = page.IndexOf("<section class=\"waiting-on-you\"", StringComparison.Ordinal);

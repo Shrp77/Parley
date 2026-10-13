@@ -1,211 +1,278 @@
 @page
 @model Parley.Web.Pages.InboxModel
+@using Parley.Core
 @{
-    ViewData["Title"] = "Your messages";
+    ViewData["Title"] = "Waiting on you";
+    ViewData["Grid"] = true;
     var waiting = Model.Projects.Sum(p => p.Waiting);
     var held = Model.Projects.Sum(p => p.Delivered.Count);
+
+    var everything = Model.Projects
+        .SelectMany(p => p.Delivered.Select(item => (Project: p.Project, Item: item)))
+        .ToList();
+    var shown = everything.Where(row => Model.Keep(row.Project, row.Item)).ToList();
+
+    // One line of what was said, for the row; the whole of it is in the row when it is opened.
+    static string Preview(Payload payload)
+    {
+        var text = payload.Said is { Length: > 0 } said ? said
+            : payload.Points.Count > 0 ? string.Join(" / ", payload.Points.Select(point => point.Text))
+            : payload.Raw ?? string.Empty;
+
+        text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        return text.Length > 140 ? text[..140] + "…" : text;
+    }
 }
 
-<h1>Your messages</h1>
+@* The page is a data grid: a title, then Create, Filters and the grid, in that order. The first three stay where they are
+   and the grid is what scrolls, with its header row held at its top. A message is one row; opening it shows the whole of it
+   and the ways to answer it. *@
 
-@if (Model.Outcome is { Length: > 0 } said)
-{
-    <p class="as-of" role="status">@said</p>
-}
+<div class="view">
+    <div class="view-title">
+        <h1>Waiting on you</h1>
+        <p class="as-of" role="status">
+            What agents are waiting on <strong>@(Model.Me?.Name.Value)</strong> for: a result to send or a question to answer. Messages are counted as picked up when this page shows them.
+        </p>
+    </div>
 
-<p class="lede">
-    What participants have sent to <strong>@(Model.Me?.Name.Value)</strong>. Taking delivery is
-    something you do on purpose rather than something that happens by opening this page: it marks
-    what you were asked to do as picked up, and work picked up and left is shown to the person
-    running the deployment. Until you take them, nothing is counted against you.
-</p>
-
-@foreach (var project in Model.Projects)
-{
-    <h2>@project.Project</h2>
-
-    @if (project.Problem is { Length: > 0 } problem)
+    @if (Model.Outcome is { Length: > 0 } said)
     {
-        <p class="unreachable" role="alert">@problem</p>
-    }
-    else if (project.Waiting == 0 && project.Polls == 0)
-    {
-        <p class="because">Nothing is waiting here.</p>
-    }
-    else
-    {
-        <form method="post" asp-page-handler="Take">
-            <input type="hidden" name="For" value="@project.Project" />
-            <p class="composer-note">
-                <strong>@project.Waiting</strong>
-                message@(project.Waiting == 1 ? "" : "s")
-                @if (project.Polls > 0)
-                {
-                    <text>and <strong>@project.Polls</strong> closure poll@(project.Polls == 1 ? "" : "s")</text>
-                }
-                waiting. Taking them marks them collected, and anything you are asked to do then
-                counts as picked up. You cannot put them back.
-            </p>
-            <button type="submit">Take delivery</button>
-        </form>
+        <p class="as-of" role="status">@said</p>
     }
 
-    @foreach (var item in project.Delivered)
-    {
-        var payload = Payload.Read(item.Message.PayloadJson);
-        var owed = item.Items();
-
-        <article class="letter@(item.Owes ? " owed" : null)">
-            <p class="attribution">
-                <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true">@Palette.BadgeFor(item.Message.From)</span>
-                <strong>@item.Message.From.Value</strong>
-                <span class="tag">@item.Message.Type.ToString().ToLowerInvariant()</span>
-                @* The name above is the attested half and this is not: §11.3 constrains only
-                   the `parley:` prefix, so an agent may report any responder it likes — a peer
-                   demonstrated it by sending a message here claiming a person's label and having it
-                   stored. Shown because §11.3 exists so a reader can calibrate on what produced
-                   the words, and worded as a claim because that is all it is. *@
-                <span class="claims" title="What that agent says produced this. Not verified.">
-                    says @item.Message.ResponderModel
+    <details class="view-card view-create">
+        <summary>Start a conversation</summary>
+        @* **Starting one belongs beside the messages that come out of them.** Naming a conversation is what creates it, and
+           the composer opens on the name. *@
+        <form method="get" action="/Conversations/Detail">
+            <div class="field">
+                <label for="new-conversation-project">Project</label>
+                <select id="new-conversation-project" name="project" required>
+                    @foreach (var project in Model.Projects)
+                    {
+                        <option value="@project.Project">@project.Project</option>
+                    }
+                </select>
+            </div>
+            <div class="field wide">
+                <label for="new-conversation">Called</label>
+                <input id="new-conversation" name="id" placeholder="what-it-is-about" required
+                       maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
+                       data-correct="@ConversationName.Allowed"
+                       autocomplete="off" spellcheck="false"
+                       aria-describedby="new-conversation-rule" />
+            </div>
+            <button type="submit">Start</button>
+            <p id="new-conversation-rule" class="composer-note">
+                @ConversationName.Rule It reaches a filename when the discussion is exported.
+                <span id="new-conversation-corrected" role="status" hidden>
+                    @ConversationName.WasCorrected.
                 </span>
-                <span class="stamp">@item.Message.CreatedUtc.ToLocalTime().ToString("d MMM HH:mm")</span>
-                @if (item.Message.ConversationId is { Length: > 0 } conversation)
-                {
-                    <a href="/Conversations/Detail?project=@project.Project&amp;id=@conversation">in @conversation</a>
-                }
             </p>
+        </form>
+    </details>
 
-            @if (payload.Said is { Length: > 0 })
-            {
-                <p class="said">@payload.Said</p>
-            }
-
-            @if (payload.Points.Count > 0)
-            {
-                <ol class="points">
-                    @foreach (var point in payload.Points)
-                    {
-                        <li>
-                            <span class="label">@point.Id</span>
-                            <span class="point-text">@point.Text</span>
-                            @if (point.Outcome is { Length: > 0 } verdict)
-                            {
-                                <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
-                            }
-                            else if (point.Kind is { Length: > 0 } kind)
-                            {
-                                <span class="verdict">@kind</span>
-                            }
-                        </li>
-                    }
-                </ol>
-            }
-
-            @if (payload.DoneWhen is { Length: > 0 } doneWhen)
-            {
-                <p class="because"><strong>Done when:</strong> @doneWhen</p>
-            }
-
-            @if (payload.Raw is { Length: > 0 } raw)
-            {
-                <pre><code>@raw</code></pre>
-            }
-
-            @if (item.OwesResult && owed.Count > 0)
-            {
-                @* One field per item the request carried. The broker checks the result against the
-                   stored request and names the items it expected when they differ, so this form
-                   cannot close the exchange on items nobody asked about. *@
-                <form method="post" asp-page-handler="Result" class="reply">
-                    <input type="hidden" name="For" value="@project.Project" />
-                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
-
-                    @foreach (var id in owed)
-                    {
-                        <input type="hidden" name="Ids" value="@id" />
-                        <label for="t-@item.Message.ExchangeId-@id">@id — what was done, the answer, or what blocks it</label>
-                        <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
-                                  required></textarea>
-                        <select name="Verdicts" aria-label="Outcome for @id">
-                            @foreach (var (value, says) in SeatVoice.Outcomes)
-                            {
-                                <option value="@value">@says</option>
-                            }
-                        </select>
-                    }
-
-                    <p class="composer-note">
-                        Blocked is for a concrete blocker: something missing, a conflict, or a
-                        permission you do not have. Name who can resolve it.
-                    </p>
-
-                    <button type="submit">Send result and close</button>
-                </form>
-            }
-
-            @if (item.Owes)
-            {
-                @* The other move a holder has: ask what was meant, or answer what they asked you.
-                   Either way the turn goes to them. *@
-                <form method="post" asp-page-handler="Clarify" class="reply">
-                    <input type="hidden" name="For" value="@project.Project" />
-                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
-                    <label for="c-@item.Message.ExchangeId">@(item.OwesReply ? "Your reply" : "Or ask them to clarify")</label>
-                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required></textarea>
-                    <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
-                </form>
-            }
-        </article>
-    }
-}
-
-@if (held > 0 && Model.Projects.Any(p => p.Delivered.Any(one => !one.Owes)))
-{
-    <form method="post" asp-page-handler="Clear">
-        <input type="hidden" name="For" value="@Model.Projects[0].Project" />
-        <p class="composer-note">
-            Results are finished once you have read them, and nothing takes them off this page but
-            you. A request stays until you send its result — it is a debt, and a button that made
-            it disappear would only hide an exchange somebody is still waiting on.
-        </p>
-        <button type="submit">Clear what I have read</button>
+    <form method="get" class="view-card view-filters" aria-label="Filter what is waiting on you">
+        <div class="field wide">
+            <label for="f-q">Search</label>
+            <input id="f-q" name="q" value="@Model.Q" placeholder="who, conversation or words" autocomplete="off" />
+        </div>
+        <div class="field">
+            <label for="f-scope">Project</label>
+            <select id="f-scope" name="scope">
+                <option value="">All projects</option>
+                @foreach (var project in Model.Projects)
+                {
+                    <option value="@project.Project" selected="@(Model.Scope == project.Project ? "selected" : null)">@project.Project</option>
+                }
+            </select>
+        </div>
+        <button type="submit">Filter</button>
+        <a class="button quiet" href="/Inbox">Clear</a>
+        <span class="tally">@shown.Count of @everything.Count</span>
     </form>
-}
 
-@if (Model.Projects.Count == 0)
-{
-    @* **Not connected, never "not joined"**. There is nothing to join: the broker provides the person seat
-       and this console takes it on every page. What this branch means now is that no project's broker could be reached
-       as the person just then — down, or older than 0.36.0 — and the next page load tries again. Mail waits against the
-       name regardless, which is why the count below is still asked for. *@
-    @if (Model.Away is { Certain: true, Waiting: > 0 })
+    @* What is waiting on the person is read from the broker, so it survives a restart of this console and is never what the
+       console happened to show. Delivery is recorded as the page is drawn. A project whose broker did not answer says so. *@
+    @foreach (var project in Model.Projects.Where(p => p.Problem is { Length: > 0 }))
     {
-        <p class="unreachable">
-            Not connected as you just now, and @Model.Away.Waiting
-            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for you. Load this page again in a
-            moment to collect @(Model.Away.Waiting == 1 ? "it" : "them").
-        </p>
+        <p class="unreachable" role="alert"><strong>@project.Project</strong>: @project.Problem</p>
     }
-    else if (!Model.Away.Certain)
-    {
-        @* "Nothing waiting" and "could not ask" are different facts, and only one of them means
-           stop looking -- the same rule the frame's count is held to. *@
-        <p class="unreachable">
-            Not connected as you just now, and the brokers could not be asked what is waiting for you. Load this page
-            again in a moment.
-        </p>
-    }
-    else
-    {
-        <p class="unreachable">
-            Not connected as you just now, and nothing is waiting for you.
-        </p>
-    }
-}
-else if (waiting == 0 && held == 0)
-{
-    <p class="because">
-        Nothing waiting and nothing outstanding. This page fills up when a participant sends you
-        a request.
-    </p>
-}
+
+    <section class="view-card dgrid" style="--cols: minmax(9rem, 1fr) 6rem minmax(7rem, 0.7fr) minmax(8rem, 0.9fr) 8rem minmax(12rem, 2.4fr) 7rem; --min: 60rem;" aria-label="Waiting on you">
+        <div class="dgrid-inner" role="table">
+            <div class="dgrid-head" role="row">
+                <span role="columnheader">From</span>
+                <span role="columnheader">Type</span>
+                <span role="columnheader">Project</span>
+                <span role="columnheader">Conversation</span>
+                <span role="columnheader">When</span>
+                <span role="columnheader">Message</span>
+                <span role="columnheader">Status</span>
+            </div>
+
+            @foreach (var (projectName, item) in shown)
+            {
+                var payload = Payload.Read(item.Message.PayloadJson);
+                var owed = item.Items();
+
+                <details class="dgrid-row" role="row">
+                    <summary class="dgrid-line">
+                        <span role="cell">
+                            <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(item.Message.From)</span>
+                            <strong class="name">@item.Message.From.Value</strong>
+                        </span>
+                        <span role="cell"><span class="tag">@item.Message.Type.ToString().ToLowerInvariant()</span></span>
+                        <span role="cell">@projectName</span>
+                        <span role="cell" class="faint">@(item.Message.ConversationId is { Length: > 0 } c ? c : "")</span>
+                        <span role="cell" class="faint">@item.Message.CreatedUtc.ToLocalTime().ToString("d MMM HH:mm")</span>
+                        <span role="cell">@Preview(payload)</span>
+                        <span role="cell" class="alarm">@(item.OwesResult ? "Owes a result" : "Owes a reply")</span>
+                    </summary>
+
+                    <div class="dgrid-detail">
+                        <article class="letter@(item.Owes ? " owed" : null)">
+                            <p class="attribution">
+                                @* The name is the attested half and this is not: §11.3 constrains only the `parley:` prefix, so an
+                                   agent may report any responder it likes. Shown because §11.3 exists so a reader can calibrate on
+                                   what produced the words, and worded as a claim because that is all it is. *@
+                                <span class="claims" title="What that agent says produced this. Not verified.">
+                                    says @item.Message.ResponderModel
+                                </span>
+                                @if (item.Message.ConversationId is { Length: > 0 } conversation)
+                                {
+                                    <a href="/Conversations/Detail?project=@projectName&amp;id=@conversation">in @conversation</a>
+                                }
+                            </p>
+
+                            @if (payload.Said is { Length: > 0 })
+                            {
+                                <p class="said">@payload.Said</p>
+                            }
+
+                            @if (payload.Points.Count > 0)
+                            {
+                                <ol class="points">
+                                    @foreach (var point in payload.Points)
+                                    {
+                                        <li>
+                                            <span class="label">@point.Id</span>
+                                            <span class="point-text">@point.Text</span>
+                                            @if (point.Outcome is { Length: > 0 } verdict)
+                                            {
+                                                <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
+                                            }
+                                            else if (point.Kind is { Length: > 0 } kind)
+                                            {
+                                                <span class="verdict">@kind</span>
+                                            }
+                                        </li>
+                                    }
+                                </ol>
+                            }
+
+                            @if (payload.DoneWhen is { Length: > 0 } doneWhen)
+                            {
+                                <p class="because"><strong>Done when:</strong> @doneWhen</p>
+                            }
+
+                            @if (payload.Raw is { Length: > 0 } raw)
+                            {
+                                <pre><code>@raw</code></pre>
+                            }
+
+                            @if (item.OwesResult && owed.Count > 0)
+                            {
+                                @* One field per item the request carried. The broker checks the result against the
+                                   stored request and names the items it expected when they differ, so this form
+                                   cannot close the exchange on items nobody asked about. *@
+                                <form method="post" asp-page-handler="Result" class="reply">
+                                    <input type="hidden" name="For" value="@projectName" />
+                                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+
+                                    @foreach (var id in owed)
+                                    {
+                                        <input type="hidden" name="Ids" value="@id" />
+                                        <label for="t-@item.Message.ExchangeId-@id">@id — what was done, the answer, or what blocks it</label>
+                                        <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
+                                                  required></textarea>
+                                        <select name="Verdicts" aria-label="Outcome for @id">
+                                            @foreach (var (value, says) in SeatVoice.Outcomes)
+                                            {
+                                                <option value="@value">@says</option>
+                                            }
+                                        </select>
+                                    }
+
+                                    <p class="composer-note">
+                                        Blocked is for a concrete blocker: something missing, a conflict, or a
+                                        permission you do not have. Name who can resolve it.
+                                    </p>
+
+                                    <button type="submit">Send result and close</button>
+                                </form>
+                            }
+
+                            @if (item.Owes)
+                            {
+                                @* The other move a holder has: ask what was meant, or answer what they asked you.
+                                   Either way the turn goes to them. *@
+                                <form method="post" asp-page-handler="Clarify" class="reply">
+                                    <input type="hidden" name="For" value="@projectName" />
+                                    <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
+                                    <label for="c-@item.Message.ExchangeId">@(item.OwesReply ? "Your reply" : "Or ask them to clarify")</label>
+                                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required></textarea>
+                                    <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
+                                </form>
+                            }
+                        </article>
+                    </div>
+                </details>
+            }
+
+            @if (shown.Count == 0)
+            {
+                <p class="dgrid-empty">
+                    @if (Model.Projects.Count == 0)
+                    {
+                        @* **Not connected, never "not joined"**. There is nothing to join: the broker provides the person seat
+                           and this console takes it on every page. What this branch means is that no project's broker could be
+                           reached as the person just then — down, or older than 0.36.0 — and the next page load tries again. Mail
+                           waits against the name regardless, which is why the count is still asked for. *@
+                        @if (Model.Away is { Certain: true, Waiting: > 0 })
+                        {
+                            <text>Not connected as you just now, and @Model.Away.Waiting
+                            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for you. Load this page again in a
+                            moment to collect @(Model.Away.Waiting == 1 ? "it" : "them").</text>
+                        }
+                        else if (!Model.Away.Certain)
+                        {
+                            @* "Nothing waiting" and "could not ask" are different facts, and only one of them means stop looking
+                               -- the same rule the frame's count is held to. *@
+                            <text>Not connected as you just now, and the brokers could not be asked what is waiting for you. Load this page
+                            again in a moment.</text>
+                        }
+                        else
+                        {
+                            <text>Not connected as you just now, and nothing is waiting for you.</text>
+                        }
+                    }
+                    else if (waiting == 0 && held == 0)
+                    {
+                        <text>Nothing is waiting on you. This page fills up when an agent sends you a request or asks you a question.</text>
+                    }
+                    else if (everything.Count > 0)
+                    {
+                        <text>Nothing waiting on you matches these filters.</text>
+                    }
+                    else
+                    {
+                        <text>Nothing is waiting on you.</text>
+                    }
+                </p>
+            }
+        </div>
+    </section>
+</div>

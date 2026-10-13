@@ -1,0 +1,105 @@
+@page
+@model Parley.Web.Pages.Projects.EnrolModel
+@using Parley.Setup
+@{
+    ViewData["Title"] = $"Register agents in {Model.Project}";
+    ViewData["Project"] = Model.Project;
+}
+
+<h1>Register agents in @Model.Project</h1>
+
+@if (Model.Attempted)
+{
+    @* Said as it is, and in the order it happened: a start that was asked for and an agent that registered are two facts,
+       and the second is the only one that makes the agent addressable. *@
+    @if (Model.Outcome is { RegisteredAgents.Count: > 0 } done)
+    {
+        <p class="outcome" role="status">Registered and ready to be asked: @string.Join(", ", done.RegisteredAgents).</p>
+    }
+
+    @if (Model.Outcome is { Unregistered.Count: > 0 } waiting)
+    {
+        @foreach (var not in waiting.Unregistered)
+        {
+            <p class="unreachable" role="alert">@not.Role was written but has not registered yet: @not.Why Until it has, it cannot be asked or told. Check <a href="/?tab=agents&amp;project=@Model.Project">the agents</a> shortly.</p>
+        }
+    }
+
+    @foreach (var line in Model.Said)
+    {
+        <p class="unreachable" role="alert">@line</p>
+    }
+
+    <p><a class="button" href="/?tab=agents&amp;project=@Model.Project">Back to the agents</a></p>
+}
+else if (Model.Problems.Count > 0 && (!Model.FolderMode || Model.Entries.Count == 0))
+{
+    @foreach (var problem in Model.Problems)
+    {
+        <p class="unreachable" role="alert">@problem</p>
+    }
+
+    <p>Nothing was written. <a href="/?tab=agents&amp;project=@Model.Project">Back to the agents</a>.</p>
+}
+else if (Model.FolderMode)
+{
+    @* Nothing starts ticked: a person looking at a list of thirty has not yet said yes to any of them, and a pre-ticked
+       list enrols whatever they did not notice. *@
+    <form method="post" asp-page-handler="Apply">
+        <input type="hidden" name="Project" value="@Model.Project" />
+        <input type="hidden" name="Folder" value="@Model.Folder" />
+
+        <p>@Model.Entries.Count repositories under <code>@Model.Folder</code>. Tick the ones that should become agents of @Model.Project.</p>
+
+        <table>
+            <thead><tr><th></th><th>Agent</th><th>Repository</th><th>Owns</th><th>Note</th></tr></thead>
+            <tbody>
+                @foreach (var entry in Model.Entries)
+                {
+                    <tr>
+                        <td><input type="checkbox" name="Chosen" value="@entry.Workspace" aria-label="Enrol @entry.Agent" /></td>
+                        <td>@entry.Agent</td>
+                        <td>@entry.Workspace</td>
+                        <td>@entry.Owns</td>
+                        <td>@entry.Note</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p>Enrolling writes into each repository you tick, and catalogues it so that a peer's request can start it with nobody watching, which spends whatever that agent costs to run. Each is then started once so that it registers itself, so expect one process for each.</p>
+        <p>The files are written to each repository, and the machine's catalogue, <code>@Model.Catalogue</code>, gains a line for each.</p>
+        <button type="submit">Enrol the ticked repositories</button>
+        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+    </form>
+}
+else
+{
+    <form method="post" asp-page-handler="Apply">
+        <input type="hidden" name="Project" value="@Model.Project" />
+        <input type="hidden" name="Workspace" value="@Model.Workspace" />
+        <input type="hidden" name="Role" value="@Model.Role" />
+        <input type="hidden" name="Owns" value="@Model.Owns" />
+
+        <p>These files will be written. Nothing has been yet.</p>
+
+        <dl class="facts">
+            <dt>Launch</dt>
+            <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — a parley server naming this repository as <code>@Model.Role</code> in @Model.Project.</dd>
+            <dt>Instructions</dt>
+            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none, telling the agent how to use Parley.</dd>
+            <dt>Catalogue</dt>
+            <dd>@Model.Catalogue — a line saying this machine may start it when a question arrives for it.</dd>
+        </dl>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Owns))
+        {
+            <p>It will be recorded as owning: @Model.Owns</p>
+        }
+
+        <p>Then it is started once, so that it registers itself and can be started again later. That runs the repository's own server on this machine, and may take up to a minute.</p>
+
+        <button type="submit">Write them and start it</button>
+        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+    </form>
+}

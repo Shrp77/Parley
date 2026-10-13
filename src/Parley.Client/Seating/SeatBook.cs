@@ -291,15 +291,20 @@ public sealed class SeatBook : IDisposable
         var total = 0;
         var certain = true;
 
-        foreach (var project in projects)
+        // All at once: in sequence the cost is the sum of the timeouts of the brokers that are down, and this is asked
+        // while a page is being drawn.
+        var reads = await Task.WhenAll(projects.Select(async project =>
         {
             var seat = Known(project.Name.Value) ?? new Seat(PersonSeat.On(project.Name));
 
-            var read = await BrokerDirectory.ReadAsync(async () =>
+            return await BrokerDirectory.ReadAsync(async () =>
                 await new SeatVoice(_agents(project), seat)
                     .WaitingAsync(cancellationToken).ConfigureAwait(false))
                 .ConfigureAwait(false);
+        })).ConfigureAwait(false);
 
+        foreach (var read in reads)
+        {
             if (read.Problem is null)
             {
                 total += read.Value.Messages;

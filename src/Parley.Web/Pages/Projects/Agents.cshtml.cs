@@ -8,19 +8,12 @@ using Parley.Client.Views;
 namespace Parley.Web.Pages.Projects;
 
 /// <summary>
-/// One project: who is registered in it, and what they have been talking about.
+/// One project's conversations, which can be narrowed to the ones an agent is party to.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The two halves are on one page because they are read together. An operator opening a project
-/// is asking some version of "who is here and what is happening", and answering that across two
-/// pages made them hold the roster in their head while looking at the conversations.
-/// </para>
-/// <para>
-/// Two contained reads rather than one. A registry that does not answer must cost the roster and
-/// leave the conversations, and the reverse — they come from the same broker but they are
-/// separate questions, and half a page is worth more than an error.
-/// </para>
+/// The roster, roadmaps, health, files and settings each have their own page in the project's rail. The roster
+/// is read here only to offer the filter. Two contained reads rather than one: a registry that does not answer must cost
+/// the filter and leave the conversations, and the reverse.
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
 public sealed class AgentsModel(BrokerDirectory directory) : PageModel
@@ -82,15 +75,9 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// </remarks>
     public string? FilterProblem { get; private set; }
 
-    /// <summary>The proposals agents have put forward that nobody has decided.</summary>
-    public IReadOnlyList<RoadmapProposal> Waiting { get; private set; } = [];
-
-    /// <summary>The project's roadmaps.</summary>
-    public IReadOnlyList<RoadmapSummary> Roadmaps { get; private set; } = [];
-
-    /// <summary>Why the roadmaps could not be read, when they could not.</summary>
-    /// <remarks>A third contained read: a broker that cannot answer about roadmaps costs that section only.</remarks>
-    public string? RoadmapProblem { get; private set; }
+    /// <summary>The agents the conversations can be narrowed to, as the filter offers them.</summary>
+    /// <remarks>The roster, plus the agent being filtered on when it is not on it, so the filter never hides what it applies.</remarks>
+    public IReadOnlyList<string> ParticipantChoices { get; private set; } = [];
 
     /// <summary>When the broker answered.</summary>
     public DateTimeOffset AsOf { get; private set; }
@@ -119,18 +106,14 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
         Agents = [.. (roster.Value ?? []).Where(agent => !agent.Facilitator)];
         Problem = roster.Problem;
 
-        var roadmaps = await BrokerDirectory.ReadAsync(async () =>
-            (await broker.ProposalsAsync(ProposalState.Waiting, token).ConfigureAwait(false),
-             await broker.RoadmapsAsync(token).ConfigureAwait(false))).ConfigureAwait(false);
+        var choices = Agents.Select(agent => agent.Name.Value).ToList();
 
-        if (roadmaps.Reachable)
+        if (!string.IsNullOrWhiteSpace(Participant) && !choices.Contains(Participant, StringComparer.Ordinal))
         {
-            (Waiting, Roadmaps) = roadmaps.Value;
+            choices.Add(Participant);
         }
-        else
-        {
-            RoadmapProblem = roadmaps.Problem;
-        }
+
+        ParticipantChoices = choices;
 
         AgentName? participant = null;
 

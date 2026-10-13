@@ -86,6 +86,23 @@ public sealed class AwayFromTheSeatTests
     }
 
     [Fact]
+    public async Task The_home_pages_do_not_wait_for_the_count_and_give_it_when_asked()
+    {
+        // The Projects and Agents pages are drawn before any broker is asked, so the frame leaves the badge empty and the
+        // page asks for it afterwards.
+        using var console = new WaitingConsole();
+        console.Broker.Messages = 3;
+
+        using var client = Seated(console);
+        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Contains("data-inbox-badge", page, StringComparison.Ordinal);
+        Assert.Contains("\"waiting\":3", said, StringComparison.Ordinal);
+        Assert.Contains("\"certain\":true", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_broker_that_could_not_be_asked_is_not_reported_as_nothing()
     {
         // "None" and "could not ask" are different facts and only one of them means stop looking — the rule the
@@ -109,7 +126,7 @@ public sealed class AwayFromTheSeatTests
         console.Broker.Messages = 3;
 
         using var client = Seated(console);
-        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
         var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..];
 

@@ -51,7 +51,6 @@ public sealed class ConsolePageSurfaceTests
     [InlineData("ShowArchived")]
     [InlineData("Sort")]
     [InlineData("Hidden")]
-    [InlineData("Summaries")]
     [InlineData("Typed")]
     [InlineData("Describes")]
     public void Every_property_006_added_to_a_page_is_read_by_its_markup_or_its_model(string added)

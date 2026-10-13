@@ -1,0 +1,106 @@
+@model Parley.Web.Pages.ProjectRowState
+@using Parley.Client.Roadmaps
+@{
+    var project = Model.Project;
+    var name = project.Name.Value;
+    var health = Model.Health;
+    var summary = Model.Summary;
+
+    // "pending" until the broker has been asked, which is a state of its own: it is neither up nor down, and a row drawn
+    // as either before the answer would be a claim nobody had checked.
+    var state = health is null ? "pending" : health.Reachable ? "up" : "down";
+    var warnings = health?.Warnings(Parley.Web.WebBuild.Version) ?? [];
+    var mismatch = health is { Reachable: true, Agrees: false };
+}
+@* One row of the projects grid. The same markup draws it before the broker is asked and after, so the page can put the
+   second in place of the first. The columns are what a person scans; the rest opens beneath. *@
+<details class="dgrid-row" role="row" data-project="@name" data-state="@state">
+    <summary class="dgrid-line">
+        <span role="cell"><a class="project-name name" href="/Projects/Agents?project=@name">@name</a></span>
+        <span role="cell">
+            @* Absent rather than zero when the broker did not answer: zero would read as a project somebody has emptied. *@
+            @if (summary is { Reachable: true })
+            {
+                @(summary.Agents ?? 0)
+                @if (summary.Running > 0)
+                {
+                    <span class="faint">(@summary.Running running)</span>
+                }
+            }
+            else
+            {
+                <span class="faint">@(state == "pending" ? "…" : "unknown")</span>
+            }
+        </span>
+        <span role="cell">
+            @if (summary is { Reachable: true })
+            {
+                @(summary.Conversations ?? 0)
+                @if (summary.Archived > 0)
+                {
+                    <span class="faint">(@summary.Archived archived)</span>
+                }
+                @if (ProposalCount.Says(summary.Proposals) is { Length: > 0 } proposed)
+                {
+                    <span class="faint">· @proposed</span>
+                }
+            }
+            else
+            {
+                <span class="faint">@(state == "pending" ? "…" : "unknown")</span>
+            }
+        </span>
+        <span role="cell" class="status-cell">
+            @if (state == "pending")
+            {
+                <span class="faint" role="status">Checking…</span>
+            }
+            else if (state == "down")
+            {
+                <span class="alarm">Not answering</span>
+            }
+            else if (mismatch)
+            {
+                <span class="alarm">Version differs</span>
+            }
+            else
+            {
+                <span>Answering</span>
+            }
+            @if (warnings.Count > 0)
+            {
+                <span class="alarm" title="Open the row to read @(warnings.Count == 1 ? "it" : "them")">⚠ @warnings.Count note@(warnings.Count == 1 ? "" : "s")</span>
+            }
+        </span>
+    </summary>
+    <div class="dgrid-detail">
+        <dl class="facts">
+            <dt>Description</dt>
+            <dd>@(project.Description is { Length: > 0 } description ? description : "None given.")</dd>
+            <dt>Address</dt>
+            <dd>@project.Endpoint</dd>
+        </dl>
+        @if (health is { Reachable: false })
+        {
+            @* Contained here: one broker being down says nothing about the others, and the row stays clickable because
+               the operator may know something the console does not. *@
+            <p class="unreachable note" role="alert">@health.Problem</p>
+        }
+        else if (mismatch)
+        {
+            @* Named, never refused. What a version disagreement means for any particular read is not knowable from the two
+               numbers, and a console that locked the operator out would remove the view at the moment it is most needed.
+               Both numbers are given, because "incompatible" alone cannot be acted on. *@
+            <p class="unreachable note" role="alert">
+                This project's broker speaks @health!.Speaks and this console was built against
+                @Parley.Web.Pages.IndexModel.ConsoleSpeaks. The pages below still open; what they show may be incomplete.
+            </p>
+        }
+        @foreach (var warning in warnings)
+        {
+            @* Shown whatever else the row says: a deployment whose parts are not from one release, or whose store is not the
+               shape its broker expects, is wrong in a way no protocol number reports. *@
+            <p class="unreachable note" role="alert">@warning</p>
+        }
+    </div>
+</details>

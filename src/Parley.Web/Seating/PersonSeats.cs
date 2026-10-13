@@ -44,15 +44,38 @@ internal static class PersonSeats
         ArgumentNullException.ThrowIfNull(seats);
         ArgumentNullException.ThrowIfNull(directory);
 
-        foreach (var project in directory.Projects)
-        {
-            await EnsureAsync(seats, directory, project, cancellationToken).ConfigureAwait(false);
-        }
+        // Together, so a broker that is down costs one timeout and not one for each project that is.
+        await Task.WhenAll(directory.Projects.Select(project => EnsureAsync(seats, directory, project, cancellationToken)))
+            .ConfigureAwait(false);
 
         if (person)
         {
             seats.Touch(DateTimeOffset.UtcNow);
         }
+    }
+
+    /// <summary>Takes the seats and counts what is waiting, both at once.</summary>
+    /// <param name="seats">The book.</param>
+    /// <param name="directory">The projects, and a client for each.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <param name="person">Whether a person caused this, as for <c>EnsureAsync</c>.</param>
+    /// <returns>How much is waiting for the person, and whether every project answered.</returns>
+    /// <remarks>
+    /// The frame does this while a page is drawn, and pages that do not need an answer to draw ask for it afterwards
+    /// instead. Mail waits against the name, not the stream, so the count does not need the seat taken first.
+    /// </remarks>
+    internal static async Task<(int Waiting, bool Certain)> PresenceAsync(
+        SeatBook seats, BrokerDirectory directory, CancellationToken cancellationToken, bool person = true)
+    {
+        ArgumentNullException.ThrowIfNull(seats);
+        ArgumentNullException.ThrowIfNull(directory);
+
+        var taking = EnsureAsync(seats, directory, cancellationToken, person);
+        var counting = seats.WaitingAsync(directory.Projects, cancellationToken);
+
+        await Task.WhenAll(taking, counting).ConfigureAwait(false);
+
+        return await counting.ConfigureAwait(false);
     }
 
     /// <summary>The query parameter a page's own timed reload carries, so the render can tell it from a person.</summary>

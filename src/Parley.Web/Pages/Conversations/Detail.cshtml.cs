@@ -416,6 +416,12 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
+        // **The first words on a roadmap item say what it is about.** The agent was never in the roadmap and cannot see it,
+        // so a bare "go ahead" on rm1-3 means nothing to it. Only when the conversation is new and was read cleanly: a
+        // conversation that already has messages has given the agent its context, and a failed read must not be taken
+        // for an empty conversation.
+        var said = await OpeningAsync(project, Id, Says).ConfigureAwait(false);
+
         foreach (var target in Targets)
         {
             if (!AgentName.TryCreate(target, out var agent))
@@ -425,16 +431,47 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             }
 
             sent.Add((target, await voice
-                .RequestAsync(agent, Says, Id, token)
+                .RequestAsync(agent, said, Id, token)
                 .ConfigureAwait(false)));
         }
 
         Sent = sent;
 
+        // Cleared once it has gone to everybody. When any was refused the words stay, so they can be fixed or sent again
+        // without being typed twice.
+        if (sent.All(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
+        {
+            Says = null;
+        }
+
         await OnGetAsync().ConfigureAwait(false);
 
         return Page();
     }
+
+    /// <summary>The person's words, led by the roadmap item they are about when this opens the work on it.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="id">The conversation.</param>
+    /// <param name="words">What the person typed.</param>
+    /// <returns>The words to send.</returns>
+    private async Task<string> OpeningAsync(ProjectSettings project, string id, string words)
+    {
+        await ReadAsync(project, id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project, id).ConfigureAwait(false);
+
+        return Problem is null && Messages.Count == 0 && ItemTitle is { Length: > 0 } item
+            ? Lead(item, RoadmapTitle, words)
+            : words;
+    }
+
+    /// <summary>The first words of a message that opens the work on a roadmap item.</summary>
+    /// <param name="item">The item's words.</param>
+    /// <param name="roadmap">The roadmap's title.</param>
+    /// <param name="words">What the person typed.</param>
+    /// <returns>The words led by what they are about.</returns>
+    /// <remarks>Plain text, because a payload is inert data and the agent reads it as the person's own line.</remarks>
+    public static string Lead(string item, string? roadmap, string words) =>
+        $"This is about \"{item}\" in the roadmap \"{roadmap}\": {words}";
 
     /// <summary>The exact words each agent receives.</summary>
     /// <returns>The instruction text.</returns>
@@ -482,6 +519,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// </remarks>
     public string? ItemTitle { get; private set; }
 
+    /// <summary>The title of the roadmap that item is in, or <see langword="null"/>.</summary>
+    public string? RoadmapTitle { get; private set; }
+
     /// <summary>Finds the roadmap item whose conversation this is, when its name is a roadmap item's.</summary>
     /// <param name="project">The project.</param>
     /// <param name="id">The conversation.</param>
@@ -509,6 +549,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
                 : await broker.RoadmapAsync(which.Id, HttpContext.RequestAborted).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
+        RoadmapTitle = found.Value?.Title;
         ItemTitle = found.Value?.Items
             .FirstOrDefault(i => !i.Removed && string.Equals(i.ConversationName, id, StringComparison.Ordinal))?.Text;
     }
