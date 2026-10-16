@@ -69,6 +69,28 @@ public sealed class RebindingTests
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
     }
 
+    [Fact]
+    public async Task No_other_page_may_frame_the_console()
+    {
+        // Clickjacking: a page in another tab frames the console and lays its own buttons over the console's. The
+        // headers are what make the person's browser refuse to draw it, so they are read off a real response.
+        using var console = new RecordingConsole();
+        using var client = console.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            BaseAddress = new Uri("http://localhost"),
+        });
+
+        using var page = await client.GetAsync(new Uri(Start, UriKind.Relative), Ct);
+
+        Assert.Equal("DENY", Assert.Single(page.Headers.GetValues("X-Frame-Options")));
+        Assert.Equal("nosniff", Assert.Single(page.Headers.GetValues("X-Content-Type-Options")));
+        Assert.Contains(
+            "frame-ancestors 'none'",
+            Assert.Single(page.Headers.GetValues("Content-Security-Policy")),
+            StringComparison.Ordinal);
+    }
+
     /// <summary>A console over a broker that records every call and answers each with an error.</summary>
     private sealed class RecordingConsole : WebApplicationFactory<Program>
     {

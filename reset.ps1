@@ -73,6 +73,23 @@ function Write-Kept { param([string] $Text) Write-Host "    keeping $Text" -Fore
 
 Write-Step "Root: $Root"
 
+# **Refused before anything is removed.** The root comes from an argument, and -Everything deletes it whole, so a
+# drive root or the profile directory would take the machine with it. A directory that has something in it and none of
+# what a Parley root holds is somebody else's, however it was named.
+$resolved = [System.IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+$profileRoot = [System.IO.Path]::GetFullPath($env:USERPROFILE).TrimEnd('\', '/')
+
+if ($resolved -eq '' -or $resolved -match '^[A-Za-z]:$' -or $resolved -ieq $profileRoot) {
+    Write-Error "Refusing to reset ${Root}: that is not a Parley root."
+}
+
+if ((Test-Path -LiteralPath $Root -PathType Container) `
+        -and -not (@('projects', 'node.json', 'ports.json', 'parley-broker.log') |
+            Where-Object { Test-Path -LiteralPath (Join-Path $Root $_) }) `
+        -and (Get-ChildItem -LiteralPath $Root -Force | Select-Object -First 1)) {
+    Write-Error "Refusing to reset ${Root}: it holds none of projects, node.json, ports.json or parley-broker.log, so it does not look like one."
+}
+
 # **Not an early exit when there are repositories to clear**, which is the second iteration of the
 # loop this script exists for: the root was removed last time and the launch entries it wrote are
 # still sitting in every checkout. Exiting here because the root is absent would report a clean

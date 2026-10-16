@@ -69,6 +69,10 @@ internal static class Windowless
     // `AllowUnsafeBlocks` turned on for the whole project. Enabling unsafe code everywhere to
     // declare one parameterless call is a poor trade: the generator's advantage is marshalling it
     // does not have to do here, since there is nothing to marshal.
+    //
+    // **Resolved from System32 only.** Without a search path the loader also looks in the application's own
+    // directory and the working directory, so a `kernel32.dll` planted beside the tool would run in its place.
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool FreeConsole();

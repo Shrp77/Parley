@@ -92,6 +92,26 @@ fi
 
 step "Root: $root"
 
+# **Refused before anything is removed.** The root comes from an argument or from another program's output, and
+# `--everything` deletes it whole, so a root of `/` or the home directory would take the machine with it. A
+# directory that has something in it and none of what a Parley root holds is somebody else's, however it was named.
+refuse() {
+    echo "Refusing to reset $root: $1" >&2
+    exit 64
+}
+
+resolved="$(cd "$root" 2>/dev/null && pwd -P || printf '%s' "$root")"
+
+case "$resolved" in
+    ''|/|"$HOME"|"${HOME%/}") refuse 'that is not a Parley root.' ;;
+esac
+
+if [ -d "$root" ] \
+    && [ ! -e "$root/projects" ] && [ ! -e "$root/node.json" ] && [ ! -e "$root/ports.json" ] \
+    && [ ! -e "$root/parley-broker.log" ] && [ -n "$(ls -A "$root" 2>/dev/null)" ]; then
+    refuse 'it holds none of projects, node.json, ports.json or parley-broker.log, so it does not look like one.'
+fi
+
 if [ "$dry_run" -eq 1 ]; then
     note 'dry run: nothing will be deleted'
 fi

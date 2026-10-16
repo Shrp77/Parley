@@ -140,6 +140,23 @@ public static class ConsoleHost
 
         var app = builder.Build();
 
+        // **No other page may frame this one.** The console can purge an agent and read every transcript, and a page in
+        // another tab that frames it can place its own buttons over the console's and have the person press them
+        // (clickjacking). `frame-ancestors` is the current control and `X-Frame-Options` the one older browsers read.
+        // The rest of the policy is only what costs nothing: the pages carry inline scripts, so a script policy would
+        // need a nonce on every one of them, and none is claimed here.
+        app.Use(async (context, next) =>
+        {
+            var headers = context.Response.Headers;
+
+            headers["X-Frame-Options"] = "DENY";
+            headers["X-Content-Type-Options"] = "nosniff";
+            headers["Referrer-Policy"] = "no-referrer";
+            headers["Content-Security-Policy"] = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+
+            await next(context).ConfigureAwait(false);
+        });
+
         app.MapRazorPages();
         MapBrand(app);
 

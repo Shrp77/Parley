@@ -41,6 +41,20 @@ public sealed class ResetScriptTests
 
     [Theory]
     [MemberData(nameof(BothScripts))]
+    public void Each_refuses_a_root_that_is_not_a_parley_root(string script)
+    {
+        // The root is an argument and the whole of it is deleted under the everything flag, so a filesystem root, a home
+        // directory or somebody else's folder must be refused before anything is removed. Both scripts say so in the
+        // same words, and each was run against `/`, the home directory and a scratch directory when this was written.
+        var text = RepositoryFile.Read(script);
+
+        Assert.Contains("Refusing to reset", text, StringComparison.Ordinal);
+        Assert.Contains("that is not a Parley root", text, StringComparison.Ordinal);
+        Assert.Contains("does not look like one", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
     public void Each_keeps_what_019_introduced_unless_told_otherwise(string script)
     {
         // The three that survive an ordinary reset. `node.json` especially: it is this machine's
