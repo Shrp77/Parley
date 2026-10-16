@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 7: what a checkout can hand the scan.
+/// What a checkout can hand the scan.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -143,10 +143,10 @@ public sealed class ProbeEighteenTests : IDisposable
             + "\"PARLEY_AGENT\":\"orders\","
             + "\"PARLEY_OWNS\":\"Carts.\\u001b[2JSomething else entirely.\"}}}}");
 
-        // **This asked a question about a file and now asks one about the row, which is stronger.**
-        // It used to assert the raw byte was absent from the written manifest -- true, but only
-        // because a JSON serialiser escaped it, so it measured System.Text.Json rather than
-        // anything this code does. With no file there is nothing to serialise, and what matters is
+        // **The question is about the row, not a file.** Asserting the raw byte absent from a written
+        // manifest would be true only because a JSON serialiser escaped it, so it would measure
+        // System.Text.Json rather than anything this code does. With no file there is nothing to
+        // serialise, and what matters is
         // that the value is carried faithfully as data: the scan's job is to show somebody what
         // their repository already says about itself, including that it says something odd.
         var found = EnrollCommand.Find(Checkouts);

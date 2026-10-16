@@ -161,10 +161,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// </exception>
     /// <remarks>
     /// <para>
-    /// <b>One body, two entry points, because the report is the expensive part to get right.</b> Grouping
-    /// refusals by reason and abbreviating names after four is 0.25.1's finding — a report that ran off
-    /// the screen at the half naming what to do about it — and a second bulk send with its own reporting
-    /// would be that lesson learned once and applied in one place.
+    /// <b>One body, two entry points, because the report is the expensive part to get right.</b> Refusals
+    /// are grouped by reason and names abbreviated after four, so the report does not run off the screen
+    /// before the part naming what to do about it.
     /// </para>
     /// <para>
     /// <b>Asking several agents what each of them owns is why this exists.</b> Those are not one
@@ -390,9 +389,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <param name="conversationId">The conversation named, or null.</param>
     /// <returns>The refusal, or null when there is none.</returns>
     /// <remarks>
-    /// Shared by the single and plural forms. What was checked here until 0.7 — an intent, a kind, and a finish line
-    /// of at least twenty characters — went with the fields: a receiver that cannot scope an ask sends a Clarify
-    /// (§5.2), which is a question the receiver is in a position to ask and the sender is not.
+    /// Shared by the single and plural forms. A receiver that cannot scope an ask sends a Clarify
+    /// (§5.2), which is a question the receiver is in a position to ask and the sender is not, so the
+    /// sender checks only that something was asked.
     /// </remarks>
     private static string? Unsendable(string? ask, string? conversationId)
     {
@@ -669,10 +668,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> or <paramref name="draft"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>Always a Request, whatever is open between them</b>. This used to derive a Result or a Clarify from
-    /// who owed whom and, with several of an agent's questions open, filed the person's words against whichever one the
-    /// broker happened to list first. The agent decides what the words settle; this delivers them so it must answer.
-    /// That also retires 0.30.7's fallback, which turned a refused derived act into a Request: nothing is derived now.
+    /// <b>Always a Request, whatever is open between them</b>. With several of an agent's questions open, a derived
+    /// act would file the person's words against whichever one the broker listed first. The agent decides what the
+    /// words settle; this delivers them so it must answer.
     /// </para>
     /// <para>
     /// <b>Length is checked once, before anything is sent</b>, because every recipient receives the same payload, so

@@ -104,7 +104,7 @@ public sealed class FacilitatorAsksTests : IDisposable
     public async Task A_discarded_answer_is_not_asked_again_by_the_sweep()
     {
         // Having been asked at all stops automatic asking (SPEC.md §10.2). Re-asking a discarded answer on the next
-        // tick would overrule the person who discarded it — /speckit-analyze's H1.
+        // tick would overrule the person who discarded it.
         var exchange = (await _facilitator.AskAsync(_parley, Orders, T0, Ct)).Exchange!.Value;
         await Answer(exchange, Orders, "orders.");
         _ = await _facilitator.ReadBackAsync(_parley, T0, Ct);
@@ -147,7 +147,7 @@ public sealed class FacilitatorAsksTests : IDisposable
     [Fact]
     public async Task An_agents_own_owns_conversation_is_not_an_answer_to_anything()
     {
-        // Research finding 11. billing opens a conversation under the prefix and orders "answers" it; neither is the
+        // billing opens a conversation under the prefix and orders "answers" it; neither is the
         // facilitator's, so nothing is read back and orders is still due.
         var sent = await _agents.RequestAsync(
             Billing, Orders, "some-model-9", Json("ask", "What do you own?"), T0, "owns-orders-20260928-120000", Ct);
@@ -183,7 +183,7 @@ public sealed class FacilitatorAsksTests : IDisposable
         Assert.Equal("Orders and totals. Not tax.", line.Statement);
         Assert.Equal("automatic", line.Source);
 
-        // The agent's own message, never the line: FR-026's evidence is what agents write.
+        // The agent's own message, never the line: the evidence is what agents write.
         Assert.Equal("Orders and totals.\nNot tax.".Length, line.Length);
         Assert.Equal("accepted", _connection.ExecuteScalar<string>("SELECT state FROM ownership_questions;"));
         Assert.Equal(

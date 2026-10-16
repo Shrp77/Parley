@@ -9,16 +9,15 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A defect 020 shipped and 022 would have made ordinary.</b> <c>agent_ownership_accepted.conversation_id</c>
-/// referenced its conversation with no action on delete, and a destroy runs with foreign keys deferred to commit —
-/// so destroying the conversation a line was agreed in failed at the commit and rolled back the whole destroy.
-/// Under 020 that needed a person to have accepted a line; under 022 every agent has one, each agreed in its own
-/// conversation.
+/// <b>A line's link to its conversation must not block a destroy.</b> <c>agent_ownership_accepted.conversation_id</c>
+/// referencing its conversation with no action on delete would fail, because a destroy runs with foreign keys deferred to commit —
+/// so destroying the conversation a line was agreed in would fail at the commit and roll back the whole destroy.
+/// Every agent has a line, each agreed in its own conversation.
 /// </para>
 /// <para>
 /// <b>The line stays and loses only its link.</b> The line is what peers route by, and the conversation is
 /// evidence of how it was reached; destroying the evidence is the person's decision and must not take the line
-/// with it. Watched to fail against the schema before 022.
+/// with it.
 /// </para>
 /// </remarks>
 public sealed class OwnershipCascadeTests : IDisposable

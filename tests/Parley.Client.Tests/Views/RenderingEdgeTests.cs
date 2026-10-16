@@ -9,8 +9,8 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 1 of the review gate, run 1.2. <c>Reading</c> is the only genuinely new algorithm this
-/// feature added — everything else derives or forwards — and it runs over eight thousand characters
+/// <c>Reading</c> is the only genuinely new algorithm here —
+/// everything else derives or forwards — and it runs over eight thousand characters
 /// of whatever a peer chose to send. Its correctness questions are boundary questions: what does it
 /// do with nothing, with only breaks, with a payload that is a scalar rather than an object, with
 /// one that nests deeply enough to be a stack.
@@ -42,8 +42,8 @@ public sealed class RenderingEdgeTests
     [InlineData("[]")]
     [InlineData("42")]
     [InlineData("\"just a string\"")]
-    [InlineData("{\"intent\":\"\"}")]
-    [InlineData("{\"intent\":null}")]
+    [InlineData("{\"ask\":\"\"}")]
+    [InlineData("{\"ask\":null}")]
     public void Every_shape_json_permits_produces_a_header_and_does_not_throw(string payload)
     {
         // The header is the invariant: whatever the body turns out to be, a message must be
@@ -60,7 +60,7 @@ public sealed class RenderingEdgeTests
     {
         // Blank lines are kept on purpose -- that is what makes paragraphs survive -- so a payload
         // that is nothing but breaks is the case where that choice costs the most.
-        var lines = Reading.Lines([Message("""{"intent":"\n\n\n\n\n"}""")]);
+        var lines = Reading.Lines([Message("""{"ask":"\n\n\n\n\n"}""")]);
 
         // Bounded by what was sent rather than multiplied by it: five breaks, not fifty lines.
         Assert.True(
@@ -106,7 +106,7 @@ public sealed class RenderingEdgeTests
         // renderer that clipped as well would hide the tail of a message somebody is reading to
         // check something specific.
         var long_ = new string('x', 7_900);
-        var lines = Reading.Lines([Message($$"""{"intent":"{{long_}}"}""")]);
+        var lines = Reading.Lines([Message($$"""{"ask":"{{long_}}"}""")]);
 
         Assert.Contains(lines, line => line.Text.Contains(long_, StringComparison.Ordinal));
     }
@@ -117,7 +117,7 @@ public sealed class RenderingEdgeTests
         // No collapsing of runs. It would read better and it would mean a reader could not tell
         // two messages from one long one, which matters when the second is an answer.
         var lines = Reading.Lines(
-            [Message("""{"intent":"one"}"""), Message("""{"intent":"two"}""")]);
+            [Message("""{"ask":"one"}"""), Message("""{"ask":"two"}""")]);
 
         Assert.Equal(2, lines.Count(line => line.Kind == LineKind.Header));
     }

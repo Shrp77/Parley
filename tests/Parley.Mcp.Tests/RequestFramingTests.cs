@@ -9,10 +9,8 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SPEC.md §5.1 — a Request is the ask — and §5.3 — a Result answers it. Until 0.7 this file checked an
-/// intent and a twenty-character finish line, both of which a model had to compose before it could ask
-/// anybody anything, and both of which reached it as SQL when it got them wrong. They are gone; what is
-/// left is that something was actually asked.
+/// SPEC.md §5.1 — a Request is the ask — and §5.3 — a Result answers it. All that is checked is that
+/// something was actually asked.
 /// </para>
 /// </remarks>
 public sealed class RequestFramingTests
@@ -50,7 +48,7 @@ public sealed class RequestFramingTests
     [Fact]
     public async Task A_short_ask_is_sent_rather_than_held_to_a_length_nobody_set()
     {
-        // 0.7's argument, as a check: the sender is not the one who can say how far an ask goes, so there
+        // The sender is not the one who can say how far an ask goes, so there
         // is no floor. A receiver that cannot scope this sends a Clarify.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);

@@ -98,8 +98,7 @@ public sealed class ParleyServer : IAsyncDisposable
 
         // Every held stream is closed before Kestrel begins waiting for its handlers, and this
         // is not tidiness: an Attach handler sits in a read that completes only when its channel
-        // does, so a graceful shutdown with agents attached waits the full ShutdownTimeout —
-        // thirty seconds, measured, every time, on a broker that had one agent connected.
+        // does, so a graceful shutdown with agents attached waits the full ShutdownTimeout.
         //
         // What a person sees is Ctrl+C appearing to hang, and what a service manager sees is a
         // process that missed its stop deadline and has to be killed. Closing the channels here

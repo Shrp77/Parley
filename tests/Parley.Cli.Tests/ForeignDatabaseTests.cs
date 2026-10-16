@@ -48,7 +48,7 @@ public sealed class ForeignDatabaseTests : IDisposable
 
     /// <summary>Somebody else's SQLite database, at a path this test chooses.</summary>
     /// <remarks>
-    /// **Takes the path since 019**, because the only way to put a foreign database where Parley will
+    /// **Takes the path**, because the only way to put a foreign database where Parley will
     /// open it is to put it where a project's store goes. No flag names one any more.
     /// </remarks>
     private static string MakeForeignDatabaseAt(string path)
@@ -86,13 +86,12 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void Pointing_the_broker_at_somebody_elses_database_changes_nothing()
     {
-        // Through `serve`, because that is the only thing that opens a file. The check moved there
-        // with the migration it guards rather than being dropped with the class it used to live in:
-        // one process creates every store, so it is the only thing left that can create one in the
+        // Through `serve`, because that is the only thing that opens a file. The check lives there
+        // with the migration it guards: one process creates every store, so it is the only thing left that can create one in the
         // wrong place.
         //
         // **Reached by putting the foreign file where the project's store goes**, which is the only
-        // way in now that no flag names a database — and it is a real way in: somebody copies a file
+        // way in, since no flag names a database — and it is a real way in: somebody copies a file
         // into a project's folder, or restores a backup over one.
         var root = Path.Combine(_directory, "root");
         var name = Parley.Core.ProjectName.Create("probe");
@@ -106,19 +105,18 @@ public sealed class ForeignDatabaseTests : IDisposable
         MakeForeignDatabaseAt(path);
 
         // **`--project` names the one project, which is what keeps this a refusal rather than a
-        // wait.** Since FR-033 was built, a `serve` given only a root *watches*: none of its
+        // wait.** A `serve` given only a root *watches*: none of its
         // projects opening is a machine somebody is repairing, so it stays up and reports why
         // rather than exiting. Naming a project says "serve this one", there is nothing to watch
         // for, and a project that will not open is a failure with an exit code.
         //
-        // The subject of this test is unchanged, and it was never the exit code: a foreign database
+        // The subject of this test is not the exit code: a foreign database
         // is refused, and left exactly as it was found.
         var (exitCode, error) = ToolProcess.Run("serve", "--config", root, "--project", name.Value);
 
-        // **69 rather than 74 since 019.** The one-store path classified "could not open this file" as an
-        // I/O error; the projects path classifies "this project would not start" as unavailable, and
-        // every project failure now shares that code rather than one code per cause. The substance is
-        // the sentence, which is unchanged: Parley says it did not create this database and leaves it
+        // **69, not an I/O error code.** The projects path classifies "this project would not start" as
+        // unavailable, and every project failure shares that code rather than one code per cause. The
+        // substance is the sentence: Parley says it did not create this database and leaves it
         // exactly as it found it.
         Assert.Equal(69, exitCode);
         Assert.Contains("Parley did not create", error, StringComparison.Ordinal);
@@ -132,12 +130,10 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void An_operator_command_cannot_create_a_database_at_all()
     {
-        // This used to assert that `parley --db <nowhere> registry` refused rather than creating
-        // the file, because an operator command against a project that has never run is a
-        // mistyped path far more often than a first use.
+        // An operator command against a project that has never run is a mistyped path far more
+        // often than a first use, so it must refuse rather than create the file.
         //
-        // The guarantee is stronger now and the test says so rather than being deleted: an
-        // operator command has no --db to mistype. It reaches the broker over the transport and
+        // The guarantee is strong: an operator command has no --db to mistype. It reaches the broker over the transport and
         // opens nothing, so there is no path it could create a database at.
         var path = Path.Combine(_directory, "nowhere.db");
 
@@ -145,11 +141,7 @@ public sealed class ForeignDatabaseTests : IDisposable
 
         Assert.Equal(64, exitCode);
 
-        // **Named with what replaced it, rather than "not an option this command takes."** Every
-        // deployment on every machine was made with this flag, so it is in scripts and in fingers, and
-        // a refusal that pretended never to have heard of it would be true and useless.
         Assert.Contains("--db", error, StringComparison.Ordinal);
-        Assert.Contains("`parley`",error, StringComparison.Ordinal);
         Assert.False(File.Exists(path));
     }
 
@@ -162,9 +154,7 @@ public sealed class ForeignDatabaseTests : IDisposable
         // variable it actually reads, which is the part that would have left an operator
         // administering a deployment the agents were not using.
         //
-        // **`PARLEY_DB` until 019 and `PARLEY_CONFIG` now.** The old variable named one store outside
-        // everything; this one names the root, which is the only thing left that says where anything
-        // is.
+        // **`PARLEY_CONFIG` names the root**, which is the only thing that says where anything is.
         var root = Path.Combine(_directory, "from-the-variable");
         var name = Parley.Core.ProjectName.Create("probe");
 
@@ -190,10 +180,9 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void The_bare_command_says_what_it_can_do()
     {
-        // `parley` on its own is somebody asking what this is, and it used to answer "no
-        // database" — a configuration error about a thing they had not yet been told existed,
-        // with no hint that there was a list of commands behind it. Found by installing the tool
-        // and typing its name.
+        // `parley` on its own is somebody asking what this is, and answering "no
+        // database" would be a configuration error about a thing they had not yet been told existed,
+        // with no hint that there was a list of commands behind it.
         var (exitCode, error) = ToolProcess.Run();
 
         Assert.Equal(64, exitCode);
@@ -217,9 +206,8 @@ public sealed class ForeignDatabaseTests : IDisposable
         Assert.Equal(78, exitCode);
         Assert.Contains("nothing to serve", error, StringComparison.Ordinal);
 
-        // The way on is a project, and it is the only way on now. A refusal naming a one-store option
-        // used to send a person to deploy by hand outside the manifest; there is no such option to name.
-        // Since 2026-09-25 the way to a project is the terminal, so that is what this has to say.
+        // The way on is a project, and it is the only way on. There is no one-store option to name.
+        // The way to a project is the terminal, so that is what this has to say.
         Assert.Contains("`parley`",error, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
     }
@@ -229,9 +217,9 @@ public sealed class ForeignDatabaseTests : IDisposable
     [InlineData("-h")]
     public void Asking_for_the_manual_is_not_a_mistake(string flag)
     {
-        // It used to answer "'--help' is not an option this command takes" and then print the
-        // help anyway, on standard error, with a usage exit code. The user got what they wanted
-        // and was told they were wrong for wanting it.
+        // Answering "'--help' is not an option this command takes" and then printing the
+        // help anyway, on standard error, with a usage exit code, would give the user what they
+        // wanted and tell them they were wrong for wanting it.
         var (exitCode, error) = ToolProcess.Run(flag);
 
         Assert.Equal(0, exitCode);
@@ -243,31 +231,23 @@ public sealed class ForeignDatabaseTests : IDisposable
     }
 
     [Fact]
-    public void The_removed_options_are_named_with_what_replaced_them()
+    public void A_store_or_endpoint_option_is_refused_by_name()
     {
-        // **Two tests lived here about the grammar of an option that no longer exists**: `--db` with no
-        // path after it, and `--db` given twice. Both were real — the first was found by typing
-        // `parley --db` and forgetting the path, and getting told that `--db` is not an option this
-        // command takes, which is false in the most confusing direction.
-        //
-        // What replaces them is the one thing still worth checking: somebody who types either flag from
-        // memory or from a script is told what to do instead, rather than met with a refusal that
-        // pretends never to have heard of it. Every deployment on every machine was made with these.
+        // A store is `parley.db` in its project's folder and an endpoint is claimed when the project is
+        // named, so neither has an option. The refusal names what was typed.
         foreach (var gone in new[] { "--db", "-d", "--listen", "-l" })
         {
             var (exitCode, error) = ToolProcess.Run(gone, "somewhere", "serve");
 
             Assert.Equal(64, exitCode);
             Assert.Contains(gone, error, StringComparison.Ordinal);
-            Assert.Contains("`parley`",error, StringComparison.Ordinal);
-            Assert.Contains("parley serve", error, StringComparison.Ordinal);
         }
     }
 
     [Fact]
     public void A_flag_in_the_wrong_place_never_becomes_data()
     {
-        // `parley export --db` used to reach the export with "--db" as the conversation
+        // `parley export --db` must not reach the export with "--db" as the conversation
         // identifier and run a real query against it. A flag in the wrong place silently
         // becoming data is the worst reading of a mistyped command, because it succeeds.
         //
@@ -284,17 +264,12 @@ public sealed class ForeignDatabaseTests : IDisposable
     [Fact]
     public void An_option_it_does_not_have_is_refused_rather_than_read_as_data()
     {
-        // The stray-option branch itself, which needs a flag the command genuinely does not
-        // have — the --db cases above are now caught earlier and more precisely, so without
-        // this the branch that catches everything else would be covered by nothing.
+        // The stray-option branch itself. A flag in the wrong place never becomes data.
         var (exitCode, error) = ToolProcess.Run(
             "--db", MakeForeignDatabase(), "export", "--verbose");
 
         Assert.Equal(64, exitCode);
-        // **Named rather than met with "is not an option this command takes."** That sentence was true
-        // and useless: `--db` is what every deployment was made with, so the refusal says what replaced
-        // it. The property this test is for is unchanged — a flag in the wrong place never becomes data.
-        Assert.Contains("was removed", error, StringComparison.Ordinal);
+        Assert.Contains("is not an option this command takes", error, StringComparison.Ordinal);
         Assert.DoesNotContain("No messages in", error, StringComparison.Ordinal);
     }
 }

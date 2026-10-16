@@ -31,7 +31,12 @@ public sealed class ReadmeDescribesTheTerminalTests
 
         Assert.NotNull(directory);
 
-        return File.ReadAllText(Path.Combine(directory!.FullName, "README.md"));
+        // The README and the pages under docs/ it links to are one body of documentation.
+        var pages = Directory.GetFiles(Path.Combine(directory!.FullName, "docs"), "*.md")
+            .Order(StringComparer.Ordinal)
+            .Prepend(Path.Combine(directory.FullName, "README.md"));
+
+        return string.Join("\n", pages.Select(p => File.ReadAllText(p))).Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     [Fact]

@@ -28,11 +28,10 @@ public sealed class MigrationDiscoveryTests
     /// and a migration that appears without anybody deciding it should is what this catches.
     /// </para>
     /// <para>
-    /// <b>It went from 11 to 1 on 2026-09-26</b>, when the eleven were folded into
-    /// <c>001_initial.sql</c> — the owner's call, on the one ground that permits it: nothing has
-    /// been released and no store outside a test process held anything worth keeping. The header of
-    /// that file carries the argument and what it cost. **The next change to the schema is a
-    /// migration again**, and this number moving to 2 is how that is noticed.
+    /// <b>There is one migration.</b> <c>001_initial.sql</c> holds the whole schema, on the one ground
+    /// that permits it: nothing has been released and no store outside a test process holds anything
+    /// worth keeping. The header of that file carries the argument and what it cost. **The next
+    /// change to the schema is a migration**, and this number moving to 2 is how that is noticed.
     /// </para>
     /// </remarks>
     private const int Expected = 1;

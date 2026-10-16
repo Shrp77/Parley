@@ -87,8 +87,8 @@ public sealed class BrokerAwayTests
         // fifteen, where the same sequence with the shutdown first gave nought out of fifteen --
         // which is why a fast machine never sees this and CI does.
         //
-        // That answer is a rule, and the remedy in it is the agent's to apply. It used to be
-        // relabelled `brokerunreachable` and have "Tell your principal rather than retrying"
+        // That answer is a rule, and the remedy in it is the agent's to apply. It is not
+        // relabelled `brokerunreachable` with "Tell your principal rather than retrying"
         // appended -- a refusal that named the fix and then forbade it. SPEC.md §7.3: a refusal
         // returns work, never a retry instruction.
         //

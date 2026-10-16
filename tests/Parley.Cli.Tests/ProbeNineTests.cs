@@ -6,13 +6,13 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 9: the manifest's writers, now that the gate shares their lock.
+/// The manifest's writers, now that the gate shares their lock.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Run 8 moved the grant gate onto the lock <c>ProjectManifest</c> already keeps for its own writes.
+/// The grant gate is the lock <c>ProjectManifest</c> keeps for its own writes.
 /// That is one mechanism rather than two — and it puts <c>parley project add</c> and a bulk enrolment
-/// on the same lock for the first time. Two things follow that nothing has checked: what a manifest
+/// on the same lock. Two things follow: what a manifest
 /// write does when a grant is in progress, and whether the terminal's own sequence, which writes the
 /// manifest and *then* takes the gate, can end up waiting for itself.
 /// </para>
@@ -80,7 +80,6 @@ public sealed class ProbeNineTests : IDisposable
             CataloguePath,
             Path.Combine(Workspace, "CLAUDE.md"),
             TestContext.Current.CancellationToken,
-            [Project(CataloguePath)],
             Root);
 
         var finished = await Task.WhenAny(enrolling, Task.Delay(10_000, TestContext.Current.CancellationToken));
@@ -95,7 +94,7 @@ public sealed class ProbeNineTests : IDisposable
     [Fact]
     public async Task A_manifest_write_during_a_grant_leaves_the_manifest_readable()
     {
-        // The interaction run 8 created. Whether the write waits, or is refused, is a judgement — but
+        // The interaction of the shared lock. Whether the write waits, or is refused, is a judgement — but
         // it must not leave the manifest unreadable, and it must not leave a half-written sibling
         // that a later read mistakes for the real thing.
         using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);

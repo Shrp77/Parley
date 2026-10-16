@@ -45,7 +45,7 @@ internal sealed partial class BrokerProcess : IDisposable
     /// <remarks>
     /// Derived through <see cref="ProjectFolder"/> rather than composed here, so a test that opens the
     /// store afterwards opens the one the broker opened. Composing it would be a second answer to where
-    /// a project's store is, which is exactly what 019 removed.
+    /// a project's store is.
     /// </remarks>
     public static string StoreFor(string root) =>
         ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(ProjectName));
@@ -57,7 +57,7 @@ internal sealed partial class BrokerProcess : IDisposable
     /// <exception cref="InvalidOperationException">It did not report an address.</exception>
     /// <remarks>
     /// <para>
-    /// <b>This took a store path and a listen address until 019, and both options are gone.</b> A
+    /// <b>It takes neither a store path nor a listen address.</b> A
     /// project's store is derived from its name and its port is claimed when it is created, so a rig
     /// names a root and writes a project into it.
     /// </para>
@@ -73,7 +73,7 @@ internal sealed partial class BrokerProcess : IDisposable
         string root, params (string Name, string Value)[] environment)
     {
         // **Named, because a rig that is handed a store path instead of a root fails obscurely.** It
-        // happened six times during 019's conversion: `Directory.CreateDirectory` reports that it
+        // `Directory.CreateDirectory` reports that it
         // cannot create `parley.db`, which reads as a defect in the layout rather than a caller passing
         // the wrong thing.
         if (root.EndsWith(ProjectFolder.StoreFileName, StringComparison.OrdinalIgnoreCase))

@@ -34,17 +34,14 @@ internal sealed class ConversationsRegion : FrameView
 
     /// <summary>What is shown when a project has had none, a short row at a time.</summary>
     /// <remarks>
-    /// Rows rather than one sentence, because a list row does not wrap: the sentence was wider than the half-width pane a
-    /// project view gives this region, and the owner's screenshot showed it cut at "when an agent asks an" — which is
-    /// the half that says how to start one, lost while they were looking for exactly that. Each row fits in the
-    /// narrowest pane this surface draws.
+    /// Rows rather than one sentence, because a list row does not wrap: a sentence wider than the half-width pane a
+    /// project view gives this region would be cut, and the cut half is the one that says how to start a
+    /// conversation. Each row fits in the narrowest pane this surface draws.
     /// </remarks>
     internal static readonly IReadOnlyList<string> Nothing =
     [
         "No conversation here yet.",
-        "One starts when an agent sends",
-        "another a request, or when you",
-        "press Alt+k to start one.",
+        "To start one, press Alt+k.",
     ];
 
     private readonly GuardedList _list = Lists.Filling(Colours.Conversations);
@@ -60,8 +57,7 @@ internal sealed class ConversationsRegion : FrameView
         Lists.Tint(_list, Tint);
 
         // The list's own accept rather than a key handler on this region. Enter reaches the
-        // focused view first and the list takes it, so a region-level handler never runs — which
-        // is how the first version of this quietly did nothing. A double click raises the same
+        // focused view first and the list takes it, so a region-level handler never runs. A double click raises the same
         // event, which is what makes the mouse route and the key route one code path (FR-003).
         _list.Accepting += (_, args) =>
         {

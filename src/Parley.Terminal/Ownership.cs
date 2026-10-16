@@ -28,7 +28,7 @@ namespace Parley.Terminal;
 /// <b>It has to say that nothing an asker reads has changed.</b> The registry is filled from the
 /// launch environment when the agent attaches (§12.3), so accepting a line is a decision until the
 /// agent next starts. A screen reporting only "recorded" would be true about the record and false
-/// about the deployment, which is the shape 0.25.2 records paying for elsewhere.
+/// about the deployment.
 /// </para>
 /// </remarks>
 internal static class Ownership
@@ -67,8 +67,7 @@ internal static class Ownership
     /// them looking for a broken broker.
     /// </remarks>
     internal const string NobodyToAsk =
-        "There is no agent in this project to ask. An agent appears here once it has attached and "
-        + "registered, which is its own act as it starts.";
+        "There is no agent in this project to ask yet.";
 
     /// <summary>The door the restart offer passes through.</summary>
     internal const string RestartTitle = "Make this the line peers read";
@@ -81,8 +80,7 @@ internal static class Ownership
 
     /// <summary>Said when the restart was asked for and the node took it.</summary>
     internal const string Restarting =
-        "Asked its node to start it. It registers as it attaches, and the line peers read is "
-        + "whatever its launch configuration carries by then.";
+        "Asked its node to start it.";
 
     /// <summary>Said when the restart was declined.</summary>
     internal const string NotRestarted =
@@ -95,7 +93,7 @@ internal static class Ownership
     /// <remarks>
     /// Distinguished from an agent that answered badly, which comes back as it was written: this is
     /// the agent having said nothing at all, which is a fact about the deployment rather than about
-    /// the answer, and 0.29.1 records what collapsing those two costs.
+    /// the answer.
     /// </remarks>
     internal const string NothingProposed =
         "This agent has not answered yet, so there is nothing to accept. Its answer will appear in "
@@ -120,12 +118,10 @@ internal static class Ownership
     /// <returns>When the read has been queued.</returns>
     /// <remarks>
     /// <para>
-    /// <b>No seat, because Parley asks</b> (022). 020 sent this as the person's own Request, so it needed a seat, and
-    /// the owner met "an ask is a message, so it is sent as somebody, and no seat is held here" on the one action they
-    /// reached for. The facilitator is the somebody now.
+    /// <b>No seat, because Parley asks</b>: the facilitator is the sender.
     /// </para>
     /// <para>
-    /// <b>The words are shown before the turn is spent</b> (FR-003), and they are the words Parley will send: the
+    /// <b>The words are shown before the turn is spent</b>, and they are the words Parley will send: the
     /// switch is read first, because the question tells the agent what becomes of its answer and that differs with it.
     /// </para>
     /// <para>
@@ -205,13 +201,13 @@ internal static class Ownership
     /// <returns>When the dialog is open, or the refusal has been said.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The cost is stated and answered before the first question is sent</b> (FR-007): a turn per agent cannot be
+    /// <b>The cost is stated and answered before the first question is sent</b>: a turn per agent cannot be
     /// un-spent. Parley already asks every new agent on its own, so this is for asking again, and says so.
     /// </para>
     /// <para>
     /// An agent whose answer is still being decided is refused and named rather than asked over: asking again then
     /// would lose an answer nobody has looked at. Nothing is waited on per agent — each ask is one round trip and the
-    /// answers arrive later — which is 0.25.1's rule satisfied by there being nothing to defer.
+    /// answers arrive later.
     /// </para>
     /// </remarks>
     internal static Task AskEveryAsync(
@@ -299,8 +295,7 @@ internal static class Ownership
     /// <remarks>
     /// Names them as well as counting them, up to a point: a count alone is a number somebody has to
     /// trust, and the list is what tells them the set is the one they meant. Abbreviated after a handful
-    /// for the reason 0.25.1 records — a report naming nineteen agents ran off the screen at the half
-    /// that said what to do about it.
+    /// because a report naming many agents runs off the screen at the half that says what to do about it.
     /// </remarks>
     internal static string Costing(IReadOnlyList<AgentName> agents)
     {
@@ -325,9 +320,8 @@ internal static class Ownership
 
     /// <summary>How many agents are named before the rest are counted.</summary>
     /// <remarks>
-    /// Four, as every other list on this surface uses — the number is 0.25.1's, and the reason it is
-    /// stated here rather than shared is that <c>SeatVoice</c>'s copy is private to the report it writes.
-    /// If a third place needs it, it moves.
+    /// Four, as every other list on this surface uses. It is stated here rather than shared because
+    /// <c>SeatVoice</c>'s copy is private to the report it writes; if a third place needs it, it moves.
     /// </remarks>
     private const int Named = 4;
 
@@ -336,9 +330,8 @@ internal static class Ownership
     /// <param name="autoAccept">The project's Auto Accept switch, which chooses the words.</param>
     /// <returns>The description.</returns>
     /// <remarks>
-    /// Shows the question itself rather than describing it. The whole of FR-003 is that the agent is told what its
-    /// answer is for, and a surface summarising those words would be the one place the promise could quietly stop
-    /// being true.
+    /// Shows the question itself rather than describing it. The agent is told what its answer is for, and a
+    /// surface summarising those words would be the one place the promise could quietly stop being true.
     /// </remarks>
     internal static string Asked(AgentName agent, bool autoAccept)
     {
@@ -381,9 +374,9 @@ internal static class Ownership
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
 
-        // **Refused before the form opens, not after it is filled in.** 0.25.2 records what the other
-        // order costs: a rule met after the form closed took somebody's words with it. Nothing about
-        // this machine or that repository will change while a person is typing.
+        // **Refused before the form opens, not after it is filled in**: a rule met after the form closed would
+        // take somebody's words with it. Nothing about this machine or that repository changes while a person
+        // is typing.
         if (OwnershipLine.NotHere(agent) is { } elsewhere)
         {
             _ = done(Safe.Text(elsewhere));
@@ -426,8 +419,8 @@ internal static class Ownership
     /// <param name="agent">Whose line it is.</param>
     /// <returns>The description.</returns>
     /// <remarks>
-    /// Names the cost rather than a length, because there is no length any more: the bound came off
-    /// at 0.33.0 and what is left is the reason to be brief. A field that said nothing about cost
+    /// Names the cost rather than a length, because the line has no length bound by default and what is left is
+    /// the reason to be brief. A field that said nothing about cost
     /// would leave somebody no reason not to write a paragraph every peer then reads.
     /// </remarks>
     internal static string Described(AgentName agent) =>
@@ -441,8 +434,7 @@ internal static class Ownership
          agent owns and what it does not -- the exclusion is the half that stops somebody asking the
          wrong agent.
 
-         This records your words as yours. It takes effect when the agent next starts, because the
-         line itself comes from its launch configuration.
+         This records your words as yours. It takes effect when the agent next starts.
          """;
 
     /// <summary>Reads what the agent proposed, and offers it for acceptance.</summary>
@@ -452,7 +444,7 @@ internal static class Ownership
     /// <param name="roster">
     /// The project's registry as it was last read. It supplies three things once the discussion has said
     /// whose line it is: the repository the write lands in, the line peers read today, and what the other
-    /// agents already claim (FR-017).
+    /// agents already claim.
     /// </param>
     /// <param name="project">The project whose launch entry carries the line.</param>
     /// <param name="queue">Runs the acceptance, so the caller can wait for it.</param>
@@ -465,18 +457,17 @@ internal static class Ownership
     /// followed every few seconds, so what was drawn is what was true a moment ago — and an agent
     /// that revised its answer in that moment would have the sentence it retracted written to its
     /// launch configuration. The proposal a person accepts is the latest one at the instant they
-    /// accept it, which is 0.30.1's rule taken to its conclusion.
+    /// accept it.
     /// </para>
     /// <para>
     /// <b>Whose line it is comes out of the discussion, not off the screen.</b> One read answers both
     /// questions — who was asked, and what they last said — where taking the agent from the cursor
     /// would let a person accept one agent's sentence into another agent's file if the selection had
-    /// moved. Two reads on one keystroke is also one wasted export and two chances to disagree, which
-    /// 017 records removing from the conversations list.
+    /// moved. Two reads on one keystroke is also one wasted export and two chances to disagree.
     /// </para>
     /// <para>
     /// <b>The machine refusal is applied before the dialog opens</b>, because this half writes a
-    /// file on the agent's machine (0.25.2) — and after the subject is known rather than before,
+    /// file on the agent's machine — and after the subject is known rather than before,
     /// since until the discussion has been read there is no agent to apply it to.
     /// </para>
     /// </remarks>
@@ -556,10 +547,8 @@ internal static class Ownership
                 return;
             }
 
-            // **The agent's own length, never the accepted one, and 0.29.0's lens 2 is why.** The
-            // evidence table exists so a bound can one day be set from what agents actually write;
-            // a length a person typed is not that, and writing it would poison the only record
-            // FR-026 asks for.
+            // **The agent's own length, never the accepted one.** The evidence table exists so a bound can
+            // one day be set from what agents actually write; a length a person typed is not that.
             var acceptance = new OwnershipAcceptance(
                 statement,
                 Chosen(statement, proposal.Statement),
@@ -578,7 +567,7 @@ internal static class Ownership
     /// <param name="neighbours">What the other agents in the project already claim.</param>
     /// <returns>The description.</returns>
     /// <remarks>
-    /// <b>Attributed, and marked as the agent's own words</b> (FR-013). The sender and the time are
+    /// <b>Attributed, and marked as the agent's own words.</b> The sender and the time are
     /// both said, because a reader has to be able to tell
     /// a model's sentence from a person's — and a screen that showed the text alone would make the
     /// record of <c>proposed</c> versus <c>composed</c> a claim nobody could check.
@@ -616,7 +605,7 @@ internal static class Ownership
     /// <param name="neighbours">Their names and lines, or null when they were not read.</param>
     /// <returns>The block to draw, or an empty string when there is nothing to say.</returns>
     /// <remarks>
-    /// <b>Shown and never judged</b> (FR-030, Principle II). An overlap is a real state of a deployment
+    /// <b>Shown and never judged.</b> An overlap is a real state of a deployment
     /// and it is the person's to settle or to leave -- a screen that flagged a clash, ranked the claims or
     /// refused the line would be arbitration arriving where nobody would look for it, and no agent has
     /// authority over another.
@@ -673,7 +662,7 @@ internal static class Ownership
     /// <returns>The time, to the minute.</returns>
     /// <remarks>
     /// Local, and the caller says so in words, because every other time on this surface is local and
-    /// an unmarked UTC beside them is the defect 0.27.0 records paying for on three screens at once.
+    /// an unmarked UTC beside them would mislead.
     /// The culture is invariant so the spelling does not move with the machine.
     /// </remarks>
     private static string When(OwnershipProposal proposal) =>
@@ -743,7 +732,7 @@ internal static class Ownership
         }
     }
 
-    /// <summary>Offers the restart that makes an accepted line the one peers read (FR-019).</summary>
+    /// <summary>Offers the restart that makes an accepted line the one peers read.</summary>
     /// <param name="app">The application the dialog opens in.</param>
     /// <param name="client">The operator's client for this project.</param>
     /// <param name="agent">Whose line it is.</param>
@@ -757,8 +746,8 @@ internal static class Ownership
     /// than a failure -- the roster carries the pending mark until the agent comes back on its own.
     /// </para>
     /// <para>
-    /// <b>It starts rather than stops.</b> <c>Operators.Start</c> is what this surface has, and 006
-    /// established it launches a catalogued role without a registry lookup. An agent already running
+    /// <b>It starts rather than stops.</b> <c>Operators.Start</c> is what this surface has, and it
+    /// launches a catalogued role without a registry lookup. An agent already running
     /// is asked for a turn instead, which is why the report says what was asked for rather than
     /// claiming the line is now live.
     /// </para>
@@ -785,9 +774,8 @@ internal static class Ownership
             }
 
             // **On the surface's own work queue and never a bare Task.Run.** `Shell.Settled` is what
-            // makes every driven test deterministic, and 005's gate found work escaping that chain --
-            // a guarantee that holds only because of where its callers happen to sit is one nothing
-            // enforces. This handler runs on the main loop, so queueing from it is the ordinary route.
+            // makes every driven test deterministic. This handler runs on the main loop, so queueing from
+            // it is the ordinary route.
             queue(async t =>
             {
                 var read = await BrokerDirectory.ReadAsync(
@@ -843,7 +831,6 @@ internal static class Ownership
             ? "no line for this agent"
             : $"'{Safe.Text(record.LiveStatement)}'";
 
-        return $"Recorded. Peers read {live} until it next starts, because the line comes from its "
-             + "launch configuration.";
+        return $"Recorded. Peers read {live} until it next starts.";
     }
 }

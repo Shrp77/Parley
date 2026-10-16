@@ -118,12 +118,10 @@ internal static class Colours
     /// border and the title and <see cref="Rows"/> gives the list inside its own neutral ground.
     /// </para>
     /// <para>
-    /// <b>Quiet unfocused, the accent when focused — and the first draft had it accented always.</b>
-    /// A dump of the drawn screen showed two panes side by side with identical frames while the
-    /// status line said which one had focus: the surface knew and the frame did not. It also had
-    /// every frame at full strength, which put a saturated rectangle around the rows the colour was
-    /// meant to draw an eye to. A frame that recedes and brightens when it is the one being acted
-    /// on does both jobs.
+    /// <b>Quiet unfocused, the accent when focused.</b> Identical frames on two panes would leave
+    /// the frame silent about which one has focus, and full strength on every frame would put a
+    /// saturated rectangle around the rows the colour is meant to draw an eye to. A frame that
+    /// recedes and brightens when it is the one being acted on does both jobs.
     /// </para>
     /// <para>
     /// Only a few roles are set; the toolkit derives the rest. Setting all twenty by hand would be

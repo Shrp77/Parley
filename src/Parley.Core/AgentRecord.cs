@@ -32,8 +32,8 @@ namespace Parley.Core;
 /// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a
 /// timeout, a notification channel — as a JSON document, or <see langword="null"/> if it needs
 /// nothing. Opaque to the broker by design: it is stored and handed back at invocation, and
-/// only the adapter interprets it. Credentials do not belong here; see
-/// <c>AgentRepository.SetCredentialAsync</c>.
+/// only the adapter interprets it. Credentials do not belong here: they are references in
+/// the launch environment, and the store holds none (SPEC.md §12).
 /// </param>
 /// <param name="Connected">
 /// When the agent last communicated, or <see langword="null"/> if it never has. Used to
@@ -76,15 +76,15 @@ namespace Parley.Core;
 /// Running, and only as a process Parley did not start (SPEC.md §11.7), so no node can give it a turn. Observed by the
 /// broker from the attachments it holds; on the operator's registry only.
 /// </param>
+/// <param name="Identity">
+/// The repository's own identifier (SPEC.md §4.1.1), or the default where the agent presented none. A label the adapter
+/// reports and never an authority: it lets an attach under a new name rename the row it already holds, and only
+/// from the same repository on the same machine. It never decides who may attach.
+/// </param>
 /// <remarks>
-/// Credentials are deliberately not a field here, and should not become one. This record is
-/// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
-/// carried on it is overwritten by that reload. Credentials are registered once and must
-/// survive it — folding them in would mean a reload silently dropped every agent's
-/// references and broke invocation on the next start. They are read and written separately,
-/// through <c>AgentRepository.GetCredentialsAsync</c> and
-/// <c>AgentRepository.SetCredentialAsync</c>, so that the two lifecycles cannot be
-/// confused by accident.
+/// Credentials are deliberately not a field here, and should not become one. The broker
+/// persists no credential reference or value for any agent (SPEC.md §12); a field on this
+/// record would put one in the store.
 /// </remarks>
 public sealed record AgentRecord(
     AgentName Name,
@@ -100,7 +100,8 @@ public sealed record AgentRecord(
     string? OwnsAccepted = null,
     OwnershipSource? OwnsSource = null,
     TurnStanding? Turns = null,
-    bool OpenOutside = false)
+    bool OpenOutside = false,
+    AgentIdentity Identity = default)
 {
     /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
     /// <remarks>

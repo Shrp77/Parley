@@ -15,7 +15,7 @@ public enum ValueSource
     /// <summary>Supplied by the selected project.</summary>
     Project,
 
-    /// <summary>The behaviour that applied before any of this existed.</summary>
+    /// <summary>Nothing supplied one, so the built-in default.</summary>
     Default,
 }
 
@@ -48,10 +48,9 @@ public sealed record Resolved(string? Value, ValueSource Source, string? Detail 
 /// between what they found is this.
 /// </para>
 /// <para>
-/// <b>Additive by construction.</b> A project is consulted only where the previous default would
-/// have applied, so a machine with no manifest resolves exactly as it did before this existed —
-/// value for value, including the working-directory fallback for the node catalogue. That is what
-/// lets an existing deployment upgrade without migrating.
+/// <b>A project is consulted only where the default would have applied</b>, so a machine with no
+/// project resolves to the defaults, including the working-directory fallback for the node
+/// catalogue.
 /// </para>
 /// <para>
 /// <b>It never guesses which project was meant.</b> A project is named, set for the terminal, named by the repository a
@@ -137,8 +136,7 @@ public static class ProjectResolution
     /// <exception cref="ArgumentNullException"><paramref name="fromRepository"/> or <paramref name="projects"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>In this order: <c>--project</c>, the terminal's <c>PARLEY_PROJECT</c>, the repository, the only project.</b> The
-    /// owner's call, made when a machine naming several projects had every command asking to be told which one again. A
+    /// <b>In this order: <c>--project</c>, the terminal's <c>PARLEY_PROJECT</c>, the repository, the only project.</b> A
     /// saved "current project" was offered and declined: chosen in one window yesterday, it would quietly apply to a purge
     /// in another today. A terminal's choice ends with the terminal, and a repository names what it is.
     /// </para>
@@ -266,16 +264,13 @@ public static class ProjectResolution
     /// <exception cref="ArgumentNullException"><paramref name="variable"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>There is no project in this any more</b> (018). It used to take one and read its
-    /// <c>node_config</c>, which is what made "what this machine can start" a per-project fact — and a
-    /// checkout answering in two projects was startable in whichever one's file named it. One catalogue
-    /// per machine cannot express that.
+    /// <b>There is no project in this.</b> What this machine can start is one catalogue per machine,
+    /// not a per-project fact.
     /// </para>
     /// <para>
-    /// <b>The fallback is beside the manifest rather than the bare file name.</b> A bare name resolves
+    /// <b>The fallback is in the root rather than the bare file name.</b> A bare name resolves
     /// against the working directory, and a broker started by a logon entry starts somewhere nobody
-    /// chose; that was survivable while every project's entry named an absolute path, and taking the
-    /// entry away made the fallback the ordinary case. The node resolves it the same way and must:
+    /// chose. The node resolves it the same way and must:
     /// writing consent into a file the supervisor does not read is the defect this whole feature exists
     /// to remove, and changing one side of the resolution alone would reintroduce it in the opposite
     /// direction. With no manifest at all it is still the bare name, which is what the node falls back
@@ -299,11 +294,9 @@ public static class ProjectResolution
     /// <param name="root">The machine's root, or null.</param>
     /// <returns>The path.</returns>
     /// <remarks>
-    /// <b>At the root, which used to mean "the directory holding the manifest".</b> The two were the same
-    /// place and the code said the second, so when <c>--config</c> came to name the root itself this
-    /// resolved one directory too high — a catalogue beside somebody's <c>Parley</c> folder rather than in
-    /// it, on a machine that is perfectly well configured. FR-008 gives the root exactly two files that
-    /// are not a project, and this is one of them.
+    /// <b>At the root itself</b>, not its parent: a catalogue beside somebody's <c>Parley</c> folder rather
+    /// than in it would not be found. The root holds exactly two files that are not a project, and this is
+    /// one of them.
     /// </remarks>
     private static string BesideTheManifest(string? root) =>
         root is { Length: > 0 } configured

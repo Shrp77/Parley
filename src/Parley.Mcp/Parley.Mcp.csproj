@@ -37,8 +37,7 @@
   <!--
     The transport and the domain, and deliberately not the store or the broker.
 
-    This used to reference Parley.Broker, and through it Parley.Store, because the adapter opened
-    the database itself. It cannot now: SPEC.md §4 gives the store to one process and everything
+    It references neither Parley.Broker nor Parley.Store: SPEC.md §4 gives the store to one process and everything
     else reaches it over the wire, and the absent reference is what enforces that. An adapter
     with no SQLite on its graph cannot open a file on a network share, which is the deployment
     that silently corrupts rather than failing.

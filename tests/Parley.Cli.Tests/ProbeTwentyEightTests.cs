@@ -4,13 +4,13 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 17: a bulk run that stops half way.
+/// A bulk run that stops half way.
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2.14 asked what one repository's failed enrolment leaves behind. `parley enroll` writes a
-/// list of them, one after another, and a refusal on the fifth arrives with four already on disk. The
-/// same question one level up, and the level the command's own comment says it cares about: it refuses
+/// `parley enroll` writes a list of repositories, one after another, and a refusal on the fifth
+/// arrives with four already on disk. That is the question of what a failed enrolment leaves behind,
+/// one level up, and the level the command's own comment says it cares about: it refuses
 /// a half-enrolled set on principle, because "the repository that missed out is indistinguishable from
 /// one you never meant to enroll".
 /// </para>

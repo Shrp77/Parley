@@ -5,14 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # The macOS leg is deferred rather than deleted: run this by hand with the box
-  # ticked before a release, or whenever the transport work below actually lands.
   workflow_dispatch:
-    inputs:
-      macos:
-        description: "Also run the macOS leg"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -24,22 +17,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows and Linux on every push; macOS only when asked for.
-        #
-        # The three-platform matrix was justified by the transport claiming parity
-        # across named pipes and Unix domain sockets. There is no transport: the
-        # only thing that crosses a process boundary today is MCP over stdio, and
-        # the store is a local SQLite file. So the macOS leg was defending a claim
-        # nothing in this repository makes yet, on a platform nobody here can
-        # reproduce a failure on.
-        #
-        # Linux still covers the Unix side of everything that does exist -- path
-        # handling, line endings, case sensitivity, and the SQLite build. What
-        # macOS is back in the matrix. It was deferred on the grounds that what it
-        # would add is Darwin-specific behaviour, which becomes worth paying for
-        # when the transport lands -- and the transport has landed: three processes
-        # now hold sockets open to each other, and sockets, keep-alives and graceful
-        # shutdown are exactly where the platforms differ.
+        # All three platforms on every push: three processes hold sockets open to
+        # each other, and sockets, keep-alives and graceful shutdown are exactly
+        # where the platforms differ. Linux also covers path handling, line
+        # endings, case sensitivity and the SQLite build.
         os: [windows-latest, ubuntu-latest, macos-latest]
 
     steps:

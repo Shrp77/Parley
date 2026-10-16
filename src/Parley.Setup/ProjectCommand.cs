@@ -74,7 +74,7 @@ public static class ProjectCommand
         await error.WriteLineAsync(
             "parley project list                        what this machine is configured for\n" +
             "\n" +
-            "Creating a project, changing what it says and removing one are done in the terminal:\n" +
+            "Projects are created in the terminal or the web console, and removed or renamed only in the terminal:\n" +
             "\n" +
             "    parley\n" +
             "\n" +
@@ -88,12 +88,9 @@ public static class ProjectCommand
 
     /// <summary>Changes the fields given on one project and leaves the rest as they were.</summary>
     /// <remarks>
-    /// Because the alternative was remove-and-add, and removing a project prints a paragraph about
-    /// what was not deleted for a change that never meant to delete anything. The case that made
-    /// this necessary is a catalogue: a project named before its machine started agents for it
-    /// has no <c>node_config</c>, and an autostart entry serving the manifest hosts a node only
-    /// where one is named — so without a way to add it, switching entries silently dropped the
-    /// node. Validated as one whole, under the same lock, by the same rules as <c>add</c>.
+    /// Remove-and-add would print a paragraph about what was not deleted for a change that never
+    /// meant to delete anything. Validated as one whole, under the same lock, by the same rules as
+    /// <c>add</c>.
     /// </remarks>
     private static async Task<int> SetAsync(
         string requested,
@@ -211,7 +208,7 @@ public static class ProjectCommand
         }
 
         // What was left out, said before what is listed: a listing that silently lacked a project is how one goes missing.
-        // And the listing then exits as a refusal does, so a script reading it is not told all was well (FR-029: never
+        // And the listing then exits as a refusal does, so a script reading it is not told all was well (never
         // read as the machine having fewer projects than it has).
         var incomplete = problem is { Length: > 0 };
 
@@ -242,15 +239,11 @@ public static class ProjectCommand
         {
             var answered = await ReachableAsync(project.Endpoint, cancellationToken).ConfigureAwait(false);
 
-            // **Two facts, never one word** (FR-022, FR-023). This printed `reachable`, meaning only
-            // that this process connected to it — and somebody planning a firewall rule reads that
-            // as reachable from the network. No rule they write can make it so, because nothing off
-            // the machine can address a loopback port. The spec quotes that listing as the defect.
-            //
-            // So: whether the broker *answered*, which is about right now and changes minute to
-            // minute; and whether anything off this machine could *address* it at all, which is a
-            // property of the endpoint and changes only when somebody edits `project.json`. They
-            // are on separate lines because a reader scanning a column is exactly who was misled.
+            // Two facts, never one word: whether the broker *answered*, which is about right now and
+            // changes minute to minute; and whether anything off this machine could *address* it at all,
+            // which is a property of the endpoint and changes only when somebody edits `project.json`.
+            // They are on separate lines because a reader scanning a column must not read "answering"
+            // as "reachable from the network".
             await output.WriteLineAsync(
                 $"{project.Name.Value,-16} {project.Endpoint,-28} {(answered ? "answering" : "not answering")}")
                 .ConfigureAwait(false);
@@ -271,16 +264,8 @@ public static class ProjectCommand
             }
         }
 
-        // **The root, labelled, because both installers read this line and neither could find it.**
-        // They match `^manifest:` and this printed `projects:` — so the scrape returned nothing,
-        // every reinstall skipped the line naming what it was about to serve, and no test noticed:
-        // the guard that declares this interface searched the whole source file, and "manifest: "
-        // appears in a comment forty lines below about something else. **A check answered by a
-        // comment is a check that has not run.**
-        //
-        // `root:` rather than `manifest:`, because there is no manifest. 019 replaced the file with
-        // a directory, and a label naming a file that no longer exists is how the next reader
-        // learns a vocabulary the code abandoned.
+        // The root, labelled, because both installers read this line. `root:` rather than `manifest:`,
+        // because the deployment is a directory, not a file.
         await output.WriteLineAsync($"\nroot:     {root}").ConfigureAwait(false);
         await output.WriteLineAsync($"projects: {ProjectFolder.ProjectsIn(root)}").ConfigureAwait(false);
 
@@ -332,17 +317,12 @@ public static class ProjectCommand
             return Usage;
         }
 
-        // **A name is the whole of it now.** `--db` is gone and `--listen` is optional, which is the
-        // friction 019 exists to remove: a person naming a project had to invent a filesystem path and
-        // pick a free port, and then remember both. The store is derived from the name and the port is
-        // claimed, so there is nothing left to get wrong.
+        // A name is the whole of it: the store is derived from the name and the port is claimed, so
+        // there is nothing left to get wrong.
         if (ProjectFolder.TryRead(root, name, out _, out _))
         {
-            // **Names no command, because this text is read on two surfaces.** The terminal runs
-            // this same method in process and prints what it said, so a sentence naming a command
-            // line would arrive on a screen where there is not one -- and the command lines it used
-            // to name have themselves moved here. What is left is the fact and what can be done
-            // about it, which is true wherever it is read.
+            // Names no command, because this text is read on two surfaces: the terminal runs this same
+            // method in process and prints what it said.
             await error.WriteLineAsync(
                 $"'{name}' is already a project on this machine. It can be described differently, "
                 + "or taken out, without being created again.").ConfigureAwait(false);
@@ -350,20 +330,16 @@ public static class ProjectCommand
             return Config;
         }
 
-        // **The port is claimed before anything is created**, so a claim that fails leaves no folder and
-        // no half-written configuration behind (FR-015). The claim is also the only thing here that can
-        // collide with another command running at the same moment.
+        // The port is claimed before anything is created, so a claim that fails leaves no folder and no
+        // half-written configuration behind. The claim is also the only thing here that can collide with
+        // another command running at the same moment.
         //
-        // **There is no way to state one, and that is the owner's call on 2026-09-23.** An earlier draft
-        // kept `--listen` for a broker meant to be reachable from another machine, which SPEC.md §16
-        // permits. What that bought was one more thing a person supplies and two rules about which source
-        // wins — and this feature exists because a deployment had been arrived at one flag at a time. A
-        // project that must be reachable elsewhere has its endpoint edited in its own `project.json`,
-        // which is one place, readable, and the same place every reader already looks.
-        // **Nothing is created beside a project that cannot be read.** Reading leaves such a project out and carries on,
-        // since serving and listing the rest costs nothing; creating does not, because the port the unreadable one holds
-        // is unknown and a claim could hand it out again. Explicit since the combined review gate made reading lenient —
-        // this refusal had been a side effect of the whole read failing.
+        // There is no way to state a port. A project that must be reachable from another machine (SPEC.md
+        // §16) has its endpoint edited in its own `project.json`, the one place every reader looks.
+        //
+        // Nothing is created beside a project that cannot be read. Reading leaves such a project out and
+        // carries on, since serving and listing the rest costs nothing; creating does not, because the
+        // port the unreadable one holds is unknown and a claim could hand it out again.
         if (!ProjectManifest.TryRead(root, out _, out var unreadable) || unreadable is { Length: > 0 })
         {
             await error.WriteLineAsync(
@@ -385,10 +361,8 @@ public static class ProjectCommand
 
         try
         {
-            // Read, validated and written as one act, under a lock. Every part of this was here before;
-            // what was missing was that they belonged together. Two `project add` commands each read, each
-            // appended to what it had read, and each wrote -- so the second discarded the first, with two
-            // successes reported and one project written.
+            // Read, validated and written as one act, under a lock: otherwise two `project add` commands
+            // each append to what they read, and the second discards the first.
             var written = ProjectManifest.TryUpdate(root, projects =>
             {
                 // The same checks reading applies, in the same order and from the same methods. Stated
@@ -450,19 +424,15 @@ public static class ProjectCommand
             return IoError;
         }
 
-        // **Both facts, because both were things a person used to have to supply.** The endpoint is what
-        // every other command needs to reach it and the store is what a backup has to include, and
-        // neither is anywhere a person can look them up without being told once.
+        // Both facts, because the endpoint is what every other command needs to reach it and the store
+        // is what a backup has to include.
         await output.WriteLineAsync($"Added '{name}'.").ConfigureAwait(false);
         await output.WriteLineAsync($"  serving on {endpoint}").ConfigureAwait(false);
         await output.WriteLineAsync($"  files in  {ProjectFolder.For(root, name)}").ConfigureAwait(false);
 
-        // **Said here because this is the one moment somebody is thinking about where a project
-        // answers.** There is no flag that binds a network address and there is deliberately never
-        // going to be one, so a person who needs an agent on another machine has nothing to discover
-        // by reading `--help` — the answer is a tunnel, which is a thing they do outside this tool
-        // entirely. Naming it once, at the moment the address is printed, is the difference between
-        // a capability that looks absent and one that looks confined.
+        // Said here because this is the one moment somebody is thinking about where a project answers.
+        // There is no flag that binds a network address, so the answer for another machine is a tunnel,
+        // done outside this tool; naming it makes the capability look confined rather than absent.
         await output.WriteLineAsync(
             "  reachable from this machine only. An agent elsewhere reaches it through a tunnel "
             + "to that port -- see the README; there is no flag that binds a network address, "
@@ -553,18 +523,17 @@ public static class ProjectCommand
             return IoError;
         }
 
-        // **The port goes back (FR-014), and only once the project is genuinely gone.** Released after the
-        // write rather than before it: a release that ran first and then met a write it could not make
-        // would hand somebody else a port this project is still serving on. The record is bookkeeping, so
-        // a release that cannot take the hold leaves an entry for reconciliation to step over rather than
-        // a failure for a person to act on — which is why this is not allowed to change the exit code.
+        // The port goes back only once the project is genuinely gone: released before the write, a write
+        // that then failed would hand somebody else a port this project still serves on. The record is
+        // bookkeeping, so a release that cannot take the hold leaves an entry for reconciliation to step
+        // over and must not change the exit code.
         _ = PortLedger.TryRelease(root, going!.Name, out _);
 
         await output.WriteLineAsync($"Removed '{requested}'.").ConfigureAwait(false);
 
         if (destroy)
         {
-            return await DestroyAsync(going!, staying, agents, root, output, error, cancellationToken)
+            return await DestroyAsync(going!, agents, root, output, error, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -589,7 +558,6 @@ public static class ProjectCommand
 
     /// <summary>Stops a removed project's broker and deletes what withdrawal leaves behind.</summary>
     /// <param name="going">The project, as it was.</param>
-    /// <param name="staying">Every project still named, for what must not be deleted.</param>
     /// <param name="agents">The registry as read before the entry went, or null if it could not be.</param>
     /// <param name="manifestPath">The manifest, which is never deleted whatever an entry says.</param>
     /// <param name="output">Where to say what was deleted.</param>
@@ -601,20 +569,18 @@ public static class ProjectCommand
     /// <b>This command does not stop anything itself, and cannot.</b> §4 gives the store to one
     /// process, and that process is the one serving the manifest: removing the entry is what
     /// tells it to stop this project's broker, and this waits for that to have happened before
-    /// touching a file the broker still had open. A broker started by hand, or by an entry
-    /// with explicit paths, was not told anything, and is left running rather than killed: it
-    /// is reported, with the store's path, and the deleting is the person's.
+    /// touching a file the broker still had open. A broker started by hand was not told
+    /// anything, and is left running rather than killed: it is reported, with the store's
+    /// path, and the deleting is the person's.
     /// </para>
     /// <para>
-    /// <b>No catalogue goes with it, because since 018 there is none per project.</b> This said the catalogue went with
-    /// the store, and the terminal's dialog promised it; the catalogue is one per machine, keyed by each repository's
-    /// identity, and a repository's membership is read out of the repository — so there is nothing of the project's left
-    /// in it to delete (the combined review gate).
+    /// <b>No catalogue goes with it, because there is none per project.</b> The catalogue is one per machine, keyed by
+    /// each repository's identity, and a repository's membership is read out of the repository — so there is nothing of
+    /// the project's left in it to delete.
     /// </para>
     /// </remarks>
     private static async Task<int> DestroyAsync(
         ProjectSettings going,
-        IReadOnlyList<ProjectSettings> staying,
         IReadOnlyList<(string Agent, string Workspace)>? agents,
         string manifestPath,
         TextWriter output,
@@ -729,8 +695,6 @@ public static class ProjectCommand
 
             deleted.Add(path);
         }
-
-        _ = staying;
 
         await output.WriteLineAsync(
             deleted.Count == 0
@@ -849,14 +813,12 @@ public static class ProjectCommand
 /// <summary>
 /// The values `project add` writes, taken from the command line before dispatch.
 /// </summary>
-
 /// <param name="Description">One line for the operator, from <c>--description</c>, or null.</param>
 /// <remarks>
 /// <para>
 /// <b>There is neither a store nor an endpoint here.</b> A project's store is derived from its name and
-/// its endpoint is claimed when it is created, so neither has a value a command line could supply — which
-/// is what "everything is project centric" means at this layer. A description is the one thing left that
-/// is somebody's to choose.
+/// its endpoint is claimed when it is created, so neither has a value a command line could supply. A
+/// description is the one thing that is somebody's to choose.
 /// </para>
 /// <para>
 /// Passed in rather than parsed here, because the entry point consumes every option before any

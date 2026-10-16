@@ -146,8 +146,8 @@ public sealed class PluginTests
     [Fact]
     public void The_setup_command_writes_the_variable_a_server_requires()
     {
-        // One, where there used to be two. The database is not the adapter's business any more
-        // and the broker has a default, so the only thing a launch configuration must still say
+        // One. The database is not the adapter's business
+        // and the broker has a default, so the only thing a launch configuration must say
         // is who this process speaks for -- which is the one thing that could never be
         // defaulted, because guessing it would guess an identity.
         //
@@ -175,10 +175,9 @@ public sealed class PluginTests
         Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
         Assert.Contains(DeploymentEnvironment.OwnsVariable, configuration.Value, StringComparison.Ordinal);
 
-        // It used to have to say how long the value may be, and this asserted the number appeared
-        // in the prose. 0.33.0 removed the bound, so the number to assert would now be the sentinel
-        // -- and printing that in front of a person is the thing 0.25.8 established must never
-        // happen, because it names a limit nobody chose.
+        // There is no bound on the value, so the number to assert would be the sentinel
+        // -- and printing that in front of a person must never happen, because it names a limit
+        // nobody chose.
         Assert.DoesNotContain(
             OwnershipStatement.MaxCharacters.ToString(CultureInfo.InvariantCulture),
             setup,
@@ -201,7 +200,10 @@ public sealed class PluginTests
         var peers = RepositoryFile.Read(WritePeers);
 
         Assert.Contains("owns", peers, StringComparison.Ordinal);
-        Assert.Contains(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
+
+        // Ownership is one statement the agent proposes and the person may override, so the command
+        // never tells anyone to write the variable by hand.
+        Assert.DoesNotContain(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
     }
 
     [Fact]

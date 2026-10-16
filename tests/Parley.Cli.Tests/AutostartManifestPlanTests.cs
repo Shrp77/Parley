@@ -8,16 +8,16 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The autostart entry used to carry one explicit store, which meant every project named after
-/// the install was "not answering" at the next logon and nothing said why. The manifest-serving
-/// entry is the fix, and what this checks is the shape of it: no store, the manifest's path
+/// An autostart entry carrying one explicit store would leave every project named after
+/// the install "not answering" at the next logon with nothing saying why. The manifest-serving
+/// entry avoids that, and what this checks is the shape of it: no store, the manifest's path
 /// written in, the node switched on, the log beside the manifest rather than beside a store it
 /// does not have.
 /// </para>
 /// <para>
 /// Reading an entry back is checked against what <see cref="AutostartPlan"/> writes, because that
-/// is the only writer. The installer used to do this with a regular expression over a scheduled
-/// task's arguments on one platform; a round trip through the same quoting on every platform is
+/// is the only writer. A regular expression over a scheduled
+/// task's arguments would work on one platform; a round trip through the same quoting on every platform is
 /// what stops a path with a space in it coming apart on the way back.
 /// </para>
 /// </remarks>
@@ -72,7 +72,6 @@ public sealed class AutostartManifestPlanTests
 
         Assert.NotNull(entry);
         Assert.True(entry.ServesManifest);
-        Assert.Null(entry.Store);
         Assert.Equal(Path.GetFullPath(Root), entry.Manifest);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
         Assert.Contains("every project in", entry.Serves, StringComparison.Ordinal);
@@ -84,8 +83,8 @@ public sealed class AutostartManifestPlanTests
         // Paths with spaces on both sides of the round trip, because that is the case the quoting
         // exists for and the one a regular expression got wrong.
         //
-        // **It carried a store and a port until 019 and carries a project name.** An entry cannot name
-        // either any more: both are a project's own, and one repeated in a scheduled task would be a
+        // **It carries a project name, not a store or a port.** An entry cannot name
+        // either: both are a project's own, and one repeated in a scheduled task would be a
         // second place the answer lives. What still has to survive quoting is the root and the
         // catalogue, which are the two paths a person can put anywhere.
         var plan = AutostartPlan.Describe(
@@ -102,9 +101,6 @@ public sealed class AutostartManifestPlanTests
         Assert.Equal(Path.GetFullPath("C:/Some Folder/node.json"), entry.NodeConfig);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
 
-        // Neither is in the entry at all, which is the property this now protects.
-        Assert.Null(entry.Store);
-        Assert.Null(entry.Listen);
         Assert.Contains("--project orders", plan.Arguments, StringComparison.Ordinal);
 
         // And it reads back as the project it names, which is what `autostart status` reports.
@@ -120,22 +116,5 @@ public sealed class AutostartManifestPlanTests
         Assert.Null(InstalledEntry.Parse(null));
         Assert.Null(InstalledEntry.Parse(string.Empty));
         Assert.Null(InstalledEntry.Parse("up --node-config node.json"));
-    }
-
-    [Theory]
-    [InlineData("serve --with-console", "--with-console", null)]
-    [InlineData("serve --no-console", "--no-console", null)]
-    [InlineData("serve --console http://127.0.0.1:5089", "--console", "http://127.0.0.1:5089")]
-    public void Every_old_console_spelling_is_reported_and_the_address_is_still_read(
-        string arguments, string removed, string? address)
-    {
-        // A broker given any of the three refuses it and exits, so the entry starts nothing at logon, and `autostart
-        // status` is the one place that can say so. `--console` was read for its address and never reported, so the
-        // one old spelling that carries a value was the one that went unmentioned (the combined review gate).
-        var entry = InstalledEntry.Parse(arguments);
-
-        Assert.NotNull(entry);
-        Assert.Contains(removed, entry.Removed);
-        Assert.Equal(address, entry.Console);
     }
 }

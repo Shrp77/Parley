@@ -9,12 +9,11 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// A machine is deployed as projects: `parley project add` names each one's store and endpoint, and the logon entry
 /// serves them all. `serve --db`, `autostart install --db` and <c>PARLEY_DB</c> serve one store outside the manifest,
-/// so a test rig need name no project — the owner's call, recorded in the README, the help and the skill.
+/// so a test rig need name no project, as the README, the help and the skill say.
 /// </para>
 /// <para>
-/// <b>Found by the gate over the installer change, in the two places a person is most likely to read it:</b> the
-/// refusal `parley serve` gives with nothing named, and the next steps `parley enroll apply` prints. Both offered only
-/// the one-store route. Read off the source, because the sentence is what matters and the paths that print it need a
+/// <b>The two places a person is most likely to read it</b> are the refusal `parley serve` gives with nothing
+/// named, and the next steps `parley enroll apply` prints. Neither may offer only the one-store route. Read off the source, because the sentence is what matters and the paths that print it need a
 /// broker and a set of repositories to reach.
 /// </para>
 /// </remarks>
@@ -38,7 +37,7 @@ public sealed class OneStoreIsForTestingTests
         "src/Parley.Terminal/Naming.cs",
     ];
 
-    /// <summary>The spellings 019 removed, as a person would be told to type them.</summary>
+    /// <summary>The removed spellings, as a person would be told to type them.</summary>
     /// <remarks>
     /// <para>
     /// Exact phrases rather than bare flag names, because two of these flags still exist on other
@@ -64,12 +63,11 @@ public sealed class OneStoreIsForTestingTests
     [MemberData(nameof(Offering))]
     public void No_source_offers_a_command_whose_flags_were_removed(string source)
     {
-        // **The class of defect, rather than the one case.** 019 took `--db`, `--listen` and the
-        // per-project `--node-config` out of the parser and left them standing in the text the tools
-        // print, so three separate places told an operator to run a command that would be refused:
+        // **The class of defect, rather than one case.** `--db`, `--listen` and the per-project
+        // `--node-config` are not in the parser, and must not stand in the text the tools print, or
+        // three separate places would tell an operator to run a command that would be refused:
         // `project`'s own usage, `enroll apply`'s next steps, and the autostart advice repeated in
-        // both the CLI and the terminal. Each was found by reading rather than by a check, and the
-        // one test that covered this ground asserted the stale wording was *present*.
+        // both the CLI and the terminal.
         //
         // Removing a flag is a sweep over prose, and prose is what nothing else here checks.
         //
@@ -112,16 +110,11 @@ public sealed class OneStoreIsForTestingTests
     {
         var text = RepositoryFile.Read("src/Parley.Setup/EnrollCommand.cs");
 
-        // **This asserted the flags rather than the step, and so held a defect in place.** It required
-        // the literal `parley project add <name> --db <path to the store> --listen <url>` — a command
-        // 019 made refusable — so the one check over this block was pinning text that could no longer
-        // be run, and would have failed had anybody corrected it.
-        //
-        // What the step actually promises is that a person with no project is told how to name one and
-        // how it comes to be served. That is what is asserted, and the spelling moved once more on
-        // 2026-09-25: naming a project is the terminal's, so a step naming any `project` command at
-        // all would send somebody to one the tool refuses. The same defect as the one above, which is
-        // why the check is now on the step rather than on any command's arguments.
+        // **The step is asserted, not the flags.** What the step promises is that a person with no
+        // project is told how to name one and how it comes to be served. Naming a project is the
+        // terminal's, so a step naming any `project` command at all would send somebody to one the
+        // tool refuses. The same defect as the one above, which is why the check is on the step
+        // rather than on any command's arguments.
         Assert.Contains("       parley\\n", text, StringComparison.Ordinal);
         Assert.DoesNotContain("parley project add", text, StringComparison.Ordinal);
         Assert.Contains("parley autostart install", text, StringComparison.Ordinal);

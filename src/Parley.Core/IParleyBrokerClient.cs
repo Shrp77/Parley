@@ -109,8 +109,8 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The flags, derived at the moment of reading.</returns>
     /// <remarks>
-    /// What replaced ghosting (§6, §14). Nothing ends a piece of work but its participants or its
-    /// person, so an exchange that stops moving is shown here for the person to act on.
+    /// Nothing ends a piece of work but its participants or its person (§6, §14), so an exchange
+    /// that stops moving is shown here for the person to act on.
     /// </remarks>
     Task<FlagReport> FlagsAsync(CancellationToken cancellationToken = default);
 

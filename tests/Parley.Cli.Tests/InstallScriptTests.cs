@@ -248,9 +248,8 @@ public sealed class InstallScriptTests
         // there would leave somebody with two commands on PATH and nothing working -- which is
         // the state a broker being a separate process creates and the one worth naming.
         //
-        // What to do next is the terminal's flow since 2026-09-27: make a project, then enrol agents into it
-        // from a folder. It was /parley:setup in each repository and `parley registry` to check -- and this
-        // test required exactly that, so it held the outdated steps in place until the owner read them.
+        // What to do next is the terminal's flow: make a project, then enrol agents into it
+        // from a folder, not /parley:setup in each repository and `parley registry` to check.
         foreach (var script in new[] { Windows, Unix })
         {
             var code = Code(script);
@@ -265,8 +264,8 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void Each_script_sets_the_broker_up_rather_than_describing_it(string script)
     {
-        // Both scripts used to end by printing the autostart command for somebody to copy, and
-        // the step nobody ran is the step that was printed. Every agent then failed to attach
+        // A script that ended by printing the autostart command for somebody to copy would
+        // leave the step nobody ran as the step that was printed. Every agent would then fail to attach
         // with "No broker is listening" -- in an editor, later, a long way from here.
         var text = RepositoryFile.Read(script);
 
@@ -278,15 +277,14 @@ public sealed class InstallScriptTests
     public void No_script_asks_where_a_store_goes_or_takes_a_catalogue(string script)
     {
         // Where a deployment lives is a project's to say, and a project is named in `parley terminal` or with
-        // `parley project add`. The scripts used to ask for a store when nothing was named -- registering one deployment by
-        // explicit paths -- and, given one, to register that narrow entry over a working manifest: a reinstall that
-        // stopped serving every project but one. The owner removed the parameter rather than guard it.
+        // `parley project add`. The scripts must not ask for a store when nothing is named -- registering one deployment by
+        // explicit paths -- or, given one, register that narrow entry over a working manifest: a reinstall that
+        // stopped serving every project but one. There is no such parameter to guard.
         var code = Code(RepositoryFile.Read(script));
 
-        // **`--db`, `--listen` and `PARLEY_DB` joined this list in 019**, which is what makes their
-        // removal hold: both scripts printed `project add <name> --db <path> --listen <url>` as the
-        // closing "name your first project" line, and prose that tells somebody to type a flag the tool
-        // refuses is worse than no prose at all.
+        // **`--db`, `--listen` and `PARLEY_DB` are on this list**, which is what makes their
+        // removal hold: prose that tells somebody to type a flag the tool refuses is worse than
+        // no prose at all.
         foreach (var gone in new[]
                  {
                      "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store",
@@ -311,9 +309,8 @@ public sealed class InstallScriptTests
         // refuses, at the one moment they have nothing else to go on.
         Assert.Contains("No projects configured", code, StringComparison.Ordinal);
 
-        // **And the steps are the terminal's flow, spelled the way it is typed.** The owner caught both
-        // halves on 2026-09-27: the script ended by sending people to /parley:setup in each repository and
-        // to `parley registry`, which is the flow from before a project could enrol a folder -- and it named
+        // **And the steps are the terminal's flow, spelled the way it is typed.** The script must not
+        // send people to /parley:setup in each repository and to `parley registry`, and must not name
         // the terminal `parley terminal`, which is not what anybody types.
         Assert.Contains("Next, run:  parley", code, StringComparison.Ordinal);
         Assert.Contains("Enroll agents from folders", code, StringComparison.Ordinal);
@@ -341,9 +338,8 @@ public sealed class InstallScriptTests
         // agent can attach" are different claims, and only the second is the one being made.
         // What proves it is the poll that reads `project list` for a broker answering.
         //
-        // **This used to find the last `registry` in the script**, which was a line telling the person to
-        // run `parley registry` -- advice, not the check. When that advice went the test failed while the
-        // real check stood untouched, which is the proxy measuring the wrong thing from the other side.
+        // **Not the last `registry` in the script**, which would be a line telling the person to
+        // run `parley registry` -- advice, not the check.
         var code = Code(RepositoryFile.Read(script));
         var registers = code.IndexOf("autostart install", StringComparison.Ordinal);
         var proves = code.LastIndexOf("answering", StringComparison.Ordinal);
@@ -378,8 +374,8 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void Each_script_stops_the_broker_before_replacing_its_binary(string script)
     {
-        // Found by probing rather than by reading. A reinstall over a live broker reported
-        // complete success and installed nothing: Windows will not unlink a mapped binary, so
+        // A reinstall over a live broker would report
+        // complete success and install nothing: Windows will not unlink a mapped binary, so
         // `dotnet tool uninstall` failed, and the install after it did nothing while exiting 0.
         var code = Code(RepositoryFile.Read(script));
         var stops = code.IndexOf("top", StringComparison.Ordinal);
@@ -444,8 +440,6 @@ public sealed class InstallScriptTests
         // script with no way to ask for `--hidden` is a machine that gets a console window at
         // every logon, and the only remedy is the one command the terminal cannot run -- on a
         // deployment whose whole direction is that setting up happens on a screen, not in a shell.
-        //
-        // Reported by the owner as exactly that: "I am not going to use the CLI".
         var code = Code(RepositoryFile.Read(script));
 
         Assert.Contains("--hidden", code, StringComparison.Ordinal);
@@ -481,7 +475,7 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void A_web_UI_the_broker_started_does_not_refuse_the_install(string script)
     {
-        // **Reported by the owner: an ordinary machine refused its own install.** The broker was
+        // **An ordinary machine must not refuse its own install.** The broker is
         // up, it had started `parley-web-ui` beside itself as it is meant to, and the pre-flight
         // counted that child as a process somebody had to go and close — naming a pid with no
         // window and offering -Force to end something the script was three steps from ending
@@ -518,8 +512,8 @@ public sealed class InstallScriptTests
         // failure, and excluding the web UI from the guard above is what would have opened it.
         var code = Code(RepositoryFile.Read(script));
 
-        // Two waits, not one. A first version waited for the broker and the web UI together,
-        // which spends the whole budget on exactly the machine this exists to help: an orphaned
+        // Two waits, not one. Waiting for the broker and the web UI together
+        // would spend the whole budget on exactly the machine this exists to help: an orphaned
         // web UI never exits on its own, so the combined wait runs to its deadline every time and
         // only then reaches the code that ends it.
         var waitsForBroker = script.EndsWith(".ps1", StringComparison.Ordinal)
@@ -540,7 +534,7 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void Stopping_the_broker_clears_the_web_UI_it_orphaned(string script)
     {
-        // **The loop the owner was stuck in.** Stopping a scheduled task or a systemd unit
+        // **The loop to avoid.** Stopping a scheduled task or a systemd unit
         // terminates the broker rather than asking it to exit, so it never reaches the code that
         // ends the child it started. The child keeps running, keeps the port and keeps the binary
         // busy — and then refuses the very install that stopped the broker. Same pid, twice, in a
@@ -566,9 +560,8 @@ public sealed class InstallScriptTests
     public void The_orphan_is_waited_for_after_it_is_ended(string script)
     {
         // **A kill asks; it does not wait.** `Remove-Holders` carries a whole paragraph about
-        // this, and the first version of the orphan cleanup reintroduced it twenty lines above
-        // that paragraph: the script printed "ending the web UI the stopped broker left behind,
-        // pid 26996" and then refused the install naming pid 26996, in consecutive lines.
+        // this, and an orphan cleanup placed above that paragraph would reintroduce it: the script would print "ending the web UI the stopped broker left behind,
+        // pid 26996" and then refuse the install naming pid 26996, in consecutive lines.
         //
         // Read as ordering: the wait for the web UI must come after the code that ends it. A wait
         // before the kill is the defect, and it is the arrangement a careless edit produces.
@@ -597,14 +590,11 @@ public sealed class InstallScriptTests
     [Fact]
     public void The_help_reaches_the_usage_and_not_only_the_preamble()
     {
-        // **`./install.sh --help` showed not one flag.** It printed lines 2 to 25 — the paragraphs
-        // explaining why the script exists — and the usage list starts at line 27. So the one part
-        // anybody runs `--help` for was the part it stopped immediately before.
+        // **`./install.sh --help` must show the flags.** Printing a fixed range of lines would show only
+        // the paragraphs explaining why the script exists, and stop immediately before the usage list —
+        // the one part anybody runs `--help` for.
         //
-        // Found by running the script in a Linux container, which is the thing this class says in
-        // its own summary it cannot do. It had been true for as long as the flags have existed.
-        //
-        // The fix reads to the first non-comment line rather than to a number, so a paragraph
+        // The help reads to the first non-comment line rather than to a number, so a paragraph
         // added to the header is in the help by construction. This checks that: no line range, and
         // every flag the parser takes named in the header it prints.
         var text = RepositoryFile.Read("install.sh");

@@ -169,7 +169,7 @@ public sealed class ClosurePollTests : IDisposable
     [Fact]
     public async Task Silence_never_assents()
     {
-        // The rule 0.4 had the other way round. An agent busy doing the work has not agreed the work is over, and
+        // An agent busy doing the work has not agreed the work is over, and
         // closing over it would end the conversation it is working in. What ends a stalled poll is the person.
         await Send(Orders, Billing);
         await Conclude(Orders, finished: true);

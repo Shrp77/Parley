@@ -1,4 +1,3 @@
-using Parley.Client.Rendering;
 using Parley.Core;
 
 namespace Parley.Client.Views;
@@ -43,9 +42,8 @@ public sealed record ConversationRow(
 /// <para>
 /// <b>Nothing here needs a new broker operation.</b> SPEC.md §10.2's <c>conversations()</c> already
 /// returns the identifier, the participants, the message count, first and last activity and whether
-/// anything is open — everything the list and the detail panel ask for. It gained an archived flag
-/// and an include-archived option and nothing else. That is 003's forward work paying for the third
-/// time.
+/// anything is open, plus an archived flag and an include-archived option — everything the list and
+/// the detail panel ask for.
 /// </para>
 /// <para>
 /// <b>The highlight is a conversation, never a row number.</b> Sorting a list by moving the rows
@@ -168,14 +166,4 @@ public static class ConversationsView
 
         return lines;
     }
-
-    /// <summary>The colour slot an agent takes in a transcript.</summary>
-    /// <param name="agent">The agent.</param>
-    /// <returns>A slot number.</returns>
-    /// <remarks>
-    /// Forwarded to <see cref="Palette"/> rather than reimplemented, which is the whole point of
-    /// there being one: the colour is derived from the name so an agent is the same colour on every
-    /// page and in every conversation, and a second derivation here would be a second answer.
-    /// </remarks>
-    public static int ColourFor(AgentName agent) => Palette.SlotFor(agent);
 }

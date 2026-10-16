@@ -33,26 +33,10 @@ public sealed record Delivered(Message Message)
     public bool Owes => OwesResult || OwesReply;
 
     /// <summary>The items a Result for this Request must give one outcome each.</summary>
-    /// <returns>The item ids, in order; empty when this is not a Request.</returns>
+    /// <returns>The one item, <see cref="PayloadShape.WholeRequest"/>; empty when this is not a Request.</returns>
     /// <remarks>
-    /// <para>
-    /// Read from the Request itself rather than asked of the broker.
-    /// </para>
-    /// <para>
-    /// <b>A Request with no item a Result can name is answered as a whole</b>, under
-    /// <see cref="PayloadShape.WholeRequest"/>, as the broker's own close answers one (SPEC.md §5.1). Returning none
-    /// left a person holding it with no form to answer it by.
-    /// </para>
+    /// A Request is answered as a whole, as the broker's own close answers one (SPEC.md §5.1), so a person
+    /// holding it always has a form to answer it by.
     /// </remarks>
-    public IReadOnlyList<string> Items()
-    {
-        if (!OwesResult)
-        {
-            return [];
-        }
-
-        var ids = PayloadShape.ItemIds(Message.PayloadJson);
-
-        return ids.Count > 0 ? ids : [PayloadShape.WholeRequest];
-    }
+    public IReadOnlyList<string> Items() => OwesResult ? [PayloadShape.WholeRequest] : [];
 }

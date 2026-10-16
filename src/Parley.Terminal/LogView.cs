@@ -13,15 +13,12 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The following itself is <see cref="LogTail"/>'s and is unchanged — where the file is, starting
-/// at the end, reopening when the file at that path stops being the file it is holding. This is
-/// the part that draws.
+/// The following itself is <see cref="LogTail"/>'s: where the file is, starting at the end,
+/// reopening when the file at that path stops being the file it is holding. This is the part that
+/// draws.
 /// </para>
 /// <para>
-/// <b>It no longer stops on <c>Console.ReadLine</c>.</b> The Spectre version read a key on a
-/// worker thread so the follow loop kept drawing, which worked and could not be driven past its
-/// first line by a test — recorded as a low finding on 2026-09-03. Escape closes this, through the
-/// same key handling as every other dialog, and a test can drive it.
+/// Escape closes this, through the same key handling as every other dialog, so a test can drive it.
 /// </para>
 /// </remarks>
 internal sealed class LogView : Dialog
@@ -90,7 +87,7 @@ internal sealed class LogView : Dialog
         {
             said(
                 $"{NoLog} ({path ?? "nowhere derivable"}). A broker started with --log elsewhere "
-                + "writes elsewhere, and the manifest does not record where.");
+                + "writes elsewhere.");
 
             return null;
         }
@@ -174,8 +171,7 @@ internal sealed class LogView : Dialog
     /// <b>It does not touch the view, and that is the whole of it.</b> The follower runs off the
     /// main loop and the toolkit draws on it; a source collection mutated during a draw throws or
     /// is read half-written, and either way the failure lands in the draw rather than anywhere
-    /// near its cause. An earlier version added straight to the bound collection and set the
-    /// selection from the follower's thread, which is that bug written twice.
+    /// near its cause. Lines are queued here and the selection is set only on the drawing thread.
     /// </remarks>
     internal void Append(string line)
     {

@@ -203,7 +203,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - Agents propose; Parley does not. The description said "an agent (or Parley)". Parley proposing would be a fourth act beyond the three the constitution (6.0.0) limits it to, so it is left out. Adding it is a constitution amendment for the owner to decide, not an implementation detail.
 - A proposal reaches the person through the same route as other work waiting on them (the waiting-on-you list), rather than as a message in a transcript.
 - Item order is the intended order; an item depends on those listed, and by default on nothing. "Next" respects dependencies when given and order otherwise.
-- Items are worked as requests like any other: a result of `done` makes an item done, `blocked` makes it blocked, and a person's close makes it closed by the person.
+- Items are worked as requests like any other: the latest result decides: `done` makes an item done and `blocked` makes it blocked, and a person's close makes it closed by the person.
 - One roadmap item has one conversation; an item meant for several agents sends one request each within it.
 - Nothing is released, so the protocol and schema change in place with no compatibility or migration; protocol and version numbers move per this repository's rules.
 - Roadmaps are per project and never cross projects.

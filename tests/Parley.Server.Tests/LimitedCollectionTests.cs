@@ -10,9 +10,9 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Found by the review gate, lens 1 run 1.18. <c>parley_inbox</c> offers a limit, and a collection freed the wake bound
-/// whatever it left: probed over a loopback broker with a joined node, orders collected one of two Requests and
-/// detached, nothing was pending, the node had been asked once, and the second Request waited with no turn coming.
+/// <c>parley_inbox</c> offers a limit, and a collection must not free the wake bound
+/// whatever it left: with a joined node, orders collecting one of two Requests and
+/// detaching must not leave nothing pending, the node asked once, and the second Request waiting with no turn coming.
 /// </para>
 /// <para>
 /// Through the real <c>DrainInbox</c> handler, because the decision to ask again lives there.

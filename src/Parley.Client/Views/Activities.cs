@@ -6,9 +6,6 @@ namespace Parley.Client.Views;
 /// <summary>What a participant is doing, as far as the broker can say.</summary>
 public enum Doing
 {
-    /// <summary>The registry could not be read, so nothing is claimed — not even whether it is running.</summary>
-    Unknown = 0,
-
     /// <summary>Nothing is running it.</summary>
     NotRunning = 1,
 
@@ -47,18 +44,14 @@ public sealed record Activity(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's report of 2026-10-03</b>: an agent was shown as working for nearly three hours after a command it was not
-/// allowed to run ended its turn silently. 0.37.5 had derived "working" from "picked up and not answered", which is what an
-/// agent mid-task and an agent that has stopped both look like. The node knew the difference and, since §11.6, says so.
-/// </para>
-/// <para>
-/// <b>Working means a turn is running, and nothing else.</b> An agent whose turns nobody reports is never shown as working
-/// or stopped on the strength of a guess (FR-010): it is shown by presence alone. <b>Waiting is not stopped</b> (FR-009): an
+/// <b>Working means a turn is running, and nothing else.</b> "Picked up and not answered" is what an agent mid-task and an
+/// agent that has stopped both look like; the node knows the difference and says so (§11.6). An agent whose turns nobody reports is never shown as working
+/// or stopped on the strength of a guess: it is shown by presence alone. <b>Waiting is not stopped</b>: an
 /// agent that asked somebody and ended its turn to wait is doing exactly what it should.
 /// </para>
 /// <para>
 /// <b>Here rather than in either surface</b>, because the terminal's room and the web UI's conversation page describe the
-/// same agents, and two derivations would come to describe one agent two ways (FR-013).
+/// same agents, and two derivations would come to describe one agent two ways.
 /// </para>
 /// </remarks>
 public static class Activities
@@ -206,7 +199,7 @@ public static class Activities
         var presence = agent.Presence == AgentPresence.Running ? Doing.Running : Doing.NotRunning;
         var turns = agent.Turns ?? TurnStanding.Unreported;
 
-        // FR-010: nobody reports this agent's turns, so working and stopped would both be guesses.
+        // Nobody reports this agent's turns, so working and stopped would both be guesses.
         if (!turns.Reported)
         {
             return new Activity(presence);
@@ -217,7 +210,7 @@ public static class Activities
             return new Activity(Doing.Working, running);
         }
 
-        // FR-009: asked somebody and waiting is not stopped, whatever else it owes.
+        // Asked somebody and waiting is not stopped, whatever else it owes.
         if (here.FirstOrDefault(edge => edge.Waiter == agent.Name) is { } asked)
         {
             return new Activity(Doing.Waiting, WaitingOn: asked.WaitedOn);

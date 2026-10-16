@@ -9,9 +9,9 @@ namespace Parley.Cli.Tests;
 /// That a serving broker is not stopped by its project.json being caught mid-edit or mid-replace.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lenses 1 and 3, run 4), a regression from the round before: reading began leaving an
-/// unreadable project out, the watcher took that as the project being removed, and since it stored the stamp before reading,
-/// a read that collided with <c>File.Replace</c> left the broker stopped for good. Driven through the real serve loop and
+/// Reading leaves an unreadable project out, so the watcher must not take that as the project being removed, and
+/// since it stores the stamp before reading, a read that collides with <c>File.Replace</c> must not leave the broker
+/// stopped for good. Driven through the real serve loop and
 /// <see cref="ServeCommand.Rereader"/>, the function the program itself uses.
 /// </remarks>
 public sealed class AHalfEditedProjectKeepsServingTests : IDisposable

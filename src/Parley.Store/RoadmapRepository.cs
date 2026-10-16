@@ -192,7 +192,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <para>
     /// <b>Provenance is computed here and never passed in.</b> The origin is <c>proposed</c> only when the final
     /// content is the stored proposal's own words, in order, with the same agents and needs, and it is a new
-    /// roadmap. A flag set by the caller would be right every time somebody remembered to set it (research R10).
+    /// roadmap. A flag set by the caller would be right every time somebody remembered to set it.
     /// </para>
     /// <para>
     /// <b>One transaction.</b> The roadmap, its reserved item conversation names, the proposal's decision, the
@@ -959,8 +959,11 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
-                           AND outcome = 'blocked')                                                     AS Blocked,
+                       -- One when the latest closed exchange is the blocked one, otherwise zero.
+                       (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
+                           AND e.outcome = 'blocked'
+                           AND e.id = (SELECT MAX(l.id) FROM exchanges l
+                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'))           AS Blocked,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome = 'closed')                                                      AS Closed,
                        (SELECT ri.blocker FROM result_items ri JOIN messages m ON m.id = ri.message_id
@@ -1041,7 +1044,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     private sealed record PositionNeed(long Position, long Needs);
 
     // A class with setters, because two of its columns are counting subselects: over an empty table SQLite reports no
-    // type for them and Dapper has nothing to match a constructor against. It passed with rows and failed with none.
+    // type for them and Dapper has nothing to match a constructor against.
     private sealed class SummaryRow
     {
         public long Id { get; set; }

@@ -70,7 +70,7 @@ public sealed class OwnershipTests : IDisposable
     [Fact]
     public async Task A_statement_far_longer_than_the_old_bound_is_stored()
     {
-        // The hundred came off at 0.33.0. This is the storage half of that: the CHECK on
+        // There is no bound by default. This is the storage half of that: the CHECK on
         // agents.owns stands down at the largest integer, the way the pair cap and the
         // clarification cap already do, so what a person accepts is what is kept.
         await Register(Orders, new string('x', 4_000));
@@ -123,8 +123,8 @@ public sealed class OwnershipTests : IDisposable
     public async Task The_schema_refuses_a_character_that_is_not_printable_text(int point, string name)
     {
         // The schema is the enforcement, so the one-line rule has to hold here and not only in
-        // the value type. Every one of these was stored happily by the first version of this
-        // constraint, which tested the C0 range and therefore missed the two Unicode line
+        // the value type. A constraint testing only the C0 range would store every one of these
+        // happily, missing the two Unicode line
         // separators, the bidi overrides, and everything invisible.
         await using var command = _connection.CreateCommand();
         command.CommandText =
@@ -394,12 +394,12 @@ public sealed class OwnershipTests : IDisposable
     [Fact]
     public async Task The_registry_carries_what_a_person_accepted_beside_what_peers_read()
     {
-        // **Both halves, because "pending" is the two differing** (research.md R5). The surfaces reach
+        // **Both halves, because "pending" is the two differing**. The surfaces reach
         // no store, so if this read did not carry the accepted line no surface could ever say a line
-        // was waiting -- which is FR-020, and is the half a person needs in order to know the
+        // was waiting -- the half a person needs in order to know the
         // deployment has not changed yet.
         //
-        // Must fail against the read returning only `owns`, which is what it did before 020: every
+        // Must fail against the read returning only `owns`: every
         // agent would look settled the moment it was accepted for.
         await Register(Billing, null);
 
@@ -435,7 +435,7 @@ public sealed class OwnershipTests : IDisposable
     {
         // The restart, as the store sees it: the adapter states the line on attach and `owns` becomes
         // what was accepted. Nothing clears the acceptance, and nothing should -- the record of who
-        // agreed to what is worth keeping, and FR-011 wants it traceable afterwards.
+        // agreed to what is worth keeping, and it has to stay traceable afterwards.
         await Register(Orders, null);
 
         await _agents.RecordOwnershipAsync(

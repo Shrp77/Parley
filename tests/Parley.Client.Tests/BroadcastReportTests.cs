@@ -195,7 +195,7 @@ public sealed class BroadcastReportTests
     [Fact]
     public void A_refusal_says_why_and_not_only_who()
     {
-        // **The owner's report.** A whole roster refused, and the line read "Refused for" and then nineteen
+        // **The reason comes first.** A whole roster refused must not read "Refused for" and then nineteen
         // names — the one shape nobody can act on.
         var said = Say(19, 0, refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"a{at}@b"))]);
 
@@ -263,7 +263,7 @@ public sealed class BroadcastReportTests
     [Fact]
     public void A_brokers_own_words_cannot_forge_a_second_line_of_this_report()
     {
-        // **0.18.6's transcript forgery in a new place.** The reason on the failure path is `Status.Detail` —
+        // **Transcript forgery, in a new place.** The reason on the failure path is `Status.Detail` —
         // whatever came back from the far end of a gRPC call — and a newline in it produced a second line
         // reading as this report's own success sentence in somebody else's hand.
         var said = Say(
@@ -311,7 +311,7 @@ public sealed class BroadcastReportTests
     [Fact]
     public void The_first_eighty_characters_carry_the_part_somebody_can_act_on()
     {
-        // **What the owner actually saw.** A terminal shows this in one row of whatever width it has, so what
+        // **What survives a narrow row.** A terminal shows this in one row of whatever width it has, so what
         // comes first is what survives. Counts, then the reason, then the names.
         var said = Say(19, 0, refused: [.. Enumerable.Range(1, 19).Select(at => Turned($"agent-{at:00}@here"))]);
 

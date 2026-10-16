@@ -11,13 +11,11 @@ namespace Parley.Web.Pages;
 /// <summary>What is waiting for a person, and what they owe an answer to.</summary>
 /// <param name="Project">The project it is waiting in.</param>
 /// <param name="Waiting">How many messages, as of this page.</param>
-/// <param name="Polls">How many closure polls.</param>
 /// <param name="Problem">Why the count could not be read, when it could not.</param>
 /// <param name="Delivered">What this person owes an answer to in the project: each agent's latest unanswered request or question.</param>
 public sealed record Pending(
     string Project,
     int Waiting,
-    int Polls,
     string? Problem,
     IReadOnlyList<Delivered> Delivered);
 
@@ -26,9 +24,11 @@ public sealed record Pending(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Taking delivery is an act, and this page is built around saying so.</b> SPEC.md §6 separates work
-/// nobody collected from work collected and left, and records collection by the inbox drain. A page that
-/// drained while rendering would mark work picked up for somebody who had merely clicked a link.
+/// <b>Showing a message is delivering it.</b> The page counts what is waiting for each seat this console
+/// holds and then drains it while rendering, as the terminal does, because the broker's inbox has no
+/// narrower drain and this is where the messages are drawn. SPEC.md §6 records collection by the drain, so
+/// opening this page marks the person's waiting mail delivered. A seat that is not held is only counted,
+/// without draining, so reading the page then makes nobody present.
 /// </para>
 /// <para>
 /// Sending Results is here for a reason that is not symmetry: an inbox that could receive a Request and not
@@ -37,7 +37,8 @@ public sealed record Pending(
 /// </remarks>
 /// <param name="directory">This machine's projects.</param>
 /// <param name="seats">The seats this console is holding.</param>
-public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : PageModel
+/// <param name="notices">What the console tells the person, which the bell lists.</param>
+public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
     /// <summary>Who is here.</summary>
     public Seat? Me { get; private set; }
@@ -47,10 +48,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
     /// <summary>How much is waiting for this name while no seat is held, and whether every project answered.</summary>
     /// <remarks>
-    /// Only read when <see cref="Projects"/> is empty, which is the state this page used to describe as "you are
-    /// seated nowhere, so nothing can be waiting". That sentence read the absence of a collector as the absence of
-    /// mail, and the owner met the case that proves them different: two Results waiting for a name whose seat a
-    /// broker restart had taken. Counted without opening an attachment, so reading the page still does not make
+    /// Only read when <see cref="Projects"/> is empty. The absence of a collector is not the absence of mail, which
+    /// waits against the name. Counted without opening an attachment, so reading the page does not make
     /// anybody present.
     /// </remarks>
     public (int Waiting, bool Certain) Away { get; private set; }
@@ -123,8 +122,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
     /// <summary>Shows what is waiting, and whatever has already been taken.</summary>
     /// <returns>The page.</returns>
     /// <remarks>
-    /// It redirected to a Join page when nobody had typed a name. Now the seats are taken on every render
-    /// (<see cref="PersonSeats"/>), so there is always somebody this page is about.
+    /// The seats are taken on every render (<see cref="PersonSeats"/>), so there is always somebody this page is about.
     /// </remarks>
     public async Task<IActionResult> OnGetAsync()
     {
@@ -145,7 +143,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot.
             return RedirectToPage("/Inbox");
         }
 
@@ -165,6 +163,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
             .ConfigureAwait(false);
 
         Outcome = sent.Says;
+        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
 
         Me = seat;
 
@@ -185,7 +184,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (seat is null || hold is null || voice is null)
         {
-            // Back to this page, which takes the seat again or says why it cannot (there is no Join).
+            // Back to this page, which takes the seat again or says why it cannot.
             return RedirectToPage("/Inbox");
         }
 
@@ -194,6 +193,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
             .ConfigureAwait(false);
 
         Outcome = sent.Says;
+        notices.Add(For ?? string.Empty, null, "Inbox", sent.Says, sent.Says.StartsWith("Sent.", StringComparison.Ordinal));
 
         Me = seat;
 
@@ -243,10 +243,8 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
             var (messages, polls, problem) = (counts.Value.Messages, counts.Value.ClosurePolls, counts.Problem);
 
-            // **Showing a message is delivering it** (the owner's call of 2026-10-13, as the terminal has done since
-            // 2026-10-08). It was a button, which a person met as a count that never went down, and reading a Request
-            // they had been sent did not count as having picked it up. Everything waiting is taken, because the broker's
-            // inbox has no narrower drain, and it is taken here because this is where it is drawn.
+            // **Showing a message is delivering it**, as in the terminal. Everything waiting is taken,
+            // because the broker's inbox has no narrower drain, and it is taken here because this is where it is drawn.
             if (problem is null && (messages > 0 || polls > 0))
             {
                 var taken = await BrokerDirectory
@@ -283,7 +281,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
                 }
             }
 
-            pending.Add(new Pending(hold.Project, messages, polls, problem, owed));
+            pending.Add(new Pending(hold.Project, messages, problem, owed));
         }
 
         // What is owed does not depend on this console holding the seat: it is the broker's wait-for graph and the person's
@@ -296,7 +294,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats) : Page
 
             if (read.Problem is null && read.Value is { Count: > 0 } owedHere)
             {
-                pending.Add(new Pending(project.Name.Value, 0, 0, null, owedHere));
+                pending.Add(new Pending(project.Name.Value, 0, null, owedHere));
             }
         }
 

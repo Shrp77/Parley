@@ -9,7 +9,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// In 0.5 every message is answered (principle 2.7), so every Request, Clarify and Result asks for its recipient's
+/// Every message is answered (principle 2.7), so every Request, Clarify and Result asks for its recipient's
 /// attention. A Request to an agent nobody has open is how a node learns to start it; a Result to a requester
 /// whose session has ended is how the work it asked for gets picked back up.
 /// </para>
@@ -229,9 +229,9 @@ public sealed class RequestWakesTests
     [Fact]
     public async Task A_participant_a_poll_waits_on_for_nothing_but_its_vote_is_given_a_turn()
     {
-        // Found by the review gate. Orders proposed closure while billing held the work, so both were polled; billing
-        // then sent its Result and never voted. The poll reaches billing only through its inbox, and billing had no
-        // reason to collect again, so nothing asked it (§5.0). The node offers billing and not orders, so the turn
+        // Orders proposed closure while billing held the work, so both were polled; billing
+        // then sent its Result and never voted. The poll reaches billing only through its inbox, and billing has no
+        // reason to collect again, so something has to ask it (§5.0). The node offers billing and not orders, so the turn
         // below can only be the silent voter's.
         var token = TestContext.Current.CancellationToken;
 
@@ -270,9 +270,8 @@ public sealed class RequestWakesTests
     [Fact]
     public async Task A_decline_turning_into_agreement_asks_the_silent_once_and_repeating_it_buys_nothing()
     {
-        // Found by the review gate, in the fix for the test above. The first version woke the silent voters after
-        // every vote that did not close the conversation, and five repeated agreements bought the silent voter five
-        // turns: each turn is a collection, and a collection frees the next wake. Only inventory is offered by the
+        // Waking the silent voters after every vote that did not close the conversation would let five repeated
+        // agreements buy the silent voter five turns: each turn is a collection, and a collection frees the next wake. Only inventory is offered by the
         // node, so every command below is inventory's.
         var token = TestContext.Current.CancellationToken;
 
@@ -312,8 +311,8 @@ public sealed class RequestWakesTests
             await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Settle));
         }
 
-        // And the replay lens 2 found in the rule this test was first written for: waking on a decline turning into
-        // agreement let billing buy inventory a turn for every two calls, by alternating its vote.
+        // And the replay: waking on a decline turning into
+        // agreement would let billing buy inventory a turn for every two calls, by alternating its vote.
         for (var round = 0; round < 3; round++)
         {
             _ = await inventory.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "inventory@alpha" }, cancellationToken: token);

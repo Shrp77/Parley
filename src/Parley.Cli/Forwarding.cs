@@ -7,17 +7,16 @@ namespace Parley.Cli;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The surfaces are separate tools now, and <c>parley terminal</c> still works.</b> Windows cannot
-/// replace a running executable, so while the terminal lived in this binary every terminal change
-/// required stopping the broker — which SPEC.md §12 makes expensive: the node stops, tells every
-/// agent it started to quit, and the process is what held everything each agent had learned. The
-/// packaging changed; the command a person types did not have to.
+/// <b>The surfaces are separate tools, and <c>parley terminal</c> forwards to one.</b> Windows cannot
+/// replace a running executable, so a terminal in this binary would need the broker stopped for every
+/// change — which SPEC.md §12 makes expensive: the node stops, tells every agent it started to quit,
+/// and the process is what held everything each agent had learned.
 /// </para>
 /// <para>
 /// <b>Nothing is parsed here, and that is the whole design.</b> Arguments are passed through
 /// exactly as given, so there is one parser per tool rather than one parser and one imitation of
 /// it. A wrapper that understood <c>--config</c> would be a second thing to keep in step with the
-/// tool it forwards to, and the two are installed and versioned apart now precisely so they do not
+/// tool it forwards to, and the two are installed and versioned apart precisely so they do not
 /// have to move together.
 /// </para>
 /// <para>

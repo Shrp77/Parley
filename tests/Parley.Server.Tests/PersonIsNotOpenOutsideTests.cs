@@ -8,9 +8,9 @@ namespace Parley.Server.Tests;
 /// That only an agent a node could start reads as open outside Parley (SPEC.md §11.7): never the person, never Parley.
 /// </summary>
 /// <remarks>
-/// <b>Found while investigating the owner's report of 2026-10-05</b>: the live registry said the person was open outside
-/// Parley, because their attachment is a surface and no surface is ever "started by Parley". Nothing drew it yet; a
-/// surface reading the flag for every row would have marked the person with the agents' warning. Fails against 0.40.1.
+/// The live registry must not say the person is open outside
+/// Parley merely because their attachment is a surface and no surface is ever "started by Parley": a
+/// surface reading the flag for every row would mark the person with the agents' warning.
 /// </remarks>
 public sealed class PersonIsNotOpenOutsideTests
 {

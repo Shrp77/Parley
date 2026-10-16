@@ -10,10 +10,10 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both come from one report.</b> The owner told nineteen agents one thing — nineteen pairwise
-/// notifications in one conversation — and every message carried a line naming the other eighteen
-/// participants, four hundred characters of it, under a header that had already said who the
-/// message was for. They read the result as the recipients not having received it and asked why.
+/// <b>Both concern a broadcast.</b> Telling nineteen agents one thing — nineteen pairwise
+/// notifications in one conversation — must not put on every message a line naming the other eighteen
+/// participants, four hundred characters of it, under a header that has already said who the
+/// message is for. It reads as the recipients not having received it.
 /// </para>
 /// <para>
 /// <b>Two different facts were being read as one.</b> Who <i>could</i> see a message is fixed when
@@ -32,7 +32,7 @@ public sealed class SeenAndCollectedTests
             AgentName.Create("arvind@test"),
             AgentName.Create(to),
             "human:arvind",
-            "{\"intent\":\"telling everybody\",\"items\":[{\"id\":\"r1\",\"kind\":\"question\",\"text\":\"the cap moves on Friday\"}],\"done_when\":\"everybody has acknowledged it\"}",
+            "{\"ask\":\"the cap moves on Friday\"}",
             "tell-everybody-test",
             DateTimeOffset.UnixEpoch,
             delivered);
@@ -61,7 +61,7 @@ public sealed class SeenAndCollectedTests
     [Fact]
     public void A_broadcast_does_not_put_the_whole_roster_under_every_message()
     {
-        // The owner's case: nineteen agents and a seat. Eighteen names per message is longer than
+        // Nineteen agents and a seat. Eighteen names per message is longer than
         // everything it annotates, and the screen cuts it off part way through.
         var messages = Broadcast(19);
         var participants = Visibility.Participants(messages);
@@ -104,7 +104,7 @@ public sealed class SeenAndCollectedTests
     [Fact]
     public void A_message_says_whether_it_has_been_collected()
     {
-        // The fact the owner actually wanted, which no line of the transcript carried. §4.2 has
+        // The fact no line of the transcript carries. §4.2 has
         // the agent take delivery of its inbox; until it does, `delivered_utc` is unset.
         Assert.Equal(Delivery.Waiting, Delivery.Of(Notice("orders@test")));
 
@@ -118,8 +118,7 @@ public sealed class SeenAndCollectedTests
     [Fact]
     public void The_screen_header_is_a_time_a_sender_and_a_recipient_and_nothing_else()
     {
-        // **This asserted the opposite until the owner read one in the room.** The header carried the
-        // message type, the state of its exchange and whether it had been collected, and all three went:
+        // **The header carries no message type, exchange state or collected flag.**
         // "Humans just talk; we do not begin by saying 'Inquiry' and 'Response'."
         //
         // Collected was the worst of the three here. It means the recipient drained its inbox, which for a
@@ -137,7 +136,7 @@ public sealed class SeenAndCollectedTests
     [Fact]
     public void And_nothing_on_screen_says_who_was_not_party_to_a_message()
     {
-        // The owner's first note of the morning: the list of everyone who did not see a broadcast is
+        // The list of everyone who did not see a broadcast is
         // superfluous beside a header that already names one sender and one recipient -- and beside a room
         // column that lists every participant. The export keeps it, which is where it earns its keep: a file
         // read somewhere else has no column beside it.

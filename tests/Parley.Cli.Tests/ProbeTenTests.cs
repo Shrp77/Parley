@@ -7,7 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 10: the feature's own user story, driven through the commands.
+/// The user story, driven through the commands.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -98,7 +98,6 @@ public sealed class ProbeTenTests : IAsyncDisposable
             output,
             new StringWriter(),
             Project(project),
-            [Project("alpha"), Project("beta")],
             ManifestPath,
             TestContext.Current.CancellationToken);
 
@@ -175,7 +174,7 @@ public sealed class ProbeTenTests : IAsyncDisposable
     [Fact]
     public async Task Enrolling_into_the_same_project_twice_reports_no_change()
     {
-        // FR-015 through the surface: the run must not claim a change it did not make.
+        // Through the surface: the run must not claim a change it did not make.
         var chosen = Chosen("inventory", "Stock levels. Not pricing.");
 
         await ApplyAsync("alpha", chosen);

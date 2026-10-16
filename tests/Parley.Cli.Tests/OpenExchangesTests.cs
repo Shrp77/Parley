@@ -11,7 +11,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-003's first half. The install scripts ask this before they stop a broker, so what it reports
+/// The install scripts ask this before they stop a broker, so what it reports
 /// is what somebody is told before deciding — and reporting nothing is indistinguishable, from
 /// their side, from there being nothing.
 /// </para>
@@ -65,10 +65,6 @@ public sealed class OpenExchangesTests : IAsyncDisposable
             Orders,
             Billing,
             "some-model-9",
-            // done_when is twenty characters at least, and the schema is what says so — §9.3's
-            // argument that a rule of §8 belongs in storage, where no code path can route around
-            // it. A shorter one here fails as a CHECK constraint rather than as a review comment,
-            // which is the point.
             """
             {"ask":"Where does price live, and is the invoice total gross or net?"}
             """,
@@ -127,7 +123,7 @@ public sealed class OpenExchangesTests : IAsyncDisposable
         // — but "the same query" is a claim about what it asks, not about what it prints, and what
         // it prints is what a script and a person see.
         //
-        // So: identifiers and participants. Not the item, not the intent, not done_when, and not a
+        // So: identifiers and participants. Not the ask, and not a
         // single word of any message. The payload here carries a distinctive phrase; if any of it
         // reaches standard output, this fails.
         var agents = new AgentRepository(_connection);

@@ -61,8 +61,8 @@ public static class Roster
     /// <exception cref="ArgumentNullException"><paramref name="registry"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>Shown so a person can see an overlap, and nothing here decides anything about it</b> (FR-017,
-    /// FR-030). Two agents both claiming the same area is a real state of a deployment and it is the
+    /// <b>Shown so a person can see an overlap, and nothing here decides anything about it</b>.
+    /// Two agents both claiming the same area is a real state of a deployment and it is the
     /// person's to settle, or to leave: Principle II gives no agent authority over another, so a helper
     /// that refused an overlapping line, ranked the claims, or marked one as the winner would be
     /// arbitration arriving in the one place nobody would look for it.
@@ -98,25 +98,23 @@ public static class Roster
     /// <exception cref="ArgumentNullException"><paramref name="agent"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>One implementation, because FR-020 is a promise every surface makes.</b> A person who
+    /// <b>One implementation, because it is a promise every surface makes.</b> A person who
     /// accepted a line and sees it in a roster will read the roster as the deployment — so a surface
     /// that showed the accepted line plainly would be saying peers route by something they have never
     /// read. What is shown stays the <em>live</em> line, which is what the roster is for, and this is
     /// appended to say a newer one is waiting.
     /// </para>
     /// <para>
-    /// <b>Short on purpose.</b> 0.20.2 records the state scrolling off the end of a row in a
-    /// half-width pane, which cut the one fact somebody had opened the screen to read. The sentence
-    /// explaining what to do about it belongs in the dialog that accepted the line, where there is
-    /// room for it.
+    /// <b>Short on purpose.</b> A long mark scrolls off the end of a row in a half-width pane and cuts the
+    /// one fact somebody opened the screen to read. The sentence explaining what to do about it belongs in
+    /// the dialog that accepted the line, where there is room for it.
     /// </para>
     /// </remarks>
     public static string PendingMark(AgentRecord agent)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        // Worded to be true of both cases. A first draft said "a newer line is accepted", which reads
-        // as nonsense beside an agent that has stated nothing at all -- there is no older line for the
+        // Worded to be true of both cases: an agent that has stated nothing has no older line for the
         // accepted one to be newer than, and that is the commonest way this state is reached.
         return agent.OwnsPending
             ? " (a line is accepted and peers do not read it yet)"

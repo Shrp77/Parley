@@ -9,25 +9,18 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This guard used to live on the command line, and 019 removed the commands it served.</b>
-/// `parley export ""` once reached the repository, threw on the way in, and printed a .NET stack
-/// trace with exit 127 — the operator's own input coming back at them as a crash. It was fixed
-/// there, inside a helper that only the sixteen removed verbs called, so removing them took the
-/// guard with them and the defect reappeared one process along.
+/// <b>The guard lives in the service, not on the command line.</b> A blank identifier that
+/// reached the repository would throw on the way in and surface as a .NET stack trace — the
+/// operator's own input coming back at them as a crash. A guard in a client helper leaves with
+/// the client.
 /// </para>
 /// <para>
-/// <b>Worse there than it had been here.</b> A shell printing a trace is at least obviously the
+/// <b>Worse from a broker than from a shell.</b> A shell printing a trace is at least obviously the
 /// tool's fault; a broker answering <c>Unknown: Exception was thrown by handler</c> says nothing an
 /// operator can act on and reads like a fault in the deployment. Neither the terminal nor the web UI
 /// can send a blank — both pass an identifier from a row somebody selected — so it is reachable only
 /// by a client written against the service directly, which is exactly the caller with the least
 /// context for an internal error.
-/// </para>
-/// <para>
-/// <b>Found by a probe rather than by reading.</b> The test that had held the old guard was being
-/// re-pointed at the broker, and failed against real behaviour. That is the argument for the rule
-/// living in the service: one enforced by whichever client happens to carry it leaves with that
-/// client.
 /// </para>
 /// </remarks>
 public sealed class BlankIdentifierTests

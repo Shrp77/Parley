@@ -12,7 +12,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 1.</b> The gate's third finding made looking for a resident and creating one a
+/// Looking for a resident and creating one is a
 /// single act, under a process-wide semaphore, because two callers could otherwise both launch and the
 /// loser was overwritten in the table — a process invisible to <c>StopEveryoneAsync</c>. This asks the
 /// same question about the other side: <c>StopEveryoneAsync</c> takes no part in that semaphore, and
@@ -23,7 +23,7 @@ namespace Parley.Cli.Tests;
 /// its process but not yet written it into the table is absent from a snapshot taken in that moment; the
 /// stop then finishes, the start records its resident, and the node loop returns. Nothing calls
 /// <c>StopEveryoneAsync</c> again, so what is left in the table is a live agent process with nothing left
-/// that would stop it — which is precisely the harm the third finding names.
+/// that would stop it — which is precisely the harm to avoid.
 /// </para>
 /// <para>
 /// <b>The symptom is observable, which is what makes this a probe rather than an argument.</b> After both
@@ -67,10 +67,10 @@ public sealed class StartRacingStopTests : IDisposable
             var identity = AgentIdentity.Mint();
             var cataloguePath = Path.Combine(_root, $"node-{attempt}.json");
 
-            // **The checkout declares what each project calls it, and without this nothing starts.** 018
-            // made a name resolve to an identity by reading it back out of the repository, so a workspace
+            // **The checkout declares what each project calls it, and without this nothing starts.** A name
+            // resolves to an identity by reading it back out of the repository, so a workspace
             // with no launch configuration resolves to nothing and `StartAsync` returns having done
-            // nothing at all — which a first version of this probe reported as forty clean attempts.
+            // nothing at all — which would report forty clean attempts.
             await File.WriteAllTextAsync(
                 Path.Combine(workspace, ".mcp.json"),
                 $$"""
@@ -135,11 +135,10 @@ public sealed class StartRacingStopTests : IDisposable
                 await left.DisposeAsync();
             }
 
-            // **Counted from what the command announced, not from the loop running.** A first version of
-            // this probe counted iterations, which a `StartAsync` that launched nothing at all satisfies
-            // perfectly — and forty attempts in half a second is exactly what that looks like. It was
-            // resolving no name, because the workspace had no launch configuration for one to be read
-            // out of. Three probes in this gate have now passed while exercising nothing.
+            // **Counted from what the command announced, not from the loop running.** Counting
+            // iterations is satisfied perfectly by a `StartAsync` that launched nothing at all — and
+            // forty attempts in half a second is exactly what that looks like. A probe that
+            // passes while exercising nothing is no probe.
             //
             // **Either outcome counts as the scenario having happened**, and that is the point rather
             // than a loosening: once a node is stopping, a start that is refused is the behaviour under

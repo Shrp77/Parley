@@ -9,9 +9,7 @@ namespace Parley.Client.Rendering;
 /// is how a person comes to think they are different fields.
 /// </para>
 /// <para>
-/// <b>There is one field to label now, and that is the change.</b> Until 0.7 there were four — an intent, the
-/// item, its kind, and a <c>done_when</c> with a paragraph arguing for itself — and the owner, composing one,
-/// read them as the same thing asked four times. A receiver that cannot tell what an ask is for, or how far it
+/// <b>There is one field to label.</b> A receiver that cannot tell what an ask is for, or how far it
 /// goes, sends a Clarify (§5.2); that is a question only the receiver is in a position to ask.
 /// </para>
 /// <para>

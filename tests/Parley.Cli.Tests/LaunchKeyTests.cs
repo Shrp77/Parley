@@ -96,8 +96,8 @@ public sealed class LaunchKeyTests
     [Fact]
     public void The_legacy_key_names_no_project()
     {
-        // Null and "a project called nothing" are different answers: the first is every repository
-        // enrolled before projects existed, and it is the one case that may be re-pointed in place.
+        // Null and "a project called nothing" are different answers: the first is an enrolment that
+        // names no project.
         Assert.Null(LaunchKey.ProjectOf("parley"));
     }
 

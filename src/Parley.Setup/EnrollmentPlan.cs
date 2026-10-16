@@ -39,9 +39,8 @@ public static class EnrollmentPlan
     /// The launch variable naming the agent a repository is.
     /// </summary>
     /// <remarks>
-    /// A constant rather than a literal because it is now read as well as written: withdrawing
-    /// checks it before removing an entry, and a name written under one spelling and read under
-    /// another would silently make every entry look like nobody's.
+    /// A constant rather than a literal because it is read as well as written: a name written under
+    /// one spelling and read under another would silently make every entry look like nobody's.
     /// </remarks>
     public const string AgentVariable = "PARLEY_AGENT";
 
@@ -57,17 +56,16 @@ public static class EnrollmentPlan
 
     /// <summary>The launch variable pinning an agent to one broker address.</summary>
     /// <remarks>
-    /// Never written here — only read, to notice a repository that already belongs somewhere.
-    /// An address goes stale the first time <c>parley project set</c> moves a port, which is why
-    /// <see cref="ProjectVariable"/> is what enrolling writes.
+    /// Never written here — only read, so that an entry a person pinned to an address (a tunnel's
+    /// local end, say) is recognised as this tooling's. An address goes stale when a port moves,
+    /// which is why <see cref="ProjectVariable"/> is what enrolling writes.
     /// </remarks>
     public const string BrokerVariable = "PARLEY_BROKER";
 
     /// <summary>The launch variable saying what an agent owns.</summary>
     /// <remarks>
-    /// A constant for the reason <see cref="AgentVariable"/> is one: it is now read as well as
-    /// written. A scan reports what a repository already tells its peers it owns, and per project,
-    /// since the same repository is worth asking about different things by different rosters.
+    /// A constant for the reason <see cref="AgentVariable"/> is one: it is read as well as written.
+    /// Enrolment carries forward what a repository already tells its peers it owns, per project.
     /// </remarks>
     public const string OwnsVariable = "PARLEY_OWNS";
 
@@ -181,11 +179,8 @@ public static class EnrollmentPlan
     /// <param name="entries">The repositories to enroll.</param>
     /// <param name="workspaceExists">Says whether a workspace is a directory that is there.</param>
     /// <param name="row">
-    /// How to name row <c>i</c> in a problem, or null for the manifest's own <c>agents[i]</c>.
-    /// **Here because these rules stopped being the bulk command's.** <c>Enrolment.AddAsync</c> is the
-    /// other way in and enforced none of them, so a name no agent could hold and an owns line past the
-    /// schema's cap were both written through it. A caller with no manifest needs a way to name the
-    /// thing being refused that does not read as a row number it does not have.
+    /// How to name row <c>i</c> in a problem, or null for <c>agents[i]</c>. A caller with no list of
+    /// rows names the thing being refused another way.
     /// </param>
     /// <returns>One line per problem, empty when the manifest is usable.</returns>
     /// <remarks>
@@ -332,28 +327,17 @@ public static class EnrollmentPlan
     /// another's, silently, from a surface whose person may not know the first exists.
     /// </para>
     /// <para>
-    /// <b>That paragraph used to end "so a repository already belonging somewhere is refused", and the
-    /// refusal it justified was wider than the argument.</b> Re-pointing is one identity moving between
-    /// deployments and is still refused; a <i>second</i> entry beside the first moves nothing, and the
-    /// two were one case only because a key could hold one entry. SPEC.md §4.1 has permitted the second
-    /// throughout — the protocol has no concept of a project, and agent names collide freely across
-    /// them. Recorded rather than replaced, because the reasoning is right and the conclusion was too
-    /// broad, which is the harder of the two mistakes to see.
-    /// </para>
-    /// <para>
-    /// An entry carrying neither is unpinned, which is what every repository enrolled before this
-    /// existed looks like. Those are re-pointed and the note says so.
-    /// </para>
-    /// <para>
-    /// <b><paramref name="endpoints"/> is passed in rather than read.</b> This takes file contents as
-    /// strings and returns file contents as strings, which is why it is the most heavily tested type
-    /// here; reaching a manifest from inside it would hand every one of those tests a filesystem.
+    /// Re-pointing is one identity moving between deployments and is refused; a <i>second</i> entry
+    /// beside the first moves nothing. SPEC.md §4.1 permits it: the protocol has no concept of a
+    /// project, and agent names collide freely across them.
     /// </para>
     /// </remarks>
     /// <param name="endpoints">
     /// Each project on this machine and the endpoint it holds, so an entry pinned to an address can be
-    /// resolved rather than guessed at. Null where there is no manifest, which refuses such an entry
-    /// exactly as it was refused before.
+    /// resolved rather than guessed at. Null where the machine has no projects to read, which refuses
+    /// such an entry. Passed in rather than read: this takes file contents as strings and returns file
+    /// contents as strings, and reaching the machine's projects from inside it would hand every one of
+    /// its tests a filesystem.
     /// </param>
     /// <param name="identity">
     /// The identity to write when the repository declares none, or the default to mint one here.
@@ -416,9 +400,8 @@ public static class EnrollmentPlan
 
         if (landed is { Ours: false })
         {
-            // FR-009. Three silent replacements of somebody's MCP configuration are recorded in this
-            // codebase's comments and none was malice; each was a cast that treated a shape it did not
-            // understand as one it could overwrite, and each reported success.
+            // A shape this did not write is never overwritten: treating it as one it understood would
+            // replace somebody's MCP configuration and report success.
             throw new InvalidDataException(
                 $"there is already a server called '{key}' that this did not write. Rename it or "
                 + "remove it first; enrolling would replace it");
@@ -426,10 +409,8 @@ public static class EnrollmentPlan
 
         if (project is not null && landed?.Broker is { } pinnedAt && landed.Project is null)
         {
-            // The old refusal was right about what it could see. It said this could not tell whether
-            // the address was the project being joined, and guessing permissively is what loses an
-            // agent — true when the address was the only evidence. The manifest knows which project
-            // holds which endpoint, so the question is decidable in each direction rather than a guess.
+            // An entry pinned to an address belongs to whichever deployment holds that address. Whether
+            // it is the project being joined is decidable in each direction rather than a guess.
             var held = endpoints?
                 .FirstOrDefault(pair => string.Equals(pair.Value, pinnedAt, StringComparison.OrdinalIgnoreCase))
                 .Key;
@@ -448,9 +429,9 @@ public static class EnrollmentPlan
                     + "project on this machine holds");
             }
 
-            // It is another project's agent, spelled the old way. Nothing is lost by admitting the
-            // second enrolment — but the entry that is there belongs to that project, so this one goes
-            // beside it rather than through it.
+            // It is another project's agent. Nothing is lost by admitting the second enrolment, but the
+            // entry that is there belongs to that project, so this one goes beside it rather than
+            // through it.
             key = LaunchKey.For(project);
             landed = null;
         }
@@ -483,11 +464,10 @@ public static class EnrollmentPlan
             ? workspace
             : "${" + WorkspaceVariable + ":-" + workspace + "}";
 
-        // **The identity is kept where it is found and minted only where there is none** (018 R2). It sits
-        // beside `mcpServers` rather than inside an entry, because it belongs to the repository and not to
-        // any one project's server: a checkout answering in two projects has one identity and two entries.
-        // A checkout that already carries one keeps it through a move, a rename, and every further project
-        // it joins — which is the whole of what R1 buys, and it is bought by not touching this.
+        // The identity is kept where it is found and minted only where there is none. It sits beside
+        // `mcpServers` rather than inside an entry, because it belongs to the repository and not to any
+        // one project's server: a checkout answering in two projects has one identity and two entries,
+        // and keeps it through a move, a rename, and every further project it joins.
         var declared = Declared(root);
         var chosen = declared.Known ? declared : identity.Known ? identity : AgentIdentity.Mint();
 
@@ -524,21 +504,17 @@ public static class EnrollmentPlan
         if (landed?.Agent is { Length: > 0 } was
             && !string.Equals(was, entry.Agent, StringComparison.Ordinal))
         {
-            // **A change of identity, said because a change of allegiance already is.** An agent's
-            // name is its identity — it comes from this file and from nowhere else — so re-enrolling
-            // a repository under a different one in the same project does not rename an agent, it
+            // A change of identity, said because an agent's name comes from this file and nowhere else:
+            // re-enrolling under a different name in the same project does not rename an agent, it
             // stops one existing and starts another. The old name stays in the registry with nothing
-            // that will ever attach as it again, and the person who edited a manifest row would have
-            // no reason to look. The note beneath this one has said less than this for two releases.
+            // that will ever attach as it again.
             notes.Add($".mcp.json: it was {Quoting.Quoted(was)} here; it becomes {Quoting.Quoted(entry.Agent)}");
         }
 
         if (project is not null && landed is not null && landed.Project is null)
         {
-            // Said because it is a change of allegiance and the file did not previously record
-            // one. A repository enrolled before projects existed names no project at all, so this
-            // is the ordinary case rather than an alarming one — but somebody reading the run
-            // should see which deployment their agent just joined.
+            // Said because it is a change of allegiance and the file did not previously record one:
+            // somebody reading the run should see which deployment their agent just joined.
             notes.Add($".mcp.json: named no project; it becomes an agent of '{project}'");
         }
 
@@ -548,10 +524,8 @@ public static class EnrollmentPlan
             // listed with none and askers fall back to its name, which is a real fallback and a
             // worse one than a sentence somebody meant.
             //
-            // **And it says how to get one, because enrolment deliberately does not ask.** 020 made
-            // the line something the agent is asked for and a person accepts; a note reporting the
-            // absence without naming the remedy would leave somebody looking for a field to fill in
-            // that was removed on purpose.
+            // It says how to get one, because enrolment deliberately does not ask: the line is
+            // something the agent is asked for and a person accepts.
             notes.Add(
                 ".mcp.json: no owns line; peers will see only the name. Ask the agent what it owns "
                 + "from the terminal or the console, and accepting the answer writes it here.");
@@ -590,12 +564,9 @@ public static class EnrollmentPlan
             notes.Add("instructions: append the peers frame");
         }
 
-        // **A line that names a different directory is rewritten, and that was not always so.** The
-        // catalogue is the file a node reads to decide *where* to start an agent, and it was left
-        // alone whenever the role was already listed — so a repository that had moved kept its old
-        // directory there while the launch configuration gained the new one. The node then started
-        // the agent against whatever is at the old path now, which is either nothing or somebody
-        // else's checkout, and nothing on the machine said the two files disagreed.
+        // A line that names a different directory is rewritten. The catalogue is the file a node reads
+        // to decide *where* to start an agent, so a stale directory would start the agent against
+        // nothing or somebody else's checkout.
         var stale = nodeAlreadyLists
             && nodeWorkspace is { Length: > 0 }
             && !WorkspacePath.SameRepository(nodeWorkspace, entry.Workspace);
@@ -609,12 +580,11 @@ public static class EnrollmentPlan
                 : nodeAlreadyLists ? "node.json: already listed"
                 : "node.json: add (consent to run unattended)");
 
-            // **Consent is per project and one start is not.** A node starts the client with this
-            // workspace as its working directory, and that client reads the launch configuration
-            // sitting in it and brings up *every* server there — which, after this feature, is one
-            // per project the repository answers in. So consenting here also lets a peer in each of
-            // the others have this repository answer with nobody watching, in projects whose
-            // catalogues say nothing about starting it.
+            // Consent is the machine's, and one start brings up every project. A node starts the client
+            // with this workspace as its working directory, and that client reads the launch
+            // configuration sitting in it and brings up *every* server there — one per project the
+            // repository answers in. So consenting here also lets a peer in each of the others have
+            // this repository answer with nobody watching.
             //
             // Nothing here can change what a client loads. What it can do is put the fact in front
             // of the person granting the consent, who is the only one able to weigh it, at the
@@ -635,14 +605,10 @@ public static class EnrollmentPlan
         }
         else if (stale)
         {
-            // **The same collision, and it used to be silent because this run is not writing the
-            // catalogue.** The name lives in the launch configuration rather than in the catalogue, so
-            // a repository nobody ever catalogues still claims it the moment somebody opens the
-            // repository in an editor — and the catalogue goes on starting a different directory under
-            // it. That is two repositories holding one identity, which is the thing the manifest's own
-            // duplicate-name rule refuses in the strongest words this codebase uses; it was enforced
-            // across the rows of one manifest and not across two calls, which is how a machine with
-            // several projects assembles it.
+            // The same collision, when this run is not writing the catalogue. The name lives in the
+            // launch configuration, so a repository nobody ever catalogues still claims it the moment
+            // somebody opens it in an editor, while the catalogue goes on starting a different
+            // directory under it: two repositories holding one name.
             notes.Add(
                 $"node.json: still starts '{entry.Agent}' in {Quoting.Flat(nodeWorkspace)}, which is "
                 + "not this repository. Two repositories claiming one name means either may collect "
@@ -688,21 +654,4 @@ public static class EnrollmentPlan
         && AgentIdentity.TryRead(written, out var identity)
             ? identity
             : default;
-
-    /// <summary>Reads one environment variable out of a launch entry, when it is a string.</summary>
-    /// <param name="env">The <c>env</c> object, or null when the entry has none.</param>
-    /// <param name="name">The variable to read.</param>
-    /// <returns>Its value, or null when it is absent, empty, or not a string.</returns>
-    /// <remarks>
-    /// A non-string value is treated as absent rather than refused. This reads somebody's file to
-    /// find out whether it already belongs somewhere, and a number where a name should be answers
-    /// that question with "not usefully" — the merge itself is guarded separately, by the shape
-    /// checks above.
-    /// </remarks>
-    private static string? Text(JsonObject? env, string name) =>
-        env?[name] is JsonValue value
-        && value.TryGetValue<string>(out var text)
-        && !string.IsNullOrWhiteSpace(text)
-            ? text
-            : null;
 }

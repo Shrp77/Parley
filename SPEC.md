@@ -341,10 +341,29 @@ routes on it: nothing is ever asked to start either (§12.3). A machine that hap
 project's name shares only the spelling.
 
 The role names what the agent is for and is chosen by whoever configures the repository. The
-machine is detected by the node, never configured, because a machine that can be told what it
-is called is a machine that can be told the wrong thing — and two boxes both answering to
+machine is detected by the node, and a person may override it with the `PARLEY_MACHINE`
+environment variable. Detection is the default because a machine that can be told what it is
+called is a machine that can be told the wrong thing — and two boxes both answering to
 `server-b` is a failure that shows up as messages going to the wrong place, long after the
 mistake.
+
+**The name is `role@machine`, and what the agent is is its identity.** A repository's identifier,
+`parleyAgentId` in its `.mcp.json`, is the agent. The name is only what a project shows for it, so
+one repository may carry a different name in each project it is enrolled in (§4.1), and the
+per-machine catalogue of startable agents (§12) is keyed by the identifier, never by a name.
+
+The adapter reports the identifier when it attaches, **as a label and never as authority.** It is not
+a credential, the name still comes from the launch environment, and the broker uses it for one
+thing: an attach that presents an identifier the project already holds, on the same machine and from
+the same repository (workspaces compared as below), under a name the project does not hold, **renames
+that agent.** Its row and everything that refers to it take the new name, so nothing it said or was
+asked is lost. A new name that already belongs to another agent is refused and nothing is renamed.
+The same identifier from a different workspace is refused as the collision it is, and the same
+identifier on a different machine is a different agent, because the machine is part of the name. An
+attach that presents none registers by name alone.
+
+The broker sends the identifier with a start, so a rename never leaves a node unable to find the
+checkout it must launch.
 
 **The role is not a scope, it is a capability.** The same repository checked out on five
 machines gives five agents with the same role and different capabilities, and the difference
@@ -559,9 +578,9 @@ Work worth resuming after a conversation closed is new work, and starts a new co
 A Request carries **one ask**: what the sender wants, in its own words, bounded by rule 8.4's cap.
 It opens one exchange, and its conversation is decided by §5.0 rather than carried in the payload.
 
-**The ask is the whole of it.** A Request has no intent, no list of items, no gates and no finish
-line: the reason for the ask is the ask, and a receiver that cannot tell how far the work goes has a
-question rather than a missing field.
+**The ask is the whole of it.** A Request is one ask, answered whole. The reason for the ask is
+the ask, and a receiver that cannot tell how far the work goes has a question rather than a
+missing field.
 
 **A receiver that needs the scope, the reason, or anything else** sends a Clarify (§5.2) and the
 turn goes back; it may also send other agents Requests of its own in the same conversation. That is
@@ -603,10 +622,10 @@ needs, where that is the truth (§5.3). Nothing closes the exchange on the recei
 **Depth increments only when the receiver sends.** The requester's reply supplies what was
 asked for; it does not open a round.
 
-**Where the requester is the person, the reply may come as a new Request** (§5.6). A person's line
-to an agent is always a Request, so a person asked back does not answer inside the exchange; the
-agent reads what the person said and, if it supplied what was asked for, hands the turn on the
-original exchange back to itself, exactly as the person's reply would have.
+**Where the requester is the person, the reply comes one of two ways** (§5.6). When the person chose
+to answer that question, the reply is a Clarify on the exchange and hands the turn back to the agent,
+as any requester's reply does. When the person wrote something new, it is a Request, and the agent
+decides what that settled.
 
 ### 5.3 Result
 
@@ -739,12 +758,18 @@ all done" is an answer that looks like success.
 
 ### 5.6 A person's line, and what the agent settles
 
-**Everything a person writes to an agent is a Request.** A surface never decides which of the
-agent's open questions a person's words answer, because it cannot know: the agent may have asked
-something days ago while the person moved on, and what the person types may be an answer, a
-question back, or about something else entirely. A surface that guessed could file a person's question
-as the answer to an unrelated, older one, closing it and leaving the agent owing nothing, so it would say
+**Everything a person writes to an agent is a Request, except a reply the person gives to a
+question.** A question is an agent's Clarify to the person that is still waiting on them. A surface
+offers a reply on each such question, and the person choosing it is what says which question the
+words answer. A surface never infers it from the words or from what is open: the agent may have asked
+something days ago while the person moved on, and what the person types may be an answer, a question
+back, or about something else entirely. A surface that guessed could file a person's question as the
+answer to an unrelated, older one, closing it and leaving the agent owing nothing, so it would say
 nothing. A Request is owed a reply, so the agent always answers what the person said.
+
+**A reply to a question is a Clarify from the person on that question's exchange.** The turn goes back
+to the agent, no exchange opens, and the depth does not move (§5.2). Anything typed without choosing a
+question is a Request.
 
 **The agent decides what that settled.** Only the agent knows what its own questions were for. When
 it sends a Clarify or a Result on a Request the person opened with it, it may name, in `settles`,
@@ -759,6 +784,17 @@ exchanges the person's words settled:
   owes the next move. The broker hands the turn back to the agent, as the person's reply there would
   have, and changes nothing else: no message, and the depth does not move. The agent then answers
   it with an ordinary Result.
+
+**A reply does not close the question; the agent does.** After a reply on its exchange the agent decides
+whether it was enough. If it was, it sends the Result. If it was not, it sends another Clarify. The broker
+closes nothing on the agent's behalf (principle 2.5), and no surface does either.
+
+**A request handed back carries what the person said since.** An agent's context moves on, and a Request
+handed back to it is only the person's first words. When the broker delivers a person's Request on which
+the agent has asked back, it delivers beside it what the person has said to that agent in the conversation
+since the agent last spoke on it: the latest five Requests, each in its own envelope (§13).
+Without them the agent would be asked to finish work whose answer it was
+given in another exchange and no longer sees.
 
 **Asking for more is not an answer.** A person who asks the agent to explain a question has not
 settled it. The agent answers what it was asked and leaves its question open, still waiting on the
@@ -825,7 +861,7 @@ waiting proposal whose hint names the same roadmap, and its proposer is told.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are
-open, whether every open request was collected, how many closed exchanges ended complete, blocked or with no Result, the blocker named, who closed it —
+open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked, the blocker named, who closed it —
 and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
 derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
 *blocked* (with the blocker the agent gave), *done*, *closed by the person*, or *could not be read*.
@@ -1195,7 +1231,7 @@ because `agents.machine` references it.
 
 ```sql
 CREATE TABLE nodes (
-  -- Detected, never configured, per §4.1.1. The primary key rather than a surrogate, because
+  -- Detected by the node, per §4.1.1. The primary key rather than a surrogate, because
   -- the machine's identity is the thing agents are named after.
   machine        TEXT    PRIMARY KEY
                  CHECK (length(machine) BETWEEN 1 AND 64
@@ -1226,6 +1262,15 @@ CREATE TABLE agents (
   -- find every agent sharing a role, which a substring match on the whole name cannot do
   -- safely: 'infra' is a prefix of 'infrastructure'.
   name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
+  -- The repository's own identifier (`parleyAgentId`, §13), which is what an agent really is: the name is only what
+  -- is shown for it. NULL for the two participants the broker provides, and for a row a repository without
+  -- one registered. An attach that presents an identity already held under another name renames that row, and every
+  -- table referencing it is moved with it (§4.1.1). Lower-case hyphenated hex, so two spellings of one
+  -- identifier cannot be two agents. The identifier belongs to a repository and a committed `.mcp.json` carries it to
+  -- every machine, so it is unique per machine (ux_agent_identity), never alone.
+  identity        TEXT
+                  CHECK (identity IS NULL
+                         OR (length(identity) = 36 AND identity NOT GLOB '*[^0-9a-f-]*')),
   -- Generated rather than supplied, so the halves cannot disagree with the name they came from.
   -- They exist as columns at all because a role question (§5.5) has to find every agent sharing
   -- a role, and a substring match on the whole name cannot do that safely -- 'infra' is a
@@ -1237,8 +1282,8 @@ CREATE TABLE agents (
   -- address.
   role            TEXT    NOT NULL
                   GENERATED ALWAYS AS (substr(name, 1, instr(name, '@') - 1)) STORED,
-  -- The node that reported this agent. Detected there and never configured, so two machines
-  -- cannot both claim to be server-b -- see §4.1.1.
+  -- The node that reported this agent. Detected there, so two machines
+  -- cannot both claim to be server-b by accident -- see §4.1.1.
   --
   -- NULL for the two participants the broker provides, the person seat and the facilitator
   -- (§12.3). Neither is hosted on a machine: the part after '@' in their names says what this
@@ -1400,18 +1445,6 @@ CREATE TABLE agent_ownership_accepted (
   -- tr_accepted_line_names_its_discussion, below, rather than a CHECK here.
   CHECK (source <> 'composed' OR proposed_length IS NULL),
   CHECK (source <> 'automatic' OR proposed_length IS NOT NULL)
-) STRICT;
-
-CREATE TABLE agent_credentials (
-  agent     TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
-  name      TEXT NOT NULL,                -- the adapter's name for it: api_key, org_token
-  reference TEXT NOT NULL,
-
-  PRIMARY KEY (agent, name),
-  CHECK (length(name) BETWEEN 1 AND 64 AND name NOT GLOB '*[^a-z0-9_]*'),
-  CHECK (reference LIKE 'env:_%'
-         OR reference LIKE 'keychain:_%'
-         OR reference LIKE 'file:_%')
 ) STRICT;
 
 -- What giving an agent a turn has cost. Unbounded on purpose (§17 question 1): the
@@ -1657,8 +1690,11 @@ CREATE UNIQUE INDEX ux_open_request
 -- question already settled. It changes nothing, but the stored row would read as a participant
 -- declining a closure that had already happened, and a stored contradiction is worse in the log
 -- a person reads than a refused write.
+-- Refuses a vote cast or changed after the close. Moving a participant's row to its renamed agent (§4.1.1) changes
+-- neither, so it is not a vote.
 CREATE TRIGGER tr_no_vote_after_closure BEFORE UPDATE ON conversation_participants
 WHEN NEW.vote IS NOT NULL
+  AND (NEW.vote IS NOT OLD.vote OR NEW.voted_utc IS NOT OLD.voted_utc)
 BEGIN
   SELECT RAISE(ABORT, 'conversation is closed')
    WHERE EXISTS (SELECT 1 FROM conversations
@@ -1995,12 +2031,16 @@ END;
 
 -- Who placed a file decides who may replace or remove it (§9.5), so neither that nor when may be
 -- rewritten, and a file does not move between conversations. A replacement, an edit and a rename
--- all update the row in place and keep all three.
+-- all update the row in place and keep all three. The one change to the placer is the placer's own
+-- rename (§4.1.1): the old name is no longer registered and the new one is.
 CREATE TRIGGER tr_shared_file_stays_put
 BEFORE UPDATE OF conversation_id, placed_by, placed_utc ON shared_files
 WHEN NEW.conversation_id IS NOT OLD.conversation_id
-  OR NEW.placed_by IS NOT OLD.placed_by
   OR NEW.placed_utc IS NOT OLD.placed_utc
+  OR (NEW.placed_by IS NOT OLD.placed_by
+      AND NOT (NEW.placed_by IS NOT NULL AND OLD.placed_by IS NOT NULL
+               AND EXISTS (SELECT 1 FROM agents WHERE name = NEW.placed_by)
+               AND NOT EXISTS (SELECT 1 FROM agents WHERE name = OLD.placed_by)))
 BEGIN
   SELECT RAISE(ABORT, 'a file keeps its conversation, its placer and when it was placed');
 END;
@@ -2148,6 +2188,10 @@ END;
 
 -- One person per store. However the row came to be written, a second is refused.
 CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
+
+-- One row per repository per machine. Two names for one identity on one machine would be two agents answering to one
+-- checkout, which is what a rename exists to prevent (§4.1.1).
+CREATE UNIQUE INDEX ux_agent_identity ON agents(identity, machine) WHERE identity IS NOT NULL;
 
 -- The role and the seat's adapter are tied in both directions (§12.3), as the facilitator's are. A row with the role and
 -- another adapter is an agent claiming to be the person; a row with the adapter and another role is an agent the broker
@@ -2532,18 +2576,11 @@ that needed it; an enumeration written as prose has already decayed.
 - **Results outlive their text.** `result_items` and `result_sources` are filled by
   `tr_result_recorded` on every Result, whatever wrote it, so §15 can count outcomes, blockers and
   sources after §9.4 has pruned the payloads that carried them.
-- **Credentials are pointers.** §12 claims a manifest is safe to commit; restricting
-  `agent_credentials.reference` to known schemes makes a pasted secret impossible rather than
-  discouraged. It prevents the careless case, not a determined one.
-
-  A row per credential rather than a JSON object on `agents`, because the constraint has to
-  reach every value. SQLite prohibits subqueries in `CHECK` constraints, and reaching inside a
-  JSON document needs `json_each`, which is one — so a JSON column could assert only that it
-  was JSON, never that its contents were references.
 - **A file is in exactly one conversation, once.** The primary key on `(conversation_id, name_key)`
   gives concurrent placements of one new name exactly one winner, and folds case the way the disks
   holding the files do (§9.5). `tr_shared_file_stays_put` refuses moving a file or rewriting who placed
-  it and when, because the placer is what decides who may replace or remove it.
+  it and when, because the placer is what decides who may replace or remove it. Only the placer's own
+  rename changes it.
 - **A name is a safe file name, and fits its folder.** The `CHECK` on `shared_files.name` and the two
   `tr_shared_file_path_fits` triggers hold §9.5's rules, so a name that could escape its folder, run a
   program when opened, or be refused by a disk is refused where it would be written. Every name is
@@ -2908,7 +2945,7 @@ other could.
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
-| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete, blocked or with no Result and the blocker a blocked one named, who closed the conversation, whether it was destroyed, the text first sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked and the blocker it named, who closed the conversation, whether it was destroyed, the text first sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
 | `proposals(state?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Waiting ones are work waiting on the person (§6). |
 | `confirm_proposal(id, content, target)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, supersedes any other waiting proposal whose title hint names the same roadmap, and tells each proposer. |
 | `decline_proposal(id)` | Decline a waiting proposal. Nothing is persisted; the proposer is told it was declined. |
@@ -3052,19 +3089,17 @@ the sender's. The bound is one wasted turn per new message, the evidence is the 
 §10.2 already keeps, and an agent that keeps leaving work untouched is flagged to the person running
 the deployment (§6) rather than retried for ever.
 
-Four things end a resident agent, and nothing else may:
+Three things end a resident agent, and nothing else may:
 
 1. **The node stops**, and tells every agent it started to quit.
-2. **The node is told to stop one agent**, because its operator retired it (§14) or removed
-   it from that machine's configuration.
-3. **The agent's own process ends**, which the node observes directly and does not fight.
-4. **The node is told to refresh one agent**, once, because that agent's first ownership line was
+2. **The agent's own process ends**, which the node observes directly and does not fight.
+3. **The node is told to refresh one agent**, once, because that agent's first ownership line was
    just accepted automatically (§10.2) and peers read a line only from the launch environment. The
    node waits until no turn is in progress, then stops the agent and starts it again with its launch
    configuration read afresh. It refreshes only an agent it started itself; an agent attached from
    somebody's editor window is never refreshed, and its line waits for its next start.
 
-The fourth is argued rather than slipped in, because the paragraph below is the reason this list is
+The third is argued rather than slipped in, because the paragraph below is the reason this list is
 short. The process holds what the agent has learned. The question is asked just after the agent first
 attaches, when it has learned almost nothing, so a restart then costs little. Leaving peers without
 the line would cost the whole point of asking. So it happens once, for the first line only, and never
@@ -3257,8 +3292,8 @@ Parley holds no secret for.
 
 Credentials are a **Headless-tier concern** (§11.2) — the broker calling a model API
 itself, or invoking a script that needs a token. There the broker genuinely needs a secret,
-and the rule is that it stores a *reference*, resolves it at invocation, and neither
-persists nor logs what it resolved.
+and the rule is that it is given a *reference*, never a value, resolves it at invocation, and neither
+persists nor logs what it resolved. The database holds no credential reference of any kind.
 
 ```yaml
 agents:
@@ -3331,12 +3366,11 @@ is required, and whether it is a secret. Registration collects exactly that. The
 learns nothing about any vendor, and a new adapter needs no schema change.
 
 `config` is free-form because it carries no invariant. Credentials are the opposite case,
-which is why they are not in it: a single constrained place for secrets is a stronger
-guarantee than any check applied after the fact.
+which is why they are not in it: they are references in the launch environment, and no
+value is held anywhere.
 
 Credential parameter names are lowercase, digits and underscore, up to 64 characters —
-`api_key`, `org_token`. Worth stating, because an adapter declaring `apiKey` is refused at
-registration by a constraint rather than at review by a person.
+`api_key`, `org_token`.
 
 ### 12.2 Which schemes are implemented, and why not the third
 
@@ -3366,7 +3400,7 @@ becomes unavailable produces a resolution failure rather than a quiet fallback t
 copy elsewhere, which would leave two secrets with no rule for which is authoritative and
 a rotated key ignored because the other answered first.
 
-Removing a credential from the registry removes the *pointer*. Whatever store holds the
+Removing a credential reference removes the *pointer*. Whatever store holds the
 value is untouched: the broker did not put it there, and deleting from someone's keychain
 on the strength of a registry edit is not its decision.
 
@@ -3800,7 +3834,7 @@ history actually gets corrupted.
 What gets deleted is found from the schema rather than enumerated here, so it cannot fall behind: any
 column declared `REFERENCES agents(name)` without `ON DELETE CASCADE` names the agent and its rows go,
 alongside everything belonging to a conversation the agent took part in. The cascading references — an
-agent's own credentials and its size refusals — are the schema already saying those rows belong to the
+agent's size refusals, for one — are the schema already saying those rows belong to the
 agent, and they go without being named. Foreign keys are deferred to commit rather than the deletions
 ordered by hand, so anything missed fails the whole purge instead of half-completing it.
 
@@ -3972,6 +4006,10 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   document. It is worth naming precisely because the collision check of §4.1.1 looks like
   authentication and is not: refusing a second agent that claims a name in use is bookkeeping,
   and it stops a mistake rather than an attacker.
+
+  The identity an adapter reports beside its name (§4.1.1) is no more than that. It is a label, so it
+  adds no authentication: it can move an agent's row to a new name only from the same repository on
+  the same machine, and it admits nobody the name check would not.
 
   **Nothing in the reference implementation binds anything but loopback**, and that is a
   deployment decision rather than a protocol rule. A project is handed a loopback port when it is

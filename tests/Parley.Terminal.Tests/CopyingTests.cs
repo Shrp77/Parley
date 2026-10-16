@@ -41,8 +41,7 @@ public sealed class CopyingTests
                     AgentName.Create("orders@test"),
                     AgentName.Create("billing@test"),
                     "claude",
-                    "{\"intent\":\"decide\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":"
-                    + "\"who owns the cap?\"}],\"done_when\":\"the owner of the cap is named\"}",
+                    "{\"ask\":\"who owns the cap?\"}",
                     "release-notes",
                     DateTimeOffset.UnixEpoch,
                     null),

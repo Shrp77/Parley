@@ -10,8 +10,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The gate over the installer change found this step telling people to deploy with `serve --db` and
-/// `autostart install --db`, which serve one store outside the manifest and are for testing only. The replacement
+/// This step must not tell people to deploy with `serve --db` and
+/// `autostart install --db`, which serve one store outside the manifest and are for testing only. It
 /// branches on two facts — whether a project is named, and whether the catalogue this run wrote is the one that
 /// project's entry names — and a sentence chosen by a branch is only as right as the branch, so each is driven here
 /// rather than read.
@@ -85,7 +85,6 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
             output,
             error,
             project,
-            project is null ? [] : [project],
             ManifestPath,
             TestContext.Current.CancellationToken);
 
@@ -104,7 +103,7 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     [Fact]
     public async Task An_enrolment_says_what_it_is_waiting_on_while_it_waits()
     {
-        // **The owner's report of 2026-09-27: enrolled four, and nothing happened for a long time.** Each agent
+        // **Enrolling four must not leave nothing happening for a long time.** Each agent
         // is started and waited for in turn, and a screen that says nothing for a minute reads as hung. This
         // broker has no node, so the start is never taken and the whole catch-up is spent -- which is the case
         // where a person most needs to see what is being waited on. Must fail against an enrolment that says
@@ -124,12 +123,11 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
             new StringWriter(),
             new StringWriter(),
             _alpha.Settings,
-            [_alpha.Settings],
             ManifestPath,
             TestContext.Current.CancellationToken,
             new EnrolmentOutcome((role, activity) => { lock (heard) { heard.Add((role, activity)); } }));
 
-        // Per agent, so a surface can put it on the agent's own row -- the owner's call of 2026-09-28.
+        // Per agent, so a surface can put it on the agent's own row.
         Assert.Equal(0, code);
         Assert.Contains(("orders", EnrolmentOutcome.Starting), heard);
         Assert.Contains(("orders", Registering.WaitingForNode), heard);
@@ -149,9 +147,7 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     [Fact]
     public async Task Consent_written_to_any_catalogue_points_the_project_at_none_of_them()
     {
-        // **The instruction this asserted is gone, and what replaced it is the absence.** A project
-        // recorded a catalogue of its own, so consent written somewhere the project did not name left
-        // a step: point it there. 018 made that field mean nothing and 019 removed it, so there is one
+        // **There is no instruction to point a project at a catalogue.** There is one
         // catalogue per machine and nothing a project could be pointed at.
         //
         // Asserted as a refusal to mention it rather than deleted, because a step that quietly grew
@@ -166,14 +162,9 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     [Fact]
     public async Task Enrolling_records_the_consent_so_the_node_is_named()
     {
-        // **This asserted "no consent recorded names no node", and the state it named cannot
-        // happen any more.** Consent used to be a field ticked per repository in a worksheet, so
-        // an enrolment could record none and the next steps would name only a broker. 019 deleted
-        // the worksheet and FR-043 reversed the rule: enrolling is the consent.
-        //
-        // So the row's own `unattended` is passed as false here deliberately — it is the value the
-        // old design would have honoured — and the steps still name the node, because what grants
-        // the consent now is the choosing rather than the field.
+        // **Enrolling is the consent.** The row's own `unattended` is passed as false here
+        // deliberately, and the steps still name the node, because what grants the consent is the
+        // choosing rather than the field.
         var said = await ApplyAsync(Catalogue, unattended: false, _alpha.Settings);
 
         Assert.Contains("A broker and this machine's node for alpha.", said, StringComparison.Ordinal);
@@ -187,15 +178,10 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
 
         Assert.Contains("Name the project these repositories answer in", said, StringComparison.Ordinal);
 
-        // **The name is the whole of the command**, and this asserted three flags none of which
-        // still exist. The catalogue does not appear because there is one per machine, so naming a
-        // project cannot point it at one; `--db` and `--listen` do not appear because 019 removed
-        // them, and until now this test required both — so the step told an operator to run a
-        // command the tool would refuse, and the check over it insisted on that wording.
-        // **And now the step names no project command at all.** Creating a project became the
-        // terminal's on 2026-09-25, so a step telling an operator to run one would be telling them
-        // to run something the tool refuses — the exact fault this comment was written about,
-        // arrived at a second time by a different route.
+        // **The step names no project command at all.** The catalogue does not appear because there
+        // is one per machine, and `--db` and `--listen` do not exist. Creating a project is the
+        // terminal's, so a step telling an operator to run one would be telling them to run
+        // something the tool refuses.
         Assert.Matches(@"(?m)^\s+parley\s*$", said);
         Assert.DoesNotContain("--node-config", said, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", said, StringComparison.Ordinal);

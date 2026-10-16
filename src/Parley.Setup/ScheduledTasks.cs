@@ -106,9 +106,8 @@ public static class ScheduledTasks
     /// <param name="name">The task.</param>
     /// <returns>The arguments of its first action, or null when there is no such task.</returns>
     /// <remarks>
-    /// The installer used to read these through <c>Get-ScheduledTask</c> to carry a catalogue
-    /// across a reinstall, which worked on the one platform that has that cmdlet. Read here, the
-    /// same question has one answer on every platform — see <see cref="InstalledEntry"/>.
+    /// Read here so the same question has one answer on every platform — see
+    /// <see cref="InstalledEntry"/>.
     /// </remarks>
     public static string? Arguments(string name)
     {

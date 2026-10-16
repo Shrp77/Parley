@@ -13,23 +13,17 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>Keystroke navigation is off, and that is the whole reason this exists.</b> A
 /// <see cref="ListView"/> searches its own items as you type, and it does that by consuming every
-/// printable key before the window above it sees one. This surface binds printable keys — <c>c</c>
-/// creates a project, <c>r</c> removes one, <c>?</c> lists what a region can do — so with the
-/// navigator on, every letter the status line advertises was swallowed by whichever list had
-/// focus. Nothing on screen said so: the letters were listed, pressing them did nothing at all,
-/// and the empty projects region said <i>Press c to create one</i> under a <c>c</c> that could
-/// not work.
+/// printable key before the window above it sees one. This surface's actions are keys the status
+/// line advertises, so with the navigator on, whichever list had focus would swallow them and
+/// nothing on screen would say so.
 /// </para>
 /// <para>
-/// The suite did not catch it because every test of a key checked the negative — that <c>?</c>
-/// does <i>not</i> open a menu over a dialog, that no action steals a letter the surface has
-/// already spoken for. <see cref="global::Terminal.Gui.Input.Key.Tab"/> was the one key checked
-/// positively, and Tab is the one printable-key-adjacent thing a list does not eat. A key tested
+/// A key is tested by pressing it, not only by checking that no other action steals it: a key tested
 /// only in the negative is a key nobody has pressed.
 /// </para>
 /// <para>
 /// Type-to-find is a real loss and it is the right one to take. It is undiscoverable — nothing
-/// announces it — while the letters are written across the status line as a promise, and a
+/// announces it — while the action keys are written across the status line as a promise, and a
 /// surface where the advertised keys work beats one where an unadvertised convenience does.
 /// </para>
 /// </remarks>
@@ -111,20 +105,15 @@ internal static class Lists
 /// draw thread, which in a terminal is the end of the process.
 /// </para>
 /// <para>
-/// <b>Measured, not reasoned.</b> A sized region, a pool thread alternating a forty-row registry
-/// with a one-row one, four thousand draws: four hundred and thirty-four
-/// <see cref="ArgumentOutOfRangeException"/>s out of <c>ListWrapper.Render</c>. The first version
-/// of that probe reported none, because the region had never been given a size and the row handler
-/// had not run once — a passing probe that was testing nothing.
+/// <b>The race is real.</b> A pool thread alternating a large registry with a one-row one, against
+/// repeated draws, throws <see cref="ArgumentOutOfRangeException"/> out of <c>ListWrapper.Render</c>.
 /// </para>
 /// <para>
 /// <b>Why a lock rather than marshalling onto the loop.</b>
-/// <see cref="global::Terminal.Gui.App.IApplication.Invoke(System.Action)"/> is the toolkit's answer and
-/// was tried first: it runs inline on the main thread and queues otherwise. It failed thirty-odd
-/// tests, because the harness deliberately never pumps the main loop — a queued update never ran,
-/// and <c>Shell.Settled</c> stopped meaning "the screen is true". Making that work needs a
-/// draining harness and a new promise from <c>Settled</c>; a lock needs neither, and it puts the
-/// guarantee where the hazard is rather than in every caller.
+/// <see cref="global::Terminal.Gui.App.IApplication.Invoke(System.Action)"/> runs inline on the main
+/// thread and queues otherwise, and the harness deliberately never pumps the main loop — a queued
+/// update would never run, and <c>Shell.Settled</c> would stop meaning "the screen is true". A lock
+/// needs neither, and it puts the guarantee where the hazard is rather than in every caller.
 /// </para>
 /// <para>
 /// The critical section is an assignment, never a computation. A region builds its rows outside
@@ -154,14 +143,11 @@ internal sealed class GuardedList : ListView
     /// was going to and then carries on the same way until the cursor is on something real.
     /// </para>
     /// <para>
-    /// <b>The direction comes from the move itself, and every earlier attempt at it was wrong.</b>
-    /// The first settled downwards always, so Up could not leave a group at all: it stepped onto
-    /// the heading, was pushed straight back, and the surface looked frozen — reported by the
-    /// owner, who could not reach the seats. The second tried to take the direction from a key in
-    /// <see cref="View.OnKeyDown"/>, which cannot work either: that is a <i>pre-process</i> hook,
-    /// raised before the commands bound to the key are invoked, so it ran before the cursor had
-    /// moved and compared a position with itself. Neither <c>NewKeyDownEvent</c> nor
-    /// <c>ListView.MoveUp</c> is virtual, so there is no seam around the move.
+    /// <b>The direction comes from the move itself.</b> Settling always downwards would push Up
+    /// straight back off a heading, and the surface would look frozen. A key hook cannot supply the
+    /// direction: <see cref="View.OnKeyDown"/> is a <i>pre-process</i> hook, raised before the cursor
+    /// has moved. Neither <c>NewKeyDownEvent</c> nor <c>ListView.MoveUp</c> is virtual, so there is no
+    /// seam around the move.
     /// </para>
     /// <para>
     /// <see cref="ValueChangedEventArgs{T}"/> carries both ends of it, which makes the question

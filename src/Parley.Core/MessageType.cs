@@ -6,9 +6,9 @@ namespace Parley.Core;
 /// <remarks>
 /// <para>
 /// Three, and every one is answered (principle 2.7). A Request always ends in a Result, a Clarify
-/// always gets a reply in the same exchange, and a Result closes its exchange. The two types that
-/// existed only to carry no reply are gone: an announcement is a Request like any other (§5.4), and
-/// nothing times out, so there is no notice that a Result will never come (§14).
+/// always gets a reply in the same exchange, and a Result closes its exchange. No type carries no
+/// reply: an announcement is a Request like any other (§5.4), and nothing times out, so there is no
+/// notice that a Result will never come (§14).
 /// </para>
 /// <para>
 /// There is no type the broker alone may send. When the person closes a conversation the broker
@@ -20,7 +20,7 @@ public enum MessageType
 {
     /// <summary>
     /// Opens an exchange, asking the receiver for work in its repository or information it holds.
-    /// Carries items, the requester's intent, and what counts as done.
+    /// Carries the ask, and nothing else (§5.1).
     /// </summary>
     Request = 0,
 

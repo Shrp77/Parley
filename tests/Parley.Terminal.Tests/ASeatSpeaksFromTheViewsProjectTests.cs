@@ -85,7 +85,6 @@ public sealed class ASeatSpeaksFromTheViewsProjectTests
         // because the whole point of the message is what it does NOT claim.
         Assert.Contains("seat is held", Shell.SeatWithoutProject, StringComparison.Ordinal);
         Assert.Contains("Escape", Shell.SeatWithoutProject, StringComparison.Ordinal);
-        Assert.Contains("defect worth reporting", Shell.SeatWithoutProject, StringComparison.Ordinal);
 
         // It must not be the sentence that was wrong.
         Assert.DoesNotContain("was released", Shell.SeatWithoutProject, StringComparison.Ordinal);

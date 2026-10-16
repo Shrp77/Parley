@@ -8,7 +8,7 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's interaction model, and their reason for it: "this way accidental typos in commands are less
+/// The interaction model, and the reason for it: "this way accidental typos in commands are less
 /// likely". Since an unrecognised identifier is sent as text, a command typed blind and wrong costs somebody an
 /// ask they must answer — so the remedy is to make typing one blind the unusual path.
 /// </para>
@@ -120,7 +120,7 @@ public sealed class CompletionTests
     [Fact]
     public void Moving_wraps_at_each_end()
     {
-        // 0.20.3 records what a list that cannot be left in one direction costs: every group was a room with no
+        // A list that cannot be left in one direction is a room with no
         // door out of the top.
         var list = Read("/");
 

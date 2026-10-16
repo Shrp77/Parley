@@ -13,9 +13,8 @@ namespace Parley.Core;
 /// <para>
 /// <b>It is also what keeps a person's characters from being attributed to a model.</b> The length
 /// recorded beside an accepted line is the length of the *agent's* message, and there is no such
-/// length for a line nobody proposed. 0.29.0's second review finding was exactly this mistake from
-/// the other side: a retry wrote into <c>size_refusals</c> a length no agent had composed, and
-/// <c>size_refusals</c> is the table §17 question 16 reads its evidence out of.
+/// length for a line nobody proposed. Recording one would write into <c>size_refusals</c> a length no
+/// agent had composed, and <c>size_refusals</c> is the table §17 question 16 reads its evidence out of.
 /// </para>
 /// </remarks>
 public enum OwnershipSource

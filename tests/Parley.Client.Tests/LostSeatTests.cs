@@ -76,11 +76,10 @@ public sealed class LostSeatTests
     [Fact]
     public async Task Rejoining_after_a_lost_seat_attaches_again_rather_than_handing_back_the_dead_one()
     {
-        // The door the first version of this guard did not cover. TakeAsync returns an existing
-        // hold under the same key without looking at it, so somebody rejoining after their
-        // attachment ended was told they were already seated -- and handed the dead hold, whose
-        // pump had stopped. The surface would then draw them as present forever, through the one
-        // path they took in order to fix it.
+        // TakeAsync must not return an existing hold under the same key without looking at it, or
+        // somebody rejoining after their attachment ended is told they are already seated -- and
+        // handed the dead hold, whose pump has stopped. The surface would then draw them as present
+        // forever, through the one path they took in order to fix it.
         var token = TestContext.Current.CancellationToken;
         var agents = new SeatDoubles.Stubborn(StatusCode.PermissionDenied);
         using var book = new SeatBook(_ => agents);

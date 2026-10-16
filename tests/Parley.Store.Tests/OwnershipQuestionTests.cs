@@ -8,9 +8,9 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <b>"Never asked twice" is an index rather than a check in the loop that asks.</b> The loop runs on a sweep, a
-/// broker can restart between reading and writing, and two brokers once raced on one store (0.25.6). A check the
+/// broker can restart between reading and writing, and two brokers can race on one store. A check the
 /// asking code made would be right until any of those happened; the partial unique index is right regardless.
-/// Each case here was watched to fail with its rule removed.
+/// Each case here must fail with its rule removed.
 /// </remarks>
 public sealed class OwnershipQuestionTests : IDisposable
 {
@@ -82,7 +82,7 @@ public sealed class OwnershipQuestionTests : IDisposable
     [Fact]
     public void Only_the_facilitators_own_request_is_a_question()
     {
-        // Research finding 11: an agent can open an `owns-` conversation itself. Recognising a question by the
+        // An agent can open an `owns-` conversation itself. Recognising a question by the
         // conversation's name would let it answer itself and have the answer accepted automatically.
         var own = _store.Asked("owns-orders-1", "billing@test", "orders@test");
 
@@ -131,7 +131,7 @@ public sealed class OwnershipQuestionTests : IDisposable
             VALUES ('orders@test', 'orders', 'automatic', NULL, 'owns-orders-1', '{FacilitatorStore.Stamp}');
             """));
 
-        // The control: with both, it is admitted. Before 022 `automatic` was refused outright.
+        // The control: with both, it is admitted.
         _store.Accepted("orders@test", "owns-orders-1", "automatic");
     }
 

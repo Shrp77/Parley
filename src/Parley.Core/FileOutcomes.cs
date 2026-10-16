@@ -74,9 +74,6 @@ public enum FileRejection
     /// <summary>The content is not what was expected, or changed while it was streamed.</summary>
     Changed,
 
-    /// <summary>A placement ended before all of it arrived.</summary>
-    Incomplete,
-
     /// <summary>The broker's disk has no room.</summary>
     NoSpace,
 

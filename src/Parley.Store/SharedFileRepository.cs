@@ -46,7 +46,7 @@ public sealed record PlaceResult(PlaceOutcome Outcome, SharedFile? File, Content
 /// </para>
 /// <para>
 /// <b>Who placed a file is read from the row inside the transaction that acts on it</b>, never from anything the
-/// caller says (FR-028). The schema refuses rewriting it, so a replacement, an edit and a rename all update in
+/// caller says. The schema refuses rewriting it, so a replacement, an edit and a rename all update in
 /// place.
 /// </para>
 /// </remarks>
@@ -267,7 +267,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The file, or why there is not exactly one.</returns>
     /// <remarks>
-    /// A name alone is looked for across the whole location, which is the owner's call: one match is used, and
+    /// A name alone is looked for across the whole location: one match is used, and
     /// several is a refusal that does nothing and names the conversations holding it — at most
     /// <see cref="FileLimits.ConversationsPerRefusal"/>, with a count of the rest.
     /// </remarks>

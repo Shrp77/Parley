@@ -15,8 +15,8 @@ namespace Parley.Terminal;
 /// brings the next sweep forward, and says what it removed and what the floor kept.
 /// </para>
 /// <para>
-/// Offered on the owner's parity decision. The console and <c>parley prune</c> do it, and a terminal that could
-/// not would be the one surface where somebody who can see a deployment's traffic cannot act on its retention.
+/// Every surface offers it: a terminal that could not would be the one surface where somebody who can see a
+/// deployment's traffic cannot act on its retention.
 /// </para>
 /// </remarks>
 internal static class Pruning

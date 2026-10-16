@@ -5,17 +5,16 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That the terminal reads its own command line the way the tool it replaced did.
+/// That the terminal reads its own command line, and refuses what it does not take.
 /// </summary>
 /// <remarks>
 /// <para>
-/// `parley top` used to parse these arguments centrally and hand the surface two resolved values.
-/// It forwards now, so this file is the only parser and there is nothing above it to correct a
-/// mistake — an argument misread here is misread for both spellings of the command.
+/// `parley terminal` forwards its arguments untouched, so this is the only parser and there is nothing above it
+/// to correct a mistake — an argument misread here is misread for both spellings of the command.
 /// </para>
 /// <para>
 /// <b>The first run of this found a real one.</b> An option given without a value returned null and
-/// left the flag in the list, so `parley-top --config` was refused with "parley-top does not take
+/// left the flag in the list, so `parley-terminal --config` was refused with "parley-terminal does not take
 /// --config". That is false: it does take it, and what was missing was the path. A refusal that
 /// misnames the problem sends somebody to check the spelling of an option they spelled correctly.
 /// </para>
@@ -71,16 +70,12 @@ public sealed class ArgumentsSurviveTests
     }
 
     [Fact]
-    public void A_project_is_warned_about_rather_than_refused()
+    public void A_project_option_is_refused_because_the_surface_is_not_scoped_to_one_project()
     {
-        // `parley top --project x` warned and carried on, and forwarding must not turn a warning
-        // into a failure. It carries on to the redirect refusal here, which is the next thing that
-        // stops it -- so the exit code is that one and not 64.
         var (code, _, error) = TerminalProcess.Run("--project", "north-helm");
 
-        Assert.NotEqual(64, code);
-        Assert.Contains("not scoped to one project", error, StringComparison.Ordinal);
-        Assert.Contains("north-helm", error, StringComparison.Ordinal);
+        Assert.Equal(64, code);
+        Assert.Contains("does not take --project", error, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -5,7 +5,7 @@ disable-model-invocation: true
 
 # Set several repositories up as Parley agents
 
-`/parley:setup` is for one repository and asks a person the things only a person knows. Running
+`/parley:setup` enrolls one repository, running the same `parley enroll` this command does, and ends with a restart. Running
 it once per repository works, and stops working somewhere around the fourth: it costs a session,
 a restart and a person's attention each time, and `/parley:write-peers` has to be run again in
 every repository already done, because each new agent makes every block already written stale.
@@ -15,7 +15,7 @@ block is rewritten *n* times. Registering everything first and reading the roste
 costs *n*, and the blocks that come out are the only ones that were ever true.
 
 This command does the part that batches. `parley enroll` writes launch configurations, node
-entries and the placeholder frame of `/parley:setup` step 6 - none of which need the tools bound,
+entries and the placeholder peers frame - none of which need the tools bound,
 which is why they can all happen before any restart. What it does not do is the two things that
 cannot be batched: the `owns` line, which each agent is asked for once it is running, and
 `/parley:write-peers`, which needs a live session per repository.
@@ -32,7 +32,7 @@ and not for a program that writes configuration into eleven repositories.
 dotnet tool list --global
 ```
 
-Look for `parley.mcp`. If it is missing, `/parley:setup` step 1 has the build-from-clone
+Look for `parley.mcp` and `parley.cli`. If either is missing, `/parley:setup` step 1 has the build-from-clone
 instructions; this command does not install anything. A broker also has to be running before any
 of these repositories can connect - `parley autostart install` serves every project this
 machine names - but that is needed at restart time, not now.
@@ -42,8 +42,6 @@ every command below takes `--project <name>` to say which one is being enrolled 
 here because the key written into each repository is `parley-<project>`, so a run against the
 wrong one leaves every repository answering in a deployment nobody meant. With one project
 configured, or none, nothing needs saying.
-
-Consent to run unattended lives in **one catalogue per machine**, keyed by identity, at the root.
 
 ## 2. Enrol them
 
@@ -56,12 +54,14 @@ enroll** - arrow keys to move, space to tick, `a` all, `n` none, enter to confir
 out. Then it configures the ticked ones, catalogues them, and starts each so that it registers
 itself.
 
+**Each agent is named from its repository's existing `PARLEY_AGENT`, or else from its folder name.** There is no option to set a name. If a folder-derived name is wrong, see `/parley:setup` step 3 for what to do.
+
 **Nothing is ticked to begin with.** A scan finds every checkout under a directory and most are
 usually not meant to be agents. Repositories that already have an `.mcp.json` are marked so,
 because leaving a working agent unticked is how one quietly stops being offered.
 
-**The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. `parley` has the
-same picker inside a project, as **Agent > Enroll agents from folders** (`Alt+f`), with a folder browser
+**The picker needs a terminal.** In a script or CI, pass `--all` or `--none`. The terminal (`parley-terminal`)
+has the same picker inside a project, as **Agent > Enroll agents from folders** (`Alt+f`), with a folder browser
 in front of it - on a machine where the user is at a keyboard, that is the easier way in.
 
 **`--describe` says what would change and changes nothing.** Read it with the user before the real

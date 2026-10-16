@@ -3,10 +3,9 @@ namespace Parley.Setup;
 /// <summary>What an enrolment did, as facts rather than as the text it printed.</summary>
 /// <remarks>
 /// <para>
-/// <b>Here so a surface can say it in one line.</b> The terminal ran the command in process and reprinted
-/// everything it wrote for a shell -- the catalogue path, the consent paragraph, a line for every file in
-/// every repository -- into a message line one row tall. The owner's call of 2026-09-27: that is noise
-/// nobody reads. A shell still gets the whole account; a screen gets these and says what matters.
+/// <b>Here so a surface can say it in one line.</b> A shell gets the whole account; a screen gets these
+/// facts and says what matters, rather than reprinting the catalogue path, the consent paragraph and a
+/// line for every file into a message line one row tall.
 /// </para>
 /// <para>
 /// <b>Filled in by the command, never parsed out of its text.</b> Reading the printed report back would
@@ -16,10 +15,9 @@ namespace Parley.Setup;
 /// <param name="progress">
 /// Told, per agent, what is happening to it while it happens, or null: the role, then a few words such as
 /// <c>starting</c> or <c>registering (7s of 30s)</c>. Starting and registering each agent can take the better
-/// part of a minute, one after another, and a screen that says nothing for that long is one somebody assumes
-/// has hung -- the owner's report of 2026-09-27, after enrolling four. <b>Per agent rather than as a
-/// sentence</b> so a surface can show it on the agent's own row, which is where the owner asked for it on
-/// 2026-09-28, rather than in a status line under everything else.
+/// part of a minute, one after another, and a screen that says nothing for that long reads as hung.
+/// <b>Per agent rather than as a sentence</b> so a surface can show it on the agent's own row rather than
+/// in a status line under everything else.
 /// </param>
 public sealed class EnrolmentOutcome(Action<string, string>? progress = null)
 {

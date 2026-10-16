@@ -50,9 +50,6 @@ internal static class DeploymentVariables
             .Where(f => f.IsLiteral && f.FieldType == typeof(string))
             .Select(f => (string)f.GetRawConstantValue()!)
             .Where(v => v.StartsWith("PARLEY_", StringComparison.Ordinal))
-
-            // Named so that tests can assert it is ignored; nothing reads it, so nothing documents it.
-            .Where(v => v != DeploymentEnvironment.DatabaseVariable)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(v => v, StringComparer.Ordinal)
             .ToArray();

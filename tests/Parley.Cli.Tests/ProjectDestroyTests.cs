@@ -11,9 +11,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Killing a project used to be four steps, and the second was restarting every other project's
-/// broker to stop this one's. Now the process serving the manifest stops a removed project on
-/// its own, and this command waits for it to have done so before deleting a file the broker
+/// The process serving the manifest stops a removed project on its own, without restarting every
+/// other project's broker, and this command waits for it to have done so before deleting a file the broker
 /// still had open — which is the order that matters, and the one a person doing it by hand gets
 /// wrong.
 /// </para>
@@ -51,17 +50,15 @@ public sealed class ProjectDestroyTests : IDisposable
 
     /// <summary>Where this machine keeps its Parley files.</summary>
     /// <remarks>
-    /// **It named the manifest file before 019 and names the root now.** Every reader and writer below
-    /// took the same value, so the change is one line here rather than one per test — which is the whole
-    /// reason `ProjectManifest` kept its type name through the conversion.
+    /// **It names the root.** Every reader and writer below takes the same value, so a change is one
+    /// line here rather than one per test.
     /// </remarks>
     private string Root => _directory;
 
     [Fact]
     public async Task With_nothing_serving_the_store_is_deleted_and_the_machines_catalogue_is_not()
     {
-        // **The catalogue is no longer the project's to delete.** A project recorded one of its own
-        // until 019, and destroying the project took it; there is one per machine now, shared by every
+        // **The catalogue is not the project's to delete.** There is one per machine, shared by every
         // project, so a destroy that removed it would take the other projects' agents with it.
         var catalogue = Path.Combine(_directory, NodeCatalogue.DefaultFileName);
         var billing = Project("billing");
@@ -85,11 +82,9 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task Another_projects_store_is_not_touched()
     {
-        // **The catalogue half of this went with 019, and only the catalogue half.** A project used
-        // to record one of its own, so destroying one had to leave another's alone; there is one
-        // catalogue per machine now and destroying a project does not touch it at all. What still
-        // has to hold — and is the reason this test exists — is that a destroy reaches exactly one
-        // project's store.
+        // **There is one catalogue per machine** and destroying a project does not touch it at all.
+        // What has to hold — and is the reason this test exists — is that a destroy reaches exactly
+        // one project's store.
         var orders = Project("orders");
         var billing = Project("billing");
 
@@ -188,7 +183,7 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task A_broker_the_serving_process_does_not_own_is_reported_and_left_alone()
     {
-        // Lens 1 probe, and the adversarial reading of "wait for it to stop": a broker started
+        // The adversarial reading of "wait for it to stop": a broker started
         // by hand on the entry's endpoint never stops when the entry goes, because nothing told
         // it to. The command must not kill it, must not delete a store it is still using, and
         // must say so -- and the entry is gone regardless, which it must also say.
@@ -231,13 +226,13 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task The_machines_own_files_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
     {
-        // **A lens 2 probe, and 019 closed it by construction rather than by a better refusal.**
+        // **Closed by construction rather than by a refusal.**
         // `--destroy` deletes whatever the project names as its store. The files whose deletion takes
         // every project with it sit at the root — the port record, the machine's catalogue — so a project
-        // naming one of those had to be refused on the way in, by `add`, rather than caught on the way
-        // out.
+        // naming one of those would have to be refused on the way in, by `add`, rather than caught on
+        // the way out.
         //
-        // There is no way in now. A store is `parley.db` inside a folder named by the project, and no
+        // There is no way in. A store is `parley.db` inside a folder named by the project, and no
         // flag carries a path, so the value that made this possible cannot be supplied. What is asserted
         // is the property the refusal was protecting: every store lies inside its own project's folder,
         // so destroying one cannot reach anything the machine shares.
@@ -271,7 +266,7 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task A_store_that_is_a_directory_is_not_deleted()
     {
-        // Lens 2 probe. Deleting is by file, and a directory named as a store -- which the
+        // Deleting is by file, and a directory named as a store -- which the
         // manifest accepts, since a store need not exist yet -- must not become a recursive
         // delete of whatever is in it.
         var directoryStore = Path.Combine(_directory, "not-a-file");
@@ -294,13 +289,13 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task A_store_something_else_holds_open_is_reported_not_half_deleted_in_silence()
     {
-        // Lens 2 probe. The worst outcome of a delete that meets a locked file is a quiet partial
+        // The worst outcome of a delete that meets a locked file is a quiet partial
         // state: entry gone, some files gone, the rest still there, exit zero. What is required
         // is the truth in the exit code and the message: which files went, which did not, and
         // that the entry is gone either way.
         // Only Windows refuses to delete an open file; on Linux and macOS an unlink succeeds and
         // the last handle keeps the data until it closes, so the loud failure this guards cannot
-        // occur there and the probe has nothing to assert. Found by the Linux run, 3 of 3.
+        // occur there and the probe has nothing to assert.
         if (!OperatingSystem.IsWindows())
         {
             Assert.Skip("a held file can be deleted on this platform, so there is no refusal to report");

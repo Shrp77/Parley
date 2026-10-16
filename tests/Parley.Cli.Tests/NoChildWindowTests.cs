@@ -11,8 +11,7 @@ namespace Parley.Cli.Tests;
 /// its console, and a child console program inherits its parent's console when there is one — which
 /// is why the web UI had never needed <c>CreateNoWindow</c> and why nothing noticed. Once there is
 /// no console to inherit, Windows gives the child a fresh one, so the window somebody had just asked
-/// not to see came back reading "Parley web UI on http://127.0.0.1:5280". Reported within a minute
-/// of the flag being installed.
+/// not to see would come back reading "Parley web UI on http://127.0.0.1:5280".
 /// </para>
 /// <para>
 /// <b>Read off the source, because the thing being asserted is a window.</b> A test cannot watch for

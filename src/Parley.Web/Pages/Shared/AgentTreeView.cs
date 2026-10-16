@@ -12,8 +12,8 @@ public sealed record AgentTreeEntry(AgentName Name, bool InIt, bool Ticked, stri
 
 /// <summary>What the shared tree of agents is drawn from.</summary>
 /// <remarks>
-/// One tree for the project page and the conversation page, because the two had already drawn the same list
-/// two ways. Grouped by machine with the person's own group first, named by role alone since the group says the machine.
+/// One tree for every page that lists agents, so they cannot draw the list two ways. Grouped by machine with the
+/// person's own group first, named by role alone since the group says the machine.
 /// </remarks>
 /// <param name="Project">The project, for the link into each agent.</param>
 /// <param name="Entries">The agents.</param>

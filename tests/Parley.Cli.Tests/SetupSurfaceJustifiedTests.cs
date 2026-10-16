@@ -8,9 +8,9 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 2. <c>SetupSurfaceTests</c> enumerates the public types and fails when the
-/// list changes, which makes adding one a decision — and over this gate that decision was made four
-/// times by adding a name to a list, with no reason attached and nothing asking for one. An
+/// <c>SetupSurfaceTests</c> enumerates the public types and fails when the list changes, which makes
+/// adding one a decision — and a decision made by adding a name to a list, with no reason attached and
+/// nothing asking for one, is not a decision. An
 /// enumeration with no justification becomes a rubber stamp, which is the failure mode of every
 /// checklist.
 /// </para>

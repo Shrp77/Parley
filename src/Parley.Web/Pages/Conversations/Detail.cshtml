@@ -21,8 +21,7 @@
             <p class="item-title">@itemTitle</p>
         }
         <p class="as-of">
-            In the order the broker recorded them. Times are shown for information; they come from the
-            machines the agents run on and are not what the order follows.
+            In the order the broker recorded them. Times come from the agents' machines.
             @Parley.Client.Rendering.LocalTime.Note()
         </p>
     </details>
@@ -30,18 +29,18 @@
     <div class="convo-actions">
         @* The project's Files page, already narrowed to this conversation. *@
         <a class="file-button" href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Id" title="Files placed in this conversation" aria-label="Files placed in this conversation">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7" /></svg>
+            <span class="icon" aria-hidden="true">description</span>
         </a>
         @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
            and the other is the broker's own records, for another program to read. *@
         <details class="export-menu">
             <summary class="file-button" title="Export this conversation">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+                <span class="icon" aria-hidden="true">download</span>
                 Export
             </summary>
             <div class="export-list">
-                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript" title="The conversation as a text file, with who saw what noted on it">Export TXT</a>
-                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw" title="The messages and exchanges as the broker holds them, as JSON for another program">Export JSON</a>
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript" download title="The conversation as a text file, with who saw what noted on it">Export TXT</a>
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw" download title="The messages and exchanges as the broker holds them, as JSON for another program">Export JSON</a>
             </div>
         </details>
     </div>
@@ -53,8 +52,7 @@
    is current, which is the failure following exists to remove. Hidden again once a read succeeds.
    The terminal says the same sentence for the same reason. *@
 <p id="uncertain" role="alert" hidden>
-    This conversation could not be read again, so what is on screen may be out of date. It is
-    tried again every few seconds.
+    This conversation could not be read again, so what is on screen may be out of date.
 </p>
 
 @if (Model.Problem is { Length: > 0 } problem)
@@ -100,7 +98,7 @@ else
    What you send is a message in this conversation, under your own seat's name, subject to every
    rule 7 refusal any other participant faces. When the broker cannot be reached as you, the first
    sentence in the panel says so. *@
-<form method="post" id="composer" class="composer@(Model.Seat is null ? " as-operator" : " as-agent")"
+<form method="post" id="composer" class="composer"
       aria-label="Send to agents in this conversation">
     @* No note about the seat: sending takes it, and says why if it cannot. *@
 
@@ -123,24 +121,19 @@ else
        well, because the boxes can be a long way from the button. *@
     <p class="composer-to" id="to-summary" aria-live="polite"></p>
 
+    @* Set by "Reply to this" on an agent's question, and cleared by Cancel or a send. *@
+    <input type="hidden" name="ReplyTo" id="reply-to" value="" />
+    <p class="composer-replying" id="replying" role="status" hidden>
+        <span id="replying-text"></span>
+        <button type="button" id="reply-cancel" class="quiet">Cancel</button>
+    </p>
+
     <textarea name="Says" rows="3" required
               placeholder="@(Model.Hint is { Length: > 0 } hint
                   ? hint
                   : Model.Seat is null
                       ? "What do you want them to do, or to know?"
                       : Framing.AskExample)">@Model.Says</textarea>
-
-    @if (Model.Seat is not null)
-    {
-        @* One field since 0.7. The composer asked for an intent, a kind and a done_when beside the ask,
-           and §5.1 removed all three: the reason for an ask is the ask, and a receiver that cannot scope
-           one sends a Clarify rather than being handed a form to fill in on the requester's behalf. What
-           is left is a note saying what this costs, which is the thing a person cannot see. *@
-        <div class="framing">
-            <p class="composer-note">A request — @Owing.Requesting.</p>
-            <p class="composer-note">@Framing.AskWhy.</p>
-        </div>
-    }
 
     <div class="composer-send">
         <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>
@@ -192,7 +185,7 @@ else
                     ? "To: everyone in this conversation."
                     : named.length
                         ? "To: " + named.join(", ") + "."
-                        : "To: nobody chosen yet. Tick who to send to in the list beside the conversation.";
+                        : "To: nobody chosen yet.";
             }
 
             function snapshot() {
@@ -253,9 +246,14 @@ else
                     && !boxes().some(function (b) { return b.checked; })) {
                     // A conversation with no messages and nothing chosen yet: the project's default agent, from its
                     // settings page, is ticked first. Only a start; the person can untick it before sending.
-                    // One name as plain text in an older version, a list of names now.
-                    var raw = window.localStorage.getItem("parley-default-to:" + params.get("project")) || "";
-                    var preferred = raw.charAt(0) === "[" ? JSON.parse(raw) : (raw ? [raw] : []);
+                    var preferred = [];
+
+                    try {
+                        var list = JSON.parse(window.localStorage.getItem("parley-default-to:" + params.get("project")) || "[]");
+
+                        preferred = Array.isArray(list) ? list : [];
+                    } catch (e) { }
+
                     var ticked = false;
 
                     boxes().forEach(function (b) {
@@ -296,7 +294,7 @@ else
             var url = region.getAttribute("data-follow");
             var every = 3000;
 
-            // **Tailed, the owner's call of 2026-10-01**: the page opens on the newest message and stays
+            // **Tailed**: the page opens on the newest message and stays
             // there while the reader does, as the terminal's transcript does. At the end means the end of
             // the newest message is on screen -- not the page's own bottom, because the composer sits below
             // it, and not merely its first line, because a reader on the message before it can see that
@@ -311,9 +309,15 @@ else
                 return !last || last.getBoundingClientRect().bottom <= window.innerHeight + 8;
             }
 
+            // **Instant, never animated.** The stylesheet smooths scrolling for the reader's own jumps, and a smoothed
+            // tail is a scroll that is still travelling when the next layout change (a message arriving, the page
+            // settling after a send) moves its target, so it stopped partway up a long message. Tailing is a position, not
+            // a journey.
+            function jump(top) { window.scrollTo({ top: top, left: 0, behavior: "instant" }); }
+
             function tail() {
                 var last = newest();
-                if (last) { last.scrollIntoView({ block: "end" }); }
+                if (last) { jump(window.scrollY + last.getBoundingClientRect().bottom - window.innerHeight); }
             }
 
             function anchor() {
@@ -328,8 +332,38 @@ else
                 return null;
             }
 
+            // **Following has a limit.** A reader at the end of the page is always followed. A reader whose newest message
+            // merely ends on screen is followed only by a short arrival: following a long one would carry what they are
+            // reading out of sight, which is the page moving under somebody mid-sentence. They stay where they are and are
+            // told, with a button that takes them there when they choose. 30% of the window is the most such a follow may
+            // move the page.
+            var arrived = document.createElement("button");
+
+            arrived.type = "button";
+            arrived.className = "new-below";
+            arrived.hidden = true;
+            arrived.innerHTML = '<span class="icon" aria-hidden="true">expand_more</span> New message';
+            arrived.addEventListener("click", function () { arrived.hidden = true; tail(); });
+            document.body.appendChild(arrived);
+
+            window.addEventListener("scroll", function () {
+                if (!arrived.hidden && atBottom()) { arrived.hidden = true; }
+            }, { passive: true });
+
+            // A reader at the very end of the page has nothing left to read, so is always followed, however long the
+            // arrival. The limit is for a reader whose newest message merely ends on screen.
+            function pageEnd() {
+                return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 24;
+            }
+
+            function farther() {
+                var last = newest();
+                return !!last && last.getBoundingClientRect().bottom - window.innerHeight > window.innerHeight * 0.3;
+            }
+
             function apply(fresh) {
                 var bottom = atBottom();
+                var end = pageEnd();
                 var held = anchor();
                 var kept = window.parleyTree ? window.parleyTree.snapshot() : null;
 
@@ -342,12 +376,15 @@ else
 
                 if (between) { between.textContent = fresh.getAttribute("data-participants") || ""; }
 
-                if (bottom) {
+                if (bottom && (end || !farther())) {
+                    arrived.hidden = true;
                     tail();
                 } else if (held && held.id) {
+                    if (bottom) { arrived.hidden = false; }
+
                     var again = document.getElementById(held.id);
 
-                    if (again) { window.scrollBy(0, again.getBoundingClientRect().top - held.top); }
+                    if (again) { jump(window.scrollY + again.getBoundingClientRect().top - held.top); }
                 }
 
                 document.dispatchEvent(new CustomEvent("parley:followed"));
@@ -384,8 +421,13 @@ else
                     .then(next);
             }
 
-            // Opened at the newest message, unless the address names one to go to.
-            if (!window.location.hash) { tail(); }
+            // Opened at the newest message, unless the address names one to go to. Again once everything has loaded,
+            // because fonts and the recipients tree change the height after the first look, and a message just sent
+            // (this page is the answer to that post) must be the one on screen.
+            if (!window.location.hash) {
+                tail();
+                window.addEventListener("load", tail);
+            }
 
             next();
         })();
@@ -743,6 +785,36 @@ else
 
                 if (box.value.trim() !== "" && form.requestSubmit) { form.requestSubmit(); }
             });
+        })();
+
+        // "Reply to this" on an agent's question points the composer at that exchange, so the words answer it. Delegated,
+        // because the transcript is replaced as it is followed.
+        (function () {
+            var field = document.getElementById("reply-to");
+            var bar = document.getElementById("replying");
+            var said = document.getElementById("replying-text");
+            var cancel = document.getElementById("reply-cancel");
+            var form = document.getElementById("composer");
+
+            if (!field || !bar || !form) { return; }
+
+            function clear() { field.value = ""; bar.hidden = true; }
+
+            document.addEventListener("click", function (e) {
+                var button = e.target.closest ? e.target.closest("button.reply-to") : null;
+
+                if (!button) { return; }
+
+                field.value = button.getAttribute("data-exchange");
+                said.textContent = "Replying to " + button.getAttribute("data-agent") + "'s question (exchange " + field.value + "). Your words answer it.";
+                bar.hidden = false;
+
+                var box = form.querySelector("textarea[name=Says]");
+                form.scrollIntoView({ block: "end" });
+                if (box) { box.focus(); }
+            });
+
+            cancel.addEventListener("click", clear);
         })();
     </script>
 }

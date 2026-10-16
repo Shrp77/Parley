@@ -8,8 +8,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Found by lens 3: <c>project set</c> was added with its usage line and its help entry and
-/// without a word in the README, which is the document the plugin and the install script send
+/// A subcommand such as <c>project set</c> with a usage line and a help entry and
+/// without a word in the README would leave out the document the plugin and the install script send
 /// people to. Read from the dispatch rather than listed here, so a subcommand added tomorrow is
 /// checked tomorrow.
 /// </para>
@@ -31,7 +31,7 @@ public sealed partial class ProjectHelpAgreementTests
     public void Every_dispatched_project_subcommand_is_still_described_in_the_readme()
     {
         var command = RepositoryFile.Read("src/Parley.Setup/ProjectCommand.cs");
-        var readme = RepositoryFile.Read("README.md");
+        var readme = RepositoryFile.Documentation();
 
         var dispatched = Dispatch().Matches(command)
             .Select(m => m.Groups["verb"].Value)

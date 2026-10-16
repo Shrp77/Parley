@@ -19,7 +19,7 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// It matters most to the surface: adding an agent from the terminal writes a catalogue entry,
 /// and without this the promise that it becomes startable would be false until somebody restarted
-/// a process by hand. SC-003 rests on the behaviour checked here.
+/// a process by hand.
 /// </para>
 /// </remarks>
 public sealed class NodeCatalogueWatchTests : IDisposable
@@ -215,7 +215,7 @@ public sealed class NodeCatalogueWatchTests : IDisposable
 
     /// <summary>Which agent each role belongs to, fixed for the length of one test.</summary>
     /// <remarks>
-    /// **A role keeps its identity across rewrites, because a checkout does** (018). The catalogue is
+    /// **A role keeps its identity across rewrites, because a checkout does**. The catalogue is
     /// keyed by the identity and the name comes back out of the checkout, so minting a new one per write
     /// would make every rewrite look like a different agent arriving — which is the opposite of what
     /// these tests are about, and would make the "same roles, no rejoin" case rejoin every time.

@@ -7,9 +7,9 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's report.</b> They told every agent in a project something, named the conversation
-/// <c>tell everybody test</c>, wrote the message, sent it — and got a sentence about which
-/// characters a name may hold, with the form closed and what they had written gone.
+/// <b>A typed name is corrected, not refused.</b> Telling every agent in a project something, naming the
+/// conversation <c>tell everybody test</c>, writing the message and sending it must not produce a sentence
+/// about which characters a name may hold, with the form closed and what was written gone.
 /// </para>
 /// <para>
 /// The rule is one rule and is checked here rather than on either surface: the terminal's composer

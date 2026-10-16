@@ -22,7 +22,7 @@ namespace Parley.Client.Views;
 /// <para>
 /// <b>Null is not zero and the distinction is the whole point.</b> A project whose broker is not
 /// answering has an unknown number of agents; showing it as none would read as a project somebody
-/// has emptied, which is the containment rule 005 wrote and this must not lose in the move.
+/// has emptied.
 /// </para>
 /// </remarks>
 public sealed record ProjectSummary(
@@ -67,7 +67,7 @@ public sealed record ProjectSummary(
 }
 
 /// <summary>One project, as the projects view lists it.</summary>
-/// <param name="Settings">What the manifest says about it.</param>
+/// <param name="Settings">What its project.json says about it.</param>
 /// <param name="Health">Whether its broker answers, and what it speaks.</param>
 /// <remarks>
 /// The summary is not here. It belongs to whichever project is highlighted and is read when the
@@ -93,9 +93,8 @@ public sealed record ProjectRow(ProjectSettings Settings, ProjectHealth Health)
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The whole of User Story 1.</b> The question a person opens this surface with is which project
-/// they want, and 005 answered it by showing four regions at once and asking them to read all of
-/// them. This answers it with one list and one line beside it that follows the highlight.
+/// The question a person opens this surface with is which project they want. It is answered with one
+/// list and one line beside it that follows the highlight.
 /// </para>
 /// <para>
 /// <b>Derived here rather than in either surface</b>, for the reason seating and transcripts are:
@@ -118,26 +117,20 @@ public static class ProjectsView
     /// <summary>What to say when this machine's projects could not be read.</summary>
     /// <remarks>
     /// <para>
-    /// A different fact from an empty machine, and 005 recorded why: "this machine names no projects" is
-    /// a machine waiting to be set up, and "they could not be read" is somebody's edit thirty seconds ago
-    /// that they can undo. Showing the first for the second hides the edit that caused it.
-    /// </para>
-    /// <para>
-    /// <b>It said "the manifest" until 019, and there is no manifest.</b> Prose left describing a file
-    /// that has gone is the shape this repository keeps recording — a comment standing over a rule that
-    /// was removed, read by the next person as evidence the rule is still there.
+    /// A different fact from an empty machine: "this machine names no projects" is a machine waiting to
+    /// be set up, and "they could not be read" is somebody's edit thirty seconds ago that they can undo.
+    /// Showing the first for the second hides the edit that caused it.
     /// </para>
     /// </remarks>
     public const string Unreadable = "This machine's projects could not be read: ";
 
-    /// <summary>Builds the rows from the manifest and what each broker said.</summary>
+    /// <summary>Builds the rows from this machine's projects and what each broker said.</summary>
     /// <param name="projects">This machine's projects.</param>
     /// <param name="health">What each broker answered, keyed by project name.</param>
     /// <returns>One row per project, in name order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="projects"/> is null.</exception>
     /// <remarks>
-    /// The manifest's order rather than sorted, because it is a file a person edits and the order
-    /// they put things in is information. Sorting would silently discard it.
+    /// In the order given, which is name order from the projects directory.
     /// </remarks>
     public static IReadOnlyList<ProjectRow> Rows(
         IReadOnlyList<ProjectSettings> projects,

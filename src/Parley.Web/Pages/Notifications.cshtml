@@ -1,0 +1,42 @@
+@page
+@model Parley.Web.Pages.NotificationsModel
+@{
+    ViewData["Title"] = "Notifications";
+}
+
+<h1>Notifications</h1>
+
+<p class="note">Newest first. Kept only while the console runs.</p>
+
+@if (Model.Items.Count == 0)
+{
+    <p>Nothing yet.</p>
+}
+else
+{
+    <ul class="notices-all">
+        @foreach (var (note, isNew) in Model.Items)
+        {
+            <li class="@(note.Good ? "notice" : "notice notice-bad")">
+                <time datetime="@note.At.ToString("O", System.Globalization.CultureInfo.InvariantCulture)">@note.At.ToLocalTime().ToString("g", System.Globalization.CultureInfo.CurrentCulture)</time>
+                @if (isNew)
+                {
+                    <span class="notice-new">new</span>
+                }
+                @if (!note.Good)
+                {
+                    <span class="notice-new">not sent</span>
+                }
+                <p><strong>@note.Source</strong> @note.Text</p>
+                @if (note.Conversation is { Length: > 0 } conversation)
+                {
+                    <a href="/Conversations/Detail?project=@Uri.EscapeDataString(note.Project)&amp;id=@Uri.EscapeDataString(conversation)">Open @conversation</a>
+                }
+            </li>
+        }
+    </ul>
+
+    <form method="post" asp-page-handler="Clear">
+        <button type="submit" class="quiet">Clear the list</button>
+    </form>
+}

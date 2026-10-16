@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 4: whether what the operator is told about a repository is true.
+/// Whether what the operator is told about a repository is true.
 /// </summary>
 /// <remarks>
 /// <para>

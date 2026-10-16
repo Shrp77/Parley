@@ -172,7 +172,6 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
             said,
             complained,
             Found,
-            directory.Projects,
             manifest,
             HttpContext.RequestAborted,
             outcome).ConfigureAwait(false);

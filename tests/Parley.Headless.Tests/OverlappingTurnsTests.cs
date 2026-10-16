@@ -9,7 +9,7 @@ namespace Parley.Headless.Tests;
 /// <remarks>
 /// <para>
 /// A node gives a turn whenever it is asked and does not know whether one is already running: the broker asks again
-/// for mail a limited collection left (lens 1 run 1.18's fix), and an agent collecting usually still has its turn open
+/// for mail a limited collection left, and an agent collecting usually still has its turn open
 /// when it does. Two turns interleaved on one process's standard input would read each other's replies, and two
 /// sessions working one repository at once is the hazard the whole resident design exists to avoid.
 /// </para>

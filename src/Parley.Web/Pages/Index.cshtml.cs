@@ -206,7 +206,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         var conversations = BrokerDirectory.ReadAsync(async () =>
             await broker.ConversationsAsync(includeArchived: true, cancellationToken: token).ConfigureAwait(false));
 
-        // What agents have put forward for the person to decide (specs/026). Unknown when the broker cannot say, which
+        // What agents have put forward for the person to decide. Unknown when the broker cannot say, which
         // is not the same as none.
         var proposals = Parley.Client.Roadmaps.ProposalCount.WaitingAsync(broker, token);
 
@@ -302,7 +302,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         else if (manifest is null)
         {
             Refused = true;
-            Outcome = "This console is not reading a project manifest, so it has nowhere to name a project.";
+            Outcome = "This console cannot name a project.";
         }
         else
         {

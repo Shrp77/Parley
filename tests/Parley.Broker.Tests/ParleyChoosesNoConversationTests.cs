@@ -8,12 +8,11 @@ using Xunit;
 namespace Parley.Broker.Tests;
 
 /// <summary>
-/// That an open question from the facilitator does not decide where an agent's own work goes (SPEC.md principle 2.10,
-/// research R13).
+/// That an open question from the facilitator does not decide where an agent's own work goes (SPEC.md principle 2.10).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Found by <c>/speckit-analyze</c> rather than by use, which is the only reason it did not ship.</b> The broker
+/// The broker
 /// assigns a Request to the conversation its sender holds a request in. An agent that had asked Parley something back
 /// holds its question indefinitely, so without this every Request it sent would have gone into its ownership
 /// conversation — the facilitator steering work, which principle 2.11 forbids. Watched to fail without the filter.

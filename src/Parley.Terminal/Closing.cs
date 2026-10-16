@@ -37,7 +37,7 @@ internal static class Closing
     private const string TypeItBack = "Type the conversation's identifier to confirm:";
 
     private const string Why =
-        "Why are you closing it? Each participant holding open work in it is told this. Leave it empty to give no reason.";
+        "Reason (optional; each participant holding open work in it is told):";
 
     /// <summary>The longest reason the broker keeps.</summary>
     private const int ReasonLimit = 1000;
@@ -162,7 +162,7 @@ internal static class Closing
         }
 
         await done(outcome.Value
-            ? $"Closed {Safe.Text(row.Id)}. Every request still open in it was closed, and each participant holding one was told."
+            ? $"Closed {Safe.Text(row.Id)}."
             : $"{Safe.Text(row.Id)} is not open, so nothing changed.").ConfigureAwait(false);
     }
 }

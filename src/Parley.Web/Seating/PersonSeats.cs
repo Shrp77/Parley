@@ -9,11 +9,8 @@ namespace Parley.Web.Seating;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What replaced the Join page and the seat cookie.</b> A person used to type a name, which a cookie remembered and a
-/// page turned into a seat — and the frame then had to reconcile the two whenever they parted company, which they did on
-/// every broker restart and twenty minutes after anybody walked away. The broker now provides the person seat in every
-/// project, so there is nothing to type and nothing to remember: each page takes the seat the registry names, if nothing
-/// holds it already.
+/// <b>No name is typed and nothing is remembered.</b> The broker provides the person seat in every
+/// project, so each page takes the seat the registry names, if nothing holds it already.
 /// </para>
 /// <para>
 /// <b>One implementation for the frame and the pages</b>, because a seat taken by the frame and looked up by a page by
@@ -26,18 +23,17 @@ internal static class PersonSeats
     /// <param name="seats">The book.</param>
     /// <param name="directory">The projects, and a client for each.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <param name="person">
+    /// Whether a person caused this render. False for a page reloading itself on a timer, which keeps the seat's stream
+    /// but is no evidence anybody is there: SPEC.md §14 has <c>here</c> mean in use, and a tab left open on a page that
+    /// reloads every thirty seconds would otherwise read <c>here</c> for ever.
+    /// </param>
     /// <returns>When every project has been tried.</returns>
     /// <remarks>
     /// A page render is evidence the person is at the console, which is the whole of what keeps them marked here:
     /// SPEC.md §4.0 has no heartbeat. Each project is tried independently; one broker that does not answer leaves that
     /// project without a seat and every other project with one.
     /// </remarks>
-    /// <param name="person">
-    /// Whether a person caused this render. False for a page reloading itself on a timer, which keeps the seat's stream
-    /// but is no evidence anybody is there: SPEC.md §14 has <c>here</c> mean in use, and a tab left open on a page that
-    /// reloads every thirty seconds would otherwise read <c>here</c> for ever (the audit before the gate resumed).
-    /// </param>
-    /// <returns>When every project has been tried.</returns>
     internal static async Task EnsureAsync(
         SeatBook seats, BrokerDirectory directory, CancellationToken cancellationToken, bool person = true)
     {

@@ -109,8 +109,8 @@ public sealed class NodeReportsTurnsTests
     [Fact]
     public async Task A_turn_is_reported_from_when_it_begins_not_from_when_it_was_asked_for()
     {
-        // The review gate's finding: a turn queued behind another was reported as starting when it was asked for, so its
-        // end — start plus the time it ran — landed before the work it took, and a stop on a refused permission was never
+        // A turn queued behind another must not be reported as starting when it was asked for, or its
+        // end — start plus the time it ran — lands before the work it took, and a stop on a refused permission is never
         // flagged. The wait here stands in for the agent's turn lock.
         using var connection = ParleyDatabase.OpenInMemory();
         var (broker, nodes, joined) = await JoinedAsync(connection);

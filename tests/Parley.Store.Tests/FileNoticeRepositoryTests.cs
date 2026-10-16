@@ -14,7 +14,7 @@ namespace Parley.Store.Tests;
 /// the opposite failure of being told something that is not true.
 /// </para>
 /// <para>
-/// Retired agents appear on purpose. The owner's rule is that active agents are told, and a retired agent that
+/// Retired agents appear on purpose. Active agents are told, and a retired agent that
 /// kept collecting notices would be the one place its retirement did not reach.
 /// </para>
 /// </remarks>

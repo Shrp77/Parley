@@ -6,10 +6,10 @@ namespace Parley.Client.Tests;
 
 /// <summary>
 /// That a question an agent settled reads as settled by that agent, and that the reply which settled it carries the list
-/// beneath it whatever its own words say (SPEC.md §5.6, FR-017, FR-021).
+/// beneath it whatever its own words say (SPEC.md §5.6).
 /// </summary>
 /// <remarks>
-/// <b>The list is the record, not the reply.</b> The owner's condition for letting the agent decide was that the person
+/// <b>The list is the record, not the reply.</b> The condition for letting the agent decide is that the person
 /// can see what it decided, beside its reply, without trusting the model to mention it — so every case here has a reply
 /// whose words say nothing about settling.
 /// </remarks>

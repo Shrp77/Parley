@@ -14,7 +14,7 @@ namespace Parley.Store.Tests;
 /// without having asked for anything.
 /// </para>
 /// <para>
-/// <b>Each refusal was watched to fail first</b>, against the schema before 022, where all four were admitted.
+/// <b>Each refusal must fail against a schema without it</b>, where all four would be admitted.
 /// </para>
 /// </remarks>
 public sealed class FacilitatorRowTests : IDisposable
@@ -72,7 +72,7 @@ public sealed class FacilitatorRowTests : IDisposable
     public void The_role_parley_is_an_ordinary_one()
     {
         // This repository registers as its own agent under `parley`, and enrolment turns a folder called Parley
-        // into that role. Reserving it would refuse the repository that defines the protocol (research R1).
+        // into that role. Reserving it would refuse the repository that defines the protocol.
         _store.Execute(
             "INSERT INTO agents (name, adapter, tier, status) VALUES ('parley@test', 'claude-code', 'full', 'active');");
 

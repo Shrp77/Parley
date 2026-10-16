@@ -8,13 +8,13 @@ using Wire = Parley.Transport;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// What a seat actually puts on the wire under protocol 0.7.
+/// What a seat actually puts on the wire.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>The document rather than the sentence it came back with.</b> Every other test of the composer reads the
 /// report a send hands the person; none of them reads the payload, so a surface that kept writing an
-/// <c>intent</c> beside the ask would pass all of them while storing a shape §5.1 no longer describes — and
+/// extra field beside the ask would pass all of them while storing a shape §5.1 does not describe — and
 /// the store would take it, because storage checks that an ask is there and is deliberately blind to what
 /// else a document carries (§9.3).
 /// </para>
@@ -68,8 +68,8 @@ public sealed class AskShapeTests
     [Fact]
     public async Task An_ask_of_one_word_is_sent_rather_than_refused()
     {
-        // The floor that went with `done_when`. A receiver that cannot scope this sends a Clarify (§5.2);
-        // the sender is not the one in a position to say how far it goes, which is the whole argument of 0.7.
+        // A receiver that cannot scope this sends a Clarify (§5.2); the sender is not the one in a position
+        // to say how far it goes, so no minimum length is imposed.
         var token = TestContext.Current.CancellationToken;
         var agents = new Listening();
         var voice = new SeatVoice(agents, Seated());
@@ -81,11 +81,10 @@ public sealed class AskShapeTests
     }
 
     [Fact]
-    public async Task A_result_answering_a_0_7_request_names_the_one_item_request()
+    public async Task A_result_answering_a_request_names_the_one_item_request()
     {
-        // The Result side of the same change. A 0.7 Request has no items, so `Delivered.Items()` offers the
-        // single spelling §5.3 reserves — and what reaches the wire must be that, under the `outcomes` array
-        // the broker has always read.
+        // A Request has no items, so `Delivered.Items()` offers the single spelling §5.3 reserves — and what
+        // reaches the wire must be that, under the `outcomes` array the broker reads.
         var token = TestContext.Current.CancellationToken;
         var agents = new Listening();
         var voice = new SeatVoice(agents, Seated());
@@ -98,29 +97,6 @@ public sealed class AskShapeTests
         Assert.Equal("request", outcome.GetProperty("id").GetString());
         Assert.Equal("done", outcome.GetProperty("outcome").GetString());
         Assert.Equal("It can: the order carries it.", outcome.GetProperty("text").GetString());
-    }
-
-    [Fact]
-    public async Task A_result_answering_a_stored_0_6_request_still_names_its_items()
-    {
-        // The half FR-009 rests on. An exchange opened under 0.6 outlives the upgrade — nothing times out —
-        // so the same method has to keep writing the ids that Request declared.
-        var token = TestContext.Current.CancellationToken;
-        var agents = new Listening();
-        var voice = new SeatVoice(agents, Seated());
-
-        await voice.ResultAsync(
-            9,
-            [("r1", "merged", "done"), ("r2", "schema 12", "answered")],
-            token);
-
-        using var document = JsonDocument.Parse(agents.LastResult!);
-
-        Assert.Equal(
-            ["r1", "r2"],
-            document.RootElement.GetProperty("outcomes").EnumerateArray()
-                .Select(o => o.GetProperty("id").GetString())
-                .ToArray());
     }
 
     /// <summary>The project's person seat, as the broker names it.</summary>

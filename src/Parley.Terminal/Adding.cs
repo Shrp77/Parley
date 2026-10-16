@@ -19,21 +19,17 @@ namespace Parley.Terminal;
 /// differ in six months.
 /// </para>
 /// <para>
-/// <b>The catalogue line is the one that comes and goes.</b> A repository another project already
-/// starts unattended gets the other two and no catalogue entry: FR-013 admits it into as many
-/// projects as it likes and lets only one of them start it, because a node starts a client with the
-/// repository as its working directory and two of those is two models editing one checkout.
+/// <b>The catalogue is one file per machine, keyed by the agent's identity.</b> Every project shares
+/// the one entry, so a repository added to a second project gains a launch entry and the instructions
+/// section, and its catalogue line is already there.
 /// </para>
 /// <para>
 /// <b>It does not write the registration, and it cannot.</b> SPEC.md §12.3 makes registration the
 /// adapter's own act on attach, and a surface that inserted a registry row on a repository's behalf
 /// would be a caller-supplied identity by another name. What it does instead is ask the machine to
 /// start the agent once and let it register itself — which is what §12.3's own closing paragraph
-/// routes through the catalogue. <b>An earlier version of this paragraph said the agent was left
-/// <c>catalogued, not yet registered</c> and that nothing could be done about it</b>; that was true
-/// of 005 and stopped being true at 0.24.0, and it is corrected here rather than deleted because
-/// the half of it that still holds — nothing here may claim to be anybody — is the reason the start
-/// is a request rather than a write.
+/// routes through the catalogue. Nothing here may claim to be anybody, which is why the start is a
+/// request rather than a write.
 /// </para>
 /// <para>
 /// <b>Nothing is written until the person has seen what would be.</b> The paths are shown and
@@ -48,10 +44,8 @@ internal static class Adding
 
     /// <summary>What the confirmation is called.</summary>
     /// <remarks>
-    /// It said <c>Write these two files?</c> and three were written. The count is gone rather than
-    /// corrected, because it is two or three depending on whether another project already starts
-    /// the repository — and a title that has to be kept in step with a branch in the description
-    /// is a title that will fall out of step with it.
+    /// Carries no count of files: a number in the title would have to be kept in step with the
+    /// description beneath it.
     /// </remarks>
     internal const string ConfirmTitle = "Write these files?";
 
@@ -122,12 +116,9 @@ internal static class Adding
     /// looking like an agent that simply never appeared.
     /// </para>
     /// <para>
-    /// <b>It asks <see cref="OwnershipStatement"/> rather than measuring a length itself.</b> It
-    /// used to compare against <c>OwnsLimit</c> and check nothing else, which meant a statement
-    /// carrying a line separator or a direction override passed here and was refused by the
-    /// database — the two halves of one rule, applied in two places, agreeing only by luck. Since
-    /// 0.33.0 removed the length bound the length half refuses nothing at all, so a field still
-    /// checking only that would have been a field checking nothing.
+    /// <b>It asks <see cref="OwnershipStatement"/> rather than measuring a length itself.</b> The
+    /// character class that stops a line separator or a direction override is part of the same rule
+    /// the database enforces, so one definition answers for both.
     /// </para>
     /// </remarks>
     internal static string? OwnsProblem(string owns) =>
@@ -139,11 +130,8 @@ internal static class Adding
     /// <param name="project">The project it would join.</param>
     /// <returns>The paths, and what each would gain.</returns>
     /// <remarks>
-    /// <b>No catalogue line when another project already starts this repository</b>, and that is
-    /// the whole of what FR-013 costs. A repository may answer in several projects and may be
-    /// started unattended by only one, because a node starts an agent with its workspace as the
-    /// working directory and two of them is two models editing one checkout. So the second project
-    /// gets the launch entry and the instructions section, and nothing in its catalogue.
+    /// Lists the three files in the order <c>Enrolment</c> writes them. The catalogue is shared by
+    /// every project on the machine, so its line is always described.
     /// </remarks>
     internal static string Describe(
         string workspace, string catalogueFile, string project) =>
@@ -158,20 +146,11 @@ internal static class Adding
 
     /// <summary>The file in a repository that tells its agent how to work.</summary>
     /// <remarks>
-    /// <b>Found by lens 2: this was written and never described.</b> Enrolment creates or appends
-    /// to it, and the confirmation named two files — the launch configuration and the catalogue —
-    /// under a title that said "these two files". Three were written. A surface that writes a file
-    /// in somebody's repository without its description covering it is doing something its
-    /// description did not cover, which is the rule this whole dialog exists for, and the
-    /// repository is not the one the person is looking at.
+    /// Enrolment creates or appends to it, so the confirmation must describe it: a surface that
+    /// writes a file in somebody's repository has to say so first, and the repository is not the
+    /// one the person is looking at.
     /// </remarks>
     internal const string Instructions = "CLAUDE.md";
-
-    // **`Shared` was here, and 018 removed the state it described.** It explained why a second project got
-    // a launch entry and no catalogue line: FR-013 let a repository answer in several projects and be
-    // started unattended by only one, because two nodes launching one working directory is two models
-    // editing one checkout. The catalogue is one file keyed by the agent's identity now, so every project
-    // shares the one entry and there is no second case to explain.
 
     /// <summary>What is said about the process this is about to start.</summary>
     /// <remarks>
@@ -211,14 +190,13 @@ internal static class Adding
     /// <param name="startedIn">The folder the terminal was started from, where the picker opens before anything is added.</param>
     /// <param name="enrolling">
     /// Told what is happening to the agent being added, at each step, and null when it is over. Adding waits up to
-    /// <see cref="Starting.Patience"/> for the agent to register, and without this the screen said nothing for all of it.
+    /// <see cref="Starting.Patience"/> for the agent to register, and this is what the screen says meanwhile.
     /// </param>
     /// <returns>When the first dialog is open.</returns>
     /// <remarks>
-    /// <b>The folder is found before it is named.</b> The owner was typing an absolute path per
-    /// agent, into a field that could only report afterwards that one of them was not a directory —
-    /// nineteen repositories is nineteen chances to mistype one. What is chosen fills the field in,
-    /// and the field is still typed into: somebody who knows the path should not have to walk to it.
+    /// <b>The folder is found before it is named.</b> A typed path can only be reported wrong
+    /// afterwards, so a picker comes first. What is chosen fills the field in, and the field is still
+    /// typed into: somebody who knows the path should not have to walk to it.
     /// </remarks>
     internal static Task OpenAsync(
         IApplication app,
@@ -277,13 +255,13 @@ internal static class Adding
             [
                 new FormField("Repository directory on this machine:", workspace, WorkspaceProblem),
                 new FormField(
-                    "The role peers will address it by — lowercase letters, digits and hyphens:",
+                    "Role (how peers address it):",
                     string.Empty,
                     RoleProblem,
                     Correct: EnrollmentPlan.CorrectName,
                     Corrected: EnrollmentPlan.NameWasCorrected),
                 new FormField(
-                    "What it owns, and what it does not (optional, and never invented for you):",
+                    "What it owns, and what it does not (optional):",
                     string.Empty,
                     OwnsProblem,
                     Long: true),
@@ -330,8 +308,7 @@ internal static class Adding
             + (catalogue.Exists()
                 ? string.Empty
                 : $"This machine has no catalogue yet, so one is created at "
-                  + $"{catalogue.Proposed()}. It is what starts every agent on this machine, in "
-                  + "every project."),
+                  + $"{catalogue.Proposed()}."),
             [NotNow, Write]);
 
         var token = Prompting.Open(app, asking);
@@ -358,23 +335,19 @@ internal static class Adding
     /// <param name="registered">Asks whether the registry holds it, or null when nothing can.</param>
     /// <param name="role">The role that was added.</param>
     /// <param name="project">The project it joined.</param>
-    /// <param name="deployment">Every project on the machine, so that one can be found.</param>
     /// <param name="cancellationToken">Stops the call.</param>
     /// <returns>What to say about it.</returns>
     /// <remarks>
     /// <para>
     /// <b>A failure here is reported and never thrown.</b> The files are already written and the
     /// agent is already catalogued, so a broker that did not answer leaves an agent somebody can
-    /// still start later -- exactly the state 005 shipped. Losing the whole enrolment because the
-    /// last of three steps could not be taken would be the worse outcome.
+    /// still start later. Losing the whole enrolment because the last of three steps could not be
+    /// taken would be the worse outcome.
     /// </para>
     /// <para>
-    /// <b>The start goes to whichever project can actually take it, which is not always this
-    /// one.</b> When another project holds the unattended consent, this project's node does not
-    /// name the role and would refuse — so the request goes to the one that does. That is not a
-    /// detour: the node starts a client in the repository's own directory, the client brings up
-    /// every parley server in its launch configuration, and the entry just written is one of them.
-    /// One start, two registrations.
+    /// <b>The start goes to the project being added to.</b> Every project's node reads the same
+    /// catalogue. The node starts a client in the repository's own directory, and the client brings
+    /// up every parley server in its launch configuration, the entry just written among them.
     /// </para>
     /// </remarks>
     internal static async Task<string> StartAsync(
@@ -382,44 +355,22 @@ internal static class Adding
         Func<ProjectSettings, AgentName, CancellationToken, Task<ProjectRead<bool>>>? registered,
         string role,
         ProjectSettings project,
-        IReadOnlyList<ProjectSettings> deployment,
         CancellationToken cancellationToken)
     {
-        if (start is null)
+        if (start is null || !AgentName.TryCreate($"{role}@{MachineName.Current}", out var agent))
         {
             return NotStarted;
         }
 
-        // **One catalogue entry now, so the start goes to the project being added to.** It used to be
-        // dispatched through whichever project held the consent, because only that project's node could
-        // launch the checkout. Every project's node reads the same catalogue.
-        var (asking, named) = (project, role);
-
-        if (asking is null
-            || !AgentName.TryCreate($"{named}@{MachineName.Current}", out var agent)
-            || !AgentName.TryCreate($"{role}@{MachineName.Current}", out var added))
-        {
-            return NotStarted;
-        }
-
-        // **Asked, and then looked at.** This used to end here, with the node's answer and a
-        // sentence promising what would happen next — "It registers itself as it attaches" — which
-        // is a prediction rather than a result. The owner enrolled nineteen repositories, was told
-        // each one had started, and found every one of them unaddressable: a node reports that it
-        // launched something, and whether the adapter attached and registered is a question only
-        // the registry answers. `parley enroll apply` has looked since 012 step 1; this did not.
-        // **Started through one project, looked for in the other.** The start goes to the project whose node names this
-        // repository, under the role it has there; the question this screen answers is whether the agent just added is
-        // in the project it was added to, under the role it was added as. Asking the starting project about its own role
-        // was always yes for a repository it already ran, so the owner was told "It can be asked and told now" about a
-        // name the project it was added to had never seen — and the agents list, redrawn from that project, said
-        // otherwise beside the claim.
+        // **Asked, and then looked at.** A node reports that it launched something; whether the adapter
+        // attached and registered is a question only the registry answers, so the screen claims the
+        // agent can be addressed only once the registry holds it, under the project and role it was added as.
         var was = await Starting.OnceAsync(
             agent,
-            (who, token) => start(asking, who, token),
+            (who, token) => start(project, who, token),
             registered is null
                 ? (_, _) => Task.FromResult(ProjectRead<bool>.Unreachable(Unchecked))
-                : (_, token) => registered(project, added, token),
+                : (_, token) => registered(project, agent, token),
             Starting.Patience,
             TimeProvider.System,
             cancellationToken,
@@ -427,9 +378,8 @@ internal static class Adding
 
         var through = $"'{role}'";
 
-        // **Three answers, not two, and the third is the one that misled somebody.** Nothing
-        // started is the old sentence unchanged; started and registered is the only case that may
-        // say the agent can be addressed; started and not seen says exactly that and no more.
+        // **Three answers.** Nothing started; started and registered, the only case that may say the
+        // agent can be addressed; started and not seen, which says exactly that and no more.
         return was switch
         {
             { Launched: false } => $"{Safe.Text(was.Says)} {NotStarted}",
@@ -439,37 +389,24 @@ internal static class Adding
         };
     }
 
-    /// <summary>What is added when a repository another project runs was not seen registering in this one.</summary>
-    /// <remarks>
-    /// The likeliest reason, and the one thing a person can do about it. A session reads its launch configuration when it
-    /// starts, so a session the other project already has running holds every server but the one just written, and a
-    /// start through that project gives it a turn rather than a restart.
-    /// </remarks>
-    private const string Reload =
-        "If that repository's session was already running, it loads the new entry only when it is restarted.";
-
     /// <summary>What is said when there is no broker to ask whether it registered.</summary>
     private const string Unchecked = "nothing here could ask the registry whether it did";
 
     /// <summary>What is said after a start whose registration was not seen.</summary>
     /// <remarks>
-    /// <b>"I do not know", never "it did not happen".</b> 008 exists because a broker stopped
-    /// waiting before a node had finished and recorded the opposite of what occurred, and an agent
-    /// that registers a second after this stopped looking is working. What this says is what to do
-    /// about either case, which is the same thing in both.
+    /// <b>"I do not know", never "it did not happen".</b> An agent that registers a second after
+    /// this stopped looking is working. What this says is what to do about either case, which is the
+    /// same thing in both.
     /// </remarks>
     private const string Later =
-        "Check the agents list shortly: until something has registered under this name, it cannot "
-        + "be asked or told.";
+        "Until it registers, it cannot be asked or told.";
 
     /// <summary>What is said when the start did not happen.</summary>
     /// <remarks>
     /// <para>
-    /// <b>This said the next Request would start it, and that cannot happen.</b> Every message is
-    /// refused for an unroutable recipient, and §14 counts a name nothing has
-    /// registered as unroutable — so until something has attached under this name, no message
-    /// reaches it and none of them starts it. The sentence sent a person to the one remedy that
-    /// does not work.
+    /// <b>The next Request does not start it.</b> Every message is refused for an unroutable
+    /// recipient, and §14 counts a name nothing has registered as unroutable — so until something has
+    /// attached under this name, no message reaches it and none of them starts it.
     /// </para>
     /// <para>
     /// What does work is what §12.3 permits: an operator asking its machine to start it, which is
@@ -485,8 +422,7 @@ internal static class Adding
     /// </remarks>
     internal const string NotStarted =
         "It was not started now. Opening its repository starts it, and so does starting it from "
-        + "this screen. Until something has, it cannot be asked or told: a name nothing has "
-        + "registered is not one messages can be addressed to.";
+        + "this screen. Until it registers, it cannot be asked or told.";
 
     /// <summary>Writes the files, creating the catalogue first when there is none.</summary>
     private static async Task WriteAsync(
@@ -511,10 +447,7 @@ internal static class Adding
 
             var file = await catalogue.EnsureAsync(said, cancellationToken).ConfigureAwait(false);
 
-            // **Unattended only when nothing else starts this repository.** FR-013 admits the
-            // repository into a second project and refuses it a second unattended start, and this
-            // is where the difference is made: asking for one here is what used to make the whole
-            // enrolment throw, with no way past it from this screen.
+            // Unattended, so a node may start the agent when a question arrives for it.
             var entry = new EnrollmentEntry(
                 workspace, role, owns.Length == 0 ? null : owns, Unattended: true)
             {
@@ -527,7 +460,6 @@ internal static class Adding
                 file,
                 Path.Combine(workspace, Instructions),
                 cancellationToken,
-                deployment,
                 catalogue.ManifestPath).ConfigureAwait(false);
 
             // Remembered only once the files are on disk, so the next search opens beside a
@@ -538,29 +470,22 @@ internal static class Adding
             said.AddRange(outcome.Notes);
             said.AddRange(outcome.Written.Select(path => $"wrote {path}"));
 
-            // **The step 005 said could not be taken.** Its planning was right that a surface must
-            // not write a registration on a repository's behalf -- §12.3 forbids it and §16 makes
-            // that the whole trust model -- and wrong that this left nothing to do. §12.3's own
-            // closing paragraph routes spawn-on-demand through the manifest, which is what the
-            // catalogue entry just written is, so the broker can be asked to launch the role and
-            // the launched adapter registers itself under the identity its launch fixes.
-            //
-            // Nothing here claims to be anybody. The start is a request; the registration is the
-            // agent's own act.
+            // A surface must not write a registration on a repository's behalf (§12.3, §16). §12.3's
+            // closing paragraph routes spawn-on-demand through the catalogue entry just written, so the
+            // broker is asked to launch the role and the launched adapter registers itself under the
+            // identity its launch fixes. The start is a request; the registration is the agent's own act.
             await Telling(
                 $"Adding '{role}': its files are written. Starting it and waiting up to "
                 + $"{(int)Starting.Patience.TotalSeconds} seconds for it to register...").ConfigureAwait(false);
 
-            said.Add(await StartAsync(start, registered, role, project, deployment, cancellationToken)
+            said.Add(await StartAsync(start, registered, role, project, cancellationToken)
                 .ConfigureAwait(false));
         }
         catch (InterruptedEnrolment interrupted)
         {
-            // **The one failure that arrives with files already changed, and the sentence below was
-            // untrue on it.** The catch under this one said `Nothing was written.` for every failure
-            // alike, so on this path the screen printed the list of changed files and then denied it
-            // on the next line — and a report that asserts the opposite of what happened settles the
-            // question wrongly, where one that merely omits leaves somebody uncertain.
+            // The one failure that arrives with files already changed, so it reports them and never
+            // says `Nothing was written.`: a report that asserts the opposite of what happened settles
+            // the question wrongly.
             said.Add($"{role}: {interrupted.Message}");
             said.AddRange(interrupted.Written.Select(path => $"wrote {path}"));
         }
@@ -595,11 +520,8 @@ internal static class Adding
 /// <param name="Given">The catalogue somebody named, or null to work it out from the manifest.</param>
 /// <remarks>
 /// <para>
-/// <b>One catalogue per machine, beside the manifest</b> (018). It was one per project, recorded on the
-/// project through the command that owns the manifest — and that binding is what made a checkout
-/// startable in the project whose file named it and unstartable in every other, while being addressable
-/// in all of them. Nothing is recorded on a project any more, so creating one no longer rewrites the
-/// manifest and no longer restarts a broker.
+/// <b>One catalogue per machine, beside the manifest.</b> Nothing is recorded on a project, so
+/// creating one never rewrites the manifest and never restarts a broker.
 /// </para>
 /// <para>
 /// <b>Beside the manifest rather than beside a store</b>, which is where the per-project one went. A
@@ -660,11 +582,10 @@ internal sealed record Catalogue(string? ManifestPath, string? Given = null)
     /// <param name="cancellationToken">Stops the write.</param>
     /// <returns>The catalogue file to write into.</returns>
     /// <remarks>
-    /// <b>Creating one no longer records anything on a project</b> (018). It used to run
-    /// <c>project set --node-config</c>, which rewrote the manifest — and the serve watcher compares the
-    /// manifest to decide whether a deployment is the same one, so adding the first agent to a project
-    /// restarted its broker and dropped every agent attached to it. There is nothing to record: the node
-    /// resolves this file the same way this does, from the machine rather than from a row.
+    /// <b>Creating one records nothing on a project.</b> The serve watcher compares the manifest to
+    /// decide whether a deployment is the same one, so rewriting it would restart a broker and drop
+    /// every agent attached. The node resolves this file the same way, from the machine rather than
+    /// from a row.
     /// </remarks>
     internal async Task<string> EnsureAsync(
         List<string> said,
@@ -684,7 +605,7 @@ internal sealed record Catalogue(string? ManifestPath, string? Given = null)
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            said.Add($"Created {path}, which is what this machine starts its agents from.");
+            said.Add($"Created {path}.");
         }
 
         return path;

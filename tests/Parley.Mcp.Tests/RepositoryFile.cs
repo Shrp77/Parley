@@ -28,6 +28,23 @@ internal static class RepositoryFile
         File.ReadAllText(Path.Combine(RootHolding(name), name))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
 
+    /// <summary>The README and every page under <c>docs/</c>, as one text.</summary>
+    /// <returns>Their text, with line endings normalised to line feeds.</returns>
+    /// <remarks>
+    /// The README is the front page and the pages under <c>docs/</c> hold the rest, so a check that a
+    /// reader is told something asks the set. A check for a particular page names that page.
+    /// </remarks>
+    public static string Documentation()
+    {
+        var root = RootHolding("README.md");
+
+        var pages = Directory.GetFiles(Path.Combine(root, "docs"), "*.md")
+            .Order(StringComparer.Ordinal)
+            .Prepend(Path.Combine(root, "README.md"));
+
+        return string.Join("\n", pages.Select(p => File.ReadAllText(p))).Replace("\r\n", "\n", StringComparison.Ordinal);
+    }
+
     /// <summary>Finds the directory above the test assembly that holds a file.</summary>
     /// <param name="name">The file name, as it appears at the repository root.</param>
     /// <returns>That directory's full path.</returns>

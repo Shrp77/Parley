@@ -64,8 +64,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         if (PersonSeat.Is(name) != string.Equals(request.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
         {
             // Both directions (§12.3). The second is the one with the standing in it: the broker recognises the person by
-            // this adapter, so an agent registering under it could name any conversation as only a person may — found by
-            // the combined review gate, round 3, after round 1 closed only the first.
+            // this adapter, so an agent registering under it could name any conversation as only a person may.
             throw new RpcException(new Status(
                 StatusCode.PermissionDenied,
                 PersonSeat.Is(name)
@@ -74,6 +73,16 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         }
 
         RequireTheSameProtocol(request.ProtocolVersion);
+
+        // A label, not a credential (§4.1.1): one that is not an identifier is a malformed call, refused whole so a typo
+        // cannot register an agent that will never be found by it.
+        var identity = default(AgentIdentity);
+
+        if (Blank(request.Identity) is { } written && !AgentIdentity.TryRead(written, out identity))
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument, $"'{written}' is not an agent identity, so this attach is refused."));
+        }
 
         var registration = new AgentRecord(
             name,
@@ -84,7 +93,8 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             Blank(request.AdapterConfig),
             Connected: false,
             AgentStatus.Active,
-            Blank(request.Owns));
+            Blank(request.Owns),
+            Identity: identity);
 
         AttachedAgent attached;
 
@@ -519,8 +529,8 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     /// <remarks>
     /// <para>
     /// The poll reaches a participant through its inbox, and only a participant that collects sees it. One that
-    /// finished its part has no reason to collect again, so without this the conversation stayed closing and
-    /// nothing asked it. The reason names nobody: the poll leaks nothing about who else was asked (§5.0).
+    /// finished its part has no reason to collect again, so without this nothing would
+    /// ask it. The reason names nobody: the poll leaks nothing about who else was asked (§5.0).
     /// </para>
     /// <para>
     /// <b>At most once for each participant in each poll.</b> Each turn is a collection and a collection frees the

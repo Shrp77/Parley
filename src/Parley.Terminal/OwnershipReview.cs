@@ -6,11 +6,11 @@ namespace Parley.Terminal;
 
 /// <summary>
 /// The ownership review: every agent, the line its peers read, where that line came from, and whatever Parley is
-/// waiting on — with the decisions a person can make about each (SPEC.md §10.2, FR-016 to FR-018).
+/// waiting on — with the decisions a person can make about each (SPEC.md §10.2).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What makes Auto Accept safe to leave on</b> (the owner's D3). A line accepted automatically is one no person
+/// <b>What makes Auto Accept safe to leave on.</b> A line accepted automatically is one no person
 /// read, and this is where a person reads it, sees that nobody had, and corrects it if it is wrong. So the provenance is
 /// on every row, in words rather than a colour, from <see cref="Provenance"/> — the one set of words both surfaces use.
 /// </para>
@@ -19,8 +19,8 @@ namespace Parley.Terminal;
 /// discarding are operator decisions, so a person reviewing ownership holds nothing and speaks as nobody.
 /// </para>
 /// <para>
-/// <b>Accepting writes the launch configuration first</b>, through <see cref="Ownership.AcceptAsync"/> — 020's path,
-/// with its machine rule and its order. A person's acceptance also settles the question Parley was waiting on, which the
+/// <b>Accepting writes the launch configuration first</b>, through <see cref="Ownership.AcceptAsync"/>, with its
+/// machine rule and its order. A person's acceptance also settles the question Parley was waiting on, which the
 /// broker does as it records the line.
 /// </para>
 /// </remarks>
@@ -52,7 +52,7 @@ internal static class OwnershipReview
 
     /// <summary>Said when there is nobody to review.</summary>
     internal const string NobodyToReview =
-        "There is no agent in this project yet. Parley asks each one what it owns when it first attaches.";
+        "There is no agent in this project yet.";
 
     /// <summary>Opens the review for a project.</summary>
     /// <param name="app">The application the dialogs open in.</param>
@@ -153,7 +153,6 @@ internal static class OwnershipReview
              : "answers wait here for a person.")}
 
          Each row says where the line came from. A line "{Provenance.Automatic}" is one nobody has checked.
-         Choose an agent to read its line and its answer, and to decide what happens.
          """;
 
     /// <summary>Everything about one agent's line, for a person deciding.</summary>
@@ -162,8 +161,8 @@ internal static class OwnershipReview
     /// <returns>The description.</returns>
     /// <remarks>
     /// <b>The answer is shown as the agent wrote it, and marked as the agent's</b>: what the person is deciding is
-    /// whether a model's sentence becomes what every peer reads, and 020 rests on a reader telling a model's words from
-    /// a person's.
+    /// whether a model's sentence becomes what every peer reads, which depends on a reader telling a model's words
+    /// from a person's.
     /// </remarks>
     internal static string Detail(AgentRecord agent, OwnershipQuestion? question)
     {

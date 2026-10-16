@@ -12,9 +12,9 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The region SC-001 starts from: a person reaches a conversation without typing an identifier,
+/// The region a person starts from: a conversation is reached without typing an identifier,
 /// so the list is chosen from rather than typed into, and the first project is selected on open
-/// so that the other three regions have something to show without a key being pressed.
+/// so that the other regions have something to show without a key being pressed.
 /// </para>
 /// <para>
 /// Every project is asked at once and each is contained. Asked in sequence the cost of the screen
@@ -39,8 +39,7 @@ internal sealed class ProjectsRegion : FrameView
 
     /// <summary>What is shown when the machine names none.</summary>
     internal const string Nothing =
-        "This machine names no projects yet. Press Alt+c to create one, or Alt+? for everything this "
-        + "region can do.";
+        "No projects yet. Press Alt+c to create one.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Projects);
 
@@ -60,8 +59,7 @@ internal sealed class ProjectsRegion : FrameView
         Lists.Tint(_list, Tint);
 
         // Moving the highlight is choosing. There is no second key to press, because the other
-        // three regions are already on screen showing whatever is selected — asking a person to
-        // confirm a selection whose consequences they can already see is the wizard this replaced.
+        // regions are already on screen showing whatever is selected.
         _list.ValueChanged += (_, _) => Announce();
     }
 
@@ -102,7 +100,7 @@ internal sealed class ProjectsRegion : FrameView
         var keep = Selected?.Name.Value;
 
         // The projects that read, with what was left out said after them: one bad folder costs that project and no
-        // other (the combined review gate). After rather than above, so a row's position is still its project's.
+        // other. After rather than above, so a row's position is still its project's.
         _projects = [.. projects];
 
         // Names and addresses are padded to the widest of each, so the columns line up and the eye can run
@@ -186,9 +184,8 @@ internal sealed class ProjectsRegion : FrameView
     /// <param name="addresses">The width the address column is padded to.</param>
     /// <returns>Its name, where it answers, whether it does, what is in it, and its description.</returns>
     /// <remarks>
-    /// <b>The facts a person wants are on the row, not in a message.</b> The owner's call of 2026-09-27:
-    /// creating a project printed a paragraph about ports and stores and tunnels, and the one fact worth
-    /// having -- where it answers -- scrolled away with it. The address is the project's own and is always
+    /// <b>The facts a person wants are on the row, not in a message</b>, above all where the project
+    /// answers. The address is the project's own and is always
     /// shown; the counts need its broker, so a project that did not answer shows none rather than zeros,
     /// which would be a claim about a deployment nothing could ask.
     /// </remarks>

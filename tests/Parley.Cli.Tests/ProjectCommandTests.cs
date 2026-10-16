@@ -12,17 +12,13 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>019 turned this command into one argument.</b> It required <c>--db &lt;path&gt;</c> and
-/// <c>--listen &lt;url&gt;</c>, neither defaulted, so a person naming a project had to invent a
-/// filesystem path and pick a free port and then remember both — and the form could only tell them
-/// afterwards that one of them clashed. A project's store is derived from its name now and its port is
-/// claimed, so those two questions have gone rather than acquired better defaults.
+/// <b>The command takes one argument.</b> A person naming a project does not invent a
+/// filesystem path or pick a free port. A project's store is derived from its name and its port is
+/// claimed, so those two questions do not arise.
 /// </para>
 /// <para>
-/// So the tests that asserted the refusals are converted by the rule the rest of this conversion uses:
-/// where the rule outlived its subject it is repointed, and where the behaviour genuinely ended the test
-/// asserts the <b>absence</b> — that two projects cannot be given one store because there is no store to
-/// give, rather than that the attempt is refused.
+/// So the tests assert the <b>absence</b> where the behaviour does not exist — that two projects cannot
+/// be given one store because there is no store to give, rather than that the attempt is refused.
 /// </para>
 /// <para>
 /// <b>Removal is where the danger is, and it is danger by omission.</b> Taking a project out forgets how
@@ -88,8 +84,7 @@ public sealed class ProjectCommandTests : IDisposable
         return (code, output.ToString(), error.ToString());
     }
 
-    // **One argument.** The store and the endpoint used to be required here and are not supplied
-    // anywhere in this file any more, which is the shape of the change more plainly than any assertion.
+    // **One argument.** The store and the endpoint are not supplied anywhere in this file.
     private Task<(int Code, string Out, string Error)> AddAsync(
         string name, string? description = null) =>
         RunAsync(["add", name], new ProjectFields(description));
@@ -115,7 +110,7 @@ public sealed class ProjectCommandTests : IDisposable
         Assert.Equal("orders", project.Name.Value);
         Assert.Equal(Store("orders"), project.Store);
 
-        // **Both facts, because both were things a person used to have to supply.** The endpoint is what
+        // **Both facts, because a person supplies neither.** The endpoint is what
         // every other command needs to reach it, and the folder is what a backup has to include —
         // neither is anywhere they can look up without being told once.
         Assert.Contains(project.Endpoint, output, StringComparison.Ordinal);
@@ -125,7 +120,7 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task A_name_is_the_whole_of_it()
     {
-        // **SC-001 at this level**: the claim that an operator types one project name and has a working
+        // **The claim** that an operator types one project name and has a working
         // deployment. Nothing is passed but the name, and what comes back is a port in the band and a
         // store inside the project's own folder.
         var (code, _, error) = await AddAsync("orders");
@@ -192,8 +187,8 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task Two_projects_are_never_handed_one_port()
     {
-        // **What `A_duplicate_endpoint_is_refused` used to assert, from the other side.** Nobody types an
-        // endpoint now, so the way to collide is to be handed the same one — which is what the claim
+        // **A duplicate endpoint, from the other side.** Nobody types an
+        // endpoint, so the way to collide is to be handed the same one — which is what the claim
         // exists to prevent, and what `PortLedgerTests` probes concurrently. Here it is the ordinary
         // sequential case, through the command a person actually runs.
         await AddAsync("orders");
@@ -211,15 +206,10 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task An_endpoint_cannot_be_stated_at_all_and_the_refusal_says_where_it_lives()
     {
-        // **Two tests stood here, written to FR-020, which is withdrawn.** They checked that `--listen`
-        // took a stated endpoint — including a non-loopback one — and that a second project asking for
-        // the same port was refused. The reasoning behind them survives and is worth keeping: SPEC.md
-        // §16 does permit a broker on a private network, and nothing here can know which interface
-        // somebody means, so what is handed out is always loopback.
-        //
-        // What was wrong is the conclusion that the remedy belongs on a command line. It bought one more
-        // thing a person supplies and two rules about which source wins, on a feature whose whole point
-        // is that a project is named rather than pathed.
+        // SPEC.md §16 does permit a broker on a private network, and nothing here can know which
+        // interface somebody means, so what is handed out is always loopback. The remedy does not
+        // belong on a command line: it would be one more thing a person supplies and two rules about
+        // which source wins, where the point is that a project is named rather than pathed.
         //
         // **So the refusal has to say where the endpoint does live**, or this is a capability removed
         // with nowhere to go. Driven through the real binary, because the refusal is in the entry point.
@@ -228,7 +218,6 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(64, code);
         Assert.Contains("--listen", error, StringComparison.Ordinal);
-        Assert.Contains("`parley`",error, StringComparison.Ordinal);
 
         // And nothing was created on the way to refusing it.
         Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
@@ -281,8 +270,8 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task A_store_cannot_be_named_at_all_and_saying_so_is_the_point()
     {
-        // **Said rather than ignored.** Every deployment on the owner's machine was made with
-        // `project add --db <path>`, so somebody will type it again from memory or from a script — and a
+        // **Said rather than ignored.** Somebody who made a deployment with
+        // `project add --db <path>` will type it again from memory or from a script — and a
         // flag silently passed over is a person believing their store went where they said it would.
         //
         // Driven through the real binary, because the refusal lives in the entry point: an in-process
@@ -292,10 +281,6 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(64, exitCode);
         Assert.Contains("--db", error, StringComparison.Ordinal);
-
-        // Named with what replaced it. "Not an option this command takes" would be true and useless to
-        // somebody typing what every deployment on every machine was made with.
-        Assert.Contains("`parley`",error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -340,9 +325,8 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task Removing_one_project_beside_an_unreadable_one_changes_nothing()
     {
-        // The combined review gate's finding (lens 3, run 4), and a regression from the round before it: reading leaves an
-        // unreadable project out, the writer removes every configuration not in what it is handed — so removing `orders`
-        // deleted `billing`'s file too, and said "Nothing was deleted".
+        // Reading leaves an unreadable project out, and the writer removes every configuration not in what it is
+        // handed — so removing `orders` must not delete `billing`'s file too and say "Nothing was deleted".
         await AddAsync("orders");
 
         Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("billing")));
@@ -384,7 +368,7 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task Removing_gives_the_port_back()
     {
-        // FR-014. A port kept against a project that has gone is a port nothing can ever use again, and
+        // A port kept against a project that has gone is a port nothing can ever use again, and
         // nothing would say so — the band would simply be one narrower every time somebody changed their
         // mind about a name.
         await AddAsync("orders");
@@ -405,8 +389,7 @@ public sealed class ProjectCommandTests : IDisposable
     [Fact]
     public async Task Removing_a_project_whose_broker_is_still_running_says_so()
     {
-        // FR-029, which was implemented and never exercised — the branch existed, and nothing had ever
-        // taken it. Forgetting how to reach a broker does not stop the broker: the process keeps its
+        // Forgetting how to reach a broker does not stop the broker: the process keeps its
         // port and its store, and the configuration just deleted was the only record of where it was.
         // Somebody who meant to shut a project down and ran this instead needs telling, and they need
         // telling at the moment they do it.
@@ -414,8 +397,8 @@ public sealed class ProjectCommandTests : IDisposable
         // A real broker on a real port, because the check is a connection attempt and a listener that
         // does not speak HTTP/2 would be reported unreachable — which is the answer that makes this test
         // pass while proving nothing.
-        // **The endpoint is read back rather than chosen.** It used to be stated with `--listen`; the
-        // project is handed one from the band now, and a broker started on that address is what makes
+        // **The endpoint is read back rather than chosen.** The
+        // project is handed one from the band, and a broker started on that address is what makes
         // the check a real connection attempt rather than a listener that cannot speak HTTP/2.
         Assert.Equal(0, (await AddAsync("orders")).Code);
 
@@ -499,10 +482,10 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.Contains("orders", output, StringComparison.Ordinal);
-        // **`not answering`, and it said `not reachable` until FR-023 was built.** That word meant
-        // "this process connected to it" and read as "reachable from the network" — which is what
-        // somebody planning a firewall rule would act on, and no rule they could write would make
-        // a loopback port reachable. The listing keeps the two facts apart now.
+        // **`not answering`, not `not reachable`.** The latter would mean "this process connected to
+        // it" and read as "reachable from the network" — which is what somebody planning a firewall
+        // rule would act on, and no rule they could write would make a loopback port reachable. The
+        // listing keeps the two facts apart.
         Assert.Contains("not answering", output, StringComparison.Ordinal);
         Assert.Contains("only this machine can address it", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);

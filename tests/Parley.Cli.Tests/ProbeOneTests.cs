@@ -6,12 +6,12 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 1: what happens when two things happen at once, and what a file with
+/// What happens when two things happen at once, and what a file with
 /// a shape nobody writes by hand does.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Probes, not readings.</b> The highest-value findings in this repository's history came from
+/// <b>Probes, not readings.</b> The highest-value defects in this repository's history were found by
 /// writing the malicious or concurrent case and watching it be admitted — a self-referral asserting
 /// both halves of a contradiction, a gate cycle no sub-question could resolve, an agent writing
 /// <c>ghosted</c> over its own answered exchanges. None were visible by inspection.
@@ -157,7 +157,7 @@ public sealed class ProbeOneTests : IDisposable
     {
         // The reader refusing is only half the fix: what matters is that each caller turns the
         // refusal into a sentence rather than a stack trace. Enrolling, withdrawing and scanning all
-        // read this file and all three used to crash on it.
+        // read this file and none of the three may crash on it.
         await File.WriteAllTextAsync(
             LaunchFile,
             """
@@ -251,7 +251,7 @@ public sealed class ProbeOneTests : IDisposable
     [Fact]
     public void The_workspace_comparison_used_by_the_catalogue_rule_is_the_specified_one()
     {
-        // FR-013 rests entirely on this. If it ever stopped agreeing with SPEC.md §4.1.1, the rule
+        // The catalogue rule rests entirely on this. If it ever stopped agreeing with SPEC.md §4.1.1, the rule
         // would pass on the machine it was written for and fail on somebody else's spelling.
         Assert.True(WorkspacePath.SameRepository("C:/src/x", "C:\\src\\x"));
         Assert.True(WorkspacePath.SameRepository("C:/src/x/", "C:/src/x"));

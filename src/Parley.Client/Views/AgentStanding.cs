@@ -35,12 +35,8 @@ public sealed record AgentStanding(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This replaces <c>catalogued, not yet registered</c> and <c>not in this catalogue</c>.</b> The
-/// owner read both on screen and could not say what either meant, which is a fair verdict: they
-/// name the mechanism rather than the fact, and the mechanism is two files a person did not write.
-/// </para>
-/// <para>
-/// There are exactly two facts to convey, and every phrase below is one or both of them:
+/// Phrases name the fact rather than the mechanism, because the mechanism is two files a person did
+/// not write. There are exactly two facts to convey, and every phrase below is one or both of them:
 /// </para>
 /// <list type="bullet">
 /// <item><description>has anything ever run under this name;</description></item>
@@ -115,18 +111,10 @@ public static class Standing
     /// <exception cref="ArgumentNullException"><paramref name="catalogued"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// Takes the roles as plain strings rather than a catalogue object, and keeps doing so now
-    /// that it could do otherwise. This said that <c>NodeCatalogue</c> lived in an assembly this
-    /// one does not reference and must not — true when it was written, and no longer: the reader
-    /// has moved to <c>Parley.Configuration</c>, which this project already references. It was
-    /// there because the terminal reached a store through it, which nothing could check.
-    /// </para>
-    /// <para>
-    /// The strings stay because they were always the better boundary, not merely the available
-    /// one. What this needs is the set of role names; a file reader is a thing that answers that
-    /// question and several others, and its callers reach it from different places — the node from
-    /// a path it was given, a surface from a project it is showing. Narrowing the parameter to what
-    /// is used keeps both callers honest about what they are passing.
+    /// Takes the roles as plain strings rather than a catalogue object. What this needs is the set of
+    /// role names; a file reader answers that question and several others, and its callers reach it
+    /// from different places. Narrowing the parameter to what is used keeps both callers honest about
+    /// what they are passing.
     /// </para>
     /// <para>
     /// A catalogue name that is not a well-formed agent name still gets a row, saying so. Dropping
@@ -145,23 +133,15 @@ public static class Standing
 
         var rows = new List<AgentStanding>();
 
-        // **A catalogue is keyed by role and a registration is named `role@machine`, and this
-        // compared one against the other in both directions.** `catalogued.Contains(name.Value)` asked
-        // whether a set of roles held `orders@somemachine`, which it never does, so
-        // `StartableHere` was false for every agent that had ever registered; and the de-duplication
-        // below asked whether a set of full names held `orders`, which it never does, so every
-        // catalogued role was listed a second time as a bare-role row beside its own registration.
-        // The bare row is what the owner then typed into the composer, which demands a full name and
-        // refused the thing the list had just printed.
+        // **`catalogued` holds roles and a registration is named `role@machine`**, so a role is matched
+        // against `name.Role`, and registered roles are compared as roles, never as full names.
         //
         // The catalogue passed here is one machine's, so a role in it makes an agent startable only
         // when the agent is on that machine -- comparing roles alone would call a namesake on another
         // box startable here.
         //
         // **Passed in rather than read from `MachineName.Current`.** This is a pure view function and
-        // a machine-wide static inside one is a hidden input: it is what made the fixtures below
-        // register agents on a machine the function could not agree was theirs, which is the kind of
-        // gap a module initializer gets added to paper over.
+        // a machine-wide static inside one is a hidden input.
         var here = machine;
 
         foreach (var agent in registry ?? [])
@@ -175,8 +155,8 @@ public static class Standing
 
             rows.Add(new AgentStanding(
                 agent.Name.Value,
-                // The person reads here or away and nothing else (023 T039): "your seat" said whose row it is and
-                // nothing about whether anybody was there, which is the one fact a peer asking them needs.
+                // The person reads here or away and nothing else: whether anybody is there is the one fact a
+                // peer asking them needs.
                 seat ? (agent.Presence == AgentPresence.Here ? Here : Away)
                     : agent.OpenOutside && !retired ? Outside
                     : Phrase(retired, running, agent.Presence, startable, everRun: true),
@@ -216,64 +196,6 @@ public static class Standing
 
         return [.. rows.OrderBy(row => row.Name, StringComparer.Ordinal)];
     }
-
-    /// <summary>How each role should be spelled, given everything on the roster.</summary>
-    /// <param name="registry">What the broker knows, or null when it could not be asked.</param>
-    /// <param name="catalogued">The roles this machine's catalogue names.</param>
-    /// <param name="machine">The machine that catalogue is for.</param>
-    /// <returns>Role and machine to the name a row shows.</returns>
-    /// <remarks>
-    /// <b>Public because two derivations draw the same list and are paired by the name they print.</b>
-    /// <c>AgentsRegion.Grouped</c> matches a row to its standing with <c>s.Name == row.Name</c>, so a
-    /// naming rule implemented in one of them and not the other does not merely look inconsistent —
-    /// the pairing silently fails and every row falls back to its own older wording, which is the
-    /// wording <see cref="AgentStanding"/> was written to replace. One rule, asked for by both.
-    /// </remarks>
-    public static Func<string, string, string> Names(
-        IReadOnlyList<AgentRecord>? registry, IReadOnlySet<string> catalogued, string machine)
-    {
-        ArgumentNullException.ThrowIfNull(catalogued);
-
-        var machines = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-
-        foreach (var agent in registry ?? [])
-        {
-            if (!machines.TryGetValue(agent.Name.Role, out var seen))
-            {
-                machines[agent.Name.Role] = seen = new HashSet<string>(StringComparer.Ordinal);
-            }
-
-            seen.Add(agent.Name.Machine);
-        }
-
-        foreach (var role in catalogued)
-        {
-            if (!machines.TryGetValue(role, out var seen))
-            {
-                machines[role] = seen = new HashSet<string>(StringComparer.Ordinal);
-            }
-
-            seen.Add(machine);
-        }
-
-        return (role, on) => Named(role, on, machines);
-    }
-
-    /// <summary>What a row calls an agent.</summary>
-    /// <param name="role">Its role.</param>
-    /// <param name="machine">The machine it is on.</param>
-    /// <param name="machines">Which machines each role was seen on.</param>
-    /// <returns>The role, or <c>role@machine</c> where the role alone would name two agents.</returns>
-    /// <remarks>
-    /// <b>The machine is noise until it is the whole point.</b> A project's roster is its own agents
-    /// and almost always one machine's, so a row carrying `@matrixmaster` on every line spends width
-    /// the state needs — this surface has already had the one fact somebody opens it for scroll off
-    /// the end of a row. It is spelled out exactly when the same role exists on more than one machine
-    /// in the project, which is the only case where the short form would be a lie.
-    /// </remarks>
-    private static string Named(
-        string role, string machine, IReadOnlyDictionary<string, HashSet<string>> machines) =>
-        role + "@" + machine;
 
     /// <summary>The phrase for one agent.</summary>
     /// <param name="retired">Whether an operator withdrew it.</param>

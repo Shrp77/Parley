@@ -11,15 +11,12 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This replaces <c>CatalogueUniquenessTests</c>, which tested the rule 018 deleted.</b> 009's FR-013
-/// let a repository answer in several projects and be started unattended by only one, because a catalogue
-/// belonged to a project and two of them consenting was two nodes launching one working directory. The
-/// catalogue is one file keyed by the agent's identity now, so the second consent cannot be written down
-/// and the scan that used to look for it is gone.
+/// <b>A repository may answer in several projects.</b> The catalogue is one file keyed by the agent's
+/// identity, so a second consent cannot be written down and two nodes cannot launch one working directory
+/// through it.
 /// </para>
 /// <para>
-/// <b>What is worth testing is therefore the opposite of what was.</b> The old file asserted that a second
-/// project was refused; these assert that it is admitted and changes one thing — the name the repository
+/// <b>What is worth testing is that a second project is admitted.</b> It changes one thing — the name the repository
 /// answers to there. The two facts that make that safe are the other two tests: an identity survives a
 /// move, so nothing has to be repaired after one, and a copy is refused, because a copy is the one way
 /// left to point one identity at two working directories.
@@ -104,10 +101,10 @@ public sealed class EnrollingTwiceTests : IDisposable
     [Fact]
     public async Task A_second_project_adds_a_name_and_nothing_else()
     {
-        // **The defect this feature starts from, asserted from the writing end.** One checkout answering
-        // in two projects used to need an entry in each project's catalogue, and FR-013 refused the
-        // second — so it was startable in one and unstartable in the other, and a request to the name it
-        // answers to in the other was accepted, queued, flagged, and never delivered.
+        // **Asserted from the writing end.** One checkout answering in two projects must not need an
+        // entry in each project's catalogue and have the second refused — it would be startable in one
+        // and unstartable in the other, and a request to the name it answers to in the other would be
+        // accepted, queued, flagged, and never delivered.
         var workspace = Checkout("inventory");
 
         await EnrolAsync(workspace, "stock", "alpha");

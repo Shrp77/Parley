@@ -28,9 +28,7 @@
     <h2 id="defaults-heading">New conversations</h2>
 
     <p>
-        The agents ticked here are ticked in the To list whenever you open a conversation that has no messages yet. You can
-        still change them before you send. This is kept in this browser and is not sent anywhere, so another browser or
-        machine has its own.
+        These agents are ticked in the To list when you open a conversation with no messages. Kept in this browser only.
     </p>
 
     @if (Model.Problem is { Length: > 0 } problem)
@@ -45,7 +43,7 @@
     {
         @* Hidden until script runs: the boxes only mean something to script, and a form that does nothing is worse than none. *@
         <form id="default-agent" class="default-agent" data-project="@Model.Project" onsubmit="return false" hidden>
-            <details class="default-expander" open>
+            <details class="default-expander disclosure" open>
                 <summary>
                     <span class="default-title">Default conversation agent:</span>
                     <span id="default-count" class="count"></span>
@@ -87,16 +85,14 @@
 <section aria-labelledby="agent-acts-heading" class="settings-section">
     <h2 id="agent-acts-heading">Agents in this project</h2>
 
-    @* Moved here from the project page: they are things done to the roster, not part of reading it. Each is a link
+    @* These are things done to the roster, not part of reading it. Each is a link
        because each describes what it does, or what it costs, before anything is sent. *@
     <ul class="act-cards">
         <li>
             <a class="act-title" href="/Projects/Register?project=@Model.Project">Register an agent</a>
-            <p>Bring a repository's agent into this project so it can be reached and can answer.</p>
         </li>
         <li>
             <a class="act-title" href="/Projects/Ownership?project=@Model.Project">Review ownership</a>
-            <p>See what each agent says it is responsible for, and accept or argue with it.</p>
         </li>
         <li class="costly">
             <a class="act-title" href="/Projects/Act?project=@Model.Project&amp;action=askeveryownership&amp;subject=@Model.Project">Ask every agent again what it owns</a>
@@ -106,7 +102,6 @@
                     Costs one turn per agent@(Model.Problem is { Length: > 0 } ? " (the count is unknown just now)" : $" ({Model.Agents.Count} now)").
                     That cannot be undone.
                 </strong>
-                The next page describes it before anything is sent.
             </p>
         </li>
     </ul>
@@ -133,19 +128,15 @@
             var known = boxes.map(function (b) { return b.value; });
             var stale = 0;
 
-            // An older version kept one name as plain text; a list is the form now.
+            // Kept as a list of names; anything else reads as nothing chosen.
             function read() {
-                var raw = window.localStorage.getItem(key);
-
-                if (!raw) { return []; }
-
-                if (raw.charAt(0) === "[") {
-                    var list = JSON.parse(raw);
+                try {
+                    var list = JSON.parse(window.localStorage.getItem(key) || "[]");
 
                     return Array.isArray(list) ? list.filter(function (n) { return typeof n === "string"; }) : [];
+                } catch (e) {
+                    return [];
                 }
-
-                return [raw];
             }
 
             function chosen() {
@@ -183,7 +174,11 @@
                 text.textContent = label;
                 x.type = "button";
                 x.className = "chip-x";
-                x.textContent = "×";
+                var glyph = document.createElement("span");
+                glyph.className = "icon";
+                glyph.setAttribute("aria-hidden", "true");
+                glyph.textContent = "close";
+                x.appendChild(glyph);
                 x.setAttribute("aria-label", "Remove " + name + " from the default agents");
                 x.addEventListener("click", function () {
                     boxes.forEach(function (b) { if (b.value === name) { b.checked = false; } });

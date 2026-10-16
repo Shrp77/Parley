@@ -55,7 +55,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Read(row.LastTurnEndedUtc),
                 row.LastTurnClean,
                 row.LastTurnPermissionDenials),
-            row.OpenOutside))];
+            row.OpenOutside,
+            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default))];
     }
 
     /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
@@ -511,7 +512,6 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.ConversationNotAssignable => FileRejection.ConversationNotAssignable,
         Wire.FileRejection.ConversationClosed => FileRejection.ConversationClosed,
         Wire.FileRejection.Changed => FileRejection.Changed,
-        Wire.FileRejection.Incomplete => FileRejection.Incomplete,
         Wire.FileRejection.NoSpace => FileRejection.NoSpace,
         Wire.FileRejection.ExtensionNotAllowed => FileRejection.ExtensionNotAllowed,
         Wire.FileRejection.NotFetched => FileRejection.NotFetched,

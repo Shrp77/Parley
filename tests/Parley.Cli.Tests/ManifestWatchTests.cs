@@ -227,7 +227,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_project_removed_and_renamed_back_in_one_edit_is_restarted_on_its_new_settings()
     {
-        // Lens 1 probe. The watcher stops removed projects before starting new ones so that a
+        // The watcher stops removed projects before starting new ones so that a
         // name reused in a single edit -- destroy and recreate between two ticks -- comes up on
         // the new entry rather than being left on the old one because "billing" was already
         // serving. The evidence is the ports: the old one frees and the new one answers.
@@ -294,7 +294,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task An_interrupt_during_a_late_start_leaves_no_port_held()
     {
-        // Lens 1 probe. FR-021's failure, reached through the watcher: a project named while
+        // A failure reached through the watcher: a project named while
         // serving is starting when Ctrl+C arrives. The start throws OperationCanceledException
         // inside the watcher, which must not swallow a half-started broker -- every port is
         // free once the command returns, or a broker is running that nothing can stop.
@@ -339,7 +339,7 @@ public sealed class ManifestWatchTests : IDisposable
 
         // Zero, not "zero or unavailable": an interrupt is how this is meant to end, and a
         // process that reports failure for being asked to stop teaches its supervisor to
-        // restart it. The looser assertion that stood here briefly would have let that through.
+        // restart it. A looser assertion would let that through.
         Assert.Equal(0, code);
 
         foreach (var project in late.Prepend(orders))
@@ -351,7 +351,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_manifest_emptied_and_refilled_leaves_the_process_serving_the_new_project()
     {
-        // Lens 1 probe. Every project removed at once is the state after somebody destroys the
+        // Every project removed at once is the state after somebody destroys the
         // last one, and the process must neither exit -- the supervisor would restart it into
         // the same emptiness -- nor lose the watcher, so that the next project named is served.
         var ct = TestContext.Current.CancellationToken;
@@ -420,7 +420,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_project_that_could_not_start_is_started_when_its_port_frees_and_the_manifest_changes()
     {
-        // Lens 1 probe. A port held by something else at start is the transient failure a
+        // A port held by something else at start is the transient failure a
         // machine actually meets -- the previous broker still exiting at logon -- and the watcher
         // must not treat "failed once" as "never". It tries again on the next change to the
         // manifest, and by then the port is free.
@@ -486,7 +486,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_manifest_that_cannot_be_read_stops_nothing_and_a_fixed_one_is_served_again()
     {
-        // Lens 1 probe. Somebody halfway through editing a project's configuration by hand, or a write
+        // Somebody halfway through editing a project's configuration by hand, or a write
         // that was interrupted: the file is there and is not configuration. The one thing the watcher
         // must not do on the strength of that is stop every project -- "removed" is a claim the
         // unreadable file cannot make. Then the file is fixed with a project added, and that project is
@@ -574,7 +574,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_change_to_the_description_alone_restarts_nothing()
     {
-        // Lens 2 probe. A broker restarted for a harmless edit drops every attached agent's
+        // A broker restarted for a harmless edit drops every attached agent's
         // session for nothing; the watcher compares what a broker is made of and not the
         // description, and this holds it to that. The port never frees and no stop is announced.
         var ct = TestContext.Current.CancellationToken;

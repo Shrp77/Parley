@@ -9,12 +9,10 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// **Found by the owner on a live deployment, immediately after 0.22.0 was merged.** Two projects were
-/// being served — the broker log named both, both ports were listening, and the node could start all
-/// three of the second project's agents — and both `autostart status` and `autostart install` printed
-/// output identical to a one-project machine. `status` answered with a file path and `install` with a
-/// rule, *each project whose entry names a catalogue*, so there was no way to tell from either that
-/// the second project had come up. The reasonable reading was that it had not.
+/// **With two projects served, `autostart status` and `autostart install` must not print output
+/// identical to a one-project machine.** Answering `status` with a file path and `install` with a
+/// rule, *each project whose entry names a catalogue*, would leave no way to tell from either that
+/// the second project had come up, and the reasonable reading would be that it had not.
 /// </para>
 /// <para>
 /// <b>Both commands already read that manifest.</b> `install` reads it to decide whether to print a
@@ -78,11 +76,10 @@ public sealed class ServedProjectsTests : IDisposable
     [Fact]
     public void Each_project_names_both_of_its_files()
     {
-        // **Two files per project now, and they are still rarely together.** This asked for three and
-        // the third was the catalogue, which stopped being a property of a project in 018. The store
-        // and the endpoint remain genuinely per project, and on the machine that found this they were
-        // in different directories from each other and from the manifest — which is the whole reason
-        // naming the manifest alone was not enough.
+        // **Two files per project, and they are rarely together.** The catalogue is not a property of a
+        // project. The store and the endpoint are genuinely per project, and can be in different
+        // directories from each other and from the manifest — which is the whole reason naming the
+        // manifest alone is not enough.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
         var text = string.Join("\n", AutostartCommand.ServedProjects(Root));
@@ -96,12 +93,10 @@ public sealed class ServedProjectsTests : IDisposable
     [Fact]
     public void No_project_is_given_a_catalogue_of_its_own()
     {
-        // **The defect the owner met on 0.31.0's install**, and it is the interesting direction: the
-        // manifest still carries `node_config` per project, because nothing has deleted the field yet
-        // (T027) — so a command that goes on reading it prints a path that is still in the file and no
-        // longer decides anything. The broker two lines further up the same output said it was hosting
-        // from somewhere else entirely, which is the shape of every defect this repository keeps
-        // recording: two answers to one question, one of them unreachable from the code that matters.
+        // **A manifest may still carry `node_config` per project**, so a command that goes on reading
+        // it would print a path that is still in the file and no longer decides anything, while the
+        // broker two lines further up the same output says it is hosting from somewhere else entirely:
+        // two answers to one question, one of them unreachable from the code that matters.
         //
         // Written against a manifest whose entries *do* name catalogues, since a manifest with none
         // would pass this by having nothing to leak.
@@ -139,7 +134,7 @@ public sealed class ServedProjectsTests : IDisposable
         // One per machine, and the entry names none of its own — so the broker it starts resolves the
         // file beside the manifest it serves. Asserted against `ProjectResolution`'s own answer rather
         // than against a path built here: a second spelling of this rule in a test is how the test
-        // comes to pass while the code is wrong, which is what `KeyRuleTests` caught during 018.
+        // comes to pass while the code is wrong, which is what `KeyRuleTests` guards.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
         Assert.Equal(
@@ -156,9 +151,8 @@ public sealed class ServedProjectsTests : IDisposable
         // the logon broker will never open — and it would look right to whoever ran the installer,
         // which is the only moment somebody checks.
         //
-        // This is 018's live-file incident read from the other side: there, ambient state was read at
-        // the bottom of a call stack and wrote into a real deployment; here it would be read at the
-        // top and describe one that does not exist.
+        // Ambient state read at the bottom of a call stack could write into a real deployment; here it
+        // would be read at the top and describe one that does not exist.
         Write(("alpha", null));
 
         var previous = Environment.GetEnvironmentVariable(NodeCatalogue.PathVariable);

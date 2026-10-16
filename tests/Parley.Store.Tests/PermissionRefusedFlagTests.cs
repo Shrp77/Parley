@@ -9,8 +9,8 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's report of 2026-10-03</b>: an agent's command was refused for want of approval, its turn ended without a
-/// word, and the earliest anybody would have been told was the four-hour "no progress" threshold. A refusal is something
+/// <b>A refused command is flagged at once</b>: an agent's command may be refused for want of approval and its turn end
+/// without a word, and the earliest anybody would otherwise be told is the four-hour "no progress" threshold. A refusal is something
 /// only a person can get past, so there is nothing to be patient with.
 /// </para>
 /// <para>
@@ -116,7 +116,7 @@ public sealed class PermissionRefusedFlagTests : IDisposable
     [Fact]
     public async Task A_later_clean_turn_clears_it_and_the_ordinary_threshold_applies_again()
     {
-        // Read off the most recent turn (research R6): the refusal is no longer what is stopping it.
+        // Read off the most recent turn: the refusal is no longer what is stopping it.
         await PickedUpAsync();
         await TurnAsync(denials: 1);
         await TurnAsync(denials: 0, started: T0.AddMinutes(10));

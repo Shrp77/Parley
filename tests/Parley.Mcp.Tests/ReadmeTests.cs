@@ -23,9 +23,9 @@ namespace Parley.Mcp.Tests;
 /// </remarks>
 public sealed class ReadmeTests
 {
-    /// <summary>The README, normalised and located from the test assembly.</summary>
-    /// <returns>Its text.</returns>
-    private static string Readme() => RepositoryFile.Read("README.md");
+    /// <summary>The README and the pages under <c>docs/</c>, normalised and located from the test assembly.</summary>
+    /// <returns>Their text.</returns>
+    private static string Readme() => RepositoryFile.Documentation();
 
     /// <summary>Every variable name the server or the operator's tool reads.</summary>
     /// <returns>The names, from the constants that define them.</returns>
@@ -55,7 +55,8 @@ public sealed class ReadmeTests
         // narrowed with it rather than being relaxed: what a launch configuration must show is
         // every variable an *adapter* reads. The deployment-level ones moved to `parley serve`,
         // and the test below is what keeps them from becoming undocumented on the way.
-        var example = Regex.Match(Readme(), @"""mcpServers"".*?\n```", RegexOptions.Singleline);
+        var example = Regex.Match(
+            RepositoryFile.Read("docs/configuration.md"), @"""mcpServers"".*?\n```", RegexOptions.Singleline);
 
         Assert.True(example.Success, "the README no longer shows a launch configuration");
 
@@ -73,22 +74,23 @@ public sealed class ReadmeTests
         // deadlines are enforced, and they are read by one process — so the place they have to
         // appear is the section that says how to start it. Documented under the launch
         // configuration instead, they would read as something each repository sets, which is
-        // exactly the arrangement that was removed.
-        // Found by what the section contains rather than by what it is called. This used to
-        // match the heading "Start the broker" literally, and it failed the day that heading was
-        // renamed -- against a README where every variable was still correctly documented, in
-        // the same section, under a better title. A check that fires on retitling teaches people
+        // exactly the arrangement to avoid.
+        // Found by what the section contains rather than by what it is called: a check that
+        // matched a heading literally would fire on retitling, which teaches people
         // to change the check.
-        var section = Regex.Matches(Readme(), @"### \d\..*?(?=\n### |\n## )", RegexOptions.Singleline)
-            .FirstOrDefault(m => m.Value.Contains("parley serve", StringComparison.Ordinal));
-
-        Assert.True(
-            section is not null,
-            "the README no longer has a section describing `parley serve`, which is where the "
-            + "variables that configure the whole deployment have to be documented.");
+        //
+        // The documentation is a set of pages now, so the check is on the sections of the configuration
+        // page: a variable the broker reads has to sit in a section that also names `parley serve`, so it
+        // reads as the broker's and never as something each repository sets.
+        var sections = Regex.Matches(
+                RepositoryFile.Read("docs/configuration.md"), @"\n#{2,3} .*?(?=\n#{2,3} |\z)", RegexOptions.Singleline)
+            .Select(m => m.Value)
+            .ToArray();
 
         var missing = DeploymentVariables.Broker()
-            .Where(v => !section!.Value.Contains(v, StringComparison.Ordinal))
+            .Where(v => !sections.Any(section =>
+                section.Contains(v, StringComparison.Ordinal)
+                && section.Contains("parley serve", StringComparison.Ordinal)))
             .ToArray();
 
         Assert.Empty(missing);

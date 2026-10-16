@@ -32,9 +32,9 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
     /// <returns>The agents, in name order.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Attached now, because the facilitator never starts an agent to ask it</b> (FR-006a). One that is not running
+    /// <b>Attached now, because the facilitator never starts an agent to ask it</b>. One that is not running
     /// is asked the next time it attaches, and this is what notices: a registration, a reattachment and a broker
-    /// starting are each "attached now and never asked", so one rule covers all three (research R4).
+    /// starting are each "attached now and never asked", so one rule covers all three.
     /// </para>
     /// <para>
     /// <b>Never asked, not merely nothing live.</b> A question in any state stops this, a discarded one included — a
@@ -323,10 +323,9 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>Whether it was still answered and is now accepted.</returns>
     /// <remarks>
-    /// <b>Keyed by the question, for Auto Accept alone</b> (the combined review gate). A pass reads an answer and decides it
-    /// later; a person who recorded a line meanwhile settled that question, and settling by agent then overwrote their
-    /// line with the agent's, marked automatic — or, if they had asked again, settled the new question with no answer and
-    /// failed at the constraint. A question no longer answered is the person's decision and is left alone.
+    /// <b>Keyed by the question, for Auto Accept alone.</b> A pass reads an answer and decides it later; a person who
+    /// recorded a line meanwhile has settled that question, and settling by agent would overwrite their line with the
+    /// agent's. A question no longer answered is the person's decision and is left alone.
     /// </remarks>
     public async Task<bool> AcceptAnsweredAsync(
         long id,
@@ -357,7 +356,7 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await SettleAsync(agent, "discarded", nowUtc, transaction, cancellationToken).ConfigureAwait(false);
 
-    /// <summary>The latest question for every agent ever asked, newest first within none.</summary>
+    /// <summary>The latest question for every agent ever asked.</summary>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One per agent, in name order.</returns>
@@ -467,8 +466,7 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Whether answers become lines with no person involved. On when never set.</returns>
     /// <remarks>
-    /// A store with no row reads as on (FR-010): a project created before the switch existed behaves as a new one
-    /// does, which is on.
+    /// A store with no row reads as on: Auto Accept is on by default.
     /// </remarks>
     public async Task<bool> AutoAcceptAsync(
         SqliteTransaction? transaction = null,
@@ -514,8 +512,7 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 -- The reason goes with the waiting: storage refuses a reason on anything but a waiting answer, because a
-                -- reason that is no longer true is the one a person would read next. Keeping it here made every accept
-                -- and discard of a waiting answer fail at the constraint -- found by the first test to settle one.
+                -- reason that is no longer true is the one a person would read next.
                 UPDATE ownership_questions
                    SET state = @State, settled_utc = @When, waiting_because = NULL
                  WHERE agent = @Agent AND state IN ('asked', 'asked_back', 'answered', 'waiting')

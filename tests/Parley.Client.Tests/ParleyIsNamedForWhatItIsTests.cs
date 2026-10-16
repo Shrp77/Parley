@@ -6,7 +6,7 @@ namespace Parley.Client.Tests;
 
 /// <summary>
 /// That every surface names Parley as Parley, a person's reply as a person's, and an automatic line as one nobody read
-/// (SPEC.md principle 2.11, FR-003a, FR-005, FR-018).
+/// (SPEC.md principle 2.11).
 /// </summary>
 /// <remarks>
 /// <b>Both surfaces draw from these, so this is where the words are held.</b> The terminal's transcript and the web UI's

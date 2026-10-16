@@ -4,7 +4,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That a git worktree is reported as one, rather than silently enrolled (T055).
+/// That a git worktree is reported as one, rather than silently enrolled.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,11 +15,10 @@ namespace Parley.Cli.Tests;
 /// configuration exists.
 /// </para>
 /// <para>
-/// <b>The rule was in the code and nothing checked it.</b> `EnrollCommand.Note` has said "worktree
-/// of another checkout" since the picker was written, and the only worktree test in the repository
-/// asserted the opposite direction — that the terminal's browser counts one as a repository, which
-/// it must, because a person may genuinely want to walk into one. Neither of those is the property
-/// T055 asks for.
+/// <b>The rule is in the code and this checks it.</b> `EnrollCommand.Note` says "worktree
+/// of another checkout", and the terminal's browser counts one as a repository, which
+/// it must, because a person may genuinely want to walk into one. That second fact is not the property
+/// checked here.
 /// </para>
 /// <para>
 /// <b>Reported rather than refused, deliberately.</b> Two agents on one codebase is a thing somebody

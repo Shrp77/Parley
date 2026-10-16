@@ -9,9 +9,9 @@ namespace Parley.Server.Tests;
 /// (SPEC.md §11.7).
 /// </summary>
 /// <remarks>
-/// The owner's question of 2026-10-03 — what an agent started outside Parley does — and their choice of a launch token
-/// over asking the model. Before, an agent opened in an editor read as running, a wake on it asked the node for a turn
-/// it could not give and marked one as coming, and its turn standing borrowed whatever the node last said of that name.
+/// What an agent started outside Parley does, decided by a launch token rather than by asking the model. An agent opened
+/// in an editor must not read as running, a wake on it must not ask the node for a turn it could not give and mark one
+/// as coming, and its turn standing must not borrow whatever the node last said of that name.
 /// </remarks>
 public sealed class StartedByParleyTests
 {

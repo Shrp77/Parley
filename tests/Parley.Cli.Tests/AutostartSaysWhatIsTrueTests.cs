@@ -7,8 +7,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Found by running the installers end to end on Linux (T107), in three consecutive lines of one
-/// transcript.</b> `install.sh` reported "Wrote …/parley-broker.service, but could not enable it";
+/// <b>Three consecutive lines of one transcript must not contradict each other.</b> `install.sh` reported "Wrote …/parley-broker.service, but could not enable it";
 /// `parley autostart status` then said "Parley's broker starts at logon"; and
 /// `parley autostart remove` said "Nothing to remove: Parley's broker is not registered to start at
 /// logon here" — after deleting the unit file.

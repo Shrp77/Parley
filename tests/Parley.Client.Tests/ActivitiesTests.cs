@@ -8,8 +8,8 @@ namespace Parley.Client.Tests;
 /// That what a participant is doing is derived from its reported turns, and never guessed.
 /// </summary>
 /// <remarks>
-/// <b>The owner's report of 2026-10-03</b>: an agent read as working for nearly three hours after a refused command ended its
-/// turn silently. Working was derived from "picked up and not answered". It is derived from a running turn now, and a turn
+/// <b>Working is derived from a running turn</b>, not from "picked up and not answered", or an agent would read as working
+/// for hours after a refused command ended its turn silently. A turn
 /// that ended with work still owed reads as stopped, with what it was refused.
 /// </remarks>
 public sealed class ActivitiesTests
@@ -44,7 +44,7 @@ public sealed class ActivitiesTests
     [Fact]
     public void A_turn_that_ended_after_the_pickup_with_work_still_owed_is_stopped_and_says_what_was_refused()
     {
-        // The owner's case: picked up at 9:01, the turn ended at 9:05 with a command refused, nothing since.
+        // Picked up at 9:01, the turn ended at 9:05 with a command refused, nothing since.
         var activity = Of(new TurnStanding(true, null, T0.AddMinutes(5), true, 1));
 
         Assert.Equal(Doing.Stopped, activity.Doing);
@@ -72,7 +72,7 @@ public sealed class ActivitiesTests
     [Fact]
     public void Waiting_on_somebody_is_not_stopped()
     {
-        // FR-009: the asker ended its turn to wait for the worker's answer, which is exactly right.
+        // The asker ended its turn to wait for the worker's answer, which is exactly right.
         var activity = Activities.Of(
             Asked(),
             AskerWaitsOnWorker,
@@ -85,8 +85,8 @@ public sealed class ActivitiesTests
     [Fact]
     public void An_agent_whose_turns_nobody_reports_is_never_called_working_or_stopped()
     {
-        // FR-010: a node older than section 11.6, or an agent attached from somebody's editor. Picked up and not answered
-        // is the guess 0.37.5 made, and it is exactly the guess that read three hours of nothing as work.
+        // A node older than section 11.6, or an agent attached from somebody's editor. Picked up and not answered
+        // is a guess, and it is exactly the guess that reads hours of nothing as work.
         var activity = Of(TurnStanding.Unreported);
 
         Assert.Equal(Doing.Running, activity.Doing);

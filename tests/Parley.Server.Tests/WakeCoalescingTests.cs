@@ -99,7 +99,7 @@ public sealed class WakeCoalescingTests
     [Fact]
     public async Task A_questions_wake_stops_a_notification_stacking_a_second_turn()
     {
-        // FR-008a. Every wake marks; only mail consults the mark. The common case this is for is
+        // Every wake marks; only mail consults the mark. The common case this is for is
         // "ask a peer, then tell it something" -- two messages, one reading, and without this two
         // turns charged to whoever hosts the peer.
         var token = TestContext.Current.CancellationToken;

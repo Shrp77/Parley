@@ -7,11 +7,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 20: what the writer will put into an identity.
+/// What the writer will put into an identity.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every earlier run asked what comes <i>out of</i> a file and where it may safely go. This asks the
+/// Other probes ask what comes <i>out of</i> a file and where it may safely go. This asks the
 /// opposite: what this program will write <i>into</i> one. The launch configuration is the whole of
 /// who an agent is — SPEC.md §16 makes the launch environment the only thing that decides it — and the
 /// owns line is charged against every peer's working memory and capped by a CHECK constraint in the
@@ -20,7 +20,7 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// Both rules exist and both live in <c>EnrollmentPlan.Validate</c>, which the bulk command calls
 /// before it writes anything. <c>AddAsync</c> is the other entry point and is public. A rule enforced
-/// in one path and not the other is this repository's recorded shape — <i>one rule applied to half the
+/// in one path and not the other is a known shape — <i>one rule applied to half the
 /// output is worse than either applied whole</i> — so the question is whether the guarantee is the
 /// code's or the callers'.
 /// </para>
@@ -97,14 +97,12 @@ public sealed class ProbeThirtyOneTests : IDisposable
     [Fact]
     public async Task A_long_owns_line_is_written_because_the_schema_now_accepts_one()
     {
-        // **This probe asserted the opposite until 0.33.0**, and the reason it is inverted rather
-        // than deleted is that what it is really about has not changed: what the enrolment writes
-        // must be what the schema accepts. A launch configuration carrying a line the broker
+        // **What the enrolment writes must be what the schema accepts.** A launch configuration carrying a line the broker
         // refuses produces an agent refused at registration, which is a failure a long way from
         // the person who caused it -- and that is just as true of a line refused for being long as
         // of one written when nothing objects.
         //
-        // The bound came off on the owner's decision of 2026-09-26 so that an agent asked what it
+        // There is no length bound, so that an agent asked what it
         // owns can answer in two halves. The character rule is what still refuses, and the test
         // below this one is the probe for it.
         await EnrolAsync("orders", new string('x', 5_000));

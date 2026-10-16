@@ -72,6 +72,26 @@ public sealed class WaitingOnYouListTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Clarify_lists_each_question_waiting_on_the_person_once()
+    {
+        // The chooser is what the seat holds joined with what the room shows waiting, so a question that is both must
+        // appear once. Must fail against a join that adds the room's questions without removing the ones already held.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var shell = await AskedAsync(driving, directory, seats);
+
+        await shell.Clarify();
+
+        var chooser = (ChoiceDialog)driving.Find(Participation.ClarifyTitle);
+        var entries = chooser.Choices.Source!.ToList().Cast<string>().ToList();
+
+        Assert.Equal(4, entries.Count);
+        Assert.Single(entries, e => e.Contains("which invoice schema?", StringComparison.Ordinal));
+        Assert.Single(entries, e => e.Contains("which currency?", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Enter_lists_the_questions_oldest_first_and_choosing_one_shows_it()
     {
         using var driving = Driving.Open(width: 140, height: 40);

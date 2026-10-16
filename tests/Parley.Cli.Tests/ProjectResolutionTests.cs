@@ -130,15 +130,13 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void The_root_decides_where_the_machines_catalogue_is()
     {
-        // **A project used to supply this and 018 took it away.** Its entry named a catalogue, which made
-        // "what this machine can start" a per-project fact — and a checkout answering in two projects was
+        // **No project supplies this.** A catalogue named by a project entry would make "what this
+        // machine can start" a per-project fact — and a checkout answering in two projects would be
         // startable in whichever project's file named it and unstartable in the other, while being
         // addressable in both. One catalogue per machine cannot express that, so there is no project in
-        // this resolution at all: what is left is the flag, the variable, and the manifest's own folder.
-        // **And 019 moved what supplies it one level.** This read "the directory holding the manifest",
-        // which was the same place said the other way — so when `--config` came to name the root itself,
-        // the catalogue resolved one directory *above* where it belongs. FR-008 gives the root exactly
-        // two files that are not a project, and this is one of them.
+        // this resolution at all: what there is, is the flag, the variable, and the root.
+        // **The root supplies it.** `--config` names the root itself, and the catalogue is one of the
+        // two files at the root that are not a project.
         var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley");
 
         Assert.Equal(
@@ -151,7 +149,7 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void Precedence_applies_per_value_independently()
     {
-        // **A store was resolved here until 019 and is not resolved at all now**: it is `parley.db`
+        // **A store is not resolved at all**: it is `parley.db`
         // inside the project's own folder, so there is no argument, no variable and no precedence rule.
         // What is left resolving is the endpoint and the machine's catalogue, and an explicit endpoint
         // still overrides only the endpoint — resolving them together would make one flag silently
@@ -183,9 +181,8 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void A_resolved_value_says_where_it_came_from()
     {
-        // This line is the point of the feature: it is what was missing when enrolling would have
-        // written consent into a catalogue nothing reads. Read off the endpoint since 019, because a
-        // store no longer resolves from anywhere — it is derived.
+        // This line is the point: enrolling would otherwise write consent into a catalogue nothing
+        // reads. Read off the endpoint, because a store does not resolve from anywhere — it is derived.
         Assert.Contains(
             "(project \"orders\")",
             ProjectResolution.Endpoint(null, NoVariables, Project()).ToString(),

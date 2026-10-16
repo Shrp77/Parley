@@ -6,10 +6,8 @@ namespace Parley.Setup;
 /// Handing off to the web console, for when a bigger screen is the better reader.
 /// </summary>
 /// <remarks>
-/// FR-014, and it assumes the console is worth opening — which it is. Nothing here replaces it:
-/// on a large screen it remains the better transcript, and this surface exists because a browser
-/// is a thing a machine may not have and a person may not be at, not because the console was
-/// wrong.
+/// Hands a person to the web console, which on a large screen is the better transcript. The terminal
+/// exists because a browser is a thing a machine may not have and a person may not be at.
 /// </remarks>
 public static class Launch
 {
@@ -27,7 +25,7 @@ public static class Launch
     /// <para>
     /// <b>A failure here is reported and never thrown.</b> There is no browser on a headless
     /// machine and no <c>xdg-open</c> on a minimal container, and both are ordinary places to run
-    /// this. FR-014 says the surface keeps running when it opens a browser; it had better keep
+    /// this. The surface keeps running when it opens a browser, so it must keep
     /// running when it cannot.
     /// </para>
     /// </remarks>
@@ -82,11 +80,7 @@ public static class Launch
     /// </para>
     /// <para>
     /// <b>Separate from <see cref="Open"/> so that proving the guard lets something through does
-    /// not start a browser.</b> The test for that used to call <c>Open</c> with a loopback URL and
-    /// assert no refusal was printed, on the reasoning that whether a browser starts is the
-    /// platform's business and there is none on a CI runner. That is true on a CI runner and false
-    /// on the machine of whoever is working on this: it opened a tab on every run of the suite.
-    /// The predicate is the part worth asserting, and it launches nothing.
+    /// not start a browser.</b> The predicate is the part worth asserting, and it launches nothing.
     /// </para>
     /// </remarks>
     public static bool IsWebAddress(string address) =>

@@ -142,7 +142,7 @@ public sealed class TwoSurfaceDeliveryTests
                     From = "orders@alpha",
                     To = request.Agent,
                     Type = Wire.MessageType.Request,
-                    PayloadJson = "{\"intent\":\"probe\",\"questions\":[]}",
+                    PayloadJson = "{\"ask\":\"probe\"}",
                     CreatedUtc = "2026-09-02T00:00:00Z",
                     ConversationId = string.Empty
                 },

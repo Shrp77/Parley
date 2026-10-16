@@ -32,8 +32,8 @@ public sealed record ProjectHealth(
     /// <para>
     /// Two things the protocol cannot say. A broker and a surface from different releases can both speak the same protocol
     /// and still disagree about everything the release changed; and a store made by an earlier build can read as current
-    /// while lacking what has been added since. A broker that did not say either is not warned about: an older broker
-    /// than this check cannot be asked, and "not said" is not "wrong".
+    /// while lacking what has been added since. Nothing is compared for a field that was not read (a project not yet
+    /// asked), because "not read" is not "wrong".
     /// </para>
     /// <para>
     /// A broker that did not answer has nothing to compare, and says why in <see cref="Problem"/> instead.

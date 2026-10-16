@@ -26,8 +26,7 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>The application is created here and passed down, never reached for.</b> Terminal.Gui's
 /// static <c>Application</c> is process-global and, once used, makes <c>Application.Create</c>
-/// throw; xUnit runs test classes in parallel. This is the same split the Spectre version made
-/// around <c>AnsiConsole.Console</c> and for the same reason, and it is what lets a test drive the
+/// throw; xUnit runs test classes in parallel. Passing it down is what lets a test drive the
 /// whole surface with its own application.
 /// </para>
 /// </remarks>
@@ -60,26 +59,12 @@ public static class TerminalCommand
         // (§4.0).
         using var seats = new SeatBook(directory.AgentsFor);
 
-        // **Ctrl+C is deliberately not intercepted, and an early draft of this got it wrong.**
-        //
-        // That draft handled CancelKeyPress, set Cancel = true and signalled a token, on the
-        // reasoning that a seat should be released politely rather than abandoned. It did not
-        // work: every screen was blocked inside a synchronous prompt waiting for a key, and a
-        // prompt does not observe a cancellation token.
-        //
-        // Letting it terminate is not the lesser option, it is the correct one. §4.0 makes an open
-        // connection the evidence an agent is reachable, and the process dying closes every attach
-        // stream this book holds — which is precisely how the broker learns somebody left. There is
-        // no politer signal available; there is only the same signal sent sooner. The `using`
-        // above still runs on every ordinary exit, and <see cref="Shell.QuitKey"/> leaves the
-        // surface properly.
-        //
-        // **That last clause was untrue for the life of this file and nothing caught it.** It said
-        // Ctrl+Q, which the toolkit does not bind: enumerating what Terminal.Gui 2.4.17 holds at
-        // application scope turns up ten entries, all navigation, and no Ctrl+Q among them. The
-        // chord did nothing at all, and no test had ever pressed it — the one place the suite
-        // mentioned Ctrl+Q was a comment on a test that disposes the surface directly. `Shell`
-        // binds it now, which is what makes the sentence true rather than aspirational.
+        // **Ctrl+C is deliberately not intercepted.** Every screen is blocked inside a synchronous prompt
+        // waiting for a key, and a prompt does not observe a cancellation token. Letting it terminate is the
+        // correct option: §4.0 makes an open connection the evidence an agent is reachable, and the process
+        // dying closes every attach stream this book holds, which is how the broker learns somebody left.
+        // The `using` above runs on every ordinary exit, and <see cref="Shell.QuitKey"/> (which `Shell` binds,
+        // because the toolkit does not) leaves the surface properly.
         // The window's title names the build, which is the one place a tab strip shows. Set here and never in the shell:
         // a driven session writes nothing to standard output, and a title is written there on every platform but Windows.
         try
@@ -129,10 +114,8 @@ public static class TerminalCommand
     /// </param>
     /// <param name="cataloguePath">
     /// This machine's node catalogue, or null to work it out from the manifest. Passed rather than read
-    /// here, for the reason <paramref name="installed"/> is — and this one is a scar: it was read from
-    /// the environment inside the write, so the tests that drive this surface in process inherited the
-    /// developer's own <c>PARLEY_NODE_CONFIG</c> and enrolled their temporary repositories into a live
-    /// deployment's catalogue.
+    /// here, for the reason <paramref name="installed"/> is, and so a test never inherits the developer's own
+    /// <c>PARLEY_NODE_CONFIG</c> and enrols its temporary repositories into a live deployment's catalogue.
     /// </param>
     /// <param name="addressingPath">
     /// Where who-each-line-goes-to is kept across restarts, or null to keep it for this run only. Null unless the
@@ -159,23 +142,14 @@ public static class TerminalCommand
         // test never pumps the loop, so it keeps the inline default.
         Prompting.Marshal = app.Invoke;
 
-        // **Started, not awaited, so the screen is on before the brokers have answered.**
+        // **Started, not awaited, so the screen is on before the brokers have answered.** Waiting would draw
+        // nothing until every project's broker had replied or given up, and giving up costs the
+        // `ConnectTimeout` in `BrokerDirectory.Connect` per project; a down broker would look like a hung tool.
         //
-        // This used to await the first read and then run, which meant nothing was drawn at all
-        // until every project's broker had replied or given up — and giving up costs the two-second
-        // `ConnectTimeout` in `BrokerDirectory.Connect`, per project. A deployment whose broker is
-        // down opened on a blank terminal for two seconds with nothing saying why, and somebody who
-        // typed `parley` had no way to tell it from a tool that had hung.
-        //
-        // The read still happens the moment the surface exists; what changed is that drawing no
-        // longer waits on it. Nothing here is novel: the transcript follower has refreshed
-        // concurrently with the run loop since 0.25.7, and `GuardedList` is what makes that safe —
-        // rows and the fields their colour derives from are swapped under the lock the draw takes.
-        // This is the first read joining the arrangement every later read already used.
-        //
-        // **Proven safe by the suite rather than argued**: every driven test calls `Show` and then
-        // `RefreshAsync`, so a shell drawn before its first read is the ordering 792 tests have
-        // been exercising all along. It was only production that did it the other way.
+        // The read happens the moment the surface exists; drawing does not wait on it. This is safe because
+        // every later read already runs concurrently with the loop: `GuardedList` swaps rows and the fields
+        // their colour derives from under the lock the draw takes. Every driven test calls `Show` and then
+        // `RefreshAsync`, so a shell drawn before its first read is the ordering the suite exercises.
         var first = shell.RefreshAsync(cancellationToken);
 
         app.Run(shell);
@@ -241,8 +215,7 @@ public static class TerminalCommand
     /// commands below are what this surface is a nicer front for, and they all work in a pipe.
     /// </remarks>
     private const string Redirected =
-        "parley draws a full screen, and this terminal is redirected — nothing here "
-        + "would be readable and the frames would fill the log. For the same facts in a pipe, "
+        "parley draws a full screen, and this terminal is redirected. For the same facts in a pipe, "
         + "use `parley project list`, `parley registry` and `parley open`. "
-        + "For a conversation's whole transcript, or anything else, use the web UI: `parley web-ui`.";
+        + "For anything else, use the web UI: `parley web-ui`.";
 }

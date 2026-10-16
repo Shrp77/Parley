@@ -250,8 +250,8 @@ public sealed class SettlingTests : IDisposable
     [Fact]
     public async Task Sending_the_same_reply_again_is_refused_for_the_exchange_being_closed_not_for_settling()
     {
-        // A Result sent twice finds its exchange closed by the first copy, and that is the refusal it gets, as before
-        // 025: the settles are judged only after the reply itself is admitted, so the second copy is never told that the
+        // A Result sent twice finds its exchange closed by the first copy, and that is the refusal it gets:
+        // the settles are judged only after the reply itself is admitted, so the second copy is never told that the
         // question its first copy settled "cannot be settled".
         var question = await AskAsync(Orders, Person, "which invoice schema?", 1);
         var line = await AskAsync(Person, Orders, "12", 2);

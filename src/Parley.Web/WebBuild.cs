@@ -9,8 +9,7 @@ namespace Parley.Web;
 /// <para>
 /// <b>Its own rather than the broker's</b>, for the reason the terminal's <c>BuildIdentity</c> gives: the web UI and the
 /// broker are separate tools that can be installed apart, and this project reaches no store, so it cannot read the
-/// schema the broker's identity names. Asked for by the owner, who could not tell from a page which build was running
-/// while a fix was being installed.
+/// schema the broker's identity names. A page shows it so a person can tell which build is running.
 /// </para>
 /// <para>
 /// Read from this assembly rather than the entry assembly. <c>parley-web-ui</c> is the usual host, but <c>ConsoleHost</c>

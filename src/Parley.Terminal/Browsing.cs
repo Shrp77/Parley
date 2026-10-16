@@ -9,9 +9,8 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Asked for by the owner, who was typing a path for every agent.</b> Adding nineteen
-/// repositories meant typing nineteen absolute paths correctly, into a field that could only say
-/// afterwards that one of them was not a directory.
+/// <b>A typed path can only be reported wrong afterwards.</b> Walking to the folder finds it
+/// before it is named.
 /// </para>
 /// <para>
 /// <b>Built from this surface's own list rather than the toolkit's file dialog.</b>
@@ -29,10 +28,8 @@ namespace Parley.Terminal;
 /// </para>
 /// <para>
 /// <b>It looks for one of two things</b>: a repository, when one is being added, or a folder that holds
-/// repositories, when a folder of them is being enrolled. Enrolment borrowed this dialog as it stood, and
-/// it would only take a folder that was itself a repository — so the folder enrolment is for, the one
-/// holding the checkouts, was the one folder it could never choose. Reported by the owner trying to enrol
-/// from the folder every one of their repositories sits in.
+/// repositories, when a folder of them is being enrolled. Enrolment is for the folder holding the
+/// checkouts, which is not itself a repository, so that mode takes a folder with repositories directly inside it.
 /// </para>
 /// </remarks>
 internal sealed class Browsing : Dialog
@@ -54,11 +51,9 @@ internal sealed class Browsing : Dialog
 
     /// <summary>What marks a folder that is a repository.</summary>
     /// <remarks>
-    /// <b>A prefix inside the indent, and it was a suffix.</b> A folder name is somebody else's
-    /// text — on most filesystems it may hold nearly anything — so a name ending in <c>— a
-    /// repository</c> read as one, and the row said something about the folder that was not true.
-    /// The same structural answer the transcript reached in 0.18.6: what a row means is decided by
-    /// where it sits, not by what it happens to end with.
+    /// <b>A prefix inside the indent, never a suffix.</b> A folder name is somebody else's text — on
+    /// most filesystems it may hold nearly anything — so a suffix could be spoofed by a name. What a
+    /// row means is decided by where it sits, as in the transcript, not by what it ends with.
     /// </remarks>
     internal const string Repository = "* ";
 
@@ -119,11 +114,9 @@ internal sealed class Browsing : Dialog
 
         Add(_where, _said, _list);
 
-        // **A folder that cannot be opened leaves this with nowhere to go**, which the review gate
-        // found by pointing it at one that does not exist: no path, no rows, one sentence, and no
-        // row to press to get anywhere else. The home directory is the answer for the same reason
-        // it is the answer on a first run, and the machine's root after that — somewhere always
-        // opens, and being somewhere is what makes the rest of the dialog work.
+        // **A folder that cannot be opened leaves this with nowhere to go**: no path, no rows, and no
+        // row to press to get anywhere else. So the home directory is tried, then the machine's
+        // root — somewhere always opens, and being somewhere is what makes the rest of the dialog work.
         foreach (var folder in new[] { opening, Opening(null), Path.GetPathRoot(opening) })
         {
             if (folder is { Length: > 0 })
@@ -166,10 +159,9 @@ internal sealed class Browsing : Dialog
     /// them back where they began each time is the walk this exists to remove.
     /// </para>
     /// <para>
-    /// <b>For the first one, the folder the terminal was started in</b>, the owner's call. It used to be the home
-    /// directory, on the reasoning that nothing yet said where somebody keeps their work — but the shell they typed
-    /// <c>parley terminal</c> into says exactly that, and is very often the repository itself. Home is left for a
-    /// start folder that has gone.
+    /// <b>For the first one, the folder the terminal was started in</b>: the shell the person typed
+    /// <c>parley terminal</c> into says where they keep their work, and is very often the repository
+    /// itself. Home is the fallback for a start folder that has gone.
     /// </para>
     /// </remarks>
     internal static string Opening(string? last, string? startedIn = null)

@@ -78,9 +78,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
         var requested = string.Equals(safe, header.Name, StringComparison.Ordinal) ? null : header.Name;
         var named = Blank(header.ConversationId);
 
-        // The schema's rule, applied before anything is looked up or staged. An id the store refuses reached the store
-        // and came back to the agent as a fault in the broker — found by the review gate, probing '..' over the wire,
-        // which the adapter's own check had kept every agent from sending.
+        // The schema's rule, applied before anything is looked up or staged, so an id the store would refuse never
+        // reaches it and does not come back as a fault in the broker.
         if (named is not null && !IsConversationId(named))
         {
             return new Wire.PlaceFileReply
@@ -630,9 +629,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return new Committed(SafeNameTaken(requested, name, clash.File), null);
         }
 
-        // A file on disk that no row names yet is the person's (§9.5), and committing over it would destroy it. Found by
-        // the review of the name set: a person's file dropped into a folder was replaced by the next placement of its
-        // name, because nothing but the watcher had ever looked, and the watcher had not looked yet.
+        // A file on disk that no row names yet is the person's (§9.5), and committing over it would destroy it. Only
+        // the watcher records such a file, and it may not have looked yet, so the disk is asked.
         if (look.Existing is null && look.Folder is { } folder && _runtime.Files.OnDisk(folder, name) is { } unrecorded)
         {
             return new Committed(PersonsOnDisk(conversation, name, requested, unrecorded), null);

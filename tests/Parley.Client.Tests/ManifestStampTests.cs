@@ -20,8 +20,7 @@ namespace Parley.Client.Tests;
 /// into it.
 /// </para>
 /// <para>
-/// <b>019 changed what is stamped and narrowed the hole, and that is why these are converted rather than
-/// deleted.</b> The stamp was one file's length and write time; it is now every project's configuration
+/// <b>The stamp narrows the hole.</b> It is every project's configuration
 /// and when each was last written. So a project appearing or going is seen by its path alone — length has
 /// left the stamp entirely — and what remains missable is two edits to <i>one</i> project inside one
 /// timer tick.
@@ -64,9 +63,8 @@ public sealed class ManifestStampTests : IDisposable
     [Fact]
     public void A_project_added_is_always_seen_however_still_the_clock_is()
     {
-        // **The half that must never fail.** It used to rest on length being in the stamp, because a write
-        // time alone would miss an edit whenever the clock had not ticked. It rests on something stronger
-        // now: a new project is a new path, and no amount of holding the clock still can make two paths
+        // **The half that must never fail.** It rests on something stronger than length or write
+        // time: a new project is a new path, and no amount of holding the clock still can make two paths
         // one.
         Write("alpha");
 
@@ -88,8 +86,7 @@ public sealed class ManifestStampTests : IDisposable
     [Fact]
     public void Two_edits_to_one_project_inside_one_tick_are_missed_exactly_as_documented()
     {
-        // **The admitted hole, held still, and narrower than it was.** It used to be any two manifests of
-        // the same size written at the same recorded instant. It is now two edits to the *same* project
+        // **The admitted hole, held still, and narrow.** It is two edits to the *same* project
         // inside one tick — the project set is unchanged, so only that project's write time could say
         // anything, and it has been held.
         //

@@ -12,7 +12,7 @@ namespace Parley.Web.Pages.Projects;
 /// <remarks>
 /// <para>
 /// These are the reads SPEC.md §10.2 keeps so that the protocol's provisional numbers can be argued about
-/// from evidence. The message cap is 8,000 because these reads said so, and §9.3 keeps the count precisely
+/// from evidence. The message cap is 8,000 and provisional (§17 question 16), and §9.3 keeps the count precisely
 /// so the number is not moved on the strength of whoever complained most recently.
 /// </para>
 /// <para>

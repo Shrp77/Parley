@@ -3,11 +3,10 @@
   <!--
     The operator's terminal surface, and its own tool rather than a subcommand of the broker's.
 
-    Windows cannot replace a running executable, so while this lived inside `parley` every
-    terminal change required stopping the broker. SPEC.md section 12 says what that costs: the
-    node stops and tells every agent it started to quit, and the process holds everything the
-    agent has learned. The churniest component in the repository was forcing the most expensive
-    restart. `parley terminal` forwards here, parsing nothing.
+    Windows cannot replace a running executable, so a terminal inside `parley` would need the
+    broker stopped for every change. SPEC.md section 12 says what that costs: the node stops and
+    tells every agent it started to quit, and the process holds everything the agent has learned.
+    `parley terminal` forwards here, parsing nothing.
 
     **There is no store here and there must never be.** GraphTests walks this project
     transitively, under the same rule Parley.Client and Parley.Web are held to. Everything on

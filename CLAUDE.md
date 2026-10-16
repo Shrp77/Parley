@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.58, protocol 0.8 (feature 026 moves it to 0.9),
+- Version 0.42.71, protocol 0.8 (feature 026 moves it to 0.9),
   schema 1. Nothing has been released, so there is **no compatibility to keep**: change the wire,
   enums and schema 1 in place, and nuke and rebuild. From the first release every schema change is
   a migration.
@@ -65,7 +65,7 @@ src/Parley.WebUi         `parley-web-ui`: only a way to start ConsoleHost. `serv
                          restart it, and ends it with the broker. A web UI that cannot start
                          leaves the broker serving and says so.
 src/Parley.Cli           `parley`: the broker's tool and the command line.
-src/Parley.Headless      The node: starts and supervises agents (AgentFleet, ResidentAgent).
+src/Parley.Headless      The node: starts and supervises agents (ResidentAgent, InvocationCommand).
 src/Parley.Mcp           `parley-mcp`, the agent's adapter.
 tests/                   One project per source project; notes below.
 plugins/parley           The Claude Code integration. .claude-plugin/marketplace.json is
@@ -94,8 +94,10 @@ in §10.2 (`force_conclude` is not `conclude`) is too thin alone.
 
 **Surfaces.** Every operator operation is available on the CLI, the terminal and the web UI,
 and `DriftTests` asserts both screens bind every `BrokerClient` operation. Everything a person
-does to a deployment is the terminal's; the command line keeps only `project list` and the
-verbs the installers and plugin need.
+does to a deployment is the terminal's, except that a project is also created in the web console;
+a project is removed or renamed only in the terminal. The command line keeps `serve`, `up`, `autostart`,
+`use`, `project list`, `enroll`, `registry`, `open`, `waiting`, `files`, `web-ui` and `terminal`
+(the last two start their own tools); every other operator verb exits 64 and names the terminal.
 
 - Destructive acts need a description plus a deliberate act, usually a typed name. `Retire`,
   `Reinstate` and `Purge` appear in exactly one file, which contains the typed-name prompt;
@@ -108,7 +110,9 @@ verbs the installers and plugin need.
 - A repository may be enrolled in several projects. Its launch key in `.mcp.json` is `parley`
   (always read) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
   implementation. An agent's identity is `parleyAgentId` in `.mcp.json`, and the per-machine
-  catalogue (`node.json`) is keyed by it.
+  catalogue (`node.json`) is keyed by it. The name is only what is shown: the adapter reports the
+  identity on attach as a label, never authority, and an attach under a new name from the same
+  repository on the same machine renames the agent (§4.1.1).
 - No surface writes a launch configuration for an agent whose machine is not this one.
 
 **Seats.** The broker provides two participants in every project, neither with a machine:
@@ -314,9 +318,11 @@ implementation detail, and needs to be argued.
   only propose one; a person confirms, edits and declines it. No agent operation reads,
   changes or marks done a roadmap, and the facilitator may not propose or confirm one. Work
   reaches an agent as a request from the person, one item at a time.
-- **A person's line to an agent is always a new Request.** The replying agent says in
-  `settles` which of its own questions to the person the words settled; the broker closes
-  those `settled` and writes no message on them.
+- **A person's line to an agent is a new Request, except a reply to a question the person
+  chose to answer.** That reply is a Clarify on the question's exchange (SPEC §5.6); no surface
+  infers which question. The replying agent says in `settles` which of its own questions to the
+  person the words of a new Request settled; the broker closes those `settled` and writes no
+  message on them. The agent, never the broker or a surface, decides a question is answered.
 - **Nothing times out.** An exchange that stops moving is flagged to the person. A
   conversation ends by consensus of the participants asked, or by a person.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker

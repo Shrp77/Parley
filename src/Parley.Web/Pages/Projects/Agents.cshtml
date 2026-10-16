@@ -11,13 +11,12 @@
 <div class="view" style="height:auto;min-height:0;">
     <div class="view-title">
         <h1>Conversations</h1>
-        <p class="as-of" role="status">What the agents of <strong>@Model.Project</strong> have been talking about.</p>
+        <p class="as-of" role="status"><strong>@Model.Project</strong></p>
     </div>
 
     <section aria-label="Conversations in this project" class="conversations">
-        @* Starting one belongs beside the list of them. The composer has always been able to open a conversation that
-           does not exist yet -- naming one is what creates it -- and nothing led anybody to it: every route in was a link
-           to a conversation already there, so a project with none had no way in at all. *@
+        @* Starting one belongs beside the list of them. Naming a conversation is what creates it, so a
+           project with none needs a way in from here. *@
         <p class="new-conversation"><button type="button" id="new-conversation-open" class="new-button">New conversation</button></p>
 
         <dialog id="new-conversation-dialog" class="default-dialog" aria-labelledby="new-conversation-title">
@@ -34,7 +33,7 @@
 
                 @* The rule is applied as it is typed rather than reported afterwards. *@
                 <p id="new-conversation-rule" class="composer-note">
-                    @ConversationName.Rule It reaches a filename when the discussion is exported.
+                    @ConversationName.Rule
                     <span id="new-conversation-corrected" role="status" hidden>
                         @ConversationName.WasCorrected.
                     </span>
@@ -78,8 +77,8 @@
 
         @if (Model.Hidden is { Length: > 0 } hidden)
         {
-            @* Computed and never shown until the review gate: once archiving had a button, an archived conversation
-               would have left the list with nothing saying where it went or how to bring it back. *@
+            @* Said whenever anything is archived: an archived conversation leaves the list, and
+               something must say where it went and how to bring it back. *@
             <p class="composer-note">
                 @hidden <a href="/Projects/Agents?project=@Model.Project&amp;showArchived=true">Show them</a>
             </p>
@@ -124,9 +123,8 @@
                         </summary>
                         <div class="grid-detail">
                             <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
-                            @* Filing away and destroying, linked from here since the combined review gate found both
-                               performed by this console and reached from no page. Archiving is one click because one
-                               click reverses it; destroying goes to a page that describes it and takes the name typed. *@
+                            @* Archiving is one click because one click reverses it; destroying goes to a page that
+                               describes it and takes the name typed. *@
                             <form method="post" asp-page-handler="Archive">
                                 <input type="hidden" name="project" value="@Model.Project" />
                                 <input type="hidden" name="id" value="@conversation.Id" />

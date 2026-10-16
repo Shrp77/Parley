@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 16: the files the scan reads, rather than the ones it writes.
+/// The files the scan reads, rather than the ones it writes.
 /// </summary>
 /// <remarks>
 /// Git stores a symlink's target verbatim, absolute paths included, so a checkout can point its

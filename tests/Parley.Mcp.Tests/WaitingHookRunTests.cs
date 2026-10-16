@@ -497,11 +497,10 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
         // have failed to start or never been configured, so a repository can be equipped to
         // trigger this notice and not equipped to act on it.
         //
-        // Found by running it rather than reading it. On a real session with no Parley tools
-        // loaded, the agent did not shrug at being told to collect — it had been instructed by
-        // a channel it trusts, so it spent four tool batches hunting for the tool and then
-        // asked the person to run it from their shell, never answering what they had actually
-        // asked. The notice took the turn over.
+        // On a real session with no Parley tools loaded, an agent does not shrug at being told to
+        // collect — it has been instructed by a channel it trusts, so it would spend tool batches
+        // hunting for the tool and then ask the person to run it from their shell, never answering
+        // what they had actually asked. The notice would take the turn over.
         //
         // Deliberately narrow: a session that can collect gets no excuse from this, so the
         // loudness this file exists for is untouched.
@@ -626,9 +625,9 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     [InlineData("PostToolBatch")]
     public async Task A_repository_enrolled_into_a_named_project_is_told_its_mail(string hookEvent)
     {
-        // Found by the sweep over project-scoped callers: the hook read only the `parley` key, and enrolment into a
+        // A hook reading only the `parley` key would miss that enrolment into a
         // named project writes `parley-<project>` with PARLEY_PROJECT -- so on a machine where every repository was
-        // enrolled that way, every session was told nothing, and `parley waiting` would have refused to choose anyway.
+        // enrolled that way, every session would be told nothing, and `parley waiting` would have refused to choose anyway.
         await SeedAsync(TestContext.Current.CancellationToken);
         NameTwoProjects();
         WriteEntries(("parley-alpha", new Dictionary<string, string>(StringComparer.Ordinal)
@@ -718,10 +717,10 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
     [Fact]
     public async Task A_project_whose_broker_never_answers_does_not_silence_the_others()
     {
-        // Found by the review gate. Asking once per entry made every entry's failure the whole run's: a timeout was
-        // raised out of `waiting`, out of `main` and into the blanket `except` at the bottom of the hook, so the
-        // entries after it were never asked and the counts already gathered were discarded. One project slow to
-        // answer silenced the mail in all the others.
+        // Asking once per entry must not make every entry's failure the whole run's: a timeout raised out of
+        // `waiting`, out of `main` and into the blanket `except` at the bottom of the hook would leave the
+        // entries after it never asked and discard the counts already gathered. One project slow to
+        // answer must not silence the mail in all the others.
         //
         // The other unreachable-project test above cannot see it, and that is the point of this one: nothing listens
         // on its address, so the connection is *refused* — back in a moment, non-zero, handled since this file was

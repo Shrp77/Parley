@@ -37,9 +37,8 @@ if (arguments.Exists(argument => argument is "--help" or "-h"))
 
 if (arguments.Exists(argument => argument is "--version" or "-v"))
 {
-    // Two numbers for the reason `parley --version` gives two, and it matters more here than it
-    // ever did in one binary: this tool and the broker are installed apart now, so they can
-    // genuinely differ, and §10.2 is a versioned contract.
+    // Two numbers for the reason `parley --version` gives two: this tool and the broker are
+    // installed apart, so they can genuinely differ, and §10.2 is a versioned contract.
     var build = typeof(ConsoleHost).Assembly
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
         ?? "unknown";
@@ -75,7 +74,7 @@ if (arguments.Find(argument => argument.StartsWith('-')) is { } unknown)
     return 64;
 }
 
-// A bare address, because `parley console <url>` took one and forwarding must not take that away.
+// A bare address is accepted as well as --listen, and `parley web-ui <url>` forwards one.
 var address = listenOn ?? (arguments.Count > 0 ? arguments[0] : null);
 
 if (arguments.Count > 1)

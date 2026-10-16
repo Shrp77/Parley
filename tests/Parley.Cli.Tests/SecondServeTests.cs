@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Starting a broker more than once is ordinary, and the owner's machine did it at every logon.</b>
+/// <b>Starting a broker more than once is ordinary, and a machine can do it at every logon.</b>
 /// A scheduled task and a terminal restoring its last session both ran <c>parley serve</c> with the
 /// same arguments, and the one that lost cleared the winner's liveness on its way out. The claim on
 /// the store stops the damage; these check what the losing process then does: names the process that
@@ -18,8 +18,8 @@ namespace Parley.Cli.Tests;
 /// code saying it was would put a red mark against a deployment that is working.
 /// </para>
 /// <para>
-/// A version that stood by and took over when the winner stopped was built and removed on the owner's
-/// call: an idle second broker is a process nobody expects. Its cost is written in CLAUDE.md.
+/// A second broker does not stand by to take over when the winner stops: an idle second broker is a
+/// process nobody expects. The cost is written in CLAUDE.md.
 /// </para>
 /// <para>
 /// In one process, as two calls, which is faithful: the claim is a file opened with no sharing, and it

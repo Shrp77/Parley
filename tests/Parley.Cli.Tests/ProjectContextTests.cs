@@ -9,7 +9,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's call: a command acts on the project <c>--project</c> names, then the terminal's <c>PARLEY_PROJECT</c>, then
+/// A command acts on the project <c>--project</c> names, then the terminal's <c>PARLEY_PROJECT</c>, then
 /// the repository it runs in when that names exactly one project this machine describes, then the only project; otherwise
 /// it refuses. A saved "current project" was offered and declined, because chosen in one window it would quietly apply to
 /// a purge in another.

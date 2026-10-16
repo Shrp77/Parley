@@ -9,10 +9,8 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Listed where the project is, not offered from a menu</b> (the owner's report of 2026-10-08). A proposed roadmap is
-/// work waiting on a person, and the way to it was a pop-up list opened from a menu: a list of one row and a way out, in
-/// front of the thing it listed. It is a pane of the project view now, beside the agents and the conversations, with
-/// Enter to open a proposal.
+/// <b>Listed where the project is, not offered from a menu.</b> A proposed roadmap is work waiting on a person,
+/// so it is a pane of the project view, beside the agents and the conversations, with Enter to open a proposal.
 /// </para>
 /// <para>
 /// <b>Only there when something is proposed.</b> The pane joins the project view when at least one proposal is waiting and

@@ -8,8 +8,8 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>FR-003 is a promise about what the agent was told, and a promise nobody checks is prose.</b> So
-/// each passage <c>contracts/asking.md</c> maps to a requirement is asserted here, and the assertions
+/// <b>The ask is a promise about what the agent was told, and a promise nobody checks is prose.</b> So
+/// each passage the ask must carry is asserted here, and the assertions
 /// are on the passages rather than on the length — a test on the length would pass while the wording
 /// was replaced by something else of the same size.
 /// </para>
@@ -28,7 +28,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void It_says_the_line_is_read_by_every_peer_on_every_listing()
     {
-        // FR-003. Without this an agent is being asked to describe itself with no idea that the answer
+        // Without this an agent is being asked to describe itself with no idea that the answer
         // is charged to everybody else -- which is the only reason to keep it short now that no bound
         // does.
         Assert.Contains("every agent in this", OwnershipAsk.Text, StringComparison.OrdinalIgnoreCase);
@@ -40,7 +40,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void It_says_nothing_is_routed_by_it_so_there_is_no_reason_to_over_claim()
     {
-        // FR-030, and it is self-interest rather than politeness: an agent told the field decides what
+        // It is self-interest rather than politeness: an agent told the field decides what
         // it receives has every reason to claim broadly, which would make the field worth less to
         // everybody including itself.
         Assert.Contains("Nothing is\nrouted by it automatically", OwnershipAsk.Text, StringComparison.Ordinal);
@@ -50,7 +50,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void It_asks_for_both_halves_and_for_the_peer_it_believes_owns_the_rest()
     {
-        // FR-004, and the exclusion half is the whole reason for asking the agent rather than reading
+        // The exclusion half is the whole reason for asking the agent rather than reading
         // the repository: a tree can be read for what it contains and not for what it has decided not
         // to own.
         Assert.Contains("What you own", OwnershipAsk.Text, StringComparison.Ordinal);
@@ -62,7 +62,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void It_says_a_person_decides_and_that_the_answer_changes_nothing_by_itself()
     {
-        // FR-012 and Principle III, said to the agent so that it does not report having configured
+        // Principle III, said to the agent so that it does not report having configured
         // something. It is also simply true, which is the only reason it may be said.
         Assert.Contains("A person will read your answer", OwnershipAsk.Text, StringComparison.Ordinal);
         Assert.Contains("may disagree", OwnershipAsk.Text, StringComparison.Ordinal);
@@ -75,7 +75,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void It_asks_for_few_words_because_no_bound_does_that_any_more()
     {
-        // The hundred came off at 0.33.0. This phrase is the only thing left asking for brevity, so
+        // No bound does it. This phrase is the only thing left asking for brevity, so
         // losing it is losing the control rather than losing a nicety.
         Assert.Contains("as few words as carry the meaning", OwnershipAsk.Text, StringComparison.Ordinal);
     }
@@ -94,8 +94,8 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void Nothing_in_the_ask_is_a_marker_a_surface_could_parse()
     {
-        // **The load-bearing one.** §13 tells a receiver a payload is inert data, and 017's chip rule
-        // is what has kept that true here. A surface finds an ownership discussion by its conversation
+        // **The load-bearing one.** §13 tells a receiver a payload is inert data, and the chip rule
+        // is what keeps that true here. A surface finds an ownership discussion by its conversation
         // identifier, so the identifier must not appear in the words -- and this fails the moment
         // somebody helpfully puts it there, which is the tempting implementation.
         Assert.DoesNotContain(OwnershipAsk.Prefix, OwnershipAsk.Text, StringComparison.Ordinal);
@@ -174,7 +174,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void The_cost_of_asking_several_names_the_count_and_the_turn()
     {
-        // FR-007, and it is shown before the first Request is sent rather than after, because a turn
+        // It is shown before the first Request is sent rather than after, because a turn
         // per agent cannot be un-spent.
         var said = OwnershipAsk.Costs(19);
 
@@ -185,7 +185,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     [Fact]
     public void One_agents_discussions_are_findable_among_everybody_elses()
     {
-        // **FR-011's other half.** The record of an acceptance names the conversation, and the store's
+        // **Traceability, the other half.** The record of an acceptance names the conversation, and the store's
         // foreign key makes that identifier point at something real -- but a person coming back later
         // starts from a list of conversations, so the identifier also has to be enough to pick one
         // agent's discussions out of a deployment's whole history.
@@ -219,7 +219,7 @@ public sealed class AskingWhatAnAgentOwnsTests
     public void A_role_that_is_a_prefix_of_another_is_not_confused_with_it()
     {
         // `infra` is a prefix of `infrastructure`, which this repository has already been bitten by --
-        // 018 records a role query matching on a substring. The separator after the role is what stops
+        // a role query can match on a substring. The separator after the role is what stops
         // it here, so it is asserted rather than assumed.
         var infra = AgentName.Create("infra@test");
         var longer = AgentName.Create("infrastructure@test");

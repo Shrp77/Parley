@@ -4,8 +4,7 @@ namespace Parley.Web.Pages.Shared;
 
 /// <summary>What the roadmap summary is drawn from.</summary>
 /// <remarks>
-/// A view of its own because two pages show it, the project's and the roadmaps list, and a roadmap summary that read one
-/// way on arrival and another a click later would be the drift the roster partial was made to end.
+/// A view of its own so that whatever shows the roadmap summary reads it one way.
 /// </remarks>
 /// <param name="Project">The project.</param>
 /// <param name="Waiting">The proposals nobody has decided.</param>

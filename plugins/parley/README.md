@@ -10,7 +10,7 @@
 
 | Component | What it is for |
 |---|---|
-| `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
+| `/parley:setup` | Configures this repository as a Parley agent: checks the tools are installed, enrolls this repository with `parley enroll`, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
 | `/parley:setup-many` | Configures several repositories in one pass: finds the git repositories under a directory, offers them to tick, then configures, catalogues and starts the ones chosen. Leaves the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
@@ -128,9 +128,8 @@ copy to drift, so the skill here covers the part the server has nothing to say a
 operator's command-line tool, which is not exposed to any agent anywhere.
 
 **A version.** Neither manifest declares one, so an install tracks the repository rather than
-pinning to a string somebody has to remember to bump. Parley is in alpha and these files are
-still moving; a stale plugin that cannot be updated by `/plugin marketplace update` would be a
-worse problem than an unpinned one. This changes at the first release.
+pinning to a string somebody has to remember to bump. A stale plugin that cannot be updated by
+`/plugin marketplace update` would be a worse problem than an unpinned one.
 
 ## Alpha
 
@@ -143,5 +142,5 @@ Parley.Mcp`, and step 1 of setup becomes one line.
 
 Parley is not a Claude Code project and the protocol has no opinion about which client an agent
 lives in. This directory is the Claude Code integration; an equivalent for another client
-belongs beside it. Everything vendor-specific is in these four files - the server's own
+belongs beside it. Everything vendor-specific is in this directory - the server's own
 `instructions` is what every client gets for free, and it needs no adapter at all.

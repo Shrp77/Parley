@@ -67,9 +67,7 @@ internal static class PortLedger
     /// <b>The same number as <see cref="BrokerEndpoint.DefaultPort"/>, and read from it rather than
     /// repeated.</b> The first project a machine names is handed this port, so "where a broker is
     /// when nothing says otherwise" and "where this machine's broker is" are one address on the
-    /// ordinary machine — which is only true while the two numbers agree, and two constants agree
-    /// until one of them is edited. 019 shipped with them disagreeing: the band moved here and the
-    /// default was left pointing into the ephemeral range the band exists to avoid.
+    /// ordinary machine — which is only true while the two numbers agree.
     /// </remarks>
     internal const int BandFirst = BrokerEndpoint.DefaultPort;
 
@@ -77,21 +75,17 @@ internal static class PortLedger
     /// <remarks>
     /// <para>
     /// <b>Above the well-known range, below Linux's ephemeral floor, and clear of what developers
-    /// habitually take.</b> The deployment that prompted 019 serves on 51707 and 53283, and both sit
-    /// inside the operating system's ephemeral range — Windows' dynamic range on that machine is
-    /// 49152–65535, Linux's default <c>ip_local_port_range</c> is 32768–60999. A port in that band can be
-    /// held transiently by an *outbound* connection from any program on the machine, which is a
-    /// logon-time bind failure that happens rarely and looks like nothing. Handing ports out from there
-    /// would manufacture that flake rather than inherit it.
+    /// habitually take.</b> Windows' dynamic range is 49152–65535 and Linux's default
+    /// <c>ip_local_port_range</c> is 32768–60999. A port in that band can be held transiently by an
+    /// *outbound* connection from any program on the machine, a rare logon-time bind failure that looks
+    /// like nothing.
     /// </para>
     /// <para>
-    /// <b>Windows also reserves ranges, and reallocates them at boot.</b> On that same machine
-    /// <c>netsh int ipv4 show excludedportrange protocol=tcp</c> reports exclusions at 50000–50059 and
-    /// seven blocks between 53116 and 54235 — and the second project serves on 53283, one port below the
-    /// block beginning at 53284. A reallocation shifting down by one would take that broker out with
-    /// "an attempt was made to access a socket in a way forbidden by its access permissions", which reads
-    /// as a permissions fault rather than a taken port. This band is clear of every exclusion there, and
-    /// the availability check below is what handles a range that moves later.
+    /// <b>Windows also reserves ranges, and reallocates them at boot</b> (see
+    /// <c>netsh int ipv4 show excludedportrange protocol=tcp</c>). A broker caught by a reallocation fails
+    /// with "forbidden by its access permissions", which reads as a permissions fault rather than a taken
+    /// port. This band is clear of the exclusions seen, and the availability check below handles a range
+    /// that moves later.
     /// </para>
     /// <para>
     /// Two hundred and fifty-six projects is far beyond what a machine will have, so this is a constant
@@ -220,9 +214,8 @@ internal static class PortLedger
         // changes something else, and handing out a second port would strand the first.
         if (Recorded(document).TryGetValue(name.Value, out var already))
         {
-            // **The project wins where the two disagree**. Its own file is what its
-            // broker binds, so handing back the record's number gave the project a second, different port — found by
-            // the combined review gate. The record is corrected rather than believed.
+            // The project wins where the two disagree: its own file is what its broker binds, so the
+            // record is corrected rather than believed.
             if (ProjectFolder.TryRead(root, name, out var own, out _)
                 && Uri.TryCreate(own!.Endpoint, UriKind.Absolute, out var address)
                 && address.Port > 0)
@@ -396,7 +389,7 @@ internal static class PortLedger
 
     /// <summary>Every port that must not be handed out.</summary>
     /// <remarks>
-    /// <b>The projects first, the record second.</b> FR-013: an endpoint found on a project is spoken for
+    /// <b>The projects first, the record second.</b> An endpoint found on a project is spoken for
     /// whether or not this record lists it, which is what makes a lost or deleted record cost a rebuild
     /// and nothing more.
     /// </remarks>

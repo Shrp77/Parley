@@ -15,22 +15,20 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This is the review gate's fourth finding, driven.</b> It was found by reading and fixed on a mechanism
-/// that is unambiguous, and the ledger recorded a driving test as owed — because a fix for a
-/// machine-wide harm that nothing exercises is a fix nobody has watched work.
+/// <b>This drives the sweep.</b> A guard against a machine-wide harm that nothing exercises is a guard
+/// nobody has watched work.
 /// </para>
 /// <para>
-/// <b>What it guards.</b> 018 gave every project's node loop one shared resident table, so that a checkout
-/// answering in two projects is one process. The sweep that sends every agent away ran in each loop's
-/// <c>finally</c> — on that shared table. So one project stopping swept the whole machine, including agents
+/// <b>What it guards.</b> Every project's node loop shares one resident table, so that a checkout
+/// answering in two projects is one process. The sweep that sends every agent away runs in each loop's
+/// <c>finally</c> — on that shared table. So one project stopping must not sweep the whole machine, including agents
 /// still serving other projects, and <c>serve</c> stops and restarts a project whose store or endpoint
-/// changed while <c>project remove</c> ends one outright. Either quietly took down everything Parley was
+/// changed while <c>project remove</c> ends one outright. Either would quietly take down everything Parley is
 /// running, and SPEC.md §12 says what that costs: the process is what held everything each agent had
 /// learned.
 /// </para>
 /// <para>
-/// <b>Two brokers rather than one</b>, because the fixture the ledger said this suite did not have is the
-/// whole point: a node loop per broker, sharing one table, is what a process hosting two projects actually
+/// <b>Two brokers rather than one</b>, because that fixture is the whole point: a node loop per broker, sharing one table, is what a process hosting two projects actually
 /// is. One loop is cancelled and the other is left alone, which is `project remove` from the surviving
 /// project's side.
 /// </para>
@@ -102,8 +100,8 @@ public sealed class SharedResidentsSweepTests : IAsyncDisposable
             """,
             ct);
 
-        // The table the two loops share, holding one live agent — which is the state 018 made ordinary and
-        // the state the sweep used to destroy.
+        // The table the two loops share, holding one live agent — which is the ordinary state, and
+        // the state a careless sweep would destroy.
         var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
 
         var resident = ResidentAgent.Start(

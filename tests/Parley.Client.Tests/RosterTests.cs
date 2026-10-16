@@ -126,7 +126,7 @@ public sealed class RosterTests
     [Fact]
     public void A_line_a_person_accepted_is_marked_until_peers_read_it()
     {
-        // **FR-020, in the one place both surfaces read it from.** A person who accepts a line and then
+        // **In the one place both surfaces read it from.** A person who accepts a line and then
         // sees it in a roster will read the roster as the deployment -- so what is shown stays the
         // *live* line and this says a newer one is waiting.
         //

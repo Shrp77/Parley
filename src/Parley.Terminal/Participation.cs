@@ -21,8 +21,7 @@ namespace Parley.Terminal;
 /// on.
 /// </para>
 /// <para>
-/// There is one way to say something to an agent, and it is answered (principle 2.7). The surface that had
-/// "Ask" and "Announce" had two, and one of them expected nothing back. An announcement is a Request asking
+/// There is one way to say something to an agent, and it is answered. An announcement is a Request asking
 /// for an acknowledgement.
 /// </para>
 /// </remarks>
@@ -34,7 +33,7 @@ internal static class Participation
     /// terminal's stream, and the key that asked has already started taking it back.
     /// </remarks>
     internal const string Gone =
-        "You are not connected to this project, so nothing was sent. Send it again once the connection is back.";
+        "You are not connected to this project, so nothing was sent.";
 
     /// <summary>What the dialog that names a conversation is called.</summary>
     internal const string NameTitle = "Name the conversation";
@@ -44,7 +43,7 @@ internal static class Participation
 
     /// <summary>When a project holds nobody to speak to.</summary>
     internal const string NoPeers =
-        "There is nobody in this project to send anything to yet. Add an agent, or wait for one to register.";
+        "There is nobody in this project to send to yet. Add an agent first.";
 
     /// <summary>The row that sends to every agent in the project at once.</summary>
     /// <param name="howMany">How many agents it will reach.</param>
@@ -120,9 +119,8 @@ internal static class Participation
     /// <param name="owed">The delivered message.</param>
     /// <returns>The text to show above the Result form.</returns>
     /// <remarks>
-    /// Everything the Request carried, because a Result written without reading it is a Result for a narrower piece
-    /// of work than was asked for. A Request stored before 0.7 carried an intent, items and a <c>done_when</c>, and
-    /// they are all shown; one written since carries the ask.
+    /// The whole ask, because a Result written without reading it is a Result for a narrower piece of work than was
+    /// asked for. A Request carries nothing else (SPEC.md §5.1).
     /// </remarks>
     internal static string Asked(Delivered owed)
     {
@@ -136,19 +134,8 @@ internal static class Participation
             .AppendLine()
             .AppendLine(payload.Raw is { Length: > 0 } raw ? raw : payload.Said);
 
-        foreach (var point in payload.Points)
-        {
-            body.Append("  - ").AppendLine(Reading.Point(point));
-        }
-
-        if (payload.DoneWhen is { Length: > 0 } doneWhen)
-        {
-            body.AppendLine().Append("Done when: ").AppendLine(doneWhen);
-        }
-
-        // Every word here after the first line is the requester's, and it is drawn as a form's title. Found by the
-        // review gate: an escape sequence in a Request's intent, an item or done_when reached the screen a person
-        // answers from. Line by line, so the breaks that lay the request out survive.
+        // Every word here after the first line is the requester's, and it is drawn as a form's title, so it is
+        // neutralised line by line, keeping the breaks that lay the request out.
         return Safe.Lines(body.ToString());
     }
 
@@ -191,8 +178,7 @@ internal static class Participation
     /// <summary>A conversation name nobody has to think of.</summary>
     /// <returns>Something short and unlikely to collide.</returns>
     /// <remarks>
-    /// Prefixed with the surface's name, so a conversation nobody named says where it was started. It said `top-` until
-    /// the gate over the rename found it — the one place the old name was still written for somebody to read.
+    /// Prefixed with the surface's name, so a conversation nobody named says where it was started.
     /// </remarks>
     internal static string Suggested() =>
         "terminal-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);

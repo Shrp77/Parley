@@ -8,10 +8,10 @@ public enum Turn
     /// <summary>Nothing is open between them.</summary>
     Nobody = 0,
 
-    /// <summary>The peer asked, and this person holds it: their move is owed by this person.</summary>
+    /// <summary>The peer is waiting on this person.</summary>
     Mine = 1,
 
-    /// <summary>This person asked, and is waiting: the move is owed by the peer.</summary>
+    /// <summary>This person is waiting on the peer.</summary>
     Theirs = 2
 }
 
@@ -21,37 +21,24 @@ public enum Turn
 /// <param name="Peer">The other participant.</param>
 /// <param name="OpenExchange">The open exchange between them, or <see langword="null"/> when there is none.</param>
 /// <param name="Turn">Whose move it is.</param>
-/// <param name="Asked">Whether this person opened the exchange, rather than the peer.</param>
 /// <remarks>
-/// <b>Whose move it is does not say what to send, and getting that wrong lost the owner's messages.</b> A move
-/// owed by this person is a Result when the peer asked them and a Clarify when they asked the peer and the peer
-/// clarified — §5.3 gives the Result to the receiver alone, so the second one is refused with "you sent that
-/// request, so its receiver sends the Result". The wait-for graph answers *whose* move and cannot answer
-/// *which*: that is the role, and the role is in the transcript.
+/// A display fact for the room column only. It never decides what a send is: a person's line to an agent is
+/// always a new Request, and a reply to a question the person chose to answer is a Clarify they ask for.
 /// </remarks>
-public sealed record PairState(AgentName Peer, long? OpenExchange, Turn Turn, bool Asked = false);
+public sealed record PairState(AgentName Peer, long? OpenExchange, Turn Turn);
 
 /// <summary>
 /// The pair state for every participant of a conversation, from two reads the surface already makes.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This is what lets one input line decide what typing means</b> (SPEC.md §5.1 to §5.3): a Result where the
-/// peer asked and this person holds it, a Clarify where this person asked and is waiting, a Request where nothing
-/// is open. The act is a property of the pair rather than a verb somebody picks first.
-/// </para>
-/// <para>
-/// <b>Joined rather than reconstructed, and that was the load-bearing decision.</b>
-/// <see cref="ExchangeSnapshot"/> carries no parties at all — no requester, no receiver, no owner of the turn —
-/// so the obvious route was to work them out from the messages, the first of an exchange being its Request. That
-/// would put the broker's turn logic in a client, and this repository has one rule about two opinions on one
-/// question: the disagreement always favours the copy that lets something through. The broker already publishes
-/// the answer as the wait-for graph (§10.2), so the graph is read and filtered to this conversation's exchanges.
+/// <b>Joined rather than reconstructed.</b> <see cref="ExchangeSnapshot"/> carries no parties, and the broker
+/// already publishes whose move it is as the wait-for graph (§10.2), so the graph is read and filtered to this
+/// conversation's exchanges rather than working turns out from messages in a client.
 /// </para>
 /// <para>
 /// An exchange open between two <em>other</em> participants yields no pair state for this person, which is
-/// correct rather than a gap: §5.0 gives nobody a way to join somebody else's exchange, so typing to either of
-/// them opens a new one.
+/// correct rather than a gap: §5.0 gives nobody a way to join somebody else's exchange.
 /// </para>
 /// </remarks>
 public static class Pairing
@@ -83,13 +70,12 @@ public static class Pairing
 
         foreach (var peer in Participants(export).Where(p => p != me).OrderBy(p => p.Value, StringComparer.Ordinal))
         {
-            // Mine first: an exchange this person owes a move on is the one whose act cannot be derived and has
-            // to be offered, so it must win over one they are merely waiting on.
+            // Mine first: an exchange the peer waits on this person for wins over one they are merely waiting on.
             var owed = edges.FirstOrDefault(e => e.WaitedOn == me && e.Waiter == peer);
 
             if (owed is not null)
             {
-                states.Add(new PairState(peer, owed.ExchangeId, Turn.Mine, Opened(export, owed.ExchangeId) == me));
+                states.Add(new PairState(peer, owed.ExchangeId, Turn.Mine));
 
                 continue;
             }
@@ -98,23 +84,11 @@ public static class Pairing
 
             states.Add(waited is null
                 ? new PairState(peer, null, Turn.Nobody)
-                : new PairState(peer, waited.ExchangeId, Turn.Theirs, Opened(export, waited.ExchangeId) == me));
+                : new PairState(peer, waited.ExchangeId, Turn.Theirs));
         }
 
         return states;
     }
-
-    /// <summary>Who opened an exchange.</summary>
-    /// <param name="export">The conversation.</param>
-    /// <param name="exchange">The exchange.</param>
-    /// <returns>The requester, or null when the conversation holds no message of it.</returns>
-    /// <remarks>
-    /// <b>The first message of an exchange is its Request</b> (§5.1), so its sender is the requester. This is
-    /// reading the transcript rather than reconstructing the broker's turn logic: who spoke first is a fact in
-    /// the messages, where whose move it is now is a judgement the broker publishes as the wait-for graph.
-    /// </remarks>
-    private static AgentName? Opened(ConversationExport export, long exchange) =>
-        export.Messages.FirstOrDefault(message => message.ExchangeId == exchange)?.From;
 
     /// <summary>Everyone party to a message in the conversation.</summary>
     /// <param name="export">The conversation.</param>

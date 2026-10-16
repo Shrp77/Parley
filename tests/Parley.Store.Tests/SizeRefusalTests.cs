@@ -217,7 +217,7 @@ public sealed class SizeRefusalTests : IDisposable
     [Fact]
     public async Task Retiring_an_agent_does_not_strand_its_record()
     {
-        // The row cascades with the registration, like a credential does. Keeping counts for an
+        // The row cascades with the registration. Keeping counts for an
         // agent nobody can address would leave the evidence describing a deployment that no
         // longer exists.
         await Record(Orders, MessageType.Result, Over(1000));

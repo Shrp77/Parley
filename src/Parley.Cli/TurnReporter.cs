@@ -11,9 +11,9 @@ namespace Parley.Cli;
 /// <param name="output">Where a report that could not be sent is noted.</param>
 /// <remarks>
 /// <para>
-/// <b>Why it exists</b>: a turn ended with a command refused for want of permission and nothing reached the
-/// broker, so the person's screen read "working" for nearly three hours. The node had measured all of it — how long, how it
-/// ended, what was refused — and kept it to its own log.
+/// <b>Why it exists</b>: when a turn ends with a command refused for want of permission and nothing reaches the
+/// broker, the person's screen reads "working" for as long as nobody looks. The node knows how long the turn ran,
+/// how it ended and what was refused, so it tells the broker.
 /// </para>
 /// <para>
 /// <b>A report never fails the turn it describes.</b> Each is sent with a short deadline and any failure is noted and
@@ -32,7 +32,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <remarks>
     /// <b>The start is reported when the turn begins, not when it is asked for</b>: a turn queued behind another for the
     /// same agent would otherwise be reported as starting early, and its end — the start plus the time it ran — would
-    /// land before the work it took, so a stop on a refused permission was never flagged (the review gate's finding). A
+    /// land before the work it took, so a stop on a refused permission would never be flagged. A
     /// turn that never began, cancelled while it queued, is reported not at all.
     /// </remarks>
     internal async Task<TurnOutcome> RunAsync(

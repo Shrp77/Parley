@@ -28,10 +28,9 @@ namespace Parley.Terminal;
 /// holding one is finished from the button rather than from the field.
 /// </para>
 /// <para>
-/// <b>The owner asked for this against the composer.</b> A request's text may be eight
-/// thousand characters — SPEC.md rule 8.4's cap, and the one this surface is most used for — and
-/// it was collected in a field one row tall, which shows about sixty of them at a time. Somebody
-/// writing a paragraph could not see the paragraph.
+/// <b>A paragraph is for the composer.</b> A request's text may be eight thousand characters —
+/// SPEC.md rule 8.4's cap, and the one this surface is most used for — and a field one row tall shows
+/// about sixty of them at a time, so somebody writing a paragraph could not see the paragraph.
 /// </para>
 /// <para>
 /// <b>Which fields are long is declared rather than guessed.</b> Making every field several rows
@@ -101,10 +100,10 @@ internal sealed class Entry
     /// <returns>The box.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A paragraph rather than a line, because a message is one.</b> The owner asked for it after writing a
-    /// long one: a single-line field scrolls sideways, so what somebody had written slid out of sight a
-    /// character at a time and the only way to read their own message back was to walk the cursor through it.
-    /// Rule 8.4's cap is eight thousand characters and this is the box those are written in.
+    /// <b>A paragraph rather than a line, because a message is one.</b> A single-line field scrolls
+    /// sideways, so what somebody had written would slide out of sight and the only way to read it back
+    /// would be to walk the cursor through it. Rule 8.4's cap is eight thousand characters and this is
+    /// the box those are written in.
     /// </para>
     /// <para>
     /// <b>Here rather than in the line region, so the deprecation stays suppressed in one file.</b> That was
@@ -118,9 +117,9 @@ internal sealed class Entry
     /// is in a form.
     /// </para>
     /// <para>
-    /// <b>It shows where you are once there is more than fits</b>, which the owner asked for by name: a box
-    /// that grows to a bound and then scrolls is a box that has hidden something, and a reader with no
-    /// scrollbar cannot tell that from having written less than they thought.
+    /// <b>It shows where you are once there is more than fits</b>: a box that grows to a bound and
+    /// then scrolls has hidden something, and a reader with no scrollbar cannot tell that from having
+    /// written less than they thought.
     /// </para>
     /// </remarks>
     internal static Entry Speaking()
@@ -169,8 +168,7 @@ internal sealed class Entry
         box.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
 
         // **Offered the key first, because a focused view is.** Without this a letter a screen binds to a choice is eaten
-        // by the paragraph that has focus and never reaches the screen's own handler, which is what made a button's key do
-        // nothing while the roadmap was selected.
+        // by the paragraph that has focus and never reaches the screen's own handler.
         if (takes is not null)
         {
             box.KeyDown += (_, key) =>
@@ -289,14 +287,13 @@ internal sealed class Entry
     /// self-correcting on it.
     /// </para>
     /// <para>
-    /// <b>Against a width that does not move, and counted the way word wrap counts</b> (the owner's report of
-    /// 2026-10-03: the box flickered and bounced as text began to wrap). This measured the text's current width,
-    /// which loses a column whenever the scrollbar appears — and the scrollbar appears whenever the box is shorter
-    /// than the text. It also counted characters while the toolkit wraps at words, so near the edge the two
-    /// disagreed: the box grew, lost the scrollbar, measured one row fewer, shrank, gained it, and grew again on
-    /// every keystroke and every redraw. The width is the frame's less the scrollbar's column, whether or not the
-    /// scrollbar is showing, so the measure cannot depend on what it decides; and at that narrower width a greedy
-    /// word wrap never needs fewer rows than the toolkit's, so the scrollbar stays away until the box is at its bound.
+    /// <b>Against a width that does not move, and counted the way word wrap counts.</b> The text's
+    /// current width loses a column whenever the scrollbar appears, and the scrollbar appears whenever
+    /// the box is shorter than the text, so measuring it would make the box grow, lose the scrollbar,
+    /// shrink and flicker. The width is the frame's less the scrollbar's column, whether or not the
+    /// scrollbar is showing, so the measure cannot depend on what it decides; and at that narrower width a
+    /// greedy word wrap never needs fewer rows than the toolkit's, so the scrollbar stays away until the
+    /// box is at its bound.
     /// </para>
     /// </remarks>
     private static int Deep(TextView paragraph)

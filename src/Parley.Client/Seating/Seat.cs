@@ -8,9 +8,7 @@ namespace Parley.Client.Seating;
 /// <param name="Name">The project's person seat, read from its registry: <c>human-user@&lt;project&gt;</c>.</param>
 /// <remarks>
 /// <para>
-/// <b>The name comes from the broker and never from the surface</b>. Once, a person typed a
-/// name and this record added the surface's own machine to it, so a person reaching a broker through a tunnel from a
-/// laptop became a second, differently named person in the same project. Now the broker provides the one person seat
+/// <b>The name comes from the broker and never from the surface</b>. The broker provides the one person seat
 /// in every project it serves (SPEC.md §12.3), and a surface on any machine speaks as that row. Nothing about the
 /// surface — its machine, its user, anything typed — can change who the person is.
 /// </para>
@@ -40,9 +38,8 @@ public sealed record Seat(AgentName Name)
     /// <param name="registry">The registry as the broker reported it.</param>
     /// <returns>The seat.</returns>
     /// <remarks>
-    /// <b>Found by role, as the broker finds it.</b> A registry can still hold rows taken under typed names before 023,
-    /// under the same adapter; the role is the one fact only the person seat has. A registry with no person row is a
-    /// broker older than 0.36.0, and the caller says so rather than inventing a name.
+    /// <b>Found by role, as the broker finds it.</b> The role is the one fact only the person seat has. A registry
+    /// with no person row yields null, and the caller says so rather than inventing a name.
     /// </remarks>
     public static Seat? In(IEnumerable<AgentRecord> registry)
     {

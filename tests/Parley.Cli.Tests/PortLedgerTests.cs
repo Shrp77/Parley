@@ -15,8 +15,8 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// <b>The probe below is the reason this type exists.</b> Choosing "a free port" by binding one and
 /// letting go is already a recorded intermittent failure in this repository's own suite — two callers
-/// bind, both release, and both believe they have it. 019 makes naming a project the whole of creating
-/// one, which would have put that race in front of every person who ever types <c>project add</c>.
+/// bind, both release, and both believe they have it. Naming a project is the whole of creating
+/// one, which would put that race in front of every person who ever types <c>project add</c>.
 /// </para>
 /// <para>
 /// So <c>Two_claims_at_once_are_never_handed_one_port</c> is written to fail against an implementation
@@ -62,8 +62,8 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void Where_the_record_and_the_project_disagree_the_project_wins()
     {
-        // Missed until the combined review gate: the record's number was handed back
-        // although the project's own file — what its broker binds — names another, giving it a second port.
+        // The record's number must not be handed back
+        // when the project's own file — what its broker binds — names another, giving it a second port.
         var orders = ProjectName.Create("orders");
 
         Assert.True(PortLedger.TryClaim(_root, orders, Anything, out _, out var problem), problem);
@@ -77,8 +77,8 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void The_band_is_clear_of_both_operating_systems_ephemeral_ranges()
     {
-        // **Not taste, and not arbitrary.** The deployment that prompted 019 serves on 51707 and 53283,
-        // and both sit inside the ephemeral range — Windows' dynamic range on that machine is
+        // **Not taste, and not arbitrary.** A deployment serving on 51707 and 53283
+        // has both inside the ephemeral range — Windows' dynamic range on that machine is
         // 49152–65535, Linux's default ip_local_port_range is 32768–60999. A port there can be held
         // transiently by an outbound connection from any program on the machine, which is a logon-time
         // bind failure that happens rarely and looks like nothing.
@@ -122,7 +122,7 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void A_released_port_is_handed_out_again()
     {
-        // FR-014, and the reason a high-water mark was rejected: a counter cannot express a removal.
+        // A high-water mark is no use here: a counter cannot express a removal.
         Assert.True(PortLedger.TryClaim(_root, ProjectName.Create("orders"), Anything, out var first, out _));
         Assert.True(PortLedger.TryRelease(_root, ProjectName.Create("orders"), out var problem), problem);
 
@@ -148,12 +148,10 @@ public sealed class PortLedgerTests : IDisposable
         // The bind test earns its keep here: the record has never heard of this port, and whatever the
         // band would hand out first is held by something outside the record entirely.
         //
-        // **Which port that is has to be discovered rather than assumed, and this test assumed it.** It
-        // bound `BandFirst` itself and claimed afterwards, which is correct only on a machine where
-        // nothing already holds 19100 — and the machine most likely to run this suite is one that is
-        // actually running Parley, where the first project ever named holds exactly that. It failed with
-        // `SocketException` from its own setup line, before reaching a single assertion, the first time
-        // the suite was run on a machine with a live 0.32.0 deployment on it.
+        // **Which port that is has to be discovered rather than assumed.** Binding `BandFirst`
+        // itself and claiming afterwards is correct only on a machine where nothing already holds
+        // 19100 — and the machine most likely to run this suite is one that is actually running
+        // Parley, where the first project ever named holds exactly that.
         //
         // So: ask the ledger what it would hand out, give that port back, hold it, and ask again.
         Assert.True(
@@ -197,7 +195,7 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void A_port_a_project_already_serves_on_is_spoken_for_even_when_the_record_forgot_it()
     {
-        // **FR-013, and what makes SC-009 true.** The projects are the truth and the record is
+        // **What makes deleting the record safe.** The projects are the truth and the record is
         // bookkeeping, so a claim reads the projects before choosing — a record that has lost entries
         // costs one directory listing to repair.
         ProjectManifest.Write(
@@ -220,7 +218,7 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void Deleting_the_record_costs_a_rebuild_and_nothing_else()
     {
-        // SC-009, driven end to end: claim, write the projects those claims describe, delete the record
+        // Driven end to end: claim, write the projects those claims describe, delete the record
         // outright, and claim again. Nothing may be handed a port a project already serves on.
         var ports = new List<int>();
 
@@ -345,7 +343,7 @@ public sealed class PortLedgerTests : IDisposable
     [Fact]
     public void Two_claims_at_once_are_never_handed_one_port()
     {
-        // **SC-008, and the whole reason this type is not a free-port helper.** Written to fail against
+        // **The whole reason this type is not a free-port helper.** Written to fail against
         // an implementation that only probes: without the hold, every claimant reads the same record,
         // sees the same port free, binds it, releases it and records it.
         //

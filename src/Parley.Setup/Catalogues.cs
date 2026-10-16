@@ -7,27 +7,15 @@ namespace Parley.Setup;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This held FR-013, and 018 deleted the rule rather than the file.</b> 009 allowed a repository to
-/// answer in several projects and to be started unattended by only one, because a catalogue belonged to a
-/// project and two of them consenting was two nodes launching one working directory — two models editing
-/// one checkout, with no coordination and nobody there. Enforcing it meant <c>Elsewhere</c>, a scan across
-/// every other project's catalogue, and 009 recorded the deviation from the constitution's fifth principle
-/// that the scan was: two projects are two databases by design, so there was no schema either could hold
-/// the constraint in.
+/// <b>There is one catalogue, keyed by the agent's identity, so "catalogued twice" cannot be written
+/// down.</b> The rule is a property of the file's shape, not a scan across projects.
 /// </para>
 /// <para>
-/// <b>There is one catalogue now, keyed by the agent's identity, so "catalogued twice" cannot be written
-/// down.</b> The rule is a property of the file's shape rather than a scan somebody has to remember to
-/// run — which also removes the failure the scan kept having: three routes to "I could not read that
-/// catalogue", each of which granted the second start in silence.
-/// </para>
-/// <para>
-/// <b>What replaces it is a narrower refusal, and it is about a copy rather than a project</b> (018 R2).
-/// One identifier is one startable thing, so a checkout copied to a second path carries an identifier
-/// already catalogued against the first — and cataloguing it again would point one identity at two
-/// working directories, which is the same hazard FR-013 was about, reached by the one route that is still
-/// open. It is refused naming both paths, because the person who did it is the only one who knows which
-/// of the two they meant.
+/// <b>The one refusal is about a copy, not a project.</b> One identifier is one startable thing, so a
+/// checkout copied to a second path carries an identifier already catalogued against the first, and
+/// cataloguing it again would point one identity at two working directories (two models editing one
+/// checkout). It is refused naming both paths, because the person who did it is the only one who knows
+/// which of the two they meant.
 /// </para>
 /// </remarks>
 internal static class Catalogues
@@ -38,18 +26,9 @@ internal static class Catalogues
     /// <returns>The gate, held until it is disposed, or null when there is nothing to gate.</returns>
     /// <remarks>
     /// <para>
-    /// <b>It was a scan across every other project's catalogue whose caller then wrote a different file,
-    /// so no amount of holding the file being written could make the pair atomic.</b> Two runs granting
-    /// consent at the same moment each looked, saw nothing, and both wrote — found by a probe that passed
-    /// six times in isolation and failed on the third round under the load of the full suite, which is the
-    /// difference between a race being present and a race being visible.
-    /// </para>
-    /// <para>
-    /// <b>018 deleted the scan and kept this</b>, which corrects 018's own research. There is one catalogue
-    /// now, so the pair this could not make atomic no longer exists — but the read-decide-write it guards
-    /// does: <see cref="Copied"/>'s refusal is decided from what the catalogue says a moment before the
-    /// entry is written into it. The lock goes when 012's D6 gives the catalogue a single long-lived owner,
-    /// and not before.
+    /// <b>It guards a read-decide-write.</b> <see cref="Copied"/>'s refusal is decided from what the
+    /// catalogue says a moment before the entry is written into it, so two runs must not interleave.
+    /// The lock goes when the catalogue has a single long-lived owner, and not before.
     /// </para>
     /// <para>
     /// <b>The manifest is what is held, because it is the one file every project on the machine
@@ -60,22 +39,17 @@ internal static class Catalogues
         string? manifestPath,
         CancellationToken cancellationToken)
     {
-        // **Directory.Exists, and the change is load-bearing.** This took a *file* path and checked for
-        // the file; it takes the root now, and `File.Exists` on a directory is false — so the guard
-        // would have returned null every time and the gate would never have been taken at all, silently,
-        // on a machine that is perfectly well configured. A guard that fails open is worse than no guard,
-        // because the thing it protects goes on looking protected.
+        // Directory.Exists, because the argument is the root: `File.Exists` on a directory is false, so
+        // the gate would silently never be taken. A guard that fails open is worse than no guard.
         if (manifestPath is not { Length: > 0 } path || !Directory.Exists(path))
         {
             return null;
         }
 
-        // **The projects' own lock file, not any configuration file.** The first version held the
-        // manifest itself with `FileShare.None`, which locked out every *reader* for the length of a
-        // bulk enrolment — the terminal, the web UI, the node and every operator command begin by
-        // reading, and each would have reported it unreadable rather than busy. `ProjectManifest`
-        // already keeps a lock for serialising its own writes, so this takes that one: readers are
-        // untouched, and a grant and a project rewrite exclude each other, which they should.
+        // The projects' own lock file, not any configuration file: holding a configuration file with
+        // `FileShare.None` would lock out every reader for the length of a bulk enrolment.
+        // `ProjectManifest` already keeps a lock for serialising its own writes, so this takes that one:
+        // readers are untouched, and an enrolment and a project rewrite exclude each other.
         var lockPath = ProjectManifest.LockFor(path);
 
         for (var attempt = 0; ; attempt++)

@@ -48,11 +48,10 @@
     project is a version that disagrees with itself. Semantic: major.minor.patch, and while the
     major is zero the minor is what moves on a breaking change.
 
-    Stated at all because nothing did, and MSBuild's default when nothing does is 1.0.0 — so
-    both tools were advertising themselves as a stable 1.0 of a protocol whose own README says
-    to expect breaking changes. It also silently broke reinstalling: `dotnet tool update` sees
-    the same version it already has and does nothing, at some length, so a local rebuild
-    appears to install and does not.
+    MSBuild's default when nothing is stated is 1.0.0, which would advertise every tool as a
+    stable 1.0 of a protocol that expects breaking changes. A constant version also breaks
+    reinstalling: `dotnet tool update` sees the same version it already has and does nothing,
+    so a local rebuild appears to install and does not.
 
     Bump this in the same change that alters shipped behaviour, per the Versioning section of
     CLAUDE.md. A change that leaves it alone cannot be delivered by the documented upgrade
@@ -63,7 +62,7 @@
     imply that the wire contract moved. The storage schema carries a third, in user_version.
   -->
   <PropertyGroup>
-    <VersionPrefix>0.42.58</VersionPrefix>
+    <VersionPrefix>0.42.71</VersionPrefix>
   </PropertyGroup>
 
   <PropertyGroup>

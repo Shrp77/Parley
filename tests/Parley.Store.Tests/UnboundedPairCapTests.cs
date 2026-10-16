@@ -77,9 +77,9 @@ public sealed class UnboundedPairCapTests : IDisposable
         // Written straight into the table, so the only thing that could refuse these is the
         // trigger.
         //
-        // **Past the sentinel rather than merely past the old default, and that distinction is
-        // what makes this a test.** A first version opened ten at the sentinel and passed against
-        // the old trigger too — ten never reaches a cap of fifty, so it proved nothing about
+        // **Past the sentinel rather than merely past the default cap, and that distinction is
+        // what makes this a test.** Opening ten at the sentinel would pass against a trigger with
+        // a cap of fifty too — ten never reaches it, so it would prove nothing about
         // whether the trigger stands down. These rows are only admitted if it does.
         for (var i = 0; i < Past; i++)
         {

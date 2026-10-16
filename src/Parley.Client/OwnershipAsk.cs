@@ -16,8 +16,8 @@ namespace Parley.Client;
 /// <b>It is an ordinary Request and adds nothing to the protocol.</b> Sent from the person's seat
 /// through <c>SeatVoice.RequestAsync</c>, opening one ordinary exchange in one conversation. There is
 /// no new operation, no new message type, and nothing in the payload that anything parses: §13 tells a
-/// receiver a payload is inert data, and 017's chip rule is what has kept that true on these surfaces
-/// — addressing is recorded beside a draft and removed at the send, so what crosses is always prose.
+/// receiver a payload is inert data, and addressing is recorded beside a draft and removed at the send,
+/// so what crosses is always prose.
 /// </para>
 /// <para>
 /// <b>What a surface recognises is the conversation's identifier, not a marker.</b> An identifier is
@@ -39,14 +39,14 @@ public static class OwnershipAsk
     public const string Stamp = "yyyyMMdd-HHmmss";
 
     /// <summary>
-    /// The ask, which tells the agent what the answer is for before asking for it (FR-003, FR-004).
+    /// The ask, which tells the agent what the answer is for before asking for it.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Every paragraph answers a requirement and none of it is padding. It says the answer becomes one
-    /// line read by every agent on every roster listing and charged against each of them (FR-003); that
-    /// nothing is routed by it automatically, so the agent has no reason to over-claim (FR-030); that
-    /// the answer has two parts, the second naming a peer (FR-004); and that nothing it says changes
+    /// line read by every agent on every roster listing and charged against each of them; that
+    /// nothing is routed by it automatically, so the agent has no reason to over-claim; that
+    /// the answer has two parts, the second naming a peer; and that nothing it says changes
     /// any configuration by itself, which is true and keeps it from reporting that it set something
     /// (Principle III).
     /// </para>
@@ -55,14 +55,14 @@ public static class OwnershipAsk
     /// is for; this asks for a description of a boundary, in two halves that are one question.
     /// </para>
     /// <para>
-    /// <b>The words live in <see cref="Facilitation"/></b>, because since 022 the facilitator sends them from the
-    /// broker, which cannot reference this assembly. This is 020's text, true when a person decides; the facilitator
+    /// <b>The words live in <see cref="Facilitation"/></b>, because the facilitator sends them from the
+    /// broker, which cannot reference this assembly. This is the text for when a person decides; the facilitator
     /// sends <see cref="Facilitation.AcceptedAsWritten"/> instead while Auto Accept is on.
     /// </para>
     /// </remarks>
     public static string Text { get; } = Facilitation.ReadByAPerson;
 
-    /// <summary>What to say before asking more than one agent (FR-007).</summary>
+    /// <summary>What to say before asking more than one agent.</summary>
     /// <param name="agents">How many will be asked.</param>
     /// <returns>The cost, in the words a person reads before it is paid.</returns>
     /// <remarks>

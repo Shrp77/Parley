@@ -11,9 +11,8 @@ namespace Parley.Core;
 /// case is already taken — Windows and macOS hold <c>Pricing</c> and <c>pricing</c> as one folder.
 /// </para>
 /// <para>
-/// <b>Why a suffix and not a prefix.</b> The first design prefixed a reserved name with <c>_</c>, which collided
-/// with a conversation actually called <c>_con</c>: an identifier may contain <c>_</c>, and identifiers are older
-/// than this feature, so they cannot be narrowed now. <c>~</c> cannot occur in an identifier, so a suffixed
+/// <b>Why a suffix and not a prefix.</b> A <c>_</c> prefix would collide with a conversation actually called
+/// <c>_con</c>, since an identifier may contain <c>_</c>. <c>~</c> cannot occur in an identifier, so a suffixed
 /// folder is never another conversation's own name.
 /// </para>
 /// <para>

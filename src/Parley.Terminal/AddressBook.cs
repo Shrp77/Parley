@@ -10,9 +10,9 @@ namespace Parley.Terminal;
 /// <param name="path">The file it is kept in, or <see langword="null"/> to keep it for this run only.</param>
 /// <remarks>
 /// <para>
-/// <b>The owner's report of 2026-10-02</b>: four agents agreed which of them would speak for the rest, the owner ticked
-/// that one, and after an upgrade restarted the terminal every agent was ticked again — so the next line went to all four
-/// and all four answered a sentence meant for one. The narrowing was the person's decision and lived only in memory.
+/// <b>A narrowing is the person's decision and survives a restart.</b> If it lived only in memory,
+/// every agent would be ticked again after the terminal restarted and the next line would go to all
+/// of them.
 /// </para>
 /// <para>
 /// <b>Kept on this machine, beside the manifest, and nowhere else.</b> Who a person is writing to is a fact about their
@@ -24,8 +24,8 @@ namespace Parley.Terminal;
 /// second spelling of the default. Clearing back to everyone removes the entry.
 /// </para>
 /// <para>
-/// <b>A file that cannot be read or written costs the memory and nothing else.</b> Losing the ticks is the defect this
-/// fixes, and it is an inconvenience; a terminal that refused to open over a damaged convenience file would be a worse
+/// <b>A file that cannot be read or written costs the memory and nothing else.</b> Losing the ticks is an
+/// inconvenience; a terminal that refused to open over a damaged convenience file would be a worse
 /// one. The write is atomic so a crash part-way leaves the previous file, never half of one.
 /// </para>
 /// </remarks>

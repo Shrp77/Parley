@@ -15,9 +15,8 @@ namespace Parley.Cli.Tests;
 /// proves nothing about what happens when the token is actually pulled.
 /// </para>
 /// <para>
-/// What happens matters more here than it did when the two were separate processes. A node holds
-/// the agents it started (SPEC.md §11.1), and the broker's own shutdown used to have nothing to
-/// do with them. Now one token ends both, and a hosted node that ignored it — or a broker that
+/// What happens matters because the node is hosted in the broker's process. A node holds
+/// the agents it started (SPEC.md §11.1), and one token ends both, so a hosted node that ignored it — or a broker that
 /// stopped without waiting for it — would leave residents behind with nobody to tell them to
 /// quit.
 /// </para>

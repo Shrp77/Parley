@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// <b>`contracts/refusals.md` is the list, and the rule it opens with is the expensive one:</b> a
-/// refusal names what replaced it or what to do instead. Twelve tests in 019 were pinned to exactly
+/// refusal names what replaced it or what to do instead. Tests are pinned to exactly
 /// that, and the reason is that removing a thing is cheap while replacing one means finding everything
 /// that ever recommended it.
 /// </para>
@@ -30,7 +30,7 @@ public sealed class OwnershipRefusalsTests
     [Fact]
     public void An_empty_statement_is_refused_and_declining_is_offered_instead()
     {
-        // FR-016 is the honest route to "no line", so the refusal has to name it. Must fail against a
+        // Declining is the honest route to "no line", so the refusal has to name it. Must fail against a
         // refusal that only says no: somebody who wants the agent to have no line would otherwise be
         // left typing spaces at it.
         var wrong = new OwnershipAcceptance("   ", OwnershipSource.Composed, null, null).Problem();
@@ -43,8 +43,7 @@ public sealed class OwnershipRefusalsTests
     [Fact]
     public void A_character_that_could_forge_a_roster_entry_is_refused_and_located()
     {
-        // FR-022 and FR-025. The code point alone was enough while a statement was capped at a hundred
-        // characters; the bound came off at 0.33.0, so "it contains U+2028" is not actionable advice
+        // A statement has no length bound, so "it contains U+2028" is not actionable advice
         // about a paragraph. Must fail against a refusal that names no position.
         Assert.False(
             OwnershipStatement.IsValid("Orders and" + (char)0x2028 + "invoicing.", out var wrong));
@@ -115,7 +114,7 @@ public sealed class OwnershipRefusalsTests
     [Fact]
     public void A_proposal_that_names_no_conversation_is_refused()
     {
-        // FR-011: an accepted line must be traceable to the discussion that produced it, so a record
+        // An accepted line must be traceable to the discussion that produced it, so a record
         // claiming the agent proposed it and naming nowhere is not traceable. Must fail against
         // accepting it and leaving the column null.
         var wrong = new OwnershipAcceptance("Orders.", OwnershipSource.Proposed, 7, null).Problem();
@@ -139,12 +138,11 @@ public sealed class OwnershipRefusalsTests
     [Fact]
     public void Nothing_names_the_integer_that_spells_no_cap()
     {
-        // **0.25.8's precedent.** `parley clarifications` says "Caps in force: none" rather than the
+        // **The precedent.** `parley clarifications` says "Caps in force: none" rather than the
         // number, because telling somebody a bound was set at 2,147,483,647 tells them a value nobody
         // chose. `OwnershipStatement.Bounded` exists so nothing has to print it.
         //
-        // Must fail against a refusal, a field description or a help string that names the sentinel --
-        // which is what every one of them did before `Bounded` was added.
+        // Must fail against a refusal, a field description or a help string that names the sentinel.
         Assert.False(OwnershipStatement.Bounded);
 
         var long_enough = new string('x', 500);
@@ -164,9 +162,9 @@ public sealed class OwnershipRefusalsTests
     [Fact]
     public void Nothing_says_seen_about_an_answer_or_reachable_about_a_broker()
     {
-        // Two words, two recorded defects. **`seen`** claims to know what a model did with a message,
-        // where the broker only knows it handed it over -- 0.25.3's rule, which is why every surface
-        // says *collected*. **`reachable`** collapses two facts 019's FR-023 keeps apart: whether an
+        // Two words, two defects. **`seen`** claims to know what a model did with a message,
+        // where the broker only knows it handed it over -- which is why every surface
+        // says *collected*. **`reachable`** collapses two facts that are kept apart: whether an
         // agent answered, and who may address it.
         //
         // Read from the sources that carry this feature's words, because the rule is about what a
@@ -198,7 +196,7 @@ public sealed class OwnershipRefusalsTests
             Path.Combine("src", "Parley.Client", "OwnershipProposal.cs"),
             Path.Combine("src", "Parley.Terminal", "Ownership.cs"),
 
-            // 022's: the facilitator's words, the review's words and the switch's, on both surfaces.
+            // The facilitator's words, the review's words and the switch's, on both surfaces.
             Path.Combine("src", "Parley.Core", "Facilitation.cs"),
             Path.Combine("src", "Parley.Broker", "Facilitator.cs"),
             Path.Combine("src", "Parley.Client", "Provenance.cs"),

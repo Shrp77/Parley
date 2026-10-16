@@ -17,8 +17,8 @@ namespace Parley.Setup;
 /// where the decision takes effect.
 /// </para>
 /// <para>
-/// <b>It reuses enrolment's own hold-and-overwrite rather than writing the file itself</b>, which is
-/// what FR-018 means by the one component that already writes those files: the exclusive handle, the
+/// <b>It reuses enrolment's own hold-and-overwrite rather than writing the file itself</b>, the one
+/// component that writes those files: the exclusive handle, the
 /// refusal to follow a symlink, the byte-order mark surviving a round trip, and cancellation being
 /// honoured before the write and never during it are all rules that were paid for once and must not
 /// be reimplemented beside them.
@@ -87,8 +87,8 @@ public static class OwnershipLine
         }
         catch (InvalidDataException refused)
         {
-            // A link, which HoldAsync will not write through. An answer, not a throw: the facilitator's pass called this
-            // for each answer in turn, and one repository's link stranded every answer after it (the review gate).
+            // A link, which HoldAsync will not write through. An answer, not a throw: the facilitator's pass calls this
+            // for each answer in turn, and one repository's link must not strand every answer after it.
             return $"{refused.Message} Nothing has been written.";
         }
 
@@ -138,11 +138,9 @@ public static class OwnershipLine
                        ". Nothing has been written.";
             }
 
-            // **005's review finding, reached from the other side.** A withdrawal once deleted a launch
-            // configuration belonging to a *different* agent, because the workspace came from the
-            // registry -- which is what the agent said about itself and may be long out of date, and a
-            // repository re-enrolled under a second name has one file and two rows pointing at it. So
-            // the name is read back out of the file before anything is written to it.
+            // The workspace comes from the registry, which is what the agent said about itself and may
+            // be long out of date, and a repository re-enrolled under a second name has one file and two
+            // rows pointing at it. So the name is read back out of the file before anything is written.
             if (!Names(existing, agent))
             {
                 return $"{path} configures " +

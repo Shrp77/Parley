@@ -9,17 +9,15 @@ namespace Parley.Store;
 /// <remarks>
 /// <para>
 /// <b>The number is the wrong witness.</b> Before the first release the schema is edited in place and stays at 1, so a
-/// store made by an earlier build opens without complaint, reads as current, and lacks whatever has been added since.
-/// The owner met it as a terminal that could not take its seat while the broker logged one missing table per sweep,
-/// seventeen thousand times. What is compared here is the thing itself: every table, index and trigger this build's
-/// schema creates, against what the file holds.
+/// store made by an earlier build reads as current and may lack what has been added since. What is compared here is the
+/// thing itself: every table, index and trigger this build's schema creates, against what the file holds.
 /// </para>
 /// <para>
 /// <b>Reported and never repaired.</b> A store with a table missing needs a person to decide between adding it and
 /// starting again, and a broker that quietly altered a database it was asked to serve would be making that decision.
 /// Whitespace is ignored when comparing a definition, because SQLite keeps the text it was given and a checkout's line
-/// endings are not a difference in shape. Objects the file has and this build does not are left out: an old table nobody
-/// reads is harmless, and reporting it would only teach a person to ignore the list.
+/// endings are not a difference in shape. Objects the file has and this build does not are not reported:
+/// they are harmless, and reporting them would only teach a person to ignore the list.
 /// </para>
 /// </remarks>
 public static partial class StoreShape

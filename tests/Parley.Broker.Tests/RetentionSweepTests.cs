@@ -205,8 +205,8 @@ public sealed class RetentionSweepTests : IDisposable
     [Fact]
     public void A_short_age_cap_is_accepted_because_nothing_about_open_work_expires()
     {
-        // 0.4 refused a cap shorter than an exchange could live, because a question could expire before its own
-        // answer was due. Open work is now held by the floor for as long as it is open, so a short cap reaches
+        // A cap shorter than an exchange could live would let a question expire before its own
+        // answer was due. Open work is held by the floor for as long as it is open, so a short cap reaches
         // only what has finished.
         _ = new Broker(_connection, BrokerOptions.Default with { Retention = new RetentionPolicy(TimeSpan.FromHours(1), TimeSpan.FromHours(2)) });
     }

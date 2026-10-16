@@ -16,10 +16,10 @@ namespace Parley.Core;
 /// spawned agent, and be replayed into its inbox.
 /// </para>
 /// <para>
-/// <b>Two parts, because one was not enough.</b> The same repository checked out on five
-/// machines gives five agents, and under a single-token grammar they collided into one
-/// registry row and silently shared an identity. The role says what the agent is for; the
-/// machine says which one is being addressed. See SPEC.md §4.1.1.
+/// <b>Two parts, because one is not enough.</b> The same repository checked out on five
+/// machines gives five agents, which a single-token grammar would collapse into one registry
+/// row sharing an identity. The role says what the agent is for; the machine says which one is
+/// being addressed. See SPEC.md §4.1.1.
 /// </para>
 /// <para>
 /// The machine half is detected by the node that reports the agent, never configured, because
@@ -188,11 +188,8 @@ public readonly partial struct AgentName : IEquatable<AgentName>, IComparable<Ag
     public static AgentName Create(string candidate) =>
         TryCreate(candidate, out var name)
             ? name
-            // The message names the grammar TryCreate actually enforces, which it did not: it
-            // described a bare lowercase slug of up to 97 characters, and a bare slug is exactly
-            // what this type refuses. A name is role@machine (§4.1), so somebody following the
-            // old message to the letter produced another value that failed for the same reason
-            // and was told the same thing again.
+            // The message names the grammar TryCreate enforces: a name is role@machine (§4.1),
+            // and a bare slug is refused.
             : throw new ArgumentException(
                 $"'{candidate}' is not a valid agent name. Expected role@machine, matching " +
                 $"^[a-z][a-z0-9-]{{0,{MaxRoleLength - 1}}}@[a-z0-9][a-z0-9.-]"

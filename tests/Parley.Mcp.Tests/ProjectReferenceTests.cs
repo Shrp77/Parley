@@ -279,7 +279,7 @@ public sealed class ProjectReferenceTests : IDisposable
     [Fact]
     public void Naming_a_project_changes_nothing_about_who_the_agent_is()
     {
-        // FR-024, and the reason it is a requirement rather than an observation. Identity comes
+        // This is a requirement rather than an observation. Identity comes
         // from the launch environment and no operation may edit it; a project supplies an address.
         // If a project could ever supply a name or an ownership line, SPEC.md §13's guarantee that
         // a sender cannot forge the agent it claims to be would move from the launch configuration

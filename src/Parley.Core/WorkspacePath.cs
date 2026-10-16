@@ -82,8 +82,7 @@ public static class WorkspacePath
         // is a separator and `C:/repo` and `C:\repo` are one directory; on a Unix filesystem it
         // is an ordinary character, so `/src/a\b` and `/src/a/b` are two directories and
         // rewriting one into the other would merge two repositories under one name -- the very
-        // failure this comparison exists to refuse, reintroduced by the fix for the other half
-        // of it.
+        // failure this comparison exists to refuse.
         var unified = LooksWindows(trimmed) ? trimmed.Replace('\\', '/') : trimmed;
 
         // A trailing separator is spelling too: a client that appends one is naming the same

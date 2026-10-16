@@ -9,7 +9,7 @@ namespace Parley.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Found by probing three assemblies, one at a time, after the first one failed.</b> Anything
+/// Anything
 /// that can reach <see cref="ProjectManifest.Locate"/> resolves the per-user default when nothing
 /// says otherwise, and on a developer machine that has named a deployment the default is that
 /// deployment. <c>Parley.Web.Tests</c> was the bad one: the bare
@@ -51,11 +51,10 @@ internal static class ManifestIsolation
     /// configuration. Tests that want projects pass an explicit root, which outranks this.
     /// </para>
     /// <para>
-    /// <b>It ended in <c>projects.json</c> until 019 and must not now.</b> The variable names a root, and
+    /// <b>It must not end in <c>projects.json</c>.</b> The variable names a root, and
     /// a value whose final segment is the old manifest file name is *refused* — so every test in the
     /// assembly inherited a refusal from a module initializer, which is about as far from the failing
-    /// assertion as a cause can get. Found by one test that runs the real binary and checks it exits
-    /// zero.
+    /// assertion as a cause can get.
     /// </para>
     /// </remarks>
     internal static readonly string NoManifest =

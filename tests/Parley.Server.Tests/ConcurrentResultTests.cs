@@ -7,7 +7,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 1.</b> <c>ConcurrencyTests</c> probes simultaneous sends, simultaneous attaches
+/// <c>ConcurrencyTests</c> probes simultaneous sends, simultaneous attaches
 /// and two sessions of one agent sending together. What it does not ask is whether the **turn** rules
 /// survive two callers arriving at once — and those are the rules SPEC.md §5.3 rests on: a Result answers
 /// the exchange and closes it, so a second one has nothing to answer.

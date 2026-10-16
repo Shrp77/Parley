@@ -97,8 +97,8 @@ public sealed record ProjectSettings(
     /// rendered straight to a terminal, so a newline in one lets a project's entry produce lines
     /// that look like another project's entry, and an escape sequence lets it produce anything at
     /// all. The listing is what an operator consults to find out what this machine is configured
-    /// for; a field in it that can forge the rest of the report is worth closing while the field
-    /// is new, whoever is expected to be writing it.
+    /// for; a field in it that can forge the rest of the report must be closed, whoever is
+    /// expected to be writing it.
     /// </para>
     /// </remarks>
     public const int MaxDescription = 120;

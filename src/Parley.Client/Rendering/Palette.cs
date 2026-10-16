@@ -11,7 +11,7 @@ namespace Parley.Client.Rendering;
 /// conversation; it never carries a fact. Every message names its sender and its recipient in
 /// words, and the visibility annotation names the agents who were not party to it — so a reader
 /// who sees no colour at all loses nothing but convenience. That is the rule the whole view is
-/// built to keep (FR-030), and a palette is exactly where it would be easiest to break.
+/// built to keep, and a palette is exactly where it would be easiest to break.
 /// </para>
 /// <para>
 /// Derived from the name rather than from position in a list, so an agent is the same colour on

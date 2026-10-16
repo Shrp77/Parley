@@ -46,7 +46,7 @@ public static class Facilitation
     /// <summary>The prefix every ownership question's conversation begins with.</summary>
     /// <remarks>
     /// For a person reading a list of conversations. <b>Nothing recognises a question by it</b>: an agent can open a
-    /// conversation under this prefix itself (research finding 11), so a question is the facilitator's own Request,
+    /// conversation under this prefix itself, so a question is the facilitator's own Request,
     /// which storage checks.
     /// </remarks>
     public const string ConversationPrefix = "owns-";
@@ -103,15 +103,15 @@ public static class Facilitation
     /// <param name="autoAccept">Whether an answer will become the agent's line with no person involved.</param>
     /// <returns>The question.</returns>
     /// <remarks>
-    /// Two texts because 020's ends with a promise that Auto Accept breaks — "a person will read your answer … before
-    /// anything is written" (research finding 10). A question that told an agent something untrue about what happens
+    /// Two texts because the person-reviewed one ends with a promise that Auto Accept breaks — "a person will read
+    /// your answer … before anything is written". A question that told an agent something untrue about what happens
     /// to its answer would be the facilitator misleading the one participant it exists to ask.
     /// </remarks>
     public static string Question(bool autoAccept) => autoAccept ? AcceptedAsWritten : ReadByAPerson;
 
     /// <summary>What both questions ask, and why.</summary>
     /// <remarks>
-    /// Both keep 020's two halves — what the agent owns, and what it does not and who does — because the exclusion is
+    /// Both keep two halves — what the agent owns, and what it does not and who does — because the exclusion is
     /// the half nobody else can supply.
     /// </remarks>
     private const string Asked = """
@@ -135,7 +135,7 @@ public static class Facilitation
         person guessing is no better placed than a tool guessing.
         """;
 
-    /// <summary>020's question, whose last paragraph is true when a person decides.</summary>
+    /// <summary>The question whose last paragraph is true when a person decides.</summary>
     public static string ReadByAPerson { get; } = Lines(Asked + """
 
 

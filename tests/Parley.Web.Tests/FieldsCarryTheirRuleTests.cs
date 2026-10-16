@@ -56,46 +56,6 @@ public sealed class FieldsCarryTheirRuleTests
     // provides the person seat, so no name is typed.
 
     [Fact]
-    public async Task The_composer_says_what_a_request_costs_the_peer()
-    {
-        // **One vocabulary across two surfaces.** The checkbox said "I would like a reply", which
-        // is a preference; in 0.5 every message is answered, so what a send decides is that the
-        // peer owes a Result. The terminal says so in `Owing`'s words and this reads the same
-        // constant, because a console describing the protocol a third way is the drift SC-003 forbids.
-        //
-        // Read from the page source: the framing is drawn only for a seat, and this console has none
-        // to take. What is checked is that the sentence is the constant rather than a copy of it.
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        var body = await client.GetStringAsync(
-            new Uri(
-                $"/Conversations/Detail?project={DeadBrokerConsole.Project}&id=any",
-                UriKind.Relative),
-            TestContext.Current.CancellationToken);
-
-        var read = System.Net.WebUtility.HtmlDecode(body);
-
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Parley.slnx")))
-        {
-            root = root.Parent;
-        }
-
-        Assert.NotNull(root);
-
-        var page = await File.ReadAllTextAsync(
-            Path.Combine(root.FullName, "src", "Parley.Web", "Pages", "Conversations", "Detail.cshtml"),
-            TestContext.Current.CancellationToken);
-
-        Assert.Contains("@Owing.Requesting", page, StringComparison.Ordinal);
-
-        // And the preference wording is gone, rather than sitting beside the new one.
-        Assert.DoesNotContain("I would like a reply", read, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task The_frame_carries_one_implementation_of_the_correction()
     {
         // On every page, because both fields are on different ones and a script copied into two

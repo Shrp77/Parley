@@ -8,14 +8,14 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That `project list` never merges "it answered" with "anything can address it" (T075, FR-023).
+/// That `project list` never merges "it answered" with "anything can address it".
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The spec quotes the old listing as the defect, in as many words:</b> "Today's listing prints
-/// <c>reachable</c> beside <c>http://127.0.0.1:51707</c>, meaning only that this process connected
-/// to it. Somebody planning a firewall rule reads that as reachable from the network — and no rule
-/// they write can make it so, because nothing off the machine can address a loopback port."
+/// <b>A listing that prints</b> "<c>reachable</c> beside <c>http://127.0.0.1:51707</c>, meaning only that this process connected
+/// to it" would be the defect. Somebody planning a firewall rule reads that as reachable from the
+/// network — and no rule they write can make it so, because nothing off the machine can address a
+/// loopback port.
 /// </para>
 /// <para>
 /// Two questions, and they change on different timescales. Whether the broker answered is about
@@ -61,10 +61,9 @@ public sealed class ReachabilityIsTwoFactsTests : IDisposable
     /// <summary>A loopback port held and never listened on, so a connection to it is refused.</summary>
     /// <returns>The socket holding it; the port is free again once it is disposed.</returns>
     /// <remarks>
-    /// <b>It was the literal 19100, and that is the first port the band hands out.</b> On a machine
-    /// with a project named, a real broker is serving there, so "nothing is listening" was a guess
-    /// about the machine the suite ran on -- and it failed on the owner's the day their first project
-    /// was created. The shape the retired 51707s had. Held rather than probed for, because a port found
+    /// <b>It is not the literal 19100, which is the first port the band hands out.</b> On a machine
+    /// with a project named, a real broker is serving there, so "nothing is listening" would be a guess
+    /// about the machine the suite runs on. Held rather than probed for, because a port found
     /// free and then released can be taken before the test uses it.
     /// </remarks>
     private static Socket Unanswered()
@@ -109,7 +108,7 @@ public sealed class ReachabilityIsTwoFactsTests : IDisposable
     [Fact]
     public async Task An_endpoint_that_is_not_loopback_is_named_as_such()
     {
-        // **The case FR-022 exists for.** No command writes this — a project is handed a loopback
+        // **The case the listing exists for.** No command writes this — a project is handed a loopback
         // port when it is named — so the only way to arrive here is somebody editing
         // `project.json`, which SPEC.md §16 permits on a network the operator controls. The
         // listing has to say so, because all three gRPC services share the one port: reaching it

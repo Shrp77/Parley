@@ -13,6 +13,10 @@ namespace Parley.Core;
 /// oldest first, at most <see cref="Settling.MostListed"/> (SPEC.md §5.6). Null on every other message.
 /// </param>
 /// <param name="SettleableLeftOut">How many more such questions there are than are listed.</param>
+/// <param name="Since">
+/// Beside a person's Request the agent had asked back about: what the person has said to it in that conversation since
+/// it last spoke on the exchange, oldest first, at most <see cref="Settling.MostSince"/> (SPEC.md §5.6). Null otherwise.
+/// </param>
 /// <remarks>
 /// <para>
 /// The pairing exists so that an adapter cannot deliver a participant's words without the framing
@@ -30,4 +34,5 @@ public sealed record DeliveredMessage(
     Message Message,
     string Envelope,
     IReadOnlyList<SettleableQuestion>? Settleable = null,
-    int SettleableLeftOut = 0);
+    int SettleableLeftOut = 0,
+    IReadOnlyList<AnswerSince>? Since = null);

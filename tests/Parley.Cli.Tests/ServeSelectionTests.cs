@@ -10,15 +10,15 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both were found by the gate over the installer change, and neither was visible to the suite</b>, because every test
-/// that starts a broker by explicit store isolates its manifest — which is exactly the arrangement in which the store is
-/// honoured. On a machine whose manifest names projects, `serve --db` and <c>PARLEY_DB</c> served the manifest and ignored
-/// the store, while the help and the README said they serve one store instead of it.
+/// <b>Neither is visible to a test that isolates its manifest</b>, because every test that starts a broker by
+/// explicit store isolates its manifest — which is exactly the arrangement in which the store is honoured. On a
+/// machine whose manifest names projects, `serve --db` and <c>PARLEY_DB</c> must not serve the manifest and ignore
+/// the store, while the help and the README say they serve one store instead of it.
 /// </para>
 /// <para>
 /// The second is the waiting path's own. A machine with one project hosts its node with the resolution `parley up` has,
-/// so <c>PARLEY_NODE_CONFIG</c> wins over the entry — but a project named while serve waited was treated as a manifest
-/// being served and hosted from its entry instead, so the same machine changed catalogues at its next start.
+/// so <c>PARLEY_NODE_CONFIG</c> wins over the entry — and a project named while serve waits must not be treated as a manifest
+/// being served and hosted from its entry instead, or the same machine would change catalogues at its next start.
 /// </para>
 /// </remarks>
 public sealed class ServeSelectionTests : IDisposable
@@ -66,8 +66,8 @@ public sealed class ServeSelectionTests : IDisposable
         // store it was told, and a stray variable turning the logon entry into a broker for a test store.
         //
         // **Both questions are gone, because there is one source.** A project's store is derived from its
-        // name; nothing names one. So what is asserted is that the flag and the variable are refused
-        // rather than honoured, and that what gets served is what the root holds.
+        // name; nothing names one. So what is asserted is that the flags are refused rather than
+        // honoured, and that what gets served is what the root holds.
         var ct = TestContext.Current.CancellationToken;
         var store = Path.Combine(_directory, "named.db");
 
@@ -83,15 +83,11 @@ public sealed class ServeSelectionTests : IDisposable
 
             Assert.Equal(64, code);
             Assert.Contains(attempt[1], error, StringComparison.Ordinal);
-            Assert.Contains("`parley`",error, StringComparison.Ordinal);
         }
 
-        // And the variable that used to replace a manifest is simply not read: the root still decides.
+        // And what is served is what the root holds.
         using var process = ToolProcess.Launch(
-            [
-                (ProjectManifest.PathVariable, Root),
-                (DeploymentEnvironment.DatabaseVariable, store),
-            ],
+            [(ProjectManifest.PathVariable, Root)],
             "serve");
 
         var log = ToolLog.Of(process);
@@ -112,7 +108,7 @@ public sealed class ServeSelectionTests : IDisposable
 
         Assert.False(
             File.Exists(store),
-            $"a store named by PARLEY_DB was opened. The tool said:{Environment.NewLine}{log}");
+            $"a store this machine did not name was opened. The tool said:{Environment.NewLine}{log}");
 
         Assert.True(
             log.Said("orders"),

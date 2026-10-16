@@ -9,8 +9,7 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Confirming a roadmap made it disappear</b> (the owner's report of 2026-10-08): the proposal left the proposed pane
-/// and nothing else in the project showed a roadmap. This is where it is. It sits above the conversations because a
+/// <b>A confirmed roadmap stays visible in the project</b>: this is where it is. It sits above the conversations because a
 /// roadmap is what the conversations come out of — each item is a conversation of its own — and beside the proposals
 /// because the two are the same list at different stages.
 /// </para>

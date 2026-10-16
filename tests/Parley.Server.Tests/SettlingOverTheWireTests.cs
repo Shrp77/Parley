@@ -72,6 +72,57 @@ public sealed class SettlingOverTheWireTests
     }
 
     [Fact]
+    public async Task A_request_handed_back_carries_what_the_person_said_since_the_agent_asked_back()
+    {
+        // Must fail against a broker that re-delivers the person's first words alone: the agent then asks the same
+        // question again, which is what happened in a live conversation.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var seat = await AttachedClient.AttachAsync(broker, Person, cancellationToken: Ct, adapter: PersonSeat.Adapter);
+
+        long first;
+        long answer;
+
+        await using (var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct))
+        {
+            first = await AskAsync(seat, orders.Name, "summarize this");
+
+            var firstInbox = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);
+
+            Assert.Empty(Assert.Single(firstInbox.Messages, m => m.Message.ExchangeId == first).Since);
+
+            var asked = await orders.Client.ClarifyAsync(
+                new Wire.ClarifyRequest
+                {
+                    From = orders.Name,
+                    ExchangeId = first,
+                    ResponderModel = "claude-opus-5",
+                    PayloadJson = """{"text":"summarize what?"}"""
+                },
+                cancellationToken: Ct);
+
+            Assert.True(asked.Ok, asked.ToString());
+
+            answer = await AskAsync(seat, orders.Name, "the support address decision, D2");
+
+            var reply = Requests.Result(orders.Name, answer);
+            reply.Settles.Add(first);
+
+            Assert.True((await orders.Client.ResultAsync(reply, cancellationToken: Ct)).Ok);
+        }
+
+        // The agent's next session: attaching gives back the work it still owes, which is the Request handed back.
+        await using var next = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct);
+
+        var again = await next.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = next.Name }, cancellationToken: Ct);
+        var handedBack = Assert.Single(again.Messages, m => m.Message.ExchangeId == first);
+        var since = Assert.Single(handedBack.Since);
+
+        Assert.Equal(answer, since.ExchangeId);
+        Assert.Contains("the support address decision, D2", since.Envelope, StringComparison.Ordinal);
+        Assert.Contains("[parley:", since.Envelope, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Only_a_request_from_the_person_carries_the_list()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

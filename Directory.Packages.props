@@ -27,21 +27,13 @@
       is runtime IL emission, so this assembly is neither trimmable nor ahead-of-time
       compilable, and it says so rather than claiming otherwise.
 
-      Dapper.AOT was referenced to remove exactly that, and did nothing. Its generator
-      intercepts the simple overloads; every call here passes a CommandDefinition, because
-      that is what carries the CancellationToken, and those are skipped silently — no
-      interceptor was emitted anywhere in the assembly. Cancellation is a correctness property
-      and native compilation is a packaging convenience, so the package went rather than the
-      tokens. Self-contained publish gives runtime independence without constraining how
-      queries are written.
-
-      Removing it did cost something, and less than it appears. The package also ships
-      build-time SQL analyzers, so those went too — but they are built on a T-SQL parser, and
-      nothing here ever declared the SQLite dialect, so what they were validating was this
-      project's SQL read as somebody else's language. STRICT tables, RETURNING, json_valid,
-      partial indexes and GLOB are all outside what that parser describes. Anyone reinstating
-      the package should set the dialect first and expect to see diagnostics that were
-      previously silent.
+      Dapper.AOT is not used: its generator intercepts the simple overloads, and every call
+      here passes a CommandDefinition because that is what carries the CancellationToken, so
+      it would emit no interceptor. Cancellation is a correctness property and native
+      compilation is a packaging convenience. Self-contained publish gives runtime
+      independence without constraining how queries are written. Its build-time SQL analyzers
+      read a T-SQL dialect, so STRICT tables, RETURNING, json_valid, partial indexes and GLOB
+      are outside what they describe.
     -->
     <PackageVersion Include="Dapper" Version="2.1.79" />
   </ItemGroup>
@@ -84,24 +76,21 @@
   </ItemGroup>
 
   <!--
-    The terminal surface of `parley terminal`, and the only dependency on the tool that is neither
+    The terminal surface of `parley-terminal`, and the only dependency on the tool that is neither
     Microsoft's nor gRPC's.
 
     That is worth a paragraph rather than a shrug, because NuGetAudit fails this build on a high
     or critical advisory and every package is a new place one can land. **This one is not cheap.**
     Terminal.Gui arrives with twelve direct dependencies and twenty-four packages in all —
     ColorHelper, JetBrains.Annotations, Markdig, five Microsoft.Extensions.* at 10.0.7 to 10.0.9,
-    System.IO.Abstractions, TextMateSharp and its grammars, Wcwidth — where the package it
-    replaced (Spectre.Console 0.57.2) brought nothing at all. TextMateSharp drags a native
+    System.IO.Abstractions, TextMateSharp and its grammars, Wcwidth. TextMateSharp drags a native
     payload with it, libonigwrap for thirteen runtime identifiers, for a syntax highlighter this
     surface never uses. Twenty-four packages is twenty-four places an advisory can land, and the
     build prices that on every restore.
 
-    It was bought knowingly, by the owner, after using the prompt-driven surface on a real
-    deployment: four regions, focus that moves with Tab, dialogs and a mouse are what a windowing
-    toolkit makes possible, and Spectre.Console has no focus model, no widgets and no mouse.
-    Building those on it is writing a toolkit. The graph was measured on
-    2026-09-04, when it carried no advisory at any severity.
+    It is accepted knowingly: four regions, focus that moves with Tab, dialogs and a mouse are
+    what a windowing toolkit makes possible, and a prompt library has no focus model, no widgets
+    and no mouse. Building those is writing a toolkit.
 
     **No transitive pin binds today, and that is a fact about how CPM works rather than luck.**
     Central transitive pinning only constrains a package that has a PackageVersion entry, and none
@@ -133,16 +122,11 @@
     Analyzers, not dependencies: PrivateAssets keeps them off every consumer's graph, and nothing
     they enforce reaches a shipped assembly.
 
-    BannedApiAnalyzers exists for one symbol so far, and it earned its place. Several test classes
-    called SqliteConnection.ClearAllPools() to release a file handle before reading or deleting a
-    temporary database. That call is process-global, xUnit runs test classes in parallel, and
-    under load it disposed the native handle of a connection another class was using,
-    surfacing as "ObjectDisposedException: SQLitePCL.sqlite3" from whichever test happened to be mid-query.
-    It presented as a flaky test failing about once in twenty-five runs of the suite, was not
-    reproducible in ninety runs afterwards, and took a build running concurrently to bring back.
-
-    The calls are gone. This is what stops the next one being written, because the reason not to
-    write it is invisible at the call site: the code looks local and is not.
+    BannedApiAnalyzers bans SqliteConnection.ClearAllPools(). It is process-global and xUnit runs
+    test classes in parallel, so under load it disposes the native handle of a connection another
+    class is using, surfacing as "ObjectDisposedException: SQLitePCL.sqlite3" in whichever test is
+    mid-query. The reason not to call it is invisible at the call site: the code looks local and
+    is not.
   -->
   <ItemGroup Label="Testing">
     <PackageVersion Include="xunit.v3" Version="4.0.0" />

@@ -9,7 +9,7 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>FR-017 asks for the neighbours to be visible; FR-030 and Principle II forbid anything deciding
+/// <b>The neighbours are visible; Principle II forbids anything deciding
 /// about them.</b> Those pull in opposite directions in exactly one place — an overlap — and this is the
 /// file that holds the line. Two agents both claiming stock is a real state of a deployment, and it is
 /// the person's to settle or to leave.

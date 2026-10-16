@@ -115,11 +115,9 @@ public static class Visibility
     /// <summary>How many of the absent to name before counting the rest.</summary>
     /// <remarks>
     /// <para>
-    /// <b>Unbounded, this line was longer than everything it annotated.</b> A person told every
-    /// agent in a project one thing, which is nineteen pairwise notifications in one conversation
-    /// — and every one of the nineteen carried the other eighteen names, four hundred characters
-    /// of them, under a header that already said who the message was for. The owner read the
-    /// result as the recipients having missed it, which is the opposite of what it says.
+    /// <b>Bounded, because unbounded this line is longer than everything it annotates.</b> A person
+    /// who tells every agent in a project one thing makes nineteen pairwise notifications in one
+    /// conversation, each carrying the other eighteen names, and reads as the recipients having missed it.
     /// </para>
     /// <para>
     /// <b>Four, and then a count — the same shape as every other list here</b> (a broadcast's

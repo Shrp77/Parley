@@ -38,7 +38,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     private async Task RegisterAsync(string? owns, CancellationToken cancellationToken)
     {
         // The machine and the conversation are both real rows because both are real foreign keys,
-        // and the second one is load-bearing rather than incidental: FR-011 says an accepted line
+        // and the second one is load-bearing rather than incidental: an accepted line
         // must be traceable to the discussion that produced it, and an identifier pointing at no
         // conversation is not traceable. A fixture that stubbed it would be testing a weaker rule
         // than the schema holds.
@@ -91,8 +91,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     public async Task A_person_can_never_record_a_line_as_accepted_automatically()
     {
         // SPEC.md §10.2: only the broker records `automatic`, below this surface. A surface that could send it would let a
-        // person's edit read as the agent's untouched words. Held by code nothing checked until the combined review gate,
-        // which made the condition never true and watched every suite pass.
+        // person's edit read as the agent's untouched words.
         var ct = TestContext.Current.CancellationToken;
         await RegisterAsync("Invoicing only.", ct);
 
@@ -110,7 +109,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     public async Task No_line_is_recorded_for_the_persons_seat()
     {
         // A person owns no repository and storage refuses the seat an `owns` line, so an accepted one would read as
-        // pending for ever. Admitted over the wire until the combined review gate.
+        // pending for ever.
         var ct = TestContext.Current.CancellationToken;
         var person = PersonSeat.On(ProjectName.Create("test"));
 
@@ -168,7 +167,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     [Fact]
     public async Task A_statement_that_could_break_its_roster_row_is_refused_in_words_a_person_reads()
     {
-        // The character rule did not move when the length bound came off at 0.33.0. Must fail against
+        // The character rule does not depend on the length bound. Must fail against
         // the refusal being SQLite's: a person reading "CHECK constraint failed" cannot act on it.
         var ct = TestContext.Current.CancellationToken;
         await RegisterAsync(null, ct);
@@ -186,7 +185,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     [Fact]
     public async Task A_long_statement_is_recorded_because_the_bound_came_off()
     {
-        // The enabling half of 020: an agent asked what it owns answers in two halves and names a
+        // An agent asked what it owns answers in two halves and names a
         // peer, which a hundred characters frequently will not hold.
         var ct = TestContext.Current.CancellationToken;
         await RegisterAsync(null, ct);
@@ -227,7 +226,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     [Fact]
     public async Task A_composed_line_records_no_length_an_agent_never_wrote()
     {
-        // 0.29.0's second review finding, from the other side: a retry wrote into size_refusals a
+        // A retry must not write into size_refusals a
         // length no agent composed, and size_refusals is what §17 question 16 reads its evidence out
         // of. The length here is the evidence the removed bound has to be chosen against, so a
         // person's characters must never be counted into it.
@@ -262,7 +261,7 @@ public sealed class RecordingOwnershipTests : IDisposable
     [Fact]
     public async Task A_proposed_line_with_no_conversation_is_refused()
     {
-        // FR-011: an accepted line must be traceable to the discussion that produced it, and a
+        // An accepted line must be traceable to the discussion that produced it, and a
         // proposal was discussed somewhere by definition.
         var ct = TestContext.Current.CancellationToken;
         await RegisterAsync(null, ct);

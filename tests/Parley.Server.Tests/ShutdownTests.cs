@@ -8,8 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Found by measuring rather than reading, and it was not subtle once measured: a broker with one
-/// agent attached took thirty seconds to stop, every time.
+/// A broker with one agent attached must not take thirty seconds to stop.
 /// </para>
 /// <para>
 /// The cause is the design working as intended in two places that had not been put together. An

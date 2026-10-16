@@ -46,9 +46,11 @@ another repository is the worst available outcome - it reads as settled fact for
 the file lives. If the user does not know either, the honest entry is the peer's name and
 "boundary not yet agreed", which still tells this agent that somebody is there to ask.
 
-If several peers have no line, that is worth saying out loud: whoever configured them can add
-`PARLEY_OWNS` once each and every agent in the project sees it, rather than every repository
-keeping its own description of everybody else. That is the whole reason the field exists.
+If several peers have no line, that is worth saying out loud. Ownership is one statement each
+agent proposes first, and the person may override it. Parley asks each agent what it owns, and
+the accepted line appears in the roster for every agent in the project, so no repository has to
+keep its own description of everybody else. A peer with no line has not been asked yet, or its
+answer has not been accepted.
 
 ## 3. Write the block
 
@@ -56,7 +58,7 @@ Put it in this repository's standing instructions - `CLAUDE.md` at the repositor
 `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section rather
 than appending a second one. Leave the rest of the file untouched.
 
-`/parley:setup` step 6 will usually have left a frame there already, carrying the invariants and
+Enrolling (`/parley:setup`) will usually have left a frame there already, carrying the invariants and
 a placeholder line saying the roster has not been read. Rewriting the frame and the roster is
 what clears it - a block that still says the roster has not been read, under a list of peers, is
 worse than either half alone.
@@ -73,7 +75,7 @@ curated line survives exactly as long as nobody runs `/parley:write-peers` - and
 design of this command is that it is run often. A rule that dies on the third run, silently, in
 a file read on every turn, is worse than one that was never written down.
 
-**Keep the frame as it is written above.** Step 6 wrote those same two sentences, and replacing
+**Keep the frame as it is written above.** Enrolling wrote those same two sentences, and replacing
 the section means writing them again rather than inheriting them - so a template here that
 stopped at "cannot see theirs" would silently delete the line telling this agent that the inbox
 is pull and must be drained. That line is the difference between an agent that collects its
@@ -98,9 +100,8 @@ placed, so code travels as `Name.cs.txt`.
   whether an order can be fulfilled.
 
 **Do not guess at what these repositories do, and do not edit them.** When you need work done
-in one, or something it knows, send its agent a `parley_request` saying what you want, and what
-it is for when that is not obvious. If a request you receive is unclear, ask with
-`parley_clarify` rather than guessing. Do the work other agents request of this repository.
+in one, or something it knows, send its agent a `parley_request` saying why and what done looks
+like. Do the work other agents request of this repository.
 ```
 
 Keep it to a line per peer. This block is in context for every turn of every session, so it is

@@ -6,7 +6,7 @@ namespace Parley.Mcp.Tests;
 /// Windows path forms that lead out of a repository are refused by the file tools, whichever form they take.
 /// </summary>
 /// <remarks>
-/// Written as a probe by the review gate (run 2.2) and kept: a device path, a UNC share, a drive-relative path and an
+/// A device path, a UNC share, a drive-relative path and an
 /// alternate data stream each resolve differently from an ordinary path, and a check written against ordinary paths
 /// could pass every other test here and still let one of them through.
 /// </remarks>

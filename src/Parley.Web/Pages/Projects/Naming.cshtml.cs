@@ -64,8 +64,8 @@ public sealed class NamingModel(BrokerDirectory directory) : PageModel
 
     /// <summary>Whether this project is named in a manifest at all.</summary>
     /// <remarks>
-    /// A machine running by explicit paths has no manifest, and the console offers the broker
-    /// its sibling commands use under a stand-in name. There is nothing to rename in that case —
+    /// A machine with no project reaches a broker by address, and the console offers that broker
+    /// under a stand-in name. There is nothing to rename in that case —
     /// what is wanted is the first naming, which is a different command and a different sentence.
     /// </remarks>
     public bool Named { get; private set; }

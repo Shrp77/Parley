@@ -31,7 +31,8 @@ public sealed class DefaultAgentTests
 
         Assert.Contains("name=\"default\" value=\"orders@beta\"", page, StringComparison.Ordinal);
         Assert.Contains("type=\"checkbox\" class=\"default-box\"", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("type=\"radio\"", page, StringComparison.Ordinal);
+        // An element, not the attribute anywhere on the page: the layout's stylesheet names `[type="radio"]` to style them.
+        Assert.DoesNotMatch("<input\\b[^>]*type=\"radio\"", page);
         Assert.Contains("Default conversation agent:", page, StringComparison.Ordinal);
         Assert.Contains("id=\"default-dialog\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain("value=\"human-user@alpha\"", page, StringComparison.Ordinal);

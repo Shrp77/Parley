@@ -9,17 +9,15 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The old refusal was right about what it could see and is now able to see more.</b> It read:
-/// <i>"this cannot tell whether that address is the project it is being asked to join, and guessing
-/// wrong in the permissive direction is the move that loses an agent"</i> — true when the only evidence
-/// was the address itself. The machine's manifest knows which project holds which endpoint, so the
-/// question is decidable rather than a guess, and the answer differs in each direction.
+/// <b>An address is decidable, not a guess.</b> The machine's projects know which project holds which
+/// endpoint, so whether a pinned address is the project being joined, another project's, or nobody's
+/// has a different answer in each case. With no projects to read, the entry is refused.
 /// </para>
 /// <para>
 /// <b>The map is passed in rather than read here, and that is deliberate.</b> <c>Describe</c> takes
 /// file contents as strings and returns file contents as strings, which is why it is the most heavily
-/// tested type in this project; reaching a manifest from inside it would give every one of those tests
-/// a filesystem.
+/// tested type in this project; reaching the machine's projects from inside it would give every one of
+/// those tests a filesystem.
 /// </para>
 /// </remarks>
 public sealed class BrokerPinnedTests

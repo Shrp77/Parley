@@ -8,8 +8,7 @@ namespace Parley.Spec.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 3 of the review gate, run 3.6, and the last of them. Run 3.3 checked the feature's own
-/// documents against each other. This checks the two that outlive the feature: `CLAUDE.md`, which
+/// This checks the two documents that outlive any feature: `CLAUDE.md`, which
 /// the next person working here reads first, and `SPEC.md`, which somebody building another
 /// implementation reads instead of the code.
 /// </para>
@@ -61,9 +60,9 @@ public sealed partial class ProjectRecordTests
         // there — and therefore the one most worth checking from outside.
         //
         // Derived rather than written out, and that is the whole substance of this test. Both
-        // halves used to name 0.18.0 as a literal, which checked that somebody had typed the same
-        // number twice here rather than that the two documents agree — so the first patch bump
-        // failed it, in the file that is not the one at fault, and the cheapest way past a test
+        // halves naming the version as a literal would check that somebody had typed the same
+        // number twice here rather than that the two documents agree — the first patch bump
+        // would fail it, in the file that is not the one at fault, and the cheapest way past a test
         // like that is to update the literal without reading the file it is about.
         var props = Read("Directory.Build.props");
 
@@ -131,10 +130,13 @@ public sealed partial class ProjectRecordTests
     {
         // It is the one document that must not require the specification to be readable, which is
         // a standing rule here rather than a preference for 006.
-        var readme = Read("README.md");
+        var pages = Directory.GetFiles(Path.Combine(Root(), "docs"), "*.md")
+            .Prepend(Path.Combine(Root(), "README.md"))
+            .Select(File.ReadAllText)
+            .ToList();
 
-        Assert.DoesNotContain("SPEC.md §", readme, StringComparison.Ordinal);
-        Assert.Contains("`parley` on its own opens it", readme, StringComparison.Ordinal);
+        Assert.All(pages, page => Assert.DoesNotContain("SPEC.md §", page, StringComparison.Ordinal));
+        Assert.Contains(pages, page => page.Contains("`parley` on its own opens the terminal", StringComparison.Ordinal));
     }
 
     [Fact]

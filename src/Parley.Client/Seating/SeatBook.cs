@@ -34,8 +34,7 @@ public sealed record SeatOutcome(SeatHold? Hold, string? Problem)
 /// <para>
 /// <b>The registry is read before anything is attached, and one that could not be read refuses.</b> A guard that
 /// skipped its check on an unreachable broker would pass hardest exactly when the deployment is least well known. A
-/// registry with no person row is a broker older than 0.36.0; that is said rather than papered over with a name this
-/// surface made up, which is the failure 023 exists to end.
+/// registry with no person row is said so rather than papered over with a name this surface made up.
 /// </para>
 /// </remarks>
 public sealed class SeatBook : IDisposable
@@ -72,8 +71,8 @@ public sealed class SeatBook : IDisposable
 
     /// <summary>What a surface says when a project's broker provides no person seat.</summary>
     public const string NoPersonSeat =
-        "This project's broker has no seat for a person, so it is older than 0.36.0 and nothing here can speak in it. "
-        + "Upgrade it (install with -Reset), and the seat is there when it next starts.";
+        "This project's registry holds no seat for a person, so nothing here can speak in it. "
+        + "The broker provides the seat when it starts, so restart this project's broker.";
 
     /// <summary>Takes the person's seat in a project, as its registry names it, or says why it could not.</summary>
     /// <param name="project">The project.</param>
@@ -275,7 +274,7 @@ public sealed class SeatBook : IDisposable
     /// name, and somebody coming back is who the count is for. The name is the seat this surface took when it has taken
     /// one, and otherwise the one SPEC.md §12.3 says the broker provides, <c>human-user@&lt;project&gt;</c>: a broker
     /// whose registry could not be read may still answer how much is waiting, and "nothing" said because no seat had
-    /// been taken yet would be 0.29.1's false sentence again.
+    /// been taken yet would be a false sentence.
     /// </para>
     /// <para>
     /// Asked of the broker rather than remembered: a notice arrives when something lands and never when something is

@@ -10,8 +10,8 @@ using Wire = Parley.Transport;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// The owner's request, end to end: every agent is asked what it owns, and its answer becomes its line, with nobody
-/// asking and no surface open (SPEC.md §10.2; FR-006, FR-011, FR-013, FR-014).
+/// End to end: every agent is asked what it owns, and its answer becomes its line, with nobody
+/// asking and no surface open (SPEC.md §10.2).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -21,7 +21,7 @@ namespace Parley.Cli.Tests;
 /// </para>
 /// <para>
 /// <b>The answer is in paragraphs on purpose.</b> A model answers that way, and a line refuses a break, so without the
-/// flatten Auto Accept would almost never accept anything (research finding 9). What is asserted is that the words
+/// flatten Auto Accept would almost never accept anything. What is asserted is that the words
 /// survive, only their whitespace changes, and the length recorded is the agent's own message.
 /// </para>
 /// </remarks>
@@ -144,7 +144,7 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
     [Fact]
     public async Task With_Auto_Accept_off_the_answer_waits_and_nothing_is_written()
     {
-        // T042's probe of the loop itself: must fail against a pass that ignored the switch.
+        // A probe of the loop itself: must fail against a pass that ignored the switch.
         var operators = new Wire.Operators.OperatorsClient(_channel);
         _ = await operators.SetAutoAcceptAsync(new Wire.SetAutoAcceptRequest { On = false }, cancellationToken: Ct);
 
@@ -170,7 +170,7 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
         var question = Assert.Single(
             (await agents.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders.Value }, cancellationToken: Ct)).Messages);
 
-        // Asked with the switch off, the question keeps 020's promise: a person reads the answer first.
+        // Asked with the switch off, the question keeps its promise: a person reads the answer first.
         Assert.Contains("A person will read your answer", question.Envelope, StringComparison.Ordinal);
 
         Assert.True((await agents.ResultAsync(

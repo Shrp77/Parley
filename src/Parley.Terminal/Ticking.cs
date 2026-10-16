@@ -26,31 +26,27 @@ internal readonly record struct Tickable(string Label, string Note, bool Ticked,
 /// twenty-one somebody wants, which is a different question and needs a different answer.
 /// </para>
 /// <para>
-/// <b>Shown a page of ten at a time</b>, the owner's call of 2026-09-27 after scrolling a long list of
-/// folders felt slow. A page is a list short enough to take in at once, the count line says which page
+/// <b>Shown a page of ten at a time.</b> A page is a list short enough to take in at once, the count line says which page
 /// and how many, and the ticks belong to the rows rather than to the page, so moving between pages loses
 /// nothing. PgDn and PgUp turn a page, as do the right and left arrows; down on a page's last row and up
 /// on its first carry on into the next and the previous, so walking the whole list with one key still
 /// works.
 /// </para>
 /// <para>
-/// <b>Every key is taken on the list, before the list's own bindings see it.</b> They were taken in the
-/// dialog's own handler, and on a screen the list has focus — and a focused view is offered a key before
-/// its dialog is, 0.30.4's sentence. The list binds Enter for itself, so Enter never reached the dialog:
-/// reported by the owner as four repositories ticked and Enter doing nothing. Space and the letters only
-/// worked because the list happens not to bind them. The tests that passed throughout sent the key to the
-/// dialog directly, which is the seam and not the screen.
+/// <b>Every key is taken on the list, before the list's own bindings see it.</b> On a screen the list has
+/// focus, and a focused view is offered a key before its dialog is. The list binds Enter for itself, so Enter
+/// would never reach the dialog's own handler. A test must send the key to the list, not the dialog, because
+/// the dialog is the seam and not the screen.
 /// </para>
 /// <para>
 /// <b>Space ticks, not Enter.</b> Enter is what every other dialog here finishes with, and a list
 /// where Enter toggled would have no way to say "these ones, go" — so the two are kept apart and
-/// the status line inside the dialog says which is which. `a` and `n` take all and none, the same
-/// letters <see cref="Parley.Setup.RepositorySelection"/> uses for the same job on the command
-/// line, so a person who knows one knows the other.
+/// the status line inside the dialog says which is which. Alt+a and Alt+n take all and none: the same
+/// letters <see cref="Parley.Setup.RepositorySelection"/> uses on the command line, with the Alt every action
+/// here carries, so a plain character is never an action.
 /// </para>
 /// <para>
-/// <b>The rows are a grid</b>, the owner's call of 2026-09-29. A note used to follow its name, so it began
-/// wherever the name happened to end and "already an agent" sat at a different column on every row. Each
+/// <b>The rows are a grid</b>, so "already an agent" sits at the same column on every row. Each
 /// column is as wide as its widest cell across <i>every</i> page, not the one on screen, so turning a page
 /// does not move the columns under the reader.
 /// </para>
@@ -168,8 +164,8 @@ internal sealed class TickDialog : Dialog
             Y = Pos.AnchorEnd(1),
             Width = Dim.Fill(2),
             Text = Pages > 1
-                ? "Space: tick   a: all   n: none   PgUp/PgDn: page   Enter: go   Esc: cancel"
-                : "Space: tick   a: all   n: none   Enter: go   Esc: cancel",
+                ? "Space: tick   Alt+a: all   Alt+n: none   PgUp/PgDn: page   Enter: go   Esc: cancel"
+                : "Space: tick   Alt+a: all   Alt+n: none   Enter: go   Esc: cancel",
         };
 
         ShowPage(0, 0);
@@ -249,14 +245,6 @@ internal sealed class TickDialog : Dialog
         // taken the key, and it does not arrive here.
         return Handle(key) || base.OnKeyDown(key);
     }
-
-    /// <summary>Whether a key is that letter, plainly typed.</summary>
-    /// <remarks>
-    /// The same test the shell's own actions use: a letter with no modifier. Ctrl and Alt are
-    /// excluded so that a chord meant for something else is not read as a plain letter here.
-    /// </remarks>
-    private static bool Typed(Key key, char character) =>
-        !key.IsCtrl && !key.IsAlt && key.AsRune == new System.Text.Rune(character);
 
     private static int Room(View? view) => view?.App?.Screen.Height ?? int.MaxValue;
 
@@ -348,17 +336,16 @@ internal sealed class TickDialog : Dialog
             return true;
         }
 
-        // Letters, and they have to be taken here: a ListView's own type-to-find would otherwise
-        // eat them, which is the collision `Lists` already records between a list's search and the
-        // letters a surface advertises. While this dialog is open the letters mean what it says.
-        if (Typed(key, 'a'))
+        // Alt plus a letter, like every action on this surface, so a plain character is never an action and the
+        // list's own type-to-find is left alone.
+        if (Shell.Typed(key, 'a'))
         {
             SetAll(true);
 
             return true;
         }
 
-        if (Typed(key, 'n'))
+        if (Shell.Typed(key, 'n'))
         {
             SetAll(false);
 

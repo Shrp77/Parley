@@ -137,10 +137,9 @@ public sealed class SchemaIntegrityTests : IDisposable
     public void A_conversation_may_not_be_named_something_that_reaches_a_filesystem(string name)
     {
         // §10.2 exports a discussion by name, so this value reaches a filename, a report heading
-        // or a console. The constraint used to share responder_model's character set, which
-        // permits '/' — while the comment above it claimed to keep path separators out. The
-        // guarantee was written down, believed, and not enforced: '../../etc/passwd' was a legal
-        // conversation id for as long as the column existed.
+        // or a console. The constraint must not share responder_model's character set, which
+        // permits '/': a guarantee that is written down and not enforced would leave
+        // '../../etc/passwd' a legal conversation id.
         //
         // responder_model keeps '/' deliberately, because model identifiers carry it, as in
         // 'some-org/some-model-9'. That value is not rendered into a filename; this one is.
@@ -324,99 +323,6 @@ public sealed class SchemaIntegrityTests : IDisposable
             ("$name", "b\u001Fc")));
     }
 
-    // ---- credentials are pointers, never secrets ----
-
-    [Theory]
-    [InlineData("env:VENDOR_API_KEY")]
-    [InlineData("keychain:parley/billing")]
-    [InlineData("file:/etc/parley/billing.token")]
-    public void Recognised_credential_references_are_accepted(string reference)
-    {
-        Execute(
-            """
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing@test', 'api_key', $ref);
-            """,
-            ("$ref", reference));
-    }
-
-    [Theory]
-    [InlineData("sk-live-1a2b3c4d5e6f")]          // a pasted API key
-    [InlineData("VENDOR_API_KEY")]                // scheme omitted
-    [InlineData("env:")]                          // scheme with no target
-    [InlineData("")]
-    public void Literal_credential_values_are_rejected(string reference)
-    {
-        // Asserting on the message, because this insert has other constraints to satisfy and a
-        // bare Throws would pass just as happily if the column were renamed out from under it.
-        var ex = Assert.Throws<SqliteException>(() => Execute(
-            """
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing@test', 'api_key', $ref);
-            """,
-            ("$ref", reference)));
-
-        Assert.Contains("CHECK", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void An_agent_may_hold_several_credentials()
-    {
-        // The reason this is a table rather than a column. An adapter needing an API key and an
-        // organisation token has two, each addressable by the name its descriptor used.
-        Execute(
-            """
-            INSERT INTO agent_credentials (agent, name, reference) VALUES
-                ('billing@test', 'api_key',   'env:VENDOR_API_KEY'),
-                ('billing@test', 'org_token', 'keychain:parley/billing-org');
-            """);
-    }
-
-    [Fact]
-    public void One_credential_per_name_per_agent()
-    {
-        Execute("""
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing@test', 'api_key', 'env:ONE');
-            """);
-
-        var ex = Assert.Throws<SqliteException>(() => Execute("""
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing@test', 'api_key', 'env:TWO');
-            """));
-
-        Assert.Contains("UNIQUE", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void A_credential_for_an_unregistered_agent_is_rejected()
-    {
-        var ex = Assert.Throws<SqliteException>(() => Execute("""
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('shipping@test', 'api_key', 'env:VENDOR_API_KEY');
-            """));
-
-        Assert.Contains("FOREIGN KEY", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void Removing_an_agent_removes_its_credential_pointers()
-    {
-        // Retirement removes an agent; without the cascade it would fail on a bare foreign key
-        // error that does not say which table objected. What goes is the pointer — the secret
-        // lives in a store this schema never wrote to and does not delete from.
-        Execute("""
-            INSERT INTO agent_credentials (agent, name, reference)
-            VALUES ('billing@test', 'api_key', 'env:VENDOR_API_KEY');
-            """);
-
-        Execute("DELETE FROM agents WHERE name = 'billing@test';");
-
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT count(*) FROM agent_credentials;";
-        Assert.Equal(0L, Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture));
-    }
-
     // ---- adapter_config is free-form, because it has no invariant ----
 
     [Theory]
@@ -449,8 +355,8 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Adapter_configuration_is_capped()
     {
-        // A handful of settings, not a payload. An unbounded blob beside a constrained
-        // credentials table would be the obvious place to hide the thing the table forbids.
+        // A handful of settings, not a payload. An unbounded blob would be the obvious
+        // place to hide a pasted secret.
         Assert.Throws<SqliteException>(() => Execute(
             """
             INSERT INTO agents (name, adapter, tier, status, adapter_config)
@@ -489,7 +395,7 @@ public sealed class SchemaIntegrityTests : IDisposable
     [Fact]
     public void Every_message_belongs_to_an_exchange()
     {
-        // 0.4 had a message on no exchange, which nothing answered. Every message is answered now
+        // Every message is answered
         // (principle 2.7), so the column that allowed that is NOT NULL.
         var ex = Assert.Throws<SqliteException>(() => InsertMessage(
             "clarify", "orders@test", "billing@test", exchangeId: DBNull.Value));

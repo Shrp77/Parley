@@ -31,16 +31,13 @@ public static class MessageLimits
     /// that does not depend on a model having read the rule.
     /// </para>
     /// <para>
-    /// <b>This is the first value here that was measured rather than judged.</b> Two thousand
-    /// was chosen because it sounded like enough; four thousand was chosen the same way. Eight
-    /// thousand was set from <c>refusals</c>, which is what that record was instrumented for —
-    /// six agents, forty-three refusals, worst case 6,195 characters and means clustered between
-    /// 4,328 and 4,556. Every refusal ever recorded fits under this number with room left, and
-    /// five of the six agents were turned away on <em>answers</em> — Results, in 0.5 — which is the
-    /// direction that costs the requester something it had already decided it needed.
+    /// <b>The number is set from measurement.</b> It comes from <c>refusals</c>, which is what that record
+    /// is instrumented for: the recorded refusals fit under it with room left, and most were on
+    /// <em>answers</em> — Results — which is the direction that costs the requester something it had
+    /// already decided it needed.
     /// </para>
     /// <para>
-    /// What it buys is editorial and that has not changed. A bounded Result forces the receiver
+    /// What it buys is editorial. A bounded Result forces the receiver
     /// to decide what matters; an unbounded one hands that job to the requester, which is the
     /// shared-context problem arriving by another route. Nothing else bounds volume by default —
     /// the per-pair and clarification caps are both off unless a deployment sets them — so this is
@@ -65,12 +62,8 @@ public static class MessageLimits
     /// A Result answers by id and storage records one row per outcome, holding the id to this.
     /// </para>
     /// <para>
-    /// <b>Since 0.7 nothing a sender writes reaches here.</b> A Request is the ask (§5.1) and declares no
-    /// identifiers, so what a Result names is either the single spelling <c>request</c> or the identifiers of a
-    /// Request stored under an earlier version — which are the reason this bound is still enforced rather than
-    /// retired. 0.5 and 0.6 refused a longer one when the Request was written; a question 0.4 wrote was not, and
-    /// its longer ids are read as though absent so the work can still be reported on
-    /// (<see cref="PayloadShape.ItemIds"/>).
+    /// <b>Nothing a sender writes reaches here.</b> A Request is the ask (§5.1) and declares no
+    /// identifiers, so what a Result names is the single spelling <see cref="PayloadShape.WholeRequest"/>.
     /// </para>
     /// </remarks>
     public const int LongestItemId = 64;

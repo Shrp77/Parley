@@ -14,9 +14,9 @@ namespace Parley.Cli.Tests;
 /// That a repository's unreadable launch configuration refuses its own agent's line and nothing else.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lens 2, run 2): <see cref="OwnershipLine.WriteAsync"/> promised to return rather
-/// than throw, and threw for a link, a server named twice and a key written twice. The facilitator's pass called it for
-/// each answer in turn after every answer had been marked answered, so one such file stranded every answer after it —
+/// <see cref="OwnershipLine.WriteAsync"/> promises to return rather than throw, even for a link, a server named
+/// twice and a key written twice. The facilitator's pass calls it for each answer in turn after every answer has
+/// been marked answered, so one such file would strand every answer after it —
 /// neither accepted nor held, never visited again, and "Parley is deciding" on both surfaces for ever. A git pull is
 /// enough to produce any of the three.
 /// </remarks>

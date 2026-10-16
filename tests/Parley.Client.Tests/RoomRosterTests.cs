@@ -55,7 +55,7 @@ public sealed class RoomRosterTests
         var offered = RoomRoster.NotInIt(Project, [], me: null);
 
         // Not the person under any name, nor the adapter that marks a seat, nor the facilitator: this is the
-        // drawn list's rule, and 0.37.7 recorded Parley appearing in a list one line before the filter.
+        // drawn list's rule.
         Assert.DoesNotContain(offered, a => a.Value.StartsWith("human-user", StringComparison.Ordinal));
         Assert.DoesNotContain(offered, a => a.Value.StartsWith("parley-facilitator", StringComparison.Ordinal));
         Assert.Equal(4, offered.Count);

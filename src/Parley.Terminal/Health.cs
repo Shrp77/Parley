@@ -77,7 +77,7 @@ internal sealed class Health : Dialog
 
         if (flags.IsEmpty)
         {
-            lines.Add("  Nothing is flagged. All open work has been collected and is moving.");
+            lines.Add("  Nothing is flagged.");
         }
 
         foreach (var flag in flags.Exchanges)

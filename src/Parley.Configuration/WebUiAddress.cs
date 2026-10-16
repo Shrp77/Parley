@@ -11,11 +11,9 @@ namespace Parley.Configuration;
 /// there is nowhere else all four can see.
 /// </para>
 /// <para>
-/// <b>The single source is not a tidiness preference — the duplicate was a live defect.</b> The
-/// terminal held this as a literal, and the literal was <c>5045</c> while every other statement of
-/// the default said <c>5280</c>. So the one action on that surface which hands off to a browser
-/// opened a port nothing listens on, on every machine, and reported success while doing it: from
-/// the terminal's side the browser started, which is all it can observe.
+/// <b>A single source matters.</b> A hand-copied literal that drifts makes the terminal's
+/// open-in-browser action open a port nothing listens on and still report success, since from the
+/// terminal's side the browser started, which is all it can observe.
 /// </para>
 /// <para>
 /// Loopback. SPEC.md §16 confines the transport to a trusted path because anything able to reach a

@@ -6,18 +6,18 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That an agent can ask the person at any point in a long session and get the person's answer (SPEC.md principle
-/// 2.6, SC-002).
+/// 2.6).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's words are the specification</b>: "They need to be able to ask the user what they want to do even if
+/// <b>The requirement</b>: "They need to be able to ask the user what they want to do even if
 /// it's 7 hours into a marathon session." So the same exchange is driven after four waits on a fake clock — a minute,
 /// the twenty-minute idle window, an hour, seven hours — and each must be admitted, told "with the person", wait
 /// uncollected, and reach the agent as the person's words once answered.
 /// </para>
 /// <para>
-/// <b>No retention case here, deliberately.</b> The owner's call (the first <c>/speckit-analyze</c>, issue 8) is that
-/// the person's mail follows the same rules as everybody's (FR-010), and those already never delete a message in open
+/// <b>No retention case here, deliberately.</b> The person's mail follows
+/// the same rules as everybody's, and those already never delete a message in open
 /// work.
 /// </para>
 /// </remarks>

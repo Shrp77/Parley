@@ -77,13 +77,13 @@ roster. Four findings, and the first is the one this command is for:
   will answer from this repository and guess at the rest, which is the failure Parley exists to
   prevent, reached by installing it correctly. Name them and say to run `/parley:write-peers`.
 - **The placeholder is still there.** A block saying the roster has not been read, while the
-  roster has peers in it, is the same finding with a timestamp: setup finished and step 8 never
+  roster has peers in it, is the same finding with a timestamp: setup finished and the final step never
   ran.
 - **Lines in the block for agents not in the roster.** Retired, purged, or never restarted after
   being configured. Worth reporting and not worth acting on alone - a peer that is merely
-  switched off is still a peer, and §5.5 says a question reaches an agent on a machine that is
+  switched off is still a peer, and §5.5 says a request reaches an agent on a machine that is
   off.
-- **No `## Peers` section at all.** Run `/parley:setup` step 6, or `/parley:write-peers` if
+- **No `## Peers` section at all.** Run `parley enroll` (see `/parley:setup`), or `/parley:write-peers` if
   the tools are already bound.
 
 Do not read the peers' `owns` lines out in this report. Whether each line is a fair statement of
@@ -92,13 +92,9 @@ repeating the claims here invites somebody to act on a description that has not 
 
 ## 4. What was left behind
 
-Two files survive a purge and a re-run, and both are the class of thing that looks like a fresh
+One file survives a purge and a re-run, and it is the class of thing that looks like a fresh
 install and is not:
 
-- **`.mcp.json`** may carry variables nothing reads. A `parley` or `parley-<project>` entry naming a store path,
-  a sweep cadence, a retention pair or a clarify cap carries settings that belong to the broker
-  process. Report them; they are not harmful, but they are evidence that this repository was
-  configured against a different Parley.
 - **`node.json`**, in the same folder as the projects or wherever `PARLEY_NODE_CONFIG` points, may
   hold an entry for an identity that is not registered. That entry is standing consent for this
   machine to start a repository unattended, and it outlives the registration it was written for

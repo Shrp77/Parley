@@ -114,7 +114,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     /// <remarks>
     /// A node gives up on a turn after twenty minutes, so a day is not a limit any real turn meets. What it stops is a
     /// length that put a turn's end past the calendar, which made every later registry and flags read throw — one report
-    /// breaking both for the whole broker (the review gate's finding). A report beyond it is ignored like any other that
+    /// breaking both for the whole broker. A report beyond it is ignored like any other that
     /// does not check out.
     /// </remarks>
     internal const long LongestTurnMs = 24L * 60 * 60 * 1000;
@@ -159,7 +159,11 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         try
         {
             joined = await _runtime.JoinNodeAsync(
-                record, request.StartableRoles, context.CancellationToken, request.ReportsTurns).ConfigureAwait(false);
+                record,
+                request.StartableRoles,
+                context.CancellationToken,
+                request.ReportsTurns,
+                request.StartableIdentities).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {
@@ -175,6 +179,15 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
             var acknowledgement = new Wire.Joined { Machine = machine };
             acknowledgement.Agents.AddRange(here.Select(a => a.Value));
+
+            var known = await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new AgentRepository(connection).GetAllAsync(ct),
+                context.CancellationToken).ConfigureAwait(false);
+
+            foreach (var agent in known.Where(a => a.Identity.Known && here.Contains(a.Name)))
+            {
+                acknowledgement.Identities[agent.Name.Value] = agent.Identity.ToString();
+            }
 
             await responseStream.WriteAsync(
                 new Wire.NodeCommand { Joined = acknowledgement }, context.CancellationToken)
@@ -289,12 +302,18 @@ public sealed class JoinedNode : IAsyncDisposable
 
     private int _closed;
 
-    internal JoinedNode(BrokerRuntime runtime, string machine, IReadOnlySet<string> startable, bool reportsTurns = false)
+    internal JoinedNode(
+        BrokerRuntime runtime,
+        string machine,
+        IReadOnlySet<string> startable,
+        bool reportsTurns = false,
+        IReadOnlySet<string>? startableIdentities = null)
     {
         _runtime = runtime;
         Machine = machine;
         Startable = startable;
         ReportsTurns = reportsTurns;
+        StartableIdentities = startableIdentities ?? new HashSet<string>(StringComparer.Ordinal);
     }
 
     /// <summary>Whether this node said it reports the turns it gives (SPEC.md §11.6).</summary>
@@ -315,28 +334,44 @@ public sealed class JoinedNode : IAsyncDisposable
     /// </remarks>
     public IReadOnlySet<string> Startable { get; }
 
+    /// <summary>Gets the identifiers of the checkouts this node said it can launch for the project.</summary>
+    /// <remarks>
+    /// What lets a node be asked for an agent by what it is rather than by what it is called (SPEC.md §4.1.1), so an
+    /// agent whose repository has been renamed is still startable under the name the broker holds until it attaches.
+    /// </remarks>
+    public IReadOnlySet<string> StartableIdentities { get; }
+
+    /// <summary>Whether this node can launch an agent, by the role it announced or by the identity behind it.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity, or the default when the broker knows none.</param>
+    /// <returns><see langword="true"/> when the node named either.</returns>
+    private bool Can(AgentName agent, AgentIdentity identity) =>
+        Startable.Contains(agent.Role) || (identity.Known && StartableIdentities.Contains(identity.ToString()));
+
     /// <summary>Gets the commands waiting to go down the stream.</summary>
     internal ChannelReader<Wire.NodeCommand> Commands => _commands.Reader;
 
     /// <summary>Asks the node to start an agent, if it said it could.</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
     /// <returns><see langword="true"/> if the command was queued.</returns>
-    internal bool RequestStart(AgentName agent, string because)
+    internal bool RequestStart(AgentName agent, AgentIdentity identity, string because)
     {
-        if (!Startable.Contains(agent.Role))
+        if (!Can(agent, identity))
         {
             return false;
         }
 
         return _commands.Writer.TryWrite(new Wire.NodeCommand
         {
-            Start = new Wire.StartAgent { Agent = agent.Value, Because = because }
+            Start = new Wire.StartAgent { Agent = agent.Value, Because = because, Identity = IdentityText(identity) }
         });
     }
 
     /// <summary>Asks the node to give an agent it already holds a turn.</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
     /// <returns><see langword="true"/> if the command was queued.</returns>
     /// <remarks>
@@ -344,26 +379,27 @@ public sealed class JoinedNode : IAsyncDisposable
     /// gives the turn only if the session is one of its own residents, because an agent attached
     /// through somebody's editor window is not something this machine can drive.
     /// </remarks>
-    internal bool RequestTurn(AgentName agent, string because)
+    internal bool RequestTurn(AgentName agent, AgentIdentity identity, string because)
     {
-        if (!Startable.Contains(agent.Role))
+        if (!Can(agent, identity))
         {
             return false;
         }
 
         return _commands.Writer.TryWrite(new Wire.NodeCommand
         {
-            Turn = new Wire.GiveTurn { Agent = agent.Value, Because = because }
+            Turn = new Wire.GiveTurn { Agent = agent.Value, Because = because, Identity = IdentityText(identity) }
         });
     }
 
     /// <summary>Asks the node to restart an agent it started, once its turn is over (SPEC.md §11.1).</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="identity">Its identity when the broker knows one, so the node can find the checkout by it.</param>
     /// <param name="because">Why, for the operator's benefit.</param>
     /// <returns><see langword="true"/> if the command was queued.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The node decides when, because only the node knows whether a turn is in progress</b> (research finding 7).
+    /// <b>The node decides when, because only the node knows whether a turn is in progress.</b>
     /// The broker has no turn state and must not grow one; it sends this when the agent owes nothing, and the node
     /// waits for the turn lock before stopping anything.
     /// </para>
@@ -372,18 +408,20 @@ public sealed class JoinedNode : IAsyncDisposable
     /// started, and an agent attached from somebody's editor window is refreshed by nothing.
     /// </para>
     /// </remarks>
-    internal bool RequestRefresh(AgentName agent, string because)
+    internal bool RequestRefresh(AgentName agent, AgentIdentity identity, string because)
     {
-        if (!Startable.Contains(agent.Role))
+        if (!Can(agent, identity))
         {
             return false;
         }
 
         return _commands.Writer.TryWrite(new Wire.NodeCommand
         {
-            Refresh = new Wire.RefreshAgent { Agent = agent.Value, Because = because }
+            Refresh = new Wire.RefreshAgent { Agent = agent.Value, Because = because, Identity = IdentityText(identity) }
         });
     }
+
+    private static string IdentityText(AgentIdentity identity) => identity.Known ? identity.ToString() : string.Empty;
 
     /// <summary>Ends the stream without touching the registry.</summary>
     internal void Close() => _ = _commands.Writer.TryComplete();

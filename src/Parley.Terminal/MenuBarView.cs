@@ -20,20 +20,16 @@ namespace Parley.Terminal;
 /// </param>
 /// <remarks>
 /// <para>
-/// <b>A dropdown rather than a dialog per menu, which reverses 021.</b> 021 opened each menu as a
-/// <c>Prompting.Choose</c> dialog in the middle of the screen. The owner's call on 2026-09-27, after using
-/// it: a menu should be a menu. What drops down is the toolkit's own <see cref="PopoverMenu"/>, with every
-/// line's hotkeys switched off as <see cref="Plain"/> does, so an underscore in a label reaches the screen.
+/// <b>A dropdown rather than a dialog per menu.</b> What drops down is the toolkit's own
+/// <see cref="PopoverMenu"/>, with every line's hotkeys switched off as <see cref="Plain"/> does, so an
+/// underscore in a label reaches the screen.
 /// </para>
 /// <para>
-/// <b>The row is drawn here rather than being the toolkit's <see cref="MenuBar"/>, and that was measured,
-/// not preferred.</b> The toolkit's bar was built first. Its titles are auto-sized views living in the
-/// shell's tree, and the shell rearranges itself from whichever thread a broker's reply finished on — so
-/// <c>RefillRaceTests</c> failed one run in three, once with the toolkit walking views the bar was
-/// replacing and once with a layout pass finding an auto-sized title half computed. Clean <c>HEAD</c>
-/// passed the same test ten runs in ten. This row has no subviews at all, so nothing in the shell's tree
-/// changes when the menus do; a dropdown is a popover, which the toolkit keeps outside that tree, and it is
-/// built on the loop when somebody opens it.
+/// <b>The row is drawn here rather than being the toolkit's <see cref="MenuBar"/>.</b> The toolkit's titles
+/// are auto-sized views living in the shell's tree, and the shell rearranges itself from whichever thread a
+/// broker's reply finished on, which made <c>RefillRaceTests</c> fail intermittently. This row has no
+/// subviews at all, so nothing in the shell's tree changes when the menus do; a dropdown is a popover,
+/// which the toolkit keeps outside that tree, and it is built on the loop when somebody opens it.
 /// </para>
 /// <para>
 /// <b>What is on it is still <see cref="MenuRow"/>'s reading of the actions and nothing else.</b> This type
@@ -61,8 +57,7 @@ internal sealed class MenuBarView(
     /// <summary>Records the titles to draw.</summary>
     /// <param name="titles">The menus' titles, left to right.</param>
     /// <remarks>
-    /// Safe from any thread: it swaps one immutable list and asks for a redraw, which is what the status
-    /// line beside it has always done.
+    /// Safe from any thread: it swaps one immutable list and asks for a redraw, as the status line beside it does.
     /// </remarks>
     internal void Show(IReadOnlyList<string> titles)
     {
@@ -86,8 +81,7 @@ internal sealed class MenuBarView(
     /// <returns><see langword="true"/> when a menu opened.</returns>
     /// <remarks>
     /// The menus are read now rather than remembered, so what drops down is what the focused region offers
-    /// at this moment — a menu kept from the last redraw could be the previous region's, which is D2's
-    /// cross-region read reached through the bar.
+    /// at this moment — a menu kept from the last redraw could be the previous region's.
     /// </remarks>
     internal bool Open(char initial)
     {
@@ -107,9 +101,9 @@ internal sealed class MenuBarView(
     /// <summary>Drops down the first menu, which is what F10 does.</summary>
     /// <returns><see langword="true"/> when a menu opened.</returns>
     /// <remarks>
-    /// <b>F10 rather than Alt and a letter, on the owner's call of 2026-10-01.</b> Alt and a letter is every action's key
-    /// now, so that a plain letter is never an action and typing can never set one off. F10 is the menu key on most
-    /// programs that have a bar, and Left and Right walk from the first menu to the rest.
+    /// <b>F10 rather than Alt and a letter</b>: Alt and a letter is every action's key, so that a plain letter is
+    /// never an action and typing can never set one off. F10 is the menu key on most programs that have a bar, and
+    /// Left and Right walk from the first menu to the rest.
     /// </remarks>
     internal bool OpenFirst()
     {
@@ -180,9 +174,8 @@ internal sealed class MenuBarView(
         Move(0, 0);
         AddStr(new string(' ', Math.Max(Viewport.Width, 0)));
 
-        // **No letter is underlined any more.** It marked the letter Alt opened the menu with, and Alt and a letter is an
-        // action's key now (2026-10-01); an underline would advertise a key that does something else. F10 is named on
-        // the row itself instead, after the titles, so the key is on screen where the menus are.
+        // No letter is underlined: Alt and a letter is an action's key, and an underline would advertise a key that
+        // does something else. F10 is named on the row itself, after the titles.
         for (var i = 0; i < titles.Count; i++)
         {
             Move(Left(titles, i), 0);

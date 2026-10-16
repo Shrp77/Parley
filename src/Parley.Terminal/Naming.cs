@@ -10,32 +10,19 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This is the only way to create a project now</b>, and for most of its life it was not: the
-/// command line could do it too, and this existed so that nobody had to leave a full-screen
-/// application to run a command whose arguments were on the screen they left. The owner removed
-/// the other half on 2026-09-25 — "if we're doing everything in the terminal app, then we DO
-/// everything in the terminal app" — so what was a convenience is the capability.
+/// <b>This is the only way to create a project</b>: the command line does not dispatch to
+/// <see cref="ProjectCommand"/> for it.
 /// </para>
 /// <para>
-/// Nothing below changed with it, which is the point of the arrangement: the command still exists
-/// and this still calls it. What went is the arm in <c>parley</c> that dispatched to it.
+/// <b>It calls <see cref="ProjectCommand"/> rather than writing the manifest itself.</b>
+/// The manifest has exactly one writer; a second path that assembled a <c>ProjectSettings</c> and wrote
+/// it would be a second writer with its own idea of the rules, and it would sidestep the lock that stops
+/// two concurrent writers discarding one another's work.
 /// </para>
 /// <para>
-/// <b>It calls <see cref="ProjectCommand"/> rather than writing the manifest itself</b>, which is
-/// the whole of the design. The manifest has exactly one writer, and this is that same program; a
-/// second path that assembled a <c>ProjectSettings</c> and wrote it would be a second writer with
-/// its own idea of the rules — and it would sidestep the lock that stops two concurrent writers
-/// discarding one another's work, which was a real defect and not a hypothetical one.
-/// </para>
-/// <para>
-/// <b>Two forms, because the two questions are different.</b> An earlier version had one, with
-/// five blank prompts, and the person filling it in answered every one only to be told at the end
-/// that the name had to be lowercase — and had to go and read a scheduled task to find the paths
-/// it wanted. Naming the deployment this machine already runs is a form whose every answer is
-/// already written down in the autostart entry, so it is pre-filled from there. Creating a new
-/// project needs values that do <i>not</i> exist yet — a fresh store, a port nothing else holds —
-/// so those are proposed rather than asked for blank. Both check every answer as it is typed,
-/// which is what a refusal at the end could never do.
+/// The form asks for a name and an optional description. The store is derived from the name and the port
+/// is claimed under a hold, so nothing else is asked. Every answer is checked as it is typed, which a
+/// refusal at the end could not do.
 /// </para>
 /// </remarks>
 internal static class Naming
@@ -46,7 +33,7 @@ internal static class Naming
     /// <summary>What is said when the command refused.</summary>
     internal const string NothingWritten = "Nothing was written.";
 
-    /// <summary>What is said when it did not.</summary>
+    /// <summary>What is said when the command succeeded.</summary>
     /// <param name="name">The project's name.</param>
     /// <returns>One short sentence.</returns>
     internal static string Created(string name) => $"Created '{name}'.";
@@ -55,16 +42,13 @@ internal static class Naming
     /// <param name="app">The application the form opens in.</param>
     /// <param name="manifestPath">The manifest to write into.</param>
     /// <param name="projects">What the manifest already names.</param>
-    /// <param name="entry">The installed entry, if any, for where stores live and what to say after.</param>
+    /// <param name="entry">The installed entry, if any, for what to say after.</param>
     /// <param name="queue">Runs the command, so the caller can wait for it.</param>
     /// <param name="done">Told what to say when the form has been dealt with.</param>
     /// <returns>When the form is open.</returns>
     /// <remarks>
-    /// The endpoint proposed is the default port when nothing on this machine holds it — an MCP
-    /// server told nothing about a broker looks there, which is what lets a repository's launch
-    /// configuration say only who it is — and a free loopback port otherwise, because a second
-    /// deployment cannot share the first one's. SPEC.md §4.1: each project gets its own store and
-    /// its own transport endpoint.
+    /// SPEC.md §4.1: each project gets its own store and its own transport endpoint, both derived or
+    /// claimed by the command rather than asked for.
     /// </remarks>
     internal static Task OpenCreateAsync(
         IApplication app,
@@ -76,10 +60,7 @@ internal static class Naming
     {
         ArgumentNullException.ThrowIfNull(projects);
 
-        // **Nothing is proposed any more**, because nothing is asked for beyond a name. The endpoints
-        // already spoken for used to be gathered here so a free one could be offered; the port is
-        // claimed under a hold now, which is a stronger answer to the same question than a proposal a
-        // person could overwrite.
+        // Nothing is proposed, because nothing is asked for beyond a name; the port is claimed under a hold.
         return OpenAsync(app, CreateTitle, manifestPath, projects, entry, queue, done);
     }
 
@@ -112,10 +93,8 @@ internal static class Naming
     /// <returns>The same name, made acceptable.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Because reporting it was not enough.</b> The owner typed <c>TimeTracker</c> and met no
-    /// resistance: the only thing enforcing lowercase was <see cref="NameProblem"/>'s sentence,
-    /// on a clipped row under a label that had itself overflowed. A field that will not take a
-    /// capital in the first place cannot fail that way, whatever the layout does.
+    /// <b>Reporting a refusal is not enough.</b> A field that will not take a capital in the first
+    /// place cannot fail the way a sentence under it can, whatever the layout does.
     /// </para>
     /// <para>
     /// <b>It corrects and never completes.</b> Case is folded and disallowed characters are
@@ -125,25 +104,13 @@ internal static class Naming
     /// field ends up holding a name they did not choose.
     /// </para>
     /// <para>
-    /// <b>A space became nothing and now becomes a hyphen</b>, which is the whole of what changed
-    /// here: <c>Order Ledger</c> was corrected to <c>orderledger</c>. That is a name nobody can
-    /// read back, and the owner chose the hyphen for the conversation field on exactly those
-    /// grounds — so the field beside it does not go on swallowing spaces. The rule is
-    /// <see cref="Parley.Core.NameCorrection"/>'s, which is also what an enrolled agent's name and
-    /// a seat are held to: one grammar, one correction.
+    /// <b>A space becomes a hyphen</b>: <c>Order Ledger</c> becomes <c>order-ledger</c>, a name that can
+    /// be read back. The rule is <see cref="Parley.Core.NameCorrection"/>'s, which is also what an enrolled
+    /// agent's name and a seat are held to: one grammar, one correction.
     /// </para>
     /// </remarks>
     internal static string NameCorrection(string? typed) =>
         Parley.Core.NameCorrection.Correct(typed);
-
-    // **Four members stood here and all four went with the fields that used them.** `StoreProblem`
-    // refused a store another project owned; `EndpointProblem` refused an address another project
-    // listened on; `FreeEndpoint` proposed one nothing held; `DefaultEndpoint` was the port an MCP
-    // server looks for when told nothing.
-    //
-    // A project's store is derived from its name and its port is claimed when it is created, so the
-    // form asks for neither and nothing is left to validate or propose. `DeadSurfaceTests` reported
-    // each of them as named only in its own file, which is exactly what that guard is for.
 
     /// <summary>Builds the form, checks every field as it is typed, and writes on confirmation.</summary>
     private static Task OpenAsync(
@@ -167,13 +134,9 @@ internal static class Naming
                     typed => NameProblem(typed, projects),
                     Correct: NameCorrection,
                     Corrected: NameWasCorrected),
-                // **Two fields went, and that is the feature rather than a tidy-up.** A person naming a
-                // project had to invent a filesystem path and pick a free port, on a form that could
-                // only tell them afterwards that one of them clashed. The store is derived from the name
-                // and the port is claimed, so both questions have gone rather than been given better
-                // defaults — which is what "the name is the address" buys, said on a screen.
+                // No path or port field: the store is derived from the name and the port is claimed.
                 new FormField(
-                    "Description (optional) — one line shown beside the name:",
+                    "Description (optional):",
                     string.Empty),
             ]);
 
@@ -199,10 +162,8 @@ internal static class Naming
     /// <summary>Runs the command and says, in one line, what came of it.</summary>
     /// <remarks>
     /// <para>
-    /// <b>A success is one sentence, and the facts are on the projects list.</b> This used to print
-    /// everything the command wrote for a shell -- the port, the folder, a paragraph about tunnels -- and
-    /// then two sentences of its own. The owner's call of 2026-09-27: nobody reads that, and the one fact
-    /// worth having is where the project answers, which the list now shows on its row.
+    /// <b>A success is one sentence, and the facts are on the projects list</b>: the one fact worth having
+    /// is where the project answers, which the list shows on its row.
     /// </para>
     /// <para>
     /// A refusal still comes back in the command's own words. A surface that summarised it to "invalid"
@@ -248,9 +209,7 @@ internal static class Naming
         {
             null => $"{Created(values[0])} Nothing starts it yet: run `parley autostart install`.",
 
-            // **`--db` is what used to narrow an entry to one store, and it has not existed since 019.**
-            // What narrows an entry today is `--project`, and leaving it out is what makes the entry serve
-            // everything.
+            // What narrows an entry is `--project`; leaving it out makes the entry serve everything.
             { ServesManifest: false } =>
                 $"{Created(values[0])} The autostart entry serves one project only; re-run "
                 + "`parley autostart install` without --project to start this one.",

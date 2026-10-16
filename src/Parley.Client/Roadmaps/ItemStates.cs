@@ -26,7 +26,7 @@ public enum ItemStanding
     /// <summary>The conversation ended without a Result, closed by a person or destroyed. Never read as not started.</summary>
     Closed,
 
-    /// <summary>The state could not be read. Never shown as not started (FR-018).</summary>
+    /// <summary>The state could not be read. Never shown as not started.</summary>
     CouldNotBeRead,
 }
 
@@ -83,7 +83,7 @@ public sealed record RoadmapStanding(
 /// this separately is how they would come to differ about what a person has seen.
 /// </para>
 /// <para>
-/// <b>A state that could not be read is never not started</b> (FR-018). An item whose facts were not returned, or whose
+/// <b>A state that could not be read is never not started</b>. An item whose facts were not returned, or whose
 /// open exchanges cannot be placed because the wait-for graph was not read, is <see cref="ItemStanding.CouldNotBeRead"/>:
 /// telling a person that work had not begun when it had is a lie that sends them to start it twice.
 /// </para>
@@ -213,45 +213,4 @@ public static class ItemStates
         ItemStanding.CouldNotBeRead => "[*]",
         _ => throw new ArgumentOutOfRangeException(nameof(standing), standing, "Not a standing."),
     };
-
-    /// <summary>What an item's standing says in words, so that a mark never carries it alone.</summary>
-    /// <param name="state">The item and where it stands.</param>
-    /// <returns>A short phrase.</returns>
-    public static string Says(ItemState state)
-    {
-        ArgumentNullException.ThrowIfNull(state);
-
-        var holders = string.Join(", ", state.Holders.Select(h => h.Role));
-
-        var phrase = state.Standing switch
-        {
-            ItemStanding.NotStarted => "not started",
-            ItemStanding.InProgress => holders.Length > 0 ? $"in progress — {holders}" : "in progress",
-            ItemStanding.WaitingOnAgent => holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent",
-            ItemStanding.WaitingOnPerson => holders.Length > 0 ? $"waiting on you — {holders}" : "waiting on you",
-            ItemStanding.Blocked => state.Blocker is { Length: > 0 } blocker ? $"blocked — {blocker.Replace('_', ' ')}" : "blocked",
-            ItemStanding.Done => "done",
-            ItemStanding.Closed => "closed without a result",
-            ItemStanding.CouldNotBeRead => "could not be read",
-            _ => throw new ArgumentOutOfRangeException(nameof(state)),
-        };
-
-        return state.TextChanged ? phrase + "; its text changed since it was sent" : phrase;
-    }
-
-    /// <summary>What a roadmap says about its next item, in words.</summary>
-    /// <param name="standing">The roadmap's standing.</param>
-    /// <returns>A sentence.</returns>
-    public static string SaysNext(RoadmapStanding standing)
-    {
-        ArgumentNullException.ThrowIfNull(standing);
-
-        return standing.Next switch
-        {
-            NextKind.Item => $"Next: item {standing.NextNumber}.",
-            NextKind.Complete => "Every item is done.",
-            NextKind.NothingReady => "Nothing is ready: what is left is waiting, blocked or needs something that is not done.",
-            _ => "There are no items.",
-        };
-    }
 }

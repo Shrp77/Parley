@@ -13,26 +13,21 @@ namespace Parley.Terminal;
 /// written is what the command writes. What this surface supplies is the choosing.
 /// </para>
 /// <para>
-/// <b>This was three steps and is one</b> (FR-040). It asked for a directory and a manifest path in
-/// a text field, wrote a file, asked for that path again to plan, and again to apply — on a
-/// full-screen surface with a folder picker and a list on it. The file it round-tripped through
-/// existed so a person could type what each repository owns, and that question is asked of the
-/// agent now rather than filled in from memory, so nothing is lost by removing it.
+/// <b>One step</b>: a folder picker, a list to tick, and a confirmation. What each repository owns is
+/// asked of the agent, not typed here.
 /// </para>
 /// <para>
-/// <b>Enrolling is the consent, and the door says so before anything is written</b> (FR-043,
-/// FR-044). A catalogued repository can be started by a peer's request with nobody watching, which
-/// spends the owner's tokens — so the count is named and the sentence is plain. The alternative,
-/// a per-repository opt-in defaulting to off, is what produced nineteen repositories that were
-/// enrolled, addressable and unstartable: an agent that cannot be started cannot answer.
+/// <b>Enrolling is the consent, and the door says so before anything is written.</b> A catalogued
+/// repository can be started by a peer's request with nobody watching, which spends the owner's tokens —
+/// so the count is named and the sentence is plain. A per-repository opt-in defaulting to off would leave
+/// repositories enrolled, addressable and unstartable: an agent that cannot be started cannot answer.
 /// </para>
 /// </remarks>
 internal static class Onboarding
 {
     /// <summary>What the dialog is called.</summary>
     /// <remarks>
-    /// It was "Enrolment", which names the act without saying what it does. The owner went looking for a way to
-    /// scan a folder for agents and did not recognise it by that name. The words are the owner's.
+    /// Names what the act does (scan a folder for agents) rather than the act's jargon.
     /// </remarks>
     internal const string Title = "Enroll agents from folders";
 
@@ -40,8 +35,8 @@ internal static class Onboarding
     /// <param name="project">The project they would join, or null when none is named.</param>
     /// <returns>The caption.</returns>
     /// <remarks>
-    /// The project first, the owner's call of 2026-09-27: ticking a repository makes it an agent of one
-    /// particular project, and the caption is the one thing on that window certain to be read.
+    /// The project first: ticking a repository makes it an agent of one particular project, and the caption
+    /// is the one thing on that window certain to be read.
     /// </remarks>
     internal static string Caption(ProjectSettings? project) =>
         project is { } named ? $"{named.Name.Value}: {Title}" : Title;
@@ -79,9 +74,7 @@ internal static class Onboarding
         ArgumentNullException.ThrowIfNull(done);
         ArgumentNullException.ThrowIfNull(remember);
 
-        // **A picker rather than a field**, which is the whole reason this belongs here. Enrolling
-        // nineteen repositories used to mean typing an absolute path that could only be reported
-        // wrong afterwards; the same argument `Adding` already records for adding one.
+        // **A picker rather than a field**: a typed path can only be reported wrong afterwards.
         var browsing = Browsing.ForFolderOfRepositories(Browsing.Opening(lastBrowsed, startedIn));
         var token = Prompting.Open(app, browsing);
 
@@ -124,8 +117,8 @@ internal static class Onboarding
         }
 
         // **A repository inside the folder is remembered, not the folder.** What is remembered is shared with
-        // adding one repository, and the next picker opens beside it -- at its parent. Remembering the folder
-        // itself put the next picker one level above where the repositories are, for both flows.
+        // adding one repository, and the next picker opens beside it, at its parent, which is where the
+        // repositories are.
         remember(found[0].Workspace);
 
         // **Nothing starts ticked.** `--all` on the command line is for scripts; a person looking at
@@ -182,23 +175,17 @@ internal static class Onboarding
     /// else's file can otherwise draw whatever it likes on this screen.
     /// </para>
     /// <para>
-    /// Internal rather than private so that a test can press on the composition itself. A test that
-    /// built the row from <see cref="EnrollmentEntry.Note"/> and read the screen would pass whatever
-    /// this method did — which is how the defect survived: the value was available and this composed
-    /// something else.
+    /// Internal rather than private so that a test can press on the composition itself; a test that
+    /// built the row from <see cref="EnrollmentEntry.Note"/> would pass whatever this method did.
     /// </para>
     /// </remarks>
     internal static string Note(EnrollmentEntry entry)
     {
-        // **The row's own note first, and this surface had none of them.** The remark above claimed
-        // the note was read off the row so that it and the command could not disagree; it read
-        // `Owns` and nothing else, while the command's own picker said "worktree of another
-        // checkout", "already an agent" or "has an .mcp.json". So a worktree — the same repository
-        // at another path, whose `.mcp.json` is a tracked file — was called out on the command line
-        // and offered silently here, which is the surface people enrol from.
+        // The row's own note ("worktree of another checkout", "already an agent", "has an .mcp.json"), so
+        // the note and the command cannot disagree.
         //
         // Not neutralised: it is one of three fixed phrases this program chooses. The owns line is its
-        // own column now, in `Owns`, so this column holds only those phrases and lines up.
+        // own column, in `Owns`, so this column holds only those phrases and lines up.
         ArgumentNullException.ThrowIfNull(entry);
 
         return entry.Note;
@@ -207,8 +194,8 @@ internal static class Onboarding
     /// <summary>What a repository says it owns, for its own column, or empty.</summary>
     /// <remarks>
     /// Neutralised, because it is the repository's own text: <see cref="Safe"/> exists because a control
-    /// character in somebody else's file can otherwise draw whatever it likes on this screen. It was
-    /// joined onto the note, which put it at a different column on every row; the grid gives it its own.
+    /// character in somebody else's file can otherwise draw whatever it likes on this screen. The grid
+    /// gives it its own column so it lines up.
     /// </remarks>
     internal static string Owns(EnrollmentEntry entry)
     {
@@ -228,14 +215,10 @@ internal static class Onboarding
         Func<string, Task> done,
         Action<string, string>? saying)
     {
-        // FR-044: said before anything is configured, and it names the number. "Some repositories"
-        // is a sentence somebody agrees to without weighing; a count is one they can.
+        // Said before anything is configured, and it names the number. "Some repositories" is a sentence
+        // somebody agrees to without weighing; a count is one they can.
         //
-        // **The sentence moved to `EnrolmentConsent` when `parley enroll` gained it too.** This
-        // surface had it and the command line said only how many repositories it had found, so one
-        // act carried its consequence on one surface and not the other — and the surface without it
-        // is the one a script reaches. Two spellings would drift, and the half that drifts is the
-        // half nobody is reading at the time.
+        // The sentence is `EnrolmentConsent`'s, shared with `parley enroll`, so the two surfaces cannot drift.
         var asking = Prompting.Choose(
             Apply,
             EnrolmentConsent.Says(wanted.Count, project?.Name),
@@ -255,10 +238,8 @@ internal static class Onboarding
             }
 
             // **Every agent chosen is shown as starting the moment the person agrees**, not when the work
-            // reaches the front of the queue. What follows can take the better part of a minute -- each agent
-            // is started and waited for in turn -- and the owner's report of 2026-09-27 was exactly that:
-            // enrolled four, and nothing happened for a long time. Shown on each agent's row, on the owner's
-            // call of 2026-09-28, rather than as a sentence on the message line.
+            // reaches the front of the queue: each agent is started and waited for in turn, which can take
+            // the better part of a minute. Shown on each agent's row rather than on the message line.
             foreach (var entry in wanted)
             {
                 saying?.Invoke(entry.Agent, Waiting);
@@ -275,10 +256,8 @@ internal static class Onboarding
     /// <summary>Runs the enrolment and says, in one line, what came of it.</summary>
     /// <remarks>
     /// <para>
-    /// <b>It reprinted everything the command wrote for a shell, and that was the defect.</b> The catalogue
-    /// path, the consent paragraph already agreed to on the screen before, and a line for every file in every
-    /// repository, joined into one paragraph and cut off. The owner's call of 2026-09-27: say what happened.
-    /// Which agents joined, and whether each came up; the agents pane beside it shows the rest.
+    /// <b>It says what happened, not everything the command wrote for a shell</b>: which agents joined, and
+    /// whether each came up; the agents pane beside it shows the rest.
     /// </para>
     /// <para>
     /// A failure still says why, in the command's own words: that is the one thing a person needs when it
@@ -313,7 +292,6 @@ internal static class Onboarding
                 said,
                 complained,
                 project,
-                deployment,
                 manifestPath,
                 cancellationToken,
                 outcome)
@@ -329,9 +307,9 @@ internal static class Onboarding
     /// <returns>Why nothing was enrolled, or empty when something was.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A success says nothing here, on the owner's call of 2026-09-28.</b> Each agent's row showed what was
-    /// happening to it while it happened, and the list drawn afterwards shows where each one landed -- running,
-    /// or never run yet. A sentence under all of that restating it is the clutter the owner asked to be rid of.
+    /// <b>A success says nothing here.</b> Each agent's row showed what was happening to it while it happened,
+    /// and the list drawn afterwards shows where each one landed -- running, or never run yet. A sentence
+    /// restating that is clutter.
     /// </para>
     /// <para>
     /// A failure still says why, in the command's own words: nothing is on any row to say it, and a summary of

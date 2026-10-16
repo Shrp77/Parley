@@ -8,9 +8,9 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// The surfaces are installed apart from the broker's tool, so the version each reports is the fact somebody needs when
-/// they disagree. `parley` answered `--version` and `--help` before it looked at the verb, which made
+/// they disagree. `parley` must not answer `--version` and `--help` before it looks at the verb, which would make
 /// `parley terminal --version` print `parley`'s version and `parley web-ui --help` print `parley`'s manual — while the
-/// README says forwarding works identically to typing the tool's own name. Found by the gate over the rename.
+/// README says forwarding works identically to typing the tool's own name.
 /// </para>
 /// <para>
 /// Run with no surface on <c>PATH</c>, so the forwarded call is observable without one: a flag that reached the

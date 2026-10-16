@@ -1,5 +1,4 @@
 ﻿using Microsoft.Data.Sqlite;
-using Parley.Broker;
 using Parley.Core;
 using Parley.Store;
 using Xunit;
@@ -7,33 +6,18 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// The operator operations of SPEC.md §10.2, as a person runs them.
+/// The registry listing, the one operator operation the command line still performs.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Until now the only one that existed was <c>force_conclude</c>, and nothing hosted it — so
-/// <c>retire</c>, which §14 leans on and which the MCP server enforces at launch, could not be
-/// reached except by writing SQL by hand. A control nobody can invoke is not a control.
-/// </para>
-/// <para>
-/// These drive the commands rather than the process, so what is pinned is what each one does and
-/// what it says. The entry point keeps only argument shape and exit codes.
-/// </para>
+/// These drive the command rather than the process, so what is pinned is what it does and what
+/// it says. The entry point keeps only argument shape and exit codes.
 /// </remarks>
 public sealed class OperatorCommandTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Billing = AgentName.Create("billing@test");
-    private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-
-    private const string Request =
-        """{"ask":"Where does price live, and is it gross or net of tax?"}""";
-
-    private const string Result =
-        """{"outcomes":[{"id":"request","outcome":"answered","text":"net"}]}""";
 
     private readonly SqliteConnection _connection;
-    private readonly AgentRepository _agents;
     private readonly StringWriter _output = new();
     private readonly LoopbackOperator _broker;
     private readonly OperatorCommands _commands;
@@ -41,11 +25,11 @@ public sealed class OperatorCommandTests : IAsyncDisposable
     public OperatorCommandTests()
     {
         _connection = ParleyDatabase.OpenInMemory();
-        _agents = new AgentRepository(_connection);
+        var agents = new AgentRepository(_connection);
 
         foreach (var name in new[] { Orders, Billing })
         {
-            _agents.UpsertAsync(
+            agents.UpsertAsync(
                 new AgentRecord(name, "mcp", AgentTier.Pull, $"/src/acme-{name.Value}", null, null, false, AgentStatus.Active),
                 TestContext.Current.CancellationToken).GetAwaiter().GetResult();
         }
@@ -66,9 +50,6 @@ public sealed class OperatorCommandTests : IAsyncDisposable
     private string Printed => _output.ToString();
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
-
-    private async Task<AgentStatus> StatusOf(AgentName name) =>
-        (await _agents.GetAllAsync(Ct)).Single(a => a.Name == name).Status;
 
     [Fact]
     public async Task Listing_agents_shows_what_a_peer_is_never_shown()
@@ -96,258 +77,5 @@ public sealed class OperatorCommandTests : IAsyncDisposable
 
         Assert.Equal(0, await commands.RegistryAsync(Ct));
         Assert.Contains("first time its server starts", output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Retiring_withdraws_the_registration()
-    {
-        Assert.Equal(0, await _commands.RetireAsync(Billing, Ct));
-        Assert.Equal(AgentStatus.Retired, await StatusOf(Billing));
-
-        // Says what it did not do, because that is the part an operator gets wrong: retiring is
-        // about the registry, and nothing times out, so the work the agent already holds stays
-        // open and is flagged until somebody closes it or reinstates the agent.
-        Assert.Contains("stays open and is flagged", Printed, StringComparison.Ordinal);
-        Assert.DoesNotContain("nobody answered", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Retiring_twice_reports_it_and_exits_non_zero()
-    {
-        Assert.Equal(0, await _commands.RetireAsync(Billing, Ct));
-        Assert.Equal(1, await _commands.RetireAsync(Billing, Ct));
-
-        Assert.Equal(AgentStatus.Retired, await StatusOf(Billing));
-        Assert.Contains("already retired", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Retiring_an_agent_that_does_not_exist_is_refused_rather_than_silent()
-    {
-        Assert.Equal(1, await _commands.RetireAsync(AgentName.Create("nobody@test"), Ct));
-        Assert.Contains("not registered", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Reinstating_is_the_only_way_back()
-    {
-        // §14: retirement is cleared by an explicit operator action and by nothing else — not by
-        // registration, and not by an agent attaching. Without this the state is terminal, and
-        // an operator who retired the wrong agent has no way back short of editing the database.
-        await _commands.RetireAsync(Billing, Ct);
-
-        Assert.Equal(0, await _commands.ReinstateAsync(Billing, Ct));
-
-        // Offline rather than registered, which is right: the agent is not attached, and offline
-        // is the ordinary resting state of a lazily spawned agent between questions. It is
-        // routable again, which is what reinstating means.
-        Assert.Equal(AgentStatus.Active, await StatusOf(Billing));
-        Assert.False(await _agents.IsUnroutableAsync(Billing, DateTimeOffset.UtcNow, cancellationToken: Ct));
-    }
-
-    [Fact]
-    public async Task Reinstating_an_agent_that_was_not_retired_changes_nothing()
-    {
-        Assert.Equal(1, await _commands.ReinstateAsync(Billing, Ct));
-        Assert.Equal(AgentStatus.Active, await StatusOf(Billing));
-        Assert.Contains("not retired", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Purging_removes_a_registration_that_never_traded()
-    {
-        Assert.Equal(0, await _commands.PurgeAsync(Billing, Ct));
-
-        Assert.DoesNotContain(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
-        Assert.Contains("free to register again", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Purging_a_name_that_does_not_exist_says_so_rather_than_inventing_a_history()
-    {
-        Assert.Equal(1, await _commands.PurgeAsync(AgentName.Create("nobody@test"), Ct));
-        Assert.Contains("not registered", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Purging_an_agent_that_has_traded_reports_what_it_destroyed()
-    {
-        // The toll has to be readable as alarm. A total tells an operator nothing — "forty-one
-        // rows" could be a dead registration's leftovers or two months of a working
-        // conversation — so it is broken out per table, and printed after the fact because
-        // nothing here is a confirmation prompt.
-        //
-        // It also has to say the part that only matters once it is too late: the peer was not
-        // asked, and its side of these conversations is gone as well.
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        await broker.RequestAsync(
-            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), cancellationToken: Ct);
-
-        Assert.Equal(0, await _commands.PurgeAsync(Billing, Ct));
-
-        Assert.DoesNotContain(Billing, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
-        Assert.Contains("exchanges", Printed, StringComparison.Ordinal);
-        Assert.Contains("messages", Printed, StringComparison.Ordinal);
-        Assert.Contains("cannot be undone", Printed, StringComparison.Ordinal);
-
-        // The requester did nothing and is still registered, but its request is gone with the agent
-        // that was sent it. That is the collateral, and the command says so rather than hiding it.
-        Assert.Contains(Orders, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
-        Assert.Contains("lost that conversation", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Purging_undoes_a_retirement_entered_for_an_agent_that_never_existed()
-    {
-        // The case §14 had no remedy for. A mistyped PARLEY_AGENT registers, and retirement was
-        // the only thing available — leaving a tombstone for an agent that never was, and the
-        // name locked up where the correctly-spelled one might want it.
-        var typo = AgentName.Create("bulling@test");
-
-        await _agents.UpsertAsync(
-            new AgentRecord(typo, "mcp", AgentTier.Pull, "/src/acme-billing", null, null, false, AgentStatus.Active),
-            Ct);
-
-        await _commands.RetireAsync(typo, Ct);
-
-        Assert.Equal(0, await _commands.PurgeAsync(typo, Ct));
-        Assert.DoesNotContain(typo, (await _agents.GetAllAsync(Ct)).Select(a => a.Name));
-    }
-
-    [Fact]
-    public async Task Exporting_reads_across_agents_which_is_why_it_is_an_operator_operation()
-    {
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        var sent = await broker.RequestAsync(
-            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
-
-        Assert.True(sent.Exchange is not null, $"expected admission, got {sent.Admission.Rejection}");
-
-        Assert.Equal(0, await _commands.ExportAsync("pricing", Ct));
-
-        // The payload as stored, not the envelope of §13. An envelope marks a peer's words as
-        // data inside another agent's context, and there is no agent here.
-        Assert.Contains("gross or net of tax?", Printed, StringComparison.Ordinal);
-        Assert.Contains("some-model-9", Printed, StringComparison.Ordinal);
-        Assert.DoesNotContain("begin peer payload", Printed, StringComparison.Ordinal);
-
-        // Readable rather than merely present. The type column was once padded to exactly the
-        // longest type name, so every message of that type ran into its sender.
-        Assert.Contains("request  orders@test -> billing@test", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Retiring_leaves_work_already_in_flight_alone()
-    {
-        // §14: retiring is about the registry, not the traffic. What the agent already owed stays
-        // open — nothing times out (§5.3) — and is flagged to the person as held by a retired agent,
-        // who closes it or reinstates the agent.
-        //
-        // A Result that does arrive is still accepted. Nothing checks retirement on the way in, and
-        // that is the right way round: the work may well have been done. An agent cannot reach it in
-        // practice — its server refuses to start — so this is what happens if one settles its work
-        // some other way.
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        var sent = await broker.RequestAsync(
-            Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), cancellationToken: Ct);
-
-        Assert.Equal(0, await _commands.RetireAsync(Billing, Ct));
-
-        var exchanges = new ExchangeRepository(_connection);
-        Assert.Equal(
-            ExchangeState.Open,
-            (await exchanges.GetAsync(sent.Exchange!.Id, cancellationToken: Ct))!.State);
-
-        // Nothing new may be sent it.
-        var refused = await broker.RequestAsync(
-            Orders, Billing, "some-model-9",
-            """{"ask":"And refunds — gross or net of tax?"}""",
-            T0.AddMinutes(2), cancellationToken: Ct);
-
-        Assert.Equal(RequestRejection.ReceiverRetired, refused.Admission.Rejection);
-
-        // What it already owed, it may still settle.
-        Assert.True((await broker.ResultAsync(
-            sent.Exchange.Id, Billing, "some-model-9", Result, T0.AddMinutes(3), cancellationToken: Ct)).Succeeded);
-    }
-
-    [Fact]
-    public async Task Exporting_a_conversation_nobody_started_says_where_they_come_from()
-    {
-        Assert.Equal(1, await _commands.ExportAsync("never-happened", Ct));
-        Assert.Contains("request has been sent in it", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Force_concluding_closes_a_conversation_over_its_votes()
-    {
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
-
-        Assert.Equal(0, await _commands.ForceConcludeAsync("pricing", "the pricing work moved elsewhere", Ct));
-
-        // And it stays closed: a new request naming it is refused, which is what the operator was
-        // reaching for.
-        var reopened = await broker.RequestAsync(
-            Orders, Billing, "some-model-9",
-            """{"ask":"And refunds — gross or net of tax?"}""",
-            T0.AddMinutes(3), "pricing", Ct);
-
-        Assert.Equal(RequestRejection.ConversationClosed, reopened.Admission.Rejection);
-    }
-
-    [Fact]
-    public async Task Archiving_takes_a_conversation_off_the_list_and_unarchiving_puts_it_back()
-    {
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
-
-        Assert.Equal(0, await _commands.ArchiveAsync("pricing", Ct));
-        Assert.Equal(1, await _commands.ArchiveAsync("pricing", Ct));
-        Assert.Equal(0, await _commands.UnarchiveAsync("pricing", Ct));
-
-        Assert.Contains("Nothing was deleted", Printed, StringComparison.Ordinal);
-        Assert.Contains("back in the list", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Destroying_a_conversation_reports_what_went_and_that_it_is_permanent()
-    {
-        var broker = new Broker.Broker(_connection, BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, Ct);
-
-        await broker.RequestAsync(Orders, Billing, "some-model-9", Request, T0.AddMinutes(1), "pricing", Ct);
-
-        Assert.Equal(0, await _commands.DestroyAsync("pricing", Ct));
-        Assert.Contains("messages", Printed, StringComparison.Ordinal);
-        Assert.Contains("cannot be undone", Printed, StringComparison.Ordinal);
-
-        Assert.Equal(1, await _commands.DestroyAsync("pricing", Ct));
-    }
-
-    [Fact]
-    public async Task Starting_an_agent_no_machine_can_start_says_so_and_exits_non_zero()
-    {
-        // No node has joined this broker, so nothing can launch anything -- and saying it had would be the
-        // "started" that 008 exists to stop anybody claiming.
-        Assert.Equal(1, await _commands.StartAgentAsync(Billing, Ct));
-        Assert.Contains("Nothing could start", Printed, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Force_concluding_something_that_is_not_open_reports_it()
-    {
-        Assert.Equal(1, await _commands.ForceConcludeAsync("never-happened", null, Ct));
-        Assert.Contains("not open", Printed, StringComparison.Ordinal);
     }
 }

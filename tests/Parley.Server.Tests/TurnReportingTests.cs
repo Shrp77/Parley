@@ -203,9 +203,9 @@ public sealed class TurnReportingTests
     [InlineData(90_000, 365)]
     public async Task One_implausible_turn_cannot_break_the_registry_or_the_flags_for_everyone(long elapsedMs, int daysAhead)
     {
-        // The review gate's finding: one report whose end fell past the calendar made every later registry and flags read
-        // throw — for every surface, for the whole broker, and surviving the reporter leaving. No victim was needed: an
-        // agent of the attacker's own was enough.
+        // One report whose end falls past the calendar must not make every later registry and flags read
+        // throw — for every surface, for the whole broker, surviving the reporter leaving. No victim is needed: an
+        // agent of the attacker's own is enough.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
@@ -305,7 +305,7 @@ public sealed class TurnReportingTests
     {
         // The other half of §12.3's tie, and the one with the standing in it: the broker recognises the person by the
         // seat's adapter (principle 2.10 — a person may always name a conversation), and registration writes whatever
-        // adapter the caller reports. Admitted until the combined review gate, round 3.
+        // adapter the caller reports.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
 
         var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(async () =>

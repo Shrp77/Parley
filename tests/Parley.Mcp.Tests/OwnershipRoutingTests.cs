@@ -210,14 +210,14 @@ public sealed class OwnershipRoutingTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>This test used to assert a guarantee, and 0.33.0 gave that guarantee up.</b> It read:
-    /// ten peers, every one of them at the limit, must still be smaller than a single message is
-    /// allowed to be — otherwise finding out who to ask costs more than asking. With no bound in
-    /// force there is no length to put in it, and `new string('x', OwnershipStatement.MaxCharacters)`
-    /// would now ask for a two-gigabyte string.
+    /// <b>This test no longer asserts a guarantee, because no bound is in force.</b> The guarantee
+    /// would be that ten peers, every one of them at the limit, are still smaller than a single message
+    /// is allowed to be — otherwise finding out who to ask costs more than asking. With no bound there
+    /// is no length to put in it, and `new string('x', OwnershipStatement.MaxCharacters)`
+    /// would ask for a two-gigabyte string.
     /// </para>
     /// <para>
-    /// So it measures the same shape at the length the bound used to be, and the number it produces
+    /// So it measures the same shape at a hundred characters, and the number it produces
     /// is still the right number — the arithmetic Principle IV was written on has not stopped being
     /// true, it has stopped being enforced. Keeping it is what makes the reduction visible: if this
     /// ever fails, the roster's structural overhead has grown, which is the other half of the cost
@@ -251,10 +251,10 @@ public sealed class OwnershipRoutingTests
     {
         // The cost of the decision, measured rather than asserted away. An agent whose line is
         // 2,000 characters is not doing anything wrong -- the registry accepts it, because the
-        // constitution was amended to 3.0.0 to let it -- and ten such peers put more in front of
+        // constitution lets it -- and ten such peers put more in front of
         // every asker than one message is allowed to carry.
         //
-        // This is FR-026's evidence in the form a test can hold: it is what the number to reinstate
+        // This is the evidence in the form a test can hold: it is what the number to reinstate
         // has to be chosen against, and it fails the day somebody puts a bound back, which is the
         // day it should be deleted.
         var ct = TestContext.Current.CancellationToken;

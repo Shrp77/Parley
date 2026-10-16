@@ -10,7 +10,7 @@ namespace Parley.Server;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's call: a person may edit, rename or delete a file in its folder, and that is the file's new state.</b>
+/// <b>A person may edit, rename or delete a file in its folder, and that is the file's new state.</b>
 /// An edit gets a new hash and every agent that fetched the file is told; a rename keeps the file's placer; a deletion is
 /// the file gone; a file copied in by hand is the person's. None of it is refused.
 /// </para>
@@ -32,8 +32,7 @@ namespace Parley.Server;
 /// <para>
 /// <b>A rename is recognised from the operating system's report of one, and the report outlives the events after
 /// it.</b> A move raises a rename and, depending on the platform, creations and changes at the new path and a deletion
-/// at the old one — each of which replaces the pending look at its path. The watcher tests' first runs lost the rename
-/// that way and made the file the person's. So the report is kept apart from the pending looks, and whichever look
+/// at the old one — each of which replaces the pending look at its path. So the report is kept apart from the pending looks, and whichever look
 /// runs first, at the name the file left or the name it took, carries the placer across; the other finds it done.
 /// A file that goes and one with the same content that appears, with no rename reported, are a deletion and the
 /// person's new file: matching by hash is the scan at start's rule alone, because only there is no report to be had.
@@ -100,7 +99,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
     /// <returns>A task that completes when every recorded folder has been looked at.</returns>
     /// <remarks>
     /// A file with no row whose hash matches exactly one row whose file went missing from the same folder is that file
-    /// renamed, and keeps its placer (the owner's call). Any other file with no row is the person's, and any row whose
+    /// renamed, and keeps its placer. Any other file with no row is the person's, and any row whose
     /// file is still missing is gone.
     /// </remarks>
     public async Task ScanAsync(CancellationToken cancellationToken)

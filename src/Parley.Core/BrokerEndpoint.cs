@@ -28,24 +28,12 @@ public static class BrokerEndpoint
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>This was 51707 until 019, and that number had become the one value guaranteed to be
-    /// wrong.</b> It was chosen from the IANA dynamic range, on the reasoning that nothing is
-    /// registered there — which is true and is exactly the problem: the dynamic range is where the
-    /// operating system hands out ephemeral ports, so a broker asking for one is asking for a port
-    /// the machine may already have given to somebody else. <c>PortLedger</c> carries the measurement
-    /// that settled it: 51707 and 53283, the ports of the deployment that prompted 019, both sit
-    /// inside Windows' 49152–65535 and would fail to bind at logon on any machine that had been up
-    /// long enough.
+    /// <b>It is outside both operating systems' ephemeral port ranges</b>, which are where the
+    /// operating system hands out ports a broker could fail to bind at logon. <c>PortLedger</c>
+    /// allocates projects from a band clear of those ranges.
     /// </para>
     /// <para>
-    /// So 019 moved every project into a band clear of both operating systems' ephemeral ranges,
-    /// and left this constant behind pointing into the range it had just abandoned. The default
-    /// could then never reach anything: a machine with one project has it on 19100, and every
-    /// command that fell back to this one spent two seconds failing to connect to 51707 before
-    /// saying no broker was listening.
-    /// </para>
-    /// <para>
-    /// <b>It is the band's first port now, which makes the default true rather than merely
+    /// <b>It is the band's first port, which makes the default true rather than merely
     /// sensible.</b> The first project a machine names is given this port, so "the broker to talk
     /// to when nothing says otherwise" and "the broker this machine has" are the same address on
     /// the ordinary machine. A deployment that set its own band in <c>ports.json</c>, or whose

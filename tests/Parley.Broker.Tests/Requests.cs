@@ -24,14 +24,6 @@ internal static class Requests
     public static string Request(string text = "is the price gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    // `OldRequestOf` stood here: a Request in the shape 0.5 and 0.6 stored, for tests that answered
-    // one by its items. Its only route into a store was to build one at schema 10 and migrate, and
-    // there are no intermediate schemas since the eleven migrations were folded into one on
-    // 2026-09-26. Every test that used it went with them. Recorded rather than silently removed,
-    // because the half of §5.3 it exercised has not changed -- an exchange opened before 0.7 is
-    // still answered by the identifiers its Request carried, and `ItemIdBoundTests` is what holds
-    // that now.
-
     /// <summary>A Result giving each named item an outcome; a blocked one is written <c>blocked:kind</c>.</summary>
     /// <param name="outcomes">The items and what came of each, or none for <c>q1</c> answered.</param>
     /// <returns>The payload.</returns>

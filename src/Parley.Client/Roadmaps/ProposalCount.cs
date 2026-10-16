@@ -8,8 +8,8 @@ namespace Parley.Client.Roadmaps;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Unknown is not none.</b> A broker that did not answer, or that is older than roadmaps and answers
-/// <c>UNIMPLEMENTED</c>, has an unknown number of proposals, and showing it as zero would read as a project with nothing
+/// <b>Unknown is not none.</b> A broker that did not answer has an unknown number of proposals, and showing it as
+/// zero would read as a project with nothing
 /// for the person to decide — which is the containment rule the project summary already holds itself to for agents and
 /// conversations. So this returns <see langword="null"/> and the caller says nothing about proposals rather than that
 /// there are none.
@@ -34,7 +34,7 @@ public static class ProposalCount
         }
         catch (RpcException)
         {
-            // Unavailable, unimplemented or anything else: the count is unknown, and unknown is never shown as none.
+            // Unavailable or anything else: the count is unknown, and unknown is never shown as none.
             return null;
         }
     }

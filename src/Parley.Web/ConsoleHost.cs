@@ -10,8 +10,8 @@ namespace Parley.Web;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The console renders what SPEC.md §10.2 grants a person, and binds the operations of that
-/// section that change something: retire, reinstate, purge and force-conclude. Each
+/// The console renders what SPEC.md §10.2 grants a person, and binds every operation of that
+/// section. Each that changes something
 /// describes what it will do before it does it, and none is reachable by following a link — a GET
 /// describes and only a POST acts, so nothing that crawls a page left open can destroy anything.
 /// </para>
@@ -22,7 +22,7 @@ namespace Parley.Web;
 /// </para>
 /// <para>
 /// Here rather than in the entry point because there are two callers: this assembly's own
-/// <c>Main</c>, and <c>parley console</c>. Two callers building a host each is two hosts that
+/// <c>Main</c>, and <c>parley-web-ui</c>. Two callers building a host each is two hosts that
 /// differ the first time one of them is edited, and the differences that matter — the loopback
 /// default, the log providers, the content root — are exactly the ones nobody would notice.
 /// </para>
@@ -34,8 +34,6 @@ public static class ConsoleHost
     /// <see cref="WebUiAddress.Loopback"/>, which is where the number lives and where the reason
     /// for it is written down. Kept here as a name because this is the assembly that binds it, and
     /// a host that did not state its own default would send every reader to find out elsewhere.
-    /// It moved because four things in three packages now state this address and there was nowhere
-    /// else all four could see.
     /// </remarks>
     public const string LoopbackAddress = WebUiAddress.Loopback;
 
@@ -62,11 +60,9 @@ public static class ConsoleHost
         // project folder and wrong for every other way this is started: an operator running it
         // from their repository, or a scheduled task with no meaningful working directory.
         //
-        // This was found the hard way, by a stylesheet that 404d — and the eventual fix for that
-        // was to stop having a file at all. The anchor stays because the host reads its content
-        // root for more than assets, and because nothing in the test suite would catch it going
-        // wrong: WebApplicationFactory sets the content root from the test project, so the tests
-        // always look in the right place.
+        // The host reads its content root for more than assets, and nothing in the test suite
+        // would catch it going wrong: WebApplicationFactory sets the content root from the test
+        // project, so the tests always look in the right place.
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
             Args = args,
@@ -79,18 +75,14 @@ public static class ConsoleHost
         builder.Logging.ClearProviders();
         builder.Logging.AddSimpleConsole();
 
-        // Quiet by default, which is what ParleyServer has always done and this never did. That
-        // asymmetry stopped being invisible when `serve --with-console` put both in one process
-        // writing one `--log`: every page render left three lines about an implicit handler
-        // method, and a broker's log became a place you search rather than read.
+        // Quiet by default, like the broker: per-request routing narration would bury a log that
+        // is meant to be read.
         //
         // Nothing diagnostic is lost. A page that throws logs at Error, a bind that fails logs at
-        // Error, and the two commands that start this each print the address themselves — so the
-        // Information tier here was Kestrel repeating what had just been said, plus a per-request
-        // narration of routing.
+        // Error, and the commands that start this each print the address themselves.
         //
         // Raisable rather than final: the host binds `Logging` from configuration, so
-        // `Logging__LogLevel__Default=Information` in the environment restores every line above.
+        // `Logging__LogLevel__Default=Information` in the environment restores every line.
         // This is a floor and not a ceiling, because the one time somebody wants that narration is
         // the time they cannot rebuild to get it.
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
@@ -116,19 +108,18 @@ public static class ConsoleHost
             }
         }
 
-        // **Only requests that name this console's own host are served** (the combined review gate, lens 2). With no
+        // **Only requests that name this console's own host are served.** With no
         // allow-list the host accepts any Host header, so a page whose own name an attacker points at 127.0.0.1 — DNS
         // rebinding — is same-origin with this console in the person's browser: it reads a form, takes its antiforgery
-        // token and posts it back. Driven: Start reached the broker that way. Antiforgery is the only thing between a
+        // token and posts it back. Antiforgery is the only thing between a
         // browser and purge and every transcript, so the Host is checked before anything else. Set only when
         // the deployment has not chosen its own `AllowedHosts`.
         builder.Configuration["AllowedHosts"] ??= AllowedHosts(chosen);
 
         // The application part named rather than discovered. Razor Pages are found by walking the
-        // entry assembly and its dependencies, and the entry assembly is `parley` when the
-        // console is started as a subcommand — which finds the stylesheet, because that is a file
-        // beside the binary, and finds no pages at all, because those are compiled into this
-        // assembly. Every route 404s and nothing says why.
+        // entry assembly and its dependencies, and the entry assembly is not this one when a
+        // test or another tool hosts it, which would find no pages, because those are compiled
+        // into this assembly. Every route would 404 and nothing would say why.
         builder.Services
             .AddRazorPages()
             .AddApplicationPart(typeof(ConsoleHost).Assembly);
@@ -144,6 +135,9 @@ public static class ConsoleHost
             new Parley.Client.Seating.SeatBook(
                 services.GetRequiredService<BrokerDirectory>().AgentsFor));
 
+        // What the console has told the person, for the bell. One for the process, because one console serves one person.
+        builder.Services.AddSingleton<Notifications.NotificationLog>();
+
         var app = builder.Build();
 
         app.MapRazorPages();
@@ -152,18 +146,20 @@ public static class ConsoleHost
         return app;
     }
 
-    /// <summary>The two brand images, and the names they are reached by.</summary>
+    /// <summary>The brand images and the icon font, and the names they are reached by.</summary>
     /// <remarks>
     /// A fixed table rather than a name composed from the route. The alternative reads a
     /// manifest resource named by whatever a caller asked for, which is the same shape as
     /// serving a file named by a caller — and while assembly resources hold no directories to
     /// escape into, a lookup that can be pointed at anything is not worth having for the sake of
-    /// two entries.
+    /// three entries. The font is Material Symbols Outlined (Apache License 2.0), cut down to
+    /// the icons the console names; see the comment beside it in the layout.
     /// </remarks>
-    private static readonly (string Route, string Resource)[] Brand =
+    private static readonly (string Route, string Resource, string ContentType)[] Brand =
     [
-        ("icon.png", "Parley.Web.Brand.icon.png"),
-        ("wordmark.png", "Parley.Web.Brand.wordmark.png")
+        ("icon.png", "Parley.Web.Brand.icon.png", "image/png"),
+        ("wordmark.png", "Parley.Web.Brand.wordmark.png", "image/png"),
+        ("material-symbols.woff2", "Parley.Web.Brand.material-symbols.woff2", "font/woff2")
     ];
 
     /// <summary>Serves the brand images out of the assembly.</summary>
@@ -175,25 +171,26 @@ public static class ConsoleHost
     /// </remarks>
     private static void MapBrand(WebApplication app)
     {
-        foreach (var (route, resource) in Brand)
+        foreach (var (route, resource, contentType) in Brand)
         {
-            app.MapGet($"/brand/{route}", (HttpContext context) => Image(context, resource));
+            app.MapGet($"/brand/{route}", (HttpContext context) => Image(context, resource, contentType));
         }
 
-        app.MapGet("/favicon.ico", (HttpContext context) => Image(context, Brand[0].Resource));
+        app.MapGet("/favicon.ico", (HttpContext context) => Image(context, Brand[0].Resource, Brand[0].ContentType));
     }
 
-    /// <summary>Reads one embedded image, as a response.</summary>
+    /// <summary>Reads one embedded file, as a response.</summary>
     /// <param name="context">The request being answered.</param>
     /// <param name="resource">The manifest resource name.</param>
-    /// <returns>The image, or a 404 if the assembly does not carry it.</returns>
+    /// <param name="contentType">The media type to answer with.</param>
+    /// <returns>The file, or a 404 if the assembly does not carry it.</returns>
     /// <remarks>
     /// Cached for a day rather than for ever. The brand outlives any single run of the console
     /// so it is worth caching, and it is served from a name that does not change with its
     /// contents — so a cache that never expired would be one an operator could only clear by
     /// knowing to.
     /// </remarks>
-    private static IResult Image(HttpContext context, string resource)
+    private static IResult Image(HttpContext context, string resource, string contentType)
     {
         var stream = typeof(ConsoleHost).Assembly.GetManifestResourceStream(resource);
 
@@ -204,7 +201,7 @@ public static class ConsoleHost
 
         context.Response.Headers.CacheControl = "public, max-age=86400";
 
-        return Results.Stream(stream, "image/png", enableRangeProcessing: false);
+        return Results.Stream(stream, contentType, enableRangeProcessing: false);
     }
 
     /// <summary>Builds the console and runs it until it is stopped.</summary>
@@ -226,10 +223,9 @@ public static class ConsoleHost
     {
         var app = Build(args, address, warn, fallbackBroker);
 
-        // Started and waited on separately rather than through RunAsync, which takes no token.
-        // The console is hosted inside the broker's process now, so its shutdown has to be the
-        // broker's: a console that ignored the interrupt would hold the process open after
-        // everything an agent depends on had stopped.
+        // Started and waited on separately rather than through RunAsync, which takes no token,
+        // so the caller's cancellation stops the console: one that ignored the interrupt would
+        // hold its process open after everything an agent depends on had stopped.
         await app.StartAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -239,10 +235,8 @@ public static class ConsoleHost
         finally
         {
             // Stopped explicitly rather than left to the wait, which stops the host on some paths
-            // out and not on others. Hosted in the broker's process the difference is invisible —
-            // the process is ending anyway — and that is exactly why it is worth being explicit:
-            // the day something hosts this and keeps running, a console nobody stopped would go on
-            // serving a deployment that had shut down.
+            // out and not on others: a console nobody stopped would go on serving a deployment
+            // that had shut down.
             await app.StopAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }

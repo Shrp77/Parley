@@ -6,18 +6,17 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 2: the <i>other</i> file this writes, and whether writing twice is the
+/// The <i>other</i> file this writes, and whether writing twice is the
 /// same as writing once.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Run 1 attacked the launch configuration and found two defects there. Enrolling writes a second
-/// file — the project's node catalogue — by exactly the same read-modify-write shape, and nothing in
-/// run 1 touched it. Two agents added to <i>one</i> project is a far commoner pairing than two
+/// Enrolling writes the launch configuration and a second file — the project's node catalogue — by
+/// exactly the same read-modify-write shape. Two agents added to <i>one</i> project is a far commoner pairing than two
 /// projects over one repository: it is what setting up a deployment looks like.
 /// </para>
 /// <para>
-/// The rest of this run asks whether the writes are stable. A tool that rewrites a file it did not
+/// The rest asks whether the writes are stable. A tool that rewrites a file it did not
 /// need to change produces a diff in somebody's repository for nothing, and a tool whose output
 /// depends on how many times it has run is one nobody can check.
 /// </para>
@@ -69,7 +68,7 @@ public sealed class ProbeTwoTests : IDisposable
     [Fact]
     public async Task Six_agents_added_to_one_project_at_once_are_all_in_its_catalogue()
     {
-        // **The probe run 1 did not make.** The catalogue is the second file an enrolment writes and
+        // **The catalogue is written the same way.** The catalogue is the second file an enrolment writes and
         // it is written the same way: read the whole thing, add a line, write the whole thing back.
         // Six repositories joining one project is what setting a deployment up looks like, and it is
         // a far commoner pairing than two projects over one repository.

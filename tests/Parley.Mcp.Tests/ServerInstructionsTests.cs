@@ -42,8 +42,7 @@ public sealed class ServerInstructionsTests : IDisposable
     /// <summary>Launches the server and performs the initialize handshake.</summary>
     /// <returns>The <c>result</c> object of the initialize response.</returns>
     /// <remarks>
-    /// A broker has to be running, which it did not before: the server used to open a database
-    /// and would start against a path that did not exist yet. It is now a client, and a client
+    /// A broker has to be running: the server is a client, and a client
     /// with nothing to connect to exits rather than serving — so a test about what the server
     /// says at initialize has to give it something to attach to first.
     /// </remarks>
@@ -145,9 +144,9 @@ public sealed class ServerInstructionsTests : IDisposable
     [Fact]
     public void The_instructions_say_a_refused_permission_must_be_reported_not_left_silent()
     {
-        // **The owner's report of 2026-10-03**: an agent's command was refused for want of approval, its turn ended
-        // without a word, and the room said "working" for nearly three hours. The protocol has the answer already; what
-        // the agent was never told is that a refusal is not a pause, and that silence is indistinguishable from work.
+        // **A refused command must be reported**: an agent's command may be refused for want of approval, its turn end
+        // without a word, and the room say "working" for hours. The protocol has the answer already; what
+        // the agent has to be told is that a refusal is not a pause, and that silence is indistinguishable from work.
         // Read with its line breaks folded to spaces, because where a sentence wraps in the source is not what it says.
         var said = string.Join(' ', ParleyInstructions.Text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
 

@@ -15,9 +15,7 @@ namespace Parley.Client.Rendering;
 /// says.
 /// </para>
 /// <para>
-/// <b>One rule for both surfaces</b>, so the terminal and the web console cannot disagree about who is offered. It
-/// replaces a copy that lived in the terminal and said nothing to the web page, which listed only those who had
-/// spoken.
+/// <b>One rule for both surfaces</b>, so the terminal and the web console cannot disagree about who is offered.
 /// </para>
 /// <para>
 /// <b>Participants come from the transcript</b>, never the registry (§5.0): a participant is anyone party to an

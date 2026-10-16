@@ -8,7 +8,7 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 1 of the review gate, run 1.5. This line is read while somebody is scanning rather than
+/// This line is read while somebody is scanning rather than
 /// reading, which is the condition under which a wrong number is least likely to be questioned —
 /// and it is composed in one place precisely so that two surfaces cannot say different things
 /// about the same project.

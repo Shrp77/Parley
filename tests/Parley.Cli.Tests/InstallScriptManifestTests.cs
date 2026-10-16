@@ -6,9 +6,9 @@ namespace Parley.Cli.Tests;
 /// Both install scripts register an entry that serves the manifest, whether or not it names a project yet.
 /// </summary>
 /// <remarks>
-/// A reinstall over a machine that names projects used to prompt for a store and register an
-/// entry serving that one store, which quietly narrowed a manifest-serving deployment back to a
-/// single project. Then the store parameter went altogether: every entry serves the manifest, and
+/// A reinstall over a machine that names projects must not prompt for a store and register an
+/// entry serving that one store, which would quietly narrow a manifest-serving deployment back to a
+/// single project. There is no store parameter: every entry serves the manifest, and
 /// a machine that names nothing is waiting for its first project.
 /// </remarks>
 public sealed class InstallScriptManifestTests
@@ -28,19 +28,16 @@ public sealed class InstallScriptManifestTests
     [Fact]
     public void The_words_the_scripts_read_are_the_words_the_command_writes()
     {
-        // Lens 3: both scripts parse `parley project list` -- the root's path from a labelled line,
+        // Both scripts parse `parley project list` -- the root's path from a labelled line,
         // whether each project answered, and "No projects configured" for none. That is an
         // interface, and one nothing declared. Named here so that rewording the command's output
         // fails this rather than the next reinstall on somebody else's machine.
         //
-        // **It was passing on a comment.** It read the whole of `ProjectCommand.cs` for
-        // "manifest: ", which appears in a remark forty lines below the listing about something
-        // else entirely -- while the listing itself printed `projects:` and the scripts matched
-        // `^manifest:`. So the scrape returned nothing on every reinstall, the line naming what was
-        // about to be served never printed, and the guard declaring the interface said it was fine.
-        // A check answered by a comment is a check that has not run.
+        // **A check answered by a comment is a check that has not run.** Reading the whole of
+        // `ProjectCommand.cs` for "manifest: " would match a remark about something else entirely,
+        // while the listing itself printed `projects:` and the scripts matched `^manifest:`.
         //
-        // Executable lines only now, on both sides.
+        // Executable lines only, on both sides.
         var command = Executable(RepositoryFile.Read("src/Parley.Setup/ProjectCommand.cs"));
 
         foreach (var literal in new[] { "root:", "answering", "not answering", "No projects configured" })
@@ -85,7 +82,7 @@ public sealed class InstallScriptManifestTests
         // The single-store check is `parley registry`, which with several projects and none
         // named refuses rather than answers. The readiness check has to be the one that asks each
         // project's broker — which is `project list`, whose per-project verdict is `answering` or
-        // `not answering` since FR-023 split it from whether anything can address the endpoint.
+        // `not answering`, which is separate from whether anything can address the endpoint.
         var text = Executable(RepositoryFile.Read(script));
 
         Assert.Contains("not answering", text, StringComparison.Ordinal);

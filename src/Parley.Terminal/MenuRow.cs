@@ -7,23 +7,22 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A reading of the action list and never a second list.</b> The owner's D1: an action carries
+/// <b>A reading of the action list and never a second list.</b> An action carries
 /// metadata that guides the UI and does not dictate it. So this takes what the actions say about
 /// themselves — their category, their group, their order — and decides what a bar looks like, while the
 /// status line and the <c>?</c> dialog make their own decisions from the same facts. Two hand-written
 /// lists agree until one is edited, which is this repository's most-repeated defect.
 /// </para>
 /// <para>
-/// <b>Scoped to the focused region</b> (D2). What is on the bar is the focused region's, because an
-/// action belongs to the region that shows the thing it acts on — 005's User Story 2 — and because a
+/// <b>Scoped to the focused region.</b> What is on the bar is the focused region's, because an
+/// action belongs to the region that shows the thing it acts on, and because a
 /// menu offering <i>Withdraw…</i> while the projects pane has focus would read one region's selection
-/// from another view, a defect CLAUDE.md records appearing five times.
+/// from another view.
 /// </para>
 /// <para>
-/// <b>Separated from the view that draws it so it can be tested without a screen.</b> The terminal's
-/// recorded trap is the opposite arrangement: a property the suite holds to and the screen never shows,
-/// which this file's neighbours have paid for four times. What is here is what the bar *says*; whether
-/// the row is drawn is a layout question, and `MenuBarTests` reads the laid-out screen for it.
+/// <b>Separated from the view that draws it so it can be tested without a screen.</b> What is here is
+/// what the bar *says*; whether the row is drawn is a layout question, and `MenuBarTests` reads the
+/// laid-out screen for it.
 /// </para>
 /// </remarks>
 internal static class MenuRow
@@ -68,7 +67,7 @@ internal static class MenuRow
     /// </para>
     /// <para>
     /// Within a menu, sorted by <c>(Group.Order, Order)</c> with a separator wherever the group
-    /// changes — D1's rendering rule, stated there and applied only here.
+    /// changes — applied only here.
     /// </para>
     /// </remarks>
     internal static IReadOnlyList<(string Title, IReadOnlyList<MenuItem> Items)> Menus(
@@ -130,7 +129,7 @@ internal static class MenuRow
     /// <param name="action">The action.</param>
     /// <returns>Its label, and what it costs whoever it reaches.</returns>
     /// <remarks>
-    /// <b>The cost belongs here and not on the status line</b>, which 0.25.4 settled: two clauses on
+    /// <b>The cost belongs here and not on the status line</b>: two clauses on
     /// the status line is fifty columns that push every action behind <c>?</c> at any ordinary width. A
     /// menu is a list somebody reads; a status line is a reminder of what they already know.
     /// </remarks>
@@ -146,9 +145,9 @@ internal static class MenuRow
 /// <param name="Action">What it does, or <see langword="null"/> for a separator.</param>
 /// <remarks>
 /// <b>The key travels with the label</b>, because a menu that hid it would teach somebody to reach for
-/// the mouse for something one keystroke does — and because the keys are unambiguous here: D2 scopes the
-/// bar to the focused region, so the <c>r</c> that removes a project and the <c>r</c> that withdraws an
-/// agent are never on screen together.
+/// the mouse for something one keystroke does — and because the keys are unambiguous here: the bar is scoped
+/// to the focused region, so the key that removes a project and the key that withdraws an agent are never on
+/// screen together.
 /// </remarks>
 internal sealed record MenuItem(string Label, string Stroke, RegionAction? Action)
 {

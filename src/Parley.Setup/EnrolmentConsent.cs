@@ -7,17 +7,14 @@ namespace Parley.Setup;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>FR-044: said before anything is configured, and it names the count.</b> "Some repositories"
+/// <b>Said before anything is configured, and it names the count.</b> "Some repositories"
 /// is a sentence somebody agrees to without weighing; a number is one they can. And what is being
 /// agreed to is not filing: enrolling catalogues each repository, so a peer's request can start it
 /// with nobody watching, which spends whatever that agent costs to run.
 /// </para>
 /// <para>
-/// <b>One sentence, two surfaces, because the command line did not have it.</b> The terminal's
-/// door said all of this and `parley enroll` said only how many repositories it had found — so the
-/// same act carried its consequence on one surface and not the other, and the surface without it
-/// is the one a script reaches. Two spellings of a consent notice would also drift, and the half
-/// that drifts is the half nobody is reading at the time.
+/// <b>One sentence, every surface.</b> The same act states its consequence wherever it is done, and
+/// two spellings of a consent notice would drift.
 /// </para>
 /// <para>
 /// Public because <c>Parley.Terminal</c> reads it, which is the same reason this whole project is
@@ -37,10 +34,8 @@ public static class EnrolmentConsent
 
         var of = project is { } named ? $" of {named.Value}" : string.Empty;
 
-        // **Plain interpolation, not `string.Create`.** A concatenated interpolated string is not
-        // an interpolated-string handler, so passing one to `string.Create` is CS1620 — "argument 2
-        // must be passed with the 'ref' keyword", which names neither the cause nor the fix. This
-        // sentence is the terminal's, moved here unchanged, and it built there this way.
+        // Plain interpolation, not `string.Create`: a concatenated interpolated string is not an
+        // interpolated-string handler, so passing one to `string.Create` is CS1620.
         return $"{count} repositories will be configured as agents{of}. This writes into each one, "
             + "and catalogues it so that a peer's request can start it with nobody watching — which "
             + "spends whatever that agent costs to run. Each is then started once so that it "

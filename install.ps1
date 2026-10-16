@@ -21,7 +21,7 @@
     It then registers the broker to start when you log in, starts it, and checks that it answers.
     The broker serves every project this machine names. A machine that names none yet is served
     too, waiting for the first: this never asks where a store goes, because a project says that,
-    and a project is named in the terminal (`parley`). The command line no longer names one.
+    and a project is named in the terminal (`parley-terminal`).
     Installing the tools is not the same as having Parley working: the broker is a separate
     process that owns the store, and until one is running every agent fails to attach with "No
     broker is listening" -- a message that arrives in an editor, days later, rather than here.
@@ -47,8 +47,8 @@
     machine ends up running a terminal from three versions ago.
 
 .PARAMETER Only
-    Install exactly these tools, by command name, and leave every other one alone. This is what
-    SC-001 is about: -Only parley-terminal replaces the terminal and does not stop the broker, because
+    Install exactly these tools, by command name, and leave every other one alone.
+    -Only parley-terminal replaces the terminal and does not stop the broker, because
     the broker's binary is not among the files being unlinked.
 
     That matters more than it sounds. SPEC.md section 12 says three things end a resident agent,
@@ -136,21 +136,10 @@ $ErrorActionPreference = 'Stop'
 
 # **Leaves the console in a state a person can type in, before doing anything else.**
 #
-# The owner reported every mouse movement printing `[555;47;16M` at the prompt after running this
-# script, three runs in a row. It is a terminal left in mouse-reporting mode: something asked the
-# terminal to report movement and never asked it to stop, and the mode belongs to the window
-# rather than to any process, so it outlives whatever set it and ruins every command typed after.
-#
-# **This script is not what sets it, and that was established rather than assumed.** One of those
-# runs refused before executing a single Parley binary -- only `dotnet` had run -- and the garbage
-# appeared anyway; `dotnet` with its terminal logger forced on emits progress and hyperlink
-# sequences and no mouse mode at all. So the window was already in that state when the script
-# started.
-#
-# Which leaves this doing the one useful thing available: clearing it. Sending a disable for a
-# mode that is already off does nothing, so this is free on a healthy window and repairs a stuck
-# one -- and it means that from here on, a terminal ruined after running this script cannot be
-# this script's doing, which is worth more than the sequences cost.
+# A terminal left in mouse-reporting mode prints `[555;47;16M` at the prompt on every mouse
+# movement. The mode belongs to the window rather than to any process, so it outlives whatever set
+# it and ruins every command typed after. Sending a disable for a mode that is already off does
+# nothing, so this is free on a healthy window and repairs a stuck one.
 #
 # Four of the six modes `ConsoleRestore` handles: the three mouse ones and bracketed paste. The
 # alternate screen is left alone on purpose -- `?1049l` switches back to the main screen, and a
@@ -188,11 +177,6 @@ $tools = @(
     @{ Package = 'Parley.Terminal'; Project = 'src\Parley.Terminal\Parley.Terminal.csproj'; Command = 'parley-terminal'; Surface = 'terminal' }
     @{ Package = 'Parley.WebUi'; Project = 'src\Parley.WebUi\Parley.WebUi.csproj'; Command = 'parley-web-ui'; Surface = 'web-ui' }
 )
-
-# The terminal's tool was `parley-top`, in a package called Parley.Top, until 0.27.0 renamed it. A machine that
-# installed it before still has it, and nothing would ever remove it: the table above no longer names it. So it is
-# removed wherever the terminal is installed and by -Uninstall, and a running one holds files like any other tool.
-$retiredTerminal = @{ Package = 'Parley.Top'; Command = 'parley-top' }
 
 # Which surfaces this machine wants, resolved once. Windows takes both; anything else takes the
 # web UI alone, because a terminal surface on a machine nobody has a session on is a package
@@ -270,26 +254,6 @@ function Installed {
 
 <#
 .SYNOPSIS
-    The version of one of this repository's tools installed globally, or $null if it is not.
-.DESCRIPTION
-    Read before anything is replaced, so the end of the run can say what an upgrade crossed. A
-    pre-release suffix is dropped, because [version] cannot parse one and the comparison this
-    serves is about which release a store was made by.
-#>
-function InstalledVersion([string] $package) {
-    $line = (& dotnet tool list -g 2>$null) |
-        Where-Object { $_ -match ('^' + [regex]::Escape($package.ToLowerInvariant()) + '\s+(\S+)') } |
-        Select-Object -First 1
-
-    if (-not $line -or $line -notmatch ('^' + [regex]::Escape($package.ToLowerInvariant()) + '\s+(\S+)')) {
-        return $null
-    }
-
-    return ($Matches[1] -split '-')[0]
-}
-
-<#
-.SYNOPSIS
     Stops the broker the autostart entry started, and waits for it to go.
 .DESCRIPTION
     Needed by both paths, for the same reason: Windows will not unlink a binary that is mapped
@@ -312,10 +276,10 @@ function Stop-Broker {
     # Waited for rather than assumed. Stopping a task asks the process to go; it goes once it has
     # closed its listener and its streams, which is quick but is not instant.
     #
-    # **The broker alone here, and the web UI below.** A first version waited for both at once,
-    # which spends the whole ten seconds on exactly the machine this exists to help: an orphaned
-    # web UI is never going to exit on its own, so the wait runs to its deadline and only then
-    # reaches the code that ends it.
+    # **The broker alone here, and the web UI below.** Waiting for both at once would spend the
+    # whole ten seconds on exactly the machine this exists to help: an orphaned web UI is never
+    # going to exit on its own, so the wait would run to its deadline before reaching the code
+    # that ends it.
     $deadline = (Get-Date).AddSeconds(10)
 
     while ((Get-Process -Name 'parley' -ErrorAction SilentlyContinue) -and
@@ -327,8 +291,7 @@ function Stop-Broker {
     # Stopping a scheduled task terminates the process; it does not ask it to exit, so the broker
     # never reaches the code that ends the child it started. The child keeps running, keeps the
     # port, and keeps `parley-web-ui.exe` mapped -- which refuses the very install that stopped
-    # the broker, every time, for ever. The owner hit exactly that loop: the same pid, twice, with
-    # a refusal naming a process they had never started and could not see.
+    # the broker, every time, with a refusal naming a process the person never started and cannot see.
     #
     # **Told apart by its parent rather than by its name**, because a web UI somebody started by
     # hand is still theirs and this must not reach for it. An orphan has a parent id that no
@@ -346,12 +309,9 @@ function Stop-Broker {
         }
     }
 
-    # **And then waited for, which the first version of this did not do.** `Stop-Process` returns
-    # once the kill has been asked for, not once the process has gone -- the exact sentence
-    # `Remove-Holders` already carries a paragraph about, reintroduced twenty lines above it. The
-    # owner met it immediately: "ending the web UI the stopped broker left behind, pid 26996",
-    # followed by a refusal naming pid 26996. Ended it, then reported it as still holding the
-    # tools, in consecutive lines.
+    # **And then waited for.** `Stop-Process` returns once the kill has been asked for, not once
+    # the process has gone (`Remove-Holders` says the same), and announcing an ended pid and then
+    # refusing the install naming that pid would contradict itself.
     #
     # The same wait covers a web UI exiting with its broker on the ordinary path, where nothing
     # was killed at all and the child simply goes a moment after its parent.
@@ -485,11 +445,6 @@ if ($Uninstall) {
         & dotnet tool uninstall -g $tool.Package 2>&1 | Out-Null
     }
 
-    if ((& dotnet tool list -g 2>$null) -match '^parley\.top\s') {
-        Write-Step "Removing $($retiredTerminal.Package), the terminal's old name"
-        & dotnet tool uninstall -g $retiredTerminal.Package 2>&1 | Out-Null
-    }
-
     # The same check the install does, for the same reason. Every step above can report success
     # while leaving a tool exactly where it was, so the only honest closing line is one that
     # asked afterwards.
@@ -556,10 +511,8 @@ foreach ($tool in $tools) {
 # The version every package just took, read from the packages rather than from the project file.
 # What matters is what was produced, and a build that ignored the property would be exactly the
 # defect this check should catch.
-# Read from whichever package was just built, rather than from Parley.Cli's. That was right
-# while every run packed every tool, and became wrong the moment a run could pack only a
-# surface: it looked for a package nothing had produced and stopped with "nothing was packed",
-# on a run that had just packed exactly what it was asked to.
+# Read from whichever package was just built, rather than from Parley.Cli's: a run can pack only
+# a surface, and Parley.Cli's package would then not exist.
 $first = $tools | Where-Object { Wanted $_ } | Select-Object -First 1
 
 if (-not $first) { Write-Error 'No tool was selected, so nothing would be installed.' }
@@ -588,13 +541,10 @@ if ($Reset) {
 
 # ----------------------------------------------------------------- install ---
 
-# Before anything is stopped, because the failure this catches used to arrive afterwards.
-#
-# A running `parley-mcp` holds its own files in the tool store, so `dotnet tool uninstall` fails
-# with "Access to the path ...\.store\parley.mcp\<version>' is denied". That on its own would be
-# a clear error and no great harm. The harm was the order: the broker was stopped first, so a
-# machine that had been serving a deployment was left with no broker, one tool replaced and one
-# not, by a script that had reported nothing but success up to that point.
+# Before anything is stopped. A running `parley-mcp` holds its own files in the tool store, so
+# `dotnet tool uninstall` fails with "Access to the path ...\.store\parley.mcp\<version>' is
+# denied". Checked after the broker was stopped, that would leave a machine that had been serving
+# a deployment with no broker and one tool replaced and one not.
 #
 # The broker itself is not checked here. It is stopped a few lines below, deliberately and by
 # name, which is a different thing from a session somebody has open.
@@ -610,13 +560,11 @@ Write-Step 'Checking nothing holds the tools'
 # unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
 # and refusing anyway would make -Surfaces useless on the machine most likely to want it.
 #
-# **The web UI is excluded with it, for the same reason and it was not.** The broker starts
-# `parley-web-ui` as a child and ends it when it ends, so a running web UI on a machine whose
-# broker is about to be stopped is not a process anybody has to close -- it is a process this
-# script is three steps from ending itself. Counting it as a holder made a perfectly ordinary
-# machine refuse the install: broker up, web UI up, and a refusal naming a window the person does
-# not have open and cannot close, telling them to use -Force to end something that was going to
-# stop anyway. Reported by the owner on the first run after `autostart install` had started one.
+# **The web UI is excluded with it, for the same reason.** The broker starts `parley-web-ui` as a
+# child and ends it when it ends, so a running web UI on a machine whose broker is about to be
+# stopped is not a process anybody has to close. Counting it as a holder would refuse the install
+# naming a window the person does not have open and cannot close, and tell them to use -Force to
+# end something that was going to stop anyway.
 #
 # A web UI somebody started by hand is a different matter, and is caught after the broker has been
 # stopped -- where it can be told apart, which is exactly what the broker's own exclusion does two
@@ -632,17 +580,10 @@ if ($replacingBroker) {
     $adapters = @($adapters | Where-Object { $_ -ne $webUiCommand })
 }
 
-if (Wanted ($tools | Where-Object { $_.Command -eq 'parley-terminal' })) { $adapters += $retiredTerminal.Command }
-
-# **Empty is an ordinary answer and used to be a crash.** `-Only parley` wants exactly the tool this
-# list excludes by name, so nothing is left to look for -- and `Get-Process -Name @()` does not
-# return nothing, it refuses the argument: "the argument is null, empty, or an element of the
-# argument collection contains a null value". The install stopped there, after packing, having
-# installed nothing.
-#
-# Found by running it. `-Only parley` is the narrow install SC-001 rests on -- the one that replaces
-# the broker alone -- so the one arrangement this guard could not survive was the arrangement it
-# exists to serve.
+# **Empty is an ordinary answer.** `-Only parley` wants exactly the tool this list excludes by
+# name, so nothing is left to look for -- and `Get-Process -Name @()` does not return nothing, it
+# refuses the argument: "the argument is null, empty, or an element of the argument collection
+# contains a null value".
 # Written as if/else rather than a ternary, and that is not taste: `?` is PowerShell's alias for
 # `Where-Object`, so a ternary broken across lines is read as a pipeline into it and fails with a
 # message about a `Property` parameter nobody wrote.
@@ -686,7 +627,7 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
             $kinds += 'an adapter belongs to an editor session with Parley configured; close the session'
         }
 
-        if ($holders | Where-Object { $_.ProcessName -in 'parley-terminal', $retiredTerminal.Command }) {
+        if ($holders | Where-Object { $_.ProcessName -in 'parley-terminal' }) {
             $kinds += 'a terminal is a window somebody has open; Ctrl+Q leaves it'
         }
 
@@ -698,10 +639,9 @@ $(($survived | ForEach-Object { "      $($_.ProcessName), pid $($_.Id)" }) -join
             $kinds += 'a web UI has no window; end it from the terminal it was started in, or with -Force'
         }
 
-        # **Never empty, because the sentence is built from it.** With no kind matched this printed
-        # a line containing one full stop and nothing else, under a list of processes -- which is
-        # what the owner saw. A refusal that names what is wrong and then says nothing about what
-        # to do is the half that gets read.
+        # **Never empty, because the sentence is built from it.** With no kind matched it would be a
+        # line containing one full stop, under a list of processes. A refusal that names what is
+        # wrong and then says nothing about what to do is the half that gets read.
         if ($kinds.Count -eq 0) {
             $kinds += 'end them, or re-run with -Force'
         }
@@ -735,12 +675,9 @@ if ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
     # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
-    # is what held everything each of them had learned. A question already drained into an agent's
-    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
-    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
-    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
-    # defines as "nobody replied", recorded against an agent that was killed rather than one that
-    # ignored anything.
+    # is what held everything each of them had learned. A Request already drained into an agent's
+    # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
+    # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
     #
     # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
     # and reading it here for a progress message would break the one boundary this whole
@@ -751,8 +688,8 @@ if ($replacingBroker) {
     $parleyOnPath = Get-Command parley -ErrorAction SilentlyContinue
 
     # **Asked of each project, because `parley open` refuses to choose between several.** On a machine naming more than
-    # one, a bare `parley open` could never answer, so this said it could not ask on exactly the machines with the most in
-    # flight -- found by reinstalling one. Names come from `parley project list`, whose first column is the name and whose
+    # one, a bare `parley open` could never answer, and those are the machines with the most in
+    # flight. Names come from `parley project list`, whose first column is the name and whose
     # second is the endpoint; a machine naming none is asked once, of the broker it would default to.
     $inFlight = @()
     $unasked = @()
@@ -794,7 +731,7 @@ if ($replacingBroker) {
         $lines = @($inFlight | Where-Object { $_ -is [string] -and $_.Trim() })
 
         if ($lines.Count -gt 0) {
-            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started, and a question already delivered has nothing left to answer it:"
+            Write-Warning "$($lines.Count) conversation(s) have an exchange still open. Stopping the broker ends every agent it started. When an agent's turn ends its open exchange stays open and is flagged to the person:"
 
             foreach ($line in $lines) {
                 Write-Host "      $line" -ForegroundColor DarkGray
@@ -816,8 +753,6 @@ else {
 # as firmly. Caught here rather than by the uninstall, which would report a denied path and leave
 # the tools half replaced.
 $replacingCommands = @($tools | Where-Object { Wanted $_ } | ForEach-Object { $_.Command })
-
-if ($replacingCommands -contains 'parley-terminal') { $replacingCommands += $retiredTerminal.Command }
 
 $strays = @(Get-Process -Name $replacingCommands -ErrorAction SilentlyContinue)
 
@@ -858,7 +793,6 @@ Write-Step "Installing version $built"
 # quietly is how a machine ends up running a terminal three versions behind its broker.
 $outcomes = @()
 $listedBefore = Installed
-$brokerBefore = InstalledVersion 'Parley.Cli'
 
 foreach ($tool in $tools) {
     if (-not (Wanted $tool)) {
@@ -878,11 +812,6 @@ foreach ($tool in $tools) {
     # and the version has not moved on every rebuild that fixed something without shipping new
     # behaviour. Removing first makes the install unconditional.
     & dotnet tool uninstall -g $tool.Package 2>&1 | Out-Null
-
-    if ($tool.Command -eq 'parley-terminal' -and ((& dotnet tool list -g 2>$null) -match '^parley\.top\s')) {
-        & dotnet tool uninstall -g $retiredTerminal.Package 2>&1 | Out-Null
-        $outcomes += @{ Command = $retiredTerminal.Command; Said = 'removed: the terminal is parley-terminal now' }
-    }
 
     $said = & dotnet tool install -g --add-source $source $tool.Package --version $built 2>&1
 
@@ -914,20 +843,6 @@ if ($stale.Count -gt 0) {
     Write-Warning "$(($stale | ForEach-Object { $_.Command }) -join ', ') is installed and was not updated to $built. Re-run with -Surfaces both to bring it up, or with -Uninstall to remove everything."
 }
 
-# 0.36.0 edited the store's schema in place without moving its number, because nothing
-# had been released. So a store made by an older broker is opened without complaint and keeps its
-# old shape: no person seat rules, and a machine recorded for each project. Nothing in the broker
-# says so -- the owner's call was to say it here rather than refuse the store -- which makes this
-# line the only warning there is. Said only when an older broker was actually replaced and -Reset
-# was not passed, because on a fresh machine or after a reset there is nothing old to keep.
-if (-not $Reset -and $brokerBefore) {
-    $before = $null
-
-    if ([version]::TryParse($brokerBefore, [ref] $before) -and $before -lt [version] '0.36.0') {
-        Write-Warning "This upgraded Parley from $brokerBefore. Stores made before 0.36.0 keep their old shape with no warning: the person seat is not protected and each project is recorded as a machine. Run this again with -Reset to start clean. Nothing in them is kept."
-    }
-}
-
 # ------------------------------------------------------------------ verify ---
 
 Write-Step 'Checking what is actually on PATH'
@@ -946,10 +861,9 @@ $parley = Join-Path $shims 'parley.exe'
 # The check the whole script exists for. An install that silently did nothing leaves the old
 # version here, and every other step reports success.
 #
-# **Asked of each tool that was installed, rather than of `parley`.** It used to ask the broker,
-# which was right while every run installed every tool -- and became wrong the moment a run could
-# replace only a surface: it would compare the version just built against a broker deliberately
-# left alone, and fail a run that did exactly what it was asked.
+# **Asked of each tool that was installed, rather than of `parley`.** A run can replace only a
+# surface, and asking the broker would then compare the version just built against a broker
+# deliberately left alone, and fail a run that did exactly what it was asked.
 $reported = @()
 
 foreach ($tool in $tools) {
@@ -957,9 +871,9 @@ foreach ($tool in $tools) {
 
     $binary = Join-Path $shims ($tool.Command + '.exe')
 
-    # Joined into one string, and a non-zero exit is a failure on its own. A tool that printed no version used to
-    # leave an empty array here, `-notmatch` over an empty array is empty, and empty is false -- so the check passed
-    # on a tool that had said nothing. parley-mcp did exactly that until it answered --version itself.
+    # Joined into one string, and a non-zero exit is a failure on its own: a tool that printed no version leaves an
+    # empty array, `-notmatch` over an empty array is empty, and empty is false -- so the check would pass on a tool
+    # that had said nothing.
     $says = (& $binary --version | Out-String).Trim()
 
     if ($LASTEXITCODE -ne 0 -or $says -notmatch [regex]::Escape($built)) {
@@ -977,11 +891,11 @@ foreach ($says in $reported) {
 
 # ---------------------------------------------------------------- broker ----
 
-# **Skipped entirely when the broker is not being replaced, and this is the half of SC-001 that
-# is easy to miss.** Not stopping the broker earlier is worthless if the script re-registers the
+# **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
+# miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the scheduled task, which restarts the
 # process, which ends every resident agent on the machine along with everything each had
-# learned. The stop would have been avoided and the cost paid anyway, three hundred lines later.
+# learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
 #
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.
@@ -997,19 +911,12 @@ if (-not $replacingBroker) {
 # a project named later started within seconds. A machine that names none yet gets the same entry, waiting for the
 # first -- so this never asks where a store goes. That is a project's to say, and a project is named in `parley terminal`
 # (the terminal), where everything else it needs is said at the same time.
-#
-# This used to ask for a store when nothing was named and register one deployment by explicit paths, and to register
-# that same narrow entry over a working manifest when it was given -Store: a reinstall that stopped serving every
-# project but one. Both went with the parameter.
 $listed = & $parley project list 2>$null
 $listedExit = $LASTEXITCODE
 $manifest = $null
 
 if ($listedExit -eq 0) {
-    # **`root:`, and this read `manifest:` and never matched.** `project list` printed
-    # `projects:`; nothing labelled `manifest:` has existed since 019 replaced the file with a
-    # directory. So the line below never ran, every reinstall skipped saying what it was about to
-    # serve, and the guard that declares this interface passed on a comment in the command's source.
+    # The `root:` line of `project list`: the directory of projects the broker is about to serve.
     $line = $listed | Where-Object { $_ -match '^root:\s+(.+)$' } | Select-Object -Last 1
 
     if ($line -match '^root:\s+(.+)$') { $manifest = $Matches[1].Trim() }
@@ -1026,12 +933,11 @@ if ($manifest) {
     Write-Host "  serving every project in $manifest"
 }
 
-# **Splatted beside the verb rather than replacing it.** A first version built the whole command
-# as an array -- `@('autostart', 'install')` -- which reads fine and takes the words
-# `autostart install` out of this file, and `InstallScriptTests` looks for exactly that string to
-# check the script sets the broker up rather than printing the command for somebody to copy. The
-# guard is right and the spelling was wrong: the verb stays written where a reader and a test can
-# both see it, and only what varies is a variable.
+# **Splatted beside the verb rather than replacing it.** Building the whole command as an array
+# would take the words `autostart install` out of this file, and `InstallScriptTests` looks for
+# exactly that string to check the script sets the broker up rather than printing the command for
+# somebody to copy. The verb stays written where a reader and a test can both see it, and only
+# what varies is a variable.
 $extraArguments = @()
 
 if ($Hidden) { $extraArguments = @('--hidden') }
@@ -1071,10 +977,9 @@ do {
                 break
             }
         }
-        # **`answering`, not `reachable`.** The listing stopped saying `reachable` when FR-023
-        # was built: that one word meant "this process connected to it" and read as "reachable from
-        # the network", which is what a person planning a firewall rule would act on. Two facts now,
-        # and this poll wants the first -- did the broker answer.
+        # `answering`, not `reachable`: "this process connected to it" must not read as "reachable
+        # from the network", which is what a person planning a firewall rule would act on. This poll
+        # wants the first fact -- did the broker answer.
         elseif ($listed -match '(?m)\sanswering$' -and $listed -notmatch 'not answering') {
             $answering = $true
             $named = $true
@@ -1097,15 +1002,11 @@ Write-Host ''
 Write-Host 'The broker is running, and starts again when you log in.' -ForegroundColor Green
 Write-Host ''
 
-# **What to do next is the terminal's flow, and it used to be the plugin's.** This ended by sending
-# people to run /parley:setup in each repository, restart the editor there and check `parley
-# registry` -- one repository at a time, from the era before a project could enrol a folder of them.
-# The owner's flow, 2026-09-27: make a project, then enrol agents into it from inside it.
-#
-# **Doing any of it needs the terminal, and on a machine without one there is no way at all.**
-# `parley project add` went on 2026-09-25, and the web UI has never been able to name a project, by
-# the one-writer rule its own naming page records. So a machine without the terminal is told
-# outright rather than handed steps it cannot follow.
+# **What to do next is the terminal's flow:** make a project, then enrol agents into it from
+# inside it. Doing any of it needs the terminal, and on a machine without one there is no way at
+# all: the command line cannot name a project and the web UI cannot either, by the one-writer rule
+# its own naming page records. So a machine without the terminal is told outright rather than
+# handed steps it cannot follow.
 if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
     Write-Host 'Next, run:  parley' -ForegroundColor White
 

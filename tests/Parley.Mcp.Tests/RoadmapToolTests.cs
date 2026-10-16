@@ -10,7 +10,7 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// The description is what a model reads on every call, so the template lives there and is held to it: factual, point
-/// oriented and short, and clear that this only proposes. It is guidance and not a limit — the owner's call of 2026-10-06 —
+/// oriented and short, and clear that this only proposes. It is guidance and not a limit,
 /// so nothing here asserts a length bound, and a test that did would be the quiet reversal of that decision.
 /// </remarks>
 public sealed class RoadmapToolTests

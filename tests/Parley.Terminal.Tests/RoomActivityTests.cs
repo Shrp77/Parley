@@ -153,7 +153,7 @@ public sealed class RoomActivityTests
     {
         // **The owner's screenshot of 2026-10-06**: "stopped <1m � 2 permissi" at the edge. Splitting at the first dash
         // put the status under the name, and the status was itself wider than the column and went off the edge.
-        var stopped = AgentName.Create("timetracker@here");
+        var stopped = AgentName.Create("orderbook@here");
         var room = new RoomRegion { Frame = new System.Drawing.Rectangle(0, 0, 30, 40) };
 
         room.Show(

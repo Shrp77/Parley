@@ -16,7 +16,7 @@ namespace Parley.Client;
 /// The whole of the console's multi-project handling lives here, and it is deliberately entirely
 /// client-side. SPEC.md §4.1 says the protocol has no concept of a project and must not acquire
 /// one: membership is which endpoint an agent connected to, so the mapping from a name to an
-/// endpoint is a fact about this machine's manifest and about nothing else. No request this class
+/// endpoint is a fact about this machine's projects and about nothing else. No request this class
 /// sends carries a project identifier, and none may ever be added.
 /// </para>
 /// <para>
@@ -26,23 +26,14 @@ namespace Parley.Client;
 /// whether it is up now.
 /// </para>
 /// <para>
-/// <b>The project list is not held either, and that reverses what this class did before.</b> It
-/// read the manifest once, in the factory, and a singleton behind a web server then served that
-/// answer for the life of the process. That was defensible while <c>parley console</c> was
-/// something an operator started, looked at, and stopped — a startup read and a live one are the
-/// same read when the process lasts a minute. It stopped being defensible when the console moved
-/// inside the broker and <c>autostart install</c> turned it on by default: the process now lasts
-/// weeks, and the manifest is precisely the file that changes underneath it. The naming page
-/// sends a person away to run <c>parley project add</c> and promises the new name will be on the
-/// list when they come back; with a cached read that promise was false, and the only way to
-/// collect on it was to restart the broker — which drops every agent attached to the deployment,
-/// to pick up a rename the protocol never sees.
+/// <b>The project list is not held either.</b> The process lasts weeks and the projects change
+/// underneath it: a person names one and expects it on the list when they come back, and the only
+/// alternative to re-reading is restarting the broker, which drops every attached agent.
 /// </para>
 /// <para>
-/// So the manifest is re-read, and the read is skipped when the file's stamp is unchanged. The
-/// cheap thing here is the file — a few hundred bytes of local JSON, against the gRPC round trips
-/// every page already makes — and the expensive thing is the channel, which is why the channels
-/// stay cached and the projects do not.
+/// So the projects are re-read, and the read is skipped when the stamp is unchanged. The cheap thing
+/// here is the small local JSON, against the gRPC round trips every page already makes, and the
+/// expensive thing is the channel, which is why the channels stay cached and the projects do not.
 /// </para>
 /// </remarks>
 public sealed class BrokerDirectory : IDisposable
@@ -57,15 +48,14 @@ public sealed class BrokerDirectory : IDisposable
     private volatile bool _disposed;
 
     /// <summary>Builds a directory over a fixed set of projects, which no file can change.</summary>
-    /// <param name="projects">The projects, in the order the manifest listed them.</param>
+    /// <param name="projects">The projects, in the order given.</param>
     /// <param name="connect">Opens a channel to an endpoint. Injected so tests need no sockets.</param>
-    /// <param name="manifestProblem">Why the manifest could not be read, when it could not.</param>
+    /// <param name="manifestProblem">Why the projects could not be read, when they could not.</param>
     /// <exception cref="ArgumentNullException">Either required argument is <see langword="null"/>.</exception>
     /// <remarks>
     /// The list given here is the answer for the life of the object: there is no path to re-read,
-    /// so nothing is watched. That is what a test wants, and it is also the honest shape — a
-    /// caller who supplied the projects owns them, and a directory that quietly replaced them
-    /// with whatever was in this machine's manifest would be answering a question nobody asked.
+    /// so nothing is watched. A caller who supplied the projects owns them, and a directory that
+    /// quietly replaced them with whatever this machine holds would be answering a question nobody asked.
     /// <see cref="FromManifest"/> is the constructor that follows a file.
     /// </remarks>
     public BrokerDirectory(
@@ -82,8 +72,8 @@ public sealed class BrokerDirectory : IDisposable
         _snapshot = new Snapshot(projects, manifestProblem, string.Empty);
     }
 
-    /// <summary>Builds a directory that follows this machine's manifest.</summary>
-    /// <param name="manifestPath">The manifest to read, now and whenever it changes.</param>
+    /// <summary>Builds a directory that follows this machine's projects.</summary>
+    /// <param name="manifestPath">The root to read, now and whenever it changes.</param>
     /// <param name="fallback">A broker to offer when the manifest names no projects.</param>
     /// <param name="connect">Opens a channel to an endpoint.</param>
     private BrokerDirectory(
@@ -97,30 +87,28 @@ public sealed class BrokerDirectory : IDisposable
         _snapshot = ReadManifest(manifestPath, fallback, StampOf(manifestPath));
     }
 
-    /// <summary>The manifest this directory follows, when it follows one.</summary>
+    /// <summary>The root this directory follows, when it follows one.</summary>
     /// <remarks>
-    /// Null for a directory built from an explicit list, which is the shape tests use and the
-    /// shape a caller who owns the projects gets. Exposed because a surface that offers to name a
-    /// new project has to write into the same file this one is reading, and deriving the path a
-    /// second time is how two readers come to disagree about which file they mean -- the defect
-    /// the manifest itself exists to prevent.
+    /// Null for a directory built from an explicit list. Exposed because a surface that offers to
+    /// name a new project has to write into the same root this one is reading, and deriving the path
+    /// a second time is how two readers come to disagree about which one they mean.
     /// </remarks>
     public string? ManifestPath => _manifestPath;
 
-    /// <summary>The projects named in this machine's manifest, as it stands now.</summary>
+    /// <summary>The projects on this machine, as they stand now.</summary>
     public IReadOnlyList<ProjectSettings> Projects => Current.Projects;
 
     /// <summary>
-    /// Why the manifest could not be read, or <see langword="null"/> when it was read.
+    /// Why the projects could not be read, or <see langword="null"/> when they were read.
     /// </summary>
     /// <remarks>
-    /// A machine with no manifest is an ordinary machine, not a broken one, and reports no
-    /// problem with an empty project list. This is only set when a manifest exists and is
-    /// unusable, which the reader must be told rather than shown as "no projects".
+    /// A machine with no projects is an ordinary machine, not a broken one, and reports no problem
+    /// with an empty list. This is only set when something exists and is unusable, which the reader
+    /// must be told rather than shown as "no projects".
     /// </remarks>
     public string? ManifestProblem => Current.Problem;
 
-    /// <summary>The manifest as it stands, re-read only when the file has moved on.</summary>
+    /// <summary>The projects as they stand, re-read only when the stamp has moved on.</summary>
     /// <remarks>
     /// <para>
     /// <b>The stamp is taken before the read, not after, and the order is the whole correctness
@@ -159,14 +147,14 @@ public sealed class BrokerDirectory : IDisposable
 
             // A read that left something out is kept without its stamp, so the next look reads again: a project.json caught
             // mid-replace is unreadable for a moment, and keeping the stamp would show it missing until something else
-            // changed (the combined review gate).
+            // changed.
             _snapshot = fresh.Problem is null ? fresh : fresh with { Stamp = string.Empty };
 
             return fresh;
         }
     }
 
-    /// <summary>Reads this machine's manifest and builds a directory from it.</summary>
+    /// <summary>Reads this machine's projects and builds a directory from them.</summary>
     /// <param name="explicitPath">A path given on the command line, if one was.</param>
     /// <param name="fallbackEndpoint">
     /// A broker to offer when the manifest names no projects, or null to offer none.
@@ -174,8 +162,8 @@ public sealed class BrokerDirectory : IDisposable
     /// <returns>The directory, whether or not the manifest was readable.</returns>
     /// <remarks>
     /// <para>
-    /// A manifest is how a machine names its deployments, and SPEC.md §4.1 is explicit that
-    /// running without one — configured entirely by explicit paths — is supported. Every other
+    /// A machine names its deployments as projects, and SPEC.md §4.1 is explicit that a machine
+    /// with none, reaching a broker by address, is supported. Every other
     /// operator command works on such a machine, because each takes <c>--broker</c> or reads
     /// <c>PARLEY_BROKER</c> and falls back to the local one. A console that showed an empty page
     /// there would be the only client unable to reach a broker the rest of the tool talks to
@@ -226,33 +214,20 @@ public sealed class BrokerDirectory : IDisposable
         return new Snapshot(projects, problem, stamp);
     }
 
-    /// <summary>Reads the manifest's stamp without opening it.</summary>
-    /// <param name="path">The file to look at.</param>
-    /// <returns>Its stamp, or the default when it is absent or cannot be looked at.</returns>
+    /// <summary>Reads the projects' stamp without opening them.</summary>
+    /// <param name="path">The machine's root.</param>
+    /// <returns>Its stamp, or empty when the root is absent or cannot be looked at.</returns>
     /// <remarks>
-    /// <para>
-    /// Length as well as write time, because the two together are what a filesystem cheaply
-    /// offers and either alone is weaker. A stat that throws reports the default — the same as
-    /// absent — which is the safe direction: a directory built from a file that was present then
-    /// holds a stamp that this cannot equal, so the mismatch sends it to
-    /// <see cref="ReadManifest"/>, where a real failure becomes a problem the operator is shown
-    /// rather than a silence.
-    /// </para>
-    /// <para>
-    /// <b>The accepted limit.</b> Windows updates a file's write time on the system timer tick,
-    /// not per write, so two edits inside about fifteen milliseconds share a timestamp — and if
-    /// they also share a length, this reports no change and the second is missed until something
-    /// else touches the file. Reaching that needs two runs of <c>parley project</c> inside one
-    /// tick, each its own process launch, producing manifests of identical size. It is written
-    /// down rather than closed because closing it means hashing the contents, which is the read
-    /// this exists to avoid.
-    /// </para>
+    /// An unreadable root stamps as empty, the safe direction: a directory that held projects a moment
+    /// ago holds a stamp this cannot equal, so the mismatch sends it to <see cref="ReadManifest"/>,
+    /// where a real failure becomes a problem the operator is shown rather than a silence. The accepted
+    /// limit on timestamp resolution is described at <see cref="ProjectFolder.StampOf"/>.
     /// </remarks>
     private static string StampOf(string path) => ProjectFolder.StampOf(path);
 
-    /// <summary>What one read of the manifest found, and the file it found it in.</summary>
-    /// <param name="Projects">The projects, in the order the manifest listed them.</param>
-    /// <param name="Problem">Why the manifest could not be read, when it could not.</param>
+    /// <summary>What one read of the projects found.</summary>
+    /// <param name="Projects">The projects, in name order.</param>
+    /// <param name="Problem">Why the projects could not be read, when they could not.</param>
     /// <param name="Stamp">What the projects looked like when this was read.</param>
     private sealed record Snapshot(
         IReadOnlyList<ProjectSettings> Projects, string? Problem, string Stamp);
@@ -261,8 +236,8 @@ public sealed class BrokerDirectory : IDisposable
         new(ProjectName.Create("this-machine"),
             string.Empty,
             endpoint,
-            "Not named in a manifest. This is the broker this machine's commands talk to; "
-            + "naming a project in `parley` gives it a name.");
+            "A broker reached by address. This machine has no project of its own, so it is shown here as "
+            + "one project.");
 
     /// <summary>Opens a channel with the console's own connect policy.</summary>
     /// <param name="endpoint">Where that project's broker listens.</param>
@@ -270,8 +245,8 @@ public sealed class BrokerDirectory : IDisposable
     /// <remarks>
     /// The two-second connect timeout matches <c>Parley.Mcp</c>'s and exists for the same reason:
     /// a broker that is down is down, waiting longer does not find it, and the default ten seconds
-    /// sits in front of a page the operator is waiting on. It also keeps SC-004 — an unreachable
-    /// project reported within five seconds — reachable by arithmetic rather than by hope.
+    /// sits in front of a page the operator is waiting on. It also keeps an unreachable
+    /// project reported within five seconds reachable by arithmetic rather than by hope.
     /// </remarks>
     public static GrpcChannel Connect(string endpoint) =>
         GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
@@ -337,16 +312,12 @@ public sealed class BrokerDirectory : IDisposable
     /// <exception cref="ObjectDisposedException">The directory has been disposed.</exception>
     /// <remarks>
     /// <para>
-    /// This existing at all reverses what was written here before it, so the argument that was
-    /// replaced is worth stating: an <c>Agents</c> client in the console put an agent's
-    /// operations one mistake from a web route, and the console had no business holding one
-    /// because an operator is not an agent.
+    /// An <c>Agents</c> client in the console puts an agent's operations one mistake from a web
+    /// route, and an operator is not an agent, so it is narrow.
     /// </para>
     /// <para>
-    /// The second half of that is still true and is why the reversal is narrow. An operator still
-    /// has no agent identity. What has one is a <em>person</em>, who SPEC.md §11.2 always admitted
-    /// as a responder and §11.3 always gave a name — and who had no way to hold that identity
-    /// between turns while sitting at a browser. So this is bound for a seat and by
+    /// An operator has no agent identity. What has one is a <em>person</em>, whom SPEC.md §11.2
+    /// admits as a responder and §11.3 gives a name. So this is bound for a seat and by
     /// <see cref="Seating.SeatBook"/> alone, which is the only thing in the console that knows a
     /// person's name and the only thing that checks it against the registry before using it.
     /// </para>
@@ -375,7 +346,7 @@ public sealed class BrokerDirectory : IDisposable
     /// <returns>What came back, or why nothing did.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="read"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// The containment of FR-004 in one place. A broker that is not answering makes its own
+    /// The containment of one broker's failure, in one place. A broker that is not answering makes its own
     /// project unreadable and must leave every other project alone — so every page reads each
     /// project through this, and a page that awaited a bare call would reintroduce the coupling
     /// by omission.
@@ -444,11 +415,9 @@ public sealed class BrokerDirectory : IDisposable
 /// <summary>The broker to offer when a machine has named no projects.</summary>
 /// <param name="Endpoint">Where that broker listens.</param>
 /// <remarks>
-/// A type of its own rather than a second string beside the manifest path, because two adjacent
-/// nullable strings is a call site somebody gets the wrong way round — and the mistake is silent
-/// in the worst way: an address read as a manifest path is simply a path that does not exist,
-/// which is an ordinary machine with nothing configured, so the page shows an empty list and no
-/// error. A test caught exactly that, and a compiler error is a better answer than a test.
+/// A type of its own rather than a second string beside the root path, because two adjacent
+/// nullable strings is a call site somebody gets the wrong way round, and an address read as a
+/// path is simply one that does not exist, so the page would show an empty list and no error.
 /// </remarks>
 public sealed record FallbackBroker(string Endpoint);
 

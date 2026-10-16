@@ -67,8 +67,7 @@ else if (Model.FolderMode)
             </tbody>
         </table>
 
-        <p>Enrolling writes into each repository you tick, and catalogues it so that a peer's request can start it with nobody watching, which spends whatever that agent costs to run. Each is then started once so that it registers itself, so expect one process for each.</p>
-        <p>The files are written to each repository, and the machine's catalogue, <code>@Model.Catalogue</code>, gains a line for each.</p>
+        <p>Enrolling writes into each repository you tick and adds a line for it to <code>@Model.Catalogue</code>, so a peer's request can start it with nobody watching. That spends what the agent costs to run. Each is started once to register, so expect one process each.</p>
         <button type="submit">Enrol the ticked repositories</button>
         <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
     </form>
@@ -85,11 +84,11 @@ else
 
         <dl class="facts">
             <dt>Launch</dt>
-            <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — a parley server naming this repository as <code>@Model.Role</code> in @Model.Project.</dd>
+            <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — launches this repository as <code>@Model.Role</code> in @Model.Project.</dd>
             <dt>Instructions</dt>
-            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none, telling the agent how to use Parley.</dd>
+            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</dd>
             <dt>Catalogue</dt>
-            <dd>@Model.Catalogue — a line saying this machine may start it when a question arrives for it.</dd>
+            <dd>@Model.Catalogue — lets this machine start it when a question arrives.</dd>
         </dl>
 
         @if (!string.IsNullOrWhiteSpace(Model.Owns))
@@ -97,7 +96,7 @@ else
             <p>It will be recorded as owning: @Model.Owns</p>
         }
 
-        <p>Then it is started once, so that it registers itself and can be started again later. That runs the repository's own server on this machine, and may take up to a minute.</p>
+        <p>It is then started once to register. That runs the repository's own server on this machine and may take up to a minute.</p>
 
         <button type="submit">Write them and start it</button>
         <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>

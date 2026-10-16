@@ -225,6 +225,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// The node that started it, which names the launch to the broker first and gives it the token — the way every agent
     /// a node runs attaches. Without one it is an agent somebody opened outside Parley, which no node gives a turn.
     /// </param>
+    /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -234,7 +235,8 @@ internal sealed class AttachedClient : IAsyncDisposable
         string? owns = null,
         string adapter = "test",
         string? launchToken = null,
-        JoinedNodeClient? startedBy = null)
+        JoinedNodeClient? startedBy = null,
+        string? identity = null)
     {
         if (startedBy is not null)
         {
@@ -258,7 +260,7 @@ internal sealed class AttachedClient : IAsyncDisposable
                 // **The only way a line reaches the registry** (§12.3): an adapter says what its
                 // launch environment carries, and no operator operation writes it. A test that needs
                 // an agent whose peers already read a line has to attach as one, which is also the
-                // honest shape -- there is no other route, and 020's whole point is that there is not.
+                // honest shape -- there is no other route.
                 Owns = owns ?? string.Empty,
 
                 // Announced, because the broker checks it. Taken from the constant rather than
@@ -267,7 +269,10 @@ internal sealed class AttachedClient : IAsyncDisposable
                 ProtocolVersion = Parley.Core.ProtocolVersion.Current,
 
                 // What a node put in the process's environment, when a node started it (SPEC.md §11.7).
-                LaunchToken = launchToken ?? string.Empty
+                LaunchToken = launchToken ?? string.Empty,
+
+                // Reported as a label, never as authority (§4.1.1).
+                Identity = identity ?? string.Empty
             },
             cancellationToken: cancellationToken);
 
@@ -429,6 +434,7 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <param name="cancellationToken">Cancels the join.</param>
     /// <param name="facts">What the node observed about itself.</param>
     /// <param name="reportsTurns">Whether this node says it reports the turns it gives (SPEC.md §11.6).</param>
+    /// <param name="identities">The identifiers of the checkouts it can launch, which let it be asked for one by what it is.</param>
     /// <returns>The joined node.</returns>
     public static async Task<JoinedNodeClient> JoinAsync(
         LoopbackBroker broker,
@@ -436,7 +442,8 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         IEnumerable<string> startable,
         CancellationToken cancellationToken = default,
         Wire.NodeFacts? facts = null,
-        bool reportsTurns = false)
+        bool reportsTurns = false,
+        IEnumerable<string>? identities = null)
     {
         var nodes = broker.ConnectAsNode();
 
@@ -448,6 +455,7 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
         };
 
         request.StartableRoles.AddRange(startable);
+        request.StartableIdentities.AddRange(identities ?? []);
 
         var stream = nodes.Join(request, cancellationToken: cancellationToken);
 

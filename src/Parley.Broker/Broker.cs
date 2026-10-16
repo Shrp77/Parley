@@ -995,8 +995,7 @@ public sealed class Broker
             }
 
             // Only to the agent that sent the Request. A person closing a conversation writes a closed Result to the
-            // receiver as well, and attaching the Request there showed the requester's words to the receiver under
-            // "your request, as you sent it": a peer's text framed as the agent's own (§13).
+            // receiver as well, and attaching the Request there would frame a peer's text as the agent's own (§13).
             var request = message.Type == MessageType.Result
                           && await _messages.GetRequestAsync(message.ExchangeId, cancellationToken: cancellationToken)
                               .ConfigureAwait(false) is { } asked
@@ -1019,6 +1018,16 @@ public sealed class Broker
                 leftOut = total - questions.Count;
             }
 
+            // **And what the person has said since the agent asked back** (SPEC.md §5.6). A Request handed back to the
+            // agent is only the person's first words; the answer to its question went in another exchange, which a model
+            // whose context has moved on no longer sees. Each is wrapped like any participant's words (§13).
+            IReadOnlyList<AnswerSince>? since = null;
+
+            if (message.Type == MessageType.Request && PersonSeat.Is(message.From) && message.ConversationId is { Length: > 0 } talk)
+            {
+                since = await SinceAsync(agent, message, talk, cancellationToken).ConfigureAwait(false);
+            }
+
             delivered.Add(new DeliveredMessage(
                 message,
                 TrustEnvelope.Wrap(
@@ -1029,7 +1038,8 @@ public sealed class Broker
                     message.ConversationId,
                     request),
                 settleable,
-                leftOut));
+                leftOut,
+                since));
         }
 
         var polls = await _conversations.GetOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false);
@@ -1046,6 +1056,43 @@ public sealed class Broker
             .ConfigureAwait(false);
 
         return new Inbox(delivered, polls, notices, proposals);
+    }
+
+    /// <summary>What the person said to an agent after it last spoke on the exchange a Request opened.</summary>
+    /// <param name="agent">The agent the Request is delivered to.</param>
+    /// <param name="request">The person's Request being delivered.</param>
+    /// <param name="conversation">Its conversation.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The latest <see cref="Settling.MostSince"/>, oldest first, or null when the agent never asked back on it.</returns>
+    private async Task<IReadOnlyList<AnswerSince>?> SinceAsync(
+        AgentName agent, Message request, string conversation, CancellationToken cancellationToken)
+    {
+        var talk = await _messages.GetConversationAsync(conversation, cancellationToken).ConfigureAwait(false);
+
+        var asked = talk.Where(m => m.ExchangeId == request.ExchangeId && m.Type == MessageType.Clarify && m.From == agent)
+            .Select(m => m.Id)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        if (asked == 0)
+        {
+            return null;
+        }
+
+        var later = talk
+            .Where(m => m.Id > asked
+                        && m.ExchangeId != request.ExchangeId
+                        && m.Type == MessageType.Request
+                        && m.From == request.From
+                        && m.To == agent)
+            .TakeLast(Settling.MostSince)
+            .Select(m => new AnswerSince(
+                m.ExchangeId,
+                m.CreatedUtc,
+                TrustEnvelope.Wrap(m.From, m.ResponderModel, m.PayloadJson, TrustEnvelope.NewToken(), m.ConversationId)))
+            .ToList();
+
+        return later;
     }
 
     private async Task RecordCollectionAsync(long exchangeId, DateTimeOffset nowUtc, CancellationToken cancellationToken)

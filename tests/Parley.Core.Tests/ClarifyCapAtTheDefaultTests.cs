@@ -10,8 +10,8 @@ namespace Parley.Core.Tests;
 /// <para>
 /// <b>The default is no cap, and it was 200.</b> SPEC.md principle 2.8 says nothing cuts a line of
 /// work off before its participants are finished, and clarification is how two of them converge,
-/// so the owner took the cap off by default the way the pair cap was. These check that the default
-/// really admits more than any number a cap used to be, and that a deployment which sets a cap
+/// so no cap is set by default, as with the pair cap. These check that the default
+/// really admits more than any number a cap could be, and that a deployment which sets a cap
 /// still has it held.
 /// </para>
 /// <para>

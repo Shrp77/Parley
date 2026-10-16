@@ -7,7 +7,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's call on 2026-09-24: the terminal is the only surface where these can sensibly be
+/// The terminal is the only surface where these can sensibly be
 /// offered, so it is where they live. The command line keeps what brings a machine up and what a
 /// program calls.
 /// </para>
@@ -77,7 +77,7 @@ public sealed class MovedToTheTerminalTests
     [Fact]
     public void The_commands_a_script_calls_are_not_among_them()
     {
-        // **FR-050, as a guard rather than a promise.** This repository's own installers call
+        // **A guard rather than a promise.** This repository's own installers call
         // `open` and `registry`, and the plugin's hook calls `waiting` — so those three going the
         // same way as the sixteen would break the tooling that installs Parley, which is the one
         // failure nobody would see until they reinstalled.
@@ -86,7 +86,7 @@ public sealed class MovedToTheTerminalTests
             var (code, error) = ToolProcess.Run([], kept);
 
             Assert.True(
-                code != 64 || !error.Contains("is not a command here any more", StringComparison.Ordinal),
+                code != 64 || !error.Contains("is not a command here.", StringComparison.Ordinal),
                 $"'{kept}' was removed, and this repository's own scripts call it");
         }
     }

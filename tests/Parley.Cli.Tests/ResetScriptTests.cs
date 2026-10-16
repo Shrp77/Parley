@@ -3,29 +3,28 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That `reset.sh` exists and does what `reset.ps1` does (T080).
+/// That `reset.sh` exists and does what `reset.ps1` does.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Owed since the migration was cut.</b> `reset.ps1` clears a developer's pre-019 layout and
-/// says in its own summary that it is Windows only, that this is "a gap rather than a decision
-/// about the design", and that it is the specification for the counterpart. CI runs on Windows,
-/// Linux and macOS and `install.sh` covers all three, so until now a developer setting Parley up on
-/// Linux had no way to clear the old layout but by hand.
+/// <b>Both platforms need a reset.</b> `reset.ps1` clears a developer's old layout and is the
+/// specification for its counterpart. CI runs on Windows, Linux and macOS and `install.sh` covers all
+/// three, so a developer setting Parley up on Linux needs a way to clear the old layout that is not
+/// by hand.
 /// </para>
 /// <para>
 /// <b>Checked as agreement between the two rather than by rerunning either.</b> What a reset must
 /// do is the same on both platforms — stop the broker and every tool beside it, read the old
-/// manifest before deleting it, take each store with its companions, keep the three files 019
-/// introduced unless told otherwise, and clear the launch entries that live outside the root. A
+/// manifest before deleting it, take each store with its companions, keep the three files of the
+/// current layout unless told otherwise, and clear the launch entries that live outside the root. A
 /// script that silently dropped one of those on one platform is the failure worth catching, and it
 /// is invisible from the platform the author happens to be on.
 /// </para>
 /// <para>
-/// <b>Neither is run here.</b> `reset.sh` was exercised against built layouts in a Linux container
+/// <b>Neither is run here.</b> `reset.sh` is exercised against built layouts in a Linux container
 /// — an old manifest with two stores and their companions, an out-of-root catalogue, three
-/// repositories including one whose `.mcp.json` is not JSON — and those runs are what establish it
-/// works. This is the guard that keeps it in step afterwards.
+/// repositories including one whose `.mcp.json` is not JSON. This is the guard that keeps the two
+/// in step.
 /// </para>
 /// </remarks>
 public sealed class ResetScriptTests
@@ -35,8 +34,8 @@ public sealed class ResetScriptTests
     [Fact]
     public void The_counterpart_exists()
     {
-        // The whole of T080, and the cheapest thing to get wrong: `reset.ps1` names the gap in its
-        // own summary, so a check that only read that summary would pass for ever.
+        // The cheapest thing to get wrong: `reset.ps1` could name the gap in its own summary, so a
+        // check that only read that summary would pass for ever.
         Assert.NotEmpty(RepositoryFile.Read("reset.sh"));
     }
 
@@ -45,8 +44,8 @@ public sealed class ResetScriptTests
     public void Each_keeps_what_019_introduced_unless_told_otherwise(string script)
     {
         // The three that survive an ordinary reset. `node.json` especially: it is this machine's
-        // catalogue of which checkouts may be started, keyed by identity since 018 and untouched by
-        // 019, and deleting it means re-enrolling every repository by hand.
+        // catalogue of which checkouts may be started, keyed by identity, and deleting it means
+        // re-enrolling every repository by hand.
         var text = RepositoryFile.Read(script);
 
         foreach (var kept in new[] { "node.json", "ports.json" })

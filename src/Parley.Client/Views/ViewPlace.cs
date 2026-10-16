@@ -20,9 +20,8 @@ public enum Viewing
 
     /// <summary>One project's settings, each with what it means.</summary>
     /// <remarks>
-    /// A level under the project rather than beside it, because every setting on it is the project's. Added
-    /// for Auto Accept, which had been a bare entry on the Project menu: a switch named with no subject,
-    /// read by the owner as "Auto-Accept what??". A setting needs somewhere that says what it is.
+    /// A level under the project rather than beside it, because every setting on it is the project's. A
+    /// setting such as Auto Accept needs somewhere that says what it is.
     /// </remarks>
     Configuration = 3,
 }
@@ -32,15 +31,11 @@ public enum Viewing
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Three views, one thing each, and a defined way back.</b> This replaces 004 and 005's four
-/// regions with Tab between them, which the owner used and found "confusing and too busy" — a
-/// verdict on the arrangement rather than on anything underneath it.
+/// <b>Three views, one thing each, and a defined way back.</b>
 /// </para>
 /// <para>
-/// <b>Derived once because both surfaces need the same answer to "what does back mean".</b> The
-/// console and the terminal implemented seating and transcripts separately in 004 and disagreed
-/// about who was in a conversation twice in one week; navigation is the same kind of thing, and
-/// the second surface to implement it would have got the empty cases subtly different.
+/// <b>Derived once because both surfaces need the same answer to "what does back mean".</b> A second
+/// implementation would get the empty cases subtly different.
 /// </para>
 /// <para>
 /// <b>Going back keeps the place, not just the level.</b> Coming out of a project lands on that

@@ -10,10 +10,9 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// Every client command refuses to choose between several configured projects when none is named, and that stays: acting
-/// on a deployment nobody asked for produces output that looks entirely normal. What it also refused was
-/// <c>--broker</c> and <c>PARLEY_BROKER</c>, which say exactly where to connect — so any caller connecting by address,
+/// on a deployment nobody asked for produces output that looks entirely normal. It must not also refuse
+/// <c>--broker</c> and <c>PARLEY_BROKER</c>, which say exactly where to connect — or any caller connecting by address,
 /// among them the waiting hook reading a launch configuration, could ask nothing on the machines with the most in flight.
-/// Found by the sweep over project-scoped callers.
 /// </para>
 /// <para>
 /// Nothing listens at the address, so a command that got past selection says no broker is listening (69) and one that

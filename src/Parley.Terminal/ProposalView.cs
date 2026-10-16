@@ -27,10 +27,8 @@ internal enum ProposalChoice
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A view of its own rather than a menu with the roadmap in its description</b> (the owner's report of 2026-10-08).
-/// The roadmap was the description of a list of choices: it did not scroll, the choices were squeezed under it, and
-/// nothing said the arrow keys moved between them. The roadmap is the thing being decided, so it has the room, and it
-/// scrolls.
+/// <b>A view of its own rather than a menu with the roadmap in its description.</b> The roadmap is the thing
+/// being decided, so it has the room, and it scrolls.
 /// </para>
 /// <para>
 /// <b>Three places, each doing one job.</b> The roadmap is on the left, an item at a time with the agent it is meant for
@@ -46,21 +44,20 @@ internal enum ProposalChoice
 internal sealed class ProposalView : Dialog
 {
     /// <summary>The label of the button that confirms as proposed.</summary>
-    internal const string ConfirmLabel = "Confirm (c)";
+    internal const string ConfirmLabel = "Confirm Alt+c";
 
     /// <summary>The label of the button that edits first.</summary>
-    internal const string EditLabel = "Edit (e)";
+    internal const string EditLabel = "Edit Alt+e";
 
     /// <summary>The label of the button that declines.</summary>
-    internal const string DeclineLabel = "Decline (d)";
+    internal const string DeclineLabel = "Decline Alt+d";
 
     /// <summary>The label of the button that leaves it.</summary>
-    internal const string LeaveLabel = "Leave (Esc)";
+    internal const string LeaveLabel = "Leave Esc";
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
-        "Up and Down scroll the roadmap. Tab moves between the roadmap, who it names and the buttons; the key on a button "
-        + "chooses it. Edit lets you change it before you confirm. Nothing is a roadmap until you confirm it, and it "
+        "Up and Down scroll the roadmap. Nothing is a roadmap until you confirm it, and it "
         + "assigns nobody: work still goes to an agent as a request from you.";
 
     /// <summary>How wide the column of agents is.</summary>
@@ -94,11 +91,9 @@ internal sealed class ProposalView : Dialog
 
         heading.TextFormatter.WordWrap = true;
 
-        // **Headings above the paragraphs, and no borders on them.** The paragraphs had bordered frames with titles, which
-        // draw through the toolkit's line canvas; the owner's terminal threw a NullReferenceException out of it on the first
-        // real draw of the roadmaps view, and the driven suite failed intermittently inside the same machinery. A dialog
-        // is opened from the queue's thread while the loop draws, and a canvas of merged border lines is what that race
-        // corrupts. The dialogs that have always worked here have one border, their own.
+        // **Headings above the paragraphs, and no borders on them.** Bordered frames draw through the toolkit's line
+        // canvas, which a dialog opened from the queue's thread while the loop draws can corrupt. The dialogs here
+        // have one border, their own.
         var itemsHeading = new Plain { Text = "The roadmap", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(AgentsWidth + 3), Height = 1 };
 
         // The roadmap takes everything the heading, the hint and the buttons leave.
@@ -172,16 +167,16 @@ internal sealed class ProposalView : Dialog
     /// <param name="key">What arrived.</param>
     /// <returns>Whether it was a choice.</returns>
     /// <remarks>
-    /// Plain letters, because there is nothing here to type into: the roadmap is read-only, so a letter is never text.
-    /// Esc leaves, as it does everywhere on this surface. The paragraphs offer their keys here first, since a focused view
-    /// is offered a key before the dialog around it.
+    /// Alt plus the letter, like every action on this surface, so a plain character is never an action even though
+    /// nothing here is typed into. Esc leaves, as it does everywhere on this surface. The paragraphs offer their keys
+    /// here first, since a focused view is offered a key before the dialog around it.
     /// </remarks>
     private bool Choose(Key key)
     {
         var chosen = key == Key.Esc ? ProposalChoice.Leave
-            : key == Key.C ? ProposalChoice.Confirm
-            : key == Key.E ? ProposalChoice.Edit
-            : key == Key.D ? ProposalChoice.Decline
+            : Shell.Typed(key, 'c') ? ProposalChoice.Confirm
+            : Shell.Typed(key, 'e') ? ProposalChoice.Edit
+            : Shell.Typed(key, 'd') ? ProposalChoice.Decline
             : (ProposalChoice?)null;
 
         if (chosen is not { } choice)
@@ -201,9 +196,8 @@ internal sealed class ProposalView : Dialog
             Title = label,
             Y = Pos.AnchorEnd(2),
 
-            // **No default button.** Enter with the roadmap in front of you used to confirm it: the first button was the default
-            // and the roadmap does not take Enter. A decision that is hard to take back is chosen by its key or by Enter on
-            // its own button, never by a key that was meant for something else.
+            // **No default button.** The roadmap does not take Enter, so a default would confirm on a key meant for
+            // something else. A decision that is hard to take back is chosen by its key or by Enter on its own button.
             IsDefault = false,
         };
 

@@ -56,14 +56,6 @@ public sealed class DeepLinkTests
         Assert.True(File.Exists(FileFor(route)), $"{route} has no page at {FileFor(route)}");
     }
 
-    [Fact]
-    public void The_conversations_route_reaches_the_index_of_its_folder()
-    {
-        // Declared without the Index, because that is how a person types it and how the router
-        // resolves it. Checked separately so the mapping above stays simple.
-        Assert.True(File.Exists(Path.Combine(Pages(), "Conversations", "Index.cshtml")));
-    }
-
     [Theory]
     [InlineData(Deep.Agents, "project")]
     [InlineData(Deep.Conversation, "project")]

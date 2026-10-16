@@ -101,7 +101,7 @@ public sealed class LogTailTests : IDisposable
             "http://127.0.0.1:5301",
             null);
 
-        var found = LogTail.For(project);
+        var found = LogTail.For(project, null);
 
         Assert.NotNull(found);
         Assert.Equal(Path.Combine(_directory, LogTail.FileName), found);
@@ -123,7 +123,7 @@ public sealed class LogTailTests : IDisposable
         var project = new ProjectSettings(
             ProjectName.Create("alpha"), unusable, "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class LogTailTests : IDisposable
         var project = new ProjectSettings(
             ProjectName.Create("alpha"), "   ", "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 
     [Fact]
@@ -141,6 +141,6 @@ public sealed class LogTailTests : IDisposable
         var project = new ProjectSettings(
             ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 }

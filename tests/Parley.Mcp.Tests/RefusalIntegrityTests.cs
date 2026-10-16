@@ -124,7 +124,7 @@ public sealed class RefusalIntegrityTests
     [Fact]
     public async Task Naming_an_agent_that_does_not_exist_as_a_source_is_refused_rather_than_throwing()
     {
-        // It used to arrive as a SqliteException from the trigger that holds sources to the
+        // It must not arrive as a SqliteException from the trigger that holds sources to the
         // registry. An agent that means a real peer and misspells it needs the roster, not SQL.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);

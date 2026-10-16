@@ -7,8 +7,7 @@ namespace Parley.Store.Tests;
 /// That a store which is not the shape this build expects is noticed, which its schema number cannot do.
 /// </summary>
 /// <remarks>
-/// <b>The owner's broker logged one missing table per sweep, seventeen thousand times, while every number said it was
-/// fine.</b> The schema is edited in place before the first release and stays at 1, so a store made by an earlier build
+/// <b>A store with a missing table must not read as fine while every number says it is.</b> The schema is edited in place before the first release and stays at 1, so a store made by an earlier build
 /// reads as current. Each of these fails against comparing the numbers.
 /// </remarks>
 public sealed class StoreShapeTests

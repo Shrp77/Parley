@@ -1,8 +1,7 @@
 @model Parley.Web.Pages.Shared.RoadmapSummaryView
 @using Parley.Client.Roadmaps
 @*
-    What is waiting for a person to decide, and the roadmaps that came of it. Shown on the project's own page and on
-    the roadmaps list, from this one partial. It only reads: every decision is a link to a page that describes what it
+    What is waiting for a person to decide, and the roadmaps that came of it, on the roadmaps list. It only reads: every decision is a link to a page that describes what it
     would do before anything is sent.
 *@
 <section class="waiting-proposals" aria-label="Proposed roadmaps">
@@ -31,7 +30,7 @@
 
     @if (Model.Roadmaps.Count == 0)
     {
-        <p>There is no roadmap in this project yet. An agent proposes one, and it exists once you confirm it.</p>
+        <p>There is no roadmap in this project yet.</p>
     }
     else
     {

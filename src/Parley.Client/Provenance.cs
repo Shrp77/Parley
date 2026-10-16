@@ -3,8 +3,7 @@ using Parley.Core;
 namespace Parley.Client;
 
 /// <summary>
-/// How a surface says where an ownership line came from, and where a question from Parley stands (SPEC.md §10.2,
-/// FR-016, FR-018).
+/// How a surface says where an ownership line came from, and where a question from Parley stands (SPEC.md §10.2).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,7 +12,7 @@ namespace Parley.Client;
 /// same record differently would make one of them wrong about exactly that.
 /// </para>
 /// <para>
-/// <b>A line accepted automatically is marked as nobody having read it</b> (FR-018), in words rather than a colour or a
+/// <b>A line accepted automatically is marked as nobody having read it</b>, in words rather than a colour or a
 /// glyph, so the distinction survives a terminal with no colour and a screen reader alike — the rule every other state
 /// on these surfaces is drawn by.
 /// </para>

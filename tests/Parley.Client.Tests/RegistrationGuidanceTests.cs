@@ -134,7 +134,7 @@ public sealed class RegistrationGuidanceTests
         // warning two thirds of readers never see.
         foreach (var guidance in new[]
         {
-            "README.md",
+            "docs/claude-code.md",
             "plugins/parley/commands/setup.md",
             "src/Parley.Web/Pages/Projects/Register.cshtml"
         })

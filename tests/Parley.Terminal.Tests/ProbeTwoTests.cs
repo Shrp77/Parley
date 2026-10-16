@@ -155,9 +155,7 @@ public sealed class ProbeTwoTests
     // one — otherwise an entry for `orders` here would have answered for `orders@server-b`, and this node
     // would start a process for a repository that is not on it under a name somebody else holds. It is
     // keyed by identity now, and an identity says nothing about machines, so there is nothing here to
-    // check. **The property itself is not gone and is not free**: it moved to the one place that still
-    // compares a name to a machine, and `AgentFleetTests.An_agent_on_another_machine_is_never_started_from_here`
-    // is where it is now held.
+    // check.
 
     [Fact]
     public void The_reader_carries_the_surface_it_had()
@@ -181,6 +179,8 @@ public sealed class ProbeTwoTests
         // by identity (`Identities`), it says nothing about what anything is called, so the names come
         // back out of the repositories (`Workspaces`, `TryResolve`, `Announceable`), and a key that is
         // not an identity is reported rather than swallowed (`Unreadable`).
+        // `StartableIn` is what a node announces beside the names: the identities it can start, so an agent whose
+        // repository was renamed is still found by what it is.
         Assert.Equal(
             [
                 "Announceable",
@@ -190,8 +190,8 @@ public sealed class ProbeTwoTests
                 "Identities",
                 "Machine",
                 "PathVariable",
-                "Read",
                 "ReadFrom",
+                "StartableIn",
                 "ToString",
                 "TryReadFrom",
                 "TryResolve",
@@ -206,7 +206,7 @@ public sealed class ProbeTwoTests
         Assert.Empty(type.GetConstructors(BindingFlags.Public | BindingFlags.Instance));
 
         // And the old home does not re-export it, which would let a stale using compile.
-        var headless = typeof(Parley.Headless.AgentFleet).Assembly;
+        var headless = typeof(Parley.Headless.ResidentAgent).Assembly;
 
         Assert.DoesNotContain(
             headless.GetTypes(),

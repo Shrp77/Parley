@@ -41,16 +41,12 @@ public sealed class InboxTests
     // Join and the inbox is always about the person — `NoJoinOnTheWebTests` asserts the page answers with no name.
 
     [Fact]
-    public void Work_owed_cannot_be_dismissed_and_a_result_can()
+    public void Only_answering_clears_work_owed()
     {
-        // Clearing removes what owes nothing back. A Request that could be cleared would let
-        // somebody tidy the page while the exchange behind it stayed open with nobody working it,
-        // which is the one outcome the inbox exists to prevent.
+        // A Request that could be cleared would let somebody tidy the page while the exchange behind
+        // it stayed open with nobody working it, which is the one outcome the inbox exists to prevent.
         var hold = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatHold.cs"));
 
-        Assert.Contains("RemoveAll(one => !one.Owes)", hold, StringComparison.Ordinal);
-
-        // And the only thing that clears a debt is answering it.
         Assert.Contains("RemoveAll(one => one.Message.ExchangeId == exchangeId)", hold,
             StringComparison.Ordinal);
     }
@@ -73,17 +69,17 @@ public sealed class InboxTests
     }
 
     [Fact]
-    public void The_items_a_result_covers_are_the_ones_the_request_carried()
+    public void A_result_is_offered_for_a_request_as_a_whole_and_for_nothing_else()
     {
-        // The form is built from the Request as stored, and a Result is never offered for anything else.
+        // The form is built from the Request, and a Result is never offered for anything else.
         var request = new Delivered(
             new Message(
                 1, 7, MessageType.Request,
                 AgentName.Create("orders@alpha"), AgentName.Create("arvind@alpha"), "claude-opus-5",
-                """{"intent":"moving tax","items":[{"id":"r1","kind":"work","text":"a"},{"id":"q2","kind":"question","text":"b"}],"done_when":"both are resolved and said so"}""",
+                """{"ask":"moving tax"}""",
                 "c", DateTimeOffset.UnixEpoch, null));
 
-        Assert.Equal(["r1", "q2"], request.Items());
+        Assert.Equal(["request"], request.Items());
         Assert.Contains("item.Items()", Page, StringComparison.Ordinal);
 
         var result = request with { Message = request.Message with { Type = MessageType.Result } };

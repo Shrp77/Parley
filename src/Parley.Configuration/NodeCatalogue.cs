@@ -15,31 +15,17 @@ namespace Parley.Configuration;
 /// stays smaller as the deployment spreads across machines. See SPEC.md §4.
 /// </para>
 /// <para>
-/// It also removes a chicken-and-egg the previous design never escaped. The command used to be
-/// written into the registry by the agent's own server, which meant an agent that had never run
-/// had no record of how to start it — the one case where knowing would have mattered. A file on
-/// the machine has no such problem: it describes agents that are not running, because that is
-/// the only state it is ever read in.
+/// A file on the machine describes agents that are not running, which is the only state it is ever
+/// read in, so an agent that has never run still has a record of how to start it.
 /// </para>
 /// <para>
-/// <b>Listing an agent here is the consent to start it.</b> There is no second flag, and there
-/// was one: recording *how* to start a repository had been read as consent to run it unwatched,
-/// so the two had to be prised apart. When starting is local configuration the question does not
-/// arise — somebody put this file here and named the repositories in it.
+/// <b>Listing an agent here is the consent to start it.</b> There is no second flag: somebody put
+/// this file here and named the repositories in it.
 /// </para>
 /// <para>
-/// <b>It lives in Configuration rather than Headless, and that move fixed a defect.</b> It sat
-/// beside the node because the node reads it, but the terminal reads it too — and
-/// <c>Parley.Headless</c> references <c>Parley.Store</c> for <c>AgentFleet</c>, so the terminal
-/// had a route to a store. No check could catch that: <c>GraphTests</c> walks project references,
-/// and the terminal had no project of its own, living inside the one assembly that owns the store
-/// legitimately.
-/// </para>
-/// <para>
-/// This class never needed to be there. It uses <c>System.Text.Json</c> and <c>Parley.Core</c> and
-/// nothing else in that assembly. Here it is what this project already exists for: a per-machine
-/// file that two programs read and cannot otherwise share a reader for, knowing nothing of
-/// brokers — the same shape as the project manifest beside it.
+/// <b>It lives in Configuration rather than Headless</b> because the node and the terminal both read
+/// it, and the terminal has no business referencing the node's process host. It knows nothing of
+/// brokers.
 /// </para>
 /// </remarks>
 public sealed class NodeCatalogue
@@ -93,46 +79,15 @@ public sealed class NodeCatalogue
     /// method.
     /// </para>
     /// <para>
-    /// <b>The path is a parameter rather than something this class works out, and that is the
-    /// fix rather than a tidying.</b> This replaced a reader that consulted
-    /// <see cref="PathVariable"/> itself, which made the catalogue a setting resolved in two
-    /// places: <c>--node-config</c> was taken centrally and honoured by <c>enroll</c>, while the
-    /// node ignored it and read the variable again. The two disagreed exactly when it mattered —
-    /// under a supervisor, which starts a process with no shell environment — and the failure was
-    /// silent in the worst way, because a missing file reads as a machine that can start nothing
-    /// and joins successfully to say so.
+    /// <b>The path is a parameter rather than something this class works out.</b> A catalogue
+    /// resolved in two places disagrees exactly when it matters — under a supervisor, which starts a
+    /// process with no shell environment — and silently, because a missing file reads as a machine
+    /// that can start nothing.
     /// </para>
     /// </remarks>
     public static NodeCatalogue ReadFrom(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-
-        return ReadFile(path);
-    }
-
-    /// <summary>
-    /// Reads the catalogue for this machine.
-    /// </summary>
-    /// <param name="databasePath">The store, used only to find the file beside it.</param>
-    /// <returns>The catalogue, or <see cref="Empty"/> if there is no file or it cannot be read.</returns>
-    /// <remarks>
-    /// <para>
-    /// A malformed file yields an empty catalogue rather than an exception, and that is the
-    /// safe direction: the failure is "nothing is started automatically", which an operator
-    /// notices, rather than "the supervisor will not run", which takes the whole deployment
-    /// down over one stray comma.
-    /// </para>
-    /// </remarks>
-    public static NodeCatalogue Read(string databasePath)
-    {
-        var path = Environment.GetEnvironmentVariable(PathVariable);
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            var directory = Path.GetDirectoryName(Path.GetFullPath(databasePath));
-
-            path = directory is null ? DefaultFileName : Path.Combine(directory, DefaultFileName);
-        }
 
         return ReadFile(path);
     }
@@ -155,7 +110,7 @@ public sealed class NodeCatalogue
     /// <para>
     /// <b>The distinction exists because the safe direction changes once a node is running.</b>
     /// At startup a malformed file yielding an empty catalogue is right, for the reason
-    /// <see cref="Read"/> records: the failure becomes "nothing starts automatically", which
+    /// <see cref="ReadFrom"/> records: the failure becomes "nothing starts automatically", which
     /// somebody notices, rather than "the supervisor will not run", which takes a deployment down
     /// over a stray comma.
     /// </para>
@@ -199,9 +154,8 @@ public sealed class NodeCatalogue
             foreach (var entry in agents.EnumerateObject())
             {
                 // **The key is an identity, and one that is not is reported rather than dropped.** A
-                // hand-edited catalogue, or one written by a version that keyed by role, would otherwise
-                // read as a machine that can start nothing — and a machine that can start nothing joins
-                // successfully to say so, which is the silence this whole feature exists to remove.
+                // hand-edited catalogue would otherwise read as a machine that can start nothing, and
+                // such a machine joins successfully to say so.
                 if (!AgentIdentity.TryRead(entry.Name, out var identity))
                 {
                     strange.Add(entry.Name);
@@ -213,12 +167,11 @@ public sealed class NodeCatalogue
                     && entry.Value.TryGetProperty("command", out var command)
                     && command.GetString() is { Length: > 0 } text)
                 {
-                    // The workspace is read here rather than taken from the registry, and that
-                    // is the correction the node process forced. The registry's workspace is
-                    // what an agent's adapter reported about itself, which is a description of
-                    // where it ran last -- not an instruction about where to run it. A node that
-                    // started a process in a directory a remote registration named would be
-                    // taking a path from the network, which §13's trust direction refuses.
+                    // The workspace is read here rather than taken from the registry. The registry's
+                    // workspace is what an adapter reported about where it ran last, not an instruction
+                    // about where to run it; a node that started a process in a directory a remote
+                    // registration named would take a path from the network, which §13's trust
+                    // direction refuses.
                     var workspace = entry.Value.TryGetProperty("workspace", out var directory)
                         ? directory.GetString()
                         : null;
@@ -246,11 +199,9 @@ public sealed class NodeCatalogue
     /// <param name="identity">Which agent.</param>
     /// <returns>Its launch command, or <see langword="null"/>.</returns>
     /// <remarks>
-    /// <b>Keyed by identity, where this was keyed by role.</b> A role is what one project calls an agent, and
-    /// a checkout enrolled in two projects answers to a different one in each — so keyed by role, the same
-    /// checkout was startable in the project whose catalogue named it and unstartable in the other. The
-    /// machine half went with it: a catalogue is one machine's file, and an identity says nothing about
-    /// machines, so there is no longer anything to check.
+    /// <b>Keyed by identity, not role.</b> A role is what one project calls an agent, and a checkout
+    /// enrolled in two projects answers to a different one in each. A catalogue is one machine's file,
+    /// and an identity says nothing about machines, so there is nothing more to check.
     /// </remarks>
     public string? CommandFor(AgentIdentity identity) =>
         _agents.TryGetValue(identity, out var entry) ? entry.Command : null;
@@ -276,7 +227,7 @@ public sealed class NodeCatalogue
     /// <returns>One entry per identity, with what its repository declares and why it could not be read.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The names come from the repositories, not from here</b> (018 R3). A catalogue entry says how to
+    /// <b>The names come from the repositories, not from here.</b> A catalogue entry says how to
     /// start a checkout and nothing about projects, so the node asks each workspace what it answers to — and
     /// because that travels in the folder, a moved or renamed checkout needs no repair beyond repointing the
     /// one entry.
@@ -316,13 +267,13 @@ public sealed class NodeCatalogue
     /// <para>
     /// <b>Names resolve to identities and never the other way.</b> A name is a project's word for something
     /// and this file has no projects, so nothing here is keyed by one — the names come from the repositories
-    /// (018 R3) and this is where they are turned back into the thing that can be started.
+    /// and this is where they are turned back into the thing that can be started.
     /// </para>
     /// <para>
-    /// <b>Two claimants is refused rather than resolved</b> (018 R4). It is either a copied repository or an
+    /// <b>Two claimants is refused rather than resolved.</b> It is either a copied repository or an
     /// enrolment mistake, and an agent's name is the one thing Parley makes unforgeable — starting either
-    /// would be guessing at identity, which Principle III exists to prevent. "First one wins" was rejected
-    /// because the winner would depend on the order a dictionary was walked.
+    /// would be guessing at identity, which Principle III exists to prevent. "First one wins" would depend
+    /// on the order a dictionary was walked.
     /// </para>
     /// <para>
     /// A null project accepts a claim from any, which is what a supervisor with no project of its own needs.
@@ -397,6 +348,24 @@ public sealed class NodeCatalogue
             [.. claims.Where(claim => claim.Value > 1).Select(claim => claim.Key).Order(StringComparer.Ordinal)],
             unread);
     }
+
+    /// <summary>The identities of the checkouts that answer in a project, whatever they are called there now.</summary>
+    /// <param name="project">The project, or null for any.</param>
+    /// <returns>One identity per readable workspace with a membership in the project.</returns>
+    /// <remarks>
+    /// What a node announces beside the names, because an identity is what a start is for (SPEC.md §4.1.1): a
+    /// broker holding a name the repository no longer answers to can still ask for the checkout by this.
+    /// </remarks>
+    public IReadOnlyList<AgentIdentity> StartableIn(string? project) =>
+    [
+        .. Workspaces()
+            .Where(workspace => workspace.Problem is null
+                && workspace.Memberships.Any(membership =>
+                    project is null
+                    || membership.Project is null
+                    || string.Equals(membership.Project, project, StringComparison.Ordinal)))
+            .Select(workspace => workspace.Identity)
+    ];
 
     /// <summary>Describes this catalogue, for a supervisor's start-up line.</summary>
     /// <returns>The machine and how many agents it can start.</returns>

@@ -75,8 +75,8 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <param name="id">The message and exchange identifier.</param>
     /// <param name="from">The sender.</param>
     /// <param name="to">The recipient.</param>
-    /// <param name="intent">What the request says, as the sender wrote it.</param>
-    public void Request(long id, string from, string to, string intent)
+    /// <param name="ask">What the request asks, as the sender wrote it.</param>
+    public void Request(long id, string from, string to, string ask)
     {
         lock (_lock)
         {
@@ -88,7 +88,7 @@ public sealed class ScriptedExport : HttpMessageHandler
                 From = from,
                 To = to,
                 ResponderModel = "test",
-                PayloadJson = "{\"intent\":" + System.Text.Json.JsonSerializer.Serialize(intent) + "}",
+                PayloadJson = "{\"ask\":" + System.Text.Json.JsonSerializer.Serialize(ask) + "}",
                 ConversationId = "shared",
                 CreatedUtc = "2026-09-16T10:00:00Z"
             });

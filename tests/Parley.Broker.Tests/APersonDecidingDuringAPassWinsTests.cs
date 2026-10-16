@@ -11,7 +11,7 @@ namespace Parley.Broker.Tests;
 /// That a person deciding an answer while Parley's pass decides it wins, and the pass leaves their decision alone.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lens 1, run 3). A pass reads answers back in one gated unit and accepts each in a
+/// A pass reads answers back in one gated unit and accepts each in a
 /// later one; settling by agent then overwrote a line a person had recorded in between with the agent's words, marked
 /// automatic — or, if they had asked again, settled the new question with no answer and failed at the constraint.
 /// Interleaved by calling the real operations in the order the race produces.

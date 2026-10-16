@@ -19,6 +19,8 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
        conversation and never set here. *@
     <p role="status">@ItemWording.Next(standing)</p>
 
+    <p><a href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
+
     @if (Model.Agents.Count > 0)
     {
         <p>Agents on this roadmap: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
@@ -35,7 +37,7 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         {
             <details class="grid-row@(state.IsNext ? " next" : null)" role="row" open="@(state.IsNext ? "open" : null)">
                 <summary>
-                    <span class="num"><span class="chev" aria-hidden="true">&#9656;</span> @state.Item.Number</span>
+                    <span class="num"><span class="chev icon" aria-hidden="true">chevron_right</span> @state.Item.Number</span>
                     @* The row opens the item, and with it its conversation. *@
                     <span class="name">@(state.IsNext ? "Next: " : "")@state.Item.Text</span>
                     <span class="when">@ItemWording.Standing(state)</span>
@@ -53,7 +55,7 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
                        so that a long roadmap does not open every conversation at once. Pop out takes it to the conversation
                        page, where it is the whole of the screen. *@
                     <div class="item-bar">
-                        <span class="between">@(state.Item.Facts is { ConversationExists: true } ? "Its conversation" : "Not started: the conversation is empty, with the item's text ready")</span>
+                        <span class="between">@(state.Item.Facts is { ConversationExists: true } ? "Its conversation" : "Not started")</span>
                         <a class="button quiet" href="@Model.OpenPath(state)" title="Open this conversation on its own page">Pop out</a>
                     </div>
                     <iframe class="item-frame" title="Conversation for item @state.Item.Number" data-src="@Model.OpenPath(state, embedded: true)"></iframe>
@@ -78,5 +80,5 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         })();
     </script>
 
-    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words in the box and the agents ticked; you press Send.</small></p>
+    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words ready; you press Send.</small></p>
 }

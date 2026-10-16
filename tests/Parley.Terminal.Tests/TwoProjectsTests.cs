@@ -311,7 +311,6 @@ public sealed class TwoProjectsTests : IAsyncDisposable
                 CatalogueFor(project.Name.Value),
                 Path.Combine(Workspace, Adding.Instructions),
                 token,
-                deployment,
                 Root),
             token)));
 

@@ -48,17 +48,16 @@ public enum SharedFileNameProblem
 /// (§9.3); this is the one that can say what was wrong.
 /// </para>
 /// <para>
-/// <b>Only <c>.md</c> and <c>.txt</c>.</b> The owner's rule, because a person may open a placed file with
+/// <b>Only <c>.md</c> and <c>.txt</c>.</b> A person may open a placed file with
 /// the application their system registers for it, and for most other extensions that application runs
 /// code. Code travels as text: <c>PriceSnapshot.cs.txt</c>. Only the name is checked; the bytes never are.
 /// </para>
 /// <para>
 /// <b>Only letters A to Z, digits, <c>.</c>, <c>_</c> and <c>-</c>, and a placement is renamed rather than
-/// refused.</b> The owner's call, replacing a list of what some disk refuses. The list had two costs the set
-/// does not: a name reaching another agent's model could carry up to two hundred and fifty characters of the
-/// placer's choosing, spaces and all, and names had to be compared by folding case for every letter, which
-/// the build's <c>InvariantGlobalization</c> could only half do. With the set, every name is ASCII, the key
-/// is the store's own <c>upper()</c>, and two spellings of one accented name cannot exist.
+/// refused.</b> A list of what some disk refuses would let a name reaching another agent's model carry up to
+/// two hundred and fifty characters of the placer's choosing, spaces and all, and would need case folded for
+/// every letter, which the build's <c>InvariantGlobalization</c> can only half do. With the set, every name is
+/// ASCII, the key is the store's own <c>upper()</c>, and two spellings of one accented name cannot exist.
 /// </para>
 /// <para>
 /// <see cref="Safe"/> replaces each character outside the set with <c>_</c>, one for one, so a renamed
@@ -72,8 +71,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
 {
     /// <summary>The longest a file's path inside the location may be: its folder, a separator and its name.</summary>
     /// <remarks>
-    /// The owner's figure, counted without the location's own path, so the same names are legal wherever a
-    /// broker keeps its store.
+    /// Counted without the location's own path, so the same names are legal wherever a broker keeps its store.
     /// </remarks>
     public const int MaxPathCharacters = 255;
 
@@ -298,7 +296,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
     /// <param name="text">The text.</param>
     /// <returns>The number of Unicode scalar values.</returns>
     /// <remarks>
-    /// Still counted as scalar values although a name is now ASCII: a folder is measured with it too, and what a
+    /// Counted as scalar values although a name is ASCII: a folder is measured with it too, and what a
     /// placement asked for is measured before it is made safe.
     /// </remarks>
     public static int CharacterCount(string text)

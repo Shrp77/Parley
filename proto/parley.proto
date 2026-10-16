@@ -4,7 +4,7 @@ package parley.v1;
 
 option csharp_namespace = "Parley.Transport";
 
-// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.7.
+// The Parley wire contract, per SPEC.md section 4.0. The version is ProtocolVersion.Current.
 //
 // SPEC.md is the authority and this file is not. A message defined here and absent there is a
 // defect here; a rule stated there and unrepresentable here is a defect here too -- the same
@@ -97,6 +97,10 @@ message AttachRequest {
   string owns = 7;
   string protocol_version = 8;
   string launch_token = 9;       // what the node that started this process put in its environment; empty when none did (section 11.7)
+
+  // The repository's identifier (`parleyAgentId`), empty when it has none. A label and never authority (section 4.1.1):
+  // presented under a name the project does not hold, from the workspace and machine that hold it, it renames the agent.
+  string identity = 10;
 }
 
 message Event {
@@ -198,12 +202,12 @@ message SayReply {
   int64 message_id = 4;
 
   // On CANNOT_SETTLE, each exchange named that could not be settled and why. Nothing was stored (section 5.6).
-  repeated SettleRefusal cannot_settle = 6;
+  repeated SettleRefusal cannot_settle = 5;
 
   // On success, what the reply's settles did: the agent's own questions closed as settled, and the person's own Requests
   // handed back to the agent.
-  repeated int64 settled = 7;
-  repeated int64 handed_back = 8;
+  repeated int64 settled = 6;
+  repeated int64 handed_back = 7;
 }
 
 message SettleRefusal {
@@ -427,12 +431,11 @@ enum FileRejection {
   FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
   FILE_REJECTION_CONVERSATION_CLOSED = 7;
   FILE_REJECTION_CHANGED = 8;
-  FILE_REJECTION_INCOMPLETE = 9;
-  FILE_REJECTION_NO_SPACE = 10;
-  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 11;
-  FILE_REJECTION_NOT_FETCHED = 12;
-  FILE_REJECTION_TOO_MANY_NAMES = 13;
-  FILE_REJECTION_SAFE_NAME_TAKEN = 14;  // a renamed placement's safe spelling is already another file's name
+  FILE_REJECTION_NO_SPACE = 9;
+  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 10;
+  FILE_REJECTION_NOT_FETCHED = 11;
+  FILE_REJECTION_TOO_MANY_NAMES = 12;
+  FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
 }
 
 enum PlaceOutcome {
@@ -454,6 +457,16 @@ message DeliveredMessage {
   // oldest first, at most 20, and how many more there are (section 5.6). The agent's own words, cut at 160 characters.
   repeated SettleableQuestion settleable = 3;
   int32 settleable_left_out = 4;
+
+  // Only beside a person's Request the receiving agent had asked back about: what the person has said to it in that
+  // conversation since it last spoke on the exchange, oldest first, at most 5, each in its own envelope (section 5.6).
+  repeated AnswerSince since = 5;
+}
+
+message AnswerSince {
+  int64 exchange_id = 1;
+  string sent_utc = 2;
+  string envelope = 3;
 }
 
 message SettleableQuestion {
@@ -527,6 +540,10 @@ message JoinRequest {
   // This node reports its turns (section 11.6). A node that does not say so leaves its agents' turn standing unknown
   // rather than stopped: nothing reported must not read as stopped.
   bool reports_turns = 4;
+
+  // The identifiers (`parleyAgentId`) of the checkouts this node can launch for this project. A node can start an agent
+  // by the identifier alone, so a repository whose role was renamed is still startable under the name the broker holds.
+  repeated string startable_identities = 5;
 }
 
 message TurnReport {
@@ -556,11 +573,8 @@ message TurnEnded {
 message NodeFacts {
   string os = 1;
   string os_version = 2;
-  string architecture = 3;
-  string ip_address = 4;
-  string domain = 5;
-  string fqdn = 6;
-  string parley_version = 7;
+  string ip_address = 3;
+  string domain = 4;
 }
 
 message NodeCommand {
@@ -570,20 +584,19 @@ message NodeCommand {
     Joined joined = 1;
 
     StartAgent start = 2;
-    StopAgent stop = 3;
-    GiveTurn turn = 4;
+    GiveTurn turn = 3;
 
     // Restart an agent this node started, once its current turn is over, so it reads its launch configuration afresh.
     // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
-    // node did not start. A node that does not know this command ignores it, as it ignores every unknown command, and
-    // the line stays pending until the agent restarts on its own.
-    RefreshAgent refresh = 6;
+    // node did not start.
+    RefreshAgent refresh = 4;
   }
 }
 
 message RefreshAgent {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 message Joined {
@@ -592,11 +605,16 @@ message Joined {
   // What the broker already knows lives here, so a node can reconcile: an agent registered to this
   // machine that the node cannot launch is a repository that moved or was renamed.
   repeated string agents = 2;
+
+  // The identifier of each of those that presented one, by name, so a node can tell an agent whose repository was renamed
+  // since it registered from one this machine cannot start (section 4.1.1).
+  map<string, string> identities = 3;
 }
 
 message StartAgent {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 // A turn, for an agent this node already holds. Distinct from StartAgent because a second process
@@ -606,10 +624,7 @@ message StartAgent {
 message GiveTurn {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
-}
-
-message StopAgent {
-  string agent = 1;
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 message DescribeNodeRequest {
@@ -657,7 +672,7 @@ service Operators {
   rpc DescribeResults(Empty) returns (ResultsReply);
 
   // The work in front of the person: open exchanges gone quiet or owed by a retired agent, and cycles
-  // (sections 6 and 7.2). What replaced ghosting.
+  // (sections 6 and 7.2).
   rpc DescribeFlags(Empty) returns (FlagsReply);
 
   rpc Export(ExportRequest) returns (ExportReply);
@@ -779,7 +794,7 @@ message RegistryRow {
   // the agent roster (`ListAgentsReply`) carries none of it, because how another agent's turns went is not a peer's to
   // read (section 10.1).
   //
-  // `turns_reported` false means nobody reports this agent's turns -- a node older than section 11.6, or an agent
+  // `turns_reported` false means nobody reports this agent's turns -- its node does not say so, or it is an agent
   // attached from somebody's editor -- and a surface must then say neither working nor stopped.
   bool turns_reported = 12;
   string turn_running_since_utc = 13;        // empty when no turn is running
@@ -788,6 +803,10 @@ message RegistryRow {
   int32 last_turn_permission_denials = 16;
   // Running, and only as a process Parley did not start (section 11.7): no node can give it a turn.
   bool open_outside = 17;
+
+  // The repository's identifier (section 4.1.1), empty when the agent presented none. Never shown: a surface uses it to
+  // tell a catalogued checkout from an agent already registered under another name, and to name the checkout to a node.
+  string identity = 18;
 }
 
 message RefusalsReply {
@@ -1081,8 +1100,8 @@ enum TransitionError {
   TRANSITION_ERROR_NOT_YOUR_TURN = 4;
   TRANSITION_ERROR_ONLY_RECEIVER_SENDS_RESULT = 5;
   TRANSITION_ERROR_CLARIFY_DEPTH_EXCEEDED = 6;
-  TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 8;
-  TRANSITION_ERROR_CANNOT_SETTLE = 9;
+  TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 7;
+  TRANSITION_ERROR_CANNOT_SETTLE = 8;
 }
 
 // Why an exchange named in settles could not be settled (section 5.6).

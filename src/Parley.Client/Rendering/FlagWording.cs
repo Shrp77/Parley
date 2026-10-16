@@ -5,10 +5,8 @@ namespace Parley.Client.Rendering;
 /// <summary>A flag in words, the same on every surface (SPEC.md §6).</summary>
 /// <remarks>
 /// <para>
-/// <b>One implementation</b>, because the terminal's Health dialog and the web UI's health page each spelled every flag
-/// themselves, and both ended in a default arm saying the agent "is retired" — so a kind either had not been taught would
-/// have told a person an agent had been retired. 024 caught that once for the refused-permission flag; this ends the
-/// shape for every kind.
+/// <b>One implementation</b>, because two surfaces spelling every flag themselves would each need a default arm, and
+/// one that said the agent "is retired" would tell a person so for any kind it had not been taught.
 /// </para>
 /// <para>
 /// <b>A flag owed by the person is their own to-do and says so</b> (SPEC.md §6): <i>waiting on you</i>,

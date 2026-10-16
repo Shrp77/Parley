@@ -12,23 +12,19 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <b>The text is <see cref="Reading"/>'s, not this region's.</b> The web console lays the same
-/// conversation out from the same function, which is what makes SC-005 true by construction rather
+/// conversation out from the same function, which makes the two agree by construction rather
 /// than by two implementations being watched. A region that formatted messages itself would be the
 /// second renderer, and the two would disagree about visibility on the day it mattered.
 /// </para>
 /// <para>
-/// <b>This paragraph named <see cref="Transcript.Write"/> until a review lens read it.</b> That is
-/// the export — one flattened line of JSON per message — and 006 stopped drawing it here, saying so
-/// in a comment inside <see cref="Show"/> that contradicted this summary from ten lines away. A
-/// remark that has drifted is worse than none: it is the account a reader trusts instead of
-/// reading on.
+/// <b>It does not draw <see cref="Transcript.Write"/></b>, which is the export: one flattened line of JSON
+/// per message.
 /// </para>
 /// <para>
 /// <b>It wraps rather than truncating, and scrolls rather than fitting.</b> A message is capped at
 /// eight thousand characters and a conversation is not capped at all, so a region that showed what
 /// fitted and dropped the rest would silently be showing part of a transcript to somebody deciding
-/// something. The 004 defect this inherits the rule from was a recipient column dropped at forty
-/// columns with nothing said.
+/// something.
 /// </para>
 /// </remarks>
 internal sealed class TranscriptRegion : FrameView
@@ -44,7 +40,7 @@ internal sealed class TranscriptRegion : FrameView
 
     /// <summary>What is said when the identifier names a conversation somebody destroyed.</summary>
     /// <remarks>
-    /// Distinct from <see cref="Empty"/> on purpose, and that distinction is the whole of FR-006.
+    /// Distinct from <see cref="Empty"/> on purpose, and that distinction is the point.
     /// A conversation with no messages is one nothing was said in; a destroyed one is one whose
     /// messages were taken away. Saying the first for the second leaves an operator unable to tell
     /// a destroy from a store that lost something.
@@ -79,10 +75,9 @@ internal sealed class TranscriptRegion : FrameView
     private List<string> _drawn = [];
 
     // Whether the reader is at the end and so is carried to each new end. **Remembered, never re-derived from the
-    // screen's shape** (the owner's report of 2026-10-04: at the bottom, they replied, and nothing that followed was
-    // shown). Writing a reply grows the box, which takes rows from this region, and the redraw that resize causes put
-    // the view back at the top -- after which every read judged a reader who had not moved to be reading back. Only
-    // the reader leaves the end: moving the cursor up it, or scrolling up it. A resize is not the reader.
+    // screen's shape**: writing a reply grows the box, which takes rows from this region, and the redraw that
+    // resize causes puts the view back at the top. Only the reader leaves the end: moving the cursor up it, or
+    // scrolling up it. A resize is not the reader.
     private bool _tailing = true;
 
     // The first row on screen where the reader left it, for a reader who is not following the end. Kept here
@@ -104,8 +99,8 @@ internal sealed class TranscriptRegion : FrameView
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Transcript));
-        // **It shows where you are in a conversation**, which the owner asked for beside the box's own: a
-        // transcript scrolls and nothing else on this screen said how much of it was above or below.
+        // **It shows where you are in a conversation**: a transcript scrolls and nothing else on this screen says
+        // how much of it is above or below.
         _lines.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
 
         Add(_lines);
@@ -139,22 +134,19 @@ internal sealed class TranscriptRegion : FrameView
         ConversationExport? export,
         string? problem)
     {
-        // **Opened at the end, and read again at the end when the reader was there** (the owner's call of 2026-10-01: a
-        // conversation taking place should be tailed). A conversation is read for what has just been said, so the newest
-        // message is where somebody arriving belongs. The same conversation read again — after a send, say — keeps a
+        // **Opened at the end, and read again at the end when the reader was there**: a conversation taking place
+        // is tailed. A conversation is read for what has just been said, so the newest message is where somebody
+        // arriving belongs. The same conversation read again — after a send, say — keeps a
         // reader who scrolled up where they are, by the rule `Follow` keeps.
         var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
         Retitle();
 
-        // **Read on screen rather than exported to it.** What was here was `Transcript.Write`,
-        // which is the export -- one flattened line of JSON per message, times in UTC, no breaks
-        // anywhere. That is right for a file somebody takes away and reads elsewhere, and it is
-        // what the owner called "one long ass blob that is not readable by a human" when it was put
-        // on a screen. `Reading` lays the same messages out for a person: the author's own line
-        // breaks kept, JSON indented, times in the reader's own zone, and every header at column
-        // zero so it can be told from body text with all colour stripped.
+        // **Read on screen rather than exported to it.** The export (`Transcript.Write`) is one flattened line
+        // of JSON per message with times in UTC, which suits a file and not a person. `Reading` lays the
+        // messages out for a person: the author's own line breaks kept, JSON indented, times in the reader's
+        // own zone, and every header at column zero so it can be told from body text with all colour stripped.
         //
         // Neutralised line by line either way: the layout is this surface's and the content is the
         // agents' own, and a payload is eight thousand characters of whatever they chose to send.
@@ -178,10 +170,9 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Whether what is on screen says the reader is at the end, judged when the reader has just scrolled.</summary>
     /// <returns><see langword="true"/> on the last row, or on no row at all.</returns>
     /// <remarks>
-    /// <b>No row counts as the end since 2026-10-01</b>, which reverses 0.25.7. That release left a reader who had never
-    /// moved the cursor at the top, on the grounds that nothing said they were waiting at the bottom. The owner's answer
-    /// is that a conversation taking place is what somebody is waiting on, so the screen tails it. Only a reader who
-    /// moved the cursor somewhere above the end has said they are reading back, and only they are left alone.
+    /// <b>No row counts as the end.</b> A conversation taking place is what somebody is waiting on, so the screen
+    /// tails it. Only a reader who moved the cursor somewhere above the end has said they are reading back, and
+    /// only they are left alone.
     /// </remarks>
     private bool Judged()
     {
@@ -192,8 +183,8 @@ internal sealed class TranscriptRegion : FrameView
             return true;
         }
 
-        // **What is on screen decides, not where the cursor is** (the owner's nuance of 2026-10-01: at the bottom, tail;
-        // anywhere else, do not even move the reader). The wheel scrolls the view and leaves the cursor behind, so a
+        // **What is on screen decides, not where the cursor is**: at the bottom, tail; anywhere else, do not even
+        // move the reader. The wheel scrolls the view and leaves the cursor behind, so a
         // reader who wheeled back to the start still had the cursor on the last row and was carried away from what they
         // were reading. The cursor is the answer only before a layout has given the list a height to judge by.
         //
@@ -220,19 +211,14 @@ internal sealed class TranscriptRegion : FrameView
     /// <returns>Whether anything was redrawn.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Asked for by the owner, whose answer arrived in forty-seven seconds and was not on screen until
-    /// they closed the transcript and opened it again.</b> <see cref="Show"/> was the only way in, and it
-    /// is called once, when a conversation is opened.
+    /// <b>An answer that arrives is shown without closing and reopening the transcript.</b>
+    /// <see cref="Show"/> is called once, when a conversation is opened; this is every later read.
     /// </para>
     /// <para>
-    /// <b>The web console decided the opposite, and the reasoning it recorded is answered rather than
-    /// ignored.</b> It says "a page that changed under a reader mid-sentence would be worse than one that
-    /// is briefly out of date". That is true of a page that redraws from the top. This does not move
-    /// what somebody is reading: a transcript only grows at the end, so the row under the cursor is the
-    /// same row afterwards — and a reader at the end, who is reading as it arrives, is carried to the new
-    /// end. **Since 2026-10-01 that includes a reader on no row**, because a transcript opens at the end and
-    /// tails what is said (<see cref="Tailing"/>); 0.25.7 left them at the top, and the owner asked for the
-    /// opposite.
+    /// <b>It does not move what somebody is reading.</b> A transcript only grows at the end, so the row under the
+    /// cursor is the same row afterwards, and a reader at the end, who is reading as it arrives, is carried to
+    /// the new end. That includes a reader on no row, because a transcript opens at the end and tails what is
+    /// said (<see cref="Tailing"/>).
     /// </para>
     /// <para>
     /// Compared on the written text rather than on a message count. A person's close, a destruction or an
@@ -424,11 +410,9 @@ internal sealed class TranscriptRegion : FrameView
     /// message would spend the width a message body needs.
     /// </para>
     /// <para>
-    /// <b>Kept as lines rather than flattened to a string.</b> It was flattened, and the sender's
-    /// colour slot — which <see cref="Reading"/> already works out, and which the console already
-    /// draws with — was thrown away on the way to the screen. A terminal that then wanted it back
-    /// would have had to work out who sent a line by matching the text of the header, which is a
-    /// second derivation of something the shared renderer had already decided.
+    /// <b>Kept as lines rather than flattened to a string</b>, so the sender's colour slot — which
+    /// <see cref="Reading"/> works out and the console draws with — reaches the screen. Recovering it from the
+    /// header text would be a second derivation of something the shared renderer has already decided.
     /// </para>
     /// </remarks>
     private static IReadOnlyList<TranscriptLine> Lay(
@@ -437,10 +421,9 @@ internal sealed class TranscriptRegion : FrameView
         new TranscriptLine(
             $"Conversation {conversationId} in project {project}", LineKind.Header, null),
         // Body rather than an annotation, and the difference is emphasis. `Reading` makes an
-        // annotation for one thing — who was *not* party to a message — which SC-006 calls the one
-        // fact on a transcript recoverable from nowhere else, and which is drawn to be noticed. The
-        // zone this surface renders times in is a note about the rendering, and it was the same
-        // colour until a dump of the screen put the two side by side.
+        // annotation for one thing — who was *not* party to a message — the one fact on a transcript
+        // recoverable from nowhere else, drawn to be noticed. The zone this surface renders times in is a
+        // note about the rendering.
         new TranscriptLine(new string(' ', Reading.Indent) + LocalTime.Note(), LineKind.Body, null),
         new TranscriptLine(string.Empty, LineKind.Blank, null),
         .. Reading.Lines(export),
@@ -654,7 +637,7 @@ internal sealed class TranscriptRegion : FrameView
 
     /// <summary>Names the conversation in the box's title, and says when the box is folded.</summary>
     /// <remarks>
-    /// The owner's call of 2026-10-09: the name of the conversation belongs in the title, since the status line is the only
+    /// The name of the conversation belongs in the title, since the status line is the only
     /// other place it is, and a person reading a long transcript has lost sight of it by then.
     /// </remarks>
     private void Retitle()
@@ -729,7 +712,7 @@ internal sealed class TranscriptRegion : FrameView
     /// would be one entry short of the rows it describes.
     /// </para>
     /// <para>
-    /// <b>Continuations are indented, and that is what makes FR-018 true rather than nearly
+    /// <b>Continuations are indented, and that is what makes the column-zero rule true rather than nearly
     /// true.</b> The rule the whole view rests on is that a header sits at column zero and nothing
     /// else does, so the distinction survives every colour being stripped — and
     /// <see cref="Wrap"/> trims the leading space off each piece it breaks off, which is the
@@ -740,7 +723,7 @@ internal sealed class TranscriptRegion : FrameView
     /// </para>
     /// <para>
     /// Colour happened to give that away — a body line keeps the terminal's own foreground — which
-    /// is exactly the crutch FR-018 forbids leaning on, and is why this is fixed in the structure
+    /// is exactly the crutch the column-zero rule forbids leaning on, and is why this is fixed in the structure
     /// instead.
     /// </para>
     /// <para>
@@ -784,7 +767,7 @@ internal sealed class TranscriptRegion : FrameView
         // **Clamped, because the rows can get fewer.** Folding is the first thing that shrinks a transcript
         // on purpose, and the toolkit refuses a selection past the end outright rather than clamping it
         // itself -- so without this, folding a conversation whose cursor was near the bottom threw.
-        // **No selection stays no selection, which the first version of this clamp threw away.** A reader who
+        // **No selection stays no selection.** A reader who
         // has never moved the cursor is left at the top and is not on a row; turning that into row zero makes
         // the surface claim they are reading something, and `FollowingTests` says so in as many words.
         int? selected = _tailing && wrapped.Count > 0
@@ -849,7 +832,6 @@ internal sealed class TranscriptRegion : FrameView
         LineKind.Header => line.Colour is { } slot ? Colours.Slot(slot) : Colours.Transcript,
         LineKind.Annotation => Colours.Warn,
         LineKind.Point => Colours.Transcript,
-        LineKind.DoneWhen => Colours.Quiet,
         _ => null,
     };
 }

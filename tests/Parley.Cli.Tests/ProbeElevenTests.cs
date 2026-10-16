@@ -7,14 +7,14 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 11: whether the two writers agree.
+/// Whether the two writers agree.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <c>Enrolment</c> exists because two writers of these files "would agree today and differ in six
 /// months" — the terminal adds one repository at a time and <c>parley enroll</c> drives a whole
-/// directory in bulk. This feature gave the bulk path its own hold, its own decision function and its own
-/// catalogue handling, which is exactly the drift that argument warns about, and no probe has asked
+/// directory in bulk. The bulk path has its own hold, its own decision function and its own
+/// catalogue handling, which is exactly the drift that argument warns about, so this asks
 /// whether what they write is still the same thing.
 /// </para>
 /// <para>
@@ -83,7 +83,6 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             Catalogue,
             Path.Combine(Workspace(name), "CLAUDE.md"),
             TestContext.Current.CancellationToken,
-            [Project()],
             ManifestPath);
 
     /// <summary>The row either surface hands to the bulk writer, ticked and approved.</summary>
@@ -110,7 +109,6 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             new StringWriter(),
             new StringWriter(),
             Project(),
-            [Project()],
             ManifestPath,
             TestContext.Current.CancellationToken);
 
@@ -130,8 +128,8 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         Assert.Equal(0, await CommandAsync("byCommand", "orders"));
 
         // Normalised on the one thing that legitimately differs: they are two repositories, so their
-        // workspaces differ and must. The first version of this probe compared them raw and reported
-        // that as a finding — a probe that has not said what it expects to differ cannot tell drift
+        // workspaces differ and must. Comparing them raw would
+        // report that as drift — a probe that has not said what it expects to differ cannot tell drift
         // from its own fixture.
         var terminal = (await EntryAsync("byTerminal")).ToJsonString()
             .Replace("byTerminal", "X", StringComparison.Ordinal);
@@ -157,7 +155,7 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         var command = await File.ReadAllTextAsync(
             Path.Combine(Workspace("byCommand"), ".mcp.json"), TestContext.Current.CancellationToken);
 
-        // **One field cannot be equal and must not be** (018). The identity is minted per repository
+        // **One field cannot be equal and must not be.** The identity is minted per repository
         // and these are two, so comparing it would be asking two agents to be one. Both must carry one,
         // which is asserted rather than assumed, and the rest of the file is compared as before —
         // including where the member sits and how it is spelled, since those are what a diff shows.
@@ -203,7 +201,6 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             output,
             new StringWriter(),
             Project(),
-            [Project()],
             ManifestPath,
             TestContext.Current.CancellationToken);
 

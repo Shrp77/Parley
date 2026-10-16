@@ -76,8 +76,7 @@ public sealed class SeatHold : IDisposable
     /// <summary>Whether the attachment behind this seat has ended for good.</summary>
     /// <remarks>
     /// <para>
-    /// <b>The seat that outlives its evidence, which is the failure a cookie outliving a seat
-    /// already caused once here.</b> A broker that is merely down is retried indefinitely and this
+    /// <b>A seat must not outlive its evidence.</b> A broker that is merely down is retried indefinitely and this
     /// stays <see langword="false"/> — that is deliberate, because a restart should give the
     /// person their seat back and nobody is going to notice they quietly stopped being present.
     /// But a broker that <i>refuses</i> the reattach (the name retired, or taken since by
@@ -97,8 +96,8 @@ public sealed class SeatHold : IDisposable
     /// <summary>When this person was last seen doing anything in the console.</summary>
     /// <remarks>
     /// Read by the sweep in <see cref="SeatBook"/>. A browser tab left open is not a person at a
-    /// desk, and a seat that outlived its occupant would be the console manufacturing exactly the
-    /// false presence §14 was rewritten to stop the sweep's old heartbeat manufacturing.
+    /// desk, and a seat that outlived its occupant would be the console manufacturing false presence;
+    /// §14 makes the open connection the only evidence of it.
     /// </remarks>
     public DateTimeOffset TouchedUtc { get; private set; }
 
@@ -155,34 +154,6 @@ public sealed class SeatHold : IDisposable
         }
     }
 
-    /// <summary>Drops what has been read and owes nothing back.</summary>
-    /// <returns>How many were dropped.</returns>
-    /// <remarks>
-    /// <para>
-    /// A debt cannot be dismissed, which is the whole of the rule. What owes nothing back — a
-    /// Result, a reply that handed the turn back — is finished the moment it has been read, and
-    /// leaving it there buries the one thing on the page that still needs doing; a Request, or a
-    /// clarification the person must answer, is settled by sending the move, and a button that
-    /// made it disappear instead would let somebody clear a list while the exchange behind it
-    /// stayed open, owed and flagged.
-    /// </para>
-    /// <para>
-    /// Public, unlike the two members either side of it, and the difference is the rule above.
-    /// <see cref="Record"/> and <see cref="Settled"/> must follow a call to the broker or the
-    /// seat's idea of what a person holds parts company with the broker's, so they are internal
-    /// and reached only through the drive in <c>SeatVoice</c>. This one goes near no broker and
-    /// can drop nothing that is owed, so the worst a caller can do with it is tidy their own
-    /// list — which is what a surface offering it is for.
-    /// </para>
-    /// </remarks>
-    public int DismissRead()
-    {
-        lock (_delivered)
-        {
-            return _delivered.RemoveAll(one => !one.Owes);
-        }
-    }
-
     /// <summary>Records that the person is still here.</summary>
     /// <param name="now">The current instant.</param>
     /// <remarks>
@@ -204,21 +175,17 @@ public sealed class SeatHold : IDisposable
         {
             // **However this ends.** Refused, faulted, or fallen out of the loop: what they have
             // in common is that nothing is reading a stream any more, and a seat is an open
-            // stream (§4.0). Only cancellation is a person leaving. Written as a finally rather
-            // than at the one exit that was known about, because the exit that matters is the one
-            // nobody thought of — an unexpected exception here faults a task nobody observes, and
-            // the seat it abandoned would have stayed in the book until the console was
-            // restarted, being drawn as somebody present the whole time.
+            // stream (§4.0). Only cancellation is a person leaving. A finally rather than a single
+            // exit, because an unexpected exception here faults a task nobody observes and the
+            // abandoned seat would be drawn as present until the console restarted.
             if (!_cancellation.IsCancellationRequested)
             {
                 Interlocked.Exchange(ref _lost, 1);
 
-                // **And let go of the call, rather than waiting to be collected.** Marking the
-                // loss and keeping the stream open was the first version of this, and a probe
-                // counting attachments against disposals caught it: the book disposes a lost hold
-                // when a sweep next reaches it, which is up to a minute of a finished gRPC call
-                // held open per abandoned seat. Nothing is reading it and nothing will; the pump
-                // is the stream's owner and this is the pump ending.
+                // **And let go of the call, rather than waiting to be collected.** The book disposes
+                // a lost hold only when a sweep next reaches it, up to a minute of a finished gRPC
+                // call held open per abandoned seat. Nothing is reading it; the pump is the
+                // stream's owner and this is the pump ending.
                 Release();
             }
         }
@@ -237,10 +204,8 @@ public sealed class SeatHold : IDisposable
                 {
                     // Read and discarded. The stream has to be consumed or it backs up, but the
                     // count it carries is deliberately not kept: a notice says how much arrived
-                    // and is never sent again to say how much left, so a console that cached it
-                    // showed a number that only ever went up. It said "1 waiting" beside a page
-                    // correctly reporting none, because this was a second answer to a question
-                    // the broker was already being asked properly.
+                    // and is never sent again to say how much left, so a cached count only ever
+                    // goes up. The broker is asked for the count directly.
                     _ = received;
                 }
             }

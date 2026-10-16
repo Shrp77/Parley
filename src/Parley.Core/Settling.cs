@@ -8,6 +8,17 @@ namespace Parley.Core;
 /// <param name="Asked">The start of the last thing the agent said in it, cut to <see cref="Settling.LongestAsked"/>.</param>
 public sealed record SettleableQuestion(long ExchangeId, DateTimeOffset OpenedUtc, string Asked);
 
+/// <summary>
+/// What the person said to an agent since the agent last spoke on a Request it asked back about (SPEC.md §5.6).
+/// </summary>
+/// <param name="ExchangeId">The exchange the person's words opened.</param>
+/// <param name="SentUtc">When the person sent them.</param>
+/// <param name="Envelope">
+/// The words inside their own envelope (§13), with a token of their own. They are a participant's text, so they
+/// reach the agent wrapped like any other and never as bare fields.
+/// </param>
+public sealed record AnswerSince(long ExchangeId, DateTimeOffset SentUtc, string Envelope);
+
 /// <summary>The bounds on settling, stated once (SPEC.md §5.6, §13).</summary>
 /// <remarks>
 /// <b>Bounded because it crosses into a model's context</b> (principle IV). The list is the agent's own words returned to
@@ -21,6 +32,9 @@ public static class Settling
 
     /// <summary>The most characters of each question listed.</summary>
     public const int LongestAsked = 160;
+
+    /// <summary>The most of the person's later Requests delivered beside a Request handed back; the latest are kept.</summary>
+    public const int MostSince = 5;
 
     /// <summary>The most exchanges one reply may name in <c>settles</c>.</summary>
     public const int MostNamed = 50;

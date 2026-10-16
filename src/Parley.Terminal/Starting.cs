@@ -3,6 +3,17 @@ using Parley.Core;
 
 namespace Parley.Terminal;
 
+/// <summary>What became of starting one agent.</summary>
+/// <param name="Registered">Whether the registry held it afterwards.</param>
+/// <param name="Launched">Whether the node said it started anything at all.</param>
+/// <param name="Says">What to tell the person, in a few words.</param>
+/// <remarks>
+/// <b>Two flags rather than one, because "it did not start" and "it started and I did not see it
+/// register" are different facts and lead somewhere different.</b> A broker that could not be reached must
+/// never be reported under a sentence beginning <i>Started</i>.
+/// </remarks>
+internal sealed record Started(bool Registered, bool Launched, string Says);
+
 /// <summary>
 /// Starting agents so that they register themselves, and saying what actually happened.
 /// </summary>
@@ -10,43 +21,20 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>Enrolment is not finished until the agent has attached once</b>, and until then §14 counts
 /// its name unroutable and refuses every message type to it. So "added" and "addressable" are two
-/// different facts, and 012 step 1 made the command close the gap: <c>parley enroll apply</c>
-/// starts each repository it wrote and then <em>looks in the registry</em> before it says anything.
+/// different facts, and the surface <em>looks in the registry</em> before it says anything: the node
+/// reports only that it launched something, and the registry is the only thing that knows whether the
+/// adapter attached, reached this broker and registered.
 /// </para>
 /// <para>
-/// <b>This surface asked and never looked, which is how somebody comes to be told a thing is done
-/// when it is not.</b> It said "Started 'x'. It registers itself as it attaches." — a prediction
-/// about the next few seconds, printed as a result. The node reports only that it launched
-/// something; whether the adapter attached, reached this broker and registered is a different
-/// question, and the registry is the only thing that answers it. The owner enrolled nineteen
-/// repositories, was told each was started, and found every one of them unaddressable.
+/// <b>It does the set, not just the one.</b> An agent that never registered cannot be reached by any
+/// message, so a set of them cannot be fixed by asking them anything.
 /// </para>
 /// <para>
-/// <b>And it does the set, not just the one.</b> An agent that never registered cannot be reached
-/// by any message — so a deployment of nineteen of them cannot be fixed by asking them anything,
-/// and the only remedies were opening nineteen repositories by hand or starting nineteen rows one
-/// at a time. That is the work 012 step 1 exists to remove, left undone on the surface the owner
-/// actually enrols from.
-/// </para>
-/// <para>
-/// <b>A timeout says "I do not know", never "it did not happen"</b> — the rule 008 exists for, and
-/// the rule <c>Registering.NotSeen</c> is worded from. An agent that registers a second after this
-/// stopped looking is working; a report that called that a failure would send somebody to fix it.
+/// <b>A timeout says "I do not know", never "it did not happen"</b> — the rule <c>Registering.NotSeen</c>
+/// is worded from. An agent that registers a second after this stopped looking is working; a report that
+/// called that a failure would send somebody to fix it.
 /// </para>
 /// </remarks>
-/// <summary>What became of starting one agent.</summary>
-/// <param name="Registered">Whether the registry held it afterwards.</param>
-/// <param name="Launched">Whether the node said it started anything at all.</param>
-/// <param name="Says">What to tell the person, in a few words.</param>
-/// <remarks>
-/// <b>Two flags rather than one, because "it did not start" and "it started and I did not see it
-/// register" are different facts and lead somewhere different.</b> A first version carried only
-/// the first, and a broker that could not be reached was then reported under a sentence beginning
-/// <i>Started</i> — which is the class of untruth this whole change exists to remove, rebuilt in
-/// the code removing it.
-/// </remarks>
-internal sealed record Started(bool Registered, bool Launched, string Says);
-
 internal static class Starting
 {
     /// <summary>How often to look in the registry while waiting.</summary>
@@ -65,8 +53,7 @@ internal static class Starting
     /// <remarks>
     /// <c>Registering.CatchUp</c>'s figure and its reasoning: the catalogue is written and the start asked
     /// in the same breath, while the node reads its catalogue on a poll, so the first answer is reliably
-    /// "not something I can start". The owner enrolled four agents and none registered for exactly that.
-    /// One claim about how long a node takes to notice, so the same length.
+    /// "not something I can start". One claim about how long a node takes to notice, so the same length.
     /// </remarks>
     internal static readonly TimeSpan CatchUp = TimeSpan.FromSeconds(15);
 
@@ -188,9 +175,8 @@ internal static class Starting
     /// memory landing together on the machine somebody is working at.
     /// </para>
     /// <para>
-    /// <b>Grouped by what happened, and the names abbreviated</b>, which is the shape
-    /// <c>SeatVoice</c>'s broadcast report was rebuilt into after the owner's screen cut nineteen
-    /// names off part way through. Counts first, reason next, names last.
+    /// <b>Grouped by what happened, and the names abbreviated</b>, the shape <c>SeatVoice</c>'s broadcast
+    /// report has: counts first, reason next, names last.
     /// </para>
     /// </remarks>
     internal static async Task<string> EveryAsync(

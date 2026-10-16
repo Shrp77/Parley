@@ -13,8 +13,7 @@ namespace Parley.Server.Tests;
 /// the wire carries nonsense (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
-/// Written as probes by the review gate (runs 1.3, 1.4, 2.3 and 2.4) and kept: each passed when written, and each holds a
-/// property that would otherwise be held only by reading the code.
+/// Each holds a property that would otherwise be held only by reading the code.
 /// </remarks>
 public sealed class FilesAcrossRestartAndMalformedInputTests
 {

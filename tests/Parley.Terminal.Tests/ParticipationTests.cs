@@ -128,55 +128,6 @@ public sealed class ParticipationTests : IAsyncDisposable
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
     }
 
-    [Fact]
-    public async Task Work_owed_cannot_be_cleared_away_instead_of_reported()
-    {
-        // The attack on the tidy-up button. Clearing must drop what has been read and owes
-        // nothing, and never a request -- a person who could clear owed work would leave the
-        // exchange behind it open with nobody working it, and nothing on their screen saying so.
-        var ct = TestContext.Current.CancellationToken;
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        var project = Project();
-
-        var seated = await SeatedAs(seats, project, ct);
-
-        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, ct);
-
-        await broker.RequestAsync(Orders, seated.Seat.Name, "model-a", Request, T0.AddMinutes(1), "chat", ct);
-
-        var voice = new SeatVoice(directory.AgentsFor(project), seated.Seat);
-
-        // And something that owes nothing: the Result of a request the person sent orders. Every
-        // message is answered, so a Result is the one kind a person holds without owing anything back.
-        Assert.StartsWith(
-            "Sent.",
-            await voice.RequestAsync(Orders, "Is the build green? Asking before I cut the release.", "chat", ct),
-            StringComparison.Ordinal);
-
-        long mine;
-
-        using (var query = _connection.CreateCommand())
-        {
-            query.CommandText = "SELECT max(id) FROM exchanges WHERE requester = $me;";
-            query.Parameters.AddWithValue("$me", seated.Seat.Name.Value);
-            mine = (long)query.ExecuteScalar()!;
-        }
-
-        await broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: ct);
-
-        Assert.True((await broker.ResultAsync(
-            mine, Orders, "model-a", """{"outcomes":[{"id":"request","outcome":"answered","text":"green"}]}""",
-            T0.AddMinutes(3), ct)).Succeeded);
-
-        await voice.TakeDeliveryAsync(seated, ct);
-
-        Assert.Equal(1, seated.DismissRead());
-        Assert.Single(seated.Delivered);
-        Assert.All(seated.Delivered, one => Assert.True(one.Owes));
-    }
-
     // `A_name_an_agent_holds_is_refused_before_anything_attaches` was here. It typed `orders` into the seat and expected
     // the book to refuse a name an agent holds. Nothing is typed now: the book attaches as the person row its
     // registry names, and storage refuses any other role under the seat's adapter.

@@ -67,8 +67,7 @@ public sealed class EnrollCommandTests : IDisposable
     /// <param name="unattended">Whether each repository consents to running unattended.</param>
     /// <returns>One row per repository found.</returns>
     /// <remarks>
-    /// This wrote a manifest and the command read it straight back; the rows are what that file
-    /// held, and they are still found by the same walk of the same directory. What is asserted
+    /// The rows are found by a walk of a directory. What is asserted
     /// below — which files are written, and which catalogue consent lands in — is decided from the
     /// rows, never from the carrier they arrived in.
     /// </remarks>
@@ -145,9 +144,8 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task A_catalogue_whose_agents_entry_is_the_wrong_type_is_also_refused()
     {
-        // The first fix covered a file that would not parse. This is the same loss wearing valid
-        // JSON: `agents` as an array is cast away and written over just as completely. Found by
-        // re-running the lens after fixing, which is the only reason it was found at all.
+        // A file that would not parse is refused; this is the same loss wearing valid
+        // JSON: `agents` as an array is cast away and written over just as completely.
         const string existing = """{"agents":["docs","billing"],"other":"kept"}""";
 
         await File.WriteAllTextAsync(NodePath, existing, TestContext.Current.CancellationToken);
@@ -200,15 +198,9 @@ public sealed class EnrollCommandTests : IDisposable
     [Fact]
     public async Task A_repository_chosen_for_enrolment_is_catalogued_whatever_the_row_said()
     {
-        // **This asserted the opposite, and it was right when it was written.** Consent used to be
-        // a field somebody ticked in a worksheet, so a row that did not ask to run unattended
-        // stayed out of the catalogue. 019 deleted the worksheet and FR-043 reversed the rule:
-        // enrolling *is* the consent, granted once at a door that names the count and says what
-        // being startable costs.
-        //
-        // The reversal was specified and never wired up, so for the life of the one-verb enrolment
-        // the catalogue write was dead code — every repository enrolled from a folder came out
-        // enrolled, addressable and unstartable. This is that rule, the other way round: whatever
+        // **Enrolling *is* the consent**, granted once at a door that names the count and says what
+        // being startable costs. If the catalogue write were dead code, every repository enrolled
+        // from a folder would come out enrolled, addressable and unstartable. Whatever
         // the row says about `unattended`, choosing it is the asking.
         await EnrolAsync(NodePath, describe: false, Chosen(unattended: false));
 
@@ -285,13 +277,8 @@ public sealed class EnrollCommandTests : IDisposable
         Assert.False(File.Exists(NodePath));
     }
 
-    // **`Re_scanning_keeps_the_owns_lines_somebody_has_written` was here and has no successor.** It
-    // asked whether a second scan preserved prose a person had typed into the manifest between runs,
-    // which mattered a great deal while there was a manifest to type into: overwriting it would have
-    // been discovered exactly once, by the person who wrote it.
-    //
-    // There is no file to carry anything forward from, and nothing asks a person to compose an owns
-    // line any more -- 020 asks the agent. What *is* still carried is whatever a repository's own
+    // **There is no file to carry anything forward from**, and nothing asks a person to compose an owns
+    // line -- the agent is asked. What *is* carried is whatever a repository's own
     // launch configuration already says, and that is read from the repository every time rather than
     // merged from a previous run:
     // `OneVerbEnrolmentTests.What_a_repository_already_says_it_owns_is_carried_forward` holds it.
@@ -303,11 +290,9 @@ public sealed class EnrollCommandTests : IDisposable
 
         var (code, _, error) = await EnrolAsync(NodePath, describe: true, unticked);
 
-        // **The refusal stopped naming a manifest, and this asserted the wording that did.** It
-        // read "<path> marks no repositories for enrollment. Set \"enroll\": true on the ones you
-        // want, or re-run `parley enroll scan` and tick them" — a file 019 deleted, a field nobody
-        // sets by hand any more, and a subcommand the tool now refuses. Three instructions, none of
-        // them followable, in the one message somebody reads when nothing happened.
+        // **The refusal names no manifest.** An instruction to set a field in a file, or to re-run a
+        // scan subcommand the tool refuses, is not followable, and this is the one message somebody
+        // reads when nothing happened.
         Assert.Equal(78, code);
         Assert.Contains("No repositories were chosen", error, StringComparison.Ordinal);
         Assert.DoesNotContain("enroll scan", error, StringComparison.Ordinal);

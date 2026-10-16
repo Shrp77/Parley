@@ -7,8 +7,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// A scheduled task and a terminal restoring its session both start the broker with the same
-/// <c>--log</c>. The log used to be held open for writing, so the second could not open it, and the
-/// one line that would have explained seventeen stranded agents went to a console nobody could see.
+/// <c>--log</c>. The log must not be held open for writing, or the second could not open it, and the
+/// one line that would explain stranded agents would go to a console nobody could see.
 /// </remarks>
 public sealed class SharedLogTests : IDisposable
 {

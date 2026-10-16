@@ -8,12 +8,11 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b><see cref="Label"/> eats <c>_</c>, and the owner met it.</b> The toolkit's labels take an
+/// <b><see cref="Label"/> eats <c>_</c>.</b> The toolkit's labels take an
 /// underscore as the marker for a hotkey — <c>T_itle</c> means Alt+I — so the character is removed
 /// on the way to the screen and the letter after it is underlined instead. The rule this surface
-/// states for a conversation name contains <c>'_'</c>, and what they were shown was
-/// <c>'.', '' and '-'</c>: a rule with one of its own characters missing, in the sentence
-/// explaining why their name had been refused.
+/// states for a conversation name contains <c>'_'</c>, so a label that dropped it would show a rule
+/// with one of its own characters missing.
 /// </para>
 /// <para>
 /// <b>It is not a typographic nuisance; it is the same class of defect as the ones this surface

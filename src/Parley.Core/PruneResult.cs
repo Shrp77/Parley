@@ -22,13 +22,12 @@ namespace Parley.Core;
 /// still in flight.
 /// </para>
 /// <para>
-/// <see cref="Contended"/> is the third, and it exists because leaving it out made the other two
+/// <see cref="Contended"/> is the third, and it exists because leaving it out would make the other two
 /// lie. Every server prunes on its own schedule and an operator may run <c>prune</c> beside
-/// them, so losing the race is ordinary rather than exceptional — six sweeps at once over thirty
-/// thousand spent messages had four of them removing nothing. Folded into
-/// <see cref="HeldByFloor"/> that read as "thirty thousand messages are undelivered or on open
-/// exchanges", which is not merely imprecise: it points at a broken deployment when nothing is
-/// wrong. It is not an error count: the work was done, by somebody else.
+/// them, so losing the race is ordinary rather than exceptional. Folded into
+/// <see cref="HeldByFloor"/> it would read as "messages are undelivered or on open exchanges",
+/// which points at a broken deployment when nothing is wrong. It is not an error count: the work
+/// was done, by somebody else.
 /// </para>
 /// <para>
 /// <see cref="Capped"/> is a fact rather than a count, and it is here rather than left to a

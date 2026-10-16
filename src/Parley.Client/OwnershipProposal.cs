@@ -10,13 +10,13 @@ namespace Parley.Client;
 /// <param name="Statement">Its readable text, which is what a person accepts or edits.</param>
 /// <remarks>
 /// <para>
-/// <b>Agent-written text, and a surface must draw it as such.</b> FR-013 wants it attributed and
+/// <b>Agent-written text, and a surface must draw it as such.</b> It has to be attributed and
 /// distinguishable from what the surface wrote, which is why the message travels with the text: the
 /// sender, the time and the exchange are all facts a reader needs in order to treat the words as
 /// somebody's rather than as the screen's.
 /// </para>
 /// <para>
-/// <b>It binds nothing.</b> An answer arriving changes no configuration (FR-012); a person accepting it
+/// <b>It binds nothing.</b> An answer arriving changes no configuration; a person accepting it
 /// is what writes a launch configuration, and even that does not write the registry.
 /// </para>
 /// </remarks>
@@ -27,16 +27,15 @@ public sealed record OwnershipProposal(Message Message, string Statement)
     /// <returns>The agent, or null when Parley asked nobody in it, or asked more than one.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Recognised by the facilitator's own Request, never by the conversation's identifier</b> (SPEC.md §10.2,
-    /// research finding 11). An agent can open a conversation under the <c>owns-</c> prefix itself; with an answer
+    /// <b>Recognised by the facilitator's own Request, never by the conversation's identifier</b> (SPEC.md §10.2).
+    /// An agent can open a conversation under the <c>owns-</c> prefix itself; with an answer
     /// able to become a line, reading its prefix as a question would let an agent put a sentence in front of a person
     /// dressed as an answer to a question nobody asked. The identifier is kept for a person scanning a list and chooses
     /// nothing here.
     /// </para>
     /// <para>
     /// <b>The subject is the Request's recipient, which is a whole name.</b> Nothing is parsed back out of an
-    /// identifier, so two agents of one role on two machines are never confused — 0.20.2's recorded defect of naming
-    /// an agent at another desk cannot arise from a name that was never guessed.
+    /// identifier, so two agents of one role on two machines are never confused.
     /// </para>
     /// <para>
     /// <b>Null rather than a guess when Parley asked two agents in one conversation.</b> It never does, and a
@@ -66,7 +65,7 @@ public sealed record OwnershipProposal(Message Message, string Statement)
     /// <returns>The latest thing that agent said, with its text, or null.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The latest, not the first, and that is 0.30.1's rule reused for its own reason.</b> An
+    /// <b>The latest, not the first.</b> An
     /// exchange can hold a Request, a Clarify and then a revision, so an agent that argued and then
     /// changed its mind has said two statements — and the one a person accepts is the later. Taking the
     /// first would put the sentence they talked the agent out of in front of them.

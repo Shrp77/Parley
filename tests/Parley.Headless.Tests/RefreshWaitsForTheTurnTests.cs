@@ -4,11 +4,11 @@ using Xunit;
 namespace Parley.Headless.Tests;
 
 /// <summary>
-/// That refreshing an agent waits for its turn to end and never stops it mid-work (SPEC.md §11.1, SC-007).
+/// That refreshing an agent waits for its turn to end and never stops it mid-work (SPEC.md §11.1).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The one promise the refresh rests on.</b> The broker cannot see a turn in progress (research finding 7) and must
+/// <b>The one promise the refresh rests on.</b> The broker cannot see a turn in progress and must
 /// not learn to; it sends a refresh only when the agent owes nothing, and the node keeps the rest of the promise by
 /// waiting on the turn lock. A refresh that did not wait would discard whatever the agent was halfway through, for the
 /// sake of one sentence about what it owns.

@@ -7,7 +7,7 @@ namespace Parley.Client.Tests;
 /// Which of an agent's messages a person is shown as its proposal.
 /// </summary>
 /// <remarks>
-/// <b>0.30.1's rule, reused for its own reason.</b> A row points at the latest thing a peer said in an
+/// <b>The latest thing said, for its own reason.</b> A row points at the latest thing a peer said in an
 /// exchange rather than the first, because an exchange can hold a Request, a Clarify and then a
 /// revision — so an agent that argued and then changed its mind has said two statements, and the one a
 /// person accepts is the later. Taking the first would put in front of them the sentence they had just
@@ -64,7 +64,7 @@ public sealed class TheProposalIsTheLatestThingSaidTests
     [Fact]
     public void The_message_travels_with_the_text_so_a_surface_can_attribute_it()
     {
-        // FR-013: the proposal must be drawn as the agent's words and told apart from what the surface
+        // The proposal must be drawn as the agent's words and told apart from what the surface
         // wrote. A bare string could not be attributed to anybody.
         var proposal = OwnershipProposal.Latest(
             [Said(Orders, Answer("Invoicing and tax."), minute: 1, id: 2)], Orders);
@@ -185,7 +185,7 @@ public sealed class TheProposalIsTheLatestThingSaidTests
     [Fact]
     public void An_agents_own_owns_conversation_is_not_a_question()
     {
-        // Research finding 11, and must fail against recognising the prefix: this conversation carries the identifier
+        // Must fail against recognising the prefix: this conversation carries the identifier
         // Parley would have used, and an agent — not Parley — asked in it. Accepting from it would make a line out of an
         // answer to a question nobody asked.
         var transcript = new[]

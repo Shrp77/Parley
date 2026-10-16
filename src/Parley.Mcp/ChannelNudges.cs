@@ -12,11 +12,10 @@ namespace Parley.Mcp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What this closes.</b> The broker already pushes a count down the attach stream the moment mail arrives (SPEC.md
-/// §4), and until now the count stopped here: an agent attached through somebody's open session learned of it only at
-/// the next hook, which is to say the next time a person typed. Claude Code channels let an MCP server push an event
-/// into a running session — <c>notifications/claude/channel</c>, behind the <c>claude/channel</c> capability — and the
-/// session reacts to it. That is the missing step, for every session that is open.
+/// <b>What this does.</b> The broker pushes a count down the attach stream the moment mail arrives (SPEC.md §4).
+/// Claude Code channels let an MCP server push an event into a running session —
+/// <c>notifications/claude/channel</c>, behind the <c>claude/channel</c> capability — and the session reacts to it,
+/// so an open session learns of mail without anybody typing.
 /// </para>
 /// <para>
 /// <b>Counts, never words.</b> §4: a notice carries how much is waiting and the adapter drains to learn what. A channel
@@ -135,7 +134,7 @@ public sealed partial class ChannelNudges(BrokerLink link, McpServer server, ILo
             }
 
             // ClientInfo rather than ClientCapabilities: every client names itself in the handshake, and one that declares no
-            // capabilities leaves the other null for ever -- found by the first test of this, which waited on it.
+            // capabilities leaves the other null for ever.
             if (_server.ClientInfo is null)
             {
                 continue;

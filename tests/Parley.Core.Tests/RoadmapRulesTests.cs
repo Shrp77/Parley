@@ -114,7 +114,7 @@ public sealed class RoadmapRulesTests
     {
         // Constitution 6.0.0 and SPEC.md section 16: nothing here is read by an agent, and what is sent
         // travels in a Request that keeps its own cap. A bound reappearing in this class would be the
-        // quiet reversal of a decision the owner took with the risk written down.
+        // quiet reversal of a decision taken with the risk written down.
         Assert.Null(RoadmapRules.Problem(new RoadmapContent(new string('t', 50_000), [Item(new string('x', 500_000))])));
     }
 

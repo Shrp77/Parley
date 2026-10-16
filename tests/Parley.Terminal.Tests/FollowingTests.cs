@@ -41,8 +41,7 @@ public sealed class FollowingTests
             Orders,
             Billing,
             "claude",
-            "{\"intent\":\"decide\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":"
-            + System.Text.Json.JsonSerializer.Serialize(text) + "}],\"done_when\":\"the owner of the cap is named\"}",
+            "{\"ask\":" + System.Text.Json.JsonSerializer.Serialize(text) + "}",
             Conversation,
             DateTimeOffset.UnixEpoch.AddMinutes(id),
             null);

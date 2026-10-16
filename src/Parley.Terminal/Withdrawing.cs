@@ -28,8 +28,8 @@ namespace Parley.Terminal;
 /// would be reachable, unstartable, and invisible to the surface that broke it.
 /// </para>
 /// <para>
-/// <c>ForceConclude</c>, <c>Instruct</c> and <c>Prune</c> are still not here. Admitting one is a
-/// decision to argue in <c>contracts/operations.md</c> first, not a call to add.
+/// <c>ForceConclude</c> and <c>Prune</c> each live in one file of their own, carrying their door. Admitting
+/// another destructive operation is a decision to argue first, not a call to add.
 /// </para>
 /// </remarks>
 internal static class Withdrawing
@@ -236,7 +236,7 @@ internal static class Withdrawing
 
     /// <summary>Names the asker and what they will see, and takes an explicit acceptance.</summary>
     /// <remarks>
-    /// FR-014's second confirmation, and the reason it exists: retirement's outcome is the kinder
+    /// The second confirmation, and the reason it exists: retirement's outcome is the kinder
     /// one — those exchanges stay open, flagged as held by a retired agent, for a person to close or
     /// to reinstate it — so somebody
     /// choosing the permanent one should be choosing between them knowingly rather than agreeing to

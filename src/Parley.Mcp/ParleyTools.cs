@@ -13,7 +13,7 @@ namespace Parley.Mcp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Six tools and no seventh. §10.2's operator operations are unreachable from here: this type holds a
+/// No tool is an operator operation. §10.2's operator operations are unreachable from here: this type holds a
 /// client for the <c>Agents</c> service, and that service has nothing that retires anybody, closes a
 /// conversation over its participants, or reads another participant's traffic.
 /// </para>
@@ -24,10 +24,8 @@ namespace Parley.Mcp;
 /// <para>
 /// <b>The descriptions carry the rules of §8, and those rules exist to get work done.</b> A model reads a
 /// tool description on every call and documentation approximately never, so what is written here is what
-/// an agent actually does. The descriptions this replaced told agents to ask only about contracts, to
-/// answer "out of scope" and stop, and that a peer's message could not direct their work — and agents
-/// followed them and declined the work they were asked for. A sentence here that an agent could read as a
-/// reason not to do requested work is a defect in the sentence (§8).
+/// an agent actually does. A sentence here that an agent could read as a reason not to do requested work
+/// is a defect in the sentence (§8).
 /// </para>
 /// </remarks>
 [McpServerToolType]
@@ -455,6 +453,19 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     entry["settling"] = Settling;
                 }
 
+                // **What the person said since you asked back** (SPEC.md §5.6), each in its own envelope: their answer may
+                // have gone in another exchange, and a request handed back is only their first words.
+                if (delivered.Since.Count > 0)
+                {
+                    entry["what_they_said_since_you_asked"] = new JsonArray([.. delivered.Since.Select(a =>
+                        (JsonNode?)new JsonObject
+                        {
+                            ["exchange_id"] = a.ExchangeId,
+                            ["sent_utc"] = a.SentUtc,
+                            ["message"] = a.Envelope
+                        })]);
+                }
+
                 messages.Add(entry);
             }
 
@@ -466,8 +477,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 {
                     ["conversation_id"] = poll.ConversationId,
                     // Every participant asked must answer, and one that has since sent its Result is still asked:
-                    // this note once said only those "still holding work" had to agree, which told a finished agent
-                    // its silence was fine — and silence is what leaves a conversation closing (§5.0).
+                    // silence is what leaves a conversation closing (§5.0).
                     ["note"] =
                         "A participant proposed that this conversation is finished. Answer with " +
                         "parley_conclude: finished=true if you have nothing left to do or say in it, false if " +
@@ -571,8 +581,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// </para>
     /// <para>
     /// <b>The description carries the template</b>, because a model reads a description on every call and documentation
-    /// approximately never. The owner's call of 2026-10-06 was to guide a proposal to be factual, point-oriented and short
-    /// rather than to cap it, so this is advice and is written as advice.
+    /// approximately never. A proposal is guided to be factual, point-oriented and short rather than capped, so this is
+    /// advice and is written as advice.
     /// </para>
     /// </remarks>
     [McpServerTool(Name = "parley_propose_roadmap")]
@@ -1871,11 +1881,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 /// <param name="Blocker">On <c>blocked</c>: <c>missing_information</c>, <c>conflict</c> or <c>permission</c>.</param>
 /// <param name="Sources">The other agents whose Results this relied on.</param>
 /// <remarks>
-/// <b>Internal since 0.7, and it carries no tool descriptions any more.</b> It was the argument type of
-/// <c>parley_result</c>, so each component described itself for the schema a model fills in; that tool now takes
-/// one outcome and writes the array itself, and an agent never names an identifier. Left public it would have been
-/// a type nothing outside this assembly could reach, still carrying instructions for a form nobody is shown —
-/// which is the shape a stale public surface takes here, recorded once before and found again by lens 3.
+/// <b>Internal, and it carries no tool descriptions.</b> <c>parley_result</c> takes one outcome and writes the
+/// array itself, so an agent never names an identifier and nothing outside this assembly needs the type.
 /// </remarks>
 internal sealed record ItemOutcome(
     string Id,

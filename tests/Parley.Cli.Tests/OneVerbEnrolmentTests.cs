@@ -5,14 +5,12 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// <c>parley enroll &lt;directory&gt;</c>: one verb, no file for anybody to author (FR-040).
+/// <c>parley enroll &lt;directory&gt;</c>: one verb, no file for anybody to author.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The three-step form named its first step <c>scan</c>, which was honest while that step only
-/// looked. It wrote a manifest, a second step planned a change to it, and a third applied it —
-/// and the manifest was a round trip through the disk between two halves of one operation, since
-/// scanning built the rows in memory and applying read them straight back.
+/// Enrolment is one operation: the rows are built in memory and applied, with no manifest as a
+/// round trip through the disk between two halves of it.
 /// </para>
 /// <para>
 /// <b>What is checked here is that the file is gone, not merely unused.</b> A collapse that went
@@ -88,18 +86,15 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     [Fact]
     public async Task Every_repository_enrolled_is_catalogued_so_a_peer_can_start_it()
     {
-        // **FR-043, and it was dead code.** `EnrollmentPlan` gates the catalogue write on
-        // `EnrollmentEntry.Unattended`, which was carried from a worksheet row somebody ticked —
-        // and 019 deleted the worksheet. Nothing on this path set it afterwards and nothing on the
-        // terminal's path set it either, so every repository enrolled from a folder got a launch
-        // configuration and no catalogue line.
+        // **The catalogue write must not be dead code.** `EnrollmentPlan` gates the catalogue write on
+        // `EnrollmentEntry.Unattended`, so if nothing on this path or the terminal's sets it, every
+        // repository enrolled from a folder gets a launch configuration and no catalogue line.
         //
-        // What that produces is the state `Onboarding`'s own summary warns against: enrolled,
-        // addressable and unstartable — an agent that cannot be started cannot answer. And the
-        // screen asking for consent said, in as many words, that each repository was being
-        // catalogued so a peer's request could start it with nobody watching. **The door described
-        // the reversal and the code never got it**, which is worse than the feature being absent:
-        // the operator was told it had happened.
+        // That is the state `Onboarding`'s own summary warns against: enrolled, addressable and
+        // unstartable — an agent that cannot be started cannot answer. And the screen asking for
+        // consent says, in as many words, that each repository is being catalogued so a peer's
+        // request can start it with nobody watching. **The door describes the act**, so the code
+        // must perform it: the operator is told it has happened.
         var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
 
         Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
@@ -121,11 +116,11 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     [Fact]
     public async Task It_says_what_enrolling_costs_before_it_configures_anything()
     {
-        // **FR-044, and the command line did not have it.** It said how many repositories it had
-        // found and nothing about what enrolling them does — while the terminal's door said,
-        // before anything was written, that each becomes startable by a peer with nobody watching
-        // and that a process is started per repository. The same act, its consequence stated on one
-        // surface and not the other, and the surface without it is the one a script reaches.
+        // **The command line states it too.** Saying how many repositories it found and nothing about
+        // what enrolling them does — while the terminal's door says, before anything is written, that
+        // each becomes startable by a peer with nobody watching and that a process is started per
+        // repository — would state the consequence on one surface and not the other, and the surface
+        // without it is the one a script reaches.
         var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
 
         Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
@@ -174,7 +169,7 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     {
         _ = await RunAsync(selectAll: true, describe: false, Checkouts);
 
-        // **The point of FR-040, asserted as an absence.** A collapse that kept writing the file
+        // **The point of one verb, asserted as an absence.** A collapse that kept writing the file
         // somewhere would satisfy every other test here. `.mcp.json` inside each checkout is the
         // launch configuration and is supposed to be there; what must not exist is a worksheet.
         var authored = Directory
@@ -195,7 +190,7 @@ public sealed class OneVerbEnrolmentTests : IDisposable
 
         Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
 
-        // FR-042, and the property `plan` had: not "writes less", but writes nothing. Asserted over
+        // The property `plan` has: not "writes less", but writes nothing. Asserted over
         // the whole tree rather than over the two files this happens to touch, because a describe
         // that left a catalogue behind would be a describe that configured the machine.
         Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
@@ -242,8 +237,8 @@ public sealed class OneVerbEnrolmentTests : IDisposable
     [Fact]
     public async Task What_a_repository_already_says_it_owns_is_carried_forward()
     {
-        // FR-048: the removed manifest was the one place a person could type this, and taking it
-        // away must not lose the lines that exist. They never came from the file — `Discover` reads
+        // There is no manifest for a person to type this into, and the lines that exist must not be
+        // lost. They never come from a file — `Discover` reads
         // them out of the repository's own launch configuration, which is where they were written.
         var orders = Path.Combine(Checkouts, "Acme.Orders");
 
@@ -265,10 +260,9 @@ public sealed class OneVerbEnrolmentTests : IDisposable
         await File.WriteAllTextAsync(
             LaunchFile(orders), existing.ToJsonString(), TestContext.Current.CancellationToken);
 
-        // Asserted on the file rather than on the report. A first version of this read stdout, and
-        // failed — not because the line was lost but because describing does not echo it, which is
-        // a test asserting the wrong surface. What FR-048 promises is that the line survives, and
-        // the file is where it either survives or does not.
+        // Asserted on the file rather than on the report, because describing does not echo the line.
+        // What is promised is that the line survives, and the file is where it either survives or
+        // does not.
         var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
 
         Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");

@@ -54,8 +54,8 @@ public sealed class LatestTurnTests
     [Fact]
     public async Task A_turn_recorded_as_ending_past_the_calendar_is_still_read()
     {
-        // The review gate's finding: such a row made this read throw, and the registry with it, for the whole broker. The
-        // broker refuses such a report now; a store written before that must still be readable.
+        // Such a row must not make this read throw, and the registry with it, for the whole broker. The
+        // broker refuses such a report, but a store holding one must still be readable.
         var ct = TestContext.Current.CancellationToken;
 
         using var connection = ParleyDatabase.OpenInMemory();

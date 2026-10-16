@@ -7,8 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 1: what a person can put into the values this feature writes into
-/// somebody's repository.
+/// What a person can put into the values this tooling writes into somebody's repository.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,7 +17,7 @@ namespace Parley.Cli.Tests;
 /// is safe as JSON can still be unsafe as configuration.
 /// </para>
 /// <para>
-/// The other half is what this feature prints. A refusal quotes a catalogue's path and a role taken
+/// The other half is what this tooling prints. A refusal quotes a catalogue's path and a role taken
 /// from a file, and refusals are read in terminals, so a value able to move the cursor can imitate the
 /// lines around it. This repository has fixed that shape twice before — in the transcript's
 /// column-zero rule and in the destroy dialog quoting a manifest raw.
@@ -85,9 +84,8 @@ public sealed class ProbeTwelveTests : IDisposable
         // that name would reach a JSON key — and a key is one of the few places JSON escaping is not
         // the whole story, because the client uses it to namespace tool names.
         //
-        // **019 moved where such a name would have to come from, and narrowed it.** It used to be a
-        // `name` field in a single manifest, which is a string somebody types. A project's name is its
-        // *directory entry* now, so a hand edit has to create a folder — and a folder cannot hold a
+        // **A project's name is its *directory entry***, not a string somebody types into a field,
+        // so a hand edit has to create a folder — and a folder cannot hold a
         // quote on Windows or a separator anywhere, which removes most of the attack before the reader
         // sees it. What is left is a name the grammar refuses but a filesystem allows.
         foreach (var hostile in new[] { "alpha two", "ALPHA", "9lives", "-leading", "a.b", "évil" })
@@ -109,7 +107,7 @@ public sealed class ProbeTwelveTests : IDisposable
             !read || projects.All(p => ProjectName.IsValid(p.Name.Value)),
             $"a folder yielded a name the grammar refuses (problem: {problem})");
 
-        // And the refusal names them rather than passing over them, which is FR-027: a folder somebody
+        // And the refusal names them rather than passing over them: a folder somebody
         // made in the one directory whose contents are the answer is somebody's mistake, and silence
         // there is how a project goes missing.
         Assert.True(projects.Count == 0 && problem is { Length: > 0 }, "a folder named something the grammar refuses was read as a project, or passed over in silence");
@@ -142,9 +140,8 @@ public sealed class ProbeTwelveTests : IDisposable
         // of a file, and refusals are read in terminals. This repository has fixed this shape twice: the
         // transcript's column-zero rule, and the destroy dialog quoting a manifest's endpoint raw.
         //
-        // The sentence this probes is 018's copied-repository refusal. It replaced FR-013's, which is
-        // where this probe was pointed when it was written; the values are read from the same file and
-        // printed in the same place, so what it is asking is unchanged.
+        // The sentence this probes is the copied-repository refusal; the values are read from a file
+        // and printed in a terminal, which is what this probe asks about.
         var refusal = Catalogues.Copied($"/tmp/orders{mischief}", $"/tmp/copy{mischief}");
 
         foreach (var character in refusal)
@@ -165,10 +162,9 @@ public sealed class ProbeTwelveTests : IDisposable
         // per project. A rule applied to the first entry and not to the rest is the shape this
         // probe exists to catch.
         //
-        // **It used to assert a length, and 0.33.0 removed the length.** Left as it was it would
-        // have gone on passing against nothing -- 500 characters is now perfectly legal -- which is
-        // worse than deleting it, because a green probe reads as a checked rule. What still refuses
-        // is the character rule, so that is what it drives.
+        // **It drives the character rule, not a length.** 500 characters is perfectly legal, and a
+        // probe asserting a length would pass against nothing, which is worse than none because a
+        // green probe reads as a checked rule.
         var problems = EnrollmentPlan.Validate(
             [Entry("/src/orders", "Carts." + (char)0x2028 + "No tax.")],
             _ => true);

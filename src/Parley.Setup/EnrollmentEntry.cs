@@ -1,10 +1,9 @@
-﻿using System.Text.Json.Serialization;
-using Parley.Core;
+﻿using Parley.Core;
 
 namespace Parley.Setup;
 
 /// <summary>
-/// One repository in an enrollment manifest.
+/// One repository to enrol.
 /// </summary>
 /// <param name="Workspace">Absolute path to the repository.</param>
 /// <param name="Agent">The name peers will address it by.</param>
@@ -30,10 +29,10 @@ namespace Parley.Setup;
 /// </para>
 /// </remarks>
 public sealed record EnrollmentEntry(
-    [property: JsonPropertyName("workspace")] string Workspace,
-    [property: JsonPropertyName("agent")] string Agent,
-    [property: JsonPropertyName("owns")] string? Owns,
-    [property: JsonPropertyName("unattended")] bool Unattended)
+    string Workspace,
+    string Agent,
+    string? Owns,
+    bool Unattended)
 {
     /// <summary>
     /// Whether this repository is to be enrolled at all.
@@ -53,7 +52,6 @@ public sealed record EnrollmentEntry(
     /// looked at this row".
     /// </para>
     /// </remarks>
-    [JsonPropertyName("enroll")]
     public bool Enroll { get; init; }
 
     /// <summary>
@@ -61,12 +59,8 @@ public sealed record EnrollmentEntry(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>On the row because two surfaces show it and only one of them knew any of this.</b>
-    /// `EnrollCommand` worked the note out privately for its own picker — "worktree of another
-    /// checkout", "already an agent", "has an .mcp.json" — and the terminal's picker composed its
-    /// own from <c>Owns</c> alone, under a remark claiming it was "read off the row the command
-    /// produced ... so the note and what the command will do cannot disagree". They disagreed: on
-    /// the surface the owner actually enrols from, a worktree was offered with nothing said.
+    /// <b>On the row because two surfaces show it.</b> The note — "worktree of another checkout",
+    /// "already an agent", "has an .mcp.json" — is worked out once, so both pickers say the same thing.
     /// </para>
     /// <para>
     /// <b>A worktree is the one worth the trouble.</b> It is the *same repository* at another path,
@@ -81,11 +75,10 @@ public sealed record EnrollmentEntry(
     /// arrives later as a launch configuration that changes under a branch switch.
     /// </para>
     /// <para>
-    /// Not serialised: it is computed from the repository every time the directory is read, and a
-    /// stored copy would be a fact about a checkout as it was.
+    /// Computed from the repository every time the directory is read, because a stored copy would
+    /// be a fact about a checkout as it was.
     /// </para>
     /// </remarks>
-    [JsonIgnore]
     public string Note { get; init; } = string.Empty;
 }
 
@@ -100,8 +93,8 @@ public sealed record EnrollmentEntry(
 /// Which agent this repository is: the one it already declared, or the one this enrolment mints for it.
 /// </param>
 /// <remarks>
-/// <b><see cref="Identity"/> is reported rather than passed in, because the repository is where it lives</b>
-/// (018 R2). A checkout that already carries one keeps it — that is what makes a move or a rename cost
+/// <b><see cref="Identity"/> is reported rather than passed in, because the repository is where it lives.</b>
+/// A checkout that already carries one keeps it — that is what makes a move or a rename cost
 /// nothing — and only a checkout carrying none gets a new one. The caller needs it because the catalogue is
 /// keyed by it, and deriving it a second time from the same file is how two readers come to disagree.
 /// </remarks>

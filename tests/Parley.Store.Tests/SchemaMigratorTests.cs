@@ -21,11 +21,10 @@ public sealed class SchemaMigratorTests
     [Fact]
     public void A_store_written_by_a_newer_parley_is_refused()
     {
-        // Found by pointing the previously installed build at a database this one had migrated.
-        // It opened it, announced the schema version it expected rather than the one present,
-        // and served it. Harmless between those two versions — the only change was a widened
-        // CHECK — but a migration that dropped or renamed anything would be met by code that
-        // believed none of it had happened.
+        // An older build pointed at a database a newer one has migrated must not open it and serve it
+        // while announcing the schema version it expected rather than the one present. That might be
+        // harmless for a widened CHECK, but a migration that dropped or renamed anything would be met
+        // by code that believed none of it had happened.
         using var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
 

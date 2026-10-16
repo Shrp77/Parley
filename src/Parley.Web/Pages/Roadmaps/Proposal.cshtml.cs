@@ -18,10 +18,10 @@ namespace Parley.Web.Pages.Roadmaps;
 /// <para>
 /// <b>Whether it was edited is the broker's comparison and never this form's.</b> The text is parsed here only to tell the
 /// person what is wrong before anything is sent; what reaches the broker is content, and the broker decides whether it is
-/// the proposal's own words (research R10).
+/// the proposal's own words.
 /// </para>
 /// <para>
-/// <b>The title hint is shown, never acted on</b> (spec FR-009b): when it matches an existing roadmap the person chooses
+/// <b>The title hint is shown, never acted on</b>: when it matches an existing roadmap the person chooses
 /// between a revision and a new roadmap, and the default is the one that leaves the old roadmap alone.
 /// </para>
 /// </remarks>

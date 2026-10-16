@@ -19,7 +19,7 @@ namespace Parley.Client.Tests;
 /// </para>
 /// <para>
 /// What is probed here is what a surface still decides: <b>that the name comes from the registry and nothing the
-/// surface knows about itself</b> (FR-001a, FR-017 — the evidence that a surface on a laptop speaks as the project's
+/// surface knows about itself</b> (a surface on a laptop speaks as the project's
 /// person); that an unreadable registry, and one with no person row, refuse rather than guess; that one project's seat
 /// says nothing about another's; and that the idle window drops the stream while keeping the seat known.
 /// </para>
@@ -35,8 +35,8 @@ public sealed class SeatTests
     [Fact]
     public async Task The_seat_is_the_registrys_person_row_and_not_this_machine()
     {
-        // The defect 023 exists for, at the layer that had it: `Seat.Name` added `MachineName.Current` to whatever was
-        // typed, so a surface on a laptop reaching a broker through a tunnel became a second person in the project. The
+        // `Seat.Name` must not add `MachineName.Current` to whatever was typed, or a surface on a laptop reaching a
+        // broker through a tunnel becomes a second person in the project. The
         // row here names a project, `alpha`, that is not this machine's name, and the attach must say exactly that.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
@@ -52,8 +52,8 @@ public sealed class SeatTests
     [Fact]
     public async Task A_registry_with_no_person_row_refuses_and_says_why()
     {
-        // A broker older than 0.36.0. Inventing a name here would be the failure 023 ends, so it refuses — with nothing
-        // on the wire, since an attach that is undone is still a registration written.
+        // Inventing a name here would be a failure, so it refuses — with nothing on the wire, since an
+        // attach that is undone is still a registration written.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
 
@@ -68,8 +68,8 @@ public sealed class SeatTests
     [Fact]
     public async Task A_typed_seat_left_from_before_is_not_taken_for_the_person()
     {
-        // A store made before 023 can still hold `arvind@…` under the seat's adapter. The person is found by role; a row
-        // that merely shares the adapter is somebody's old typed seat, and adopting it would speak as the wrong name.
+        // The person is found by role; a row that merely shares the adapter is somebody's typed seat, and adopting
+        // it would speak as the wrong name.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
 

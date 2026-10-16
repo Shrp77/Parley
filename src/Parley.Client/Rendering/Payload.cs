@@ -2,17 +2,15 @@ using System.Text.Json;
 
 namespace Parley.Client.Rendering;
 
-/// <summary>One numbered point in a message: an item of a Request, or its outcome in a Result.</summary>
-/// <param name="Id">The label the requester gave it, such as <c>r1</c>.</param>
-/// <param name="Text">The work or question, or what came of it.</param>
-/// <param name="Kind">On a Request, <c>work</c> or <c>question</c>; null otherwise.</param>
-/// <param name="Outcome">On a Result, how the item came out; null on a Request.</param>
+/// <summary>One outcome of a Result.</summary>
+/// <param name="Id">The item it answers, such as <c>request</c>.</param>
+/// <param name="Text">What came of it.</param>
+/// <param name="Outcome">How the item came out.</param>
 /// <param name="Blocker">On a blocked outcome, the kind of blocker; null otherwise.</param>
-/// <param name="Sources">On a Result, the agents it relied on; empty otherwise.</param>
+/// <param name="Sources">The agents it relied on; empty otherwise.</param>
 public sealed record PayloadPoint(
     string Id,
     string Text,
-    string? Kind,
     string? Outcome,
     string? Blocker,
     IReadOnlyList<string> Sources);
@@ -21,8 +19,7 @@ public sealed record PayloadPoint(
 /// A message's payload, read for a person rather than for a model.
 /// </summary>
 /// <param name="Said">The ask of a Request, or the words of a clarification. May be empty.</param>
-/// <param name="Points">A Result's outcomes, and the items of a Request stored before 0.7.</param>
-/// <param name="DoneWhen">What a Request stored before 0.7 said counted as finished, or null.</param>
+/// <param name="Points">A Result's outcomes.</param>
 /// <param name="Raw">The document exactly as stored, for when it is not a shape this can read.</param>
 /// <remarks>
 /// <para>
@@ -32,16 +29,13 @@ public sealed record PayloadPoint(
 /// it, so here the document is pulled apart and shown as a person reads. Every surface encodes each field.
 /// </para>
 /// <para>
-/// A message written under protocol 0.4 carries <c>sub_questions</c>, <c>consequences</c> and
-/// <c>resolutions</c>, and those rows were carried forward unchanged, so they are read too. Anything this
-/// cannot read comes back whole in <see cref="Raw"/>: guessing at a shape the document does not have would
-/// be the one way to make a transcript say something nobody said.
+/// Anything this cannot read comes back whole in <see cref="Raw"/>: guessing at a shape the document does not
+/// have would be the one way to make a transcript say something nobody said.
 /// </para>
 /// </remarks>
 public sealed record Payload(
     string Said,
     IReadOnlyList<PayloadPoint> Points,
-    string? DoneWhen,
     string? Raw)
 {
     /// <summary>Reads a stored payload.</summary>
@@ -51,7 +45,7 @@ public sealed record Payload(
     {
         if (string.IsNullOrWhiteSpace(json))
         {
-            return new Payload(string.Empty, [], null, null);
+            return new Payload(string.Empty, [], null);
         }
 
         try
@@ -61,18 +55,11 @@ public sealed record Payload(
 
             if (root.ValueKind != JsonValueKind.Object)
             {
-                return new Payload(string.Empty, [], null, json);
+                return new Payload(string.Empty, [], json);
             }
 
-            // The ask first, then the shapes earlier versions stored: a 0.7 Request carries `ask` (§5.1), 0.5 and
-            // 0.6 carried `intent` beside their items, and a clarification has always been `text`. A stored message
-            // still renders with everything it was written with; nothing here fills in a field it did not find.
+            // A Request carries `ask` (§5.1) and a clarification `text`; a Result carries `outcomes`.
             var said = Text(root, "ask");
-
-            if (said.Length == 0)
-            {
-                said = Text(root, "intent");
-            }
 
             if (said.Length == 0)
             {
@@ -81,27 +68,17 @@ public sealed record Payload(
 
             var points = new List<PayloadPoint>();
 
-            Collect(root, "items", points);
             Collect(root, "outcomes", points);
-            Collect(root, "sub_questions", points);
-            Collect(root, "resolutions", points);
-
-            var doneWhen = Text(root, "done_when");
-
-            if (doneWhen.Length == 0)
-            {
-                doneWhen = Text(root, "consequences");
-            }
 
             // Nothing recognisable. Shown whole rather than as an empty bubble, because a message that said
             // nothing and a message this could not read are different facts.
-            return said.Length == 0 && points.Count == 0 && doneWhen.Length == 0
-                ? new Payload(string.Empty, [], null, json)
-                : new Payload(said, points, doneWhen.Length == 0 ? null : doneWhen, null);
+            return said.Length == 0 && points.Count == 0
+                ? new Payload(string.Empty, [], json)
+                : new Payload(said, points, null);
         }
         catch (JsonException)
         {
-            return new Payload(string.Empty, [], null, json);
+            return new Payload(string.Empty, [], json);
         }
     }
 
@@ -142,8 +119,7 @@ public sealed record Payload(
             into.Add(new PayloadPoint(
                 Text(entry, "id"),
                 Text(entry, "text"),
-                Optional(entry, "kind"),
-                Optional(entry, "outcome") ?? Optional(entry, "resolution"),
+                Optional(entry, "outcome"),
                 Optional(entry, "blocker"),
                 sources));
         }

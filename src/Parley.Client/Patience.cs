@@ -6,10 +6,10 @@ namespace Parley.Client;
 /// <summary>Gives every single-reply call to a broker a deadline when its caller set none.</summary>
 /// <remarks>
 /// <para>
-/// <b>A broker that accepts a connection and never answers held a surface for ever</b> (the combined review gate, lens 1,
-/// run 4). The connect timeout covers only the connection; a call over it waited without end, and the terminal runs its
-/// work one item at a time — so one wedged broker stopped every send, open and toggle in every project, with nothing on
-/// screen saying why. A wedged process still answers HTTP/2 keep-alive pings, so the connection never looked dead either.
+/// <b>A broker that accepts a connection and never answers would hold a surface for ever.</b> The connect timeout covers
+/// only the connection, and the terminal runs its work one item at a time, so one wedged broker would stop every send,
+/// open and toggle in every project. A wedged process still answers HTTP/2 keep-alive pings, so the connection never
+/// looks dead either.
 /// </para>
 /// <para>
 /// Thirty seconds, which nothing an operator or a seat asks for should approach on a broker that is working. Streams are left alone: a seat's attachment is meant to stay open.

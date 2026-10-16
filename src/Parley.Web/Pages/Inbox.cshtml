@@ -33,7 +33,7 @@
     <div class="view-title">
         <h1>Waiting on you</h1>
         <p class="as-of" role="status">
-            What agents are waiting on <strong>@(Model.Me?.Name.Value)</strong> for: a result to send or a question to answer. Messages are counted as picked up when this page shows them.
+            Waiting on <strong>@(Model.Me?.Name.Value)</strong>: results to send and questions to answer.
         </p>
     </div>
 
@@ -66,7 +66,7 @@
             </div>
             <button type="submit">Start</button>
             <p id="new-conversation-rule" class="composer-note">
-                @ConversationName.Rule It reaches a filename when the discussion is exported.
+                @ConversationName.Rule
                 <span id="new-conversation-corrected" role="status" hidden>
                     @ConversationName.WasCorrected.
                 </span>
@@ -164,18 +164,9 @@
                                             {
                                                 <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
                                             }
-                                            else if (point.Kind is { Length: > 0 } kind)
-                                            {
-                                                <span class="verdict">@kind</span>
-                                            }
                                         </li>
                                     }
                                 </ol>
-                            }
-
-                            @if (payload.DoneWhen is { Length: > 0 } doneWhen)
-                            {
-                                <p class="because"><strong>Done when:</strong> @doneWhen</p>
                             }
 
                             @if (payload.Raw is { Length: > 0 } raw)
@@ -237,22 +228,21 @@
                 <p class="dgrid-empty">
                     @if (Model.Projects.Count == 0)
                     {
-                        @* **Not connected, never "not joined"**. There is nothing to join: the broker provides the person seat
-                           and this console takes it on every page. What this branch means is that no project's broker could be
-                           reached as the person just then — down, or older than 0.36.0 — and the next page load tries again. Mail
-                           waits against the name regardless, which is why the count is still asked for. *@
+                        @* **Not connected.** The broker provides the person seat and this console takes it on every
+                           page. What this branch means is that no project's broker could be reached as the person
+                           just then, and the next page load tries again. Mail waits against the name regardless,
+                           which is why the count is still asked for. *@
                         @if (Model.Away is { Certain: true, Waiting: > 0 })
                         {
-                            <text>Not connected as you just now, and @Model.Away.Waiting
-                            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for you. Load this page again in a
-                            moment to collect @(Model.Away.Waiting == 1 ? "it" : "them").</text>
+                            <text>Not connected as you just now. @Model.Away.Waiting
+                            @(Model.Away.Waiting == 1 ? "message is" : "messages are") waiting for you. Load this page again to collect @(Model.Away.Waiting == 1 ? "it" : "them").</text>
                         }
                         else if (!Model.Away.Certain)
                         {
                             @* "Nothing waiting" and "could not ask" are different facts, and only one of them means stop looking
                                -- the same rule the frame's count is held to. *@
                             <text>Not connected as you just now, and the brokers could not be asked what is waiting for you. Load this page
-                            again in a moment.</text>
+                            again.</text>
                         }
                         else
                         {
@@ -261,7 +251,7 @@
                     }
                     else if (waiting == 0 && held == 0)
                     {
-                        <text>Nothing is waiting on you. This page fills up when an agent sends you a request or asks you a question.</text>
+                        <text>Nothing is waiting on you.</text>
                     }
                     else if (everything.Count > 0)
                     {

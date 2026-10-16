@@ -17,11 +17,9 @@ public sealed record Sent(int Count, string Says);
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The surface no longer decides what a line answers</b> (the owner's call of 2026-10-05). Until then this
-/// derived an act per recipient from who owed whom: a Result where the agent had asked the person something, a Clarify
-/// where the agent had asked back. With several of an agent's questions open, it took whichever exchange the wait-for
-/// graph listed first — the store's order, nobody's choice — and the owner's reply to the newest question was filed as
-/// the Result of an unrelated one two days old. A Result asks nothing back, so the agent read it and said nothing.
+/// <b>The surface does not decide what a line answers.</b> Deriving an act from who owed whom would, with several of
+/// an agent's questions open, file the reply against whichever exchange the wait-for graph listed first — the store's
+/// order, nobody's choice — and a Result asks nothing back.
 /// </para>
 /// <para>
 /// <b>Only the agent can know what its questions were for, so the agent decides.</b> What the person types is a
@@ -76,9 +74,7 @@ public sealed class Draft
     /// <remarks>
     /// <para>
     /// <b>Completing fills the name in, because a completion that makes text vanish reads as a broken key.</b>
-    /// The first version resolved the agent and deleted what had been typed — the recipient was recorded and
-    /// correct, and the owner pressed Tab, saw an empty box, and reported that Tab did nothing. What a person
-    /// is looking at when they press it is the thing they typed.
+    /// What a person is looking at when they press Tab is the thing they typed.
     /// </para>
     /// <para>
     /// <b>And it is still never parsed back out.</b> This records the exact spelling the surface itself wrote,
@@ -111,13 +107,10 @@ public sealed class Draft
     /// moment a chip is recorded it is therefore the last occurrence of itself, by construction.
     /// </para>
     /// <para>
-    /// <b>Removing the first was wrong, and the review gate caught it by probe.</b> Somebody who had typed
-    /// the agent's name into their sentence and then completed that same agent had the words they wrote
-    /// taken out of the middle of the message, while the addressing the surface wrote was the part that
-    /// went on to be sent — the exact inversion of this method's purpose. The paragraph above used to end
-    /// "so a person who writes an agent's name again on purpose keeps the second one", which was true in
-    /// the only case it considered and backwards in the one that mattered: what they keep is the one they
-    /// typed.
+    /// <b>Removing the first would invert the method's purpose.</b> Somebody who typed the agent's name into
+    /// their sentence and then completed that same agent would have the words they wrote taken out of the
+    /// middle of the message while the addressing the surface wrote was sent. What they keep is the one
+    /// they typed.
     /// </para>
     /// <para>
     /// <b>A chip the person has since edited is left alone</b>, and that is deliberate. It no longer matches
@@ -170,7 +163,7 @@ public sealed class Draft
     /// <param name="peer">The resolved agent.</param>
     /// <remarks>
     /// <para>
-    /// <b>The first <c>@</c> replaces and the rest add</b>, which is what the owner's own example means:
+    /// <b>The first <c>@</c> replaces and the rest add</b>, which is what this example means:
     /// <c>@billing, @inventory; I want this</c> targets those two, so the second sigil cannot be a second
     /// replacement. Nothing says "and everyone else as well", because addressing somebody in particular is the
     /// act of not addressing the room.

@@ -1,7 +1,7 @@
 {
   "name": "parley",
   "displayName": "Parley",
-  "description": "Cross-repository agent-to-agent messaging. Sets this repository up as a Parley agent, keeps its list of peers current, and carries the operator commands agents are never given.",
+  "description": "Cross-repository agent-to-agent messaging. Sets this repository up as a Parley agent, keeps its list of peers current, and lets a person manage the files agents share.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Shrp77/Parley",
   "repository": "https://github.com/Shrp77/Parley",

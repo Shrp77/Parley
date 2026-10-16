@@ -54,14 +54,8 @@ public sealed class HostedNodeTests : IDisposable
     [Fact]
     public async Task One_catalogue_named_for_several_projects_is_the_one_they_all_read()
     {
-        // **This asserted a refusal until 018, and the refusal's reason is what went.** A catalogue
-        // belonged to a project, so one named on the command line beside several projects had nowhere
-        // to go — and admitting it would have joined the machine to whichever project happened to be
-        // listed first, which is why the check ran before any store was opened or any port bound.
-        //
-        // There is one catalogue per machine now and `--node-config` names exactly that, so it applies
-        // to every project this process serves and there is nothing left to disambiguate. What the old
-        // test protected is now unrepresentable rather than guarded.
+        // There is one catalogue per machine and `--node-config` names exactly that, so it applies
+        // to every project this process serves and there is nothing to disambiguate.
         ProjectManifest.Write(
             Root,
             [
@@ -112,10 +106,9 @@ public sealed class HostedNodeTests : IDisposable
     [Fact]
     public async Task Every_project_served_hosts_a_node_from_the_one_catalogue()
     {
-        // **This asserted the opposite until 018: one project offered the node and the other told, by
-        // name, that it named no catalogue.** That was the per-project binding working exactly as
-        // designed — and it is the defect, not a symptom of one: a checkout is addressable in every
-        // project that names it and was startable only in the one whose file happened to hold it.
+        // **No project may tell, by name, that it names no catalogue.** A checkout is addressable in
+        // every project that names it, so it must be startable in every one of them, not only the
+        // one whose file happens to hold it.
         //
         // Read from the real tool's output, because the placement lives in the entry point and not in
         // the command an in-process test drives.
@@ -162,7 +155,7 @@ public sealed class HostedNodeTests : IDisposable
     [Fact]
     public async Task The_environment_catalogue_survives_the_watcher_restarting_a_project()
     {
-        // Lens 1 probe, kept through 018 because the failure it guards is still reachable. A machine
+        // A machine
         // whose catalogue is in PARLEY_NODE_CONFIG hosts its node from the variable at start; the
         // watcher then restarts the project on a changed entry, and the restarted project must read
         // the same file.
@@ -214,8 +207,8 @@ public sealed class HostedNodeTests : IDisposable
 
         // Matched case-insensitively because the two spellings are two call sites: a node hosted for a
         // named project is prefixed with that name and opens lower case, and one hosted for a machine
-        // serving no project opens the sentence. 018 made every project take the first, and a matcher
-        // pinned to the second counted nothing while the node was hosted perfectly well.
+        // serving no project opens the sentence. Every project takes the first, and a matcher
+        // pinned to the second would count nothing while the node was hosted perfectly well.
         static int Hosted(ToolLog log) =>
             log.Lines().Count(l => l.Contains("osting this machine's node", StringComparison.Ordinal));
 
@@ -231,7 +224,7 @@ public sealed class HostedNodeTests : IDisposable
         // Options are taken above the verb, so the entry point's refusal of unknown flags cannot
         // see one that was legitimately taken for a different command: every verb accepts every
         // option. `parley up --with-node` is the case that matters -- the flag names hosting a
-        // node and `up` is the command that runs one -- and it used to do precisely what typing
+        // node and `up` is the command that runs one -- and it must not do what typing
         // nothing does, exit zero, and say nothing.
         var (code, error) = ToolProcess.Run(
             [(ProjectManifest.PathVariable, Root)], verb, "--with-node");
@@ -244,8 +237,7 @@ public sealed class HostedNodeTests : IDisposable
     [Fact]
     public void The_node_is_told_which_catalogue_to_read_rather_than_finding_one()
     {
-        // The defect this file's feature was found by, guarded at the source because the
-        // behaviour needs a broker and a logon to reproduce.
+        // Guarded at the source because the behaviour needs a broker and a logon to reproduce.
         //
         // `--node-config` is taken centrally, like every other option. It was honoured by
         // `enroll` and ignored by the node, which called a reader that consulted

@@ -74,7 +74,6 @@ public sealed class SecondProjectTests
         // project held the consent, because only that project's node could launch the checkout; every project's node
         // reads the same catalogue, so there is no longer another project to go through. The asking half — which is
         // what the defect was — is unchanged, and is what this still holds.
-        var alpha = new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null);
         var beta = new ProjectSettings(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:2", null);
         var asked = new List<(string Project, string Agent)>();
         var started = new List<(string Project, string Agent)>();
@@ -92,7 +91,6 @@ public sealed class SecondProjectTests
             },
             "inventory",
             beta,
-            [alpha, beta],
             TestContext.Current.CancellationToken);
 
         Assert.Equal([("beta", "inventory@" + MachineName.Current)], started);

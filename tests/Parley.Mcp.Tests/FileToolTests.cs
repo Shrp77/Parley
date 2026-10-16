@@ -260,9 +260,9 @@ public sealed class FileToolTests : IDisposable
     [Fact]
     public async Task A_name_a_placer_chose_reaches_another_agent_as_the_placer_chose_it_so_the_tools_say_whose_text_it_is()
     {
-        // Review gate, lens 2 run 2.1. A message reaches a model inside the envelope that marks it as another
+        // A message reaches a model inside the envelope that marks it as another
         // participant's words; a file's name is the placer's choosing and reaches the fetcher's list and inbox as it is.
-        // So each tool that returns one says so. Since 0.28.0 a name is letters, digits, '.', '_' and '-', which takes
+        // So each tool that returns one says so. A name is letters, digits, '.', '_' and '-', which takes
         // the spaces out of a sentence and leaves its words: narrower text, still the placer's.
         await using var fixture = new ServerFixture(T0);
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);

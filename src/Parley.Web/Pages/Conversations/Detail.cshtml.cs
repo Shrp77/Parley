@@ -20,7 +20,8 @@ namespace Parley.Web.Pages.Conversations;
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
 /// <param name="seats">The seats this console is holding, for the composer's voice.</param>
-public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : PageModel
+/// <param name="notices">What the console tells the person, which the bell lists.</param>
+public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parley.Web.Notifications.NotificationLog notices) : PageModel
 {
     /// <summary>Which project this conversation belongs to.</summary>
     [BindProperty(SupportsGet = true)]
@@ -44,7 +45,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// <summary>Everyone party to any exchange in it.</summary>
     public IReadOnlyList<AgentName> Participants { get; private set; } = [];
 
-    /// <summary>The project's agents that have not taken part, offered beside the ones that have (specs/026).</summary>
+    /// <summary>The project's agents that have not taken part, offered beside the ones that have.</summary>
     /// <remarks>
     /// <see cref="Parley.Client.Rendering.RoomRoster.NotInIt"/>, the one rule the terminal's room reads too, so the page and
     /// the room cannot disagree about who is offered. Ticking one and sending addresses them, which brings them in.
@@ -120,11 +121,29 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
     /// <summary>What the operator wrote.</summary>
     /// <remarks>
-    /// Bound on a POST only. A link can no longer leave words in the box, so a stale link that still carries
-    /// <c>Says=</c> opens an empty one: what is in the box is only ever what the person typed.
+    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is only
+    /// ever what the person typed.
     /// </remarks>
     [BindProperty]
     public string? Says { get; set; }
+
+    /// <summary>The exchange this is an answer to, when the person chose to reply to an agent's question.</summary>
+    /// <remarks>
+    /// Chosen by the person, never inferred (SPEC.md 5.6): the button is on the question being answered. Without it the
+    /// words are a new Request, as everything else a person writes is.
+    /// </remarks>
+    [BindProperty]
+    public long? ReplyTo { get; set; }
+
+    /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
+    /// <param name="message">The message.</param>
+    /// <returns><see langword="true"/> for a Clarify to the person, on an open exchange, with nothing after it there.</returns>
+    public bool AwaitsReply(Message message) =>
+        message.Type == MessageType.Clarify
+        && message.To.Role == "human-user"
+        && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
+        && snapshot.State == ExchangeState.Open
+        && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
 
     /// <summary>Words a link suggests, shown as the box's hint and never put in it.</summary>
     /// <remarks>
@@ -211,12 +230,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// </returns>
     /// <remarks>
     /// <para>
-    /// <b>The transcript follows its conversation, which reverses what this page used to do.</b> It never
-    /// refreshed, on the argument that a page changing under a reader mid-sentence is worse than one briefly
-    /// out of date, and said instead that it had fallen behind. The terminal answered that argument in 0.25.7
-    /// rather than overruling it, and this answers it the same way: a transcript grows only at its end, and
-    /// the page keeps the message a reader is looking at where it was — so what the argument feared does not
-    /// happen, and a reader at the bottom sees an answer arrive without reloading.
+    /// <b>The transcript follows its conversation.</b> A transcript grows only at its end, and
+    /// the page keeps the message a reader is looking at where it was, so a page never changes under a reader
+    /// mid-sentence, and a reader at the bottom sees an answer arrive without reloading.
     /// </para>
     /// <para>
     /// <b>The whole region rather than the messages after one the reader has.</b> A new message is not the
@@ -320,12 +336,16 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             return Unavailable(read.Problem);
         }
 
-        return new JsonResult(new
-        {
-            conversation = Id,
-            messages = export.Messages,
-            exchanges = export.Exchanges
-        });
+        // A file and not a page: a JSON body answered to a link replaced the console in the tab, with no way back.
+        return File(
+            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+                new { conversation = Id, messages = export.Messages, exchanges = export.Exchanges },
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+                {
+                    WriteIndented = true
+                }),
+            "application/json",
+            $"{Id}.json");
     }
 
     /// <summary>Keys exchange snapshots by their identifier, tolerating a repeated one.</summary>
@@ -371,8 +391,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         }
 
         // **Everybody, resolved here rather than by checking boxes in a browser.** The alternative
-        // is script that ticks them, which this console does not use anywhere and would make the
-        // one composer that sends to several agents the only page that stops working without it.
+        // is script that ticks them, which would make the one composer that sends to several
+        // agents stop working without script.
         //
         // It is read after the page is loaded because the roster it expands to has to be the one
         // the server holds now, not the one the form was rendered from: a participant who joined
@@ -385,9 +405,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
             Targets = [.. Participants.Select(who => who.Value)];
         }
 
-        if (Targets.Count == 0 || string.IsNullOrWhiteSpace(Says))
+        if ((ReplyTo is null && Targets.Count == 0) || string.IsNullOrWhiteSpace(Says))
         {
-            SendProblem = Targets.Count == 0
+            SendProblem = ReplyTo is null && Targets.Count == 0
                 ? "Nobody was picked, so nothing was sent."
                 : "Nothing was written, so nothing was sent.";
 
@@ -399,10 +419,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
         var token = HttpContext.RequestAborted;
         var sent = new List<(string, string)>();
 
-        // **Always the person's voice, never the operator's**. A composer with no seat behind it
-        // fell back to sending an instruction — a different kind of thing, reported differently, and absent from the
-        // transcript — so what a person wrote here depended on whether they had remembered to join. The broker provides
-        // the seat now and this takes it; when it cannot be taken, nothing is sent and the reason is said.
+        // **Always the person's voice.** The broker provides the seat and this takes it; when it
+        // cannot be taken, nothing is sent and the reason is said.
         var seated = await PersonSeats.EnsureAsync(seats, directory, project, token).ConfigureAwait(false);
 
         if (seated.Hold is not { } hold)
@@ -413,6 +431,44 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
             return Page();
         }
+
+        // **A reply the person chose to give to a question**, on that exchange, so it answers the question rather than
+        // standing beside it as a new Request that leaves the question open. The broker checks the exchange is theirs to
+        // answer.
+        if (ReplyTo is { } exchange)
+        {
+            var answered = await new SeatVoice(directory.AgentsFor(project), hold.Seat)
+                .ClarifyAsync(hold, exchange, Says, token).ConfigureAwait(false);
+
+            Sent = [("Reply", answered.Says)];
+            Tell(project.Name.Value, "Reply", answered.Says);
+
+            if (answered.Closed)
+            {
+                Says = null;
+            }
+
+            ReplyTo = null;
+
+            await OnGetAsync().ConfigureAwait(false);
+
+            return Page();
+        }
+
+        // The person is never one of their own recipients. "Everyone in this conversation" includes the seat that is
+        // sending, and the broker rightly refuses a request to oneself, which read as a failure and kept the words in the box.
+        var others = Targets.Where(target => !string.Equals(target, hold.Seat.Name.Value, StringComparison.Ordinal)).ToList();
+
+        if (others.Count == 0)
+        {
+            SendProblem = "Nobody was picked, so nothing was sent.";
+
+            await OnGetAsync().ConfigureAwait(false);
+
+            return Page();
+        }
+
+        Targets = others;
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
@@ -437,6 +493,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
         Sent = sent;
 
+        foreach (var (who, outcome) in sent)
+        {
+            Tell(project.Name.Value, who, outcome);
+        }
+
         // Cleared once it has gone to everybody. When any was refused the words stay, so they can be fixed or sent again
         // without being typed twice.
         if (sent.All(result => result.Item2.StartsWith("Sent.", StringComparison.Ordinal)))
@@ -448,6 +509,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
 
         return Page();
     }
+
+    /// <summary>Keeps what the broker answered, for the bell.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="who">Who it is about.</param>
+    /// <param name="outcome">What the broker said.</param>
+    private void Tell(string project, string who, string outcome) =>
+        notices.Add(project, Id, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
 
     /// <summary>The person's words, led by the roadmap item they are about when this opens the work on it.</summary>
     /// <param name="project">The project.</param>
@@ -472,16 +540,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats) : Pag
     /// <remarks>Plain text, because a payload is inert data and the agent reads it as the person's own line.</remarks>
     public static string Lead(string item, string? roadmap, string words) =>
         $"This is about \"{item}\" in the roadmap \"{roadmap}\": {words}";
-
-    /// <summary>The exact words each agent receives.</summary>
-    /// <returns>The instruction text.</returns>
-    /// <remarks>
-    /// Shown in the composer before anything is sent, because an operator who cannot see what
-    /// will be said cannot be responsible for it — and the node marks this as the operator's, so
-    /// the agent reads it as the principal speaking.
-    /// </remarks>
-    public string Compose() =>
-        $"About conversation '{Id}'.{Environment.NewLine}{Environment.NewLine}{Says}";
 
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>
     /// <param name="problem">What the read reported.</param>

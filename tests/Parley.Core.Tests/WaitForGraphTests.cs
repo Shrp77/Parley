@@ -6,7 +6,7 @@ namespace Parley.Core.Tests;
 /// The cycle a Request would close, which the broker records and admits (§5.0).
 /// </summary>
 /// <remarks>
-/// A cycle is not refused in 0.5: agents asking each other for work in a loop is ordinary cross-repository
+/// A cycle is not refused: agents asking each other for work in a loop is ordinary cross-repository
 /// work, and nothing is deadlocked because nothing waits synchronously. It is recorded so the person running
 /// the deployment can see a loop that has stopped making progress.
 /// </remarks>

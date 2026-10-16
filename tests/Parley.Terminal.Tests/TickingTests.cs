@@ -65,17 +65,32 @@ public sealed class TickingTests
     }
 
     [Fact]
-    public void A_ticks_everything_and_n_ticks_nothing()
+    public void Alt_a_ticks_everything_and_Alt_n_ticks_nothing()
     {
         var dialog = Over("orders", "billing", "inventory");
 
-        dialog.NewKeyDownEvent(Key.A.WithShift.NoShift);
+        dialog.NewKeyDownEvent(Key.A.WithAlt);
 
         Assert.Equal(["orders", "billing", "inventory"], Ticked(dialog));
 
-        dialog.NewKeyDownEvent(Key.N.WithShift.NoShift);
+        dialog.NewKeyDownEvent(Key.N.WithAlt);
 
         Assert.Empty(Ticked(dialog));
+    }
+
+    [Fact]
+    public void A_plain_a_or_n_is_not_an_action()
+    {
+        var dialog = Over("orders", "billing");
+
+        dialog.NewKeyDownEvent(Key.A);
+
+        Assert.Empty(Ticked(dialog));
+
+        dialog.SetAll(true);
+        dialog.NewKeyDownEvent(Key.N);
+
+        Assert.Equal(["orders", "billing"], Ticked(dialog));
     }
 
     [Fact]

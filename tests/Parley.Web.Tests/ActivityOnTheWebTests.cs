@@ -28,7 +28,7 @@ public sealed class ActivityOnTheWebTests
             [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
-        var model = new DetailModel(directory, new SeatBook(directory.AgentsFor));
+        var model = new DetailModel(directory, new SeatBook(directory.AgentsFor), new Parley.Web.Notifications.NotificationLog());
 
         typeof(DetailModel).GetProperty(nameof(DetailModel.ParticipantActivity))!.SetValue(model, activity);
 

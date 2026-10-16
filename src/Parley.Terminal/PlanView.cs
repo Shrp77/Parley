@@ -30,13 +30,19 @@ internal sealed class PlanView : Dialog
     /// <summary>Said on the button that opens an item.</summary>
     private const string OpenLabel = "Open item (Enter)";
 
+    /// <summary>Said on the button that edits the roadmap; its key is Alt plus <see cref="EditKey"/>.</summary>
+    internal const string EditLabel = "Edit roadmap (Alt+e)";
+
+    /// <summary>The letter, with Alt, that edits the roadmap.</summary>
+    internal const char EditKey = 'e';
+
     /// <summary>Said on the button that leaves the view.</summary>
     internal const string CloseLabel = "Close (Esc)";
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
-        "Up and Down choose an item. Enter opens its conversation; an item that has not started opens an empty one with its "
-        + "text in the box, and nothing is sent until you send it.";
+        "An item that has not started opens an empty conversation with its text in the box, "
+        + "and nothing is sent until you send it.";
 
     private readonly ListView _items;
     private readonly View _detail;
@@ -67,11 +73,9 @@ internal sealed class PlanView : Dialog
             Height = 2,
         };
 
-        // **A label above the list, and no border on it.** The list had a bordered frame of its own with a title, which no
-        // other list on this surface has: the owner's terminal threw a NullReferenceException from the toolkit's line
-        // canvas on the first real draw of this view, which the driven suite never reproduced because it never pumps the
-        // loop. Every list here is a plain ListView under a label, so this is too; the view that draws borders on its
-        // paragraphs (the proposal view) has run on a real terminal.
+        // **A label above the list, and no border on it.** Every list here is a plain ListView under a label: a
+        // bordered frame draws through the toolkit's line canvas, which the driven suite never exercises because it
+        // never pumps the loop.
         var itemsLabel = new Plain { Text = "Items", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(2), Height = 1 };
 
         _items = new ListView
@@ -105,12 +109,14 @@ internal sealed class PlanView : Dialog
         hint.TextFormatter.WordWrap = true;
 
         var open = new Button { Title = OpenLabel, X = 1, Y = Pos.AnchorEnd(2) };
-        var close = new Button { Title = CloseLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
+        var edit = new Button { Title = EditLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
+        var close = new Button { Title = CloseLabel, X = Pos.Right(edit) + 1, Y = Pos.AnchorEnd(2) };
 
         open.Accepting += (_, args) => { args.Handled = true; OpenSelected(); };
+        edit.Accepting += (_, args) => { args.Handled = true; Edit(); };
         close.Accepting += (_, args) => { args.Handled = true; Closed?.Invoke(this, EventArgs.Empty); };
 
-        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, close);
+        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, edit, close);
 
         ShowDetail();
     }
@@ -121,6 +127,9 @@ internal sealed class PlanView : Dialog
 
     /// <summary>Raised with the item chosen.</summary>
     internal event EventHandler<RoadmapItem>? ItemChosen;
+
+    /// <summary>Raised when the person asks to change the roadmap.</summary>
+    internal event EventHandler? EditRequested;
 
     /// <summary>Raised when the view is left without choosing.</summary>
     internal event EventHandler? Closed;
@@ -189,6 +198,13 @@ internal sealed class PlanView : Dialog
 
     private bool Choose(Key key)
     {
+        if (Shell.Typed(key, EditKey))
+        {
+            Edit();
+
+            return true;
+        }
+
         if (key != Key.Esc)
         {
             return false;
@@ -198,6 +214,10 @@ internal sealed class PlanView : Dialog
 
         return true;
     }
+
+    /// <summary>Asks to change the roadmap, as Alt+e does.</summary>
+    /// <remarks>Internal so a driven test can ask without a key that starts queued work.</remarks>
+    internal void Edit() => EditRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Chooses the item under the cursor, as Enter does.</summary>
     /// <remarks>Internal so a driven test can choose without drawing while the queue opens the item, which races the test's own draw.</remarks>

@@ -19,8 +19,7 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// </remarks>
 /// <param name="directory">
-/// The projects and their brokers. No seat book any more: asking an agent what it owns was the one action here that was a
-/// person's message and needed a seat, and since 022 Parley asks.
+/// The projects and their brokers. No seat is needed: Parley asks an agent what it owns, not the person.
 /// </param>
 public sealed class ActModel(BrokerDirectory directory) : PageModel
 {
@@ -29,13 +28,11 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     public string? Project { get; set; }
 
     /// <summary>
-    /// What to do: retire, reinstate, purge, forceconclude, prune, ownership, askownership or
-    /// askeveryownership.
+    /// What to do: one of the arms of the two switches below.
     /// </summary>
     /// <remarks>
-    /// The list is here as well as in the two switches, so it goes stale — it already had, missing
-    /// <c>askeveryownership</c>. What keeps the set honest is <c>EveryActionHasADoorTests</c>, which reads
-    /// the arms out of both switches and out of every page rather than out of any list.
+    /// <c>EveryActionHasADoorTests</c> reads the arms out of both switches and out of every page,
+    /// so the set is held there and not in any list.
     /// </remarks>
     [BindProperty(SupportsGet = true)]
     public string? Action { get; set; }
@@ -44,10 +41,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public string? Subject { get; set; }
 
-    /// <summary>The operator's own words: the ownership line they are recording.</summary>
+    /// <summary>The person's own words: the ownership line they are recording.</summary>
     /// <remarks>
-    /// What makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>, where
-    /// the argument for leaving it empty is the one distinction 020 exists to keep.
+    /// What makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>.
     /// </remarks>
     [BindProperty]
     public string? Text { get; set; }
@@ -108,11 +104,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "reinstate" => ($"'{Subject}' will be routed to again.", false),
 
-            // Reachable from the web since the combined review gate found it was not: the operation was bound here in
-            // no page at all, and DriftTests passed because the host's own `app.StartAsync(` contains its name.
-            "start" => ($"The node on '{Subject}'s machine is asked to start it. Nothing is said to it, and it costs "
-                      + "no turn; it attaches and is reachable. A retired agent is not started, and nothing can be "
-                      + "asked of a machine whose node is not running.", false),
+            "start" => ($"The node on '{Subject}'s machine is asked to start it. It costs no turn. A retired agent is "
+                      + "not started, and nothing can be asked of a machine whose node is not running.", false),
 
             "purge" => ($"'{Subject}' will be deleted, along with every conversation it was party "
                       + "to — including its peers' side of those conversations. Its name becomes "
@@ -121,15 +114,13 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "forceconclude" => ($"Conversation '{Subject}' will be closed now, whatever its participants "
                               + "have voted. Every request still open in it is closed with a result saying "
-                              + "a person closed it, each participant holding that work is told, and the "
-                              + "log records that a person closed it.", false),
+                              + "a person closed it, and each participant holding that work is told.", false),
 
             // The project-level form, which follows `prune` in taking its subject from whatever made the
             // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
             // and a person cannot un-spend a turn per agent.
             "askeveryownership" => ("Parley will ask every agent in this project again what it owns, each as "
-                                  + "its own question, and answering costs each of them a turn. Parley already "
-                                  + "asks every new agent on its own, so this is for asking again. An agent whose "
+                                  + "its own question, and answering costs each of them a turn. An agent whose "
                                   + "answer is still being decided is left alone. No seat is needed: Parley "
                                   + "asks, not you.", false),
 
@@ -168,13 +159,12 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                   + "for a person. Answers already waiting stay waiting.", false),
 
             // Described here as well as done below, because an action with an arm in the POST and none
-            // here reached a person as "this is not something the console does" above a button that did
-            // it anyway -- which is what this did until 0.34.1. Not destructive: it replaces one line in
+            // here would reach a person as "this is not something the console does" above a button that
+            // does it anyway. Not destructive: it replaces one line in
             // one launch entry, and the agent's peers go on reading the old one until it restarts.
             "ownership" => ($"The line you write is recorded as yours and written into '{Subject}'s "
                           + "launch configuration on this machine. Its peers go on reading whatever "
-                          + "line it started with until it next starts. To have the agent propose one "
-                          + "instead, ask it what it owns and accept the answer.", false),
+                          + "line it started with until it next starts.", false),
 
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
                       + "sweep. Message text past the policy is deleted permanently: export a conversation "
@@ -205,9 +195,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         // forceconclude and prune needs it to be an agent name, and the parse is done once, here,
         // rather than inside the switch: AgentName.Create throws on anything malformed, and an
         // unhandled throw out of a page handler is a stack trace served to whatever asked for it.
-        //
-        // The count this comment used to carry went stale the first time an action was added, so it
-        // names the two exceptions instead -- which is the fact that decides where the guard sits.
+        // The two exceptions decide where the guard sits.
         var named = AgentName.TryCreate(Subject, out var agent);
 
         var read = await BrokerDirectory.ReadAsync(async () =>
@@ -244,17 +232,15 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                 "purge" => DescribePurge(broker.PurgeAsync(agent, token)),
 
                 // Composed, because what a person types *here* is their own line and is recorded as
-                // theirs. That is still true now the ask exists: a proposal an agent wrote arrives
-                // through the conversation it was agreed in and is accepted from that conversation,
-                // carrying it -- which is why `source` exists at all rather than every acceptance
-                // being one thing.
+                // theirs. A proposal an agent wrote arrives through the conversation it was agreed
+                // in and is accepted from that conversation, carrying it -- which is why `source`
+                // exists rather than every acceptance being one thing.
                 "ownership" => AcceptOwnership(
                     project, broker, agent,
                     new OwnershipAcceptance((Text ?? string.Empty).Trim(), OwnershipSource.Composed, null, null),
                     token),
 
-                // Parley asks, so no seat: 020 sent this as the person's own Request and refused without a seat, which
-                // is the refusal the owner met on the one action they reached for (022).
+                // Parley asks, so no seat.
                 "askownership" => DescribeAction(broker.AskAgainAsync(agent, token),
                     $"Parley asked '{agent.Value}' what it owns. Its answer shows in the ownership review."),
 
@@ -278,18 +264,16 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
         await action.ConfigureAwait(false) ? "Done." : "Nothing changed.";
 
     // What a start reports is that a node was asked, never that the agent is running: whether it attaches and registers is
-    // a different question, and 0.25.2 records a screen predicting a registration instead of checking one.
+    // a different question, so a screen must not predict a registration.
     private static async Task<string> DescribeStart(Task<bool> start) =>
         await start.ConfigureAwait(false)
-            ? "Its node was asked to start it. It is reachable once it attaches; the agent's page shows when it has."
+            ? "Its node was asked to start it."
             : "Nothing was asked: it is retired, so reinstate it first, or no node on its machine is running.";
 
     /// <summary>Writes the line where it takes effect, then records that a person accepted it.</summary>
     /// <param name="project">
-    /// The project whose launch entry to write. Named rather than left null, which is what 020's
-    /// quickstart walk found: enrolment writes <c>parley-&lt;project&gt;</c>, so asking for the unnamed key
-    /// refused every repository enrolled since 009 with "has no entry for this agent" — while the terminal,
-    /// which passes its project, wrote the same file happily.
+    /// The project whose launch entry to write. Named rather than left null: enrolment writes
+    /// <c>parley-&lt;project&gt;</c>, so asking for the unnamed key would refuse every enrolled repository.
     /// </param>
     /// <param name="broker">This project's broker.</param>
     /// <param name="agent">Whose line it is.</param>
@@ -307,8 +291,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <para>
     /// <b>The workspace comes from the registry, which is what the agent said about itself</b> and may
     /// be long out of date. That is why the write reads the name back out of the file before touching
-    /// it: 005's review gate found a withdrawal deleting a <em>different</em> agent's launch
-    /// configuration for exactly this reason.
+    /// it: a stale workspace could otherwise hit a <em>different</em> agent's launch configuration.
     /// </para>
     /// </remarks>
     private static async Task<string> AcceptOwnership(
@@ -364,7 +347,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// person's edit.
     /// </para>
     /// <para>
-    /// The length recorded is the agent's own message, never the accepted line (FR-026's evidence is what agents write).
+    /// The length recorded is the agent's own message, never the accepted line (the evidence is what agents write).
     /// Accepting settles Parley's question and closes its conversation, which the broker does as it records the line.
     /// </para>
     /// </remarks>
@@ -402,8 +385,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <returns>What to put in front of the person.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Parley asks, so no seat is needed</b> (022). 020 sent these as the person's own Requests and refused without a
-    /// seat.
+    /// <b>Parley asks, so no seat is needed.</b>
     /// </para>
     /// <para>
     /// <b>Seats, retired agents and Parley itself are left out.</b> A seat is a person, a retired agent is not routed to,

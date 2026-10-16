@@ -5,26 +5,10 @@
 /// </summary>
 /// <remarks>
 /// <para>
-/// This type has been written three times and the two earlier versions are worth recording,
-/// because each fixed the previous one's failure and introduced its own.
-/// </para>
-/// <para>
-/// The first <b>stored</b> liveness: <c>live</c> was written on attach and again on every
-/// sweep, and nothing at all wrote the way out. A session that was killed, crashed, or lost its
-/// machine is exactly the case where nothing is left running to withdraw the claim, so a dead
-/// agent's row read <c>live</c> for ever and every reader believed it.
-/// </para>
-/// <para>
-/// The second <b>derived</b> liveness from a timestamp, which fixed that — a timestamp stops
-/// advancing when the process stops, however impolitely. But it could only produce a guess
-/// dressed as a status: three sweeps of silence meant one thing and five minutes meant another,
-/// and both were really "we have not heard anything and are estimating what that implies."
-/// Worse, every reader had to assume the deployment's sweep cadence to interpret them, and no
-/// reader could see it — a registry that reported healthy agents as <c>NotResponding</c> would
-/// have been the result of somebody raising the tick.
-/// </para>
-/// <para>
-/// This one <b>observes</b>. A connection is open or it is not, and the process holding it says
+/// Presence is <b>observed</b>, never stored and never inferred from a timestamp. A stored claim
+/// would need something to withdraw it, and a killed session or a machine that lost power is
+/// exactly the case where nothing is left running to do so; a timestamp could only produce a
+/// guess dressed as a status. A connection is open or it is not, and the process holding it says
 /// so. There is no window, no cadence, and nothing to assume. See SPEC.md §4.0 and §14.
 /// </para>
 /// </remarks>
@@ -38,20 +22,13 @@ public static class AgentLiveness
     /// <returns>What to report.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The agent's own connection is checked first, and this is a correction.</b> An earlier
-    /// version asked about the node first and treated its answer as final, on the grounds that
-    /// an agent cannot be connected through a node that is not. That premise is false here and
-    /// SPEC.md §4 says so in as many words: a node is not a relay, and its agents speak to the
-    /// broker through their own adapters under their own identities. So the two connections are
-    /// independent, and a machine may perfectly well have a working agent and no node — somebody
-    /// opened an editor without running a supervisor there.
-    /// </para>
-    /// <para>
-    /// Under the old order that agent read as <see cref="AgentPresence.Stranded"/> while it was
-    /// answering questions, which is the worst of the three to be wrong about: it means
-    /// unreachable, and it would have been reported for the agents most obviously reachable of
-    /// all. The node's connection decides only whether an agent that is <em>not</em> running can
-    /// be made to run, which is the one question it actually answers.
+    /// <b>The agent's own connection is checked first.</b> SPEC.md §4 says a node is not a relay:
+    /// its agents speak to the broker through their own adapters under their own identities. So the
+    /// two connections are independent, and a machine may perfectly well have a working agent and no
+    /// node — somebody opened an editor without running a supervisor there. Asking about the node
+    /// first would report that agent <see cref="AgentPresence.Stranded"/> while it was answering
+    /// questions. The node's connection decides only whether an agent that is <em>not</em> running
+    /// can be made to run, which is the one question it actually answers.
     /// </para>
     /// <para>
     /// Retirement is not considered. It is a judgement rather than an observation and it
@@ -75,8 +52,8 @@ public static class AgentLiveness
     /// <remarks>
     /// <para>
     /// <b>The person reads <see cref="AgentPresence.Here"/> or <see cref="AgentPresence.Away"/>, never anything else</b>
-    /// (SPEC.md §14). With no machine, the agents' reading gave the person <see cref="AgentPresence.Stranded"/> — telling a
-    /// peer the person could not be reached, which 023 made untrue: the seat is always there and always asked.
+    /// (SPEC.md §14). With no machine, the agents' reading would give the person <see cref="AgentPresence.Stranded"/> — telling a
+    /// peer the person could not be reached, which is untrue: the seat is always there and always asked.
     /// </para>
     /// <para>
     /// <b>The facilitator reads <see cref="AgentPresence.Running"/></b>, since it is present whenever its project is served

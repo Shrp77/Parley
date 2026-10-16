@@ -63,7 +63,7 @@ public sealed class ScriptParityTests
     [Fact]
     public void Both_scripts_decide_about_the_broker_before_touching_it()
     {
-        // The property SC-001 rests on, asserted of each script separately rather than of one and
+        // The property that matters, asserted of each script separately rather than of one and
         // assumed of the other. This is the check that would have caught a Linux script still
         // stopping the broker unconditionally while the Windows one had learned not to.
         Assert.Contains("$replacingBroker", Windows, StringComparison.Ordinal);

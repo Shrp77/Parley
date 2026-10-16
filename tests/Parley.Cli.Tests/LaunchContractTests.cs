@@ -56,7 +56,7 @@ public sealed class LaunchContractTests
     public void The_illustrated_keys_this_owns_are_ones_it_derives()
     {
         // **Only the keys this owns, because the illustration deliberately holds one it does not.**
-        // The first version of this required every key to be ours and reported `some-other-server`,
+        // Requiring every key to be ours would report `some-other-server`,
         // which is the entry the document is *making a point about*: a repository's launch
         // configuration is shared, and what this writes goes beside what was already there. A check
         // that failed on it would push somebody to delete the one line that matters most.

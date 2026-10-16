@@ -8,9 +8,8 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This exists because the number moves, and it has: the default was 200 as a measurement, and the
-/// owner took it off on the reasoning of SPEC.md principle 2.8 — nothing cuts a line of work off
-/// before its participants are finished. Whoever changes the default changes a constant and a test,
+/// This exists because the number can move: there is no cap by default, on the reasoning of SPEC.md
+/// principle 2.8 — nothing cuts a line of work off before its participants are finished. Whoever changes the default changes a constant and a test,
 /// and would otherwise ship documents still telling operators the old number. Prose has nothing
 /// checking it but this.
 /// </para>
@@ -53,7 +52,7 @@ public sealed class DocumentedDefaultTests
     [Fact]
     public void The_readme_states_the_default_the_domain_applies()
     {
-        var readme = RepositoryFile.Read("README.md");
+        var readme = RepositoryFile.Documentation();
 
         Assert.False(ExchangePolicy.Default.BoundsClarifications);
         Assert.Contains("Clarifications are not capped", readme, StringComparison.Ordinal);

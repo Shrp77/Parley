@@ -9,7 +9,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 of the review gate, run 2.2. <c>DestroyTests</c> asks what a successful destroy removes.
+/// <c>DestroyTests</c> asks what a successful destroy removes.
 /// This asks what a failing one leaves, which is the question SPEC.md §14 answers with the shape of
 /// the transaction rather than with a list: the deletes run with foreign keys deferred to commit,
 /// so a table nobody remembered fails the whole thing instead of leaving a message pointing at a

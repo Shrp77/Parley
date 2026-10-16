@@ -9,12 +9,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This file used to be about an exemption, and the exemption has no subject any more.</b> While enrolment was
-/// three steps, <c>scan</c> needed no project — it walked one directory, decided which subdirectories were git
-/// repositories, and wrote a file for a person to edit, with no project named anywhere in what it produced. Holding
-/// it to the requirement its two siblings met meant the one step whose whole job was to survey a machine could not be
-/// run on a machine with several projects on it, which is the machine worth surveying. That was the owner's, found
-/// while re-enrolling nineteen repositories.
+/// <b>There is no exemption from naming a project.</b> Enrolment is one verb, and there is no
+/// survey step that could run without one.
 /// </para>
 /// <para>
 /// One verb has no such asymmetry. It writes <c>parley-&lt;project&gt;</c> into every repository it configures, so

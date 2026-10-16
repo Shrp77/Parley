@@ -168,7 +168,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
 
         // By the key written on the button, which is the way the view says to choose.
-        driving.Press(Key.C);
+        driving.Press(Key.C.WithAlt);
         await shell.Settled;
 
         var roadmap = Assert.Single(await Client.RoadmapsAsync(Ct));
@@ -195,7 +195,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // The proposals are a pane of the project, and Enter on one opens it.
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.E);
+        driving.Press(Key.E.WithAlt);
         await shell.Settled;
 
         var form = (FormDialog)driving.Find(Proposing.Title);
@@ -227,7 +227,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // The proposals are a pane of the project, and Enter on one opens it.
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.E);
+        driving.Press(Key.E.WithAlt);
         await shell.Settled;
 
         var form = (FormDialog)driving.Find(Proposing.Title);
@@ -255,7 +255,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // The proposals are a pane of the project, and Enter on one opens it.
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.D);
+        driving.Press(Key.D.WithAlt);
         await shell.Settled;
 
         // The deliberate act: a second dialog that says what declining does, with the safe answer first.
@@ -318,7 +318,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // The proposals are a pane of the project, and Enter on one opens it.
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.C);
+        driving.Press(Key.C.WithAlt);
         await shell.Settled;
 
         // Shown with the match, and nothing is decided for the person (spec FR-009b).
@@ -478,9 +478,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         foreach (var (key, expected) in new[]
                  {
-                     (Key.C, ProposalChoice.Confirm),
-                     (Key.E, ProposalChoice.Edit),
-                     (Key.D, ProposalChoice.Decline),
+                     (Key.C.WithAlt, ProposalChoice.Confirm),
+                     (Key.E.WithAlt, ProposalChoice.Edit),
+                     (Key.D.WithAlt, ProposalChoice.Decline),
                      (Key.Esc, ProposalChoice.Leave),
                  })
         {
@@ -595,7 +595,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.C);
+        driving.Press(Key.C.WithAlt);
         await shell.Settled;
 
         Assert.Empty(shell.Roadmaps.Proposals);

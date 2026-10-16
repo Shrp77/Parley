@@ -63,13 +63,10 @@ internal static class Quoting
 
             if (kept.Length > Longest)
             {
-                // **The bound is counted in runes and applied in chars, and those are not the same
-                // unit.** A rune outside the basic plane is two chars, so an index taken at the bound
-                // can land between the halves of one — and half a surrogate pair is not a character
-                // at all: it renders as the replacement glyph and can make a well-formed value
-                // unreadable at exactly the moment it is being quoted in a refusal. 008's gate found
-                // this in one message and recorded it as low; here it is every message this feature
-                // builds, because 2.8 made this the single defence.
+                // The bound is counted in runes and applied in chars, and those are not the same unit. A
+                // rune outside the basic plane is two chars, so an index taken at the bound can land
+                // between the halves of one, and half a surrogate pair renders as the replacement glyph
+                // exactly when a value is being quoted in a refusal.
                 var cut = Longest - 1;
 
                 if (char.IsLowSurrogate(kept[cut]))
@@ -90,11 +87,10 @@ internal static class Quoting
     /// <remarks>
     /// <para>
     /// <b>The quotes are part of the neutralisation, which is why they are here and not at each
-    /// call site.</b> Fourteen sentences wrote their own, and a value carrying the delimiter reads
-    /// as several quoted values where there is one: a role of
+    /// call site.</b> A value carrying the delimiter reads as several quoted values where there is one: a role of
     /// <c>orders' in /srv/other.json. Project 'beta</c> turns one refusal into what looks like a
     /// complete and different one, naming a file the value's author chose — and a refusal is what
-    /// somebody reads before deciding which file is safe to point a tool at. That is 006's forged
+    /// somebody reads before deciding which file is safe to point a tool at. The same shape as a forged
     /// transcript header, one layer up.
     /// </para>
     /// <para>

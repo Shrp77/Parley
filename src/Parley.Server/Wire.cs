@@ -177,7 +177,7 @@ internal static class Conversions
     };
 
     /// <summary>Converts how a person arrived at an ownership line, for the wire.</summary>
-    /// <param name="source">Which of the three routes produced it.</param>
+    /// <param name="source">Which of the four routes produced it.</param>
     /// <returns>The wire value.</returns>
     public static Wire.OwnershipSource Out(OwnershipSource source) => source switch
     {
@@ -194,7 +194,7 @@ internal static class Conversions
     /// <remarks>
     /// <c>Unspecified</c> is refused rather than defaulted. It is what an unset field arrives as, and
     /// guessing <see cref="OwnershipSource.Proposed"/> would attribute a line to an agent that may
-    /// never have written one — which is the one thing the three values exist to keep apart.
+    /// never have written one — which is the one thing the values exist to keep apart.
     /// </remarks>
     public static OwnershipSource In(Wire.OwnershipSource source) => source switch
     {
@@ -429,6 +429,13 @@ internal static class Conversions
             Asked = q.Asked
         }));
 
+        wire.Since.AddRange((delivered.Since ?? []).Select(a => new Wire.AnswerSince
+        {
+            ExchangeId = a.ExchangeId,
+            SentUtc = Stamp(a.SentUtc),
+            Envelope = a.Envelope
+        }));
+
         return wire;
     }
 
@@ -530,6 +537,7 @@ internal static class Conversions
             LastTurnClean = record.Turns?.LastClean ?? false,
             LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
             OpenOutside = record.OpenOutside,
+            Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }
 
@@ -547,7 +555,6 @@ internal static class Conversions
         FileRejection.ConversationNotAssignable => Wire.FileRejection.ConversationNotAssignable,
         FileRejection.ConversationClosed => Wire.FileRejection.ConversationClosed,
         FileRejection.Changed => Wire.FileRejection.Changed,
-        FileRejection.Incomplete => Wire.FileRejection.Incomplete,
         FileRejection.NoSpace => Wire.FileRejection.NoSpace,
         FileRejection.ExtensionNotAllowed => Wire.FileRejection.ExtensionNotAllowed,
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,

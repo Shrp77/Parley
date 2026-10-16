@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 13: the delete path, and what else lives in that file.
+/// The delete path, and what else lives in that file.
 /// </summary>
 /// <remarks>
 /// <para>

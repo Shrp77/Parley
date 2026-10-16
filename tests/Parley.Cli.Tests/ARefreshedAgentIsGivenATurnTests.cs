@@ -11,9 +11,9 @@ namespace Parley.Cli.Tests;
 /// That an agent restarted to read its new ownership line is given a turn, as a fresh start is.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lens 1, run 3). A Request arriving while a refresh waited for the old process to
-/// exit asked for a turn the dying process could not take, and the restart gave none — while the broker's wake stayed
-/// claimed until a drain, so the mail sat uncollected with nothing to ask again. Driven with a stub agent that records
+/// A Request arriving while a refresh waits for the old process to
+/// exit asks for a turn the dying process cannot take, and the restart must give one — otherwise the broker's wake stays
+/// claimed until a drain, so the mail sits uncollected with nothing to ask again. Driven with a stub agent that records
 /// every turn it is given and takes two seconds to exit.
 /// </remarks>
 public sealed class ARefreshedAgentIsGivenATurnTests : IDisposable

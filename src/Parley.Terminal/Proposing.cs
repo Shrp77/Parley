@@ -17,7 +17,7 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>Which of the three happened is recorded by the broker from what was sent.</b> Confirming as proposed and editing
 /// first both end in the same call, with the content in it; whether the roadmap began as the agent's words or as the
-/// person's edit of them is the broker's comparison and never a choice made on this screen (research R10).
+/// person's edit of them is the broker's comparison and never a choice made on this screen.
 /// </para>
 /// <para>
 /// <b>Declining sits behind its description and a deliberate act</b>, the surface rule this repository applies to anything
@@ -120,7 +120,7 @@ internal static class Proposing
 
             var choosing = Prompting.Choose(
                 Title,
-                $"{waiting.Count} roadmap{(waiting.Count == 1 ? " is" : "s are")} awaiting your decision. An agent proposed each; nothing is a roadmap until you confirm it.",
+                $"{waiting.Count} roadmap{(waiting.Count == 1 ? " is" : "s are")} awaiting your decision.",
                 rows);
 
             var open = Prompting.Open(app, choosing);
@@ -152,9 +152,8 @@ internal static class Proposing
     /// <param name="queue">Runs the decision.</param>
     /// <param name="done">Told what to say when it is over.</param>
     /// <remarks>
-    /// The view is <see cref="ProposalView"/>: the roadmap, who it names and the choices all on screen, where this used to be
-    /// a menu whose description was the roadmap. Declining still passes through its own confirmation, since it tells the
-    /// agent and cannot be taken back.
+    /// The view is <see cref="ProposalView"/>: the roadmap, who it names and the choices all on screen. Declining
+    /// passes through its own confirmation, since it tells the agent and cannot be taken back.
     /// </remarks>
     internal static void Review(
         IApplication app,
@@ -299,7 +298,7 @@ internal static class Proposing
             return;
         }
 
-        // The title is a hint and a person decides what it means (spec FR-009b): shown with the match, never acted on.
+        // The title is a hint and a person decides what it means: shown with the match, never acted on.
         var revise = $"Revise the roadmap '{Safe.Text(match.Title)}'";
         var choosing = Prompting.Choose(
             Title,

@@ -1,14 +1,14 @@
 @model Parley.Web.Pages.Shared.AgentTreeView
 @using Parley.Core
 @*
-    The agents as a tree: one group per machine, the person's own group first. Used by the project page, which
-    only browses it, and by the conversation page, where each agent also carries a box that belongs to the
-    composer's form (`form="composer"`) so choosing one here is choosing it there.
+    The agents as a tree: one group per machine, the person's own group first. Used by the conversation page,
+    where each agent carries a box that belongs to the composer's form (`form="composer"`) so choosing one
+    here is choosing it there, and by the settings page, for choosing default agents.
 
     `name`, `value` and `checked` stay adjacent and in that order: tests and the form both read them that way.
 *@
 @{
-    // One agent's row. Where the tree picks, the state is the heading of the subgroup the row is in, so it is not repeated.
+    // One agent's row in the picking tree. The state is the heading of the subgroup the row is in, so it is not repeated.
     Func<AgentTreeEntry, Microsoft.AspNetCore.Html.IHtmlContent> row = @<li class="slot-@Palette.SlotFor(item.Name)@(item.InIt ? null : " not-in-it")">
         @if (Model.Pick)
         {
@@ -20,10 +20,6 @@
         }
         <span class="who" aria-hidden="true">@Palette.BadgeFor(item.Name)</span>
         <a class="name" title="@item.Name.Value" href="/Projects/Agent?project=@Model.Project&amp;agent=@item.Name.Value">@item.Name.Role</a>
-        @if (!Model.Pick)
-        {
-            <span class="state">@item.State</span>
-        }
         @if (item.Messages is { } messages)
         {
             <span class="msgs" title="Messages in this conversation sent by this agent or to it">@messages</span>
@@ -42,10 +38,7 @@
         <li class="group">
             <details open data-group="@group.Key">
                 <summary>
-                    @if (Model.Pick || Model.ForDefaults)
-                    {
-                        <input type="checkbox" class="group-box" aria-label="Everyone at @group.Key" />
-                    }
+                    <input type="checkbox" class="group-box" aria-label="Everyone at @group.Key" />
                     <span class="group-name">@@@group.Key</span>
                     <span class="count">@group.Count()</span>
                 </summary>
@@ -100,20 +93,14 @@
                                 <li class="divider">Not in it yet</li>
                             }
 
-                            @if (Model.ForDefaults)
-                            {
-                                <li class="slot-@Palette.SlotFor(who)">
-                                    <input type="checkbox" class="default-box" id="default-@who.Value" name="default" value="@who.Value" aria-label="@who.Value" />
-                                    <label for="default-@who.Value" class="pick-name">
-                                        <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
-                                        <span class="name">@who.Role</span>
-                                    </label>
-                                    <span class="state">@entry.State</span>
-                                </li>
-                                continue;
-                            }
-
-                            @row(entry)
+                            <li class="slot-@Palette.SlotFor(who)">
+                                <input type="checkbox" class="default-box" id="default-@who.Value" name="default" value="@who.Value" aria-label="@who.Value" />
+                                <label for="default-@who.Value" class="pick-name">
+                                    <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                                    <span class="name">@who.Role</span>
+                                </label>
+                                <span class="state">@entry.State</span>
+                            </li>
                         }
                     </ul>
                 }

@@ -130,9 +130,9 @@ public sealed class MultiProjectEnrolmentTests
     [Fact]
     public void Enrolling_again_into_a_project_it_already_answers_in_changes_nothing()
     {
-        // FR-015. The run must not report a change it did not make.
+        // The run must not report a change it did not make.
         //
-        // **The fixture carries an identity because 018 made that part of "already correct".** A
+        // **The fixture carries an identity because that is part of "already correct".** A
         // repository that declares none is genuinely changed by an enrolment — it gains one — so the
         // file below would be rewritten and the run would be right to say so. That case is its own
         // test rather than this one's silence.
@@ -150,8 +150,8 @@ public sealed class MultiProjectEnrolmentTests
     [Fact]
     public void A_repository_that_declares_no_identity_gains_one_and_the_run_says_so()
     {
-        // The other half of the test above, and the one enrolment actually performs on every
-        // repository enrolled before 018. The identity is what the catalogue is keyed by, so a
+        // The other half of the test above, and the one enrolment performs on every
+        // repository that declares none. The identity is what the catalogue is keyed by, so a
         // checkout without one is startable by nothing; gaining one is a change to somebody's file and
         // is reported like every other.
         // Taken out through the parser rather than by string surgery, because the member's line ending

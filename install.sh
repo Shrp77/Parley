@@ -39,11 +39,11 @@
 #                                running a terminal three versions behind its broker.
 #   ./install.sh --only parley-terminal
 #                                install exactly these tools and leave every other one alone.
-#                                This is what SC-001 is about: --only parley-terminal replaces the
-#                                terminal and does not stop the broker, because the broker's
-#                                binary is not among the files being unlinked. SPEC.md section 12
-#                                says the node stopping tells every agent it started to quit, and
-#                                the process is what held everything that agent had learned.
+#                                --only parley-terminal replaces the terminal and does not stop
+#                                the broker, because the broker's binary is not among the files
+#                                being unlinked. SPEC.md section 12 says the node stopping tells
+#                                every agent it started to quit, and the process is what held
+#                                everything that agent had learned.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
 #   ./install.sh --hidden        register a logon entry that opens no console window, by
 #                                passing --hidden to `parley autostart install`. The entry
@@ -73,13 +73,11 @@
 
 set -euo pipefail
 
-# **Leaves the console in a state a person can type in, before doing anything else.** Reported on
-# Windows as every mouse movement printing `[555;47;16M` at the prompt after this script ran: a
-# terminal left in mouse-reporting mode, which belongs to the window rather than to any process
-# and so outlives whatever set it. This script was established not to be what sets it -- a run
-# that refused before executing any Parley binary produced it too -- so this does the one useful
-# thing available, which is to clear it. Disabling a mode that is already off does nothing, so it
-# is free on a healthy terminal and repairs a stuck one.
+# Leaves the console in a state a person can type in, before doing anything else. A terminal left
+# in mouse-reporting mode prints `[555;47;16M` at the prompt on every mouse movement; the mode
+# belongs to the window rather than to any process, so it outlives whatever set it. Disabling a
+# mode that is already off does nothing, so this is free on a healthy terminal and repairs a stuck
+# one.
 #
 # The three mouse modes and bracketed paste. The alternate screen is left alone: switching back to
 # the main screen would throw away what is on the screen of somebody running this from inside a
@@ -110,14 +108,9 @@ while [ $# -gt 0 ]; do
         --reset) reset=1; shift ;;
         --repositories) repositories="${2:-}"; shift 2 ;;
         --repositories=*) repositories="${1#--repositories=}"; shift ;;
-        # **Every comment line after the shebang, not a line range.** This was `sed -n '2,25p'`,
-        # and the usage list starts at line 27 -- so `--help` printed the explanation and stopped
-        # immediately before the only part anybody asks for, showing not one of --uninstall,
-        # --surfaces, --only, --force or --hidden. Found by running the script in a Linux
-        # container, which is the one thing `InstallScriptTests` says it cannot do.
-        #
-        # Reads to the first non-comment line, so a paragraph added here is in the help by
-        # construction and there is no line number to keep in step.
+        # Every comment line after the shebang, not a line range: it reads to the first
+        # non-comment line, so a paragraph added to the header is in the help by construction
+        # and there is no line number to keep in step.
         -h|--help) awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
@@ -150,11 +143,6 @@ packages=("Parley.Cli" "Parley.Mcp" "Parley.Terminal" "Parley.WebUi")
 projects=("src/Parley.Cli/Parley.Cli.csproj" "src/Parley.Mcp/Parley.Mcp.csproj" "src/Parley.Terminal/Parley.Terminal.csproj" "src/Parley.WebUi/Parley.WebUi.csproj")
 commands=("parley" "parley-mcp" "parley-terminal" "parley-web-ui")
 
-# The terminal's tool was parley-top, in a package called Parley.Top, until 0.27.0 renamed it. A machine that
-# installed it before still has it and nothing would ever remove it, so it goes wherever the terminal is installed
-# and with --uninstall, and a running one holds files like any other tool.
-retired_terminal_package="Parley.Top"
-retired_terminal_command="parley-top"
 surface_of=("" "" "terminal" "web-ui")
 
 # The web UI alone by default, for the reason at the top: this script runs where there is usually
@@ -281,11 +269,10 @@ stop_broker() {
         fi
     done
 
-    # **And then waited for.** `kill` asks; it does not wait -- the sentence `remove_holders`
-    # already carries a paragraph about, and which a first version of this reintroduced twenty
-    # lines above it: the script announced ending a pid and then refused the install naming that
-    # same pid, in consecutive lines. The same wait covers a web UI exiting with its broker on the
-    # ordinary path, where nothing was killed and the child simply goes a moment after its parent.
+    # And then waited for: `kill` asks; it does not wait, and announcing an ended pid and then
+    # refusing the install naming that same pid would contradict itself. The same wait covers a web
+    # UI exiting with its broker on the ordinary path, where nothing was killed and the child simply
+    # goes a moment after its parent.
     waited=0
 
     while [ "$waited" -lt 50 ]; do
@@ -438,11 +425,6 @@ if [ "$uninstall" = "1" ]; then
         dotnet tool uninstall -g "$package" >/dev/null 2>&1 || true
     done
 
-    if printf '%s\n' "$(dotnet tool list -g 2>/dev/null || true)" | grep -qi "^parley\.top[[:space:]]"; then
-        step "Removing $retired_terminal_package, the terminal's old name"
-        dotnet tool uninstall -g "$retired_terminal_package" >/dev/null 2>&1 || true
-    fi
-
     # The same check the install does, for the same reason. Every step above can report success
     # while leaving a tool exactly where it was, so the only honest closing line is one that
     # asked afterwards.
@@ -537,13 +519,10 @@ fi
 
 # ----------------------------------------------------------------- install ---
 
-# Before anything is stopped, because the failure this catches used to arrive afterwards.
-#
-# A running `parley-mcp` holds its own files in the tool store, so `dotnet tool uninstall` fails
-# on a denied path. That on its own would be a clear error and no great harm. The harm was the
-# order: the broker was stopped first, so a machine that had been serving a deployment was left
-# with no broker, one tool replaced and one not, by a script that had reported nothing but
-# success up to that point.
+# Before anything is stopped. A running `parley-mcp` holds its own files in the tool store, so
+# `dotnet tool uninstall` fails on a denied path. Checked after the broker was stopped, that would
+# leave a machine that had been serving a deployment with no broker and one tool replaced and one
+# not.
 #
 # The broker itself is not checked here. It is stopped a few lines below, deliberately and by
 # name, which is a different thing from a session somebody has open.
@@ -560,11 +539,10 @@ step "Checking nothing holds the tools"
 # unlinked, so a terminal somebody has open is no reason to refuse an install of the broker --
 # and refusing anyway would make --surfaces useless on the machine most likely to want it.
 #
-# **The web UI is excluded with it, for the same reason and it was not.** The broker starts
-# parley-web-ui as a child and ends it when it ends, so a running web UI on a machine whose broker
-# is about to be stopped is not a process anybody has to close -- it is one this script is three
-# steps from ending itself. Counting it as a holder made an ordinary machine refuse the install,
-# naming a process with no window, and telling the person to use --force to end something that was
+# **The web UI is excluded with it, for the same reason.** The broker starts parley-web-ui as a
+# child and ends it when it ends, so a running web UI on a machine whose broker is about to be
+# stopped is not a process anybody has to close. Counting it as a holder would refuse the install
+# naming a process with no window and tell the person to use --force to end something that was
 # going to stop anyway. One started by hand is caught after the broker stops, where it can be told
 # apart, exactly as the broker's own exclusion works.
 replacing_broker=0
@@ -586,10 +564,6 @@ for i in "${!commands[@]}"; do
     fi
 
     adapters+=("${commands[$i]}")
-
-    if [ "${commands[$i]}" = "parley-terminal" ]; then
-        adapters+=("$retired_terminal_command")
-    fi
 done
 
 holders="$(holding "${adapters[@]}")"
@@ -645,12 +619,9 @@ if [ "$replacing_broker" = "1" ]; then
     # **What stopping it will interrupt, said before it is stopped.**
     #
     # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
-    # is what held everything each of them had learned. A question already drained into an agent's
-    # inbox is marked delivered, so it sits in section 4.2's four-hour Working window rather than
-    # the fifteen-minute Delivery one -- and killing the agent that holds it leaves the exchange
-    # open and owed with nothing running to answer. It ends as `ghosted`, which section 5.3
-    # defines as "nobody replied", recorded against an agent that was killed rather than one that
-    # ignored anything.
+    # is what held everything each of them had learned. A Request already drained into an agent's
+    # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
+    # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
     #
     # **Asked of the broker, never of the store.** Only the broker opens the database (section 4),
     # and reading it here for a progress message would break the one boundary this architecture is
@@ -658,8 +629,8 @@ if [ "$replacing_broker" = "1" ]; then
     #
     # A warning and not a refusal: the person running this has decided to upgrade.
     # **Asked of each project, because `parley open` refuses to choose between several.** On a machine naming more than
-    # one, a bare `parley open` could never answer, so this said it could not ask on exactly the machines with the most in
-    # flight -- found by reinstalling one. Names come from `parley project list`, whose first column is the name and whose
+    # one, a bare `parley open` could never answer, and those are the machines with the most in
+    # flight. Names come from `parley project list`, whose first column is the name and whose
     # second is the endpoint; a machine naming none is asked once, of the broker it would default to.
     in_flight=""
     unasked=""
@@ -697,8 +668,8 @@ if [ "$replacing_broker" = "1" ]; then
             count="$(printf '%s\n' "$in_flight" | grep -c . || true)"
 
             echo "warning: $count conversation(s) have an exchange still open. Stopping the broker" >&2
-            echo "         ends every agent it started, and a question already delivered has nothing" >&2
-            echo "         left to answer it:" >&2
+            echo "         ends every agent it started. When an agent's turn ends its open exchange" >&2
+            echo "         stays open and is flagged to the person:" >&2
 
             printf '%s\n' "$in_flight" | while IFS= read -r line; do
                 [ -n "$line" ] && echo "      $line" >&2
@@ -730,17 +701,13 @@ for i in "${!commands[@]}"; do
     is_wanted "$i" && replacing+=("${commands[$i]}")
 done
 
-case " ${replacing[*]} " in
-    *" parley-terminal "*) replacing+=("$retired_terminal_command") ;;
-esac
-
 strays="$(holding "${replacing[@]}")"
 
 if [ -n "$strays" ]; then
     if [ "$force" = "1" ]; then
         note "something still holds the tools; --force is ending it"
 
-        if ! survivors="$(remove_holders "${commands[@]}" "$retired_terminal_command")"; then
+        if ! survivors="$(remove_holders "${commands[@]}")"; then
             echo "==> Something is still holding the tools after --force tried to end it:" >&2
             printf '      pid %s\n' $survivors >&2
             echo "    Nothing has been replaced." >&2
@@ -788,11 +755,6 @@ for i in "${!packages[@]}"; do
     # behaviour. Removing first makes the install unconditional.
     dotnet tool uninstall -g "${packages[$i]}" >/dev/null 2>&1 || true
 
-    if [ "${commands[$i]}" = "parley-terminal" ] && printf '%s\n' "$listed_before" | grep -qi "^parley\.top[[:space:]]"; then
-        dotnet tool uninstall -g "$retired_terminal_package" >/dev/null 2>&1 || true
-        outcomes+=("$retired_terminal_command: removed: the terminal is parley-terminal now")
-    fi
-
     if ! said="$(dotnet tool install -g --add-source "$source_dir" "${packages[$i]}" \
             --version "$built" 2>&1)"; then
         echo "Could not install ${packages[$i]}: $said" >&2
@@ -827,25 +789,6 @@ if [ -n "$skew" ]; then
     echo "    bring it up, or with --uninstall to remove everything." >&2
 fi
 
-# 0.36.0 edited the store's schema in place without moving its number, because nothing
-# had been released. So a store made by an older broker is opened without complaint and keeps its
-# old shape. Nothing in the broker says so -- the owner's call was to say it here rather than
-# refuse the store -- which makes this the only warning there is. Said only when an older broker was
-# replaced and --reset was not passed. Compared with awk rather than `sort -V`, which not every
-# platform this runs on has; a pre-release suffix is dropped first.
-broker_before="$(printf '%s\n' "$listed_before" \
-    | awk 'tolower($1) == "parley.cli" { print $2; exit }' | cut -d- -f1)"
-
-if [ "$reset" != "1" ] && [ -n "$broker_before" ]; then
-    older="$(awk -v v="$broker_before" 'BEGIN { split(v, p, "."); print ((p[1] + 0 == 0 && p[2] + 0 < 36) ? 1 : 0) }')"
-
-    if [ "$older" = "1" ]; then
-        echo "==> This upgraded Parley from $broker_before. Stores made before 0.36.0 keep their old" >&2
-        echo "    shape with no warning: the person seat is not protected and each project is recorded" >&2
-        echo "    as a machine. Run this again with --reset to start clean. Nothing in them is kept." >&2
-    fi
-fi
-
 # ------------------------------------------------------------------ verify ---
 
 step "Checking what is actually on PATH"
@@ -869,10 +812,9 @@ fi
 # The check the whole script exists for. An install that silently did nothing leaves the old
 # version here, and every other step reports success.
 #
-# **Asked of each tool that was installed, rather than of `parley`.** It used to ask the broker,
-# which was right while every run installed every tool, and became wrong the moment a run could
-# replace only a surface: it would compare the version just built against a broker deliberately
-# left alone, and fail a run that did exactly what it was asked.
+# **Asked of each tool that was installed, rather than of `parley`.** A run can replace only a
+# surface, and asking the broker would then compare the version just built against a broker
+# deliberately left alone, and fail a run that did exactly what it was asked.
 echo
 
 for i in "${!commands[@]}"; do
@@ -903,8 +845,8 @@ done
 
 # ---------------------------------------------------------------- broker ----
 
-# **Skipped entirely when the broker is not being replaced, and this is the half of SC-001 that
-# is easy to miss.** Not stopping the broker earlier is worthless if the script re-registers the
+# **Skipped entirely when the broker is not being replaced, and this is the half that is easy to
+# miss.** Not stopping the broker earlier is worthless if the script re-registers the
 # autostart entry down here: `autostart install` replaces the unit or launch agent, which
 # restarts the process, which ends every resident agent on the machine along with everything each
 # had learned. The stop would have been avoided and the cost paid anyway, hundreds of lines later.
@@ -924,18 +866,11 @@ fi
 # a project named later started within seconds. A machine that names none yet gets the same entry, waiting for the
 # first -- so this never asks where a store goes. That is a project's to say, and a project is named in `parley terminal`
 # (the terminal), where everything else it needs is said at the same time.
-#
-# This used to ask for a store when nothing was named and register one deployment by explicit paths, and to register
-# that same narrow entry over a working manifest when it was given --store: a reinstall that stopped serving every
-# project but one. Both went with the option.
 manifest=""
 named=0
 
 if listed="$("$parley_command" project list 2>/dev/null)"; then
-    # **`root:`, and this read `manifest:` and never matched.** `project list` printed `projects:`,
-    # and nothing labelled `manifest:` has existed since 019 replaced the file with a directory --
-    # so every reinstall skipped the line saying what it was about to serve, and the guard that
-    # declares this interface passed on a comment in the command's own source.
+    # The `root:` line of `project list`: the directory of projects the broker is about to serve.
     manifest="$(printf '%s\n' "$listed" | sed -n 's/^root:[[:space:]]*//p' | tail -n 1)"
 
     if ! printf '%s' "$listed" | grep -q 'No projects configured'; then
@@ -1003,10 +938,9 @@ for _ in $(seq 1 80); do
                 answering=1
                 break
             fi
-        # **`answering`, not `reachable`.** The listing stopped saying `reachable` when FR-023 was
-        # built: one word meant "this process connected to it" and read as "reachable from the
-        # network", which is what somebody planning a firewall rule would act on. Two facts now, and
-        # this poll wants the first -- did the broker answer.
+        # `answering`, not `reachable`: "this process connected to it" must not read as "reachable
+        # from the network", which is what somebody planning a firewall rule would act on. This poll
+        # wants the first fact -- did the broker answer.
         elif printf '%s\n' "$listed" | grep -q ' answering$' \
             && ! printf '%s\n' "$listed" | grep -q 'not answering'; then
             answering=1
@@ -1034,14 +968,10 @@ echo
 printf '%sThe broker is running, and starts again when you log in.%s\n' "$green" "$plain"
 echo
 
-# What to do next is the terminal's flow, and it used to be the plugin's: /parley:setup in each
-# repository, restart the editor, check `parley registry`. The owner's flow, 2026-09-27: make a
-# project, then enrol agents into it from inside it.
-#
-# Doing any of it needs the terminal, and on a machine without one there is no way at all:
-# `parley project add` went on 2026-09-25, and the web UI has never been able to name a project, by
-# the one-writer rule its own naming page records. Said outright rather than handing somebody steps
-# they cannot follow.
+# What to do next is the terminal's flow: make a project, then enrol agents into it from inside it.
+# Doing any of it needs the terminal, and on a machine without one there is no way at all: the
+# command line cannot name a project and the web UI cannot either, by the one-writer rule its own
+# naming page records. Said outright rather than handing somebody steps they cannot follow.
 if command -v parley-terminal >/dev/null 2>&1 || [ -x "$shims/parley-terminal" ]; then
     echo "Next, run:  parley"
 

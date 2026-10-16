@@ -45,19 +45,10 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <exception cref="RpcException">It is blank.</exception>
     /// <remarks>
     /// <para>
-    /// <b>This guard was in the command line and is here because the command line stopped having
-    /// it.</b> `parley export ""` once reached the repository, threw on the way in, and printed a
-    /// stack trace with exit 127 — the operator's own input coming back at them as a crash. It was
-    /// fixed there, in a `WithConversation` helper, and 019 removed the sixteen operator verbs the
-    /// helper served. The defect came straight back one process along, where it is worse: a broker
-    /// answering `Unknown: Exception was thrown by handler`, which says nothing an operator can act
-    /// on and reads like a fault in the deployment.
-    /// </para>
-    /// <para>
-    /// <b>Found by a probe rather than by reading</b>, while re-pointing the test that used to hold
-    /// the old guard: it was rewritten to ask the broker directly and failed against real behaviour.
-    /// That is the argument for putting it here rather than back on a caller — a rule enforced by
-    /// whichever client happens to have it is a rule that leaves with that client.
+    /// <b>The guard lives here, not in a client.</b> A blank identifier reaching the repository
+    /// throws, and a broker answering `Unknown: Exception was thrown by handler` says nothing an
+    /// operator can act on and reads like a fault in the deployment. A rule enforced by whichever
+    /// client happens to have it leaves with that client.
     /// </para>
     /// <para>
     /// Blank only, deliberately. The schema constrains the character set and refuses to store an
@@ -926,9 +917,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// <param name="value">The name on the wire.</param>
     /// <returns>The agent.</returns>
     /// <remarks>
-    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2). Before, `retire` and `purge`
-    /// failed at a storage trigger with a raw constraint, and `start` asked a node to start somebody no node can,
-    /// and `reinstate` changed nothing — four different answers to one fact.
+    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2), so `retire`, `purge`, `start` and
+    /// `reinstate` give one answer to one fact rather than a raw constraint or a silent no-op.
     /// </remarks>
     private static AgentName Acted(string value)
     {

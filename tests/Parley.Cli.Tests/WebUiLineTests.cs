@@ -7,10 +7,9 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Asked for by the owner on the first install that produced no console window.</b> The command
-/// printed what it runs, where it logs, what it serves and what it hosts — and the address of the
-/// page a person actually opens was in none of them. It was in the command line, as
-/// <c>--web-ui &lt;url&gt;</c> at the end of a line nobody reads to the end of.
+/// <b>The address of the page a person opens gets its own line.</b> The command prints what it runs,
+/// where it logs, what it serves and what it hosts, and the address must not be left in the command
+/// line, as <c>--web-ui &lt;url&gt;</c> at the end of a line nobody reads to the end of.
 /// </para>
 /// <para>
 /// <b>One writer for two commands.</b> Somebody runs `install` once and `status` whenever they have

@@ -84,12 +84,12 @@ public sealed class OwnershipListingTests : IAsyncDisposable
     [Fact]
     public async Task A_line_accepted_and_not_yet_live_is_marked_pending()
     {
-        // **FR-020 applies to any surface showing the line, and this listing is one.** 020's quickstart
-        // walk found it printing the live line with nothing said about a line already accepted — and
-        // this is the listing somebody runs to check that an acceptance worked, so what it showed them
-        // was the old line and no reason to think anything had happened.
+        // **The pending mark applies to any surface showing the line, and this listing is one.** It
+        // is the listing somebody runs to check that an acceptance worked, so printing the live line
+        // with nothing said about a line already accepted would show them the old line and no reason
+        // to think anything had happened.
         //
-        // Must fail against reading the registry off the wire directly, which is what it did: the
+        // Must fail against reading the registry off the wire directly: the
         // comparison lives in `AgentRecord.OwnsPending` and the sentence in `Roster.PendingMark`, and
         // neither is reachable from a `RegistryRow`.
         await Register(Billing, "Invoicing and tax.");

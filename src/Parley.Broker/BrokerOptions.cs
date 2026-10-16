@@ -23,8 +23,7 @@ public sealed record BrokerOptions(
 {
     /// <summary>The retention interval when none is configured.</summary>
     /// <remarks>
-    /// Hourly, because retention is measured in days and its pass walks the whole message log. Running it
-    /// at the cadence of every tick paid that walk for nothing.
+    /// Hourly, because retention is measured in days and its pass walks the whole message log.
     /// </remarks>
     public static TimeSpan DefaultRetentionInterval { get; } = TimeSpan.FromHours(1);
 
@@ -57,7 +56,7 @@ public sealed record BrokerOptions(
             throw new ArgumentOutOfRangeException(nameof(ResumePolicy), ResumePolicy, "Not a defined resume policy.");
         }
 
-        // Zero would restore the every-tick sweep this interval exists to replace, silently.
+        // Zero would sweep on every tick, silently.
         if (RetentionInterval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(

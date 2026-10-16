@@ -29,7 +29,7 @@ public sealed class NodeTurnTests : IDisposable
     /// <param name="role">What the checkout says it is called.</param>
     /// <returns>The catalogue, and the identity it is keyed by.</returns>
     /// <remarks>
-    /// These tests used to hand the node a table keyed by name. A resident is keyed by identity now, so a
+    /// A resident is keyed by identity, not name, so a
     /// turn has to be resolved through what a repository claims — which is the step that lets one process
     /// answer to two projects' names, and therefore the step worth exercising here.
     /// </remarks>

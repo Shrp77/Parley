@@ -56,11 +56,10 @@ public sealed record PurgeToll(string Table, int Rows);
 /// whoever reads it next.
 /// </para>
 /// <para>
-/// It used to refuse the moment anything referenced the agent, which made it useful only for a
-/// registration that had never traded — a typo's worth of cleanup — and left an operator who
-/// genuinely wanted an agent gone with no command that did it. Retirement is still the right
-/// instrument for an agent that has finished: it keeps the history and frees nothing. Purge is
-/// for when the history is the thing you want gone.
+/// It does not refuse because anything references the agent: an operator who genuinely wants an
+/// agent gone needs a command that does it. Retirement is the right instrument for an agent that
+/// has finished: it keeps the history and frees nothing. Purge is for when the history is the
+/// thing you want gone.
 /// </para>
 /// <para>
 /// There is deliberately no <c>Succeeded</c> property: a derived summary is a second definition of
@@ -80,8 +79,7 @@ public sealed record PurgeOutcome(PurgeVerdict Verdict, IReadOnlyList<PurgeToll>
     /// <returns>A completed purge carrying <paramref name="destroyed"/>.</returns>
     /// <remarks>
     /// An empty toll is legitimate and is not refused: an agent that registered and never traded
-    /// leaves nothing behind but its own row, and that is the one case the old command could
-    /// already handle.
+    /// leaves nothing behind but its own row.
     /// </remarks>
     public static PurgeOutcome Razed(IReadOnlyList<PurgeToll> destroyed)
     {

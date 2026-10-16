@@ -6,7 +6,7 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That a Request to the person is always with the person, and never makes a machine try to start anybody (SPEC.md §5,
-/// §12.3, FR-007, FR-009).
+/// §12.3).
 /// </summary>
 /// <remarks>
 /// <para>

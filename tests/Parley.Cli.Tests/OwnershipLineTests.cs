@@ -17,7 +17,7 @@ namespace Parley.Cli.Tests;
 /// feature with one half and not the other records agreements that can never become true.
 /// </para>
 /// <para>
-/// The refusals are the probes, as they were for 019's enrolment: every one of them is a case where
+/// The refusals are the probes: every one of them is a case where
 /// the tempting implementation writes something.
 /// </para>
 /// </remarks>
@@ -92,7 +92,7 @@ public sealed class OwnershipLineTests : IDisposable
     [Fact]
     public async Task A_line_can_be_taken_back_out()
     {
-        // Declining is not the same as writing an empty line, and FR-031 says an agent with no line
+        // Declining is not the same as writing an empty line, and an agent with no line
         // is listed without one. So null removes the variable rather than setting it to "".
         Launch();
 

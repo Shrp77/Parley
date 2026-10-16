@@ -11,7 +11,7 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Research R2 settled that both the console and the terminal present the same adapter, so a
+/// Both the console and the terminal present the same adapter, so a
 /// person seated in a browser and in a terminal at once is two attachments under one name rather
 /// than a collision. SPEC.md §14 makes that legitimate, and the alternative — giving the terminal
 /// its own marker — would have invented a restriction the protocol does not have, by way of a

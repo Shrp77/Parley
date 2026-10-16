@@ -19,7 +19,7 @@ namespace Parley.Terminal;
 /// node may start; they are not the same set and the places they differ are the interesting ones.
 /// An agent just added from this surface is in the catalogue and not yet in the registry, and an
 /// agent in the registry but not this catalogue is §17 question 13's misleading <c>startable</c>,
-/// which used to be visible nowhere.
+/// which this list makes visible.
 /// </para>
 /// <para>
 /// The state of a row present in both comes from <see cref="Roster.State"/> rather than from a
@@ -41,10 +41,8 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>An agent this machine could start that has never registered itself.</summary>
     /// <remarks>
-    /// <b>Kept only so the README's own test can still find what it used to say.</b> 006 replaced
-    /// both of these: the owner read them on screen and could not say what either meant, which was
-    /// fair, because they name two files a person did not write rather than the facts those files
-    /// decide. <see cref="Standing"/> holds the wording now.
+    /// The state of a row only the catalogue knows. The heading a person reads comes from
+    /// <see cref="Standing"/>, which holds the wording.
     /// </remarks>
     internal const string CataloguedOnly = "catalogued, not yet registered";
 
@@ -64,10 +62,6 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     internal const string Seats = "you — the person, not an agent";
 
-    // **There was a second group, "seats — withdrawn, take one to put it back"**, for seats an operator had retired.
-    // The person seat cannot be retired — storage refuses it — so the group could never hold anything,
-    // and a heading that is always empty is a promise of something the surface cannot show.
-
     /// <summary>What is shown before anything has been read.</summary>
     internal const string Nothing =
         "No agent is registered in this project and its catalogue names none. Press Alt+a to make a "
@@ -83,12 +77,10 @@ internal sealed class AgentsRegion : FrameView
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>A map rather than an offset, and the offset is what grouping broke.</b> This used to be a
-    /// single number — one when a broker's complaint occupied the first line, zero otherwise — and
-    /// <c>Selected</c> subtracted it. Grouping puts a heading above each set of agents, so the
-    /// distance between a line and its agent is no longer constant, and a version that kept
-    /// subtracting would name the agent above the one highlighted. In this region that is the
-    /// difference between retiring the right agent and the wrong one.
+    /// <b>A map rather than an offset.</b> Grouping puts a heading above each set of agents, so the
+    /// distance between a line and its agent is not constant, and an offset would name the agent above
+    /// the one highlighted. In this region that is the difference between retiring the right agent
+    /// and the wrong one.
     /// </para>
     /// <para>
     /// Null for a heading and for a broker's complaint, which is what makes both unselectable
@@ -97,31 +89,19 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private List<AgentRow?> _at = [];
 
-    /// <summary>Whether the first line is a broker's complaint rather than a heading.</summary>
-    /// <remarks>
-    /// Held rather than inferred from the text, because inferring it would mean matching a
-    /// sentence the broker wrote against the headings this surface writes, and a broker whose
-    /// complaint happened to read like a heading would be coloured as one.
-    /// </remarks>
-    private bool _complained;
-
     /// <summary>What colour each drawn line earns when it is a heading, null when it is not.</summary>
     /// <remarks>
-    /// <b>A heading takes the colour of the state it names.</b> It would have been simpler to draw
-    /// every heading alike, and <c>ColourSaysNothingNewTests</c> said why not: two states a person
-    /// has to tell apart must not be the same colour. The heading <i>is</i> the state now, so it is
-    /// the thing that has to carry it — and the rule still holds the way it always did, because the
-    /// state is also written out in words and survives the colour being stripped.
+    /// <b>A heading takes the colour of the state it names.</b> Two states a person has to tell apart
+    /// must not be the same colour (<c>ColourSaysNothingNewTests</c>), and the state is also written
+    /// out in words, so it survives the colour being stripped.
     /// </remarks>
     private List<Color?> _tone = [];
 
     /// <summary>What is happening to each agent right now, by role, while something is working on it.</summary>
     /// <remarks>
-    /// <b>On the agent's own row, which is the owner's call of 2026-09-28.</b> Enrolling four agents starts and
-    /// waits for each in turn, and that progress was said on the message line under everything else -- one
-    /// sentence at a time, about one agent at a time, below a list that went on showing all four as never
-    /// run. The row is where somebody is already looking for an agent's state, so that is where it goes, and
-    /// the message line is left for what went wrong.
+    /// <b>On the agent's own row.</b> Enrolling several agents starts and waits for each in turn. The
+    /// row is where somebody is already looking for an agent's state, so progress goes there, and the
+    /// message line is left for what went wrong.
     /// </remarks>
     private readonly Dictionary<string, string> _activity = new(StringComparer.Ordinal);
     private readonly Lock _activityGate = new();
@@ -241,9 +221,8 @@ internal sealed class AgentsRegion : FrameView
 
         var rows = new List<AgentRow>();
 
-        // **What this machine can start for this project, which the repositories decide** (018 R3). It was
-        // the catalogue's own keys, which were roles; they are identities now, and a role is what one
-        // project calls an agent.
+        // What this machine can start for this project, which the repositories decide. The catalogue is
+        // keyed by identity, and a role is what one project calls an agent.
         var catalogued = new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal);
 
         foreach (var agent in registry ?? [])
@@ -251,8 +230,8 @@ internal sealed class AgentsRegion : FrameView
             var seat = string.Equals(agent.Adapter, Seat.Adapter, StringComparison.Ordinal);
             var state = seat ? Seated : Roster.State(agent);
 
-            // A catalogue is keyed by role; this asked whether a set of roles held `role@machine`,
-            // which it never does, so every registered agent was told it was not in the catalogue.
+            // The catalogued set holds roles for this project, so the role is compared and the machine
+            // checked beside it.
             if (!seat
                 && !(catalogued.Contains(agent.Name.Role)
                      && string.Equals(agent.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal)))
@@ -274,23 +253,29 @@ internal sealed class AgentsRegion : FrameView
                 seat));
         }
 
-        // Roles registered *here*, compared as roles. This built a set of `role@machine` and asked
-        // whether it held a bare role, which it never does, so every catalogued role was listed a
-        // second time beside its own registration.
-        var registered = new HashSet<string>(
-            (registry ?? [])
-                .Where(a => string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
-                .Select(a => a.Name.Role),
-            StringComparer.Ordinal);
+        // What is registered *here*, so a catalogued checkout is not listed a second time beside its own
+        // registration. By identity first, because a repository renamed since it registered answers to a new
+        // role while the broker still holds the old one until it attaches; by role for a registration that
+        // presented no identity.
+        var here = (registry ?? [])
+            .Where(a => string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
+            .ToList();
+
+        var registered = new HashSet<string>(here.Select(a => a.Name.Role), StringComparer.Ordinal);
+        var registeredIdentities = new HashSet<AgentIdentity>(here.Where(a => a.Identity.Known).Select(a => a.Identity));
 
         foreach (var role in catalogued.Where(role => !registered.Contains(role)))
         {
-            // A catalogue holds roles, so the machine has to be put back before this is a name.
-            // Parsing the role alone never succeeded, which is why every catalogued agent showed no
-            // workspace at all -- the one column saying where it would actually run.
+            // A catalogue holds roles, so the machine has to be put back before this is a name; the
+            // workspace is where the agent would actually run.
             var workspace = catalogue.TryResolve(role, project, out var identity, out _)
                 ? catalogue.WorkspaceFor(identity)
                 : null;
+
+            if (identity.Known && registeredIdentities.Contains(identity))
+            {
+                continue;
+            }
 
             rows.Add(new AgentRow(
                 Safe.Text(role),
@@ -325,11 +310,7 @@ internal sealed class AgentsRegion : FrameView
         // rather than at each reader: the rows, the standings, the names offered as recipients and every action on a
         // row are all built from this, and a row for Parley would offer it retire, purge, instruct and "ask what it
         // owns" — each of which the broker refuses. It is shown where it acts: as the sender of its questions, and in
-        // the ownership review.
-        //
-        // **Before the rows, which it was not** (the owner's report of 2026-10-03): the rows were joined a line above
-        // this, so Parley was filtered out of everything except the list on the screen, where it read "stranded, not in
-        // this catalogue" — an agent's state for something no node ever starts.
+        // the ownership review. The filter comes before the rows are joined, so it is absent from them too.
         registry = registry?.Where(record => !record.Facilitator).ToList();
 
         var rows = Join(registry, catalogue, project);
@@ -358,9 +339,8 @@ internal sealed class AgentsRegion : FrameView
             tone.Add(Colours.Bad);
         }
 
-        // **An agent being added is on this pane while it is added** (the owner's report of 2026-10-09: enrolling one showed
-        // nothing here for the half minute it takes to register). A line above the rows, not a row: it has no name the
-        // broker knows yet, so nothing can be done to it, and it is gone as soon as the add is over.
+        // **An agent being added is on this pane while it is added.** A line above the rows, not a row: it has no
+        // name the broker knows yet, so nothing can be done to it, and it is gone as soon as the add is over.
         if (Enrolling is { } enrolling)
         {
             lines.Add(Safe.Text(enrolling));
@@ -414,7 +394,6 @@ internal sealed class AgentsRegion : FrameView
                 _standing = [.. standing];
                 _at = map;
                 _tone = tone;
-                _complained = problem is not null;
             });
     }
 
@@ -429,12 +408,10 @@ internal sealed class AgentsRegion : FrameView
     /// <returns>The groups, in the order they are drawn.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The state moved from the row to the heading because it did not fit.</b> A line was
-    /// <c>name [standing] owns workspace</c>, and in the half-width pane a project view gives this
-    /// region, a 27-character agent name and a 50-character standing are over the width before the
-    /// ownership line begins — so the one fact a person is looking for was the one cut off. Said
-    /// once above a group, it is always readable, and the rows below it are short enough to be
-    /// scanned.
+    /// <b>The state is the heading, not part of the row.</b> In the half-width pane a project view
+    /// gives this region, a long agent name and a long standing together are over the width, so the
+    /// standing would be the fact cut off. Said once above a group, it is always readable, and the
+    /// rows below it are short enough to be scanned.
     /// </para>
     /// <para>
     /// <b>Seats first, and their own group.</b> A seat is a person rather than an agent, so
@@ -528,10 +505,9 @@ internal sealed class AgentsRegion : FrameView
     /// <returns>The line: the agent's name, indented under its group.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The name and nothing else, which is the change.</b> It was
-    /// <c>name [standing] owns workspace</c> — four facts on a line in a pane half a screen wide,
-    /// where the standing was routinely cut off. The standing is the group's heading now, and the
-    /// ownership line and workspace are on the agent's own screen rather than crushed into a list.
+    /// <b>The name and nothing else.</b> The standing is the group's heading, and the ownership
+    /// line and workspace are on the agent's own screen rather than crushed into a list in a pane
+    /// half a screen wide.
     /// </para>
     /// <para>
     /// Indented by two, so a heading sits at column zero and an agent does not. That is the same
@@ -582,9 +558,6 @@ internal sealed class AgentsRegion : FrameView
             return null;
         }
 
-        // A heading, or the reason the broker could not be asked. Both are lines with no agent
-        // behind them, and they do not earn the same colour: the complaint is bad news, and a
-        // heading is this surface's own word for a state rather than a fact about any one agent.
         // A heading, or the reason the broker could not be asked. A heading names a state and
         // takes that state's colour; the complaint is bad news and takes the colour of bad news.
         if (_at[row] is not { } here)
@@ -592,10 +565,9 @@ internal sealed class AgentsRegion : FrameView
             return row < _tone.Count ? _tone[row] : null;
         }
 
-        // **An agent under a heading takes no colour of its own, and that is the rule rather than
-        // a saving.** The heading above it already says where it stands, in words and in colour;
-        // painting the same fact onto every row beneath would be a colour that says nothing new,
-        // which is the one thing Colours forbids. It was caught by the test that forbids it.
+        // **An agent under a heading takes no colour of its own.** The heading above it already says
+        // where it stands, in words and in colour; painting the same fact onto every row beneath would
+        // be a colour that says nothing new, which is the one thing Colours forbids.
         return null;
     }
 

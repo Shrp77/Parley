@@ -14,8 +14,8 @@ namespace Parley.Core;
 /// </para>
 /// <para>
 /// It exists because a sender told only that the message was stored cannot tell delivery from
-/// silence. That was met in use: a message to an agent nobody had open reported "Sent.",
-/// which was true, and left the person believing a peer was reading it.
+/// silence: a message to an agent nobody has open would report "Sent.", which is true, and leave
+/// the person believing a peer was reading it.
 /// </para>
 /// <para>
 /// An enum rather than a sentence, deliberately. Everything crossing between agents is charged
@@ -57,8 +57,8 @@ public enum WakeOutcome
     /// <remarks>
     /// Ordinary rather than an error, and the case SPEC.md section 5.5 designs for rather than
     /// around: the message waits, and is collected whenever the agent next runs for any reason.
-    /// Said out loud because the alternative is what was reported — a send that looked identical
-    /// to one that had reached somebody.
+    /// Said out loud because the alternative is a send that looks identical to one that has
+    /// reached somebody.
     /// </remarks>
     Unreachable = 3,
 
@@ -69,12 +69,11 @@ public enum WakeOutcome
     /// <para>
     /// <b>Not <see cref="AlreadyComing"/>, though that is the nearest.</b> Nothing is coming by itself: a person has to
     /// decide, and an agent told a turn is on its way would wait for something no machine will do. And never
-    /// <see cref="Unreachable"/>, which is what the person seat was once told — every wake asked a node to
-    /// start the person, no node can, and an agent told "unreachable" behaves as if its question will never be read,
-    /// when it waits in the person's mail for as long as it takes.
+    /// <see cref="Unreachable"/>: no node can start the person, and an agent told "unreachable" behaves as if its
+    /// question will never be read, when it waits in the person's mail for as long as it takes.
     /// </para>
     /// <para>
-    /// The same whether the person is here or away (FR-007). What changes with presence is only whether a surface is
+    /// The same whether the person is here or away. What changes with presence is only whether a surface is
     /// told something arrived, which is the ordinary notice every attached adapter gets.
     /// </para>
     /// </remarks>
@@ -85,9 +84,9 @@ public enum WakeOutcome
     /// message when somebody prompts it.
     /// </summary>
     /// <remarks>
-    /// Before §11.7 this was <see cref="AlreadyRunning"/>: the broker asked the node for a turn the node could not give,
-    /// marked one as coming, and so suppressed every wake after it — while the sender was told its receiver was running.
-    /// Somebody opened that repository in an editor, and only they can make it read.
+    /// Not <see cref="AlreadyRunning"/>: asking the node for a turn it cannot give would mark one as coming and
+    /// suppress every wake after it, while the sender was told its receiver was running. Somebody opened that
+    /// repository in an editor, and only they can make it read.
     /// </remarks>
     OpenOutside = 5
 }

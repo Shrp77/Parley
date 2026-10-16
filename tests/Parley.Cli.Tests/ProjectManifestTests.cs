@@ -20,14 +20,12 @@ namespace Parley.Cli.Tests;
 /// the guard. That is the constitution's <i>probe, do not reason</i> applied to a file format.
 /// </para>
 /// <para>
-/// <b>019 replaced one file with a directory of them, and this suite was converted rather than
-/// rewritten.</b> Where a rule outlived the file it was written against — an unparseable document
-/// refused, unknown keys preserved, a write committed by rename — it is repointed at
-/// <c>projects/&lt;name&gt;/project.json</c>, because the rule was about a configuration file with
-/// no second copy and that is still what this is. Where the behaviour genuinely ended, the test
-/// asserts the <b>absence</b>: two projects sharing a store is not refused any more, it is
-/// unsayable, and a suite that simply lost those cases would leave the next reader unable to tell
-/// a rule that was removed from one nobody ever wrote.
+/// <b>A project is a directory.</b> The rules — an unparseable document
+/// refused, unknown keys preserved, a write committed by rename — apply to
+/// <c>projects/&lt;name&gt;/project.json</c>, a configuration file with no second copy. Where the
+/// behaviour does not exist, the test asserts the <b>absence</b>: two projects sharing a store is not
+/// refused, it is unsayable, and a suite that simply lacked those cases would leave the next reader
+/// unable to tell a rule that was removed from one nobody ever wrote.
 /// </para>
 /// </remarks>
 public sealed class ProjectManifestTests : IDisposable
@@ -97,17 +95,10 @@ public sealed class ProjectManifestTests : IDisposable
         // combine produced the relative "Parley/projects.json", and this is the only line that
         // said so. See DefaultPathFrom.
         //
-        // **It answers with the root now rather than with a file in it**, so the assertion that
-        // it ends with `projects.json` is inverted: a default that still named the file would be
-        // read as a root by everything downstream and would put `projects/` inside it.
         var path = ProjectManifest.DefaultPath;
 
         Assert.True(Path.IsPathRooted(path), $"'{path}' is not absolute");
         Assert.Contains(ProjectManifest.DirectoryName, path, StringComparison.Ordinal);
-
-        Assert.False(
-            path.EndsWith(ProjectManifest.FileName, StringComparison.Ordinal),
-            $"'{path}' still names the manifest file, so the root would be inside it");
     }
 
     [Fact]
@@ -148,55 +139,10 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
-    public void The_old_spelling_resolves_to_nothing_and_is_refused_when_it_is_read()
-    {
-        // **This asserted the opposite, and the compatibility it asserted is withdrawn.** `--config` and
-        // PARLEY_CONFIG named the manifest file, and a value ending in `projects.json` was resolved to the
-        // directory containing it — for at least one release, because the owner's logon entry held that
-        // path verbatim.
-        //
-        // Nothing has been released. The only machine carrying the old layout is the one this was written
-        // on, and `reset.ps1` clears it. A rule kept "for one release" on a product with no releases has
-        // no expiry.
-        //
-        // So `Locate` passes it through untouched and the *reader* refuses it, which is the loud version:
-        // a path handed back as a root would have had `projects/` looked for inside a file, found nothing,
-        // and reported a well-configured machine as having no projects.
-        const string old = "/somewhere/Parley/projects.json";
-
-        Assert.Equal(old, ProjectManifest.Locate(old, _ => null));
-        Assert.Equal(old, ProjectManifest.Locate(null, _ => old));
-
-        Assert.False(ProjectManifest.TryRead(old, out var projects, out var problem));
-        Assert.Empty(projects);
-
-        // Named with what to do about it, at the one moment somebody can act on it.
-        Assert.Contains(ProjectManifest.FileName, problem, StringComparison.Ordinal);
-        Assert.Contains("reset.ps1", problem, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void A_root_is_taken_exactly_as_given()
     {
-        // The other half: nothing is trimmed, resolved or second-guessed. A root is what was named.
+        // Nothing is trimmed, resolved or second-guessed. A root is what was named.
         Assert.Equal("/somewhere/Parley", ProjectManifest.Locate("/somewhere/Parley", _ => null));
-    }
-
-    [Fact]
-    public void The_old_spelling_is_recognised_by_name_and_never_by_asking_the_filesystem()
-    {
-        // The rule has to hold on a machine being set up, which has neither the file nor the directory
-        // yet — so a version that tested for existence would behave one way before first run and another
-        // after, which is a rule nobody can reason about.
-        //
-        // Probed by naming a path under a directory that does not exist at all: the refusal comes from the
-        // name, so it arrives either way.
-        var nowhere = Path.Combine(_root, "never-created", ProjectManifest.FileName);
-
-        Assert.False(ProjectManifest.TryRead(nowhere, out _, out var problem));
-        Assert.Contains(ProjectManifest.FileName, problem, StringComparison.Ordinal);
-
-        Assert.False(Directory.Exists(Path.Combine(_root, "never-created")));
     }
 
     // ---- absent is not an error -----------------------------------------------------------
@@ -256,7 +202,7 @@ public sealed class ProjectManifestTests : IDisposable
     {
         Given("orders", """["not", "an", "object"]""");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("does not hold an object", problem, StringComparison.Ordinal);
@@ -265,10 +211,9 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void An_empty_folder_with_any_name_is_nobodys_project_and_costs_nothing()
     {
-        // Explorer's "New folder" beside a real project. It stopped every command and the broker, and once reported the
-        // report outlived the folder: the watchers' stamp counts configurations only, so removing it changed nothing they
-        // compare (the combined review gate, lenses 1 and 3). A folder with no configuration is not a project, whatever
-        // it is called.
+        // Explorer's "New folder" beside a real project must not stop every command and the broker, nor have
+        // its report outlive the folder: the watchers' stamp counts configurations only, so removing it changes
+        // nothing they compare. A folder with no configuration is not a project, whatever it is called.
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
         Directory.CreateDirectory(Path.Combine(_root, ProjectFolder.ProjectsDirectoryName, "New folder"));
 
@@ -280,33 +225,18 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void One_unreadable_project_does_not_take_the_readable_ones_with_it_silently()
     {
-        // The refusal names the project that is wrong. It used to name an index into one array in
-        // one file; there is no array now, and a person told "projects[1]" would have nothing to
-        // count. FR-029: never reported as the machine having no projects.
+        // The refusal names the project that is wrong. There is no array, and a person told
+        // "projects[1]" would have nothing to count. Never reported as the machine having no projects.
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
         Given("billing", """{ "endpoint": """);
 
-        // Left out and said, and the readable one kept: until the combined review gate this returned nothing at all,
-        // which is exactly what the name of this test says must not happen.
+        // Left out and said, and the readable one kept: returning nothing at all is exactly what the name
+        // of this test says must not happen.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Equal("orders", Assert.Single(kept).Name.Value);
 
         Assert.Contains("billing", problem, StringComparison.Ordinal);
         Assert.DoesNotContain("projects[", problem, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Being_handed_the_old_manifest_file_is_reported_rather_than_read_as_empty()
-    {
-        // **A caller that composed the path itself rather than asking Locate.** A directory reader
-        // handed a file name finds no directories and says nothing — which is this repository's
-        // recorded shape for a green-looking answer to a question nobody asked, and here it would
-        // read a fully configured machine as having no projects.
-        var file = Path.Combine(_root, ProjectManifest.FileName);
-
-        Assert.False(ProjectManifest.TryRead(file, out var projects, out var problem));
-        Assert.Empty(projects);
-        Assert.Contains("reset.ps1", problem, StringComparison.Ordinal);
     }
 
     // ---- per-project rules ------------------------------------------------------------------
@@ -320,7 +250,7 @@ public sealed class ProjectManifestTests : IDisposable
         // project goes missing.
         Given("Orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("lowercase", problem, StringComparison.Ordinal);
@@ -356,7 +286,7 @@ public sealed class ProjectManifestTests : IDisposable
     {
         Given("orders", """{ "endpoint": "nonsense" }""");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("not an absolute address", problem, StringComparison.Ordinal);
@@ -388,17 +318,15 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void Two_projects_cannot_share_a_store_because_a_store_is_derived()
     {
-        // **Three tests used to guard this one rule**, and each was found the hard way: two
-        // projects naming one database, the same database under two spellings (a `..` in one, the
-        // other separator in the other), and two casings of one path on a filesystem that folds
-        // case. All three are unsayable now — a store is `parley.db` inside a folder named by the
+        // **Three cases could breach this one rule**: two projects naming one database, the same
+        // database under two spellings (a `..` in one, the other separator in the other), and two
+        // casings of one path on a filesystem that folds case. All three are unsayable — a store is `parley.db` inside a folder named by the
         // project, so distinct names give distinct stores by construction and one name is one
         // folder.
         //
         // What that check defended is still worth stating: two brokers on one SQLite file corrupt
         // it, because WAL mode needs coherent shared memory between every process touching a
-        // database. So the property is asserted directly rather than the refusal that used to
-        // approximate it.
+        // database. So the property is asserted directly rather than a refusal approximating it.
         var stores = new[] { "orders", "billing", "inventory" }
             .Select(name => ProjectFolder.StoreFor(_root, ProjectName.Create(name)))
             .ToList();
@@ -440,7 +368,7 @@ public sealed class ProjectManifestTests : IDisposable
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
         Given("billing", """{ "endpoint": "http://127.0.0.1:51707" }""");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("share an endpoint", problem, StringComparison.Ordinal);
@@ -524,10 +452,8 @@ public sealed class ProjectManifestTests : IDisposable
         // An older tool editing a newer tool's file is the one version pairing nobody can plan
         // for, which is exactly why it must not eat anything.
         //
-        // **019's first draft of ProjectFolder.Write lost this, and the build stayed green.** It
-        // was File.WriteAllText over a freshly built object, which is the same mistake reached by
-        // the same route one file format later — so the rule is repointed rather than deleted, and
-        // this test is what found the regression.
+        // **`ProjectFolder.Write` must keep what it does not recognise.** A File.WriteAllText over a
+        // freshly built object would lose it, and the build would stay green.
         Given(
             "orders",
             """
@@ -670,7 +596,7 @@ public sealed class ProjectManifestTests : IDisposable
             "{ \"endpoint\": \"http://127.0.0.1:51707\", "
             + "\"description\": \"the shop\\u000Aacme  http://127.0.0.1:1  reachable\" }");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("control character", problem, StringComparison.Ordinal);
@@ -684,7 +610,7 @@ public sealed class ProjectManifestTests : IDisposable
             "{ \"endpoint\": \"http://127.0.0.1:51707\", \"description\": \""
             + new string('x', ProjectSettings.MaxDescription + 1) + "\" }");
 
-        // Left out and said, never the machine's other projects with it (the combined review gate).
+        // Left out and said, never the machine's other projects with it.
         Assert.True(ProjectManifest.TryRead(_root, out var kept, out var problem));
         Assert.Empty(kept);
         Assert.Contains("description is", problem, StringComparison.Ordinal);
@@ -756,10 +682,10 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void Two_writers_at_once_cannot_leave_a_configuration_that_no_longer_parses()
     {
-        // The pending file used to be a fixed name -- one name, shared by every writer. So two of
-        // them did not merely race: writer A truncated the pending file and began writing, and
-        // writer B renamed that same path over the top, committing A's fragment. Probed with four
-        // writers over fifty rounds each, before the name was made unique:
+        // The pending file's name is unique. Were it one name, shared by every writer, two of
+        // them would not merely race: writer A would truncate the pending file and begin writing, and
+        // writer B would rename that same path over the top, committing A's fragment. With four
+        // writers over fifty rounds each, a shared name produced:
         //
         //   5 reads returned a document that no longer parsed, and 11 subsequent writes then
         //   refused with "it exists but could not be parsed, so writing over it would discard
@@ -824,10 +750,8 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.True(ProjectManifest.TryRead(_root, out var projects, out var settled), settled);
         Assert.Single(projects);
 
-        // No pending file survives a collision. The cleanup used to be unreachable from the
-        // fallback rename, which orphaned one per failure -- invisible while every writer used
-        // the same name and the next write reused it, a growing pile of files that look like
-        // configuration once the name became unique.
+        // No pending file survives a collision. A cleanup unreachable from the fallback rename would
+        // orphan one per failure, a growing pile of files that look like configuration.
         //
         // Only this pattern: ReplaceFile leaves its own ~RF*.TMP working files behind when it
         // fails midway, and those are Windows' to clean up rather than this code's.
@@ -845,10 +769,9 @@ public sealed class ProjectManifestTests : IDisposable
         // is the shape of the loss, arriving when the machine is busiest and being discovered when
         // something later cannot find a deployment nobody remembers removing.
         //
-        // **The lock moved inside `projects/` and the rule it keeps did not.** FR-008 gives the
-        // root exactly two entries that are not a project, and a file there would be invisible to
+        // **The lock is inside `projects/`.** The root has exactly two entries that are not a project, and a file there would be invisible to
         // a reader that lists directories -- so the lock cannot be mistaken for a project whose
-        // name is not one. This is what says the move kept the guarantee.
+        // name is not one.
         //
         // Threads rather than the thread pool, for the reason ManifestCurrencyTests records: a
         // writer that must run is a thread, not a work item, and a pool saturated by the rest of
@@ -914,9 +837,9 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void The_lock_is_inside_the_projects_directory_where_the_reader_cannot_see_it()
     {
-        // The other half of the move, asserted directly: the reader lists *directories*, so a file
+        // Asserted directly: the reader lists *directories*, so a file
         // is invisible to it — but a lock at the root would sit beside `node.json` in a place
-        // FR-008 says holds exactly two things, and one named `.lock` in `projects/` must never be
+        // that holds exactly two things, and one named `.lock` in `projects/` must never be
         // read as a project whose name is not one.
         Assert.True(ProjectManifest.TryUpdate(_root, _ => [Project()], out var problem), problem);
 

@@ -45,7 +45,7 @@ public sealed class LogReachTests : IDisposable
         // different ones, and this is the name AutostartPlan passes to --log.
         var project = Project(Path.Combine(_root, "alpha.db"));
 
-        Assert.EndsWith(LogTail.FileName, LogTail.For(project)!, StringComparison.Ordinal);
+        Assert.EndsWith(LogTail.FileName, LogTail.For(project, null)!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class LogReachTests : IDisposable
         var store = Path.Combine(_root, "nested", "alpha.db");
         var project = Project(store);
 
-        var log = LogTail.For(project)!;
+        var log = LogTail.For(project, null)!;
 
         Assert.Equal(Path.GetDirectoryName(Path.GetFullPath(store)), Path.GetDirectoryName(log));
     }
@@ -66,7 +66,7 @@ public sealed class LogReachTests : IDisposable
     {
         // Rather than falling back to a working directory, which would follow whatever file
         // happened to be beside the process.
-        Assert.Null(LogTail.For(Project(string.Empty)));
+        Assert.Null(LogTail.For(Project(string.Empty), null));
     }
 
     [Fact]
@@ -82,8 +82,8 @@ public sealed class LogReachTests : IDisposable
         // invisible in most editors, which this repository has had happen more than once.
         var unusable = "a" + ((char)0) + "b";
 
-        Assert.Null(LogTail.For(Project(unusable)));
-        Assert.Null(LogTail.For(Project("   ")));
+        Assert.Null(LogTail.For(Project(unusable), null));
+        Assert.Null(LogTail.For(Project("   "), null));
     }
 
     [Fact]

@@ -230,11 +230,9 @@ public sealed class MultiProjectServeTests : IDisposable
     [Fact]
     public async Task Starting_none_of_several_while_watching_stays_up_and_says_why()
     {
-        // **FR-033, the half that was not built.** "A machine whose projects can none of them be
-        // opened, or which has no projects, MUST stay up and report why, so that a project named
-        // next is served without anything being restarted." The empty-root half stayed up; this
-        // one exited 69 — and the test above asserted that it should, for every case rather than
-        // for the one where it is right.
+        // **A machine whose projects can none of them be opened must stay up and report why**, so
+        // that a project named next is served without anything being restarted. An empty root stays
+        // up, and so does this one; exiting 69 is right only for the case of one named project.
         //
         // Every store unreadable is a moved directory or a permissions change: a thing somebody is
         // actively repairing. Exiting meant the repair did nothing until the next logon, because a
@@ -282,12 +280,10 @@ public sealed class MultiProjectServeTests : IDisposable
     [Fact]
     public async Task An_interrupt_during_start_up_stops_what_had_already_started()
     {
-        // The window nothing was watching, found by reading the shutdown path adversarially
-        // rather than by running it: the start loop sat outside the try that disposes what it
-        // started, so an interrupt arriving between one broker coming up and the next left the
-        // first holding its port and its store handle for as long as the process lived. FR-021 in
-        // full, and invisible on any machine that serves a single project — which is every machine
-        // that had one before this feature existed.
+        // The window nothing is watching: a start loop outside the try that disposes what it
+        // started would let an interrupt arriving between one broker coming up and the next leave
+        // the first holding its port and its store handle for as long as the process lived. It is
+        // invisible on any machine that serves a single project.
         //
         // Cancelled by the enumerator rather than by a timer, so this reproduces the exact moment
         // rather than usually reproducing it. A flaky guard on a shutdown path is worse than none:
@@ -359,8 +355,7 @@ public sealed class MultiProjectServeTests : IDisposable
     [Fact]
     public async Task An_empty_manifest_being_watched_waits_and_starts_the_first_project_named()
     {
-        // The machine the installer leaves: an entry serving a manifest that names nothing yet. It used to fall through
-        // to one default store nobody had named. Now it waits, and the first project named from `parley terminal` or with
+        // The machine the installer leaves: an entry serving a manifest that names nothing yet. It waits, and the first project named from `parley terminal` or with
         // `parley project add` gets its broker from the watcher within seconds.
         var ct = TestContext.Current.CancellationToken;
         var orders = Project("orders");

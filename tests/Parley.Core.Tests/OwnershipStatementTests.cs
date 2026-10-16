@@ -51,9 +51,9 @@ public sealed class OwnershipStatementTests
     [Fact]
     public void No_length_is_refused_while_no_bound_is_in_force()
     {
-        // 0.33.0 removed the hundred, on the owner's decision of 2026-09-26, so that an agent
+        // There is no bound, so that an agent
         // asked what it owns can answer in two halves and name a peer. A statement far longer
-        // than the old bound is accepted; the character rule below is what still refuses.
+        // than a hundred characters is accepted; the character rule below is what still refuses.
         Assert.False(OwnershipStatement.Bounded);
 
         Assert.True(OwnershipStatement.IsValid(new string('x', 4_000), out _));
@@ -62,7 +62,7 @@ public sealed class OwnershipStatementTests
     [Fact]
     public void The_sentinel_is_never_put_in_front_of_a_person()
     {
-        // 0.25.8's rule, which `parley clarifications` already keeps by saying "Caps in force:
+        // `parley clarifications` keeps this rule by saying "Caps in force:
         // none": printing 2,147,483,647 tells somebody a bound was set at a value nobody chose.
         // The only path that names a number is the refusal, and it cannot be reached while the
         // sentinel is what is set -- so a message carrying it is a defect rather than a surprise.
@@ -99,8 +99,8 @@ public sealed class OwnershipStatementTests
     [InlineData(0xFEFF, "ZERO WIDTH NO-BREAK SPACE")]
     public void A_character_that_is_not_printable_text_is_refused(int point, string name)
     {
-        // Every one of these was accepted by the first version of this rule, which tested
-        // char.IsControl and therefore covered C0 and C1 and nothing else. U+2028 and U+2029
+        // A test of char.IsControl alone covers C0 and C1 and nothing else, and every one of these
+        // gets past it. U+2028 and U+2029
         // are line breaks wherever this text is rendered; U+202E reverses the display of
         // everything after it, so a statement can appear to say the opposite of what is stored;
         // the rest are invisible. All of them let one entry imitate the entries around it in a

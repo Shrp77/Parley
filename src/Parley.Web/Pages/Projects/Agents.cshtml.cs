@@ -141,9 +141,7 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
             string.Equals(Sort, "name", StringComparison.Ordinal) ? SortBy.Name : SortBy.Activity);
 
         // Ordered through the shared derivation and then mapped back, so the console and the
-        // terminal cannot sort the same list differently. The alternative -- an OrderBy here and
-        // another there -- is how the two surfaces came to disagree about who was in a conversation
-        // twice in one week, which is why anything both of them decide is decided once.
+        // terminal cannot sort the same list differently: anything both surfaces decide is decided once.
         Conversations =
         [
             .. rows.Select(row => (listed.Value?.Items ?? []).First(c => c.Id == row.Id))
@@ -162,8 +160,8 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// <param name="archived">Whether it is archived now, so this reverses it.</param>
     /// <returns>The page again, showing the result.</returns>
     /// <remarks>
-    /// No typed name, which is the line 004 drew and this does not move: nothing is destroyed and
-    /// one click reverses it, so a confirmation here would be a dialog in front of a light switch.
+    /// No typed name: nothing is destroyed and one click reverses it, so a confirmation here
+    /// would be a dialog in front of a light switch.
     /// </remarks>
     public async Task<IActionResult> OnPostArchiveAsync(string id, bool archived)
     {

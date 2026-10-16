@@ -624,6 +624,43 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(1, (await Repository.ListAsync(Ct)).Single().StartedItems);
     }
 
+    /// <summary>Ends the newest open exchange of a conversation on a Result from its receiver, as an agent's answer does.</summary>
+    private void Answer(string conversation, string outcome)
+    {
+        var item = outcome == "blocked"
+            ? """{"outcomes":[{"id":"q1","outcome":"blocked","text":"no","blocker":"permission"}]}"""
+            : """{"outcomes":[{"id":"q1","outcome":"done","text":"ok"}]}""";
+
+        _store.Execute($$"""
+            INSERT INTO messages
+                (exchange_id, type, from_agent, to_agent, responder_model, payload_json,
+                 content_hash, conversation_id, created_utc)
+            SELECT id, 'result', receiver, requester, 'claude-opus-5', '{{item}}',
+                   '{{Guid.NewGuid():N}}{{Guid.NewGuid():N}}', conversation_id, '{{FacilitatorStore.Stamp}}'
+              FROM exchanges WHERE conversation_id = '{{conversation}}' AND state = 'OPEN' ORDER BY id DESC LIMIT 1;
+            UPDATE exchanges SET state = 'CLOSED', closed_utc = '{{FacilitatorStore.Stamp}}', outcome = '{{outcome}}'
+             WHERE id = (SELECT MAX(id) FROM exchanges WHERE conversation_id = '{{conversation}}' AND state = 'OPEN');
+            """);
+    }
+
+    [Fact]
+    public async Task A_blocker_the_agent_has_since_answered_past_no_longer_blocks_the_item()
+    {
+        var id = await RoadmapAsync();
+
+        Open("rm1-1", "human-user@test", "billing@test");
+        Answer("rm1-1", "blocked");
+        Assert.Equal(1, (await Repository.GetAsync(id, Ct))!.Items[0].Facts!.BlockedExchanges);
+
+        // The person resolved it and asked again; the agent finished. The blocked exchange is still in the record.
+        Open("rm1-1", "human-user@test", "billing@test");
+        Answer("rm1-1", "complete");
+
+        var facts = (await Repository.GetAsync(id, Ct))!.Items[0].Facts!;
+        Assert.Equal(0, facts.BlockedExchanges);
+        Assert.Equal(1, facts.CompleteExchanges);
+    }
+
     [Fact]
     public async Task Retention_removes_old_decided_proposals_and_delivered_notices_and_never_a_roadmap_or_a_waiting_one()
     {

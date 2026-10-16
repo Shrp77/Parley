@@ -15,19 +15,17 @@ namespace Parley.Core;
 /// to disagree with each other about the same boundary. See SPEC.md §17, the tenth question.
 /// </para>
 /// <para>
-/// <b>An agent may draft it; only a person may accept it.</b> That is the whole reason it is worth
-/// reading, and it is narrower than it was: this paragraph used to say the line was authored by an
-/// operator and never by the agent it describes. 020 amended SPEC.md §17 question 10 to permit a
+/// <b>An agent may draft it; only a person may accept it.</b> SPEC.md §17 question 10 permits a
 /// drafted line, because the half nobody else can supply is what an agent has decided it does
 /// <em>not</em> own — a repository can be read to find out what it contains and cannot be read to
 /// find out what it has ruled out.
 /// </para>
 /// <para>
-/// <b>What did not move is the part that makes it trustworthy.</b> No agent-facing operation writes
-/// this field, the registry is still filled from the launch environment on attach (§12.3), and
-/// which of three routes produced a line — the agent's own words, its words edited, or a line a
-/// person composed with no ask — is recorded against it. An agent can no more set its charter than
-/// its identity; it can now be asked what it should be.
+/// <b>What makes it trustworthy:</b> no agent-facing operation writes this field, the registry is
+/// filled from the launch environment on attach (§12.3), and which of three routes produced a
+/// line — the agent's own words, its words edited, or a line a person composed with no ask — is
+/// recorded against it. An agent can no more set its charter than its identity; it can be asked
+/// what it should be.
 /// </para>
 /// <para>
 /// Advisory, and deliberately so. Nothing routes on it, nothing is refused because of it, and
@@ -47,37 +45,27 @@ public static class OwnershipStatement
     /// would refuse every statement.
     /// </para>
     /// <para>
-    /// <b>It was a hundred, and it was measured rather than chosen.</b> A roster entry costs about
-    /// seventy-five characters of structure before the statement, so ten peers at a hundred cost
-    /// roughly what one message is allowed to; at a hundred and sixty, which is where it started,
-    /// ten peers cost 2,352 characters and listing them cost more than asking. That arithmetic is
-    /// still true and is the reason this is recorded rather than deleted.
+    /// <b>The absence of a bound is a recorded reduction in a control, not a tidy-up.</b> An agent is
+    /// asked what it owns, and a two-part answer naming what it does not own and who it believes does
+    /// will frequently not fit in a short bound. A cap censors the evidence that would justify it, but
+    /// that precedent is weaker here, because this text is charged against every agent's context on
+    /// every roster listing: a roster entry costs about seventy-five characters of structure before
+    /// the statement. The constitution says that until the evidence exists a roster may be the largest
+    /// thing an agent reads.
     /// </para>
     /// <para>
-    /// <b>It came off on the owner's decision of 2026-09-26, and it is a reduction in a control
-    /// rather than a tidy-up.</b> An agent is asked what it owns now, and a two-part answer naming
-    /// what it does not own and who it believes does will frequently not fit in a hundred
-    /// characters. The reasoning is the one used for the open-question cap and the clarification
-    /// depth cap — a cap censors the evidence that would justify it — and <b>that precedent is
-    /// weaker here, because both of those capped counts</b> while this one bounded text charged
-    /// against every agent's context on every roster listing. The constitution was amended to 3.0.0
-    /// to say so, naming this field, and it says that until the evidence exists a roster may be the
-    /// largest thing an agent reads.
-    /// </para>
-    /// <para>
-    /// <b>What survives is the character rule and the deployment's own bound.</b> Nothing below is
-    /// relaxed, and storage still holds a bound a deployment reinstates, so a number chosen from
-    /// what agents actually propose can be put back the way the message cap's 8,000 was put in.
+    /// <b>What holds is the character rule and the deployment's own bound.</b> Storage still holds a
+    /// bound a deployment reinstates, so a number chosen from what agents actually propose can be put
+    /// back the way the message cap's 8,000 was put in.
     /// </para>
     /// </remarks>
     public const int MaxCharacters = int.MaxValue;
 
     /// <summary>Whether a length bound is in force at all.</summary>
     /// <remarks>
-    /// <b>Exists so that nothing has to print the sentinel.</b> 0.25.8 recorded the cost of not
-    /// having it: <c>parley clarifications</c> says <i>"Caps in force: none"</i> rather than the
-    /// number that spells <i>off</i>, because telling somebody a bound was set at 2,147,483,647
-    /// tells them a value nobody chose. Every surface that would otherwise name a limit asks this
+    /// <b>Exists so that nothing has to print the sentinel.</b> A report says <i>"Caps in force: none"</i>
+    /// rather than the number that spells <i>off</i>, because telling somebody a bound was set at
+    /// 2,147,483,647 tells them a value nobody chose. Every surface that would otherwise name a limit asks this
     /// first, and a surface that names the number when this is <see langword="false"/> is a defect.
     /// </remarks>
     public static bool Bounded => MaxCharacters != int.MaxValue;
@@ -96,13 +84,12 @@ public static class OwnershipStatement
     /// entries around it — a second agent, or an instruction, where there was neither.
     /// </para>
     /// <para>
-    /// <b>Refused by Unicode category, because a control-character test is not the rule and was
-    /// found not to be.</b> <c>char.IsControl</c> covers C0 and C1 and nothing else, so
+    /// <b>Refused by Unicode category, because a control-character test is not the rule.</b>
+    /// <c>char.IsControl</c> covers C0 and C1 and nothing else, so
     /// <c>U+2028 LINE SEPARATOR</c> and <c>U+2029 PARAGRAPH SEPARATOR</c> — which are line breaks
-    /// wherever this text is rendered — went straight through it, as did
+    /// wherever this text is rendered — would go straight through it, as would
     /// <c>U+202E RIGHT-TO-LEFT OVERRIDE</c>, which reverses the display of everything after it,
-    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. Every one of those was admitted
-    /// by the first version of this method and by the constraint behind it. So: no
+    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. So: no
     /// <see cref="UnicodeCategory.Control"/>, no
     /// <see cref="UnicodeCategory.Format"/>, and no line or paragraph
     /// separator. Ordinary spaces stay, and so does every letter, accent, dash and emoji in
@@ -145,11 +132,9 @@ public static class OwnershipStatement
             return false;
         }
 
-        // **Counted as it goes, so the refusal can say where.** Naming the code point alone was enough
-        // while a statement was capped at a hundred characters; the bound came off in 0.33.0 so an
-        // agent asked what it owns can answer in two halves, and "it contains U+2028" is not
-        // actionable advice about a paragraph. The position is in text elements, like the length above,
-        // so the two numbers a person reads are counted the same way.
+        // **Counted as it goes, so the refusal can say where.** An agent answers in two halves, and
+        // "it contains U+2028" is not actionable advice about a paragraph. The position is in text
+        // elements, like the length above, so the two numbers a person reads are counted the same way.
         var at = 0;
 
         foreach (var rune in statement.EnumerateRunes())
@@ -183,7 +168,7 @@ public static class OwnershipStatement
     /// <remarks>
     /// <para>
     /// <b>Why there is a flatten at all.</b> A model answers in paragraphs, and a statement refuses a line break
-    /// (<see cref="IsValid"/>). Without this, Auto Accept would almost never accept anything (research finding 9).
+    /// (<see cref="IsValid"/>). Without this, Auto Accept would almost never accept anything.
     /// </para>
     /// <para>
     /// <b>It changes no word, and that is the whole of what keeps <see cref="OwnershipSource.Automatic"/>

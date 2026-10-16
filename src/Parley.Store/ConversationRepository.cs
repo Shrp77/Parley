@@ -349,9 +349,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// <remarks>
     /// <para>
     /// <b>Every participant asked must have agreed.</b> A decline blocks outright, and so does silence:
-    /// a participant that has not answered has not agreed (§5.0). The version this replaced let silence
-    /// assent after a window, which closed conversations over participants that were simply busy with
-    /// the work. A retired participant counts for nothing either way.
+    /// a participant that has not answered has not agreed (§5.0). A retired participant counts for
+    /// nothing either way.
     /// </para>
     /// <para>
     /// Work still open when the participants agree ends <c>closed</c>, with the broker's Result to each
@@ -492,10 +491,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
         foreach (var exchange in open)
         {
-            var request = await messages.GetRequestAsync(exchange.Id, scope.Transaction, cancellationToken)
-                .ConfigureAwait(false);
-
-            var payload = ClosedResult(conversationId, closer, reason, ItemIds(request?.PayloadJson));
+            var payload = ClosedResult(conversationId, closer, reason);
 
             await messages.AppendAsync(
                 exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, Responder.Broker,
@@ -519,25 +515,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
         return true;
     }
 
-    /// <summary>The item identifiers a Request carried, for the <c>closed</c> Result that answers it.</summary>
-    /// <param name="requestJson">The Request's payload, or <see langword="null"/> if it has none any more.</param>
-    /// <returns>Its item ids, or a single placeholder when none can be read.</returns>
-    /// <remarks>
-    /// A Request written under protocol 0.4 carries <c>sub_questions</c> rather than <c>items</c>, and
-    /// is read for those too. A Result must carry at least one outcome, so a Request whose items cannot
-    /// be read is answered for the Request as a whole.
-    /// </remarks>
-    internal static IReadOnlyList<string> ItemIds(string? requestJson)
-    {
-        var ids = PayloadShape.ItemIds(requestJson)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        return ids.Count > 0 ? ids : [PayloadShape.WholeRequest];
-    }
-
     private static string ClosedResult(
-        string conversationId, ConversationCloser closer, string? reason, IReadOnlyList<string> items)
+        string conversationId, ConversationCloser closer, string? reason)
     {
         var text = closer == ConversationCloser.Person
             ? $"The person running the deployment closed conversation {conversationId} before this was finished."
@@ -553,13 +532,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
         var payload = Render(text);
 
-        // A Request with many items and a long reason could still pass the cap. The notice matters
-        // more than its wording, so the reason goes before the close does.
+        // A long reason could still pass the cap. The notice matters more than its wording, so the
+        // reason goes before the close does.
         return payload.Length <= MessageLimits.MaxPayloadCharacters ? payload : Render("Closed.");
 
         string Render(string said) => JsonSerializer.Serialize(new
         {
-            outcomes = items.Select(id => new { id, outcome = "closed", text = said }).ToArray(),
+            outcomes = new[] { new { id = PayloadShape.WholeRequest, outcome = "closed", text = said } },
             closed_by = closer == ConversationCloser.Person ? "person" : "consensus"
         });
     }
@@ -586,8 +565,8 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// </summary>
     /// <remarks>
     /// Polled, silent and not retired, in a conversation still closing that has no open exchange and no live
-    /// decline. §5.0 asks such a participant again and shows it to the person; before this, a participant that
-    /// finished its part and never voted left the conversation closing with nothing asking it and nobody told.
+    /// decline. §5.0 asks such a participant again and shows it to the person, so a participant that
+    /// finished its part and never voted does not leave the conversation closing with nobody told.
     /// </remarks>
     internal const string SilentVoters =
         """

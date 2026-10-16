@@ -11,11 +11,9 @@ namespace Parley.Mcp;
 /// protocol and reaches any client that speaks it.
 /// </para>
 /// <para>
-/// <b>It says what Parley is for, because the text it replaced said the opposite.</b> It described Parley
-/// as a way to ask peers questions about their repositories, and agents that read it declined the work
-/// they were asked for. SPEC.md principle 2.1: Parley exists to get work done across repositories, and an
-/// instruction anywhere in a deployment that stops an agent doing work it was asked for is a defect in
-/// that instruction.
+/// <b>It says what Parley is for.</b> SPEC.md principle 2.1: Parley exists to get work done across
+/// repositories, and an instruction anywhere in a deployment that stops an agent doing work it was asked
+/// for is a defect in that instruction.
 /// </para>
 /// <para>
 /// What belongs here is what is true of every deployment. Which agents exist and what each owns changes,
@@ -23,12 +21,11 @@ namespace Parley.Mcp;
 /// context on every session.
 /// </para>
 /// <para>
-/// <b>The bullet about refused permissions earns its length</b> (the owner's report of 2026-10-03). An agent tried a
-/// command, nobody was there to approve it, the call was refused, and its turn ended without a word — and the room read
-/// "working" for nearly three hours, because a request picked up and not answered is all the broker could see. The
-/// protocol already had the answer, a Result <c>blocked</c> with blocker <c>permission</c>; what was missing was telling
-/// an agent that a refusal is not a pause and that silence strands whoever asked. Reporting turns to the broker, so a
-/// surface can tell a stopped agent from a working one whether or not the agent says so, was the answer to that.
+/// <b>The bullet about refused permissions earns its length.</b> A refused call ends a turn silently, and a
+/// request picked up and not answered looks like work in progress to the broker. The protocol's answer is a
+/// Result <c>blocked</c> with blocker <c>permission</c>, so an agent must be told that a refusal is not a
+/// pause and that silence strands whoever asked. Turn reports let a surface tell a stopped agent from a
+/// working one whether or not the agent says so.
 /// </para>
 /// </remarks>
 public static class ParleyInstructions

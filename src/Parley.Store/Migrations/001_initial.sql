@@ -5,112 +5,17 @@
 -- document's fragments against SQLite in the order written. The two must agree; the document is
 -- the specification and this is the implementation of it.
 --
--- ============================================================================================
--- THIS FILE WAS ELEVEN FILES, AND THE COLLAPSE IS THE OWNER'S CALL OF 2026-09-26
--- ============================================================================================
---
--- Migrations 002 to 011 were folded in here and deleted, and the schema number went from 11 to 1.
--- The ground that permits it is the only one that ever permits it: **nothing has been released and
--- no store outside a test process holds anything worth keeping.** The owner's words were "nothing
--- we have is worth keeping right now".
---
--- It is the same ground 011 was edited on rather than being followed by a 012 — 0.29.0 was
--- installed nowhere, so it had been applied in no store that mattered. This is that argument
--- applied to the whole sequence at once, and it is the last time it will be available: the first
--- release makes every future change a migration, because from then on somebody's conversations are
--- in a file on their disk.
---
--- **A store written by an older build is not upgraded and is not readable.** There is no migration
--- path from 11 to 1 and there is deliberately no attempt at one; `reset.ps1` and `reset.sh` at the
--- repository root clear a developer's stores, which is what they exist for.
---
--- **THE STRUCTURE BELOW WAS DERIVED, NOT HAND-MERGED.** A store was migrated through all eleven
--- and its schema read back out of `sqlite_master` in creation order, because hand-merging eleven
--- files is how a collapse quietly loses a trigger — and four of the tables here (`messages`,
--- `exchanges`, `size_refusals`, `shared_files`) existed in two shapes across that sequence, with
--- fourteen triggers dropped and recreated between them.
---
--- **IT WAS VERIFIED BY A ONE-TIME PROBE, AND THAT PROBE CANNOT BE KEPT.** A store built from this
--- file was compared object by object against one built by the eleven, before this file was
--- trusted: **41 shared objects, with identical names and identical creation order**, plus the one
--- table this feature adds. What it produces is 20 tables of ours beside SQLite's own
--- `sqlite_sequence`, 7 indexes and 14 triggers. Twenty-two objects differed on raw bytes and twenty-one of those differed
--- only by carriage returns inside the text SQLite stores in `sqlite_master` — the later migrations
--- were LF files and this one is CRLF, which changes nothing a reader or a constraint can observe.
--- **Exactly one object differed for any other reason: `agents`, by the one number this feature
--- changes.** The transcript is in `REVIEW-LEDGER.md`.
---
--- That comparison is not a test and can never be one again, because the thing it compared against
--- has been deleted. Saying otherwise in a comment here would be a claim nothing checks. What is
--- checked from now on is narrower and is what `SchemaConformanceTests` and
--- `tests/Parley.Spec.Tests` already do: this file and SPEC.md §9 agree, and every fragment in the
--- document executes.
---
--- ============================================================================================
--- WHAT THE DELETED FILES ARGUED, WHERE IT IS STILL TRUE
--- ============================================================================================
---
--- Reasoning attached to a column or a constraint came with it and is inline below. What follows is
--- the reasoning that lived in those files' headers and is still true of this schema. **What is not
--- carried forward is every file's rebuild mechanics** — the order to drop triggers in, which
--- generated column to leave out of a copy, which AFTER INSERT trigger would double-count a
--- referral if the copy ran under it. Those were instructions for rebuilds that no longer happen,
--- and keeping them in a file that creates each table exactly once would be archaeology dressed as
--- guidance. They are in the git history of the deleted files.
---
--- **003 — the message cap is 8,000 and it is the first number here set from measurement.**
--- §17 question 16 asked for `refusals()` showing "the same agents turned away repeatedly at
--- similar sizes, rather than one agent once", and that is what it showed: six agents, forty-three
--- refusals, worst case 6,195 characters, means between 4,328 and 4,556. Every refusal ever
--- recorded fits under the number. It is a CHECK rather than a limit the broker enforces because
--- §9.3 puts invariants in storage where application code cannot route around them, and that
--- decision is worth its cost rather than regretted. It stays provisional on the same terms: move
--- it on that record, not because a message did not fit.
---
--- **004 — the destroy invariant of §14 needs no cascade, and adding one would weaken it.**
--- Every column referencing `conversations(id)` does so *without* `ON DELETE CASCADE`, which is
--- exactly what the deletion relies on: the deletes are ordered inside one transaction with foreign
--- keys deferred to commit, so a table nobody remembered fails the whole destroy rather than leaving
--- a message pointing at a conversation that is gone. A cascade would remove that guard while
--- looking like it strengthened it.
---
--- **006 and 007 — two caps are off by default, and `2147483647` is how "off" is spelled.**
--- §7.1's open-question cap and §5.2's clarification cap. Nothing cuts a line of work off before its
--- participants are finished (principle 2.8), and **a cap censors the evidence that would justify
--- it** — the reasoning this repository has now used three times. Zero was not available to either:
--- for clarifications it already means no clarification at all, which a deployment may want, and
--- the largest integer means nothing else. **What survives is the range**: a real cap is still held
--- to its band by the triggers below, so a bug writing a large number is still refused rather than
--- silently switching the rule off, and the one value beyond the band has to be written on purpose.
--- 020 adds a third to the list and the constitution was amended to 3.0.0 to say so — see the
--- `owns` column, whose bound is off on the same reasoning and at a cost recorded there.
---
--- **008 — protocol 0.5 made every message answered, and nothing times out.** `ORPHANED`,
--- `ghosted` and the delivery and working windows are gone; an exchange that stops moving is
--- flagged to a person rather than closed by a clock. An announcement is a Request answered
--- `acknowledged`, which is why there is no standalone notification shape here.
---
--- **010 — `name_key` is `upper(name)` and that retired a caveat.** The key used to fold every
--- letter so that two spellings of one accented name were one row. With a shared file's name held
--- to A–Z, digits, '.', '_' and '-', SQLite's own `upper()` computes the same key — and a key that
--- disagreed with its name would be a second name for one file.
---
--- **011 — protocol 0.7 reduced a Request to the ask, and no row was ever touched.** The old
--- requirements lived in one BEFORE INSERT trigger, and a message is never updated: §9.4 prunes
--- text, it does not rewrite it. Replacing the trigger decided what may be written from then on and
--- said nothing about what had been written, because rewriting stored payloads would destroy words
--- a participant wrote, which is the one thing the log exists to keep. That property is why this
--- collapse is safe to do *now* and would not have been safe after a release.
---
--- `tr_result_is_well_formed` was deliberately left alone by 011 and is unchanged here. It never
--- named an item identifier: it requires at least one outcome, holds a blocked outcome to naming its
--- blocker, checks every source against the registry, and lets only the broker write 'closed'. All
--- four are as true of one outcome named 'request' as of five named by a Request's items.
---
--- ============================================================================================
+-- Present rules, each held here rather than in code:
+--   * The message cap (8,000 characters) is a CHECK, so no code path can route around it (§9.3).
+--   * The two caps that are off by default (§7.1, §5.2) are spelled 2147483647; the triggers still
+--     hold a real cap to its band, so a bug writing a large number is refused, not a silent "off".
+--   * Nothing referencing conversations(id) cascades on delete: a destroy deletes in order inside one
+--     transaction with foreign keys deferred, so a table nobody remembered fails the whole destroy.
+--   * Message rows are never rewritten; §9.4 prunes text, it does not edit it.
+--   * A store written by another build is not upgraded: reset.ps1 and reset.sh clear a developer's stores.
 
 CREATE TABLE nodes (
-  -- Detected, never configured, per §4.1.1. The primary key rather than a surrogate, because
+  -- Detected by the node, per §4.1.1. The primary key rather than a surrogate, because
   -- the machine's identity is the thing agents are named after.
   machine        TEXT    PRIMARY KEY
                  CHECK (length(machine) BETWEEN 1 AND 64
@@ -139,6 +44,15 @@ CREATE TABLE agents (
   -- find every agent sharing a role, which a substring match on the whole name cannot do
   -- safely: 'infra' is a prefix of 'infrastructure'.
   name            TEXT    PRIMARY KEY,     -- logical name, NOT a session id
+  -- The repository's own identifier (`parleyAgentId`, §13), which is what an agent really is: the name is only what
+  -- is shown for it. NULL for the two participants the broker provides, and for a row a repository without
+  -- one registered. An attach that presents an identity already held under another name renames that row, and every
+  -- table referencing it is moved with it (§4.1.1). Lower-case hyphenated hex, so two spellings of one
+  -- identifier cannot be two agents. The identifier belongs to a repository and a committed `.mcp.json` carries it to
+  -- every machine, so it is unique per machine (ux_agent_identity), never alone.
+  identity        TEXT
+                  CHECK (identity IS NULL
+                         OR (length(identity) = 36 AND identity NOT GLOB '*[^0-9a-f-]*')),
   -- Generated rather than supplied, so the halves cannot disagree with the name they came from.
   -- They exist as columns at all because a role question (§5.5) has to find every agent sharing
   -- a role, and a substring match on the whole name cannot do that safely -- 'infra' is a
@@ -150,8 +64,8 @@ CREATE TABLE agents (
   -- address.
   role            TEXT    NOT NULL
                   GENERATED ALWAYS AS (substr(name, 1, instr(name, '@') - 1)) STORED,
-  -- The node that reported this agent. Detected there and never configured, so two machines
-  -- cannot both claim to be server-b -- see §4.1.1.
+  -- The node that reported this agent. Detected there, so two machines
+  -- cannot both claim to be server-b by accident -- see §4.1.1.
   --
   -- NULL for the two participants the broker provides, the person seat and the facilitator
   -- (§12.3). Neither is hosted on a machine: the part after '@' in their names says what this
@@ -175,21 +89,16 @@ CREATE TABLE agents (
   owns            TEXT,                    -- one line, read by peers (see §17 q10)
   -- How many of this agent's adapters are connected right now, raised on connect and lowered
   -- on disconnect, and written by nothing else. Not derived from a timestamp: §4.0 gives the
-  -- broker a held connection, so this is an observation rather than the guess a last-seen
-  -- column forces on every reader -- and the guess is what let a session killed on Tuesday
-  -- read as healthy on Friday.
+  -- broker a held connection, so this is an observation rather than a last-seen guess.
   --
   -- A count rather than a flag, because an agent may have two sessions open. With a flag the
   -- second one closing says the agent is gone while the first is still mid-answer, and the
-  -- next attach releases work somebody is doing -- which is exactly the failure the timestamp
-  -- lease this replaced was invented to avoid. Counting keeps that property without needing an
-  -- expiry to guess at.
+  -- next attach releases work somebody is doing.
   connected       INTEGER NOT NULL DEFAULT 0 CHECK (connected >= 0),
   -- When that last changed. For reports, never for decisions; nothing routes on it.
   changed_utc     TEXT,
   -- Two values, because there are only two judgements a person makes about a registration:
-  -- it stands, or it is finished. Everything else that used to live here was a description
-  -- of reachability, which is now observed rather than stored -- see §14.
+  -- it stands, or it is finished. Reachability is observed, not stored -- see §14.
   status          TEXT    NOT NULL CHECK (status IN ('active', 'retired')),
 
   CHECK (adapter_config IS NULL
@@ -271,26 +180,21 @@ CREATE TABLE agents (
 CREATE TABLE agent_ownership_accepted (
   -- What a person agreed this agent owns, and the evidence of how they arrived at it.
   --
-  -- SEPARATE FROM agents.owns ON PURPOSE, and the distinction is the whole of FR-020. This is
-  -- what somebody accepted; agents.owns is what peers actually read, and it is filled from the
-  -- launch environment when the agent attaches (SPEC.md §12.3). Until the agent restarts the
-  -- two differ, and a surface says so by comparing them rather than by keeping a third flag
-  -- somebody has to remember to clear. Both halves here are observations, so the state cannot
-  -- be wrong -- which is the shape 0.29.1 and 0.25.3 both argued for after collapsing two
-  -- questions into one made both unanswerable.
-  agent            TEXT    NOT NULL PRIMARY KEY
+  -- SEPARATE FROM agents.owns ON PURPOSE. This is what somebody accepted; agents.owns is what
+  -- peers actually read, and it is filled from the launch environment when the agent attaches
+  -- (SPEC.md §12.3). Until the agent restarts the two differ, and a surface says so by comparing
+  -- them rather than by keeping a flag somebody has to remember to clear.
+  agent           TEXT    NOT NULL PRIMARY KEY
                            REFERENCES agents(name) ON DELETE CASCADE,
   statement        TEXT    NOT NULL,
-  -- Which of the three routes FR-015 admits. A person's characters are never attributed to a
-  -- model: 0.29.0's second review finding was a retry writing a length no agent composed into
-  -- size_refusals, which is the table §17 question 16 reads.
+  -- Which route the line came by. A person's characters are never attributed to a model, so
+  -- nothing here feeds size_refusals, which §17 question 16 reads.
   source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed', 'automatic')),
-  -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is
-  -- FR-026's evidence, and the reason the bound above could be switched off at all: the
-  -- number that replaces it has to be chosen from what agents actually propose, the way the
-  -- message cap's 8,000 was chosen from `parley refusals`.
+  -- The length of the AGENT'S OWN message, or NULL where there was no proposal. It is the
+  -- evidence a bound on agents.owns would be chosen from, as the message cap was chosen from
+  -- `parley refusals`.
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
-  -- The discussion, so FR-011 is answerable from the agent rather than from somebody's memory.
+  -- The discussion, so how a line was reached is answerable from the agent.
   -- Cleared, not refused, when that conversation is destroyed: the line is what peers route by and the
   -- conversation is evidence of how it was reached.
   conversation_id  TEXT             REFERENCES conversations(id) ON DELETE SET NULL,
@@ -304,34 +208,20 @@ CREATE TABLE agent_ownership_accepted (
   CHECK (source <> 'automatic' OR proposed_length IS NOT NULL)
 ) STRICT;
 
-CREATE TABLE agent_credentials (
-  agent     TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
-  name      TEXT NOT NULL,                -- the adapter's name for it: api_key, org_token
-  reference TEXT NOT NULL,
-
-  PRIMARY KEY (agent, name),
-  CHECK (length(name) BETWEEN 1 AND 64 AND name NOT GLOB '*[^a-z0-9_]*'),
-  CHECK (reference LIKE 'env:_%'
-         OR reference LIKE 'keychain:_%'
-         OR reference LIKE 'file:_%')
-) STRICT;
-
 CREATE TABLE invocations (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   agent         TEXT    NOT NULL REFERENCES agents(name),
   -- Before and after, so the record can say whether the turn changed anything. An agent that
   -- ran and is still owed as much as it was is the one worth noticing.
   --
-  -- "Waiting" rather than "owed", because the two stopped being the same thing: an answer to a
-  -- question this agent asked leaves no debt at all, and an uncollected message is a reason to
-  -- give an agent a turn that no count of debts can see. That distinction is what let an agent
-  -- sit connected beside an uncollected message for twenty minutes with nothing wrong anywhere.
+  -- "Waiting" rather than "owed": an answer to a question this agent asked leaves no debt at
+  -- all, and an uncollected message is a reason to give an agent a turn that no count of debts
+  -- can see.
   waiting_before INTEGER NOT NULL CHECK (waiting_before >= 0),
   waiting_after  INTEGER NOT NULL CHECK (waiting_after >= 0),
   started_utc   TEXT    NOT NULL,
   elapsed_ms    INTEGER NOT NULL CHECK (elapsed_ms >= 0),
-  -- The turn's verdict: zero when it ran to a clean finish. Named for a process exit code
-  -- because it once was one, back when a turn and a process were the same thing.
+  -- The turn's verdict: zero when it ran to a clean finish.
   exit_code     INTEGER NOT NULL,
   -- A timeout is not a failure of the agent: it is a turn that took longer than the supervisor
   -- was willing to wait for, and the two need different responses. It does not end the agent --
@@ -374,11 +264,6 @@ CREATE TABLE conversations (
   -- separator. This is the authoritative name: exchanges reference it and messages carry a copy
   -- held in agreement by a composite foreign key, so constraining it here is what constrains it
   -- everywhere.
-  --
-  -- It was previously responder_model's character set, which permits '/'. That set is right for
-  -- a model identifier -- 'some-org/some-model-9' is a real name -- and wrong for this, and the
-  -- comment claiming to keep path separators out sat directly above a GLOB that admitted them.
-  -- '../../etc/passwd' was a legal conversation id.
   CHECK (length(id) BETWEEN 1 AND 64
          AND id NOT GLOB '*[^a-zA-Z0-9._-]*'
          AND id NOT GLOB '*..*')
@@ -399,8 +284,11 @@ CREATE TABLE conversation_participants (
   CHECK ((vote IS NULL) = (voted_utc IS NULL))
 ) STRICT;
 
+-- Refuses a vote cast or changed after the close. Moving a participant's row to its renamed agent (§4.1.1) changes
+-- neither, so it is not a vote.
 CREATE TRIGGER tr_no_vote_after_closure BEFORE UPDATE ON conversation_participants
 WHEN NEW.vote IS NOT NULL
+  AND (NEW.vote IS NOT OLD.vote OR NEW.voted_utc IS NOT OLD.voted_utc)
 BEGIN
   SELECT RAISE(ABORT, 'conversation is closed')
    WHERE EXISTS (SELECT 1 FROM conversations
@@ -769,8 +657,11 @@ END;
 CREATE TRIGGER tr_shared_file_stays_put
 BEFORE UPDATE OF conversation_id, placed_by, placed_utc ON shared_files
 WHEN NEW.conversation_id IS NOT OLD.conversation_id
-  OR NEW.placed_by IS NOT OLD.placed_by
   OR NEW.placed_utc IS NOT OLD.placed_utc
+  OR (NEW.placed_by IS NOT OLD.placed_by
+      AND NOT (NEW.placed_by IS NOT NULL AND OLD.placed_by IS NOT NULL
+               AND EXISTS (SELECT 1 FROM agents WHERE name = NEW.placed_by)
+               AND NOT EXISTS (SELECT 1 FROM agents WHERE name = OLD.placed_by)))
 BEGIN
   SELECT RAISE(ABORT, 'a file keeps its conversation, its placer and when it was placed');
 END;
@@ -866,10 +757,13 @@ END;
 -- One person per store. However the row came to be written, a second is refused.
 CREATE UNIQUE INDEX ux_one_person ON agents(role) WHERE role = 'human-user';
 
+-- One row per repository per machine. Two names for one identity on one machine would be two agents answering to one
+-- checkout, which is what a rename exists to prevent (§4.1.1).
+CREATE UNIQUE INDEX ux_agent_identity ON agents(identity, machine) WHERE identity IS NOT NULL;
+
 -- The role and the seat's adapter are tied in both directions (§12.3), as the facilitator's are. A row with the role and
 -- another adapter is an agent claiming to be the person; a row with the adapter and another role is an agent the broker
--- would treat as a person, who may always name a conversation (principle 2.10). Added at the combined review gate, which
--- found the second direction admitted at attach; the door refuses both first, with a sentence.
+-- would treat as a person, who may always name a conversation (principle 2.10). The door refuses both first, with a sentence.
 CREATE TRIGGER tr_person_role_is_reserved
 BEFORE INSERT ON agents
 WHEN (substr(NEW.name, 1, instr(NEW.name, '@') - 1) = 'human-user')
@@ -937,8 +831,8 @@ WHERE state IN ('asked', 'asked_back', 'answered', 'waiting');
 -- Refreshed once, ever (§11.1).
 CREATE UNIQUE INDEX ux_one_refresh ON ownership_questions(agent) WHERE restart_sent = 1;
 
--- A question is the facilitator's own Request to the agent it names, and starts asked. Research finding
--- 11: an agent can open an `owns-` conversation itself, so recognising a question by its conversation's
+-- A question is the facilitator's own Request to the agent it names, and starts asked. An agent can open an
+-- `owns-` conversation itself, so recognising a question by its conversation's
 -- name would let an agent answer itself and have the answer accepted with nobody looking. Neither the
 -- facilitator nor a seat is asked: one owns nothing and the other is a person.
 CREATE TRIGGER tr_question_is_the_facilitators
@@ -976,16 +870,15 @@ END;
 
 -- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
 -- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
--- row reads as on: a project created before this switch existed behaves as a new one does.
+-- row reads as on: Auto Accept is on by default.
 CREATE TABLE facilitation (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   auto_accept  INTEGER NOT NULL DEFAULT 1 CHECK (auto_accept IN (0, 1)),
   changed_utc  TEXT    NOT NULL
 ) STRICT;
 
--- Every route but a composed line names the discussion it came from. This was a CHECK on
--- agent_ownership_accepted, and it moved here because that column is now cleared when the conversation is
--- destroyed (research finding 14): a CHECK applies to that clearing too and would refuse the destroy. A
+-- Every route but a composed line names the discussion it came from. A trigger rather than a CHECK,
+-- because that column is cleared when the conversation is destroyed and a CHECK would refuse the destroy. A
 -- line agreed in a conversation that was later destroyed keeps the line and loses only the link.
 --
 -- Checked on insert, and on an update that changes the route. Clearing the link alone is not a new route.

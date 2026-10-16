@@ -67,10 +67,9 @@ public sealed class WakeLifecycleTests
         // but it has taken a turn and there is more mail, which is a legitimate reason to be woken
         // again. The alternative would hold the mark while unread messages accumulated behind it.
         //
-        // **This asserted that the mark was clear afterwards, which stood in for "it will be woken
-        // again" and was not the same thing.** Clear, the rest waited for some later message to ask, and
-        // the review gate found that nothing ever might (lens 1 run 1.18). The drain now asks for the
-        // turn itself, so the mark is held again -- for a turn that is coming -- and a further message
+        // **The mark is not asserted clear afterwards, because that is not the same thing as "it will be
+        // woken again".** Clear, the rest would wait for some later message to ask, and nothing ever might.
+        // The drain asks for the turn itself, so the mark is held again -- for a turn that is coming -- and a further message
         // does not stack a second one. Orders is the resident its node started (SPEC.md §11.7), since
         // an agent opened outside Parley is asked for no turn at all.
         var token = TestContext.Current.CancellationToken;

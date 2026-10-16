@@ -88,8 +88,7 @@ public sealed class InvocationCommandTests
     [Fact]
     public void The_prompt_is_not_an_argument()
     {
-        // It used to be, when a process was started per message and the prompt was the only way
-        // to say anything to it. A resident agent is given its turn over standard input, so a
+        // A resident agent is given its turn over standard input, so a
         // prompt on the command line would be a first turn nobody asked for.
         var command = InvocationCommand.Parse("claude");
 

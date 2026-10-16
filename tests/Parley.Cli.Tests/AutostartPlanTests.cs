@@ -98,9 +98,9 @@ public sealed class AutostartPlanTests
         // project's own, recorded in its `project.json` and claimed when it was created, so an entry
         // that repeated one would be a second place the answer lives.
         //
-        // What narrows an entry now is the project. Asserted both ways, because an entry that quietly
-        // served everything when it was asked for one project would be the reverse of the defect the
-        // owner met at 0.31.0 — an installer describing a deployment that is not the one running.
+        // What narrows an entry is the project. Asserted both ways, because an entry that quietly
+        // served everything when it was asked for one project would be an installer describing a
+        // deployment that is not the one running.
         Assert.DoesNotContain("--project", Plan().Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", Plan().Arguments, StringComparison.Ordinal);
 

@@ -10,10 +10,9 @@ namespace Parley.Store;
 /// <param name="connection">An open connection to the project's database.</param>
 /// <remarks>
 /// <para>
-/// Rule 8.5 fixes a number no evidence has ever been offered for, and §17 says the same of the
-/// clarify cap without anyone ever collecting it. This is the collection. It exists because the
-/// alternative — changing a poisoning control on the strength of whoever complained most
-/// recently — is how a control becomes a formality.
+/// Rule 8.4's cap moves on the record of what it refuses (§17 question 16), and this is that
+/// record. The alternative — changing a poisoning control on the strength of whoever complained
+/// most recently — is how a control becomes a formality.
 /// </para>
 /// <para>
 /// <b>No payload is stored, only its length.</b> Keeping the text that was refused for being too

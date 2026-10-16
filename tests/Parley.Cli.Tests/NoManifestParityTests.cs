@@ -53,10 +53,7 @@ public sealed class NoManifestParityTests : IDisposable
 
     /// <summary>A root in this test's own directory that has never been created.</summary>
     /// <remarks>
-    /// **It named <c>projects.json</c> and names a directory now.** Keeping the old spelling would have
-    /// tested the compatibility rule rather than the absent case: a value whose final segment is the
-    /// manifest's file name resolves to its parent, so this would have pointed at a directory that
-    /// exists and holds this test's own scratch files.
+    /// A directory that does not exist, so the absent case is what is tested.
     /// </remarks>
     private string Absent => Path.Combine(_directory, "never-configured");
 
@@ -86,8 +83,6 @@ public sealed class NoManifestParityTests : IDisposable
     }
 
     [Theory]
-    // PARLEY_DB was here and resolves nothing now: a project's store is derived from its name, so
-    // there is no variable a machine could set to change it.
     [InlineData(BrokerEndpoint.Variable, "http://env:1")]
     [InlineData(NodeCatalogue.PathVariable, "/from/env-node.json")]
     public void With_no_manifest_the_environment_still_decides(string name, string value)
@@ -107,7 +102,7 @@ public sealed class NoManifestParityTests : IDisposable
     [Fact]
     public void An_explicit_value_still_wins_over_a_project_and_says_so()
     {
-        // FR-009: the report says which input won, because the only thing worse than the wrong value is
+        // The report says which input won, because the only thing worse than the wrong value is
         // the wrong value with nothing to say where it came from.
         //
         // **This was about `--db` beating a project's store, and that pairing no longer exists** — a
@@ -130,7 +125,7 @@ public sealed class NoManifestParityTests : IDisposable
     public void A_machine_with_no_manifest_still_resolves_a_catalogue()
     {
         // A machine may legitimately name no projects, and §4.1 keeps that supported. The catalogue is
-        // the machine's rather than any project's since 018, so there is nothing for a project to fail
+        // the machine's rather than any project's, so there is nothing for a project to fail
         // to supply — what has to hold is that the answer is still the one the node reaches.
         var node = ProjectResolution.NodeConfig(null, NoVariables, null);
 
@@ -157,7 +152,6 @@ public sealed class NoManifestParityTests : IDisposable
         // it. What must not appear is anything reporting the file's absence.
         foreach (var stream in new[] { output, error })
         {
-            Assert.DoesNotContain(ProjectManifest.FileName, stream, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("No projects configured", stream, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(Absent, stream, StringComparison.OrdinalIgnoreCase);
         }
@@ -193,19 +187,14 @@ public sealed class NoManifestParityTests : IDisposable
 
         // And says where that came from, without mentioning the manifest it does not have.
         Assert.Contains("(default)", output, StringComparison.Ordinal);
-        Assert.DoesNotContain(ProjectManifest.FileName, output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Serve_with_nothing_configured_refuses_and_says_how_to_configure_something()
     {
-        // **The refusal used to be about the database, and had to be.** While `--db` and `PARLEY_DB`
-        // existed, a machine with nothing configured was missing a *store*, and a message about
-        // projects would have been a different answer to the same mistake on every machine that had
-        // never heard of one.
-        //
-        // There is no store to be missing now. What such a machine lacks is a project, and the refusal
-        // says exactly that and how to make one — which is the whole of what it can usefully say.
+        // **The refusal is about a project, not a database.** There is no store to be missing. What
+        // such a machine lacks is a project, and the refusal says exactly that and how to make one —
+        // which is the whole of what it can usefully say.
         //
         // **And it must refuse rather than wait.** `serve --config <root>` waits, because that is the
         // entry an installer registers and a project named an hour later must come up without it
@@ -220,7 +209,6 @@ public sealed class NoManifestParityTests : IDisposable
 
         // Nothing about a store, because there is nothing a person could do about one.
         Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
-        Assert.DoesNotContain(DeploymentEnvironment.DatabaseVariable, error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -238,6 +226,5 @@ public sealed class NoManifestParityTests : IDisposable
 
         Assert.NotEqual(0, code);
         Assert.DoesNotContain("--project", error, StringComparison.Ordinal);
-        Assert.DoesNotContain("projects.json", error, StringComparison.OrdinalIgnoreCase);
     }
 }

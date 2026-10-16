@@ -4,11 +4,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 2: where a write can be made to land, and how long a quoted value can be.
+/// Where a write can be made to land, and how long a quoted value can be.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Run 1 attacked the *values* written into a repository. This attacks the *destination*: this tooling
+/// Other probes attack the *values* written into a repository. This attacks the *destination*: this tooling
 /// is pointed at a directory of checkouts it did not create, and decides from what it finds there
 /// which files to overwrite. A checkout is somebody else's data — often a clone of somebody else's
 /// repository — and `.mcp.json` is a tracked file that a repository can therefore ship as a link.
@@ -127,8 +127,8 @@ public sealed class ProbeThirteenTests : IDisposable
     [Fact]
     public void A_lone_surrogate_does_not_end_the_quoting()
     {
-        // Paths and roles are read as UTF-16 from JSON, which can hold an unpaired surrogate. The
-        // truncation in this repository has already cut one in half once, in 008's gate.
+        // Paths and roles are read as UTF-16 from JSON, which can hold an unpaired surrogate. A
+        // truncation that cuts one in half must not end the quoting.
         var flat = Quoting.Flat("orders\ud800tail");
 
         Assert.Contains("orders", flat, StringComparison.Ordinal);

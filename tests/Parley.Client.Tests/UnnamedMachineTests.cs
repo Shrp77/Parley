@@ -29,10 +29,10 @@ public sealed class UnnamedMachineTests
 {
     /// <summary>A root this machine has never created.</summary>
     /// <remarks>
-    /// **It ended in `projects.json` until 019.** The variable and the flag name a root now, and a value
-    /// whose final segment is the old manifest file name is *refused* — so a fixture spelled the old way
-    /// no longer describes an unconfigured machine, it describes a misconfigured one, and every test
-    /// here failed for a reason that had nothing to do with fallbacks.
+    /// **It must not end in `projects.json`.** The variable and the flag name a root, and a value
+    /// whose final segment is the manifest file name is *refused* — so a fixture spelled that way
+    /// describes a misconfigured machine rather than an unconfigured one, and every test
+    /// here would fail for a reason that had nothing to do with fallbacks.
     /// </remarks>
     private static string NoManifestHere =>
         Path.Combine(Path.GetTempPath(), $"parley-absent-{Guid.NewGuid():N}");
@@ -74,8 +74,8 @@ public sealed class UnnamedMachineTests
 
         var offered = directory.Projects[0];
 
-        Assert.Contains("Not named in a manifest", offered.Description, StringComparison.Ordinal);
-        Assert.Contains("`parley`",offered.Description, StringComparison.Ordinal);
+        Assert.Contains("A broker reached by address", offered.Description, StringComparison.Ordinal);
+        Assert.Contains("no project of its own", offered.Description, StringComparison.Ordinal);
     }
 
     [Fact]

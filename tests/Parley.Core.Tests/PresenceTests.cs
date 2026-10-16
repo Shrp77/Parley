@@ -7,11 +7,9 @@ namespace Parley.Core.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This replaces a suite about time windows, and the windows are gone rather than adjusted.
-/// Liveness used to be derived from a timestamp: three sweeps of silence meant one thing, five
-/// minutes meant another, and both were estimates that every reader had to interpret using a
-/// sweep cadence it could not see. The tests that pinned those boundaries were pinning the
-/// arithmetic of a guess.
+/// Liveness is not derived from a timestamp: a window of silence is an estimate that every
+/// reader would have to interpret using a sweep cadence it could not see, and a test that pinned
+/// its boundaries would be pinning the arithmetic of a guess.
 /// </para>
 /// <para>
 /// There is nothing left to pin to the second. A connection is open or it is not.

@@ -62,13 +62,10 @@ public sealed record AutostartPlan(
     /// else somebody installed.
     /// </para>
     /// <para>
-    /// <b>One entry, even though it now starts three things.</b> The process it launches hosts
-    /// the broker, this machine's node, and the operator's console, so a deployment needs a
-    /// single supervisor entry rather than one per part — which is what further entries would
-    /// have been: more things to install, remove, and find already removed. The name did not
-    /// change with the scope, because it is the handle by which <c>remove</c> finds what
-    /// <c>install</c> left behind, and a rename would strand every entry installed by an earlier
-    /// build.
+    /// <b>One entry, which starts three things.</b> The process it launches hosts the broker, this
+    /// machine's node, and the operator's console, so a deployment needs a single supervisor entry
+    /// rather than one per part. The name is the handle by which <c>remove</c> finds what
+    /// <c>install</c> left behind.
     /// </para>
     /// </remarks>
     public const string Name = "parley-broker";
@@ -97,10 +94,10 @@ public sealed record AutostartPlan(
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <remarks>
     /// <para>
-    /// The database path is required and is resolved to an absolute one. A logon task has no
-    /// working directory worth relying on, so a relative path installed today would name a
-    /// different file tomorrow — and the failure is a broker that comes up healthy against an
-    /// empty store, which reads as every agent having lost its registration.
+    /// The root is required and is resolved to an absolute path. A logon task has no working
+    /// directory worth relying on, so a relative path installed today would name a different
+    /// folder tomorrow — and the failure is a broker that comes up healthy against an empty
+    /// store, which reads as every agent having lost its registration.
     /// </para>
     /// <para>
     /// The executable defaults to the running process rather than to whatever is on PATH at
@@ -129,11 +126,8 @@ public sealed record AutostartPlan(
         // wrapping the broker in cmd.exe or sh -c and quoting a path twice -- for the one
         // feature whose absence is silent. The broker writing its own log needs no wrapper on
         // any platform, and the same argument is testable everywhere.
-        // **A narrowed entry names a project, not a store and a port.** It wrote
-        // `serve --db <path> --listen <url>`, which `serve` no longer accepts at all — so an entry
-        // installed with --project would have failed at the next logon, with nothing on screen
-        // connecting it to the flags going. The project is the whole of what narrows it now, and
-        // where its store is and what port it holds are that project's own business.
+        // A narrowed entry names a project; where its store is and what port it holds are that
+        // project's own business.
         var arguments = project is { Length: > 0 } named
             ? string.Create(CultureInfo.InvariantCulture,
                 $"serve --config {Quote(machine)} --project {Quote(named)} --log {Quote(log)}")
@@ -200,11 +194,9 @@ public sealed record AutostartPlan(
     /// <exception cref="ArgumentException"><paramref name="manifestPath"/> is blank.</exception>
     /// <remarks>
     /// <para>
-    /// <b>No store and no port, because the manifest holds them.</b> SPEC.md §4.1 gives every
+    /// <b>No store and no port, because each project holds its own.</b> SPEC.md §4.1 gives every
     /// project its own store and endpoint and says one process may host them all; <c>serve</c>
-    /// with nothing named does exactly that. An entry written with one explicit store was the
-    /// installer's only shape for a long time, and it is what left every project named
-    /// afterwards "not answering" until somebody found out the entry had never heard of it.
+    /// with nothing named does exactly that.
     /// </para>
     /// <para>
     /// The manifest's path is written in, for the reason the catalogue is in
@@ -228,8 +220,7 @@ public sealed record AutostartPlan(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
 
-        // The root, which used to be "the directory holding the manifest". Same place, said the other
-        // way, and taking the parent of it now would put the broker's log beside the Parley folder.
+        // The root itself: its parent would put the broker's log beside the Parley folder.
         var root = Path.GetFullPath(manifestPath);
 
         var log = Path.Combine(root, Name + ".log");
@@ -263,10 +254,7 @@ public sealed record AutostartPlan(
     /// <param name="log">Where its output goes.</param>
     /// <returns>The plan.</returns>
     /// <remarks>
-    /// The one place the supervisor is chosen and the unit path derived. The manifest plan used
-    /// to be built by describing a placeholder store and overwriting two properties, which
-    /// worked and read as a trick — and a trick in the function that decides what runs at
-    /// logon is a trick somebody will one day extend.
+    /// The one place the supervisor is chosen and the unit path derived.
     /// </remarks>
     private static AutostartPlan Compose(string binary, string arguments, string log) =>
         Detect() switch

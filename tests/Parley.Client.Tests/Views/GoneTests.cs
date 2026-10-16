@@ -9,7 +9,7 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-006's other half. The store keeps a record; this is the sentence a person reads, and it is
+/// The store keeps a record; this is the sentence a person reads, and it is
 /// composed once because two surfaces answering "what happened to it" differently would be two
 /// accounts of an event that has no other account left.
 /// </para>

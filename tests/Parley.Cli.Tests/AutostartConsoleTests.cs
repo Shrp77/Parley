@@ -148,12 +148,9 @@ public sealed class AutostartConsoleTests
     [Fact]
     public async Task Neither_a_console_nor_a_node_is_refused_across_several_projects()
     {
-        // Found by running it, twice over. A console reads this machine's manifest and is at its
-        // best across several projects, and it was once refused because it shared a hook with the
-        // node. The node was then refused across several projects on its own, on the grounds
-        // that a machine has one identity — until an autostart entry serving the manifest had
-        // nowhere to put the node at all. It is hosted per catalogued project now, so neither
-        // hook may throw at a person. Cancelled up front so nothing binds and the test needs no
+        // A console reads this machine's manifest and is at its best across several projects, so it
+        // must not be refused because it shares a hook with the node. The node is hosted per
+        // catalogued project, so neither hook may throw at a person. Cancelled up front so nothing binds and the test needs no
         // sockets: anything that is not an ArgumentException got past the guard, which is the
         // whole claim.
         var projects = new[]

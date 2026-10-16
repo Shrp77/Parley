@@ -20,8 +20,7 @@ else if (Model.Record is not { } agent)
     <h1>@Model.Agent</h1>
     @* Not an error. A name can leave the registry while a link to it is still on somebody's
        screen -- purged, or never registered at all -- and saying so is the answer. *@
-    <p>This project's registry holds no agent by that name. It may have been purged, or never
-       registered.</p>
+    <p>This project has no agent by that name.</p>
 }
 else
 {
@@ -72,26 +71,19 @@ else
 
     <h2>Do something</h2>
 
-    <p>
-        Each of these says what it will do before it does it, and none of them happens by
-        following a link.
-    </p>
-
-    @* Asking and recording sit first because they are the two that cost nothing and are the ones
-       somebody is most often here for. Both were built at 0.33.0 and linked from nowhere until
-       0.34.1, which is what 020's quickstart walk found: the operation existed, the page model
-       performed it, and no door led to it. *@
+    @* Responsibility sits first because it costs nothing and is what somebody is most often here for.
+       It is one statement per agent: the agent proposes it and the person may override it, and both
+       the asking and the writing are on the ownership page. *@
     @if (Parley.Core.PersonSeat.Is(agent.Name))
     {
         @* The person's seat: a person is asked, never started, retired or purged, and owns no
            repository — so every action below would only be refused. Said once instead. *@
-        <p>This is you. Agents ask you things here; there is nothing to do to it.</p>
+        <p>This is you.</p>
     }
     else
     {
     <nav aria-label="Actions">
-        <a href="/Projects/Act?project=@Model.Project&amp;action=askownership&amp;subject=@agent.Name.Value">Ask what it owns</a>
-        <a href="/Projects/Act?project=@Model.Project&amp;action=ownership&amp;subject=@agent.Name.Value">Record what it owns</a>
+        <a href="/Projects/Ownership?project=@Model.Project#agent-@agent.Name.Value">What this agent is responsible for</a>
         <a href="/Projects/Act?project=@Model.Project&amp;action=start&amp;subject=@agent.Name.Value">Start</a>
         @if (agent.Status == AgentStatus.Retired)
         {

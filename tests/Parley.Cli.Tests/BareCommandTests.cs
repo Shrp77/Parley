@@ -7,8 +7,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's call on 2026-09-24, and the other half of the sixteen operator operations moving to
-/// the terminal: if that is where a deployment is read and changed, typing the tool's name should
+/// The other half of the operator operations living in the terminal: if that is where a deployment is read and changed, typing the tool's name should
 /// put somebody in it. <c>htop</c> and <c>top</c> behave the same way.
 /// </para>
 /// <para>
@@ -41,7 +40,7 @@ public sealed class BareCommandTests
     {
         // Somebody typing the name on a machine where nothing is running is asking what this is.
         // Answering "no broker is listening" tells them nothing they can act on, least of all that
-        // there is a list of commands to see. Found by installing it and typing the name.
+        // there is a list of commands to see.
         var (_, output, error) = ToolProcess.RunFully(
             [("PARLEY_BROKER", "http://127.0.0.1:1")]);
 

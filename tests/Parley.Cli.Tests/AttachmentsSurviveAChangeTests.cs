@@ -6,14 +6,13 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That adding a project does not disconnect an agent attached to another (T097, FR-035, SC-010).
+/// That adding a project does not disconnect an agent attached to another.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The half that matters, and the half a restart would silently break.</b> SC-010 asks for two
-/// things: a project named while Parley runs is reachable within ten seconds, *and* no agent
-/// attached to any other project loses its connection. The first was checked; nothing anywhere
-/// asserted the second.
+/// <b>The half that matters, and the half a restart would silently break.</b> Two
+/// things are required: a project named while Parley runs is reachable within ten seconds, *and* no agent
+/// attached to any other project loses its connection.
 /// </para>
 /// <para>
 /// It matters because the cheap implementation passes the first and fails the second. Re-reading the
@@ -137,8 +136,7 @@ public sealed class AttachmentsSurviveAChangeTests : IDisposable
             // so the two calls above would pass against exactly the failure this test is named for.
             // What cannot survive a restart is this stream: if it had ended, `MoveNext` returns
             // false at once. Still pending after half a second is the connection still being held.
-            // **Two outcomes are both healthy and one is not**, which the first version of this got
-            // wrong by asserting the read stayed pending: the stream carries messages, so a read
+            // **Two outcomes are both healthy and one is not**: the stream carries messages, so a read
             // completing is ordinary. What distinguishes them is the *value* — `MoveNext` answers
             // false only when the stream has ended, which is the disconnection.
             var next = attached.ResponseStream.MoveNext(ct);

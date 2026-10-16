@@ -71,7 +71,7 @@ public sealed class DeprecationClaimsTests
     [Fact]
     public void Nothing_a_person_reads_says_a_removed_spelling_still_works()
     {
-        // The generalisation of run 5's finding. Not one flag and one document — every sentence in
+        // The general rule: not one flag and one document — every sentence in
         // everything current that puts a removed spelling beside a claim that it works.
         string[] removed = ["--with-console", "--no-console", "parley console"];
 

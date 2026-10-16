@@ -40,7 +40,7 @@ public sealed class ColumnZeroTests
         // which is the piece the wrap used to left-trim.
         foreach (var filler in Enumerable.Range(60, 30))
         {
-            var region = Region($"{{\"intent\":\"{new string('x', filler)} {Forged}\"}}");
+            var region = Region($"{{\"ask\":\"{new string('x', filler)} {Forged}\"}}");
 
             Assert.DoesNotContain(
                 Drawn.Rows(region.List).Where(AtColumnZero),
@@ -55,7 +55,7 @@ public sealed class ColumnZeroTests
         // two things this surface puts there: a message header, or the heading naming the
         // conversation.
         var region = Region(
-            $"{{\"said\":\"{new string('y', 200)}\",\"intent\":\"{new string('z', 300)} {Forged}\"}}");
+            $"{{\"said\":\"{new string('y', 200)}\",\"ask\":\"{new string('z', 300)} {Forged}\"}}");
 
         foreach (var row in Drawn.Rows(region.List).Where(AtColumnZero))
         {
@@ -84,7 +84,7 @@ public sealed class ColumnZeroTests
         // Non-vacuity, twice over. The transcript has to have wrapped at all -- a payload that fit
         // on one row would never reach the code this is about -- and something has to be at column
         // zero, or "nothing forged is at column zero" is true of an empty screen.
-        var region = Region($"{{\"intent\":\"{new string('x', 76)} {Forged}\"}}");
+        var region = Region($"{{\"ask\":\"{new string('x', 76)} {Forged}\"}}");
         var rows = Drawn.Rows(region.List);
 
         Assert.Contains(rows, row => row.StartsWith(' '));
@@ -112,7 +112,7 @@ public sealed class ColumnZeroTests
         // Checked as "is the start of a line this surface wrote" rather than by pattern, because
         // at four columns a header itself wraps to single characters and a rule looking for `->`
         // would call those a violation. What FR-018 is about is where a line begins.
-        var region = Region($"{{\"intent\":\"{Said}\"}}");
+        var region = Region($"{{\"ask\":\"{Said}\"}}");
         var problems = new List<string>();
 
         // **Read off the widest render rather than written down.** The first version of this

@@ -9,7 +9,7 @@ namespace Parley.Broker.Tests;
 
 /// <summary>
 /// That a reply a person writes to an agent that asked Parley something back is recorded as the person's, never as
-/// Parley's (SPEC.md §5, FR-003a), and the decisions a person makes about a question hold their rules.
+/// Parley's (SPEC.md §5), and the decisions a person makes about a question hold their rules.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -151,7 +151,7 @@ public sealed class APersonsWordsAreNeverParleysTests : IDisposable
     [Fact]
     public async Task A_person_writing_a_line_before_Parley_read_an_answer_settles_the_question_without_one()
     {
-        // Found by rewriting 020's discussion test: a person accepting from the transcript, or writing a line, inside the
+        // A person accepting from the transcript, or writing a line, inside the
         // few seconds before Parley's next pass read the agent's answer, settled the question as accepted with no answer
         // -- which storage refuses, so the person's own record failed. The line overtook the question; it is discarded.
         _ = await _facilitator.AskAsync(_parley, Orders, T0, Ct);

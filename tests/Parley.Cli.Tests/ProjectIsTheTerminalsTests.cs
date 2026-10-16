@@ -7,10 +7,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's call on 2026-09-25, in their own words: <i>"if we're doing everything in the
-/// terminal app, then we DO everything in the terminal app."</i> It follows the sixteen operator
-/// operations that moved the day before, and finishes the job those left half done — a person was
-/// still expected to open a shell to bring a deployment into existence.
+/// <i>"if we're doing everything in the terminal app, then we DO everything in the terminal
+/// app."</i> A person is not expected to open a shell to bring a deployment into existence.
 /// </para>
 /// <para>
 /// <b>Refused at the entry point rather than deleted from <c>ProjectCommand</c>, and the
@@ -42,7 +40,7 @@ public sealed class ProjectIsTheTerminalsTests
     {
         var (code, error) = ToolProcess.Run([], "project", action, "anything");
 
-        // EX_USAGE, so a script detects it rather than reading an empty success (FR-051).
+        // EX_USAGE, so a script detects it rather than reading an empty success.
         Assert.Equal(64, code);
         Assert.Matches(@"(?m)^\s+parley\s*$", error);
     }
@@ -57,20 +55,20 @@ public sealed class ProjectIsTheTerminalsTests
         // be creating projects on the machine running the suite.
         var (_, error) = ToolProcess.Run([], "project", action, "orders");
 
-        Assert.Contains("is not a command here any more", error, StringComparison.Ordinal);
+        Assert.Contains("is not a command here.", error, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Listing_still_works_because_both_installers_call_it()
     {
-        // **FR-050, as a guard rather than a promise.** `install.ps1` and `install.sh` both read
+        // **A guard rather than a promise.** `install.ps1` and `install.sh` both read
         // `project list` -- for the manifest path, and to check a project's broker actually answers
         // rather than that a task was registered. It also reads nothing else and writes nothing, so
         // it is not one of the acts this move is about.
         var (code, _, error) = ToolProcess.Reading("project", "list");
 
         Assert.NotEqual(64, code);
-        Assert.DoesNotContain("is not a command here any more", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("is not a command here.", error, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -14,21 +14,18 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The narrow column of the room.</b> The owner asked for it after 0.29.2 put a count of waiting mail on the
-/// status line: knowing that something is waiting is not knowing what, and the answer to "what" was a key pressed
-/// inside a transcript they had no reason to open.
+/// <b>The narrow column of the room.</b> Knowing that something is waiting is not knowing what; this column says
+/// what.
 /// </para>
 /// <para>
 /// <b>Every row is readable with colour stripped.</b> An agent's colour is <see cref="Palette"/>'s, so it is the
 /// same hue here, in every other view and in the web console — but it repeats a name that is already written, and
 /// never carries a fact of its own. `ColourTests` reads this screen with every attribute removed and asserts
-/// nothing is lost, which is a rule this repository has already broken once by dimming an archived row that said
-/// nothing else about being archived.
+/// nothing is lost.
 /// </para>
 /// <para>
-/// <b>What is outstanding comes from the same pair state the input line derives its acts from</b>
-/// (<see cref="Pairing"/>), so the list and the line cannot disagree about what is owed. Two sources for one fact
-/// is how a surface comes to promise something it will not do.
+/// <b>What is outstanding comes from the pair state</b> (<see cref="Pairing"/>). It is shown only; it never
+/// decides what a line sends, which is always a new Request.
 /// </para>
 /// </remarks>
 internal sealed class RoomRegion : FrameView
@@ -41,17 +38,17 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>The heading the project's other agents are listed under.</summary>
     /// <remarks>
-    /// Listed so they can be brought in later (the owner's report of 2026-10-05): a conversation grows by sending an
-    /// agent a Request, and an agent that is not shown cannot be chosen. It says what ticking one does rather than
+    /// Listed so they can be brought in later: a conversation grows by sending an agent a Request, and an agent
+    /// that is not shown cannot be chosen. It says what ticking one does rather than
     /// that they are absent, because the person is here to decide who joins.
     /// </remarks>
     internal const string Elsewhere = "not in it yet (Space adds)";
 
     /// <summary>The heading the person's own seat is listed under.</summary>
     /// <remarks>
-    /// <b>On its own line, above the agents, because a person is not one of them.</b> The owner asked for it
-    /// after taking a seat and then hunting for where it said so: every other row here is somebody they might
-    /// send to, and the one row that is them was indistinguishable in the middle of that list.
+    /// <b>On its own line, above the agents, because a person is not one of them.</b> Every other row here is
+    /// somebody they might send to, and the one row that is them would be indistinguishable in the middle of
+    /// that list.
     /// </remarks>
     internal const string You = "you";
 
@@ -106,7 +103,7 @@ internal sealed class RoomRegion : FrameView
     internal static string ListTitle(string peer) => $"Waiting on you from {peer}";
 
     /// <summary>What the list of one agent's questions says above them.</summary>
-    internal const string ListSays = "Oldest first. Choose one to read it where it was asked.";
+    internal const string ListSays = "Oldest first.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
@@ -124,9 +121,9 @@ internal sealed class RoomRegion : FrameView
     /// The agents this machine can start that have not registered yet, by role, for the room to name.
     /// </summary>
     /// <remarks>
-    /// <b>Named, never ticked</b> (the owner's report of 2026-10-09: an agent just added was missing from the room). A name
-    /// nothing has registered is not one a message can be addressed to, so there is nothing to tick; but leaving it out
-    /// said the agent did not exist. It is listed so it can be seen, and says what is wrong with it.
+    /// <b>Named, never ticked.</b> A name nothing has registered is not one a message can be addressed to, so
+    /// there is nothing to tick; but leaving it out would say the agent does not exist. It is listed so it can be
+    /// seen, and says what is wrong with it.
     /// </remarks>
     internal IReadOnlyList<string> Unstarted { get; set; } = [];
 
@@ -149,8 +146,8 @@ internal sealed class RoomRegion : FrameView
         // `contracts/views.md` means by nothing existing only as a key.
         _list.Accepting += (_, args) =>
         {
-            // **An agent that has not registered cannot be ticked or written to, so choosing it starts it** (the owner's
-            // report of 2026-10-09: it was listed and could not be selected). Once it has registered it is an ordinary row.
+            // **An agent that has not registered cannot be ticked or written to, so choosing it starts it.** Once it
+            // has registered it is an ordinary row.
             if (SelectedUnstarted is { } role)
             {
                 args.Handled = true;
@@ -159,12 +156,11 @@ internal sealed class RoomRegion : FrameView
                 return;
             }
 
-            // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: on a
-            // participant it is going to say something, and on a thing owed it is going to read it.
+            // **Enter does what the row under it is for**: on a participant it is going to say something, and on a
+            // thing owed it is going to read it.
             //
-            // **Enter on a participant goes to the box and leaves the ticks alone** (the owner's call of 2026-10-02).
-            // It ticked and unticked until then, the same as Space; the owner's report was that pressing Enter on an
-            // agent is somebody about to type, and they want to start typing. Space is still the tick.
+            // **Enter on a participant goes to the box and leaves the ticks alone**: pressing Enter on an agent is
+            // somebody about to type. Space is the tick.
             if (SelectedPeer is { } peer)
             {
                 args.Handled = true;
@@ -204,6 +200,9 @@ internal sealed class RoomRegion : FrameView
     /// <summary>The list itself, so a test drives this column the way it drives every other one.</summary>
     internal GuardedList List => _list;
 
+    /// <summary>Every agent with questions the column last showed as waiting on this person.</summary>
+    internal IReadOnlyList<OutstandingItem> Outstanding => _outstanding;
+
     /// <summary>The questions of one agent the column last showed as waiting on this person.</summary>
     /// <param name="peer">The agent.</param>
     /// <returns>Its questions, or null when it has none waiting.</returns>
@@ -223,7 +222,7 @@ internal sealed class RoomRegion : FrameView
     /// <summary>Includes or excludes the participant under the cursor.</summary>
     /// <remarks>
     /// Raises an event rather than changing anything itself. This column draws who a message is going to; it does
-    /// not decide it. Space, since 2026-10-02: Enter on a participant goes to the box instead.
+    /// not decide it. Space ticks; Enter on a participant goes to the box instead.
     /// </remarks>
     internal void Toggle()
     {
@@ -326,7 +325,7 @@ internal sealed class RoomRegion : FrameView
                 continue;
             }
 
-            // The participation mark is a character and not a colour (the owner's call, 2026-10-06): the heading above
+            // The participation mark is a character and not a colour: the heading above
             // says who has taken part and the mark says it on the row, so a row read alone still says so.
             rows.Add(new Row(
                 Mark(pair.Peer) + RoomRoster.ParticipantMark + Glyph(pair.Peer) + " " + Safe.Text(Shown(pair.Peer, pairs)) + Standing(pair),
@@ -335,7 +334,7 @@ internal sealed class RoomRegion : FrameView
                 pair.Peer));
         }
 
-        // **Listed whether or not a seat is held** (specs/026): every agent of the project is in the room, so what a person
+        // **Listed whether or not a seat is held**: every agent of the project is in the room, so what a person
         // reads here does not depend on whether they have connected. Ticking one is only possible with a seat.
         if (_others.Count > 0 || Unstarted.Count > 0)
         {
@@ -370,9 +369,7 @@ internal sealed class RoomRegion : FrameView
         }
         else
         {
-            // **One row per agent, with how many of its questions are waiting** (the owner's call of 2026-10-05). It was
-            // one row per agent reading "orders@host — waiting for your reply", which repeated the heading above it and
-            // hid how many there were; Enter on the row now lists them.
+            // **One row per agent, with how many of its questions are waiting**; Enter on the row lists them.
             foreach (var item in outstanding)
             {
                 rows.Add(new Row(
@@ -396,7 +393,7 @@ internal sealed class RoomRegion : FrameView
         rows = Fit(rows, _width);
 
         // **The cursor stays on what it was on, not on the row number it was at.** A row that splits or joins above it
-        // moves everything below by one, and every refresh can do that now that a status can grow past the edge — so a
+        // moves everything below by one, and every refresh can do that when a status grows past the edge — so a
         // cursor kept by position would land on a different agent, and Space would tick somebody else.
         var was = Under;
         var at = was is null ? _list.SelectedItem : rows.FindIndex(row => Same(row, was));
@@ -423,9 +420,8 @@ internal sealed class RoomRegion : FrameView
     /// <returns>The rows as they fit.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The owner's report of 2026-10-03</b>, with the marks already in: "inventoryledger — worki" and "orders —
-    /// waiting on y" at the edge of a column some thirty characters wide. What an agent is doing is the half of the row
-    /// worth reading, and it was the half that was cut.
+    /// <b>What an agent is doing is the half of the row worth reading</b>, and at the edge of a column some thirty
+    /// characters wide it would be the half that was cut.
     /// </para>
     /// <para>
     /// <b>Both rows belong to the same thing</b>, so a key on either acts on the agent or the item it names — the second
@@ -537,7 +533,7 @@ internal sealed class RoomRegion : FrameView
     /// <param name="pairs">Everybody in the conversation.</param>
     /// <returns>The role alone where no other participant shares it, else the whole name.</returns>
     /// <remarks>
-    /// <b>The machine half was most of what the owner could not see.</b> Agents in one deployment are nearly always on one
+    /// <b>The machine half is usually noise.</b> Agents in one deployment are nearly always on one
     /// machine, so <c>@machine</c> on every row is the same word repeated in a column twenty-odd characters wide — and it
     /// pushed what each agent was doing off the edge. Where two participants share a role the machine is what tells them
     /// apart, and the whole name is kept.

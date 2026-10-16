@@ -138,7 +138,7 @@ public sealed class OperatorConsole
         }
 
         // The person's seat owns no repository, and storage refuses it an `owns` line — so a line accepted for it would read
-        // as pending for ever, a promise nothing can keep (the combined review gate). The sentence is `ask_again`'s.
+        // as pending for ever, a promise nothing can keep. The sentence is `ask_again`'s.
         if (PersonSeat.Is(agent))
         {
             return new OwnershipRecord(
@@ -229,9 +229,8 @@ public sealed class OperatorConsole
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>Open exchanges gone quiet or owed by a retired agent, and cycles in conversations still open.</returns>
     /// <remarks>
-    /// What replaced ghosting (§6, §14). Nothing ends a piece of work but its participants or its person,
-    /// so work that stops moving is shown here, and the person — who can see why — starts the agent, asks
-    /// it, or closes the conversation.
+    /// Nothing ends a piece of work but its participants or its person (§6, §14), so work that stops moving
+    /// is shown here, and the person — who can see why — starts the agent, asks it, or closes the conversation.
     /// </remarks>
     public async Task<FlagReport> DescribeFlagsAsync(
         DateTimeOffset nowUtc, CancellationToken cancellationToken = default) =>

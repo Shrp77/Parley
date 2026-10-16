@@ -15,14 +15,12 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One page where there were two doors.</b> "Say what this agent owns" and "Ask what this agent owns" were the same
-/// subject reached by two keys, and somebody choosing between them had to know in advance whether they wanted to write
-/// the line or have the agent write it. The page shows what the agent has said and holds the line in a field: changing
-/// it and saving is the first, and asking the agent to refresh is the second.
+/// <b>One page for both acts.</b> The page shows what the agent has said and holds the line in a field: changing
+/// it and saving is writing the line, and asking the agent to refresh is having the agent write it.
 /// </para>
 /// <para>
-/// <b>It adds no operation.</b> Saving is <c>record_ownership</c> and refreshing is Parley asking again, both of which
-/// already existed; what moved is where a person reaches them. Which words were whose is still a comparison and never a
+/// <b>It adds no operation.</b> Saving is <c>record_ownership</c> and refreshing is Parley asking again.
+/// Which words were whose is still a comparison and never a
 /// flag (<see cref="Ownership.Chosen"/>): the field opens holding an undecided answer of the agent's, so saving it
 /// untouched records the agent's words and any change records a person's.
 /// </para>
@@ -98,9 +96,9 @@ internal static class Responsibility
 
             var question = read.Value!.Questions.FirstOrDefault(q => q.Agent == agent.Name);
 
-            // **Refused before the page opens, not after it is edited.** Saving writes a file on the agent's machine, and
-            // 0.25.2 records what a rule met after the form closed costs: the words went with it. Asking is not writing a
-            // file, so it stays available either way.
+            // **Refused before the page opens, not after it is edited.** Saving writes a file on the agent's machine,
+            // and a rule met after the form closed would take the words with it. Asking is not writing a file, so it
+            // stays available either way.
             var elsewhere = OwnershipLine.NotHere(agent.Name);
 
             var page = new ResponsibilityDialog(

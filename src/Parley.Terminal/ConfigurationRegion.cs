@@ -8,10 +8,9 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Written from the owner's first look at 0.35.0.</b> Auto Accept was an entry on the Project menu, beside creating
-/// and removing projects, and nothing near it said what was being accepted. "Auto-Accept what??" is a fair reading of a
-/// switch named with no subject. A setting needs a place that states it and explains it before anybody changes it, so
-/// settings have a view of their own, reached from the Project menu.
+/// <b>A setting needs a place that states it and explains it before anybody changes it</b>, so
+/// settings have a view of their own, reached from the Project menu. A switch named with no subject,
+/// such as Auto Accept, says nothing about what is being accepted.
 /// </para>
 /// <para>
 /// <b>The meaning is shown for the selected setting, under the list, in full.</b> A list row does not wrap, so an

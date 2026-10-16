@@ -8,11 +8,9 @@ namespace Parley.Client.Rendering;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One place because the last hand-copied address was wrong for the life of the feature.</b>
-/// 005's terminal offered "open the web console in a browser" against a literal
-/// <c>127.0.0.1:5045</c> while every other statement of the default said <c>5280</c>, so the action
-/// opened a port nothing listens on and reported <c>Opened …</c> while doing it. Nothing could
-/// catch it: from the launcher's side, the browser started.
+/// <b>One place because a hand-copied address can be wrong without anything noticing.</b> An action
+/// that opened a port nothing listens on would still report <c>Opened …</c>: from the launcher's
+/// side, the browser started.
 /// </para>
 /// <para>
 /// A hand-copied <i>route</i> is the same defect one layer up, and worse, because a 404 looks like

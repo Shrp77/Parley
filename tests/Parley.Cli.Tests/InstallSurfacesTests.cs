@@ -122,7 +122,7 @@ public sealed class InstallSurfacesTests
     [MemberData(nameof(BothScripts))]
     public void A_run_that_does_not_replace_the_broker_does_not_stop_it(string script)
     {
-        // **SC-001, and it is one branch in each script.** A run that replaces only the terminal
+        // **It is one branch in each script.** A run that replaces only the terminal
         // unlinks a file the broker never opened, so there is nothing to stop. Without this branch
         // the feature is theory: the tools are separate, and installing either one still ends every
         // resident agent on the machine.
@@ -160,11 +160,11 @@ public sealed class InstallSurfacesTests
     [MemberData(nameof(BothScripts))]
     public void A_run_that_does_not_replace_the_broker_registers_no_autostart_entry(string script)
     {
-        // **The half of SC-001 that is easy to miss, and it was missed here first.** Not stopping
+        // **The half that is easy to miss.** Not stopping
         // the broker is worthless if the script re-registers the autostart entry afterwards:
         // `autostart install` replaces the scheduled task, which restarts the process, which ends
         // every resident agent anyway -- the stop avoided and the cost paid three hundred lines
-        // later. Found by reading the script's tail before running it on a live deployment.
+        // later.
         var text = RepositoryFile.Read(script);
 
         var decides = text.IndexOf(

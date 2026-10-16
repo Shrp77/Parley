@@ -8,8 +8,7 @@ namespace Parley.Spec.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 3 of the review gate, run 3.7 — the first after T035. Four new operations went through this
-/// gate already; this is a *field*, which is the kind of change that gets into one of the three and
+/// A *field* is the kind of change that gets into one of the three (document, proto, code) and
 /// not the others, because nothing forces the document and the proto to move together.
 /// </para>
 /// <para>
@@ -42,8 +41,8 @@ public sealed class DestroyedFieldTests
     /// <returns>The same text with every run of whitespace reduced to one space.</returns>
     /// <remarks>
     /// Comment and prose checks ask about meaning; a raw substring search asks about line breaks as
-    /// well, and the two look the same until a sentence is rewrapped. Every check in this gate that
-    /// searched a document for a phrase and failed did so for this reason and no other.
+    /// well, and the two look the same until a sentence is rewrapped. A check that
+    /// searches a document for a phrase fails for this reason and no other.
     /// </remarks>
     private static string Flowed(string text) =>
         System.Text.RegularExpressions.Regex.Replace(
@@ -87,8 +86,7 @@ public sealed class DestroyedFieldTests
         // Optional rather than a message that is always present and sometimes empty, because those
         // two are different answers and the proto has to be able to express both.
         //
-        // **Matched against whitespace-normalised text, and that is the fix for a mistake made five
-        // times in this gate.** A phrase in a comment wraps where the line ends, so searching a
+        // **Matched against whitespace-normalised text.** A phrase in a comment wraps where the line ends, so searching a
         // document for a contiguous sentence asks about its line breaks rather than its meaning.
         Assert.Contains("no such conversation ever", Flowed(proto), StringComparison.Ordinal);
     }

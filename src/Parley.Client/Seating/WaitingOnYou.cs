@@ -20,17 +20,16 @@ public sealed record WaitingOn(AgentName Peer, IReadOnlyList<WaitingQuestion> Qu
 /// <remarks>
 /// <para>
 /// <b>Every question, not one per agent.</b> <see cref="Pairing"/> keeps one exchange per peer, picked by the order the
-/// wait-for graph lists its edges, and that pick is what filed the owner's reply against the wrong question. This keeps
-/// all of them, so the person sees how many there are and can reach each one.
+/// wait-for graph lists its edges. This keeps all of them, so the person sees how many there are and can reach each one.
 /// </para>
 /// <para>
 /// <b>One derivation for both surfaces</b>, so the terminal's room and the web page cannot disagree about who is waiting
-/// on the person or how many questions each has (SC-005).
+/// on the person or how many questions each has.
 /// </para>
 /// <para>
 /// A question is an exchange in this conversation, still open, on which the person owes the next move — the agent's own
 /// request, or the person's request that the agent asked back about. What it shows is the latest thing the agent said in
-/// it, 0.30.1's rule, because that is what the person owes a reply to.
+/// it, because that is what the person owes a reply to.
 /// </para>
 /// </remarks>
 public static class WaitingOnYou

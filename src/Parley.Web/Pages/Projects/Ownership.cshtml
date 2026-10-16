@@ -29,12 +29,12 @@ else
 
     @if (Model.Rows.Count == 0)
     {
-        <p>There is no agent in this project yet. Parley asks each one what it owns when it first attaches.</p>
+        <p>There is no agent in this project yet.</p>
     }
 
     @foreach (var (agent, question) in Model.Rows)
     {
-        <section class="ownership" aria-label="@agent.Name.Value">
+        <section class="ownership" id="agent-@agent.Name.Value" aria-label="@agent.Name.Value">
             <h2>@agent.Name.Value</h2>
 
             <dl>
@@ -55,7 +55,7 @@ else
 
             @if (question?.Answer is { Length: > 0 } said)
             {
-                <p>What @agent.Name.Value answered, in its own words:</p>
+                <p>Its answer:</p>
                 <blockquote class="agent-words">@said</blockquote>
             }
 

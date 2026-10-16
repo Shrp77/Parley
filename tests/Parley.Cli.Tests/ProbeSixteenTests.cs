@@ -7,7 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 5: the file a node runs.
+/// The file a node runs.
 /// </summary>
 /// <remarks>
 /// <para>

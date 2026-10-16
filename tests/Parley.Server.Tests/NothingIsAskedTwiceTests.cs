@@ -6,7 +6,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That Parley asks an agent what it owns once, across everything that could make it ask again (SPEC.md §10.2, SC-002).
+/// That Parley asks an agent what it owns once, across everything that could make it ask again (SPEC.md §10.2).
 /// </summary>
 /// <remarks>
 /// <para>

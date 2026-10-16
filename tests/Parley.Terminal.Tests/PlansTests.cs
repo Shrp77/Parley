@@ -2,6 +2,7 @@ using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
+using Parley.Client.Roadmaps;
 using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
@@ -192,6 +193,125 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Contains("billing", room, StringComparison.Ordinal);
         Assert.Contains("orders", room, StringComparison.Ordinal);
         Assert.Empty((await new BrokerClient(_broker.Operators).ConversationsAsync(cancellationToken: Ct)).Items);
+    }
+
+    /// <summary>Opens the confirmed roadmap's view and asks to edit it, leaving the form open.</summary>
+    private async Task<(FormDialog Form, PlanView View)> EditingAsync(Driving.Session driving, Shell shell)
+    {
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+
+        // Asked directly rather than by Alt+e: the key draws on this thread while the queue opens the form.
+        view.Edit();
+        await shell.Settled;
+
+        return ((FormDialog)driving.Find(Revising.Title), view);
+    }
+
+    [Fact]
+    public async Task Editing_a_confirmed_roadmap_is_offered_on_the_roadmap_and_in_its_view()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+
+        var edit = Assert.Single(shell.Actions(), a => a.Label == Revising.Title);
+
+        Assert.Equal(PlanView.EditKey, edit.Key);
+        Assert.Equal("Alt+e", edit.Stroke);
+
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+
+        Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        Assert.Contains(PlanView.EditLabel, driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_edit_form_opens_holding_the_roadmap_as_text()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        var (form, _) = await EditingAsync(driving, shell);
+
+        Assert.Contains("title: Billing export", form.Values[0], StringComparison.Ordinal);
+        Assert.Contains("1. Add CSV export | for: billing@test | item: 1", form.Values[0], StringComparison.Ordinal);
+        Assert.Contains("2. Call it from the report | for: orders@test | needs: 1 | item: 2", form.Values[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Saving_an_edit_removes_changes_and_adds_items_and_the_pane_shows_it()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        var (form, _) = await EditingAsync(driving, shell);
+
+        // Item 2 is taken out, item 1 is reworded and a new one is written.
+        form.Fill(0, "title: Billing exports\n1. Add CSV export as a file | for: billing@test | item: 1\n2. Write it up | for: orders@test");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        var client = new BrokerClient(_broker.Operators);
+        var roadmap = Assert.Single(await client.RoadmapsAsync(Ct));
+        var whole = await client.RoadmapAsync(roadmap.Id, Ct);
+
+        Assert.Equal("Billing exports", whole!.Title);
+        Assert.Equal(["Add CSV export as a file", "Write it up"], whole.Items.Where(i => !i.Removed).OrderBy(i => i.Position).Select(i => i.Text));
+        Assert.Contains(whole.Items, i => i.Removed && i.Text == "Call it from the report");
+        Assert.Contains("Saved 'Billing exports'", shell.Said, StringComparison.Ordinal);
+        Assert.Contains("Billing exports", Assert.Single(shell.Plans.Roadmaps).Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_edit_made_on_a_stale_revision_is_said_and_applies_nothing()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        var (form, _) = await EditingAsync(driving, shell);
+
+        // Somebody else saves first, so the revision this form was opened on is no longer the roadmap's.
+        var client = new BrokerClient(_broker.Operators);
+        var roadmap = Assert.Single(await client.RoadmapsAsync(Ct));
+        var current = (await client.RoadmapAsync(roadmap.Id, Ct))!;
+        var other = RoadmapDraft.From(current);
+
+        other.Title = "Changed elsewhere";
+
+        Assert.True((await client.EditRoadmapAsync(roadmap.Id, current.Revision, other.ToContent(), Ct)).Done);
+
+        form.Fill(0, "title: Mine\n1. Something else | item: 1");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        var after = (await client.RoadmapAsync(roadmap.Id, Ct))!;
+
+        Assert.Equal(Revising.Stale, shell.Said);
+        Assert.Equal("Changed elsewhere", after.Title);
+        Assert.Equal(2, after.Items.Count(i => !i.Removed));
     }
 
     [Fact]

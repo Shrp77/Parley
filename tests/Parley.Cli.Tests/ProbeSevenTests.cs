@@ -5,20 +5,20 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 7: the paths that promise to write nothing, and the promise made to
-/// machines configured before this release.
+/// The paths that promise to write nothing, and the promise made to
+/// machines configured earlier.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Six runs have attacked writing. This one attacks <i>not</i> writing — describing exists to say
-/// what would change without changing it, and run 6 moved the write inside the same method that
-/// decides, which is exactly the edit that turns a dry run into a live one. The failure would be
+/// This attacks <i>not</i> writing — describing exists to say
+/// what would change without changing it, and moving the write inside the same method that
+/// decides is exactly the edit that turns a dry run into a live one. The failure would be
 /// silent and would land in somebody's repository.
 /// </para>
 /// <para>
-/// The second half is 0.22.0's compatibility promise, which is narrower than it sounds and is the
+/// The second half is a compatibility promise, which is narrower than it sounds and is the
 /// half nobody would notice breaking: stop writing the old flags, stop accepting them, **keep reading
-/// them**, because every machine with an autostart entry written before 0.19.0 still holds one.
+/// them**, because a machine with an autostart entry written earlier still holds one.
 /// </para>
 /// </remarks>
 public sealed class ProbeSevenTests : IDisposable
@@ -83,8 +83,8 @@ public sealed class ProbeSevenTests : IDisposable
     [Fact]
     public async Task Planning_creates_nothing_at_all()
     {
-        // The whole contract of a dry run. Run 6 moved the write inside the method that decides,
-        // which is the edit that turns this into a live run without anybody noticing — the files it
+        // The whole contract of a dry run. Moving the write inside the method that decides
+        // is the edit that turns this into a live run without anybody noticing — the files it
         // would create do not exist beforehand, so nothing complains and a repository quietly gains
         // a launch configuration from a command that said it was only looking.
         var repository = Repository;
@@ -183,26 +183,10 @@ public sealed class ProbeSevenTests : IDisposable
                 Path.Combine(repository, ".mcp.json"), TestContext.Current.CancellationToken)));
     }
 
-    [Theory]
-    [InlineData("serve --db x.db --with-node --console http://127.0.0.1:5280")]
-    [InlineData("serve --db x.db --console http://127.0.0.1:5280 --with-node")]
-    public void An_entry_written_before_the_rename_still_reports_its_web_ui(string arguments)
-    {
-        // **0.22.0's compatibility promise, and the half nobody would notice breaking.** The old
-        // flags are refused on the command line now; a reader that also forgot them would report
-        // every entry installed before 0.19.0 as having no web UI, so `autostart status` would say
-        // one thing while the scheduled task did another, and a reinstall carrying the arguments
-        // forward would silently drop it.
-        var entry = InstalledEntry.Parse(arguments);
-
-        Assert.NotNull(entry);
-        Assert.Equal("http://127.0.0.1:5280", entry.Console);
-    }
-
     [Fact]
-    public void An_entry_written_after_the_rename_reports_the_same_thing()
+    public void An_entry_reports_its_web_ui()
     {
-        var entry = InstalledEntry.Parse("serve --db x.db --with-node --web-ui http://127.0.0.1:5280");
+        var entry = InstalledEntry.Parse("serve --config x --with-node --web-ui http://127.0.0.1:5280");
 
         Assert.NotNull(entry);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);

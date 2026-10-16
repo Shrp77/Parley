@@ -16,9 +16,9 @@ namespace Parley.Client.Tests;
 /// the plural case.
 /// </para>
 /// <para>
-/// <b>The seat check is the one with history.</b> 0.18.9 records a composer that captured its seat when it
-/// opened and went on speaking under a name the book had released — found on Linux and passing on Windows,
-/// because what decided it was whether a stream had finished tearing down. Twenty sends with the idle sweep
+/// <b>The seat check is the delicate one.</b> A composer that captured its seat when it
+/// opened must not go on speaking under a name the book has released — a race that passes on Windows and
+/// fails on Linux, because what decides it is whether a stream has finished tearing down. Twenty sends with the idle sweep
 /// running throughout leave that window twenty times wider, and every Request that lands under a released
 /// name is work owed to somebody who has left.
 /// </para>
@@ -200,7 +200,7 @@ public sealed class BroadcastGuardTests
     public async Task What_the_single_send_refuses_is_refused_before_anybody_is_sent_anything(string? ask)
     {
         // Checked once, before the loop, in the single send's own words — so a Request the single form refuses
-        // cannot reach nineteen people through the plural one. Since 0.7 there is one thing to refuse: an ask that
+        // cannot reach nineteen people through the plural one. There is one thing to refuse: an ask that
         // says nothing.
         var token = TestContext.Current.CancellationToken;
 

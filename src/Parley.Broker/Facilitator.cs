@@ -83,7 +83,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// any two of these steps.
     /// </para>
     /// <para>
-    /// <b>The words are chosen by the switch as it stands now</b> (research R7), because what the question tells the
+    /// <b>The words are chosen by the switch as it stands now</b>, because what the question tells the
     /// agent about its answer has to be true when the answer arrives — and a question asked with the switch on promises
     /// the answer becomes the line.
     /// </para>
@@ -147,8 +147,8 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <remarks>
     /// <para>
     /// <b>An answer is the agent's Result</b>, read from the exchange the facilitator opened and from nowhere else, so an
-    /// agent answering an <c>owns-</c> conversation it started itself is not an answer to anything (research finding
-    /// 11). A Clarify moves the question to <em>asked back</em>, where it waits for a person's reply; that reply hands
+    /// agent answering an <c>owns-</c> conversation it started itself is not an answer to anything.
+    /// A Clarify moves the question to <em>asked back</em>, where it waits for a person's reply; that reply hands
     /// the turn back and the question is <em>asked</em> again.
     /// </para>
     /// <para>
@@ -223,7 +223,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <returns>Whether it was recorded.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Called after the file is written, never before</b> (FR-014, 020's order): a file with no record is repaired by
+    /// <b>Called after the file is written, never before</b>: a file with no record is repaired by
     /// the next acceptance, while a record with no file would claim a line the agent will never carry.
     /// </para>
     /// <para>
@@ -250,7 +250,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
         using var scope = WriteScope.Begin(_connection, ambient: null);
 
         // **The question first, and only while it is still the one this pass read.** A person may have recorded a line or
-        // asked again since; their decision stands, and nothing below runs (the combined review gate).
+        // asked again since; their decision stands, and nothing below runs.
         if (!await Questions.StillAnsweredAsync(answer.Question, scope.Transaction, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -314,9 +314,8 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
         var questions = Questions;
 
         // **Accepted only when Parley has an answer to accept.** A person can write a line, or accept from the transcript,
-        // before Parley's next pass has read the agent's answer -- and a question marked accepted with no answer is one
-        // storage refuses, which made the person's own record fail. With nothing read yet, the person's line overtook
-        // the question, so it is settled as discarded: no answer of the agent's became anything.
+        // before Parley's next pass has read the agent's answer, and storage refuses a question accepted with no answer.
+        // With nothing read yet, the person's line has overtaken the question, so it is settled as discarded.
         var live = await questions.LiveAsync(agent, scope.Transaction, cancellationToken).ConfigureAwait(false);
 
         var conversation = live is { State: QuestionState.Answered or QuestionState.Waiting }
@@ -347,7 +346,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>The switch as now set.</returns>
     /// <remarks>
-    /// Governs answers that arrive afterwards and nothing else (FR-015): an answer already waiting stays waiting, because
+    /// Governs answers that arrive afterwards and nothing else: an answer already waiting stays waiting, because
     /// turning the switch on is a statement about what should happen next, not a decision about answers a person has
     /// not looked at.
     /// </remarks>
@@ -374,9 +373,8 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <returns>Whether it was asked, and why not when it was not.</returns>
     /// <remarks>
     /// <para>
-    /// <b>No seat, because Parley sends it.</b> The refusal the owner met — "an ask is a message, so it is sent as
-    /// somebody, and no seat is held here" — was 020's ask going out under the person's name; this one is the
-    /// facilitator's, so a person needs to hold nothing to have it asked.
+    /// <b>No seat, because Parley sends it.</b> The ask is the facilitator's own, so a person needs to hold
+    /// nothing to have it asked.
     /// </para>
     /// <para>
     /// Refused for the facilitator, a seat and a retired agent, and for an agent with a question still being decided —
@@ -432,7 +430,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <remarks>
     /// <para>
     /// <b>Sent on the facilitator's exchange, because only the requester may answer a Clarify there</b> (§5.2), and
-    /// <b>attributed <c>parley:person</c>, never <c>parley:facilitator</c></b> (FR-003a). A log whose worth is that it says
+    /// <b>attributed <c>parley:person</c>, never <c>parley:facilitator</c></b>. A log whose worth is that it says
     /// who said what stops having any the moment a person's words appear under another name.
     /// </para>
     /// <para>
@@ -571,7 +569,7 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Needed because a conversation ends by consensus of its participants</b> (research finding 8), and a participant
+    /// <b>Needed because a conversation ends by consensus of its participants</b>, and a participant
     /// that never agreed would hold every ownership conversation open for ever.
     /// </para>
     /// <para>

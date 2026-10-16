@@ -112,9 +112,8 @@ internal static class AutoAccepting
         """
         Parley asks every agent in this project what it owns. This setting decides what happens to the answer.
 
-        On: the answer becomes the agent's ownership line, the sentence its peers read to decide what to send it,
-        with no person reading it first, unless it cannot be one. It is marked as accepted automatically, and you
-        can correct it in the ownership review at any time.
+        On: the answer becomes the agent's ownership line with no person reading it first, unless it cannot be
+        one. It is marked as accepted automatically, and you can correct it in the ownership review.
 
         Off: every answer waits in the ownership review for a person to accept, edit or discard.
 

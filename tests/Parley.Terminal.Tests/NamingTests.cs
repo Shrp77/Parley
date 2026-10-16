@@ -64,7 +64,7 @@ public sealed class NamingTests : IDisposable
         // **Corrected as it is typed, not refused after four more answers — and this assertion
         // changed shape rather than being deleted.** It used to fill "Alpha" and expect the words
         // "lowercase letters" in the problem, which is what the field said when it accepted a
-        // capital and complained about it. The owner typed `TimeTracker` into this field and met no
+        // capital and complained about it. The owner typed `OrderBook` into this field and met no
         // resistance at all, because that complaint sat on a clipped row; the rule is applied now,
         // so a capital never survives to be complained about.
         form.Fill(0, "Alpha");

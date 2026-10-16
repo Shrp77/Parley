@@ -10,7 +10,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both halves come from one report.</b> The owner typed <c>TimeTracker</c> into the create
+/// <b>Both halves come from one report.</b> The owner typed <c>OrderBook</c> into the create
 /// form and met no resistance at all — no warning, no correction — and separately found the form
 /// running off the screen. The two are the same failure: the only thing enforcing lowercase was a
 /// sentence on a row that had been clipped, under a label that had itself overflowed.
@@ -23,18 +23,18 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 public sealed class NameAsYouTypeTests
 {
-    // **`Time Tracker` was `timetracker` and is `time-tracker` now**, which is the one thing about
+    // **`Order Book` was `orderbook` and is `order-book` now**, which is the one thing about
     // this correction that changed after 0.25.1. The owner chose the hyphen for the conversation
     // field on the grounds that `telleverybodytest` is a name nobody can read back, and the field
     // beside it had no business going on swallowing spaces. One grammar, one correction:
     // `Parley.Core.NameCorrection` is what a project's name, an enrolled agent's role and a seat
     // are all held to now.
     [Theory]
-    [InlineData("TimeTracker", "timetracker")]
-    [InlineData("Time Tracker", "time-tracker")]
-    [InlineData("Time  Tracker", "time-tracker")]
-    [InlineData("TIME_TRACKER", "timetracker")]
-    [InlineData("time-tracker", "time-tracker")]
+    [InlineData("OrderBook", "orderbook")]
+    [InlineData("Order Book", "order-book")]
+    [InlineData("Order  Book", "order-book")]
+    [InlineData("ORDER_BOOK", "orderbook")]
+    [InlineData("order-book", "order-book")]
     [InlineData("Café/Bar!", "cafbar")]
     [InlineData("north-helm", "north-helm")]
     public void A_name_is_corrected_to_something_the_rule_accepts(string typed, string expected)
@@ -86,12 +86,12 @@ public sealed class NameAsYouTypeTests
 
         driving.Show((View)form);
 
-        foreach (var key in "TimeTracker")
+        foreach (var key in "OrderBook")
         {
             driving.Press(new global::Terminal.Gui.Input.Key(key));
         }
 
-        Assert.Equal("timetracker", form.Values[0]);
+        Assert.Equal("orderbook", form.Values[0]);
     }
 
     [Fact]

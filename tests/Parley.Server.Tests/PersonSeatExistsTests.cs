@@ -17,8 +17,8 @@ namespace Parley.Server.Tests;
 /// connection: a row nobody can read through the protocol is not evidence the protocol has one.
 /// </para>
 /// <para>
-/// <b>Watched to fail first</b>: before 023 the registry held no person at all, and the facilitator was
-/// <c>parley-facilitator@&lt;this machine&gt;</c> with a machine the broker had recorded for it.
+/// <b>Must fail against a registry without the seat</b>: one holding no person at all, with the facilitator
+/// <c>parley-facilitator@&lt;this machine&gt;</c> on a machine the broker had recorded for it.
 /// </para>
 /// </remarks>
 public sealed class PersonSeatExistsTests : IDisposable

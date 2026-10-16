@@ -7,7 +7,7 @@ namespace Parley.Core;
 /// <param name="Cycles">Cycles of Requests recorded in conversations that still have work open.</param>
 /// <remarks>
 /// <para>
-/// <b>This replaced ghosting, and it changes nothing about the work.</b> Nothing ends a piece of work
+/// <b>Flagging changes nothing about the work.</b> Nothing ends a piece of work
 /// but its participants or its person (principle 2.8), so an exchange that stops moving is shown to
 /// the person — naming the stage, the participant it waits on and since when — and the person, who
 /// can see why, starts the agent, asks it, or closes the conversation.

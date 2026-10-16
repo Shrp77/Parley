@@ -6,7 +6,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 15: where an agent's traffic goes, and whether a file may decide it.
+/// Where an agent's traffic goes, and whether a file may decide it.
 /// </summary>
 /// <remarks>
 /// <para>

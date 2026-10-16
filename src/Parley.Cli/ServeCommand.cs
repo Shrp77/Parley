@@ -14,17 +14,14 @@ namespace Parley.Cli;
 /// <remarks>
 /// <para>
 /// <b>It is the only command that touches a file, and the only one that migrates.</b> Everything
-/// else here is a client. That division used to run the other way — the operator's tool opened
-/// the database and the servers migrated it — and the reason it moved is not tidiness: SQLite in
-/// WAL mode requires coherent shared memory between every process touching the file, which no
-/// network filesystem provides, so more than one opener is a constraint on where the machines
-/// can be rather than a performance note.
+/// else here is a client. SQLite in WAL mode requires coherent shared memory between every
+/// process touching the file, which no network filesystem provides, so more than one opener is a
+/// constraint on where the machines can be rather than a performance note.
 /// </para>
 /// <para>
-/// <b>Migration happens here and nowhere else.</b> It used to run in every adapter's launch
-/// path, which meant a deployment's schema version was whatever the most recently updated
-/// repository happened to carry, and two adapters at different versions raced to apply it. One
-/// process that owns the file is also the one process entitled to change its shape.
+/// <b>Migration happens here and nowhere else.</b> One process that owns the file is also the one
+/// process entitled to change its shape; adapters at different versions would otherwise race to
+/// apply it.
 /// </para>
 /// </remarks>
 public static class ServeCommand
@@ -47,7 +44,7 @@ public static class ServeCommand
     /// </param>
     /// <param name="alongside">
     /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
-    /// operator's console, which reads this machine's manifest rather than a single endpoint.
+    /// web UI, which reads this machine's manifest rather than a single endpoint.
     /// Run once, and handed the first started broker's addresses as its fallback.
     /// </param>
     /// <param name="reread">
@@ -74,21 +71,13 @@ public static class ServeCommand
     /// requires a corrupt database or a failed migration to stop that broker while the others keep
     /// running; what it does not settle is what the process tells its supervisor, and that is the
     /// part an operator cannot see afterwards. A run that starts two of three brokers and exits
-    /// zero is the same shape as the defects this repository has already met twice — an unreadable
-    /// catalogue read as empty, ten repositories written where nothing reads them — where a run
-    /// reported success while doing less than it claimed.
+    /// zero would report success while doing less than it claimed.
     /// </para>
     /// <para>
-    /// <b>A node is hosted per project, and each one joins its own broker.</b> An earlier version
-    /// refused to host a node across several projects, reasoning from §4.1.1 that a machine has
-    /// one identity and a process serving three projects could not choose which deployment it
-    /// belonged to. That reasoning was right about the choosing and wrong about who makes it: the
-    /// manifest names a catalogue <i>per project</i> — "the catalogue of agents this machine may
-    /// start for it", §4.1 — so the projects this machine belongs to are exactly the ones that
-    /// say so. Each project's registry is its own file, so the same machine name in two of them
-    /// collides no more than the same agent name does. What is still refused, at the entry point,
-    /// is one explicit catalogue offered to several projects, because that is the choice nobody
-    /// made.
+    /// <b>A node is hosted per project, and each one joins its own broker.</b> There is one
+    /// catalogue per machine (§4.1), so every project announces what the repositories say it may
+    /// start. Each project's registry is its own file, so the same machine name in two of them
+    /// collides no more than the same agent name does.
     /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
@@ -114,19 +103,18 @@ public static class ServeCommand
             error = new TeeWriter(error, log);
         }
 
-        // Synchronised whether or not there is a log, which the single-project overload does not
-        // need to be: there is one sweep there and N here, all writing the same failure line to
-        // the same writer. A TextWriter is not thread-safe, and the output that would be
-        // interleaved is the output an operator reads to find out which broker is unwell.
+        // Synchronised whether or not there is a log: there are N sweeps, all writing the same
+        // failure line to the same writer. A TextWriter is not thread-safe, and the output that
+        // would be interleaved is the output an operator reads to find out which broker is unwell.
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
 
         // Said once for the process rather than once per project: one build serves all of them,
         // and a line repeated per project would read as though it could differ. Before the first
-        // store is opened, for the reason the single-store overload gives.
+        // store is opened, so it appears even when no store opens.
         await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
 
-        // **Asked of the other programs on this machine, in the background** (the owner's call of 2026-10-08): the parts of a
+        // **Asked of the other programs on this machine, in the background**: the parts of a
         // deployment are installed one at a time and a release can change what they share. Off for a test's broker, which
         // must not start processes, and never awaited here, so it cannot be why a broker does not start.
         if (checkInstall)
@@ -208,7 +196,7 @@ public static class ServeCommand
 
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
             // to every surface that asks what this broker speaks. The schema number cannot say it while the schema is
-            // edited in place, which is how a broker came to log one missing table per sweep for as long as it ran.
+            // edited in place.
             if (runtime.StoreProblems.Count > 0)
             {
                 await output.WriteLineAsync(
@@ -283,14 +271,10 @@ public static class ServeCommand
 
         try
         {
-            // Inside the try, and that is the whole of why this loop is not where it reads most
-            // naturally. Ctrl+C during start-up cancels the pending StartAsync, which throws
-            // OperationCanceledException — deliberately not caught, because an interrupt is not a
-            // project failing. Started outside the try, that exception left every broker already
-            // running still holding its port and its store handle: the interrupt arrives, the
-            // process exits, and nothing has been shut down. Which is FR-021 exactly, and the
-            // defect fixed one commit earlier, reappearing in the window where it is least
-            // visible — a machine that only ever starts one project never enters it.
+            // Inside the try so that Ctrl+C during start-up, which cancels the pending StartAsync and
+            // throws OperationCanceledException (deliberately not caught: an interrupt is not a
+            // project failing), still reaches the finally that shuts down every broker already
+            // running and holding its port and store handle.
             // Remembered by name, because the watcher may start one of these later -- a port
             // still held by the previous broker at logon is the usual reason -- and a project
             // serving at the end is not one that failed, whatever it did at the start.
@@ -322,18 +306,11 @@ public static class ServeCommand
             // restarted. Where there is no watcher nothing can ever change, and a process that
             // stayed up would be a process achieving nothing for ever.
             //
-            // **This used to be two rules and only one of them was FR-033's.** An empty root stayed
-            // up; a root whose projects could none of them be opened exited 69. FR-033 asks for
-            // both — "A machine whose projects can none of them be opened, or which has no
-            // projects, MUST stay up and report why" — and the second case is the one where
-            // staying up is worth most: every store unreadable is a moved directory or a
-            // permissions change, which is a thing somebody is actively repairing. Exiting meant
-            // the repair did nothing until the next logon, because a scheduled task does not
-            // restart a process that ran and stopped.
-            //
-            // The owner's call on 2026-09-25, taking the narrower of three options: not "always
-            // stay up", which would have a broker report healthy to its supervisor while serving
-            // nothing on a machine where nothing is watching.
+            // A machine whose projects can none of them be opened, or which has no projects, stays
+            // up and reports why: every store unreadable is a moved directory or a permissions
+            // change somebody is actively repairing, and a scheduled task does not restart a
+            // process that ran and stopped. Not "always stay up", which would have a broker report
+            // healthy to its supervisor while serving nothing where nothing is watching.
             var watching = reread is not null;
             var awaitingFirstProject = projects.Count == 0 && watching;
 
@@ -466,8 +443,7 @@ public static class ServeCommand
         finally
         {
             // Everything started is stopped, including when one sweep threw. A broker left holding
-            // a port after the process was told to stop is the failure Ctrl+C was just fixed for,
-            // reappearing one level up.
+            // a port after the process was told to stop would outlive the interrupt.
             Hosted[] remaining;
 
             lock (started)
@@ -509,10 +485,8 @@ public static class ServeCommand
     /// <remarks>
     /// <para>
     /// <b>Nothing changes on a read that left anything out, and the stamp is kept only from a clean one.</b> A project.json
-    /// mid-replace is briefly unreadable and reading leaves it out; taking that as the project being removed stopped its
-    /// broker, and storing the stamp before reading meant nothing read again, so it stayed stopped (the combined review
-    /// gate, lenses 1 and 3, after round three made reading lenient). With the stamp unchanged the next tick reads again,
-    /// until the read is clean.
+    /// mid-replace is briefly unreadable and reading leaves it out; taking that as the project being removed would stop its
+    /// broker. With the stamp unchanged the next tick reads again, until the read is clean.
     /// </para>
     /// <para>
     /// The cost is recorded rather than hidden: while any project's file stays unreadable, no change to any other is
@@ -552,10 +526,10 @@ public static class ServeCommand
     /// <param name="held">The refusal.</param>
     /// <returns>The line.</returns>
     /// <remarks>
-    /// <b>It names the process, because that is the question the owner had to answer by hand.</b>
-    /// Seventeen agents read as stranded and the cause was a second broker started by a terminal
-    /// restoring its session; nothing on screen or in the log said a second process existed. The log
-    /// is shared now, so this line reaches it even from the process that is leaving.
+    /// <b>It names the process, because "who holds it" is the question a refused launcher raises.</b>
+    /// A second broker started by a terminal restoring its session leaves agents reading as
+    /// stranded unless something says a second process exists. The log is shared, so this line
+    /// reaches it even from the process that is leaving.
     /// </remarks>
     internal static string HeldElsewhere(string label, StoreHeldException held)
     {
@@ -597,17 +571,13 @@ public static class ServeCommand
     /// <b>A project has its own broker, so naming one is asking for that broker now — and
     /// removing one is asking for it to stop.</b> SPEC.md §4.1 gives every project a store and
     /// an endpoint of its own and lets one process host them all; the process that hosts them is
-    /// this one, and before this it read the manifest once at start. A project named from the
-    /// terminal was therefore "not answering" until the next logon, with the form politely
-    /// saying so — which is documenting a gap rather than closing it, and was said to be exactly
-    /// that by the first person it happened to. Removal followed for the same reason: the only
-    /// way to stop one project's broker was to restart every other project's with it.
+    /// this one, so a project named from the terminal answers within seconds and removing one
+    /// does not restart every other project's broker.
     /// </para>
     /// <para>
-    /// Stopping is not deleting. A removed project's store stays where it is, as <c>project
-    /// remove</c> has always said; <c>remove --destroy</c> is the command that deletes, and it
-    /// waits for this to have stopped the broker first. A running project whose store, endpoint
-    /// or catalogue changed is stopped and started on the new entry, because the manifest is
+    /// Stopping is not deleting. A removed project's store stays where it is; <c>remove --destroy</c>
+    /// is the command that deletes, and it waits for this to have stopped the broker first. A
+    /// running project whose store or endpoint changed is stopped and started on the new entry, because the manifest is
     /// what this serves and a changed entry is a different broker. And a project that would not
     /// start is tried once per change to its entry rather than once per tick, because a store
     /// that is a directory does not become a file by being asked again every two seconds, and
@@ -661,10 +631,9 @@ public static class ServeCommand
 
                 // Removed or changed first, so a project removed and re-added under the same
                 // name in one edit -- or given a new port or store with `project set` -- is
-                // stopped and started rather than left as it was. Found by probing: matched by
-                // name alone, a re-added "billing" was "already serving" and stayed on the old
-                // entry's port for ever. The description is not compared, because a broker does
-                // not run differently for having been described.
+                // stopped and started rather than left as it was: matched by name alone, a
+                // re-added "billing" would stay on the old entry's port for ever. The description
+                // is not compared, because a broker does not run differently for having been described.
                 var restarting = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var hosted in serving)
@@ -723,65 +692,12 @@ public static class ServeCommand
         static bool SameName(ProjectSettings a, ProjectSettings b) =>
             string.Equals(a.Name.Value, b.Name.Value, StringComparison.Ordinal);
 
-        // The same name serving the same store on the same endpoint from the same catalogue:
-        // the parts a broker is made of. A description is not one of them.
+        // The same name serving the same store on the same endpoint: the parts a broker is
+        // made of. A description is not one of them.
         static bool SameDeployment(ProjectSettings a, ProjectSettings b) =>
             SameName(a, b)
             && string.Equals(a.Store, b.Store, StringComparison.Ordinal)
             && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal);
-    }
-
-    /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
-    /// <param name="whenListening">What to run, or null to run nothing.</param>
-    /// <param name="alongside">What to run that is not bound to one broker, or null.</param>
-    /// <param name="addresses">Where the broker is listening.</param>
-    /// <param name="output">Where to report a failure worth seeing.</param>
-    /// <param name="cancellationToken">Stops it.</param>
-    /// <returns>Its exit code, or zero when there was nothing to run.</returns>
-    /// <remarks>
-    /// <b>Contained, for the same reason §4.1 contains a failing project.</b> Hosting this
-    /// machine's node in the broker's process is a deployment convenience, and it must not become
-    /// a way for a node to take the broker down: a node fault would otherwise propagate out of
-    /// the sweep's <c>WhenAll</c> and end a process that every agent in the deployment is
-    /// connected to, converting one machine's supervision problem into everybody's outage.
-    /// <para>
-    /// The exit code still carries it. A run that hosted nothing must not report success — that
-    /// is the same lie as a run that started two of three brokers and exited zero.
-    /// </para>
-    /// </remarks>
-    private static async Task<int> HostAsync(
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside,
-        IReadOnlyList<string> addresses,
-        TextWriter output,
-        CancellationToken cancellationToken)
-    {
-        if (alongside is not null)
-        {
-            // Both, running together rather than one waiting out the other: each is meant to last
-            // as long as the broker does. Recursed with a null `alongside` so the containment
-            // below applies to the node exactly as it did before this parameter existed.
-            var beside = alongside(addresses, output, cancellationToken);
-
-            var codes = await Task.WhenAll(
-                beside,
-                HostAsync(whenListening, null, addresses, output, cancellationToken))
-                .ConfigureAwait(false);
-
-            return Array.Find(codes, code => code != 0);
-        }
-
-        if (whenListening is null)
-        {
-            return 0;
-        }
-
-        return await ContainAsync(
-            () => whenListening(addresses, output, cancellationToken),
-            "This machine's node",
-            output,
-            cancellationToken)
-            .ConfigureAwait(false);
     }
 
     /// <summary>Whether a project's endpoint keeps its broker on the machine it runs on.</summary>
@@ -806,10 +722,8 @@ public static class ServeCommand
     /// </para>
     /// </remarks>
     /// <remarks>
-    /// <b>The rule moved to <see cref="BrokerEndpoint.OnlyThisMachine"/> when `project list` became
-    /// its second caller</b>, and this stayed as the name the warning above and its own tests use.
-    /// One implementation, because a listing and a start-up warning disagreeing about whether an
-    /// endpoint is exposed is the disagreement that matters least until it matters most.
+    /// The rule is <see cref="BrokerEndpoint.OnlyThisMachine"/>, shared with `project list`:
+    /// a listing and a start-up warning must not disagree about whether an endpoint is exposed.
     /// </remarks>
     internal static bool OnlyThisMachine(string endpoint) =>
         BrokerEndpoint.OnlyThisMachine(endpoint);
@@ -851,9 +765,7 @@ public static class ServeCommand
         {
             // Also how it is meant to end. A node cancelled mid-call sees its gRPC call
             // cancelled, and that arrives as an RpcException rather than the cancellation it
-            // is -- so a project stopped on purpose was reported as its node having failed,
-            // "nothing will be started until `parley up` runs again", and the process exited
-            // non-zero for a stop it had been asked for. Found by probing the watcher.
+            // is; a project stopped on purpose is not a node failure.
             return 0;
         }
         catch (Exception failure)
@@ -874,10 +786,8 @@ public static class ServeCommand
     /// <returns>A task that completes when it stops.</returns>
     /// <remarks>
     /// <para>
-    /// One sweep for the deployment, which is the arrangement that first becomes possible here.
-    /// It used to run inside every adapter, so twenty repositories ran twenty sweeps over one
-    /// file — each taking the write lock for the same work, and none of them wrong in a way anybody
-    /// could see.
+    /// One sweep for the deployment: running it in every adapter would have twenty repositories
+    /// taking the write lock for the same work.
     /// </para>
     /// <para>
     /// A failing pass is reported and the loop continues. The pass concludes polls whose last
@@ -926,7 +836,7 @@ public static class ServeCommand
     /// <returns>A task that completes when it stops.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Here because this is the one host that can do both halves</b> (research finding 12): drive the broker, and write
+    /// <b>Here because this is the one host that can do both halves</b>: drive the broker, and write
     /// a repository's launch configuration through <see cref="OwnershipLine"/>. <c>Parley.Server</c> may not reach
     /// <c>Parley.Setup</c>, and <c>Parley.Setup</c> may not reach a store.
     /// </para>
@@ -974,11 +884,11 @@ public static class ServeCommand
     /// <returns>A task that completes when the pass is done.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The switch is read as each answer arrives, not when the question was asked</b> (FR-015): turning Auto Accept
+    /// <b>The switch is read as each answer arrives, not when the question was asked</b>: turning Auto Accept
     /// off stops answers still to come from becoming lines, and turning it on leaves waiting answers waiting.
     /// </para>
     /// <para>
-    /// <b>The file first, then the record</b> (FR-014, 020's order). A file with no record is repaired by the next
+    /// <b>The file first, then the record.</b> A file with no record is repaired by the next
     /// acceptance; a record with no file would claim a line the agent will never carry. A write that fails is not an
     /// error: the answer waits, with the write's own sentence as the reason, which is what the review shows.
     /// </para>
@@ -1001,9 +911,8 @@ public static class ServeCommand
             bool accepted;
 
             // **Each answer is settled whatever happened to another.** FacilitateAsync has already marked every one
-            // answered, so an answer this pass neither accepts nor holds is never visited again — and the review gate
-            // found one repository's unreadable launch configuration stranding every answer after it, with both surfaces
-            // saying "Parley is deciding" for ever.
+            // answered, so an answer this pass neither accepts nor holds is never visited again; one
+            // repository's unreadable launch configuration must not strand every answer after it.
 #pragma warning disable CA1031 // Whatever went wrong deciding one answer, it is held for a person rather than lost.
             try
             {
@@ -1031,7 +940,7 @@ public static class ServeCommand
 
             if (because is null)
             {
-                // **The file was written and the record refused it**, which since the combined review gate means a person
+                // **The file was written and the record refused it**, which means a person
                 // decided this question while the pass was deciding it. Their line goes back into the file, so what the
                 // agent carries at its next start is the person's and not the answer they had already overruled.
                 await RestoreAcceptedLineAsync(runtime, project, answer.Agent, cancellationToken).ConfigureAwait(false);

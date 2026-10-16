@@ -11,9 +11,9 @@ namespace Parley.Cli.Tests;
 /// That a turn which ends without finishing is logged by how it ended, never by what the agent said.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lens 2, run 4), older than the branch. The node printed the whole turn record, whose
+/// The node must not print the whole turn record, whose
 /// default text carries <see cref="TurnOutcome.Reply"/> — the agent's words, which that type keeps out of every record on
-/// purpose (§9.4) — into the broker's log, where nothing prunes them. And a line break in them forged a line of the log,
+/// purpose (§9.4) — into the broker's log, where nothing prunes them. And a line break in them would forge a line of the log,
 /// which a peer can steer, since a peer's payload shapes what a model says.
 /// </remarks>
 public sealed class AFailedTurnLogsNoWordsTests : IDisposable

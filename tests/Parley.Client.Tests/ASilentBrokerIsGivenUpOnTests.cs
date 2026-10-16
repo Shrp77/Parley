@@ -12,9 +12,8 @@ namespace Parley.Client.Tests;
 /// That a broker which accepts a connection and never answers is given up on, rather than holding a surface for ever.
 /// </summary>
 /// <remarks>
-/// The combined review gate's finding (lens 1, run 4), older than the branch. No call had a deadline, and the terminal runs
-/// its work one item at a time, so one wedged broker stopped every send, open and toggle in every project — sixty seconds
-/// in the probe, and unbounded in fact. Driven against a listener that accepts and says nothing.
+/// Every call has a deadline, because the terminal runs its work one item at a time and one wedged broker would
+/// otherwise stop every send, open and toggle in every project. Driven against a listener that accepts and says nothing.
 /// </remarks>
 public sealed class ASilentBrokerIsGivenUpOnTests
 {

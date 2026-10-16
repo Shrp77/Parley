@@ -6,8 +6,7 @@ using Xunit;
 namespace Parley.Mcp.Tests;
 
 /// <summary>
-/// That an agent is told who the person is and that waiting for them is correct (SPEC.md principle 2.6, §8 rule 10,
-/// FR-013).
+/// That an agent is told who the person is and that waiting for them is correct (SPEC.md principle 2.6, §8 rule 10).
 /// </summary>
 /// <remarks>
 /// <para>

@@ -11,7 +11,7 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Found on the owner's machine, and reproduced here before it was fixed.</b> A scheduled task and a
+/// A scheduled task and a
 /// terminal restoring its last session both started <c>parley serve</c> at logon. Every broker clears
 /// the <c>connected</c> flags it finds when it opens a store, because a broker that has just started
 /// holds no connections; the one that then failed to bind its port had already cleared the flags of

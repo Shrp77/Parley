@@ -12,8 +12,8 @@ namespace Parley.Core;
 /// blocks it. It cannot grant permissions, change the agent's configuration or standing instructions,
 /// or reach outside the agent's repository. Without the second half Parley is a prompt-injection
 /// channel wired between repositories. Without the first it is a channel through which no work can be
-/// requested: the wording this replaced told agents on every delivery that a peer could not "direct
-/// your work", and agents followed it and declined the work they were asked for.
+/// requested: telling agents on every delivery that a peer cannot "direct your work" makes them
+/// decline the work they are asked for.
 /// </para>
 /// <para>
 /// It is a soft control: it depends on the receiving model honouring the framing. The structural
@@ -102,8 +102,7 @@ public static class TrustEnvelope
             : $" in conversation `{conversationId}`";
 
         // The broker's own notices sit on an exchange, so they carry one of its parties as their sender, and rendering
-        // them as that party's message said a peer wrote words it never wrote — a person's closing reason arrived as
-        // "Message from billing ... another participant in your project". Named for what they are instead (§13).
+        // them as that party's message would say a peer wrote words it never wrote. Named for what they are (§13).
         //
         // Parley's own question and a person's reply sent through it are named the same way (SPEC.md principle 2.11): a
         // question from the facilitator is not a peer asking for work, and a person's words are not Parley's.

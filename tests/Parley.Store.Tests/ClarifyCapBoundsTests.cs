@@ -17,9 +17,8 @@ namespace Parley.Store.Tests;
 /// an insert.
 /// </para>
 /// <para>
-/// The reason it stopped being theoretical is that the cap became a launch setting in the same
-/// change. A number that used to be the constant 3 now arrives from an environment variable,
-/// which is the path a typo travels.
+/// The risk is not theoretical because the cap is a launch setting: the number arrives from an
+/// environment variable, which is the path a typo travels.
 /// </para>
 /// </remarks>
 public sealed class ClarifyCapBoundsTests : IDisposable

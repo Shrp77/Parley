@@ -6,7 +6,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 6: the paths the earlier fixes did not reach.
+/// The paths the other guards do not reach.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,10 +40,8 @@ public sealed class ProbeSixTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    // **A probe of the history reader stood here and was removed with it.** It checked that a
-    // duplicated member in a committed .mcp.json could not end the scan through `git show`. The scan
-    // no longer reads history at all -- the owner's call of 2026-09-27 -- so the probe had no subject,
-    // and a probe that cannot fail is worse than none.
+    // **The scan does not read history**, so there is no probe of a duplicated member in a committed
+    // .mcp.json ending the scan through `git show`; a probe that cannot fail is worse than none.
 
     [Fact]
     public async Task Six_bulk_runs_sharing_one_catalogue_lose_none_of_their_agents()

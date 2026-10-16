@@ -6,11 +6,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 8: what the gate this gate added does to everybody else.
+/// What the machine-wide gate does to everybody else.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Finding 1.6 introduced a machine-wide gate held on the project manifest — for the length of an
+/// A machine-wide gate is held on the project manifest — for the length of an
 /// <c>enroll apply</c>, which over eighteen repositories is not a moment. **Every other thing on the
 /// machine reads that file**: the terminal, the web UI, the node, and every operator command reads it
 /// at start-up to find out which deployment it is talking to.
@@ -97,9 +97,8 @@ public sealed class ProbeEightTests : IDisposable
         // a project's configuration open would otherwise make every enrolment on the machine wait two
         // seconds and then fail.
         //
-        // **Repointed at what a reader actually holds.** This held the manifest, which was one file and
-        // is now a directory — and the property is unchanged, because the gate takes a lock of its own
-        // and never the thing anybody reads.
+        // **Pointed at what a reader actually holds**: a project's configuration. The gate takes a
+        // lock of its own and never the thing anybody reads.
         using var reading = new FileStream(
             ProjectFolder.ConfigurationFor(Root, ProjectName.Create("alpha")),
             FileMode.Open,
@@ -114,7 +113,7 @@ public sealed class ProbeEightTests : IDisposable
     [Fact]
     public async Task The_gate_is_released_even_when_what_it_guards_throws()
     {
-        // A refusal inside the guarded region is the ordinary case — FR-013 refuses there. A gate
+        // A refusal inside the guarded region is the ordinary case. A gate
         // left held by an exception would wedge every enrolment on the machine until the process
         // ended.
         try

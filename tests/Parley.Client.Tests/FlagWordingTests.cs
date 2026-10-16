@@ -44,7 +44,7 @@ public sealed class FlagWordingTests
     [Fact]
     public void A_kind_this_build_does_not_know_is_never_called_a_retirement()
     {
-        // The default arm both surfaces had said "is retired", which is how 024's new flag would have been described.
+        // A default arm that said "is retired" would describe a new flag that way.
         var said = FlagWording.Describe(Owed((FlagKind)99, Orders, Billing), "09:00");
 
         Assert.DoesNotContain("retired", said, StringComparison.Ordinal);

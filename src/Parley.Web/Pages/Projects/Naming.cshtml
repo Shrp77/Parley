@@ -23,57 +23,32 @@
     }
 }
 
-<p>
-    A project name is a fact about this machine and nothing else. SPEC.md §4.1 gives the protocol
-    no concept of a project — membership is which endpoint an agent connected to — so renaming one
-    changes what your commands call a deployment and reaches nothing on the wire. No agent
-    notices, no history moves, nothing restarts.
-</p>
-
-<p>
-    The console will not do it. It reads this machine's layout and does not write it — renaming is
-    rare and is two commands, which are below. <code>parley</code> and <code>parley-terminal</code>
-    are what write here, and they share one implementation so that they cannot disagree about what
-    a project is.
-</p>
-
 @if (Model.Named)
 {
     <h2>Rename it</h2>
 
     <p>
-        There is no single rename command yet, so it is two acts: forget the old name, then name
-        the new one. Forgetting deletes nothing — not the store, not a conversation, not an agent's
-        registration — it only forgets how this machine reaches the deployment. Both are done on
-        the terminal's project screen, which is the only place a project is created or removed.
+        Rename is two steps on the terminal's project screen: remove the old name, then name the new one.
+        Removing deletes nothing. It only forgets how this machine reaches the deployment.
     </p>
 
     <pre><code>parley</code></pre>
 
     <p>
-        The new project gets its own folder, its own store and a port of its own — there is nothing
-        to copy across. <strong>What it does not get is this project's conversations</strong>: they
-        are in the old store, which <code>remove</code> leaves exactly where it is. Come back to
-        <a href="/">the project list</a> and the new name is there.
+        <strong>The new project does not get this project's conversations.</strong> They stay in the old store.
+        Then return to <a href="/">the project list</a>.
     </p>
 }
 else
 {
     <h2>Name it</h2>
 
-    <p>
-        This project is not in a manifest at all. Nothing on this machine has named a deployment,
-        so the console is offering the broker your other commands already talk to, under a stand-in
-        name. Give it a real one:
-    </p>
+    <p>This broker has no project name on this machine. Give it one:</p>
 
     <pre><code>parley</code></pre>
 
     <p>
-        Naming it is the whole of creating it: the project gets a folder of its own, a store inside
-        it, and a port claimed for it. <strong>It will not be the broker above</strong> — that one
-        was started by hand or by an older entry, and it keeps its own store until it is migrated.
-        Once named, the new project appears on <a href="/">the project list</a> in place of the
-        stand-in.
+        Naming creates a new project with its own store. <strong>It will not be the broker above</strong>, which keeps
+        its own store. The new project appears on <a href="/">the project list</a> in its place.
     </p>
 }

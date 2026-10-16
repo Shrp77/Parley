@@ -91,8 +91,7 @@ public sealed class FilesCommand(
         }
 
         // An option a subcommand has no use for is refused rather than ignored: `list --yes` succeeding tells somebody a
-        // flag did something, and `prune --yes` asking anyway tells them nothing about why. Found by the review gate,
-        // lens 3 run 3.5, which typed every option after every subcommand.
+        // flag did something, and `prune --yes` asking anyway tells them nothing about why.
         if (Takes.TryGetValue(arguments[0], out var takes) && parsed.Given.FirstOrDefault(o => !takes.Contains(o)) is { } stray)
         {
             await _error.WriteLineAsync($"'{stray}' is not an option `parley files {arguments[0]}` takes.").ConfigureAwait(false);

@@ -7,11 +7,11 @@ namespace Parley.Web.Pages.Projects;
 
 /// <summary>
 /// The ownership review: every agent, the line its peers read, where that line came from, and whatever Parley is waiting
-/// on (SPEC.md §10.2, FR-016 to FR-018).
+/// on (SPEC.md §10.2).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What makes Auto Accept safe to leave on</b> — the owner's condition for it. A line accepted automatically is one no
+/// <b>What makes Auto Accept safe to leave on.</b> A line accepted automatically is one no
 /// person read, and this page is where somebody reads it and corrects it. The provenance is in words from
 /// <see cref="Provenance"/>, which the terminal's review reads too, so the two surfaces cannot describe one record two
 /// ways.

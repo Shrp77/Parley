@@ -122,7 +122,7 @@ public sealed class AttachEdgeTests : IDisposable
     [Fact]
     public async Task Work_owed_by_nobody_running_stays_open_for_as_long_as_it_takes()
     {
-        // The case 0.4 ghosted: the receiver never came back. Nothing closes it on a schedule; it is flagged,
+        // The receiver never came back. Nothing closes it on a schedule; it is flagged,
         // and the person closes it or the agent comes back.
         var orders = new Broker(_connection, BrokerOptions.Default);
         await orders.StartAsync(Orders, T0, Ct);

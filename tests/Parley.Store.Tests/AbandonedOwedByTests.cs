@@ -14,9 +14,8 @@ namespace Parley.Store.Tests;
 /// session that ended is handed over again, and one never collected is simply delivered.
 /// </para>
 /// <para>
-/// In 0.4 the same predicate chose what to <em>orphan</em>, and getting it wrong destroyed Requests. Nothing
-/// is orphaned now, so a wrong answer costs a duplicate delivery or a missed one rather than lost work — but
-/// the cases that made it subtle are the same cases, and they are kept.
+/// Nothing is orphaned, so a wrong answer costs a duplicate delivery or a missed one rather than lost work — but
+/// the cases that make the predicate subtle are the same cases, and they are kept.
 /// </para>
 /// </remarks>
 public sealed class AbandonedOwedByTests : IDisposable

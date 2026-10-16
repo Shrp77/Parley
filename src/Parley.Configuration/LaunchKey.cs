@@ -8,36 +8,31 @@ namespace Parley.Configuration;
 /// <remarks>
 /// <para>
 /// <b>A repository may answer in more than one project, so one repository holds one entry per
-/// project.</b> SPEC.md §4.1 has always permitted this — the protocol has no concept of a project,
-/// membership is which endpoint an agent connected to, and names collide freely across projects. What
-/// forbade it was a fixed key here: one key holds one entry, so one repository held one identity.
+/// project.</b> SPEC.md §4.1: the protocol has no concept of a project, membership is which endpoint
+/// an agent connected to, and names collide freely across projects. One key holds one entry, so each
+/// project needs a key of its own.
 /// </para>
 /// <para>
 /// <b>The key carries the prefix rather than being the bare project name, and that is a safety
 /// property rather than a style.</b> Withdrawal is the only path in this tooling that deletes
 /// something out of somebody's own file, and it must be able to decide from the key alone whether an
 /// entry is one this program wrote. A bare project name would make that decision an inspection of what
-/// is inside the entry, which is exactly the shape that has silently replaced a person's MCP
-/// configuration three times in this codebase's history.
+/// is inside the entry, which risks silently replacing a person's own MCP configuration.
 /// </para>
 /// <para>
 /// <b>The grammar is asked of <see cref="ProjectName"/> rather than repeated.</b> One rule with two
 /// implementations is a rule that survives until somebody edits one of them.
 /// </para>
 /// <para>
-/// <b><see cref="Unnamed"/> is not deprecated.</b> §4.1 keeps a deployment that names no projects
-/// supported, and such a deployment has nothing to derive a key from — so the legacy spelling is what a
-/// project-less enrolment still writes, and it is what every repository enrolled before this feature
-/// already has. Reading it is permanent; it is never renamed in place, because the key is a component
-/// of every tool name the agent behind it already sees.
+/// <see cref="Unnamed"/> (<c>parley</c>) is the key for an enrolment that names no project: such an
+/// enrolment has nothing to derive a key from. It is always read. It is never renamed in place,
+/// because the key is a component of every tool name the agent behind it sees.
 /// </para>
 /// <para>
-/// <b>It lives in <c>Parley.Configuration</c> rather than beside the enrolment that writes it, and
-/// <c>KeyRuleTests</c> is what moved it.</b> 018 gave this project a reader of its own — a node has to
-/// ask each catalogued workspace what it answers to — and that reader needed the same two spellings, so
-/// for one build the rule had two implementations that happened to agree. The guard reported it by
-/// path, which is exactly what it was written to do; the answer is one implementation both readers can
-/// see, and this is the project both of them already reference.
+/// <b>It lives in <c>Parley.Configuration</c> rather than beside the enrolment that writes it</b>
+/// because both the enrolment and the node's reader of each workspace need the same two spellings, and
+/// this is the project both already reference. <c>KeyRuleTests</c> guards that it stays the one
+/// implementation.
 /// </para>
 /// </remarks>
 public static class LaunchKey
@@ -74,9 +69,8 @@ public static class LaunchKey
     /// <returns><see langword="true"/> when this tooling owns the key.</returns>
     /// <remarks>
     /// This answers <i>may something be written here</i>, which is a different question from whether
-    /// what is already there is ours — an entry at a key we own may still have been written by hand,
-    /// and <c>Enrolment.NamedBy</c> is what tells them apart. Conflating the two either refuses to
-    /// clean up our own entry or deletes a stranger's.
+    /// what is already there is ours — an entry at a key we own may still have been written by hand.
+    /// Conflating the two either refuses to clean up our own entry or deletes a stranger's.
     /// </remarks>
     public static bool IsOurs(string? key) =>
         string.Equals(key, Unnamed, StringComparison.Ordinal) || ProjectOf(key) is not null;
@@ -86,7 +80,7 @@ public static class LaunchKey
     /// <returns>The project, or null for <see cref="Unnamed"/> and for a key that is not ours.</returns>
     /// <remarks>
     /// Null means two different things and both are handled by the caller rather than distinguished
-    /// here: a legacy entry, whose project is in its environment if it has one at all, and a server
+    /// here: an unnamed entry, whose project is in its environment if it has one at all, and a server
     /// belonging to something else. <see cref="IsOurs"/> is what separates them.
     /// </remarks>
     public static string? ProjectOf(string? key)

@@ -54,6 +54,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
     private readonly ConcurrentDictionary<AgentName, string> _launches = new();
 
+    /// <summary>The identity each agent was last registered with, so a command for a node can name the checkout.</summary>
+    /// <remarks>
+    /// A copy, filled when an agent attaches, is renamed or is read for a node that joins, because a wake is not
+    /// asynchronous and must not wait on a read. It is only ever a hint to the node, which falls back to the name.
+    /// </remarks>
+    private readonly ConcurrentDictionary<AgentName, AgentIdentity> _identities = new();
+
     private readonly ConcurrentDictionary<string, ImmutableArray<AttachedAgent>> _attached =
         new(StringComparer.Ordinal);
 
@@ -103,11 +110,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// turn drains sixty messages and asking a second time buys nothing.
     /// </para>
     /// <para>
-    /// <b>Two things the review gate changed about when it clears</b> (SPEC.md §5.4). It is removed as a
-    /// collection begins rather than after it returns (<see cref="CollectAsync{T}"/>), so a message stored
-    /// during one asks for its own turn. And a collection its caller limited to fewer than are waiting is
-    /// followed by a wake for the rest (<c>AgentsService.DrainInbox</c>), because there asking again is what
-    /// the messages left behind are owed.
+    /// <b>When it clears</b> (SPEC.md §5.4). It is removed as a collection begins rather than after it
+    /// returns (<see cref="CollectAsync{T}"/>), so a message stored during one asks for its own turn. A
+    /// collection its caller limited to fewer than are waiting is followed by a wake for the rest
+    /// (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
     /// </para>
     /// <para>
     /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>
@@ -252,10 +258,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
     /// <remarks>
-    /// The broker's, read from the broker's own environment. It used to be read by whoever ran
-    /// the CLI, which meant an operator on another machine could prune to a different floor than
-    /// the sweep used — from a box that does not hold the store and cannot see what the setting
-    /// there is.
+    /// The broker's, read from the broker's own environment, so an operator on another machine cannot
+    /// prune to a different floor than the sweep uses.
     /// </remarks>
     public RetentionPolicy Retention { get; }
 
@@ -299,20 +303,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <exception cref="StoreHeldException">Another broker is serving this store.</exception>
     /// <remarks>
     /// <para>
-    /// Migration happens here, once, rather than in every client. It used to run in each
-    /// adapter's launch path, which meant a deployment's schema version was whatever the
-    /// most recently updated repository happened to carry — and two adapters at different
-    /// versions raced to apply it.
+    /// Migration happens here, once, rather than in every client, so a deployment's schema version
+    /// never depends on which adapter was updated last.
     /// </para>
     /// <para>
-    /// <b>The store is locked before anything else touches it, and the order is the fix.</b> The
-    /// constructor clears every <c>connected</c> it finds, which is right for a broker that is
-    /// about to serve and ruinous for one that is not: two launchers at logon — a scheduled task
-    /// and a terminal restoring its last session — both reached it, the one that then failed to
-    /// bind its port had already marked the other's live node disconnected, and seventeen agents
-    /// read as stranded on the machine that was running them. Nothing put the flag back, because
-    /// the live node's stream never ended. Taken here, a second broker is refused before it has
-    /// opened a connection, run a migration or written a row.
+    /// <b>The store is locked before anything else touches it.</b> The constructor clears every
+    /// <c>connected</c> it finds, which is right for a broker that is about to serve and ruinous for
+    /// one that is not: a second launcher that then failed to bind its port would already have marked
+    /// the first one's live node disconnected, and nothing would put the flag back because that
+    /// node's stream never ends. Taken here, a second broker is refused before it has opened a
+    /// connection, run a migration or written a row.
     /// </para>
     /// </remarks>
     public static BrokerRuntime Open(
@@ -348,9 +348,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
             files.Prepare();
 
-            // **Looked at after the migration, and only reported** (the owner's call of 2026-10-08). The schema number is
-            // not a witness while it is edited in place, so the shape is compared directly; `StoreShape` says why a
-            // difference is never repaired here.
+            // Looked at after the migration, and only reported. The schema number is not a witness while it is
+            // edited in place, so the shape is compared directly; `StoreShape` says why a difference is never
+            // repaired here.
             var shape = StoreShape.Problems(connection);
 
             return new BrokerRuntime(
@@ -426,10 +426,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// to look.
     /// </para>
     /// <para>
-    /// This check used to live in the adapter, which was where migration used to happen. It
-    /// moved here with the migration rather than being dropped with the file it was in, because
-    /// the risk moved too: one process now creates every store, so it is the only thing left
-    /// that can create one in the wrong place.
+    /// The check lives with the migration because one process creates every store, so it is the
+    /// only thing that can create one in the wrong place.
     /// </para>
     /// <para>
     /// Both reads under one transaction, which is not tidiness. They are two statements, so
@@ -511,8 +509,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// Only <see cref="OpenInMemory"/> and <see cref="Over"/> default it, and nothing but tests calls either. A runtime
     /// over a real store must be told its project (<see cref="Open"/>), because the name is written into the two rows
-    /// the broker provides and cannot be corrected later. <c>test</c> is what 022's tests already named the
-    /// facilitator's second half, so they read the same.
+    /// the broker provides and cannot be corrected later.
     /// </remarks>
     private static readonly ProjectName TestProject = ProjectName.Create("test");
 
@@ -567,10 +564,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // The workspace is the only distinguishing fact available, so a registration that
             // supplies none cannot be checked. That is the honest limit rather than a reason to
             // guess.
-            // Compared through WorkspacePath rather than as text. Two spellings of one directory
-            // were being refused as two repositories -- `C:/repo` against `C:\repo` -- and two
-            // directories differing only in case were being admitted as one, which on a
-            // case-sensitive filesystem is the collision this check exists to refuse.
+            // Compared through WorkspacePath rather than as text, so two spellings of one directory
+            // (`C:/repo`, `C:\repo`) are one repository, and two directories differing only in case on a
+            // case-sensitive filesystem are not.
             if (registration.Workspace is { Length: > 0 } here
                 && await agents.WorkspaceOfAsync(registration.Name, cancellationToken)
                     .ConfigureAwait(false) is { Length: > 0 } held
@@ -580,6 +576,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     $"'{registration.Name.Value}' is already registered to '{held}', and this " +
                     $"one is attaching from '{here}'. An agent name belongs to one repository: " +
                     "give this one a different role, or retire the other.");
+            }
+
+            await ReconcileIdentityAsync(agents, registration, cancellationToken).ConfigureAwait(false);
+
+            if (registration.Identity.Known)
+            {
+                _identities[registration.Name] = registration.Identity;
             }
 
             await agents.RegisterIfAbsentAsync(registration, cancellationToken)
@@ -633,12 +636,94 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
+    /// Applies the identity an attach presented: records it, or renames the agent that already holds it (SPEC.md §4.1.1).
+    /// </summary>
+    /// <param name="agents">The registry, inside the attach's gate.</param>
+    /// <param name="registration">What the adapter said about itself.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The identity is held by another repository, the old name is attached, or the new name belongs to another agent.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A label, never authority.</b> The identity can only move a row to a new name, and only when the attach comes
+    /// from the same repository on the same machine, by the workspace comparison §4.1.1 already uses for a name. It
+    /// admits nobody the name check would not, so a forged identifier gets a refusal and nothing else.
+    /// </para>
+    /// <para>
+    /// A rename refuses while a session is attached under the old name, because that session would go on reading and
+    /// writing a name that no longer exists. A start the node had been told for the old name is carried to the new one.
+    /// </para>
+    /// </remarks>
+    private async Task ReconcileIdentityAsync(
+        AgentRepository agents,
+        AgentRecord registration,
+        CancellationToken cancellationToken)
+    {
+        if (!registration.Identity.Known || PersonSeat.Is(registration.Name) || Facilitation.Is(registration.Name))
+        {
+            return;
+        }
+
+        var holder = await agents.HolderOfIdentityAsync(
+            registration.Identity, registration.Machine, cancellationToken).ConfigureAwait(false);
+
+        if (holder is null)
+        {
+            _ = await agents.RecordIdentityAsync(registration.Name, registration.Identity, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (holder.Name == registration.Name)
+        {
+            return;
+        }
+
+        if (registration.Workspace is not { Length: > 0 } here
+            || holder.Workspace is not { Length: > 0 } held
+            || !WorkspacePath.SameRepository(here, held))
+        {
+            throw new InvalidOperationException(
+                $"This repository's identity is already registered here as '{holder.Name.Value}', from " +
+                $"'{holder.Workspace ?? "no recorded workspace"}', and '{registration.Name.Value}' is attaching from " +
+                $"'{registration.Workspace ?? "no workspace"}'. An identity belongs to one repository on a machine: " +
+                "give this checkout its own, or retire the other.");
+        }
+
+        if (_attached.TryGetValue(holder.Name.Value, out var running) && !running.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                $"'{holder.Name.Value}' is still attached, so it cannot be renamed to '{registration.Name.Value}' " +
+                "yet. Close its session and open this one again.");
+        }
+
+        _ = await agents.RenameAsync(holder.Name, registration.Name, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (_launches.TryRemove(holder.Name, out var token))
+        {
+            _launches[registration.Name] = token;
+        }
+
+        _ = _identities.TryRemove(holder.Name, out _);
+    }
+
+    /// <summary>The identity an agent was registered with, or the default when none is known.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The identity.</returns>
+    private AgentIdentity IdentityOf(AgentName agent) =>
+        _identities.TryGetValue(agent, out var identity) ? identity : default;
+
+    /// <summary>
     /// Records that a machine's node is connected and holds it until its stream ends.
     /// </summary>
     /// <param name="node">What the node observed about its machine.</param>
     /// <param name="startableRoles">The roles it says it can launch.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
     /// <param name="reportsTurns">Whether the node said it reports the turns it gives (SPEC.md §11.6).</param>
+    /// <param name="startableIdentities">The identifiers of the checkouts it can launch for the project (SPEC.md §4.1.1).</param>
     /// <returns>The join, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="node"/> is null.</exception>
     /// <exception cref="InvalidOperationException">A node is already joined for that machine.</exception>
@@ -652,13 +737,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
         NodeRecord node,
         IEnumerable<string> startableRoles,
         CancellationToken cancellationToken = default,
-        bool reportsTurns = false)
+        bool reportsTurns = false,
+        IEnumerable<string>? startableIdentities = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(startableRoles);
 
         var joined = new JoinedNode(
-            this, node.Machine, startableRoles.ToHashSet(StringComparer.Ordinal), reportsTurns);
+            this,
+            node.Machine,
+            startableRoles.ToHashSet(StringComparer.Ordinal),
+            reportsTurns,
+            startableIdentities?.ToHashSet(StringComparer.Ordinal));
 
         if (!_nodes.TryAdd(node.Machine, joined))
         {
@@ -674,6 +764,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 {
                     await new NodeRepository(connection).JoinAsync(node, now, ct)
                         .ConfigureAwait(false);
+
+                    foreach (var known in await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                    {
+                        if (known.Identity.Known)
+                        {
+                            _identities[known.Name] = known.Identity;
+                        }
+                    }
 
                     return true;
                 },
@@ -719,7 +817,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 var agents = (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
                     .Where(a => a.Status == AgentStatus.Active && a.Name.Machine == machine)
                     // The two broker-provided participants are hosted on no machine; their second half is the project,
-                    // so a node that happens to share a project's name must not be taken to host them (T013a).
+                    // so a node that happens to share a project's name must not be taken to host them.
                     .Where(a => !PersonSeat.Is(a.Name) && !Facilitation.Is(a.Name))
                     .Select(a => a.Name)
                     .ToList();
@@ -770,7 +868,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = _turns.AddOrUpdate(agent, running, (_, was) => was.Started > startedUtc ? was : running);
 
         // The node may have left while the count was read, and its release swept the table before this landed. Taken
-        // back, or the agent would read as working until its next report — the three hours 024 exists to end.
+        // back, or the agent would read as working until its next report.
         if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
         {
             _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
@@ -785,7 +883,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>Whether to believe it.</returns>
     /// <remarks>
     /// Machines' clocks differ, so this is loose on purpose; what it stops is a start a year ahead, which would hold an
-    /// agent "working" until then, or put a turn's end past the calendar (both found by the review gate).
+    /// agent "working" until then, or put a turn's end past the calendar.
     /// </remarks>
     private bool Plausible(DateTimeOffset startedUtc) =>
         (startedUtc - Clock.GetUtcNow()).Duration() <= TimeSpan.FromDays(1);
@@ -889,8 +987,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// <b>Never the person or Parley</b>. Open outside Parley means a process Parley could have started and did
     /// not, and no node ever starts either of them: the person's attachment is a surface, which is always "not started by
-    /// Parley", so the registry was reporting the person as open outside — a surface reading the flag for every row
-    /// would have marked them with the agents' warning.
+    /// Parley", so a surface reading the flag for every row would mark the person with the agents' warning.
     /// </remarks>
     public bool OpenOutside(AgentName agent) =>
         !PersonSeat.Is(agent)
@@ -906,11 +1003,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// Parley, whom no node gives a turn.
     /// </returns>
     /// <remarks>
-    /// <b>Per agent, not per machine</b> (the audit before the gate resumed). Decided by machine alone, an agent nobody's
-    /// node runs — one opened in an editor on a machine whose node reports turns — read as reported, and could be shown
-    /// stopped on a turn some earlier run left behind; and a node joined under a project's name made the person and Parley
-    /// read as reported. <b>The limit is recorded rather than hidden</b>: an agent the node could start but somebody
-    /// opened in an editor instead still reads as reported, because the broker sees two attachments of one name alike.
+    /// <b>Per agent, not per machine.</b> Decided by machine alone, an agent nobody's node runs — one opened in an
+    /// editor on a machine whose node reports turns — would read as reported and could be shown stopped on a turn some
+    /// earlier run left behind; and a node joined under a project's name would make the person and Parley read as
+    /// reported. <b>The limit is recorded rather than hidden</b>: an agent the node could start but somebody opened in an
+    /// editor instead still reads as reported, because the broker sees two attachments of one name alike.
     /// </remarks>
     public bool TurnsReported(AgentName agent) =>
         !PersonSeat.Is(agent)
@@ -1002,10 +1099,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// <para>
     /// <b>Not named for the start, because the start is only half of it.</b> An agent that is
-    /// already attached needs a turn rather than a process, and this used to fall silent in that
-    /// case — which read as correct and meant every message after the first reached nobody. A
-    /// name that promised only a start is how that stayed invisible: the call did what it said,
-    /// and what it said was not what the traffic needed.
+    /// already attached needs a turn rather than a process; falling silent there would mean every
+    /// message after the first reached nobody.
     /// </para>
     /// <para>
     /// Silent and false when the machine has no node, or when that node did not list the role
@@ -1032,13 +1127,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <b>The path every message's wake takes.</b> A Request, a Clarify and a Result all wake their
     /// recipient through here, so a burst from any number of senders costs one turn until the
     /// recipient collects, and a message will not stack a turn on top of one already coming: that
-    /// turn collects it. 0.4 kept questions on <see cref="RequestAttention"/>, bounded instead by
-    /// §7.1's per-pair cap; 0.5 has one message path and that cap is off by default.
+    /// turn collects it.
     /// </para>
     /// <para>
     /// Returns an outcome rather than a flag because a sender told only that its message was
-    /// stored cannot tell delivery from silence, which is the half of the reported defect that was
-    /// not about waking at all. None of the outcomes is a refusal — see
+    /// stored cannot tell delivery from silence. None of the outcomes is a refusal — see
     /// <see cref="WakeOutcome"/>.
     /// </para>
     /// </remarks>
@@ -1053,8 +1146,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         // Mail for the person waits for the person (SPEC.md §5, §12.3), here or away. Nothing starts a person, so no node is
-        // asked — asking one is what used to come back unreachable and tell an agent its question would never be read. A
-        // surface the person has open has already been told something arrived: the nudge runs before this, for every
+        // asked; asking one would come back unreachable and tell the sender its message would never be read. A surface
+        // the person has open has already been told something arrived: the nudge runs before this, for every
         // recipient. Not claimed either, because a claim bounds turns and a person takes none.
         if (PersonSeat.Is(agent))
         {
@@ -1100,15 +1193,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// clock does not only move forwards: an NTP correction steps it back and a resumed snapshot
     /// steps it back a long way, so a mark can be stamped in what is now the future. Comparing only
     /// against the ceiling answers <em>yes</em> for such a mark, which would suspend waking for that
-    /// agent for the length of the step — this feature's own defect, reintroduced by arithmetic that
-    /// reads as though it handles it.
+    /// agent for the length of the step.
     /// </para>
     /// <para>
-    /// <b>But treating every negative elapsed as expired is worse, and an existing test caught it
-    /// doing so.</b> Each caller reads the clock once and compares its own instant against another
-    /// caller's stamp, so under a flood the callers whose read landed a fraction before the winner's
-    /// write see a negative elapsed — and would each replace the mark and claim. Sixty concurrent
-    /// notices went back to buying up to forty-three turns, which is the bound not holding at all.
+    /// <b>But treating every negative elapsed as expired is worse.</b> Each caller reads the clock
+    /// once and compares its own instant against another caller's stamp, so under a flood the
+    /// callers whose read landed a fraction before the winner's write see a negative elapsed — and
+    /// would each replace the mark and claim, which defeats the bound.
     /// </para>
     /// <para>
     /// So the two cases are told apart by <em>how far</em> into the future the stamp is. Slightly
@@ -1180,9 +1271,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// <para>
     /// <b>The mark is cleared before the drain reads, not after it returns.</b> Cleared after, a message stored in
-    /// between found the mark still held, asked for nothing, and then lost the mark to a collection that had never
-    /// seen it: the message sat with no turn coming, and nothing in 0.5 times out. Found by the review gate by
-    /// replaying the two halves in their shipped order (lens 1 run 1.17).
+    /// between would find the mark still held, ask for nothing, and then lose the mark to a collection that had
+    /// never seen it: the message would sit with no turn coming, and nothing times out.
     /// </para>
     /// <para>
     /// Cleared before, a message stored after the clear claims a turn of its own. If the drain then reads it anyway,
@@ -1250,21 +1340,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        // Attached already, so a start would duplicate a process. What the traffic needs is not a
-        // start but a turn, and falling silent here is what left a second message reaching
-        // nobody: written and never collected while the registry reported the agent live. The node gives the turn only to a resident of its own, so an
-        // agent attached through somebody's editor window is left alone rather than duplicated.
+        // Attached already, so a start would duplicate a process. What the traffic needs is a turn. The node
+        // gives the turn only to a resident of its own, so an agent attached through somebody's editor window
+        // is left alone rather than duplicated.
         var running = _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty;
 
         // **Open only outside Parley** (§11.7): no node can give it a turn and starting a second process would put two
-        // models in one checkout, so nobody is asked — and nothing is marked as coming, which before this suppressed
-        // every wake after the first while the sender was told its receiver was running.
+        // models in one checkout, so nobody is asked — and nothing is marked as coming, or every wake after the first
+        // would be suppressed.
         if (running && sessions.All(session => !session.StartedByParley))
         {
             return WakeOutcome.OpenOutside;
         }
 
-        if (!(running ? node.RequestTurn(agent, because) : node.RequestStart(agent, because)))
+        if (!(running ? node.RequestTurn(agent, IdentityOf(agent), because) : node.RequestStart(agent, IdentityOf(agent), because)))
         {
             // The node holds this machine but does not name the role among what it can launch, so
             // nothing here will run it. Not marked pending: nothing is coming, and marking would
@@ -1306,8 +1395,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         // Any of them. They are brokers for the same agent over the same connection, and differ
-        // only in when each attached -- which nothing reads now that 0.5 has no ghosting clock.
-        // The newest is taken because it needs no comparison.
+        // only in when each attached. The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1363,9 +1451,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="cancellationToken">Cancels the pass.</param>
     /// <returns>What it did.</returns>
     /// <remarks>
-    /// The pass belongs to the process that owns the store, and this is the first arrangement
-    /// in which such a process exists. It used to run inside every adapter, so a deployment of
-    /// twenty repositories ran twenty passes over one file, each taking the write lock for the same work.
+    /// The pass belongs to the process that owns the store, so a deployment runs one pass over one file
+    /// rather than one per repository.
     /// </remarks>
     public Task<Parley.Broker.TickResult> TickAsync(CancellationToken cancellationToken = default) =>
         UseConnectionAsync(
@@ -1380,13 +1467,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>The answers that arrived, each recorded and waiting on a decision.</returns>
     /// <remarks>
     /// <para>
-    /// <b>On the sweep rather than on an event</b> (research R4). There is no attach event to hook, and a pass over the
+    /// <b>On the sweep rather than on an event.</b> There is no attach event to hook, and a pass over the
     /// store is also what makes a broker restart harmless: nothing is remembered in memory that the store does not say,
     /// so an agent that was running before the broker started is asked on the first pass after it.
     /// </para>
     /// <para>
     /// <b>The decision about each answer is not made here.</b> Accepting one writes the agent's launch configuration,
-    /// which this project cannot reach (research finding 12); the host that can, decides and calls back into
+    /// which this project cannot reach; the host that can, decides and calls back into
     /// <see cref="AcceptAutomaticallyAsync"/> or <see cref="HoldAsync"/>.
     /// </para>
     /// <para>
@@ -1482,7 +1569,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// <para>
     /// <b>Only when the agent owes no open exchange and no turn is on its way to it.</b> The broker cannot see a turn in
-    /// progress (research finding 7), so it sends only when it has no reason to think one is coming, and the node — which
+    /// progress, so it sends only when it has no reason to think one is coming, and the node — which
     /// can see — waits for the turn lock before stopping anything. An agent that is never idle is never refreshed, and
     /// its line stays pending, visibly.
     /// </para>
@@ -1524,7 +1611,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             }
 
             if (!_nodes.TryGetValue(agent.Machine, out var node)
-                || !node.RequestRefresh(agent, "its first ownership line was accepted automatically"))
+                || !node.RequestRefresh(agent, IdentityOf(agent), "its first ownership line was accepted automatically"))
             {
                 continue;
             }

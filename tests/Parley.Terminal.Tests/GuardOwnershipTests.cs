@@ -37,9 +37,8 @@ public sealed class GuardOwnershipTests
     [Fact]
     public void An_ask_is_held_to_being_said_at_all_and_to_no_length_this_surface_invented()
     {
-        // The floor that used to live here was `done_when`'s twenty characters, and it went with the
-        // field in 0.7: §5.1 asks for the ask and nothing else, and a receiver that cannot scope one
-        // sends a Clarify. So the only rule left is that something was typed -- and a short ask is
+        // §5.1 asks for the ask and nothing else, and a receiver that cannot scope one sends a
+        // Clarify. So the only rule is that something was typed -- and a short ask is
         // admitted, which is the half worth pinning. A surface that grew its own minimum back would
         // be refusing what the protocol accepts, and nothing but this would notice.
         Assert.NotNull(Participation.RequiredProblem(string.Empty));

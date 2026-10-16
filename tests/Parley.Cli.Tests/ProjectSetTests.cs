@@ -15,8 +15,8 @@ namespace Parley.Cli.Tests;
 /// delete anything.
 /// </para>
 /// <para>
-/// <b>019 left it one field.</b> <c>--db</c> went because a project's store is derived from its name, and
-/// <c>--listen</c> went because its port is claimed when it is created — so neither has a value to set.
+/// <b>There is one field.</b> There is no <c>--db</c>, because a project's store is derived from its name, and
+/// no <c>--listen</c>, because its port is claimed when it is created — so neither has a value to set.
 /// Moving a project's data is moving its folder and moving its port is a claim; both are acts rather than
 /// edits. What survives is the description, which is the one thing about a project that is somebody's to
 /// choose.
@@ -105,9 +105,8 @@ public sealed class ProjectSetTests : IDisposable
     [Fact]
     public async Task An_empty_value_clears_an_optional_field()
     {
-        // **Written about `node_config`, which 018 removed the meaning of and 019 removed the field.**
-        // The rule survived both: an empty value clears an optional one rather than being read as "leave
-        // it alone", and `description` is what now has to hold it.
+        // An empty value clears an optional field rather than being read as "leave it alone", and
+        // `description` is what has to hold it.
         await AddAsync("orders");
         await RunAsync(["set", "orders"], new ProjectFields("the one that started it all"));
 
@@ -147,12 +146,11 @@ public sealed class ProjectSetTests : IDisposable
     [Fact]
     public async Task A_project_cannot_be_pointed_at_another_projects_store_because_it_cannot_be_pointed_anywhere()
     {
-        // **A lens 2 probe, converted to an absence.** It found two ways to make `remove --destroy`
-        // delete data that is not the project's own: point its store at another project's, or at the
-        // manifest. Both were refused by `set` as they were by `add`, and a third way in — pointing a
-        // project at the manifest as its catalogue — went with `--node-config` in 018.
+        // **An absence.** There would be ways to make `remove --destroy` delete data that is not the
+        // project's own: point its store at another project's, at the manifest, or the project at the
+        // manifest as its catalogue.
         //
-        // **All three are now unreachable rather than refused.** A store is derived from the name, so
+        // **All three are unreachable rather than refused.** A store is derived from the name, so
         // there is no field to set, no flag to carry a value, and nothing `set` could be asked to do.
         // That is what closes the hazard: `remove --destroy` deletes what is inside the project's own
         // folder, and nothing can make that folder somebody else's.

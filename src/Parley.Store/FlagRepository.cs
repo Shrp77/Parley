@@ -121,7 +121,7 @@ public sealed class FlagRepository(SqliteConnection connection)
             // agent's most recent turn ended after it took this work and after it last said anything here, and refused
             // at least one tool call for want of permission. A resident agent runs with nobody at the keyboard, so such a
             // call is refused rather than paused, and nothing the agent can do gets it further — there is nothing to be
-            // patient with. Read off the most recent turn, so a later clean turn clears it (research R6).
+            // patient with. Read off the most recent turn, so a later clean turn clears it.
             if (row.LastTurnDenials > 0
                 && row.LastTurnStarted is { } began
                 && InvocationRepository.EndOf(ExchangeRow.ParseTimestamp(began), row.LastTurnElapsedMs) is var ended

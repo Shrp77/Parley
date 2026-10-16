@@ -7,7 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 21: two repositories, one role.
+/// Two repositories, one role.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,8 +17,8 @@ namespace Parley.Cli.Tests;
 /// either may collect the other's mail with neither side able to tell.
 /// </para>
 /// <para>
-/// That rule is scoped to one manifest. The terminal enrols one repository at a time, and this feature
-/// exists because a machine now holds several projects — so the same collision assembled across two
+/// That rule is scoped to one manifest. The terminal enrols one repository at a time, and a machine
+/// holds several projects — so the same collision assembled across two
 /// calls is the ordinary way to reach it, and no manifest ever contains both rows.
 /// </para>
 /// </remarks>
@@ -161,9 +161,9 @@ public sealed class ProbeThirtyTwoTests : IDisposable
         // raw control bytes, which is not JSON at all.
         var hostile = "/srv/" + (char)0x1B + "[2J" + (char)0x202E + "orders";
 
-        // **The note that quotes it is the one about a checkout that has moved** (018). It used to be
-        // the note about a second repository taking a name the first held, and that one can no longer
-        // carry a hostile path: the claim is established by reading the other workspace's own launch
+        // **The note that quotes it is the one about a checkout that has moved.** A note about a
+        // second repository taking a name the first held cannot carry a hostile path: the claim is
+        // established by reading the other workspace's own launch
         // configuration, so a path nothing can open claims nothing and is quoted nowhere. A checkout
         // catalogued at a path it is not at is the same shape — a value out of a file, in a sentence a
         // person reads — and is constructible, so the probe is pointed there rather than retired.

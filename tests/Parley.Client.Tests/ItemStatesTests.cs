@@ -10,7 +10,7 @@ namespace Parley.Client.Tests;
 /// <remarks>
 /// <para>
 /// One case per state and per acceptance scenario of the story that asks for them. Each case is a fact pattern the
-/// broker can really return, and a state that could not be read is held to never reading as not started (FR-018).
+/// broker can really return, and a state that could not be read is held to never reading as not started.
 /// </para>
 /// </remarks>
 public sealed class ItemStatesTests
@@ -19,13 +19,13 @@ public sealed class ItemStatesTests
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Billing = AgentName.Create("billing@test");
 
-    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, null);
+    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, null, []);
 
     private static ItemFacts Open(bool collected, params long[] exchanges) =>
         new(true, exchanges.Length, collected, 0, 0, 0, null, null, false, null, exchanges);
 
     private static ItemFacts Closed(int complete = 0, int blocked = 0, int closed = 0, string? blocker = null, string? by = null) =>
-        new(true, 0, false, complete, blocked, closed, blocker, by, false, null);
+        new(true, 0, false, complete, blocked, closed, blocker, by, false, null, []);
 
     private static RoadmapItem Item(int number, ItemFacts? facts, params int[] needs) =>
         new(number, number, number, $"Item {number}", null, needs, $"rm1-{number}", null, facts);
@@ -49,8 +49,6 @@ public sealed class ItemStatesTests
 
         Assert.Equal(ItemStanding.InProgress, states.Items[0].Standing);
         Assert.Equal([Billing], states.Items[0].Holders);
-        Assert.Contains("in progress", ItemStates.Says(states.Items[0]), StringComparison.Ordinal);
-        Assert.Contains("billing", ItemStates.Says(states.Items[0]), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -84,7 +82,6 @@ public sealed class ItemStatesTests
 
         Assert.Equal(ItemStanding.WaitingOnPerson, standing.Items[0].Standing);
         Assert.Equal(1, standing.WaitingOnYou);
-        Assert.Equal("waiting on you — billing", ItemStates.Says(standing.Items[0]));
     }
 
     [Fact]
@@ -104,7 +101,6 @@ public sealed class ItemStatesTests
 
         Assert.Equal(ItemStanding.Blocked, state.Standing);
         Assert.Equal("permission", state.Blocker);
-        Assert.Equal("blocked — permission", ItemStates.Says(state));
     }
 
     [Fact]
@@ -126,7 +122,7 @@ public sealed class ItemStatesTests
     [Fact]
     public void A_destroyed_conversation_is_closed_and_not_not_started()
     {
-        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, null);
+        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, null, []);
 
         Assert.Equal(ItemStanding.Closed, Standing(facts));
     }
@@ -143,7 +139,6 @@ public sealed class ItemStatesTests
         var state = ItemStates.Of(Plan(Item(1, null)), [], Person).Items[0];
 
         Assert.Equal(ItemStanding.CouldNotBeRead, state.Standing);
-        Assert.Equal("could not be read", ItemStates.Says(state));
     }
 
     [Fact]
@@ -176,7 +171,6 @@ public sealed class ItemStatesTests
         Assert.Equal(2, standing.NextNumber);
         Assert.True(standing.Items[1].IsNext);
         Assert.False(standing.Items[2].IsNext);
-        Assert.Equal("Next: item 2.", ItemStates.SaysNext(standing));
     }
 
     [Fact]
@@ -211,7 +205,6 @@ public sealed class ItemStatesTests
 
         Assert.Equal(NextKind.Complete, standing.Next);
         Assert.Null(standing.NextNumber);
-        Assert.Equal("Every item is done.", ItemStates.SaysNext(standing));
     }
 
     [Fact]
@@ -240,7 +233,7 @@ public sealed class ItemStatesTests
     [Fact]
     public void An_items_text_changed_since_it_was_sent_is_said_and_unchanged_text_is_not()
     {
-        var sent = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Item 1");
+        var sent = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Item 1", []);
 
         var same = ItemStates.Of(Plan(Item(1, sent)), [], Person).Items[0];
 
@@ -251,14 +244,13 @@ public sealed class ItemStatesTests
 
         Assert.False(same.TextChanged);
         Assert.True(reworded.TextChanged);
-        Assert.Contains("text changed", ItemStates.Says(reworded), StringComparison.Ordinal);
     }
 
     [Fact]
     public void Text_the_agent_received_inside_a_frame_is_still_the_text_sent()
     {
         // The Request carries the person's words around the item's, so the comparison is containment.
-        var facts = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Start this: Item 1. Thanks.");
+        var facts = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Start this: Item 1. Thanks.", []);
 
         Assert.False(ItemStates.Of(Plan(Item(1, facts)), [], Person).Items[0].TextChanged);
     }

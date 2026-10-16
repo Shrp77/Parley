@@ -10,27 +10,22 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One box, and the protocol has four acts.</b> Which one a line becomes is derived per recipient from who
-/// owes whom (<see cref="Pairing"/>) rather than chosen before the words: a person knows what they want to say,
-/// and Request, Clarify and Result are bookkeeping about turns. The preview above the line is what makes that
-/// safe — it names every recipient and what each will get, so nothing is recorded that was not shown.
+/// <b>One box, and every line is a new Request</b> (SPEC.md §5.6). Nothing is derived from whose move it is: an
+/// answer to one particular question is a Clarify the person asks for by picking that question. The preview above
+/// the line names every recipient, so nothing is recorded that was not shown.
 /// </para>
 /// <para>
-/// <b>And it names the cost.</b> SPEC.md §5.5 makes a plural ask N exchanges, each owing a Result, and until now
-/// this surface let somebody find that out in `parley flags` the next day. Counted in exchanges rather than
-/// messages because obligations are what a person is deciding about.
+/// <b>And it names the cost.</b> SPEC.md §5.5 makes a plural ask N exchanges, each owing a Result.
+/// Counted in exchanges rather than messages because obligations are what a person is deciding about.
 /// </para>
 /// <para>
-/// <b>The seat is read at the send and never captured here.</b> 0.18.9 found three call sites that took the seat
-/// when a form opened and went on speaking under a name the book had released; the rule since is that the send
-/// asks.
+/// <b>The seat is read at the send and never captured here.</b> A seat taken when a form opens could
+/// go on speaking under a name the book had released, so the send asks.
 /// </para>
 /// <para>
 /// <b>The completion list is drawn between the preview and the box, and the box keeps focus while it shows.</b>
-/// That is FR-032, and it is what makes Enter answerable without looking at the screen: what Enter does is decided
-/// by what is active, and the list is never active. Up and down move its selection, Tab completes it, Enter sends
-/// — which is the owner's own description of it, and the reason a wrong guess was corrected twice while this was
-/// being specified.
+/// That is what makes Enter answerable without looking at the screen: what Enter does is decided
+/// by what is active, and the list is never active. Up and down move its selection, Tab completes it, Enter sends.
 /// </para>
 /// </remarks>
 internal sealed class LineRegion : FrameView
@@ -52,7 +47,7 @@ internal sealed class LineRegion : FrameView
     /// The fewest rows the transcript keeps, however long the message being written is.
     /// </summary>
     /// <remarks>
-    /// <b>A floor for the transcript rather than a ceiling for the box.</b> The owner asked for the box to grow
+    /// <b>A floor for the transcript rather than a ceiling for the box.</b> The box grows
     /// so a whole message can be read back, and rule 8.4's cap is eight thousand characters — which is more
     /// rows than any terminal has. So the box takes what it asks for until the transcript is down to this, and
     /// scrolls after that: a conversation somebody is writing into is still a conversation they are reading.
@@ -66,7 +61,7 @@ internal sealed class LineRegion : FrameView
     /// The most rows the box itself grows to before it scrolls.
     /// </summary>
     /// <remarks>
-    /// The owner's number, and a bound rather than none: a message may be eight thousand characters, which is
+    /// A bound rather than none: a message may be eight thousand characters, which is
     /// more rows than any terminal has. Ten is a screenful of a paragraph with a conversation still above it.
     /// </remarks>
     internal const int MostBoxRows = 10;
@@ -75,10 +70,9 @@ internal sealed class LineRegion : FrameView
     /// The most rows the preview takes before it counts the rest.
     /// </summary>
     /// <remarks>
-    /// <b>Bounded because it is what squeezed the box to nothing.</b> The preview names every recipient, so a
-    /// conversation of nineteen agents is a twenty-one row preview — and the box was given what was left,
-    /// which was nothing: no cursor, and text that went in and was never drawn. The recipients are still all
-    /// named on the first line; what this bounds is the line-per-recipient detail under it.
+    /// <b>Bounded so the preview cannot squeeze the box to nothing.</b> The preview names every
+    /// recipient, so a large conversation would take every row and leave the box no cursor and no
+    /// drawn text. The recipients are all named on the first line; what this bounds is the detail under it.
     /// </remarks>
     internal const int MostPreviewRows = 6;
 
@@ -122,9 +116,8 @@ internal sealed class LineRegion : FrameView
         _list.Visible = false;
         _list.CanFocus = false;
 
-        // **A paragraph rather than a line, and it wraps rather than scrolling sideways.** A single-line
-        // field slid what somebody had written out of sight a character at a time, so the only way to read
-        // your own message back was to walk the cursor through it.
+        // **A paragraph rather than a line, and it wraps rather than scrolling sideways**, so a message
+        // can be read back as it is written.
         _field = Entry.Speaking();
 
         // The preview is a function of what is written, so it is recomputed as it is written. Held instead, it
@@ -136,16 +129,14 @@ internal sealed class LineRegion : FrameView
         //
         // A focused view is offered a key before the surface's own handler is, so what reaches the shell is
         // only what this box declined: Tab arrives there because this box does not bind it, and Enter never
-        // arrives at all because it does. An arm in the shell for Enter is an arm that never runs — which is
-        // what it was for a morning, with the owner unable to send a message at all, and **nothing in the
-        // suite had ever pressed the key**: every test called the `Accept()` seam, which raises the same
-        // event from the other side. The one thing that seam exists to check was the one thing unchecked.
+        // arrives at all because it does. An arm in the shell for Enter is an arm that never runs, so a test
+        // must press the key itself: the `Accept()` seam raises the same event from the other side.
         //
         // `KeyDown` rather than `Accepting`, because this box adds a line on Enter and that is a binding
         // rather than an accept: the key has to be taken before the binding runs.
         _field.View.KeyDown += (_, key) =>
         {
-            // **Shift+Enter is a line break, and so is Ctrl+Enter** (the owner asked for Shift+Enter on 2026-10-03). Taken
+            // **Shift+Enter is a line break, and so is Ctrl+Enter.** Taken
             // here rather than left to the shell's action, because a focused view is offered a key first and the field's
             // own Enter binding would otherwise read either chord as Enter.
             if (key == Key.Enter.WithShift || key == Key.Enter.WithCtrl)
@@ -189,10 +180,9 @@ internal sealed class LineRegion : FrameView
     /// Gives the box the rows it needs, the list its own, and the preview whatever is left.
     /// </summary>
     /// <remarks>
-    /// <b>The box is anchored to the bottom and sized absolutely, and that ordering is the whole fix.</b> It
-    /// used to fill what the preview and the list had not taken, so a preview that grew with the recipients
-    /// took the rows the box was to be drawn in: the owner watched it stop growing at two lines and then lose
-    /// the cursor altogether. What somebody is typing into cannot be the thing that gives way.
+    /// <b>The box is anchored to the bottom and sized absolutely.</b> Filling what the preview and
+    /// the list had not taken would let a preview that grows with the recipients take the rows the box
+    /// is drawn in. What somebody is typing into cannot be the thing that gives way.
     /// </remarks>
     private void Place()
     {
@@ -249,20 +239,18 @@ internal sealed class LineRegion : FrameView
             _field.Text = value;
 
             // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
-            // completion that grew `@ord` into `@orders@test` left it at the fourth character — and the next
-            // thing typed landed inside the name. The message went out as "@ordthe build is greeners@test",
-            // with the chip no longer written the way it was recorded and so no longer taken back out.
+            // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
+            // name, and the chip would no longer be written the way it was recorded.
             _field.MoveEnd();
         }
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>
     /// <remarks>
-    /// <b>Every action on this surface is a letter, which makes this the whole of a text field's safety.</b> The
-    /// shell takes a region's action key in its own key handler, so without this a person typing a question mark
-    /// into an ask would get the actions menu and a person typing <c>x</c> would clear the message line. `Lists`
-    /// records the same collision from the other side: a list's type-to-find was eating every letter the status
-    /// line advertised.
+    /// <b>Every action on this surface is Alt plus a letter and menus open with F10, so a plain
+    /// character is never an action.</b> This tells the shell that a printable key is somebody writing,
+    /// which is the whole of a text field's safety. `Lists` records the same collision from the other
+    /// side: type-to-find would eat the keys the status line advertises.
     /// </remarks>
     internal bool Editing => _field.View.HasFocus;
 
@@ -275,8 +263,7 @@ internal sealed class LineRegion : FrameView
     /// </para>
     /// <para>
     /// <b>The field makes a break by being sent Enter, and this region reads Enter as a send.</b> So the send stands
-    /// aside while the break is being made. Without it every chord that "started a new line" sent the message instead —
-    /// found on 2026-10-03 by the first test that pressed Shift+Enter; the test of Ctrl+Enter had only ever read its label.
+    /// aside while the break is being made, or every chord that starts a new line would send the message instead.
     /// </para>
     /// </remarks>
     internal void Break()
@@ -314,9 +301,8 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>How many rows the box itself was given once the screen was laid out.</summary>
     /// <remarks>
-    /// <b>Read by a test, because the box having no rows is a state nothing else could see.</b> The text went
-    /// in, the completion list opened, every assertion on what was written passed — and there was no cursor
-    /// and nothing on the screen, because a closed list was still taking the row the box was to be drawn in.
+    /// <b>Read by a test, because the box having no rows is a state nothing else could see.</b> Every
+    /// assertion on what was written can pass while nothing is on the screen.
     /// </remarks>
     internal int BoxRows => _field.View.Frame.Height;
 
@@ -347,14 +333,12 @@ internal sealed class LineRegion : FrameView
             ? [.. completion.Matches.Select(m => Row(completion.Which, m))]
             : [];
 
-        // **Nought rows when it is closed, not one.** A closed list that went on reserving a row took one the
-        // box needed: no cursor, nothing drawn, and typing still working — the completion list opened on `@`
-        // while the characters themselves were invisible. `Place` gives it exactly what it is showing.
+        // **Nought rows when it is closed, not one**: a closed list that reserved a row would take one the
+        // box needs. `Place` gives it exactly what it is showing.
         _list.Visible = _offering.Count > 0;
 
         // **Null rather than nought on an empty list**, which the toolkit refuses outright: a selection of zero
-        // rows is not row zero. Closing the list is the commonest thing that happens to it, so this threw on
-        // the first keystroke of every test in the file.
+        // rows is not row zero.
         _list.Replace(_offering, _offering.Count == 0 ? null : completion.Selected);
 
         Measure();
@@ -370,9 +354,9 @@ internal sealed class LineRegion : FrameView
     /// different things — which a count would hide.
     /// </para>
     /// <para>
-    /// <b>No seat and no draft yet are different facts, and were one for an afternoon.</b> A single nullable
-    /// draft made them the same, so a seated person whose conversation had not been read yet was told to take
-    /// a seat they already had. The same class of mistake as reporting "none waiting" for "could not ask".
+    /// <b>No seat and no draft yet are different facts.</b> A seated person whose conversation has not been
+    /// read yet must not be told to take a seat they already have; compare reporting "none waiting" for
+    /// "could not ask".
     /// </para>
     /// <para>
     /// The note is where a near miss is said (FR-033). It goes above the plan rather than into the message line
@@ -403,16 +387,13 @@ internal sealed class LineRegion : FrameView
         }
         else
         {
-            // **Who it goes to, and nothing else** (the owner's call of 2026-10-02). This listed each recipient again
-            // with what Enter would record — "answer — closes the exchange (F2: ask back instead)" — and a count of
-            // exchanges opened and closed. The owner read both as wrong: a conversation never really stops, so a line
-            // that says it closes something is describing bookkeeping as if it were the conversation.
+            // **Who it goes to, and nothing else.** A conversation never really stops, so a line that says what
+            // Enter closes would describe bookkeeping as if it were the conversation.
             lines.Add("to: " + Safe.Text(string.Join(", ", draft.Recipients.Select(peer => peer.Value))));
         }
 
-        // **One line each, with nothing added.** `Reports.Sentences` joins a report into one paragraph and closes each
-        // part with a full stop, which is right for a report and was wrong here: the owner read "to: orders@host."
-        // with a stop after the agent's name and the next line run on after it. Each part is already neutralised.
+        // **One line each, with nothing added.** `Reports.Sentences` closes each part with a full stop, which is
+        // right for a report and wrong after an agent's name. Each part is already neutralised.
         _preview.Text = string.Join('\n', lines);
 
         Measure();

@@ -6,8 +6,8 @@ namespace Parley.Cli.Tests;
 /// Every way of mistyping <c>parley files</c> is refused as usage, through the real binary.
 /// </summary>
 /// <remarks>
-/// Found by the review gate, lens 3 run 3.5: an option a subcommand has no use for was parsed and ignored, so
-/// <c>list --yes</c> succeeded and <c>prune --yes</c> asked anyway. The tool's own rule is that a flag accepted and ignored
+/// An option a subcommand has no use for must not be parsed and ignored, or
+/// <c>list --yes</c> would succeed and <c>prune --yes</c> would ask anyway. The tool's own rule is that a flag accepted and ignored
 /// is worse than one refused, because whoever typed it believes it did something.
 /// </remarks>
 public sealed class FilesCommandUsageTests : IAsyncDisposable
@@ -61,7 +61,7 @@ public sealed class FilesCommandUsageTests : IAsyncDisposable
     [Fact]
     public void An_option_refused_is_refused_before_the_broker_is_asked_and_names_only_the_option()
     {
-        // Review gate, lens 2 run 2.6. The refusal is decided from the command line alone — a broker nothing listens on
+        // The refusal is decided from the command line alone — a broker nothing listens on
         // is never reached, so the answer is usage rather than unreachable — and it repeats the option's own spelling,
         // never a name typed beside it, which is somebody's text on its way to a terminal.
         var hostile = "notes" + (char)0x1B + "]0;owned" + (char)0x07 + ".md";

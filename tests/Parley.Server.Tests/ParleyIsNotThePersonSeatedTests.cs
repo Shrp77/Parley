@@ -5,7 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That the facilitator is never the person an agent escalates to (SPEC.md principle 2.6, FR-004).
+/// That the facilitator is never the person an agent escalates to (SPEC.md principle 2.6).
 /// </summary>
 /// <remarks>
 /// <para>

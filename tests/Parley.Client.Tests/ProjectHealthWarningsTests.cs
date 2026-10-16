@@ -27,7 +27,7 @@ public sealed class ProjectHealthWarningsTests
     [Fact]
     public void A_store_of_the_wrong_shape_is_warned_about_and_names_what_is_missing()
     {
-        // Must fail against warning only about versions: the owner's numbers all agreed.
+        // Must fail against warning only about versions: the numbers all agree.
         var health = new ProjectHealth("0.8", null, "0.42.1", ["missing table roadmap_notices"]);
 
         var warning = Assert.Single(health.Warnings("0.42.1"));

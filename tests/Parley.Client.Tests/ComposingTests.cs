@@ -9,15 +9,12 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This suite used to be about which act a line became</b> — a Result where the person held an agent's request, a
-/// Clarify where the agent had asked back, a Request otherwise. That derivation is gone: every line is a
-/// Request (SPEC.md §5.6), because with several of an agent's questions open the surface filed the owner's reply
-/// against whichever one the broker listed first. Seven tests asserted the old acts and went with it; what a line now
-/// becomes is held over a real socket by <c>LineIsARequestOverTheWireTests</c> in the terminal's suite, where the broker
-/// records it.
+/// <b>Every line is a Request</b> (SPEC.md §5.6), because with several of an agent's questions open the surface
+/// would file the person's reply against whichever one the broker listed first. What a line becomes is held over a
+/// real socket by <c>LineIsARequestOverTheWireTests</c> in the terminal's suite, where the broker records it.
 /// </para>
 /// <para>
-/// What is left here is addressing, which did not change: who a line goes to, narrowing and widening it.
+/// What is tested here is addressing: who a line goes to, narrowing and widening it.
 /// </para>
 /// </remarks>
 public sealed class ComposingTests
@@ -92,7 +89,7 @@ public sealed class ComposingTests
     [Fact]
     public void The_first_at_sign_replaces_and_the_rest_add()
     {
-        // The owner's own example: `@billing, @inventory; I want this` targets those two, so the second sigil
+        // For example: `@billing, @inventory; I want this` targets those two, so the second sigil
         // cannot be a second replacement. Nothing means "and everyone else as well", because addressing
         // somebody in particular is the act of not addressing the room.
         var draft = Over(

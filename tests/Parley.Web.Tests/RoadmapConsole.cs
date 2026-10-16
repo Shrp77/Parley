@@ -215,8 +215,51 @@ public sealed class RoadmapBroker : HttpMessageHandler
     {
         Edited.Add(request);
 
-        return Refuse is { } why
-            ? new Wire.RoadmapChangeReply { Done = false, Problem = why }
-            : new Wire.RoadmapChangeReply { Done = true, RoadmapId = request.Id, Revision = request.Revision + 1, Origin = Wire.RoadmapOrigin.Edited };
+        if (Refuse is { } why)
+        {
+            return new Wire.RoadmapChangeReply { Done = false, Problem = why };
+        }
+
+        if (Details.TryGetValue(request.Id, out var detail))
+        {
+            // The roadmap as the broker would hold it after the edit: kept numbers, new numbers after the highest, and
+            // an item left out marked removed.
+            var kept = request.Content.Items.Where(i => i.Number != 0).Select(i => i.Number).ToHashSet();
+            var next = detail.Items.Select(i => i.Number).DefaultIfEmpty(0).Max() + 1;
+            var numbers = request.Content.Items.Select(i => i.Number != 0 ? i.Number : next++).ToList();
+            var items = new List<Wire.RoadmapItemDetail>();
+
+            for (var at = 0; at < request.Content.Items.Count; at++)
+            {
+                var draft = request.Content.Items[at];
+                var live = new Wire.RoadmapItemDetail
+                {
+                    Id = numbers[at],
+                    Number = numbers[at],
+                    Position = at + 1,
+                    Text = draft.Text,
+                    IntendedAgent = draft.IntendedAgent,
+                    ConversationName = $"rm{detail.Number}-{numbers[at]}",
+                    Facts = new Wire.ItemFacts(),
+                };
+
+                live.Needs.AddRange(draft.Needs.Select(position => numbers[position - 1]));
+                items.Add(live);
+            }
+
+            foreach (var gone in detail.Items.Where(i => i.RemovedRevision == 0 && !kept.Contains(i.Number)))
+            {
+                gone.RemovedRevision = request.Revision + 1;
+                gone.Facts = null;
+                items.Add(gone);
+            }
+
+            detail.Title = request.Content.Title;
+            detail.Revision = request.Revision + 1;
+            detail.Items.Clear();
+            detail.Items.AddRange(items);
+        }
+
+        return new Wire.RoadmapChangeReply { Done = true, RoadmapId = request.Id, Revision = request.Revision + 1, Origin = Wire.RoadmapOrigin.Edited };
     }
 }

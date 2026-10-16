@@ -11,8 +11,7 @@ namespace Parley.Store.Tests;
 /// <para>
 /// One place rather than a copy per file, because storage refuses a malformed payload (§9.3): a Request
 /// with no ask, a Result naming no item. A test that wrote its own would be testing whether its author
-/// remembered the shape — and the day the shape moved, which is what 0.7 did to it, every copy would have
-/// had to find out separately. This one changed, and the suites did not.
+/// remembered the shape — and the day the shape moves, every copy would have to find out separately.
 /// </para>
 /// <para>
 /// The steps are the ones the broker takes, in its order: admit the exchange, then write the Request on it.
@@ -34,18 +33,12 @@ internal static class Work
     public static string Request(string text = "is the invoice total gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    // `OldRequest` and `DoneWhen` stood here: a Request in the shape 0.5 and 0.6 stored. Their only
-    // route into a store was to build one at schema 10 and migrate, and there are no intermediate
-    // schemas since the eleven migrations were folded into one on 2026-09-26. The surfaces that
-    // render a pre-0.7 payload are still tested -- `OldShapeRendersTests` and `OldShapeOnThePageTests`
-    // each build the payload themselves, because rendering one needs no store at all.
-
     /// <summary>A Request payload whose ask names several things, for the Results that answer several items.</summary>
     /// <param name="subject">What the Request is about, which keeps two of them distinct.</param>
     /// <param name="ids">What the Result will name its outcomes. The ask mentions them so the pair reads together.</param>
     /// <returns>The payload as stored.</returns>
     /// <remarks>
-    /// A 0.7 Request has no items, and storage never made a Result's outcomes match any. These suites are about the
+    /// A Request has no items, and storage never made a Result's outcomes match any. These suites are about the
     /// result tables, so the Request is the ask it would now be and the Result names what the test needs.
     /// </remarks>
     public static string RequestOf(string subject, params string[] ids) =>

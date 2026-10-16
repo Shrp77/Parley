@@ -72,7 +72,7 @@ public sealed class DescribedWritesTests : IDisposable
 
         _ = await Enrolment.AddAsync(
             entry, "alpha", catalogue, Path.Combine(workspace, Adding.Instructions),
-            token, null, manifest);
+            token, manifest);
 
         var appeared = Directory.GetFiles(workspace, "*", SearchOption.AllDirectories)
             .Except(before)

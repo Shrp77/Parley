@@ -59,8 +59,8 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void The_persons_role_is_refused_and_a_user_is_not()
     {
-        // SPEC.md §12.3 says enrolment refuses a repository under the person's seat, and until the review gate nothing
-        // did: the repository's adapter would have attached under the person's name. `user` stays an ordinary role.
+        // SPEC.md §12.3 says enrolment refuses a repository under the person's seat: otherwise the repository's
+        // adapter would attach under the person's name. `user` stays an ordinary role.
         Assert.Contains(
             Validate(new EnrollmentEntry(Workspace, PersonSeat.Role, "", false)),
             p => p.Contains(PersonSeat.Reserved, StringComparison.Ordinal));
@@ -254,8 +254,7 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void A_long_owns_line_is_accepted_because_no_bound_is_in_force()
     {
-        // This asserted "limit is 100" until 0.33.0 took the bound off, on the owner's decision of
-        // 2026-09-26: an agent asked what it owns answers in two halves and names a peer, which a
+        // There is no bound: an agent asked what it owns answers in two halves and names a peer, which a
         // hundred characters frequently will not hold. What still refuses is the character rule,
         // which the theory below drives -- and that is the half the schema has always cared about.
         Assert.Empty(Validate(Entry(owns: new string('x', 4_000))));
@@ -298,7 +297,7 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void One_directory_may_not_be_two_agents()
     {
-        // Found by probing rather than reading, and worse than the duplicate-name case it
+        // Worse than the duplicate-name case it
         // mirrors: both entries write the same .mcp.json, so the second silently overwrites the
         // first while the run reports "Enrolled 2 repositories". One agent exists, two were
         // promised, and nothing afterwards says which.
@@ -346,10 +345,8 @@ public sealed class EnrollmentPlanTests
     {
         // Whole-manifest rather than fail-fast, so somebody fixing a manifest of eleven does it
         // in one pass instead of eleven runs.
-        // The third entry's fault was a 200-character owns line until 0.33.0 removed the bound,
-        // at which point it stopped being a fault and this counted two. It carries a character the
-        // roster rule refuses instead, which is the fault that is left -- and keeping three faults
-        // is the point, since what is being measured is that all of them are reported at once.
+        // The third entry carries a character the roster rule refuses, since there is no length
+        // bound to fault -- and keeping three faults is the point, since what is being measured is that all of them are reported at once.
         var problems = Validate(
             new EnrollmentEntry("/srv/a", "Orders", "A.", false),
             new EnrollmentEntry("relative", "billing", "B.", false),
@@ -415,9 +412,7 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void Naming_no_project_writes_exactly_what_it_wrote_before()
     {
-        // The parity case for every repository enrolled before projects existed. Adding an
-        // optional parameter that changed the file for callers who did not pass it would rewrite
-        // the launch configuration of every agent on the next run of `enroll apply`.
+        // An enrolment that names no project writes the `parley` key and no PARLEY_PROJECT.
         var plan = EnrollmentPlan.Describe(Entry(), null, null, false);
         var env = (JsonObject)JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
 
@@ -456,26 +451,6 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void A_repository_already_pinned_to_a_broker_address_is_refused()
-    {
-        // Refused with less certainty than the case above and for the same reason: this cannot
-        // tell whether that address is the project being joined, and guessing wrong in the
-        // permissive direction is the move that loses an agent from a roster.
-        var existing = """
-            {
-              "mcpServers": {
-                "parley": { "command": "parley-mcp", "env": { "PARLEY_BROKER": "http://127.0.0.1:7777" } }
-              }
-            }
-            """;
-
-        var refusal = Assert.Throws<InvalidDataException>(
-            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
-
-        Assert.Contains("127.0.0.1:7777", refusal.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void A_repository_already_in_this_project_is_accepted_rather_than_refused()
     {
         var existing = """
@@ -492,11 +467,29 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
+    public void A_repository_already_pinned_to_a_broker_address_is_refused()
+    {
+        // Refused when nothing says whether that address is the project being joined: guessing wrong
+        // in the permissive direction is the move that loses an agent from a roster.
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_BROKER": "http://127.0.0.1:7777" } }
+              }
+            }
+            """;
+
+        var refusal = Assert.Throws<InvalidDataException>(
+            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
+
+        Assert.Contains("127.0.0.1:7777", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_repository_naming_neither_is_re_pointed_and_said()
     {
-        // The ordinary case for anything enrolled before this existed. It is a change of
-        // allegiance in a file that did not previously record one, so it is said rather than
-        // done quietly.
+        // A change of allegiance in a file that did not record one, so it is said rather than done
+        // quietly.
         var existing = """
             {
               "mcpServers": {

@@ -14,7 +14,7 @@ namespace Parley.Cli;
 /// it controls whether the task appears in the Task Scheduler list, not whether a window appears.
 /// </para>
 /// <para>
-/// <b>The alternative was rejected on a concrete ground, and it is the owner's.</b> Running the
+/// <b>The alternative is rejected on a concrete ground.</b> Running the
 /// task as <c>S4U</c> — "whether the user is logged on or not" — shows no window at all, because it
 /// runs outside the interactive session. But the node's whole job is launching agents, and an agent
 /// is a CLI the person has already authenticated: that authentication belongs to their session, so

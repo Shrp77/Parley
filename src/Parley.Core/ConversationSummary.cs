@@ -10,8 +10,7 @@ namespace Parley.Core;
 /// <param name="LastActivityUtc">When the latest was.</param>
 /// <param name="HasOpenExchange">Whether anything in it is still awaiting a resolution.</param>
 /// <param name="Archived">
-/// Whether an operator has put it out of the way. Defaulted so every existing caller keeps
-/// compiling and reads the truth: nothing was archived before this existed.
+/// Whether an operator has put it out of the way. Defaulted to not archived.
 /// </param>
 /// <param name="Item">
 /// The roadmap item it belongs to, or <see langword="null"/> for an ordinary conversation (SPEC.md §5.7). Defaulted

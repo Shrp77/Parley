@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 12: who may grant consent.
+/// Who may grant consent.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -123,7 +123,7 @@ public sealed class ProbeTwentyThreeTests : IDisposable
     // row, keyed by workspace — a real question while enrolment wrote a manifest that a later scan
     // merged with. There is no manifest and so no previous run to merge with: `EnrollCommand.Find`
     // is handed an empty carry-forward on purpose, and consent is not a thing this surface records
-    // at all any more, since enrolling a repository is itself the consent (FR-043).
+    // at all, since enrolling a repository is itself the consent.
     //
     // Recorded rather than deleted silently, because the property it protected — one person's
     // approval never landing on another repository's row — is worth somebody recognising if a

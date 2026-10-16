@@ -34,12 +34,11 @@ internal static class Logging
     /// <para>
     /// <b>Shared, because two brokers naming one log is ordinary and the second one's line is the
     /// one somebody needs.</b> A scheduled task and a terminal that restores its last session both
-    /// start <c>parley serve</c> with the same arguments at logon. This used to hold the file open
-    /// for writing, so whichever started second could not open it and said why only to a console
-    /// nobody could see — while the first went on to report a deployment that the second had
-    /// already damaged. Each line is appended by opening, writing and closing, rather than through
-    /// a writer held open, because a held .NET writer keeps its own position and would write its
-    /// next line over whatever another process had appended since.
+    /// start <c>parley serve</c> with the same arguments at logon. Holding the file open for writing
+    /// would stop whichever started second from opening it. Each line is appended by opening,
+    /// writing and closing, rather than through a writer held open, because a held .NET writer
+    /// keeps its own position and would write its next line over whatever another process had
+    /// appended since.
     /// </para>
     /// </remarks>
     public static TextWriter? Open(string? path, TextWriter error)

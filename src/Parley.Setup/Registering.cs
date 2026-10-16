@@ -21,9 +21,8 @@ internal sealed record Registration(bool Registered, string Says);
 /// <remarks>
 /// <para>
 /// <b>Enrolment is not finished until the agent has attached at least once.</b> Until then §14
-/// counts its name as unroutable, and <em>every</em> message type is refused, all of them through
-/// <c>IsUnroutableAsync</c>. So a repository that has been
-/// enrolled and never opened is not a quiet agent; it is one nothing can address at all.
+/// counts its name as unroutable, and <em>every</em> message type is refused. So a repository that
+/// has been enrolled and never opened is not a quiet agent; it is one nothing can address at all.
 /// </para>
 /// <para>
 /// <b>Nothing here writes a registration, and nothing may.</b> SPEC.md §12.3 makes registration the
@@ -53,9 +52,7 @@ internal static class Registering
     /// <para>
     /// <b>Enrolment writes the catalogue and asks for the start in the same breath, and the node reads
     /// its catalogue on a poll.</b> So the first ask reliably reaches a node that has not read the new
-    /// entry yet and answers that it cannot start the role. That answer was taken as final, and the owner
-    /// enrolled four agents of which none registered -- while the broker's log showed the node rejoining
-    /// with all four a moment later, with nothing left that would ask again.
+    /// entry yet and answers that it cannot start the role; that answer is not final, so the ask repeats.
     /// </para>
     /// <para>
     /// The node polls every two seconds and then rejoins, so fifteen is several of its cycles: long enough
@@ -68,8 +65,8 @@ internal static class Registering
 
     /// <summary>What is said of an agent while the node has not yet taken its start.</summary>
     /// <remarks>
-    /// Short, because it is drawn beside the agent's name in a pane half a screen wide, on the owner's call of
-    /// 2026-09-28 that progress belongs on the agent's row rather than on a status line.
+    /// Short, because it is drawn beside the agent's name in a pane half a screen wide: progress belongs on
+    /// the agent's row rather than on a status line.
     /// </remarks>
     internal const string WaitingForNode = "waiting for the node";
 
@@ -92,17 +89,14 @@ internal static class Registering
     /// <remarks>
     /// <b>Without this, enrolment hangs.</b> A gRPC call with no deadline against an endpoint
     /// nothing is listening on does not fail — it waits, and the command waits with it, having
-    /// already written every file. Found by a test that ran for ten minutes instead of failing.
+    /// already written every file.
     /// </remarks>
     private static readonly TimeSpan Reach = TimeSpan.FromSeconds(5);
 
     /// <summary>What is said when the wait ran out.</summary>
     /// <remarks>
-    /// <b>"I do not know", never "it did not happen".</b> 008 exists because a broker stopped
-    /// waiting before a node had finished and then recorded the opposite of what occurred: it waited
-    /// five minutes, the node waited twenty, and the real answer was refused on arrival. The same
-    /// shape is available here, and a run that reported failure for an agent that registered a
-    /// second later would send somebody to fix what was already working.
+    /// <b>"I do not know", never "it did not happen".</b> A run that reported failure for an agent
+    /// that registered a second later would send somebody to fix what was already working.
     /// </remarks>
     internal const string NotSeen =
         "started, but it had not registered before this stopped waiting. Check it shortly; "
@@ -115,19 +109,13 @@ internal static class Registering
     /// <returns>The reason, or null.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Asked before anything is written, because enrolment now depends on the answer.</b> Adding
+    /// <b>Asked before anything is written, because enrolment depends on the answer.</b> Adding
     /// an agent has to leave it registered, registering is the agent attaching, and attaching needs
     /// a broker — so a run that cannot reach one cannot finish the job, and writing the files anyway
-    /// leaves exactly the state this exists to remove.
+    /// would leave an enrolled agent nothing can address.
     /// </para>
     /// <para>
-    /// <b>It inverts what the command used to advise</b>, which was to enrol and then start a
-    /// broker. That order was only ever possible because enrolment stopped half way.
-    /// </para>
-    /// <para>
-    /// Only asked when a project was resolved. A machine that names none has no endpoint to ask, and
-    /// closing that hole too is a first-run change recorded as open in 012's spec rather than made
-    /// here.
+    /// Only asked when a project was resolved. A machine that names none has no endpoint to ask.
     /// </para>
     /// </remarks>
     internal static async Task<string?> UnreachableAsync(

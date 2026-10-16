@@ -12,21 +12,17 @@ namespace Parley.Configuration;
 /// <para>
 /// <b>The name is the address.</b> A project is a directory under the root named by the project, so
 /// naming a project is the whole of saying where its files are — there is no path for a person to supply
-/// and none for them to get wrong. That replaces a manifest entry in which a store could be anywhere
-/// somebody typed, which is how the layout that prompted 019 was arrived at: one flag at a time.
+/// and none for them to get wrong.
 /// </para>
 /// <para>
-/// <b>Two things are therefore derived rather than recorded, and that is stronger than checking them.</b>
+/// <b>Two things are derived rather than recorded, which is stronger than checking them.</b>
 /// A project's store is <c>parley.db</c> inside its own folder, so two projects cannot share one; and a
-/// project's name is its directory entry, so two cannot share a name. Both were checks over a whole
-/// manifest file before, held under one lock. Neither is expressible now, which is the form of Principle V
-/// this feature can offer — see <c>plan.md</c>, where the one invariant that genuinely loses write-time
-/// enforcement is argued rather than glossed.
+/// project's name is its directory entry, so two cannot share a name.
 /// </para>
 /// <para>
 /// <b>There is no name in <c>project.json</c>, and no store.</b> The folder is the name, so the two cannot
-/// disagree; the store is derived, so there is nothing to record. And there is no per-project catalogue:
-/// 018 made one catalogue per machine, and a new file carrying that field would be born holding a corpse.
+/// disagree; the store is derived, so there is nothing to record. There is one node catalogue per machine,
+/// not one per project.
 /// </para>
 /// <para>
 /// Path composition and nothing else lives here. <see cref="ProjectSettings"/> stays free of filesystem
@@ -76,8 +72,8 @@ public static class ProjectFolder
     /// <param name="name">The project.</param>
     /// <returns>The path, which need not exist.</returns>
     /// <remarks>
-    /// Derived rather than read, which is what FR-007 rests on: there is nowhere else for it to be, so
-    /// there is no option that could name one and nothing to keep in step.
+    /// Derived rather than read: there is nowhere else for it to be, so there is no option that could
+    /// name one and nothing to keep in step.
     /// </remarks>
     public static string StoreFor(string root, ProjectName name) =>
         Path.Combine(For(root, name), StoreFileName);
@@ -90,13 +86,9 @@ public static class ProjectFolder
     /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <remarks>
     /// <para>
-    /// <b>One implementation, because there are three callers and they have already disagreed.</b> The
-    /// serve watcher, the operator's console and the terminal each decide whether to re-read by asking
-    /// whether anything has moved. While the answer was one file's length and write time, each of them
-    /// spelled it separately and all three quietly stopped working the moment that file became a
-    /// directory: <see cref="FileInfo.Exists"/> is false for one, so every stamp was the default, no stamp
-    /// ever changed, and a machine went on serving and showing whatever it started with while
-    /// <c>project add</c> reported success.
+    /// <b>One implementation, because there are three callers.</b> The serve watcher, the operator's
+    /// console and the terminal each decide whether to re-read by asking whether anything has moved, and
+    /// separate spellings of that question drift apart.
     /// </para>
     /// <para>
     /// <b>What it covers is every project's configuration and when each was last written</b> — so a
@@ -105,7 +97,7 @@ public static class ProjectFolder
     /// here either; the two agree by construction rather than by a second rule.
     /// </para>
     /// <para>
-    /// <b>The accepted limit is inherited and is narrower than it was.</b> Windows updates a write time on
+    /// <b>The accepted limit.</b> Windows updates a write time on
     /// the system timer tick rather than per write, so two edits to one project inside about fifteen
     /// milliseconds share a timestamp and the second is missed until something else touches the file.
     /// Reaching it needs two runs of <c>parley project</c> inside one tick, each its own process launch,
@@ -160,7 +152,7 @@ public static class ProjectFolder
     /// </para>
     /// <para>
     /// Everything else that is wrong is reported <b>naming the project and its file</b>, never as the
-    /// machine having no projects — FR-029, and the same rule the manifest reader has always been held to.
+    /// machine having no projects, as <see cref="ProjectManifest.TryRead"/> does.
     /// </para>
     /// </remarks>
     public static bool TryRead(
@@ -241,13 +233,9 @@ public static class ProjectFolder
     /// writing either would create something for a reader to disagree with.
     /// </para>
     /// <para>
-    /// <b>Four rules the manifest paid for, carried across whole.</b> Unknown keys survive, the byte order
-    /// mark and line endings survive, a file that cannot be parsed is refused rather than replaced, and the
-    /// write is committed by rename rather than made in place. Each was written against one file naming
-    /// every project; every one of them is about a configuration file with no second copy, which is what
-    /// this is. A first draft of this method was <see cref="File.WriteAllText(string, string)"/> over a
-    /// freshly built document and lost all four at once — the build stayed green, because nothing a
-    /// compiler can see was wrong.
+    /// <b>Four rules, each because this is a configuration file with no second copy.</b> Unknown keys
+    /// survive, the byte order mark and line endings survive, a file that cannot be parsed is refused
+    /// rather than replaced, and the write is committed by rename rather than made in place.
     /// </para>
     /// </remarks>
     public static void Write(string root, ProjectSettings project)
@@ -348,8 +336,7 @@ public static class ProjectFolder
     /// <para>
     /// The pending file is a sibling so the commit stays within one volume, and it is <b>unique per
     /// write</b>: a fixed name is shared by every writer, so two of them do not merely race — one commits
-    /// the other's half-written file. Probed on the manifest with four writers over 50 rounds each, a
-    /// fixed name left five reads on a document that no longer parsed.
+    /// the other's half-written file.
     /// </para>
     /// <para>
     /// <see cref="File.Replace(string, string, string)"/> rather than
@@ -395,8 +382,7 @@ public static class ProjectFolder
         catch
         {
             // Never left behind to be mistaken for configuration, or to make the next write fail. Nested
-            // so it is reached from the fallback as well — it was not, once, and a fallback rename that
-            // threw orphaned the pending file.
+            // so it is reached from the fallback rename as well.
             try
             {
                 File.Delete(pending);

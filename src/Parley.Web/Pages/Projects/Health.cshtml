@@ -10,8 +10,8 @@
 <h1>Health of @Model.Project</h1>
 
 <nav aria-label="This project">
-    <a href="/Projects/Agents?project=@Model.Project">Agents</a>
-    <a href="/Conversations?project=@Model.Project">Conversations</a>
+    <a href="/?tab=agents&amp;project=@Model.Project">Agents</a>
+    <a href="/Projects/Agents?project=@Model.Project">Conversations</a>
     <a href="/Projects/Act?project=@Model.Project&amp;action=prune&amp;subject=@Model.Project">Apply the retention policy now</a>
 </nav>
 
@@ -58,7 +58,7 @@ else
         }
         else
         {
-            <p>Nothing is flagged. All open work has been collected and is moving.</p>
+            <p>Nothing is flagged.</p>
         }
     </section>
 
@@ -87,7 +87,7 @@ else
 
     <section>
         <h2>What the size cap refused</h2>
-        @* The cap is 4,000 because somebody chose 4,000. This is the evidence the next choice
+        @* The cap is 8,000 and provisional (SPEC.md §17 question 16). This is the evidence a change
            should be argued from, and one refusal is the first row of a case rather than a case:
            what makes it one is the same agents refused repeatedly at similar sizes. *@
         @if (Model.Refusals.Count == 0)

@@ -13,9 +13,9 @@ namespace Parley.Headless;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This replaces a one-shot invoker, and the difference is the whole point. A process started
-/// per message can answer a bounded factual question — the envelope of §5.3 carries the intent
-/// and consequences back, so a cold reader has what it needs — but it cannot hold a position
+/// A process started
+/// per message can answer a bounded factual question — the envelope of §5.3 carries the ask
+/// back, so a cold reader has what it needs — but it cannot hold a position
 /// across turns. It cannot remember why it asked a clarification, cannot get better at its own
 /// domain by answering thirty questions about it, and cannot negotiate a contested boundary,
 /// which is the case the protocol exists for.
@@ -27,11 +27,8 @@ namespace Parley.Headless;
 /// remembers the last one.
 /// </para>
 /// <para>
-/// <b>Standard input is the turn channel, and that inverts the previous rule.</b> The one-shot
-/// invoker had to redirect stdin and close it immediately, or the child inherited the host's
-/// live JSON-RPC pipe and the wait never returned. Here stdin is redirected for the opposite
-/// reason: it is how a turn is delivered, and it stays open for exactly as long as the agent
-/// should live. Closing it is how the agent is told to quit.
+/// <b>Standard input is the turn channel.</b> It is how a turn is delivered, and it stays open
+/// for exactly as long as the agent should live. Closing it is how the agent is told to quit.
 /// </para>
 /// <para>
 /// Standard output is drained continuously by a background pump rather than read per turn. With
@@ -213,9 +210,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// whose result was whose, and the agent would be answering two prompts in one context.
     /// </para>
     /// <para>
-    /// <b>A timeout does not kill the agent.</b> That is the important departure from the
-    /// one-shot invoker, which killed and lost nothing because there was nothing to lose. Here
-    /// the process holds the agent's entire accumulated context, and discarding that because one
+    /// <b>A timeout does not kill the agent.</b> The process holds the agent's entire accumulated context, and discarding that because one
     /// turn ran long is a far worse trade than waiting. So a timed-out turn is recorded and left:
     /// the exchange is unharmed — still owed, still open, tried again — and the result that
     /// eventually arrives is discarded before the next turn rather than being read as its answer.
@@ -238,8 +233,8 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <remarks>
     /// <b>A turn begins when it holds the agent, not when it is asked for.</b> A second wake while a turn runs queues
     /// behind it, and a start reported at the asking put the turn's end — start plus <see cref="TurnOutcome.Elapsed"/>,
-    /// which is measured from here — before the work it picked up, so a turn stopped on a refused permission was never
-    /// flagged or shown stopped (the review gate's finding).
+    /// which is measured from here — before the work it picked up, so a turn stopped on a refused permission would never
+    /// be flagged or shown stopped.
     /// </remarks>
     public async Task<TurnOutcome> TakeTurnAsync(
         string text, TimeSpan timeout, Func<Task> began, CancellationToken cancellationToken = default)
@@ -367,9 +362,8 @@ public sealed class ResidentAgent : IAsyncDisposable
             // polite form of stopping, and everything that actually guarantees the process is gone —
             // the bounded wait, then Kill — is below and runs regardless.
             //
-            // Left uncaught it escaped ShutdownAsync into whoever was stopping the fleet, so one agent
-            // being mid-turn could abandon the stop of every agent after it. That is the shape the
-            // review gate's fourth finding already closed once, reached here by a different route.
+            // Left uncaught it would escape ShutdownAsync into whoever is stopping the fleet, so one
+            // agent being mid-turn could abandon the stop of every agent after it.
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

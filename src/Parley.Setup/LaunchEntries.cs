@@ -46,8 +46,7 @@ internal sealed record LaunchEntry(
     /// refusing to write there would refuse the repair.
     /// </para>
     /// <para>
-    /// <b>A different question from whether it may be removed.</b> Withdrawing asks
-    /// <c>Enrolment.NamedBy</c>, which requires the name, because deleting the wrong entry is worse
+    /// <b>A different question from whether it may be removed.</b> Deleting the wrong entry is worse
     /// than declining to write one. This asks only whether writing here would destroy something that
     /// was never ours.
     /// </para>
@@ -73,9 +72,8 @@ internal sealed record LaunchEntry(
 /// <remarks>
 /// <para>
 /// <b>A repository has as many enrolments as it has entries, and "the first one" is never the right
-/// answer to what a repository is.</b> Before this existed, two readers took
-/// <c>mcpServers.parley.env</c> by literal key — so a repository enrolled under any other key read as
-/// enrolled nowhere, which is how one comes to be enrolled twice in one project.
+/// answer to what a repository is.</b> Every reader goes through here, so a repository enrolled under
+/// any key reads as enrolled.
 /// </para>
 /// <para>
 /// Everything that is not this tooling's is skipped rather than reported as damaged. A repository may
@@ -146,22 +144,22 @@ internal static class LaunchEntries
     /// <returns>The key to write at, and the entry it would update, or null when it would be new.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The order is the feature.</b> Without one, a repository already in <c>alpha</c> matches both
-    /// "update the legacy entry" and "add a project-keyed entry", and the difference between them is
-    /// whether a working agent's tool names change underneath it.
+    /// <b>The order is the feature.</b> A repository already in <c>alpha</c> under the key <c>parley</c>
+    /// matches both "update that entry" and "add a project-keyed entry", and the difference between them
+    /// is whether a working agent's tool names change underneath it.
     /// </para>
     /// <list type="number">
     /// <item>The derived key, if something is there — <b>whatever it says about itself</b>. An entry at
     /// the key this would write at is the caller's problem to refuse or update, and hiding it here
     /// would mean writing over it.</item>
-    /// <item>The legacy key, when its environment pins this project. <b>Updated where it stands and
-    /// never renamed</b>: the key is a component of every tool name the agent already sees, so a
+    /// <item>The <c>parley</c> key, when its environment pins this project. <b>Updated where it stands
+    /// and never renamed</b>: the key is a component of every tool name the agent already sees, so a
     /// rename edits an agent's vocabulary to achieve nothing.</item>
-    /// <item>The legacy key, when it pins no project at all and one is being named — every repository
-    /// enrolled before projects existed. This is the re-point that already happens today, and it comes
-    /// after the case above so that an unpinned entry cannot swallow an enrolment meant to be a second
-    /// one.</item>
-    /// <item>Nothing, and the derived key is free.</item>
+    /// <item>The <c>parley</c> key, when it pins no project at all and one is being named. It is
+    /// updated where it stands, after the case above so that an unpinned entry cannot swallow an
+    /// enrolment meant to be a second one.</item>
+    /// <item>Nothing, and the derived key is free. An entry at <c>parley</c> that pins another project is
+    /// left alone and the new entry goes beside it.</item>
     /// </list>
     /// </remarks>
     public static (string Key, LaunchEntry? Existing) Landing(JsonObject? servers, string? project)

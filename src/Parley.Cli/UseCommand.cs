@@ -14,7 +14,7 @@ namespace Parley.Cli;
 /// <c>Invoke-Expression (parley use alpha --shell powershell)</c> or <c>eval "$(parley use alpha --shell posix)"</c>.
 /// </para>
 /// <para>
-/// <b>Per terminal, and never saved.</b> The owner chose this over a saved "current project": chosen in one window, a saved
+/// <b>Per terminal, and never saved.</b> A saved "current project" was declined: chosen in one window, a saved
 /// one would quietly apply to a purge in another. A terminal's choice ends with the terminal, and <c>--project</c> on any
 /// one command still wins over it.
 /// </para>

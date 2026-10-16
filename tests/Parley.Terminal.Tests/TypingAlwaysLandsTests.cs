@@ -20,7 +20,7 @@ namespace Parley.Terminal.Tests;
 /// <b>Against a real broker, because the refusals were the broker's and correct.</b> These drive it through
 /// each state a pair can be in. They used to assert which act the surface derived for each; the surface no longer makes the
 /// derivation, since every line is now a Request (SPEC.md §5.6), so what they hold is the pair state the room still
-/// reads — whose move it is, and who opened it — and that a new Request is admitted whatever is open.
+/// reads — whose move it is — and that a new Request is admitted whatever is open.
 /// </para>
 /// </remarks>
 public sealed class TypingAlwaysLandsTests : IDisposable
@@ -46,7 +46,6 @@ public sealed class TypingAlwaysLandsTests : IDisposable
         var pair = await PairAsync(broker, ct);
 
         Assert.Equal(Turn.Mine, pair.Turn);
-        Assert.False(pair.Asked, "the peer opened it, so this person is the receiver");
     }
 
     [Fact]
@@ -67,7 +66,6 @@ public sealed class TypingAlwaysLandsTests : IDisposable
         var pair = await PairAsync(broker, ct);
 
         Assert.Equal(Turn.Mine, pair.Turn);
-        Assert.True(pair.Asked, "this person opened it, so they are the requester");
     }
 
     [Fact]

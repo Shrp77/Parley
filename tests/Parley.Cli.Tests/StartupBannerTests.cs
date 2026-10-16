@@ -95,7 +95,7 @@ public sealed class StartupBannerTests
     {
         // The run this line exists for. Everything else the banner says comes after the store is
         // open, so a build that refuses a store — "this store is at schema 5 and this Parley only
-        // knows 4" — used to leave a log with the complaint in it and nothing saying which Parley.
+        // knows 4" — must not leave a log with the complaint in it and nothing saying which Parley.
         //
         // A directory rather than a locked or malformed file, because it fails the same way on
         // every platform this suite runs on and needs no cleanup of its own.
@@ -146,11 +146,9 @@ public sealed class StartupBannerTests
         if (BuildIdentity.Commit is null)
         {
             // **Only the version's own parenthesis, not any parenthesis.** The line always ends
-            // with the runtime identifier in brackets, so asserting the whole line has none was a
+            // with the runtime identifier in brackets, so asserting the whole line has none is a
             // check that could not pass in the state it describes — and it only ever runs on a tree
-            // with no `.git`, which is why every Windows run took the other branch and this stood.
-            // Found by running the suite in a container from `git archive`, which is exactly that
-            // tree.
+            // with no `.git`, such as one made by `git archive`.
             var version = BuildIdentity.Line[..BuildIdentity.Line.IndexOf(',', StringComparison.Ordinal)];
 
             Assert.DoesNotContain('(', version);
@@ -183,7 +181,7 @@ public sealed class StartupBannerTests
     [Fact]
     public void The_console_address_is_set_apart_from_everything_else()
     {
-        // It used to be the third line of five, in the same weight as the broker's address and
+        // It must not be the third line of five, in the same weight as the broker's address and
         // the node's catalogue. A person scanning for somewhere to click found the first URL.
         //
         // Asserted against the source because the announcement is in top-level statements with no
@@ -198,11 +196,9 @@ public sealed class StartupBannerTests
         // against a concurrent writer, none split.
         var block = ConsoleAnnouncement(program);
 
-        // **The label and the interpolation, not the variable's name.** This asserted
-        // `{consoleAt}` and broke when that local was renamed to say what it holds rather than which
-        // removed flag used to set it — a rename that changed no behaviour and no output. It is the
-        // third anchor in this file to break on something that was never the point: the other two
-        // are recorded in CLAUDE.md, both `var body`. What the test is about is that the address is
+        // **The label and the interpolation, not the variable's name.** An anchor on a local's name
+        // breaks on a rename that changes no behaviour and no output; the anchors recorded in
+        // CLAUDE.md, both `var body`, are the same kind. What the test is about is that the address is
         // on its own labelled line and is interpolated rather than written in, and both survive a
         // rename.
         Assert.Contains("Web UI:   {", block, StringComparison.Ordinal);
@@ -225,9 +221,8 @@ public sealed class StartupBannerTests
     [Fact]
     public void Both_ways_in_are_pointed_at_the_manifest_being_served()
     {
-        // Found by the gate over the installer change, by running `serve --config <file> --with-web-ui` and reading the
-        // page: it listed this machine's own projects, because the child located a manifest on its own. The web UI is
-        // handed the one being served, and the terminal line names it whenever it is not this machine's default.
+        // With `serve --config <file> --with-web-ui` the page must not list this machine's own projects because the
+        // child located a manifest on its own. The web UI is handed the one being served, and the terminal line names it whenever it is not this machine's default.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
         Assert.Contains("start.Environment[ProjectManifest.PathVariable] = manifestPath;", program, StringComparison.Ordinal);
@@ -416,10 +411,10 @@ public sealed class StartupBannerTests
     {
         var body = HostingWebUiBlock(program);
 
-        // From where the block is composed, not from the call. It used to start at the call,
-        // which worked while every line of the block was a literal argument to it — and the
-        // moment the block grew a second route wide enough to need measuring, the text moved
-        // into a variable one line above and the extraction found an empty box.
+        // From where the block is composed, not from the call. Starting at the call works only while
+        // every line of the block is a literal argument to it — and once the block has a second route
+        // wide enough to need measuring, the text moves into a variable one line above and the
+        // extraction finds an empty box.
         //
         // The single-write property that start was protecting is now asserted directly, below,
         // rather than implied by everything happening to sit inside one set of parentheses.

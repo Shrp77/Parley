@@ -3,7 +3,7 @@ using Parley.Core;
 namespace Parley.Client.Rendering;
 
 /// <summary>
-/// Who a transcript says spoke, and to whom (SPEC.md §5, principle 2.11, FR-003a, FR-005).
+/// Who a transcript says spoke, and to whom (SPEC.md §5, principle 2.11).
 /// </summary>
 /// <remarks>
 /// <para>

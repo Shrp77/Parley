@@ -31,8 +31,8 @@ internal static class ToolProcess
     /// nowhere else.
     /// </para>
     /// <para>
-    /// <b>It has to shrink with the tool too, and <c>PARLEY_DB</c> is the first entry to go</b>
-    /// (019, T037). The tool stopped reading it when <c>--db</c> went: a project's store is
+    /// <b>It has to shrink with the tool too, and <c>PARLEY_DB</c> is not an entry</b>. The tool does
+    /// not read it, and there is no <c>--db</c>: a project's store is
     /// <c>parley.db</c> inside its own folder, derived from its name. Clearing it would be
     /// harmless and that is exactly the problem — this list is read as the answer to "what does
     /// the tool take from an environment", and an entry that has stopped being true makes the

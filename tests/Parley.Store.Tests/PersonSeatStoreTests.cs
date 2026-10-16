@@ -15,8 +15,8 @@ namespace Parley.Store.Tests;
 /// storage refuses; a repository that checked first would make a missing rule invisible here.
 /// </para>
 /// <para>
-/// <b>Each refusal was watched to fail first</b>: against the schema before 023 every one of them was admitted, and
-/// the person and the facilitator were each given a machine named after the project.
+/// <b>Each refusal must fail against a schema without it</b>: every one of them would be admitted, and
+/// the person and the facilitator each given a machine named after the project.
 /// </para>
 /// </remarks>
 public sealed class PersonSeatStoreTests : IDisposable
@@ -62,16 +62,16 @@ public sealed class PersonSeatStoreTests : IDisposable
             "SELECT count(*) FROM agents WHERE machine IS NULL " +
             "AND name IN ('human-user@alpha', 'parley-facilitator@alpha');"));
 
-        // The fake machine the owner declined: a node named for the project that never connects.
+        // No fake machine: a node named for the project that never connects.
         Assert.Equal(0L, Count("SELECT count(*) FROM nodes WHERE machine = 'alpha';"));
     }
 
     [Fact]
     public async Task A_surface_attaching_as_the_person_declares_no_machine_either()
     {
-        // T013a's finding. Registration writes the node row itself before the trigger runs, so teaching only the
+        // Registration writes the node row itself before the trigger runs, so teaching only the
         // trigger left this route open: a surface's attach goes through RegisterIfAbsentAsync, and the broker's own
-        // upsert through UpsertAsync. Watched to fail before HostedOnAMachine existed: 'alpha' was recorded.
+        // upsert through UpsertAsync.
         var agents = new AgentRepository(_connection);
         var person = new AgentRecord(
             PersonSeat.On(Alpha), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active);
@@ -151,8 +151,8 @@ public sealed class PersonSeatStoreTests : IDisposable
     [Fact]
     public async Task The_seats_adapter_under_any_other_role_is_refused_now_the_reservation_has_landed()
     {
-        // Inverted, as this test said it would be, when the reservation pair landed — at the combined review gate, which
-        // found an agent attaching under the seat's adapter and so being treated as the person (principle 2.10).
+        // An agent attaching under the seat's adapter would be treated as the person (principle 2.10), so the
+        // reservation holds.
         await SeatedAsync();
 
         var refused = Assert.Throws<SqliteException>(() =>
