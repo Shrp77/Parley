@@ -38,6 +38,12 @@ public static class NodeCommand
     private const int Config = 78;         // EX_CONFIG
     private const int Unavailable = 69;    // EX_UNAVAILABLE
 
+    /// <summary>How many times a rejoin the broker refused as a second node is asked again.</summary>
+    private const int RejoinAttempts = 8;
+
+    /// <summary>The first wait before asking again, lengthened by each refusal: about seven seconds in all.</summary>
+    private static readonly TimeSpan RejoinPause = TimeSpan.FromMilliseconds(200);
+
     /// <summary>How long to let an agent finish its turn before giving up on it.</summary>
     private static readonly TimeSpan TurnTimeout = InvocationCommand.DefaultTimeout;
 
@@ -132,6 +138,13 @@ public static class NodeCommand
         // to have got right.
         output = TextWriter.Synchronized(output);
 
+        // A rejoin follows the end of this node's own stream at once, and the broker lets go of the old join only when
+        // it notices that end. Until it does, the rejoin reads as a second node and is refused: wait and ask again,
+        // a bounded number of times, rather than end the node over its own shadow. A first join is never retried,
+        // because a refusal then is a real second node.
+        var rejoin = false;
+        var refusals = 0;
+
         try
         {
             while (true)
@@ -163,6 +176,7 @@ public static class NodeCommand
 
                 var watcher = WatchAsync(
                     catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
+                var refused = false;
 
                 try
                 {
@@ -174,6 +188,7 @@ public static class NodeCommand
                         switch (command.CommandCase)
                         {
                             case Wire.NodeCommand.CommandOneofCase.Joined:
+                                refusals = 0;
                                 await ReportJoinedAsync(
                                     command.Joined, catalogue, project, catalogueFile, endpoint, output)
                                     .ConfigureAwait(false);
@@ -222,9 +237,22 @@ public static class NodeCommand
                     // raise the cancellation: the stream reports it as an RpcException carrying
                     // Cancelled.
                 }
+                catch (RpcException failure) when (
+                    failure.StatusCode == StatusCode.AlreadyExists && rejoin && refusals < RejoinAttempts)
+                {
+                    refused = true;
+                }
                 finally
                 {
                     await watching.CancelAsync().ConfigureAwait(false);
+                }
+
+                if (refused)
+                {
+                    _ = await watcher.ConfigureAwait(false);
+                    refusals++;
+                    await Task.Delay(RejoinPause * refusals, cancellationToken).ConfigureAwait(false);
+                    continue;
                 }
 
                 var changed = await watcher.ConfigureAwait(false);
@@ -237,6 +265,7 @@ public static class NodeCommand
                 }
 
                 catalogue = changed;
+                rejoin = true;
 
                 await output.WriteLineAsync(
                     $"{catalogueFile} changed. Rejoining with: {Listed(catalogue.Announceable(project).Names)}")

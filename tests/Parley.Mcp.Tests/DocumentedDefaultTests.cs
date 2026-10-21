@@ -62,23 +62,11 @@ public sealed class DocumentedDefaultTests
     [Fact]
     public void Setup_does_not_offer_a_cap_it_cannot_set()
     {
-        // This asserted that the setup command wrote the cap into every launch configuration,
-        // and that the sentence beside it named the same number. Both were right while each
-        // repository set its own.
-        //
-        // A launch configuration cannot set it now, so writing it would be worse than omitting
-        // it: the user would see a value in the file they were told to create, change it, and
-        // find that nothing happened. The check is therefore that it is absent, which is a real
-        // property and not the absence of a test.
+        // A launch configuration cannot set the cap, so offering it would be worse than omitting
+        // it: the user would set a value, change it, and find that nothing happened. The check is
+        // that the setup never names it, which is a real property and not the absence of a test.
         var setup = RepositoryFile.Read("plugins/parley/commands/setup.md");
 
-        var configuration = System.Text.RegularExpressions.Regex.Match(
-            setup, @"""mcpServers"".*?\n```",
-            System.Text.RegularExpressions.RegexOptions.Singleline);
-
-        Assert.True(configuration.Success, "the setup command no longer shows a configuration");
-
-        Assert.DoesNotContain(
-            "PARLEY_CLARIFY_CAP", configuration.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain("PARLEY_CLARIFY_CAP", setup, StringComparison.Ordinal);
     }
 }

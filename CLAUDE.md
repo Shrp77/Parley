@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.82, protocol 0.8 (feature 026 moves it to 0.9),
+- Version 0.42.83, protocol 0.8 (feature 026 moves it to 0.9),
   schema 1. Nothing has been released, so there is **no compatibility to keep**: change the wire,
   enums and schema 1 in place, and nuke and rebuild. From the first release every schema change is
   a migration.

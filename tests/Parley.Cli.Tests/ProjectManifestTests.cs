@@ -267,7 +267,7 @@ public sealed class ProjectManifestTests : IDisposable
         // folder, so the class of mistake is gone rather than guarded. Asserted as an absence,
         // because a suite that merely dropped the case would leave the next reader unable to tell
         // a rule that was removed from one nobody wrote.
-        Given("orders", """{ "endpoint": "http://127.0.0.1:51707", "store": "orders/parley.db" }""");
+        Given("orders", """{ "endpoint": "http://127.0.0.1:51707", "store": "somewhere-else/other.db" }""");
 
         Assert.True(ProjectManifest.TryRead(_root, out var projects, out var problem), problem);
 
@@ -277,8 +277,9 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.True(Path.IsPathRooted(project.Store), $"'{project.Store}' is not absolute");
 
         // And the value somebody wrote is ignored rather than honoured — a file that could name a
-        // store would be a second place the answer lives, and two places disagree.
-        Assert.DoesNotContain("orders/parley.db", project.Store, StringComparison.Ordinal);
+        // store would be a second place the answer lives, and two places disagree. A path that cannot be part of the
+        // derived one, so the check holds where the separator is the same slash.
+        Assert.DoesNotContain("somewhere-else", project.Store, StringComparison.Ordinal);
     }
 
     [Fact]

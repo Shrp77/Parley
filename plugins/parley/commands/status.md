@@ -83,8 +83,8 @@ roster. Four findings, and the first is the one this command is for:
   being configured. Worth reporting and not worth acting on alone - a peer that is merely
   switched off is still a peer, and §5.5 says a request reaches an agent on a machine that is
   off.
-- **No `## Peers` section at all.** Run `parley enroll` (see `/parley:setup`), or `/parley:write-peers` if
-  the tools are already bound.
+- **No `## Peers` section at all.** Tell the user to enroll this repository (see `/parley:setup`), or
+  run `/parley:write-peers` if the tools are already bound.
 
 Do not read the peers' `owns` lines out in this report. Whether each line is a fair statement of
 that peer's boundary is `/parley:write-peers`' judgement to make and it makes it carefully;

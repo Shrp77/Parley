@@ -173,6 +173,22 @@ internal sealed partial class BrokerProcess : IDisposable
         {
             // Already gone, which is the outcome this wanted.
         }
+        catch (Exception refused) when (refused is AggregateException or System.ComponentModel.Win32Exception)
+        {
+            // Windows refuses to kill a member of the tree that is already exiting ("Access is denied"). The broker is
+            // what matters, so it is stopped on its own; the rest end with it.
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    _ = process.WaitForExit(5000);
+                }
+            }
+            catch (Exception again) when (again is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+        }
 
         process.Dispose();
     }

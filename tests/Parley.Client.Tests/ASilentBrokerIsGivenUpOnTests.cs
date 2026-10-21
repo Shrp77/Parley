@@ -24,7 +24,29 @@ public sealed class ASilentBrokerIsGivenUpOnTests
 
         using var silent = new TcpListener(IPAddress.Loopback, 0);
         silent.Start();
-        _ = silent.AcceptTcpClientAsync(ct);
+
+        // Every connection accepted is held until the test ends. A discarded one can be collected and closed, and the
+        // client then sees a dropped connection (Unavailable) rather than a broker that says nothing.
+        using var listening = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var held = new List<TcpClient>();
+        var accepting = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var client = await silent.AcceptTcpClientAsync(listening.Token);
+
+                    lock (held)
+                    {
+                        held.Add(client);
+                    }
+                }
+            }
+            catch (Exception ended) when (ended is OperationCanceledException or SocketException or ObjectDisposedException)
+            {
+            }
+        }, ct);
 
         var endpoint = $"http://127.0.0.1:{((IPEndPoint)silent.LocalEndpoint).Port}";
         using var channel = BrokerDirectory.Connect(endpoint);
@@ -36,6 +58,15 @@ public sealed class ASilentBrokerIsGivenUpOnTests
 
         Assert.Equal(StatusCode.DeadlineExceeded, gaveUp.StatusCode);
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"gave up only after {clock.Elapsed}");
+
+        await listening.CancelAsync();
+        silent.Stop();
+        await accepting;
+
+        lock (held)
+        {
+            held.ForEach(client => client.Dispose());
+        }
     }
 
     [Fact]
