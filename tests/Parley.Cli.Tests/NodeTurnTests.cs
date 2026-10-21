@@ -108,8 +108,9 @@ public sealed class NodeTurnTests : IDisposable
         residents[identity] = dead;
 
         // It is launched with the protocol's own arguments appended, which `dotnet --info` will
-        // not accept, so it exits at once. All this test needs of it is that it has stopped.
-        for (var i = 0; i < 100 && dead.IsAlive; i++)
+        // not accept, so it exits at once. All this test needs of it is that it has stopped. "At once" is the time a
+        // dotnet host takes to start, which on a busy runner has exceeded five seconds, so up to thirty are allowed.
+        for (var i = 0; i < 600 && dead.IsAlive; i++)
         {
             await Task.Delay(50, Ct);
         }

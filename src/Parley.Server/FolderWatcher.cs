@@ -272,11 +272,25 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _renamedTo.TryRemove(path, out var renamedTo);
 
         // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
-        // handled, so whatever was written into it before then raised no event at all. The location is looked at
-        // whole instead, after the quiet period, which finds it.
+        // handled, so whatever was written into it before then raised no event at all. Each file in it, and each the
+        // store records there, is looked at as an event would have asked: the same looks, by the same rules, so a
+        // rename is still recognised only from a report of one and never by matching hashes.
         if (Directory.Exists(path))
         {
-            await ScanAsync(cancellationToken).ConfigureAwait(false);
+            var here = Path.GetFileName(path);
+            var recorded = await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new SharedFileRepository(connection).GetAllAsync(cancellationToken: ct),
+                cancellationToken).ConfigureAwait(false);
+
+            foreach (var file in Directory.EnumerateFiles(path)
+                         .Concat(recorded
+                             .Where(r => string.Equals(r.File.Folder, here, StringComparison.OrdinalIgnoreCase))
+                             .Select(r => _runtime.Files.FilePath(r.File.Folder, r.File.Name)))
+                         .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                Schedule(file);
+            }
+
             return;
         }
 

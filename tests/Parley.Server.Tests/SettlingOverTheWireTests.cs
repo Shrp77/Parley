@@ -110,7 +110,11 @@ public sealed class SettlingOverTheWireTests
             Assert.True((await orders.Client.ResultAsync(reply, cancellationToken: Ct)).Ok);
         }
 
-        // The agent's next session: attaching gives back the work it still owes, which is the Request handed back.
+        // The agent's next session: attaching gives back the work it still owes, which is the Request handed back. Only
+        // once the broker has seen the first session end, because work is given back only to an agent with no session
+        // attached, and a close still in flight counts as one.
+        await broker.WaitUntilDetachedAsync("orders@alpha", TimeSpan.FromSeconds(10));
+
         await using var next = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: Ct);
 
         var again = await next.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = next.Name }, cancellationToken: Ct);
