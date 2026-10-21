@@ -137,6 +137,7 @@ public static class ConsoleHost
 
         // What the console has told the person, for the bell. One for the process, because one console serves one person.
         builder.Services.AddSingleton<Notifications.NotificationLog>();
+        builder.Services.AddSingleton<EnrolmentRuns>();
 
         var app = builder.Build();
 

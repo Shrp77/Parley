@@ -172,10 +172,38 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <summary>Why nothing could be sent, when nothing could.</summary>
     public string? SendProblem { get; private set; }
 
-    /// <summary>Says who did not see one message.</summary>
-    /// <param name="message">The message.</param>
-    /// <returns>A sentence, or empty when everybody in the conversation was party to it.</returns>
-    public string NotSeenBy(Message message) => Visibility.Describe(message, Participants);
+    /// <summary>The messages as the page draws them: a send to several agents is one turn, not one per agent.</summary>
+    /// <returns>Each turn, in the order the broker recorded its first message.</returns>
+    /// <remarks>
+    /// A send to several agents is recorded as one Request each, because a refusal is per agent. The words, the sender
+    /// and the conversation are the same, and the recipients are what the "to" line is for, so adjacent Requests that
+    /// match are drawn once with every recipient named. Only adjacent ones: reordering messages to join them would
+    /// misstate the order the broker recorded.
+    /// </remarks>
+    public IReadOnlyList<IReadOnlyList<Message>> Turns()
+    {
+        var turns = new List<List<Message>>();
+
+        foreach (var message in Messages)
+        {
+            if (turns.Count > 0
+                && turns[^1][0] is { Type: MessageType.Request } first
+                && message.Type == MessageType.Request
+                && first.From == message.From
+                && first.To != message.To
+                && string.Equals(first.PayloadJson, message.PayloadJson, StringComparison.Ordinal)
+                && turns[^1].All(m => m.To != message.To))
+            {
+                turns[^1].Add(message);
+            }
+            else
+            {
+                turns.Add([message]);
+            }
+        }
+
+        return [.. turns.Select(turn => (IReadOnlyList<Message>)turn)];
+    }
 
     /// <summary>Says where the exchange a message belongs to stands.</summary>
     /// <param name="message">The message.</param>

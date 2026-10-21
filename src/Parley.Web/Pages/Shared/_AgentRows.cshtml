@@ -4,7 +4,9 @@
    empty, and none here would read as a project somebody has emptied. *@
 @if (Model.Unread)
 {
-    <p class="dgrid-empty" data-unread="@Model.Project" role="alert"><span class="alarm">@Model.Project:</span> its broker did not answer, so its agents are not known.</p>
+    <p class="dgrid-empty" data-unread="@Model.Project" role="alert"><span class="alarm">@Model.Project:</span> its agents cannot be listed.
+        @(Model.Problem is { Length: > 0 } why ? why : "Its broker did not answer.")
+        <a href="/Projects/Settings?project=@Model.Project">Open its settings</a></p>
 }
 
 @foreach (var row in Model.Rows)

@@ -7,8 +7,9 @@
 <h1>Register an agent in @Model.Project</h1>
 
 <p>
-    An agent's name comes from its launch configuration and nowhere else. No call can supply it, so a sender
-    cannot forge the agent it claims to be. This page can only tell you what to write.
+    Prefer to point at a folder? <a href="/?tab=agents&amp;project=@Model.Project">Register from the agents page</a> instead.
+    This page is for writing the file yourself. An agent's name comes from its launch configuration and nowhere else.
+    No call can supply it, so a sender cannot forge the agent it claims to be. This page can only tell you what to write.
 </p>
 
 <h2>1. Name the agent in the repository</h2>
@@ -21,7 +22,6 @@
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
-        "PARLEY_OWNS": "&lt;optional; obtained by asking the agent&gt;",
         "PARLEY_PROJECT": "@Model.Project"
       }
     }
@@ -39,9 +39,8 @@
 </p>
 
 <p>
-    Other agents read the <code>owns</code> line to decide who to ask, so say what the repository does not own as well
-    as what it does. You can leave it out and ask the agent once it has registered. What you agree on is written into
-    the file for you.
+    What the repository owns is not written by hand. The agent reports it once it has registered, and you can
+    review and change it under <a href="/Projects/Ownership?project=@Model.Project">Review ownership</a>.
 </p>
 
 <p>

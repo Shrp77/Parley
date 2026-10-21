@@ -26,7 +26,8 @@ public sealed record AgentRow(string Project, AgentRecord Agent, string State);
 /// <param name="Project">The project.</param>
 /// <param name="Rows">The agents the filters leave in; empty when none, or when the registry could not be read.</param>
 /// <param name="Unread">Whether the registry could not be read, so the agents are not known.</param>
-public sealed record AgentGroup(string Project, IReadOnlyList<AgentRow> Rows, bool Unread);
+/// <param name="Problem">Why it could not be read, in the broker's own words, when it could not.</param>
+public sealed record AgentGroup(string Project, IReadOnlyList<AgentRow> Rows, bool Unread, string? Problem = null);
 
 /// <summary>
 /// The projects this machine is configured for.
@@ -246,6 +247,70 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         return new JsonResult(new { waiting, certain });
     }
 
+    /// <summary>Lists the folders in one directory of this machine, for the folder browser on the register form.</summary>
+    /// <param name="path">The directory; empty for the drives, or the root on a machine without them.</param>
+    /// <returns>The directory, the one above it, and the folders in it with whether each is a repository.</returns>
+    /// <remarks>
+    /// Folders only, never a file's name or contents, and hidden and system folders are left out. The console answers only
+    /// loopback host names, so the person at this machine is the only reader; the page's other handlers rest on the same
+    /// premise. The names are sent as data and drawn as text.
+    /// </remarks>
+    public IActionResult OnGetFolders(string? path)
+    {
+        const int Cap = 500;
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            var roots = OperatingSystem.IsWindows()
+                ? DriveInfo.GetDrives().Where(drive => drive.IsReady).Select(drive => drive.Name)
+                : ["/"];
+
+            return new JsonResult(new
+            {
+                path = string.Empty,
+                parent = (string?)null,
+                folders = roots.Select(name => new { name, full = name, repo = false }),
+                error = (string?)null,
+            });
+        }
+
+        var wanted = path.Trim();
+
+        if (!Path.IsPathRooted(wanted) || !Directory.Exists(wanted))
+        {
+            return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = "There is no such folder." });
+        }
+
+        var here = Path.GetFullPath(wanted);
+        var parent = Path.GetDirectoryName(here.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? string.Empty;
+
+        try
+        {
+            var options = new EnumerationOptions
+            {
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+            };
+
+            var folders = Directory.EnumerateDirectories(here, "*", options)
+                .Select(full => new
+                {
+                    name = Path.GetFileName(full),
+                    full,
+                    repo = Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git")),
+                })
+                .OrderBy(folder => folder.name, StringComparer.OrdinalIgnoreCase)
+                .Take(Cap)
+                .ToList();
+
+            return new JsonResult(new { path = here, parent, folders, error = (string?)null });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new JsonResult(new { path = here, parent, folders = Array.Empty<object>(), error = "That folder cannot be read." });
+        }
+    }
+
     /// <summary>Asks one project's broker for its agents, and draws their rows.</summary>
     /// <param name="name">The project.</param>
     /// <returns>The rows the filters leave in, as a fragment to put in place of the project's placeholder.</returns>
@@ -263,7 +328,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         if (registry.Value is null)
         {
-            return Partial("_AgentRows", new AgentGroup(project.Name.Value, [], Unread: true));
+            return Partial("_AgentRows", new AgentGroup(project.Name.Value, [], Unread: true, registry.Problem));
         }
 
         var rows = registry.Value

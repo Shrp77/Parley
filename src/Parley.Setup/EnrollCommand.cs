@@ -980,6 +980,12 @@ public static class EnrollCommand
             }
         }
 
+        // **Let go before waiting on the node.** The hold above stops two runs losing each other's line, and it is over
+        // now the catalogue is written. Kept through the starts, it left the node reading "used by another process",
+        // holding the roles it had, and every start timing out as "its node did not start it" -- the node learns a new
+        // role by reading this very file.
+        nodeHeld?.Dispose();
+
         // **Enrolment is not finished until each agent has registered**, and it cannot register
         // itself without running once: §12.3 makes registration the adapter's own act on attach, so
         // the only honest way to leave one registered is to start it and let it do so. Until then

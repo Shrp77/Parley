@@ -142,6 +142,13 @@ else
 </form>
 
 @section Scripts {
+    <style>
+        form.composer { position: relative; }
+        .mention-list { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--surface, Canvas); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); z-index: 20; }
+        .mention-list[hidden] { display: none; }
+        .mention-list li { padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+        .mention-list li[aria-selected="true"], .mention-list li:hover { background: var(--quiet-wash); }
+    </style>
     <script>
         // The recipients tree. Its boxes belong to the composer's form, so this only keeps the
         // page honest about them: a group's box shows all, some or none of its members, ticking it
@@ -545,7 +552,8 @@ else
                 var seen = {};
 
                 document.querySelectorAll("li.turn").forEach(function (t) {
-                    [t.getAttribute("data-agent"), t.getAttribute("data-to")].forEach(function (n) {
+                    // data-to lists every recipient of a send to several agents, separated by spaces.
+                    [t.getAttribute("data-agent")].concat((t.getAttribute("data-to") || "").split(" ")).forEach(function (n) {
                         if (n && n !== human) { seen[n] = true; }
                     });
                 });
@@ -578,11 +586,12 @@ else
 
             function keeps(turn, picked) {
                 var from = turn.getAttribute("data-agent");
-                var to = turn.getAttribute("data-to");
+                var to = (turn.getAttribute("data-to") || "").split(" ");
 
-                if (only.checked && from !== human && to !== human) { return false; }
+                if (only.checked && from !== human && to.indexOf(human) < 0) { return false; }
 
-                return picked.length === 0 || picked.indexOf(from) >= 0 || picked.indexOf(to) >= 0;
+                return picked.length === 0 || picked.indexOf(from) >= 0
+                    || to.some(function (n) { return picked.indexOf(n) >= 0; });
             }
 
             function run() {
@@ -785,6 +794,118 @@ else
 
                 if (box.value.trim() !== "" && form.requestSubmit) { form.requestSubmit(); }
             });
+        })();
+
+        // Typing @@ in the box offers the project's agents, narrowing as the person types. Choosing one ticks it in the
+        // recipients tree and completes the @@name in the text, which stays: it is part of what the person said. The
+        // addressing is the "To" list, never the text (a payload is never parsed for addressing). Arrow keys and Enter or Tab choose, Escape closes.
+        (function () {
+            var form = document.getElementById("composer");
+            var box = form ? form.querySelector("textarea[name=Says]") : null;
+
+            if (!box) { return; }
+
+            var list = document.createElement("ul");
+            var shown = [];
+            var at = 0;
+            var start = -1;
+
+            list.id = "mention-list";
+            list.className = "mention-list";
+            list.setAttribute("role", "listbox");
+            list.hidden = true;
+            form.appendChild(list);
+
+            function close() { list.hidden = true; shown = []; start = -1; }
+
+            function agents() {
+                return [].slice.call(document.querySelectorAll('input[name="Targets"]')).filter(function (b) {
+                    return b.value.indexOf("human-user@@") !== 0;
+                });
+            }
+
+            // The @@word being typed, if the caret is at the end of one that begins at a word boundary.
+            function word() {
+                var upto = box.value.slice(0, box.selectionStart);
+                var m = /(^|\s)@@([A-Za-z0-9@@._\-]*)$/.exec(upto);
+
+                return m ? { from: upto.length - m[2].length - 1, query: m[2].toLowerCase() } : null;
+            }
+
+            function draw() {
+                list.replaceChildren();
+
+                shown.forEach(function (b, i) {
+                    var li = document.createElement("li");
+
+                    li.setAttribute("role", "option");
+                    li.setAttribute("aria-selected", i === at ? "true" : "false");
+                    li.textContent = b.value + (b.checked ? " (chosen)" : "");
+                    li.addEventListener("mousedown", function (e) { e.preventDefault(); choose(b); });
+                    list.appendChild(li);
+                });
+
+                list.hidden = shown.length === 0;
+            }
+
+            function update() {
+                var w = word();
+
+                if (!w) { close(); return; }
+
+                start = w.from;
+                shown = agents().filter(function (b) { return b.value.toLowerCase().indexOf(w.query) >= 0; })
+                    .sort(function (a, b) {
+                        var x = a.value.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+                        var y = b.value.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+
+                        return x - y || a.value.localeCompare(b.value);
+                    }).slice(0, 8);
+                at = 0;
+                draw();
+            }
+
+            function choose(b) {
+                var end = box.selectionStart;
+                var before = box.value.slice(0, start);
+                var after = box.value.slice(end);
+
+                // The mention stays in the words: it may be an instruction to that agent the others should see.
+                var mention = "@@" + b.value + (/^\s/.test(after) ? "" : " ");
+
+                box.value = before + mention + after;
+                box.selectionStart = box.selectionEnd = before.length + mention.length;
+
+                if (!b.checked) {
+                    b.checked = true;
+                    b.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+
+                close();
+                box.focus();
+            }
+
+            box.addEventListener("input", update);
+            box.addEventListener("click", update);
+            box.addEventListener("blur", close);
+
+            // Captured on the form so it runs before the box's own Enter-sends handler.
+            form.addEventListener("keydown", function (e) {
+                if (list.hidden || e.target !== box) { return; }
+
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
+                    draw();
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    choose(shown[at]);
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    close();
+                }
+            }, true);
         })();
 
         // "Reply to this" on an agent's question points the composer at that exchange, so the words answer it. Delegated,

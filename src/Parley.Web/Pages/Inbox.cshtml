@@ -33,7 +33,7 @@
     <div class="view-title">
         <h1>Waiting on you</h1>
         <p class="as-of" role="status">
-            Waiting on <strong>@(Model.Me?.Name.Value)</strong>: results to send and questions to answer.
+            Results to send and questions to answer, across every project.
         </p>
     </div>
 
@@ -101,6 +101,11 @@
         <p class="unreachable" role="alert"><strong>@project.Project</strong>: @project.Problem</p>
     }
 
+    @foreach (var line in Model.NotDelivered)
+    {
+        <p class="unreachable" role="alert">@line</p>
+    }
+
     <section class="view-card dgrid" style="--cols: minmax(9rem, 1fr) 6rem minmax(7rem, 0.7fr) minmax(8rem, 0.9fr) 8rem minmax(12rem, 2.4fr) 7rem; --min: 60rem;" aria-label="Waiting on you">
         <div class="dgrid-inner" role="table">
             <div class="dgrid-head" role="row">
@@ -122,7 +127,8 @@
                     <summary class="dgrid-line">
                         <span role="cell">
                             <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(item.Message.From)</span>
-                            <strong class="name">@item.Message.From.Value</strong>
+                            <strong class="name" title="@item.Message.From.Value">@item.Message.From.Role</strong>
+                            <span class="faint from-machine">@@@item.Message.From.Machine</span>
                         </span>
                         <span role="cell"><span class="tag">@item.Message.Type.ToString().ToLowerInvariant()</span></span>
                         <span role="cell">@projectName</span>

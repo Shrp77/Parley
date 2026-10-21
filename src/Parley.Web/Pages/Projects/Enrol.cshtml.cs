@@ -24,7 +24,8 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
-public sealed class EnrolModel(BrokerDirectory directory) : PageModel
+/// <param name="runs">Enrolments in progress, so the page can say what each is doing.</param>
+public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : PageModel
 {
     /// <summary>The project the agents join.</summary>
     [BindProperty(SupportsGet = true)]
@@ -37,10 +38,6 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
     /// <summary>The role peers will address a single repository by.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Role { get; set; }
-
-    /// <summary>What a single repository owns and does not; may be empty.</summary>
-    [BindProperty(SupportsGet = true)]
-    public string? Owns { get; set; }
 
     /// <summary>A folder whose repositories are offered, when that is what is being done.</summary>
     [BindProperty(SupportsGet = true)]
@@ -67,6 +64,12 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
 
     /// <summary>What came of enrolling, once it has been done.</summary>
     public IReadOnlyList<string> Said { get; private set; } = [];
+
+    /// <summary>The enrolment under way, which the page asks about until it is over.</summary>
+    public string? RunId { get; private set; }
+
+    /// <summary>The repositories being enrolled, so the page can list them before any has said anything.</summary>
+    public IReadOnlyList<string> Working { get; private set; } = [];
 
     /// <summary>Whether enrolling was attempted on this request.</summary>
     public bool Attempted { get; private set; }
@@ -110,7 +113,7 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
     /// Slow on purpose to report: each agent is started and waited for in turn, up to a time limit, because a node
     /// reporting that it launched something says nothing about whether the agent attached and registered.
     /// </remarks>
-    public async Task<IActionResult> OnPostApplyAsync()
+    public IActionResult OnPostApply()
     {
         if (!Prepare())
         {
@@ -148,48 +151,112 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
                 return Page();
             }
 
-            var owns = (Owns ?? string.Empty).Trim();
-
+            // No ownership line: the agent reports what it owns once it has attached, and a person can change it.
             wanted =
             [
                 new EnrollmentEntry(
-                    Path.GetFullPath(Workspace!.Trim()), Role!, owns.Length == 0 ? null : owns, Unattended: true)
+                    Path.GetFullPath(Workspace!.Trim()), Role!, null, Unattended: true)
                 {
                     Enroll = true,
                 }
             ];
         }
 
-        var said = new StringWriter();
-        var complained = new StringWriter();
-        var outcome = new EnrolmentOutcome();
         var manifest = directory.ManifestPath;
+        var project = Found;
 
-        var code = await EnrollCommand.EnrolAsync(
-            wanted,
-            describe: false,
-            ProjectResolution.NodeConfig(null, Environment.GetEnvironmentVariable, manifest),
-            said,
-            complained,
-            Found,
-            manifest,
-            HttpContext.RequestAborted,
-            outcome).ConfigureAwait(false);
+        // Begun here and finished beyond this request: each agent is started and waited for in turn, and a page that said
+        // nothing until the end left a browser's tab spinner as the only sign anything was happening.
+        var id = runs.Start(
+            wanted.Select(entry => entry.Agent),
+            async outcome =>
+            {
+                var said = new StringWriter();
+                var complained = new StringWriter();
 
-        Attempted = true;
-        Outcome = outcome;
+                var code = await EnrollCommand.EnrolAsync(
+                    wanted,
+                    describe: false,
+                    ProjectResolution.NodeConfig(null, Environment.GetEnvironmentVariable, manifest),
+                    said,
+                    complained,
+                    project,
+                    manifest,
+                    CancellationToken.None,
+                    outcome).ConfigureAwait(false);
 
-        var lines = complained.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .Where(line => line.Length > 0)
-            .ToList();
+                var lines = complained.ToString().Split((char)10, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToList();
 
-        if (code != 0 || outcome.EnrolledAgents.Count == 0)
+                if (code != 0 || outcome.EnrolledAgents.Count == 0)
+                {
+                    lines.Add("Nothing was enrolled.");
+                }
+
+                return lines;
+            });
+
+        // A redirect, so reloading the page asks about the run again rather than enrolling a second time.
+        return RedirectToPage(new { handler = "Running", run = id, project = Found!.Name.Value });
+    }
+
+    /// <summary>The page an enrolment is watched from while it runs.</summary>
+    /// <param name="run">The run.</param>
+    /// <returns>The page listing what each repository is doing, or back to the agents when there is no such run.</returns>
+    public IActionResult OnGetRunning(string? run)
+    {
+        if (!Prepare() || runs.Progress(run) is not { } progress)
         {
-            lines.Add("Nothing was enrolled.");
+            return RedirectToPage("/Index", new { tab = "agents" });
         }
 
-        Said = lines;
+        RunId = run;
+        Working = [.. progress.Activity.Select(pair => pair.Key)];
+
+        return Page();
+    }
+
+    /// <summary>What a run has said so far, for the page to show while it waits.</summary>
+    /// <param name="run">The run.</param>
+    /// <returns>Whether it is over, and what each repository is doing.</returns>
+    public IActionResult OnGetProgress(string? run)
+    {
+        if (runs.Progress(run) is not { } progress)
+        {
+            return NotFound();
+        }
+
+        return new JsonResult(new
+        {
+            done = progress.Done,
+            activity = progress.Activity.Select(pair => new { role = pair.Key, says = pair.Value }),
+        });
+    }
+
+    /// <summary>What a finished run came to.</summary>
+    /// <param name="run">The run.</param>
+    /// <returns>The page saying what happened, or back to the agents when there is no such run.</returns>
+    public IActionResult OnGetResult(string? run)
+    {
+        if (!Prepare() || runs.Finished(run) is not { } finished)
+        {
+            return RedirectToPage("/Index", new { tab = "agents" });
+        }
+
+        // Everything came up and nothing needs saying: the agents are what the person wants to see, so go there. The
+        // page stays for the other case, where something did not register and a person has to know which and why.
+        if (finished.Said.Count == 0
+            && finished.Outcome.Unregistered.Count == 0
+            && finished.Outcome.RegisteredAgents.Count > 0)
+        {
+            return RedirectToPage("/Index", new { tab = "agents", project = Found!.Name.Value });
+        }
+
+        Attempted = true;
+        Outcome = finished.Outcome;
+        Said = finished.Said;
 
         return Page();
     }
@@ -245,11 +312,6 @@ public sealed class EnrolModel(BrokerDirectory directory) : PageModel
         if (!EnrollmentPlan.IsWellFormedName(Role))
         {
             problems.Add("The role must be lowercase letters, digits and hyphens, starting with a letter.");
-        }
-
-        if (!OwnershipStatement.IsValid((Owns ?? string.Empty).Trim(), out var error))
-        {
-            problems.Add(error ?? "The ownership line cannot be used.");
         }
 
         return problems;

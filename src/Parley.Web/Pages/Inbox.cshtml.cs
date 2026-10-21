@@ -54,6 +54,9 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
     /// </remarks>
     public (int Waiting, bool Certain) Away { get; private set; }
 
+    /// <summary>The projects whose mail this page could not deliver, each with why, so the count in the frame is explained.</summary>
+    public IReadOnlyList<string> NotDelivered { get; private set; } = [];
+
     /// <summary>What became of sending, or of clearing.</summary>
     public string? Outcome { get; private set; }
 
@@ -225,6 +228,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
     {
         var pending = new List<Pending>();
         var token = HttpContext.RequestAborted;
+        var unseated = new List<string>();
 
         foreach (var hold in seats.Seats())
         {
@@ -292,6 +296,17 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
                 .ReadAsync(async () => await OwedAsync(project, PersonSeat.On(project.Name), token).ConfigureAwait(false))
                 .ConfigureAwait(false);
 
+            // Said when the seat cannot be taken: mail waits against the name, so a project whose registry cannot be
+            // read holds messages this page can neither deliver nor list, and the count in the frame would otherwise
+            // disagree with the rows with no word as to why.
+            var outcome = await PersonSeats.EnsureAsync(seats, directory, project, token).ConfigureAwait(false);
+            var cannotSeat = outcome.Seated ? null : $"Its messages cannot be delivered here: {outcome.Problem ?? "the person's seat could not be taken."}";
+
+            if (cannotSeat is not null)
+            {
+                unseated.Add($"{project.Name.Value}: {cannotSeat}");
+            }
+
             if (read.Problem is null && read.Value is { Count: > 0 } owedHere)
             {
                 pending.Add(new Pending(project.Name.Value, 0, null, owedHere));
@@ -299,6 +314,7 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
         }
 
         Projects = pending;
+        NotDelivered = unseated;
 
         if (pending.Count == 0)
         {

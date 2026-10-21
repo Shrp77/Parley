@@ -135,6 +135,66 @@ public sealed class EnrolmentNextStepsTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task The_catalogue_can_be_read_by_the_node_while_enrolment_waits_for_it()
+    {
+        // **The node cannot start what it cannot read.** Enrolment writes the catalogue and then waits for the node to
+        // announce the role, and the node learns it by reading that file on a poll. A run still holding the file when it
+        // starts waiting leaves the node reading "used by another process", keeping the roles it had, and every start
+        // timing out: "written, but this machine's node did not start it", for every agent. Must fail against a run
+        // that keeps its exclusive handle until it returns.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        string? readable = null;
+
+        // A machine that already has a catalogue, which is the only case that holds one: a run that finds none creates it.
+        await File.WriteAllTextAsync(Catalogue, "{\"agents\":{}}", TestContext.Current.CancellationToken);
+
+        var chosen = new EnrollmentEntry(
+            Workspace.Replace(Path.DirectorySeparatorChar, '/'), "orders", string.Empty, true)
+        {
+            Enroll = true,
+        };
+
+        var outcome = new EnrolmentOutcome((_, activity) =>
+        {
+            if (activity != Registering.WaitingForNode || readable is not null)
+            {
+                return;
+            }
+
+            try
+            {
+                using var read = new FileStream(Catalogue, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                readable = "yes";
+            }
+            catch (IOException failure)
+            {
+                readable = failure.Message;
+            }
+
+            stop.Cancel();
+        });
+
+        try
+        {
+            _ = await EnrollCommand.EnrolAsync(
+                [chosen],
+                describe: false,
+                new Resolved(Catalogue, ValueSource.Argument),
+                new StringWriter(),
+                new StringWriter(),
+                _alpha.Settings,
+                ManifestPath,
+                stop.Token,
+                outcome);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        Assert.Equal("yes", readable);
+    }
+
+    [Fact]
     public async Task A_named_project_whose_entry_names_this_catalogue_needs_only_the_entry()
     {
         var said = await ApplyAsync(Catalogue, unattended: true, _alpha.Settings);

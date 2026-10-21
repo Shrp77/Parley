@@ -1,5 +1,6 @@
 @page
 @model Parley.Web.Pages.IndexModel
+@using Parley.Core
 @using Parley.Web.Pages.Shared
 @{
     ViewData["Refresh"] = "30";
@@ -40,19 +41,22 @@
                     <input type="hidden" name="project" value="@here.Name.Value" />
                     <div class="field wide">
                         <label for="register-workspace">Repository directory on this machine</label>
-                        <input id="register-workspace" name="workspace" required autocomplete="off" spellcheck="false" placeholder="C:\src\shipping" />
+                        <div class="browse-row">
+                            <input id="register-workspace" name="workspace" required autocomplete="off" spellcheck="false" placeholder="C:\src\shipping" />
+                            <button type="button" class="quiet browse-button" data-browse="register-workspace" aria-label="Browse for a folder" title="Browse for a folder">
+                                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="field">
                         <label for="register-role">Role peers address it by</label>
-                        <input id="register-role" name="role" required autocomplete="off" spellcheck="false" placeholder="shipping" />
+                        <input id="register-role" name="role" required maxlength="@ProjectName.MaxLength" pattern="[a-z][a-z0-9\-]*"
+                               data-correct="@NameCorrection.Allowed" data-lower
+                               autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="shipping" />
                     </div>
-                    <div class="field wide">
-                        <label for="register-owns">What it owns, and does not (optional)</label>
-                        <input id="register-owns" name="owns" autocomplete="off" />
-                    </div>
-                    <button type="submit">Review</button>
+                    <button type="submit">Continue</button>
                     <p class="composer-note">
-                        You see what will be written first. Nothing is written until you confirm.
+                        The next page lists the files that will be written into the repository. Nothing is written until you confirm there.
                         <a href="/Projects/Register?project=@here.Name.Value">Do it by hand</a>
                     </p>
                 </form>
@@ -60,10 +64,98 @@
                     <input type="hidden" name="project" value="@here.Name.Value" />
                     <div class="field wide">
                         <label for="register-folder">Or a folder holding several repositories</label>
-                        <input id="register-folder" name="folder" required autocomplete="off" spellcheck="false" placeholder="C:\src" />
+                        <div class="browse-row">
+                            <input id="register-folder" name="folder" required autocomplete="off" spellcheck="false" placeholder="C:\src" />
+                            <button type="button" class="quiet browse-button" data-browse="register-folder" aria-label="Browse for a folder" title="Browse for a folder">
+                                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2Z"/></svg>
+                            </button>
+                        </div>
                     </div>
                     <button type="submit">Find repositories</button>
                 </form>
+                @* Lists folders on the machine the console runs on, one level at a time, and fills in the path of whichever
+                   field asked. With no script the fields still take a typed path. *@
+                <div id="folder-browser" class="folder-browser" hidden>
+                    <div class="folder-bar">
+                        <button type="button" class="quiet" id="folder-up">Up</button>
+                        <code id="folder-path"></code>
+                    </div>
+                    <p class="composer-note" id="folder-error" hidden></p>
+                    <ul id="folder-list"></ul>
+                    <div class="folder-bar">
+                        <button type="button" id="folder-use">Use this folder</button>
+                        <button type="button" class="quiet" id="folder-close">Cancel</button>
+                    </div>
+                </div>
+            <style>
+                .browse-row { display: flex; gap: 0.5rem; align-items: center; }
+                .browse-row input { flex: 1 1 auto; }
+                .browse-button { display: inline-grid; place-items: center; flex: none; align-self: stretch; width: 2.6rem; padding: 0; border-radius: 999px; }
+                .folder-browser { padding: 0.1rem 1.1rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+                .folder-browser[hidden] { display: none; }
+                .folder-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+                #folder-list { list-style: none; margin: 0; padding: 0; max-height: 14rem; overflow-y: auto; }
+                #folder-list li button { width: 100%; text-align: left; background: none; border: 0; padding: 0.3rem 0.5rem; cursor: pointer; color: inherit; }
+                #folder-list li button:hover { background: var(--accent); color: var(--on-accent); }
+            </style>
+            <script>
+                (function () {
+                    var panel = document.getElementById('folder-browser');
+                    if (!panel) { return; }
+                    var list = document.getElementById('folder-list');
+                    var pathBox = document.getElementById('folder-path');
+                    var errorBox = document.getElementById('folder-error');
+                    var up = document.getElementById('folder-up');
+                    var use = document.getElementById('folder-use');
+                    var target = null, here = '', above = null;
+
+                    function show(path) {
+                        fetch(location.pathname + '?handler=Folders&path=' + encodeURIComponent(path))
+                            .then(function (r) { return r.json(); })
+                            .then(function (d) {
+                                here = d.path; above = d.parent;
+                                pathBox.textContent = d.path || 'This computer';
+                                up.disabled = !d.path;
+                                use.disabled = !d.path;
+                                errorBox.hidden = !d.error;
+                                errorBox.textContent = d.error || '';
+                                list.textContent = '';
+                                d.folders.forEach(function (f) {
+                                    var li = document.createElement('li');
+                                    var b = document.createElement('button');
+                                    b.type = 'button';
+                                    b.textContent = f.name + (f.repo ? '  (repository)' : '');
+                                    b.addEventListener('click', function () { show(f.full); });
+                                    li.appendChild(b);
+                                    list.appendChild(li);
+                                });
+                            });
+                    }
+
+                    document.querySelectorAll('[data-browse]').forEach(function (button) {
+                        button.addEventListener('click', function () {
+                            target = document.getElementById(button.getAttribute('data-browse'));
+                            panel.hidden = false;
+                            show(target.value.trim());
+                        });
+                    });
+                    up.addEventListener('click', function () { show(above || ''); });
+                    use.addEventListener('click', function () {
+                        target.value = here;
+                        if (target.id === 'register-workspace') {
+                            var role = document.getElementById('register-role');
+                            var name = here.split(/[\\/]/).filter(Boolean).pop() || '';
+                            if (role && !role.value) {
+                                // The frame's correction turns the folder's name into a role as it would a typed one.
+                                role.value = name;
+                                role.dispatchEvent(new Event('input'));
+                            }
+                        }
+                        panel.hidden = true;
+                    });
+                    document.getElementById('folder-close').addEventListener('click', function () { panel.hidden = true; });
+                })();
+            </script>
             </details>
         }
 
@@ -144,14 +236,20 @@
             <form method="post" asp-page-handler="Create">
                 <div class="field wide">
                     <label for="new-project">Name</label>
-                    <input id="new-project" name="NewProject" required maxlength="64" autocomplete="off" spellcheck="false" />
+                    <input id="new-project" name="NewProject" required maxlength="@ProjectName.MaxLength"
+                           pattern="[a-z][a-z0-9\-]*"
+                           title="Lower-case letters, digits and hyphens, starting with a letter, at most @ProjectName.MaxLength characters."
+                           data-correct="@NameCorrection.Allowed" data-lower
+                           autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="new-project-note" />
                 </div>
                 <div class="field wide">
                     <label for="new-description">Description (optional)</label>
                     <input id="new-description" name="NewDescription" autocomplete="off" />
                 </div>
                 <button type="submit">Create</button>
-                <p class="composer-note">
+                <p class="composer-note" id="new-project-note">
+                    A name is lower-case letters, digits and hyphens, starting with a letter.
+                    <span id="new-project-corrected" role="status" hidden>@NameCorrection.WasCorrected.</span>
                     Removing or renaming a project is done in the terminal.
                 </p>
             </form>

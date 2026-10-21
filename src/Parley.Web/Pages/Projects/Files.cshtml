@@ -7,7 +7,7 @@
 
 <h1>Files in @Model.Project</h1>
 
-<nav aria-label="This project">
+<nav class="page-links" aria-label="This project">
     <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
     @if (!string.IsNullOrWhiteSpace(Model.Conversation))
     {
@@ -52,7 +52,7 @@
         }
         <input type="hidden" name="confirmed" value="yes" />
 
-        <button type="submit">Remove them</button>
+        <button type="submit" class="danger">Remove them</button>
         <a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Conversation">Keep them</a>
     </form>
 }
@@ -70,7 +70,7 @@ else if (Model.ConfirmingPrune && Model.Listing is { } pruning)
         <label for="typed">Type the project's name to confirm:</label>
         <input id="typed" name="typed" autocomplete="off" />
 
-        <button type="submit">Remove every file</button>
+        <button type="submit" class="danger">Remove every file</button>
         <a href="/Projects/Files?project=@Model.Project">Keep them</a>
     </form>
 }
@@ -80,12 +80,12 @@ else if (Model.Listing is { } listing)
         <input type="hidden" name="project" value="@Model.Project" />
         <label for="conversation">Only the files of conversation</label>
         <input id="conversation" name="conversation" value="@Model.Conversation" autocomplete="off" />
-        <button type="submit">Show</button>
+        <button type="submit" class="quiet">Show</button>
     </form>
 
     @if (listing.Page.TotalFiles == 0)
     {
-        <p>The file location is empty.</p>
+        <p>No files have been placed in this project yet. Agents place files here to hand them to each other.</p>
     }
     else
     {
@@ -128,7 +128,7 @@ else if (Model.Listing is { } listing)
                 </tbody>
             </table>
 
-            <button type="submit">Remove the chosen files…</button>
+            <button type="submit" class="danger">Remove the chosen files…</button>
         </form>
 
         <p>@listing.Page.TotalFiles file(s), @FilesModel.Size(listing.Page.TotalBytes) in all. @Parley.Client.Rendering.LocalTime.Note()</p>
@@ -168,11 +168,11 @@ else if (Model.Listing is { } listing)
     <form method="post" asp-page-handler="Folder">
         <input type="hidden" name="project" value="@Model.Project" />
         <input type="hidden" name="conversation" value="@Model.Conversation" />
-        <button type="submit">Open the folder</button>
+        <button type="submit" class="quiet">Open the folder</button>
     </form>
 
     <form method="post" asp-page-handler="Prune">
         <input type="hidden" name="project" value="@Model.Project" />
-        <button type="submit">Remove every file…</button>
+        <button type="submit" class="danger">Remove every file…</button>
     </form>
 }

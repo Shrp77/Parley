@@ -76,12 +76,13 @@ else
 
     <ol class="transcript">
         @{ var day = default(DateOnly?); }
-        @foreach (var message in Model.Messages)
+        @foreach (var turn in Model.Turns())
         {
+            var message = turn[0];
             var said = Payload.Read(message.PayloadJson);
             var on = DateOnly.FromDateTime(
                 TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
-            var ghost = Model.ClosedUnfinished(message);
+            var ghost = turn.All(Model.ClosedUnfinished);
 
             @* A date only where the date changes, the way a messenger marks a new day. The
                times come from the machines the agents run on, so this follows the record rather
@@ -93,7 +94,7 @@ else
                 <li class="day">@TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).ToString("dddd, d MMMM yyyy")</li>
             }
 
-            <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@message.To.Value"
+            <li id="@($"m{message.Id}")" data-agent="@message.From.Value" data-to="@string.Join(' ', turn.Select(m => m.To.Value))"
                 class="turn slot-@Palette.SlotFor(message.From)@(ghost ? " ghosted" : null)">
                 <div class="who" aria-hidden="true">@Palette.BadgeFor(message.From)</div>
 
@@ -101,7 +102,8 @@ else
                     <p class="attribution">
                         <strong>@Speaker.From(message)</strong>
                         <span class="arrow">to</span>
-                        <strong>@Speaker.To(message)</strong>
+                        @* One send to several agents is one message, so every recipient is named here. *@
+                        <strong>@string.Join(", ", turn.Select(m => Speaker.To(m)))</strong>
                         @* The reader's own clock. What is stored stays UTC, and the export
                            still says so -- a file read by somebody else, somewhere else, needs the
                            Z that a screen does not. *@
@@ -119,7 +121,7 @@ else
                     {
                         @if (said.Said is { Length: > 0 } body)
                         {
-                            <p class="said">@body</p>
+                            <p class="said">@foreach (var part in Parley.Web.LinkedText.Split(body)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</p>
                         }
 
                         @if (said.Points.Count > 0)
@@ -132,17 +134,23 @@ else
                                         {
                                             <span class="label">@label</span>
                                         }
-                                        <span class="point-text">@point.Text</span>
-                                        @if (point.Outcome is { Length: > 0 } verdict)
+                                        <span class="point-text">@foreach (var part in Parley.Web.LinkedText.Split(point.Text)) {if (part.Link is { } to) {<a href="@to.AbsoluteUri" target="_blank" rel="noopener noreferrer">@part.Text</a>} else {@part.Text}}</span>
+                                        @if (point.Outcome is { Length: > 0 } || point.Sources.Count > 0)
                                         {
-                                            @* The word the receiver chose, shown rather than
-                                               summarised: "blocked" and "done" are different
-                                               outcomes and only one of them is finished. *@
-                                            <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
-                                        }
-                                        @if (point.Sources.Count > 0)
-                                        {
-                                            <span class="verdict">relied on @string.Join(", ", point.Sources)</span>
+                                            @* On a line of their own: beside the text, several chips left it a narrow column. *@
+                                            <span class="chits">
+                                                @if (point.Outcome is { Length: > 0 } verdict)
+                                                {
+                                                    @* The word the receiver chose, shown rather than
+                                                       summarised: "blocked" and "done" are different
+                                                       outcomes and only one of them is finished. *@
+                                                    <span class="verdict">@(point.Blocker is { } blocker ? $"{verdict}: {blocker.Replace('_', ' ')}" : verdict)</span>
+                                                }
+                                                @if (point.Sources.Count > 0)
+                                                {
+                                                    <span class="verdict">relied on @string.Join(", ", point.Sources)</span>
+                                                }
+                                            </span>
                                         }
                                     </li>
                                 }
@@ -156,7 +164,11 @@ else
                             <span class="tag">closed by a person</span>
                         }
                         @message.Type
-                        @if (Model.StateOf(message) is { Length: > 0 } state)
+                        @if (turn.Count > 1)
+                        {
+                            <span> · exchanges @string.Join(", ", turn.Select(m => m.ExchangeId))</span>
+                        }
+                        else if (Model.StateOf(message) is { Length: > 0 } state)
                         {
                             <span> · exchange @message.ExchangeId, @state</span>
                         }
@@ -177,15 +189,6 @@ else
                     }
                 </div>
             </li>
-
-            @if (Model.NotSeenBy(message) is { Length: > 0 } absent)
-            {
-                @* Between the messages rather than inside one, the way a chat marks something the
-                   room should know. In words and never by colour alone: a reader who cannot see
-                   the tint would otherwise lose exactly the fact that stops this transcript
-                   reading as a group chat everybody was in. *@
-                <li class="not-seen"><strong>@absent</strong></li>
-            }
         }
     </ol>
 
@@ -197,11 +200,12 @@ else
 
     <nav class="timeline" aria-label="Jump to a message">
         @{ var railDay = default(DateOnly?); }
-        @foreach (var message in Model.Messages)
+        @foreach (var turn in Model.Turns())
         {
+            var message = turn[0];
             var on = DateOnly.FromDateTime(
                 TimeZoneInfo.ConvertTime(message.CreatedUtc, TimeZoneInfo.Local).DateTime);
-            var closedByPerson = Model.ClosedUnfinished(message);
+            var closedByPerson = turn.All(Model.ClosedUnfinished);
 
             if (railDay != on)
             {
@@ -212,10 +216,10 @@ else
             <a data-agent="@message.From.Value"
                class="tick slot-@Palette.SlotFor(message.From)@(closedByPerson ? " ghosted" : null)"
                href="@($"#m{message.Id}")"
-               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @message.To.Value@(closedByPerson ? " — closed by a person" : null)">
+               title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? " — closed by a person" : null)">
                 <span class="visually-hidden">
                     @message.CreatedUtc.ToString("d MMM HH:mm"),
-                    @message.From.Value to @message.To.Value@(closedByPerson ? ", closed by a person" : null)
+                    @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? ", closed by a person" : null)
                 </span>
             </a>
         }

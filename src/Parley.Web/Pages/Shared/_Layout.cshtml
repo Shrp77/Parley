@@ -52,7 +52,7 @@
             --frame: 3.6rem;
             --ink: #16181d;
             --ink-soft: #5b6270;
-            --ink-faint: #878e9c;
+            --ink-faint: #667085;
             --page: #f7f8fa;
             --card: #ffffff;
             --rule: #e3e6ec;
@@ -75,7 +75,7 @@
             :root {
                 --ink: #e8eaf0;
                 --ink-soft: #a8b0c0;
-                --ink-faint: #7d8598;
+                --ink-faint: #97a0b4;
                 --page: #14161b;
                 --card: #1c1f26;
                 --rule: #2c313b;
@@ -395,7 +395,7 @@
         }
 
         th {
-            font-size: 0.78rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             color: var(--ink-faint);
@@ -804,6 +804,14 @@
             overflow-wrap: anywhere;
         }
 
+        /* The chips sit on a line below the text, so the text keeps the bubble's full width however many there are. */
+        ol.points .chits {
+            flex: 0 0 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
         /* The receiver's own word for the outcome. "blocked" and "done" are different
            results and only one of them is finished. */
         ol.points .verdict {
@@ -839,26 +847,6 @@
             font-size: 0.75rem;
             color: var(--ink-faint);
         }
-
-        /* The line that stops this being a group chat. Centred and quiet, the way a messenger
-           marks something about the conversation rather than something said in it -- and it is
-           a sentence naming the agents, so the styling is the last thing carrying it, never the
-           only one. */
-        li.not-seen {
-            align-self: center;
-            max-width: 40rem;
-            margin: 0.15rem 0;
-            padding: 0.4rem 0.85rem;
-            background: var(--quiet-wash);
-            border: 1px dashed var(--rule);
-            border-radius: 999px;
-            font-size: 0.78rem;
-            line-height: 1.45;
-            color: var(--ink-soft);
-            text-align: center;
-        }
-
-        li.not-seen strong { font-weight: 500; color: var(--ink-soft); }
 
         /* Eight slots, assigned from a hash of the agent's name so it never moves. Decoration:
            every fact these tint is also written in words beside them. */
@@ -976,6 +964,14 @@
         .act-cards li { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; }
         .act-cards li.costly { background: var(--alarm-wash); }
         .act-cards .act-title { font-weight: 650; }
+        .act-cards li.idle { color: var(--ink-soft); }
+
+        /* The links a project page opens with, laid out as a row rather than a run of words. */
+        nav.page-links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0 0 1.25rem; font-size: 0.9rem; }
+
+        /* A button that destroys something: outlined in the alarm colour, so it is not the loudest thing on the page. */
+        button.danger { color: var(--alarm); background: none; border: 1px solid var(--alarm); }
+        button.danger:hover { background: var(--alarm-wash); }
         .act-cards p { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
 
         /* The data-grid views (Projects, Agents, Inbox): a title, then Create, Filters and the grid as one stack that fills
@@ -1037,7 +1033,7 @@
         .dgrid { flex: 1 1 auto; min-height: 0; overflow: auto; border-radius: 20px; }
         .dgrid-inner { min-width: var(--min, 40rem); }
         .dgrid-head, .dgrid-line { display: grid; grid-template-columns: var(--cols); gap: 0.8rem; align-items: baseline; padding: 0.6rem 1.1rem; }
-        .dgrid-head { position: sticky; top: 0; z-index: 2; background: var(--quiet-wash); border-bottom: 1px solid var(--rule); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+        .dgrid-head { position: sticky; top: 0; z-index: 2; background: var(--quiet-wash); border-bottom: 1px solid var(--rule); font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
         .dgrid-row + .dgrid-row { border-top: 1px solid var(--rule); }
         .dgrid-line > * { min-width: 0; overflow-wrap: anywhere; }
         details.dgrid-row > summary { list-style: none; cursor: pointer; }
@@ -1046,7 +1042,7 @@
         .dgrid-detail { padding: 0.4rem 1.1rem 1rem; border-top: 1px solid var(--rule); }
         .dgrid-detail .letter { margin-top: 0; }
         .dgrid-detail .facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.3rem 1rem; margin: 0.6rem 0 0; }
-        .dgrid-detail .facts dt { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); padding-top: 0.15rem; }
+        .dgrid-detail .facts dt { font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); padding-top: 0.15rem; }
         .dgrid-detail .facts dd { margin: 0; overflow-wrap: anywhere; }
         .dgrid-detail .note { margin: 0.6rem 0 0; }
         .dgrid .status-cell .alarm + .alarm, .dgrid .status-cell span + .alarm { margin-left: 0.5rem; }
@@ -1208,7 +1204,7 @@
 
         .kin-note:empty { display: none; }
 
-        header .build { margin-left: 0.8rem; font-size: 0.72rem; color: var(--ink-faint); white-space: nowrap; }
+        header .build { margin-left: 0.8rem; font-size: 0.8rem; color: var(--ink-faint); white-space: nowrap; }
 
         /* Find within a conversation. */
         .find {
@@ -1275,7 +1271,7 @@
 
         .composer-note {
             margin: 0 0 0.6rem;
-            font-size: 0.78rem;
+            font-size: 0.85rem;
             line-height: 1.45;
             color: var(--ink-soft);
         }
@@ -1601,7 +1597,7 @@
                 .Where(pair => pair.Key != PersonSeats.Reloaded)
                 .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)))
                 .Append(new KeyValuePair<string, string?>(PersonSeats.Reloaded, "1")));
-        @* The reload waits while a dialog is open: it would close the dialog under whoever is typing in it. Without script
+        @* The reload waits while a dialog or an opened "create" card is open: it would close either under whoever is typing in it. Without script
            the page reloads on the timer as before. *@
         var target = $"{Context.Request.Path}{query}";
         <noscript><meta http-equiv="refresh" content="@($"{seconds};url={target}")" /></noscript>
@@ -1612,7 +1608,7 @@
                 var every = Number(m.content) * 1000;
                 (function tick() {
                     setTimeout(function () {
-                        if (document.querySelector("dialog[open]")) { tick(); } else { location.replace(m.getAttribute("data-url")); }
+                        if (document.querySelector("dialog[open], details.view-create[open]")) { tick(); } else { location.replace(m.getAttribute("data-url")); }
                     }, every);
                 })();
             })();

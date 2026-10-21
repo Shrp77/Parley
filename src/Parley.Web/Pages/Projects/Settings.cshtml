@@ -37,7 +37,7 @@
     }
     else if (Model.Agents.Count == 0)
     {
-        <p>No agents are registered yet. <a href="#agent-acts-heading">Register one below.</a></p>
+        <p>No agents are registered yet. <a href="/?tab=agents&amp;project=@Model.Project">Register one.</a></p>
     }
     else
     {
@@ -89,21 +89,33 @@
        because each describes what it does, or what it costs, before anything is sent. *@
     <ul class="act-cards">
         <li>
-            <a class="act-title" href="/Projects/Register?project=@Model.Project">Register an agent</a>
+            <a class="act-title" href="/?tab=agents&amp;project=@Model.Project">Register an agent</a>
+            <p>Make a repository on this machine an agent of this project.</p>
         </li>
         <li>
             <a class="act-title" href="/Projects/Ownership?project=@Model.Project">Review ownership</a>
+            <p>Read what each agent says it owns, and accept or change it.</p>
         </li>
-        <li class="costly">
-            <a class="act-title" href="/Projects/Act?project=@Model.Project&amp;action=askeveryownership&amp;subject=@Model.Project">Ask every agent again what it owns</a>
-            <p>
-                Sends every agent the ownership question again.
-                <strong>
-                    Costs one turn per agent@(Model.Problem is { Length: > 0 } ? " (the count is unknown just now)" : $" ({Model.Agents.Count} now)").
-                    That cannot be undone.
-                </strong>
-            </p>
-        </li>
+        @if (Model.Problem is not { Length: > 0 } && Model.Agents.Count == 0)
+        {
+            <li class="idle">
+                <span class="act-title">Ask every agent again what it owns</span>
+                <p>There are no agents to ask yet.</p>
+            </li>
+        }
+        else
+        {
+            <li class="costly">
+                <a class="act-title" href="/Projects/Act?project=@Model.Project&amp;action=askeveryownership&amp;subject=@Model.Project">Ask every agent again what it owns</a>
+                <p>
+                    Sends every agent the ownership question again.
+                    <strong>
+                        Costs one turn per agent@(Model.Problem is { Length: > 0 } ? " (the count is unknown just now)" : $" ({Model.Agents.Count} now)").
+                        That cannot be undone.
+                    </strong>
+                </p>
+            </li>
+        }
     </ul>
 </section>
 
