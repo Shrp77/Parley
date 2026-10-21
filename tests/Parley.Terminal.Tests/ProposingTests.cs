@@ -168,8 +168,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
 
         // By the key written on the button, which is the way the view says to choose.
-        driving.Press(Key.C.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
         var roadmap = Assert.Single(await Client.RoadmapsAsync(Ct));
         Assert.Equal("Billing export", roadmap.Title);
@@ -318,8 +317,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // The proposals are a pane of the project, and Enter on one opens it.
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.C.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
         // Shown with the match, and nothing is decided for the person (spec FR-009b).
         var choosing = (ChoiceDialog)driving.Find(Proposing.Title);
@@ -595,8 +593,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         driving.Enter();
         await shell.Settled;
-        driving.Press(Key.C.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
         Assert.Empty(shell.Roadmaps.Proposals);
         Assert.DoesNotContain(shell.Roadmaps, shell.Panes);

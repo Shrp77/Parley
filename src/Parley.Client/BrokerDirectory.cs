@@ -84,7 +84,11 @@ public sealed class BrokerDirectory : IDisposable
         _connect = connect;
         _manifestPath = manifestPath;
         _fallback = fallback;
-        _snapshot = ReadManifest(manifestPath, fallback, StampOf(manifestPath));
+        // Kept without its stamp when the read left something out, as every later read is (see Current): a repair
+        // written within the same timestamp tick would otherwise never be read.
+        var first = ReadManifest(manifestPath, fallback, StampOf(manifestPath));
+
+        _snapshot = first.Problem is null ? first : first with { Stamp = string.Empty };
     }
 
     /// <summary>The root this directory follows, when it follows one.</summary>

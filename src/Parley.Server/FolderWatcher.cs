@@ -271,6 +271,15 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _renamedFrom.TryRemove(path, out var renamedFrom);
         _renamedTo.TryRemove(path, out var renamedTo);
 
+        // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
+        // handled, so whatever was written into it before then raised no event at all. The location is looked at
+        // whole instead, after the quiet period, which finds it.
+        if (Directory.Exists(path))
+        {
+            await ScanAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (!Split(path, out var folder, out var fileName))
         {
             return;
