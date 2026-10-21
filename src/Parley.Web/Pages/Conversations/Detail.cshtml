@@ -323,8 +323,9 @@ else
             function jump(top) { window.scrollTo({ top: top, left: 0, behavior: "instant" }); }
 
             function tail() {
-                var last = newest();
-                if (last) { jump(window.scrollY + last.getBoundingClientRect().bottom - window.innerHeight); }
+                // All the way down, not to the end of the newest message: the composer is pinned over the bottom of the
+                // window, so stopping at the message leaves the entry box out of view.
+                jump(document.documentElement.scrollHeight);
             }
 
             function anchor() {
@@ -364,8 +365,7 @@ else
             }
 
             function farther() {
-                var last = newest();
-                return !!last && last.getBoundingClientRect().bottom - window.innerHeight > window.innerHeight * 0.3;
+                return document.documentElement.scrollHeight - window.scrollY - window.innerHeight > window.innerHeight * 0.3;
             }
 
             function apply(fresh) {
