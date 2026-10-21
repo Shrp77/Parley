@@ -111,6 +111,13 @@ public sealed class ProbeOneTests : IDisposable
 
                 return true;
             }
+            catch (InterruptedEnrolment interrupted)
+            {
+                // Stopped part-way and said which files it had already changed: an entry it wrote is in the file, and it
+                // said so, which is the honest report the probe is after. Seen on macOS, where a later write failed.
+                return interrupted.Written.Any(path => string.Equals(
+                    Path.GetFullPath(path), Path.GetFullPath(LaunchFile), StringComparison.OrdinalIgnoreCase));
+            }
             catch (Exception ex) when (ex is IOException or InvalidDataException)
             {
                 return false;

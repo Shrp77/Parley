@@ -99,10 +99,10 @@ public static class ProjectFolder
     /// <para>
     /// <b>The accepted limit.</b> Windows updates a write time on
     /// the system timer tick rather than per write, so two edits to one project inside about fifteen
-    /// milliseconds share a timestamp and the second is missed until something else touches the file.
-    /// Reaching it needs two runs of <c>parley project</c> inside one tick, each its own process launch,
-    /// against the same project. Written down rather than closed, because closing it means hashing every
-    /// file — which is the read this exists to avoid.
+    /// milliseconds share a timestamp. The file's length is in the stamp as well, at no cost, so such an
+    /// edit is missed only when it also leaves the length unchanged, until something else touches the file.
+    /// Written down rather than closed, because closing it means hashing every file — which is the read this
+    /// exists to avoid.
     /// </para>
     /// <para>
     /// A root that cannot be listed stamps as empty, which is the same as having no projects. That is the
@@ -128,7 +128,8 @@ public static class ProjectFolder
                     .Select(folder => Path.Combine(folder, ConfigurationFileName))
                     .Where(File.Exists)
                     .Order(StringComparer.Ordinal)
-                    .Select(file => $"{file}|{File.GetLastWriteTimeUtc(file).Ticks}"));
+                    .Select(file => new FileInfo(file))
+                    .Select(info => $"{info.FullName}|{info.LastWriteTimeUtc.Ticks}|{info.Length}"));
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
