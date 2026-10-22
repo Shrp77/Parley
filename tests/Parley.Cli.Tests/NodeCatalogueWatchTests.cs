@@ -19,7 +19,7 @@ namespace Parley.Cli.Tests;
 /// <para>
 /// It matters most to the surface: adding an agent from the terminal writes a catalogue entry,
 /// and without this the promise that it becomes startable would be false until somebody restarted
-/// a process by hand. SC-003 rests on the behaviour checked here.
+/// a process by hand.
 /// </para>
 /// </remarks>
 public sealed class NodeCatalogueWatchTests : IDisposable
@@ -41,7 +41,9 @@ public sealed class NodeCatalogueWatchTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private string CataloguePath => Path.Combine(_directory, "node.json");
 
@@ -182,17 +184,16 @@ public sealed class NodeCatalogueWatchTests : IDisposable
     }
 
     private Process Serve() =>
-        ToolProcess.Launch([(ProjectManifest.PathVariable, ManifestPath)], "serve", "--with-node");
+        ToolProcess.Launch([(ProjectManifest.PathVariable, Root)], "serve", "--with-node");
 
     private void WriteManifest() =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("acme"),
                     Path.Combine(_directory, "acme.db"),
                     $"http://127.0.0.1:{FreePort()}",
-                    CataloguePath,
                     null),
             ]);
 
@@ -214,7 +215,7 @@ public sealed class NodeCatalogueWatchTests : IDisposable
 
     /// <summary>Which agent each role belongs to, fixed for the length of one test.</summary>
     /// <remarks>
-    /// **A role keeps its identity across rewrites, because a checkout does** (018). The catalogue is
+    /// **A role keeps its identity across rewrites, because a checkout does**. The catalogue is
     /// keyed by the identity and the name comes back out of the checkout, so minting a new one per write
     /// would make every rewrite look like a different agent arriving — which is the opposite of what
     /// these tests are about, and would make the "same roles, no rejoin" case rejoin every time.

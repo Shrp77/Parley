@@ -7,11 +7,8 @@ namespace Parley.Client.Rendering;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The transcript did not say, and it is the first thing anybody asks of it.</b> The owner told
-/// nineteen agents one thing, read the result, and asked why the agents had not seen it — a
-/// question the screen could not answer either way, because the only thing on it about visibility
-/// was <see cref="Visibility"/>'s note about the <em>other</em> participants. Two different facts
-/// were being read as one.
+/// <b>Whether a message was collected is the first thing anybody asks of a transcript.</b>
+/// <see cref="Visibility"/>'s note is about the <em>other</em> participants, a different fact.
 /// </para>
 /// <para>
 /// <b>They are genuinely different.</b> §5.0 makes a conversation a set of pairwise exchanges, so
@@ -39,8 +36,7 @@ public static class Delivery
     /// <exception cref="ArgumentNullException"><paramref name="message"/> is null.</exception>
     /// <remarks>
     /// In the header rather than on a line of its own: it is one fact about the message, it is
-    /// short, and a transcript that grew a second annotation line per message would be mostly
-    /// annotation — which is the defect this was written alongside fixing.
+    /// short, and a transcript with a second annotation line per message would be mostly annotation.
     /// </remarks>
     public static string Of(Message message, TimeZoneInfo? zone = null)
     {

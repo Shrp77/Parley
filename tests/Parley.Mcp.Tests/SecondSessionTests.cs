@@ -7,7 +7,7 @@ namespace Parley.Mcp.Tests;
 /// Two sessions for one agent, and a project whose database directory does not exist yet.
 /// </summary>
 /// <remarks>
-/// Both were found by probing rather than by reading, and both are ordinary rather than
+/// Both cases are ordinary rather than
 /// exotic — a second editor window on a repository somebody is already working in, and the
 /// first run of any project at all.
 /// </remarks>
@@ -89,8 +89,7 @@ public sealed class SecondSessionTests
     [Fact]
     public async Task A_session_that_stopped_is_handed_its_work_again_when_it_returns()
     {
-        // 0.4 released an exchange like this when the agent came back, and the requester was told
-        // nobody had answered. Nothing times out now (§5.3): the work was collected by a session
+        // An exchange like this is not released when the agent comes back. Nothing times out (§5.3): the work was collected by a session
         // that ended, so the next session is given it again and its Result lands.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
@@ -125,7 +124,8 @@ public sealed class SecondSessionTests
 
         try
         {
-            var runtime = Parley.Server.BrokerRuntime.Open(path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
+            var runtime = Parley.Server.BrokerRuntime.Open(
+                Parley.Core.ProjectName.Create("test"), path, Parley.Broker.BrokerOptions.Default, new StubClock(T0));
 
             await runtime.DisposeAsync();
 

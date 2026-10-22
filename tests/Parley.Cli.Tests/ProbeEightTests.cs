@@ -6,11 +6,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 8: what the gate this gate added does to everybody else.
+/// What the machine-wide gate does to everybody else.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Finding 1.6 introduced a machine-wide gate held on the project manifest — for the length of an
+/// A machine-wide gate is held on the project manifest — for the length of an
 /// <c>enroll apply</c>, which over eighteen repositories is not a moment. **Every other thing on the
 /// machine reads that file**: the terminal, the web UI, the node, and every operator command reads it
 /// at start-up to find out which deployment it is talking to.
@@ -31,8 +31,8 @@ public sealed class ProbeEightTests : IDisposable
         Directory.CreateDirectory(_root);
 
         ProjectManifest.Write(
-            ManifestPath,
-            [new ProjectSettings(ProjectName.Create("alpha"), Store, "http://127.0.0.1:51707", null, null)]);
+            Root,
+            [new ProjectSettings(ProjectName.Create("alpha"), Store, "http://127.0.0.1:51707", null)]);
     }
 
     public void Dispose()
@@ -46,7 +46,9 @@ public sealed class ProbeEightTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string Store => Path.Combine(_root, "alpha.db");
 
@@ -57,11 +59,11 @@ public sealed class ProbeEightTests : IDisposable
         // this file; a bulk enrolment holding it against them would stop the machine for as long as
         // the enrolment ran, and the message they would print is about a file that cannot be read
         // rather than one that is busy.
-        using var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         Assert.NotNull(gate);
 
-        var read = ProjectManifest.TryRead(ManifestPath, out var projects, out var problem);
+        var read = ProjectManifest.TryRead(Root, out var projects, out var problem);
 
         Assert.True(read, $"the manifest could not be read while the gate was held: {problem}");
         Assert.Single(projects);
@@ -73,11 +75,11 @@ public sealed class ProbeEightTests : IDisposable
         // The other half, and the half that must not be traded away to buy the first: the gate exists
         // so that checking whether another project starts a workspace and recording that this one
         // does are one act.
-        using var first = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var first = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         Assert.NotNull(first);
 
-        var second = Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        var second = Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         var settled = await Task.WhenAny(second, Task.Delay(400, TestContext.Current.CancellationToken));
 
@@ -89,15 +91,21 @@ public sealed class ProbeEightTests : IDisposable
     }
 
     [Fact]
-    public async Task A_reader_holding_the_manifest_does_not_stop_the_gate_being_taken()
+    public async Task A_reader_holding_a_projects_configuration_does_not_stop_the_gate_being_taken()
     {
-        // The inverse, and the deadlock that would follow from getting it wrong: a terminal sitting
-        // with the manifest open would otherwise make every enrolment on the machine wait two seconds
-        // and then fail.
+        // The inverse, and the deadlock that would follow from getting it wrong: a terminal sitting with
+        // a project's configuration open would otherwise make every enrolment on the machine wait two
+        // seconds and then fail.
+        //
+        // **Pointed at what a reader actually holds**: a project's configuration. The gate takes a
+        // lock of its own and never the thing anybody reads.
         using var reading = new FileStream(
-            ManifestPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            ProjectFolder.ConfigurationFor(Root, ProjectName.Create("alpha")),
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
 
-        using var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         Assert.NotNull(gate);
     }
@@ -105,12 +113,12 @@ public sealed class ProbeEightTests : IDisposable
     [Fact]
     public async Task The_gate_is_released_even_when_what_it_guards_throws()
     {
-        // A refusal inside the guarded region is the ordinary case — FR-013 refuses there. A gate
+        // A refusal inside the guarded region is the ordinary case. A gate
         // left held by an exception would wedge every enrolment on the machine until the process
         // ended.
         try
         {
-            using var gate = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+            using var gate = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
             throw new InvalidDataException("as FR-013 does");
         }
@@ -118,7 +126,7 @@ public sealed class ProbeEightTests : IDisposable
         {
         }
 
-        using var again = await Catalogues.GateAsync(ManifestPath, TestContext.Current.CancellationToken);
+        using var again = await Catalogues.GateAsync(Root, TestContext.Current.CancellationToken);
 
         Assert.NotNull(again);
     }

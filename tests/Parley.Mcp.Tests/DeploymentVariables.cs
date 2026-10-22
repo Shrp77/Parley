@@ -118,7 +118,6 @@ internal static class DeploymentVariables
     /// <returns>The names `parley serve` reads from its own environment.</returns>
     public static IReadOnlyList<string> Broker() =>
     [
-        DeploymentEnvironment.DatabaseVariable,
         RetentionPolicyEnvironment.IdleVariable,
         RetentionPolicyEnvironment.MaximumAgeVariable,
         "PARLEY_TICK_SECONDS"

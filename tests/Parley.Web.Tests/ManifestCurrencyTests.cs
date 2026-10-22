@@ -33,7 +33,9 @@ public sealed class ManifestCurrencyTests : IDisposable
     public ManifestCurrencyTests()
     {
         Directory.CreateDirectory(_folder);
-        _path = Path.Combine(_folder, "projects.json");
+        // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+        // Parley files in, and a project is a folder under it.
+        _path = _folder;
     }
 
     /// <summary>Writes a manifest the way <c>parley project add</c> writes one.</summary>
@@ -50,9 +52,8 @@ public sealed class ManifestCurrencyTests : IDisposable
             _path,
             [.. names.Select((name, index) => new ProjectSettings(
                 ProjectName.Create(name),
-                Path.Combine(_folder, $"{name}.db"),
+                ProjectFolder.StoreFor(_path, ProjectName.Create(name)),
                 $"http://127.0.0.1:{5301 + index}",
-                null,
                 null))]);
 
     [Fact]
@@ -122,7 +123,7 @@ public sealed class ManifestCurrencyTests : IDisposable
 
         Assert.Null(directory.ManifestProblem);
 
-        File.WriteAllText(_path, "{ \"projects\": \"not a list\" }");
+        Damage("alpha");
 
         Assert.NotNull(directory.ManifestProblem);
         Assert.Empty(directory.Projects);
@@ -134,7 +135,7 @@ public sealed class ManifestCurrencyTests : IDisposable
         // A directory that latched on the failure would need the restart this whole change
         // removes, and would need it at the worst moment -- the operator has just fixed the file
         // and has no way to tell whether the fix worked.
-        File.WriteAllText(_path, "{ \"projects\": \"not a list\" }");
+        Damage("alpha");
 
         using var directory = BrokerDirectory.FromManifest(_path);
 
@@ -144,6 +145,21 @@ public sealed class ManifestCurrencyTests : IDisposable
 
         Assert.Null(directory.ManifestProblem);
         Assert.Single(directory.Projects);
+    }
+
+    /// <summary>Damages one project's configuration, as a half-finished hand edit would.</summary>
+    /// <remarks>
+    /// **Repointed at a project's own file.** It used to overwrite the single manifest; with a directory
+    /// of them the equivalent damage is to one project, and what the reader owes is the same or more —
+    /// it must say so rather than list the projects it can still read as though nothing were wrong.
+    /// </remarks>
+    private void Damage(string name)
+    {
+        Directory.CreateDirectory(ProjectFolder.For(_path, ProjectName.Create(name)));
+
+        File.WriteAllText(
+            ProjectFolder.ConfigurationFor(_path, ProjectName.Create(name)),
+            "{ \"endpoint\": \"not an address\" }");
     }
 
     [Fact]
@@ -172,7 +188,7 @@ public sealed class ManifestCurrencyTests : IDisposable
         var fixedList = new[]
         {
             new ProjectSettings(
-                ProjectName.Create("given"), "given.db", "http://127.0.0.1:5399", null, null)
+                ProjectName.Create("given"), "given.db", "http://127.0.0.1:5399", null)
         };
 
         using var directory = new BrokerDirectory(fixedList, BrokerDirectory.Connect);
@@ -256,15 +272,20 @@ public sealed class ManifestCurrencyTests : IDisposable
 
         try
         {
-            // Deleting is one of the rounds: absent is a distinct branch, and an operator running
-            // `project remove` produces exactly this sequence.
+            // Removing every project is one of the rounds: nothing configured is a distinct branch, and
+            // an operator running `project remove` produces exactly this sequence.
+            //
+            // **`WriteManifest()` rather than deleting a file.** Forgetting a project takes its
+            // configuration and leaves its folder, which is what the writer does and what the reader then
+            // sees — deleting the root would be removing the whole installation, which no command does
+            // and which this is not about.
             for (var round = 0; round < 60; round++)
             {
                 switch (round % 3)
                 {
                     case 0: WriteManifest("alpha", "beta"); break;
                     case 1: WriteManifest("alpha"); break;
-                    default: File.Delete(_path); break;
+                    default: WriteManifest(); break;
                 }
             }
         }

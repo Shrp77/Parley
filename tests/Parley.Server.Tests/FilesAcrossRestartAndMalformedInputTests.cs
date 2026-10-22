@@ -13,8 +13,7 @@ namespace Parley.Server.Tests;
 /// the wire carries nonsense (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
-/// Written as probes by the review gate (runs 1.3, 1.4, 2.3 and 2.4) and kept: each passed when written, and each holds a
-/// property that would otherwise be held only by reading the code.
+/// Each holds a property that would otherwise be held only by reading the code.
 /// </remarks>
 public sealed class FilesAcrossRestartAndMalformedInputTests
 {
@@ -348,7 +347,8 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
 
         public static async Task<Served> StartAsync(string store, CancellationToken cancellationToken)
         {
-            var runtime = BrokerRuntime.Open(store, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
+            var runtime = BrokerRuntime.Open(
+                ProjectName.Create("test"), store, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
 
             return new Served(await ParleyServer.StartAsync(runtime, "http://127.0.0.1:0", cancellationToken));
         }

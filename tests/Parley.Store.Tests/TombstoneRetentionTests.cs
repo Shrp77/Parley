@@ -8,8 +8,8 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 of the review gate, run 2.6. §9.4's retention sweep exists because a log kept forever
-/// grows the blast radius of a leaked database. 006 added a table the sweep has never seen, and the
+/// §9.4's retention sweep exists because a log kept forever
+/// grows the blast radius of a leaked database. The tombstone table is one the sweep never sees, and the
 /// question cuts both ways: if retention removes the record, the identifier is freed and a
 /// destroyed conversation's name can be reused under somebody's export; if retention can never
 /// touch it, the table grows for as long as the deployment runs.

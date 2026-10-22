@@ -7,11 +7,10 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Asked for so a transcript can leave this screen.</b> A terminal is where the owner reads a
+/// <b>So a transcript can leave this screen.</b> A terminal is where a person reads a
 /// conversation and not where they act on it: what comes next is quoting it to a colleague, or
-/// into a chat with the agent that is going to fix something. Re-typing nineteen exchanges is not
-/// a workflow, and <c>parley export</c> is a different machine's shell away when the terminal is
-/// open over SSH.
+/// into a chat with the agent that is going to fix something, and re-typing exchanges is not a
+/// workflow.
 /// </para>
 /// <para>
 /// <b>Through <c>IApplication</c> rather than the static <c>Clipboard</c>.</b> The static one is

@@ -56,7 +56,9 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     [Fact]
     public async Task A_removal_acts_on_the_project_it_described_and_not_on_the_one_selected_later()
@@ -68,8 +70,8 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
         WriteManifest("alpha", "beta");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
-        using var shell = TerminalCommand.Build(directory, manifestPath: ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
+        using var shell = TerminalCommand.Build(directory, manifestPath: Root);
 
         driving.Show(shell);
         await shell.RefreshAsync(ct);
@@ -101,7 +103,7 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
         typing.Finish(taken: true);
         await shell.Settled;
 
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Equal(2, left.Count);
     }
 
@@ -124,8 +126,8 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
         WriteManifest("alpha");
 
         using var driving = Driving.Open();
-        using var directory = BrokerDirectory.FromManifest(ManifestPath);
-        using var shell = TerminalCommand.Build(directory, manifestPath: ManifestPath);
+        using var directory = BrokerDirectory.FromManifest(Root);
+        using var shell = TerminalCommand.Build(directory, manifestPath: Root);
 
         driving.Show(shell);
         await shell.RefreshAsync(ct);
@@ -162,7 +164,7 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
 
     private void WriteManifest(params string[] names) =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 // The first project points at the test's broker; any others point nowhere, because
                 // two projects cannot share a port and only the first one is read from here.
@@ -170,7 +172,6 @@ public sealed class ShiftingGroundTests : IAsyncDisposable
                     ProjectName.Create(name),
                     Path.Combine(_root, name + ".db"),
                     at == 0 ? _broker.Address : $"http://127.0.0.1:{9000 + at}",
-                    null,
                     null)),
             ]);
 }

@@ -11,7 +11,7 @@ namespace Parley.Client.Tests;
 public sealed class BrokerDirectoryTests
 {
     private static ProjectSettings Project(string name, string endpoint) =>
-        new(ProjectName.Create(name), $"{name}.db", endpoint, null, null);
+        new(ProjectName.Create(name), $"{name}.db", endpoint, null);
 
     private static GrpcChannel Fake(string endpoint) => GrpcChannel.ForAddress(endpoint);
 

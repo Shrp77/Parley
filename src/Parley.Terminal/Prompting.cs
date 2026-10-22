@@ -18,10 +18,8 @@ namespace Parley.Terminal;
 /// stack and returns, so keys reach it, the caller drives it, and the same code path serves both.
 /// </para>
 /// <para>
-/// <b>Validation runs as the person types.</b> 004 shipped forms whose every proposal was accepted
-/// by Enter and whose every answer was checked while it was being written, and that is what use
-/// added to it after its plan. A dialog that only checked on submission would be a step backwards
-/// wearing a new toolkit.
+/// <b>Validation runs as the person types.</b> A dialog that only checked on submission would refuse
+/// after the form had closed and the words were gone.
 /// </para>
 /// </remarks>
 internal static class Prompting
@@ -87,19 +85,15 @@ internal static class Prompting
     /// looks like spacing, and one row short is a sentence cut in half.
     /// </para>
     /// <para>
-    /// <b>One copy.</b> <see cref="FormDialog"/> grew this first, for the form the owner met
-    /// running off the screen; <see cref="ChoiceDialog"/> then met the same defect from the other
-    /// direction, its description squeezed to nothing by the list below it. Two dialogs measuring
-    /// text two ways is how they come to disagree about what fits.
+    /// <b>One copy</b>, shared by <see cref="FormDialog"/> and <see cref="ChoiceDialog"/>: two dialogs
+    /// measuring text two ways would disagree about what fits.
     /// </para>
     /// </remarks>
     internal static int Rows(string text)
     {
-        // **The breaks the text already has, and then the ones wrapping will add.** This counted
-        // characters alone, so a description of eight short lines was measured as two rows and the
-        // other six were drawn off the bottom of the label. `ChoiceDialog`'s descriptions are
-        // written with line breaks in them — the add confirmation names two file paths on lines of
-        // their own — which is exactly the shape it got wrong.
+        // **The breaks the text already has, and then the ones wrapping will add.** `ChoiceDialog`'s
+        // descriptions are written with line breaks in them (the add confirmation names two file paths on
+        // lines of their own), so counting characters alone would under-measure.
         var lines = (text ?? string.Empty).ReplaceLineEndings("\n").Split('\n');
 
         return Math.Max(1, lines.Sum(line => Math.Max(1, (int)Math.Ceiling(line.Length / 60.0))));
@@ -114,8 +108,49 @@ internal static class Prompting
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(dialog);
 
-        // A dialog does not rename the terminal. The toolkit writes a modal runnable's title to the terminal's own, so the
-        // owner's tab read "What this region can do" while a menu was open, in place of the build the shell names there.
+        // **On the thread that draws, when there is a loop.** Most dialogs are opened after a read, from the work
+        // queue's thread-pool thread, while the loop is drawing; the toolkit's draw is not safe to enter twice at
+        // once (it throws out of its line canvas). Invoke runs inline
+        // when this is already the loop's thread, so the waiting below only ever waits for the loop to get to it. The harness
+        // never sets this, because it never pumps a loop: work posted to one would not run.
+        if (Marshal is { } onTheLoop)
+        {
+            SessionToken? opened = null;
+            using var done = new ManualResetEventSlim();
+
+            onTheLoop(() =>
+            {
+                try
+                {
+                    opened = OpenHere(app, dialog);
+                }
+                finally
+                {
+                    done.Set();
+                }
+            });
+
+            // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
+            _ = done.Wait(TimeSpan.FromSeconds(5));
+
+            return opened;
+        }
+
+        return OpenHere(app, dialog);
+    }
+
+    /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
+    /// <remarks>
+    /// Set once, by the program, to the loop's own <c>Invoke</c>; never by a test. Static because every dialog goes through
+    /// <see cref="Open"/> and a seam threaded through all of them would be a parameter on each.
+    /// </remarks>
+    internal static Action<Action>? Marshal { get; set; }
+
+    private static SessionToken? OpenHere(IApplication app, View dialog)
+    {
+
+        // A dialog does not rename the terminal. The toolkit writes a modal runnable's title to the terminal's own,
+        // which would replace the build the shell names there.
         dialog.Border.Settings &= ~BorderSettings.TerminalTitle;
 
         var token = app.Begin((IRunnable)dialog);
@@ -174,19 +209,10 @@ internal sealed class TextDialog : Dialog
         Title = title;
         Width = Dim.Percent(70);
 
-        // **Tall enough for the question, because the question is the point.** This was nine rows
-        // with the label at Y=0 and the field at Y=1, so whatever was asked got exactly one line
-        // however long it was — and the longest thing this dialog asks is the destroy warning,
-        // which is four lines. Two hundred and fifty characters of it, including "Every
-        // conversation in it goes with the store", were simply never drawn: the owner met it
-        // trying to delete a project and reported the text running off the screen.
-        //
-        // That is the rule this surface is built on — nothing truncates, and where something does
-        // not fit the width the surface says so — broken in the worst place for it, since this is
-        // the description standing between somebody and a store being deleted.
-        //
-        // `ChoiceDialog` next to it always gave its label a width and a height, which is why the
-        // dialog *before* this one reads correctly and this one did not.
+        // **Tall enough for the question, because the question is the point.** The longest thing this
+        // dialog asks is the destroy warning, which is four lines, and it is the description standing
+        // between somebody and a store being deleted. Nothing truncates, and where something does not fit
+        // the width the surface says so; `ChoiceDialog` gives its label a width and a height for the same reason.
         Height = Dim.Percent(60);
 
         var asked = new Plain
@@ -249,9 +275,8 @@ internal sealed class TextDialog : Dialog
 
     /// <summary>Whether what has been typed would be refused.</summary>
     /// <remarks>
-    /// Asked of the button rather than of <see cref="Problem"/>, which stopped being the same
-    /// question when a correction's note started sharing that line. Reading the label to decide
-    /// whether to accept would refuse every name a correction had just tidied.
+    /// Asked of the button rather than of <see cref="Problem"/>, because a correction's note shares that
+    /// line. Reading the label to decide whether to accept would refuse every name a correction had just tidied.
     /// </remarks>
     internal bool Wrong => !_ok.Enabled;
 
@@ -288,9 +313,8 @@ internal sealed class TextDialog : Dialog
     /// <see cref="FormDialog.Fix"/> in one field's worth, and re-entrant by the same construction:
     /// setting <c>Text</c> raises <c>TextChanged</c> again, and a corrected value corrects to
     /// itself, so the second pass changes nothing and stops. The note stays while the corrected
-    /// text does and goes when the field is emptied — clearing it on the first keystroke that
-    /// needed no correction was tried in the forms and is wrong, because everything after the
-    /// character that was corrected is usually already acceptable.
+    /// text does and goes when the field is emptied, because everything after the character that
+    /// was corrected is usually already acceptable.
     /// </remarks>
     private void Fix()
     {
@@ -332,12 +356,8 @@ internal sealed class ChoiceDialog : Dialog
 
         var wants = Prompting.Rows(description);
 
-        // **As tall as it needs and never taller than the screen.** A percentage fixed at sixty was
-        // the whole dialog's height however much it had to show, which is what put twenty agents
-        // into a box with room for fourteen of them — and then, once the description was sized to
-        // its own words, squeezed the choices out altogether: the add confirmation drew its three
-        // file paths and none of its two buttons. A dialog asking a question with no visible
-        // answers is worse than either.
+        // **As tall as it needs and never taller than the screen.** A dialog asking a question with no
+        // visible answers is worse than one that is cramped.
         //
         // `Dim.Func` rather than a number, because the screen is not known while this is being
         // built: it is evaluated at layout time, by which point the dialog is running in
@@ -352,20 +372,15 @@ internal sealed class ChoiceDialog : Dialog
             Y = 0,
             Width = Dim.Fill(2),
 
-            // **Its own words, not what is left after the choices.** This was
-            // `Dim.Fill(choices.Count + 2)`, which gives the description whatever the list does not
-            // want — so a picker with twenty rows in it drew no description at all. The rule this
-            // surface is held to is that a choice sits behind a description of it, and a
-            // description nobody can read is the same as none. `DoorsAreReadableTests` did not
-            // catch it because every dialog it drives offers two or three choices.
+            // **Its own words, not what is left after the choices**, so a picker with many rows still draws
+            // its description. A choice sits behind a description of it, and a description nobody can read
+            // is the same as none.
             //
             // Capped at what is left once the choices have their rows, so a description too long
             // for the screen loses its tail rather than taking the answers with it. Both halves
             // readable is the ideal; only one of them can be guaranteed.
             // `view` here is the dialog, so its own viewport is the content area the label and the
-            // list share — not the screen, which is what `SuperView` would have given and what a
-            // first version asked for: it read twenty-four where the room was sixteen, and the
-            // label was sized past the space it had.
+            // list share, not the screen.
             Height = Dim.Func(view => Math.Max(1, Math.Min(wants, Content(view) - 1)), this),
         };
 
@@ -377,11 +392,9 @@ internal sealed class ChoiceDialog : Dialog
             Y = Pos.Bottom(said),
             Width = Dim.Fill(2),
 
-            // **Whatever is left, rather than one row per choice.** A list told it is twenty rows
-            // tall inside an eighteen-row dialog believes every row is visible, so it never
-            // scrolls: the cursor walks off the bottom edge and the highlight — the only mark
-            // saying which row a key is about to act on — goes with it. Reported by the owner
-            // against a project with nineteen agents. Filling the space is what makes the
+            // **Whatever is left, rather than one row per choice.** A list told it is taller than the dialog
+            // believes every row is visible, so it never scrolls and the highlight — the only mark saying
+            // which row a key is about to act on — walks off the bottom edge. Filling the space makes the
             // viewport true, and the toolkit scrolls on its own once it is.
             Height = Dim.Fill(),
         };
@@ -473,10 +486,8 @@ internal sealed class ChoiceDialog : Dialog
 /// </param>
 /// <remarks>
 /// <b>Correcting and reporting are both here, and neither replaces the other.</b> A rule that can
-/// be applied should be — the owner typed <c>TimeTracker</c> into the project name and met no
-/// resistance at all, because the only thing enforcing lowercase was a sentence under a field, on
-/// a row that had been clipped. A field that will not accept a capital in the first place cannot
-/// have that failure. But the message still exists for what correcting cannot fix: a name already
+/// be applied should be: a field that will not accept a capital in the first place cannot fail the way a
+/// sentence under it can. But the message still exists for what correcting cannot fix: a name already
 /// taken, a path that is not writable, a first character that is a digit.
 /// </remarks>
 internal sealed record FormField(
@@ -490,9 +501,9 @@ internal sealed record FormField(
 /// <summary>A dialog collecting several lines at once, each checked as it is typed.</summary>
 /// <remarks>
 /// <para>
-/// Several fields rather than several dialogs in a row. Rule 8.1 asks for an intent, a question
-/// and its consequences together, and a person answering three prompts in sequence cannot revise
-/// the first after writing the third — which is exactly when they realise the intent was wrong.
+/// Several fields rather than several dialogs in a row. A person answering three prompts in
+/// sequence cannot revise the first after writing the third — which is exactly when they realise
+/// it was wrong.
 /// </para>
 /// <para>
 /// The button that sends is refused while any field is wrong, and every field says what is wrong
@@ -542,15 +553,8 @@ internal sealed class FormDialog : Dialog
         Title = title;
         Width = Dim.Percent(80);
 
-        // **Every label is given the rows its own words need.** This was one row per label and a
-        // height counted three rows to the field, so a label longer than the dialog was cut where
-        // it ran out — and these labels are sentences: the node catalogue's is a hundred and ten
-        // characters. The owner met it creating a project and reported the form running off the
-        // screen, which is the same defect `TextDialog` had, in the neighbour nobody looked at
-        // after fixing that one.
-        //
-        // Measured per field rather than assumed, because the height of the dialog is the sum of
-        // them and a fixed three-per-field is what made this wrong.
+        // **Every label is given the rows its own words need**, because these labels are sentences. Measured
+        // per field rather than assumed, because the height of the dialog is the sum of them.
         _tall.AddRange(fields.Select(field => Prompting.Rows(field.Label)));
 
         foreach (var field in fields)
@@ -659,20 +663,9 @@ internal sealed class FormDialog : Dialog
     /// <inheritdoc/>
     /// <remarks>
     /// <para>
-    /// <b>The moment the screen's height becomes knowable, and until this existed nothing used
-    /// it.</b> <see cref="Trimmed"/> says in as many words that nothing can be trimmed in the
-    /// constructor because the form is not running in anything yet, and that it will be laid out
-    /// "for the size it will be given a moment later" — but the only thing that ever re-laid it
-    /// was a keystroke. A form too tall to fit opened clipped and stayed clipped until somebody
-    /// typed into it.
-    /// </para>
-    /// <para>
-    /// <b>Its own guard passed throughout, because it typed.</b>
-    /// <c>LongFieldTests.The_form_never_grows_taller_than_the_screen</c> fills a field with four
-    /// thousand characters before it measures anything, so it only ever checked the form after a
-    /// re-lay. Found when the ask form's labels grew: three labels carrying an example each are
-    /// tall enough to overflow a thirty-row screen on their own, and the dialog opened with its
-    /// title row off the top.
+    /// <b>The moment the screen's height becomes knowable.</b> <see cref="Trimmed"/> cannot trim in the
+    /// constructor because the form is not running in anything yet, so the form is laid out again here, for
+    /// the size it is given.
     /// </para>
     /// <para>
     /// Keyed on the height rather than on a "have I done this" flag, so a terminal resized under
@@ -701,17 +694,9 @@ internal sealed class FormDialog : Dialog
     /// <returns>What each field gets.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Found by the review gate, on a thirty by ten terminal.</b> A form taller than the screen is
-    /// centred and clipped at the top, so the dialog sat at <c>Y=-4</c> with its first label and its
-    /// first field off the screen entirely — and a field somebody cannot see is one they cannot tell
-    /// is there. The buttons and the last field were all that showed.
-    /// </para>
-    /// <para>
-    /// <b>Pre-existing and made worse here.</b> A four-field form was already eighteen rows before a
-    /// long field existed; opening each of the ask form's three prose fields at three rows added six
-    /// more, which is the difference between fitting a twenty-four row terminal and not. So this
-    /// gives the rows back in the order they were taken: the deepest long field first, down to one
-    /// row each, until the form fits.
+    /// <b>A form taller than the screen is centred and clipped at the top</b>, so its first label and field
+    /// would be off the screen entirely, and a field somebody cannot see is one they cannot tell is there.
+    /// So this takes rows back: the deepest long field first, down to one row each, until the form fits.
     /// </para>
     /// <para>
     /// Nothing is trimmed when the screen is not known — the form is laid out once in its
@@ -875,11 +860,10 @@ internal sealed class FormDialog : Dialog
         if (string.Equals(typed, corrected, StringComparison.Ordinal))
         {
             // **The note stays while the corrected text does, and goes when the field is
-            // emptied.** Clearing it on the first keystroke that needed no correction was tried
-            // and is wrong: typing `TimeTracker` corrects on the `T` and then every remaining
-            // letter is already acceptable, so the note was gone by the second character and
-            // nobody could read it. What it explains — that the field holds something other than
-            // what was typed — is true for as long as that text is there.
+            // emptied.** Typing `OrderBook` corrects on the `O` and then every remaining letter is
+            // already acceptable, so clearing the note on the first keystroke that needed no correction
+            // would leave nobody able to read it. What it explains — that the field holds something other
+            // than what was typed — is true for as long as that text is there.
             if (at >= 0 && corrected.Length == 0)
             {
                 _corrections[at] = string.Empty;

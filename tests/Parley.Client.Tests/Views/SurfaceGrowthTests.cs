@@ -1,7 +1,5 @@
 ﻿using System.Reflection;
-using Parley.Client.Rendering;
 using Parley.Client.Views;
-using Parley.Core;
 using Xunit;
 
 namespace Parley.Client.Tests.Views;
@@ -11,7 +9,7 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 3 of the review gate, run 3.1. <c>Parley.Client</c> is the assembly both surfaces read, so
+/// <c>Parley.Client</c> is the assembly both surfaces read, so
 /// everything public on it is a promise to two callers and a thing the next feature will find. The
 /// question is not whether it works but whether it is the smallest surface that could.
 /// </para>
@@ -66,17 +64,6 @@ public sealed class SurfaceGrowthTests
                 Assert.DoesNotContain("Microsoft.AspNetCore", named ?? string.Empty, StringComparison.Ordinal);
             }
         }
-    }
-
-    [Fact]
-    public void The_colour_derivation_exists_once()
-    {
-        // Palette is the only thing that decides an agent's colour, and ConversationsView forwards
-        // to it rather than repeating the hash. A second derivation would be a second answer, and
-        // the two would agree until somebody changed one.
-        Assert.Equal(
-            Palette.SlotFor(AgentName.Create("orders@test")),
-            ConversationsView.ColourFor(AgentName.Create("orders@test")));
     }
 
     [Fact]

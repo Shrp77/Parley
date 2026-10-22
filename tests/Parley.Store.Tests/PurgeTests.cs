@@ -329,24 +329,6 @@ public sealed class PurgeTests : IDisposable
     }
 
     [Fact]
-    public async Task An_agent_s_own_credentials_go_with_it()
-    {
-        // Declared ON DELETE CASCADE, which is the schema saying these rows belong to the
-        // agent rather than to a counterparty. A credential reference for an agent that no
-        // longer exists is not history anybody can use.
-        await _agents.SetCredentialAsync(
-            Orders,
-            new AgentCredential("token", "env:ORDERS_TOKEN"),
-            TestContext.Current.CancellationToken);
-
-        var outcome = await _agents.PurgeAsync(
-            Orders, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal(PurgeVerdict.Gone, outcome.Verdict);
-        Assert.Equal(0, await Count("SELECT count(*) FROM agent_credentials WHERE agent = 'orders@test';"));
-    }
-
-    [Fact]
     public async Task A_reference_the_code_has_never_heard_of_still_holds_an_agent()
     {
         // The load-bearing test. Purge finds what to delete by asking the schema which columns

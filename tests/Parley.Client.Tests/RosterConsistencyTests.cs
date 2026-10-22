@@ -30,7 +30,7 @@ public sealed class RosterConsistencyTests
 
         var own = pages
             .Where(p => !string.Equals(
-                Path.GetFileName(p), "_Roster.cshtml", StringComparison.Ordinal))
+                Path.GetFileName(p), "_AgentTree.cshtml", StringComparison.Ordinal))
             .Where(p => File.ReadAllText(p)
                 .Contains("class=\"roster\"", StringComparison.Ordinal))
             .Select(Path.GetFileName)
@@ -43,18 +43,17 @@ public sealed class RosterConsistencyTests
     }
 
     [Fact]
-    public void Both_pages_that_show_one_use_it()
+    public void Every_page_that_shows_one_uses_it()
     {
         // The other direction. A partial nothing renders is a partial that stops being kept up,
         // and the check above would still pass with every roster deleted.
         foreach (var page in new[]
         {
-            "src/Parley.Web/Pages/Projects/Agents.cshtml",
-            "src/Parley.Web/Pages/Conversations/_Conversation.cshtml"
+            "src/Parley.Web/Pages/Conversations/_Recipients.cshtml"
         })
         {
             Assert.Contains(
-                "<partial name=\"_Roster\"",
+                "<partial name=\"_AgentTree\"",
                 File.ReadAllText(RepositoryPath(page)),
                 StringComparison.Ordinal);
         }
@@ -66,7 +65,7 @@ public sealed class RosterConsistencyTests
         // The functional half, and the thing the conversation's copy was missing. A roster whose
         // names are inert is a list; one whose names lead somewhere is navigation.
         var partial = File.ReadAllText(
-            RepositoryPath("src/Parley.Web/Pages/Shared/_Roster.cshtml"));
+            RepositoryPath("src/Parley.Web/Pages/Shared/_AgentTree.cshtml"));
 
         Assert.Contains("/Projects/Agent?project=", partial, StringComparison.Ordinal);
         Assert.Contains("Palette.SlotFor", partial, StringComparison.Ordinal);

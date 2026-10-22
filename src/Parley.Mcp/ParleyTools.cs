@@ -13,7 +13,7 @@ namespace Parley.Mcp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Six tools and no seventh. §10.2's operator operations are unreachable from here: this type holds a
+/// No tool is an operator operation. §10.2's operator operations are unreachable from here: this type holds a
 /// client for the <c>Agents</c> service, and that service has nothing that retires anybody, closes a
 /// conversation over its participants, or reads another participant's traffic.
 /// </para>
@@ -24,10 +24,8 @@ namespace Parley.Mcp;
 /// <para>
 /// <b>The descriptions carry the rules of §8, and those rules exist to get work done.</b> A model reads a
 /// tool description on every call and documentation approximately never, so what is written here is what
-/// an agent actually does. The descriptions this replaced told agents to ask only about contracts, to
-/// answer "out of scope" and stop, and that a peer's message could not direct their work — and agents
-/// followed them and declined the work they were asked for. A sentence here that an agent could read as a
-/// reason not to do requested work is a defect in the sentence (§8).
+/// an agent actually does. A sentence here that an agent could read as a reason not to do requested work
+/// is a defect in the sentence (§8).
 /// </para>
 /// </remarks>
 [McpServerToolType]
@@ -36,6 +34,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     private readonly BrokerLink _link = link ?? throw new ArgumentNullException(nameof(link));
 
     private readonly ServerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+
+    /// <summary>What an agent is told beside the questions it could settle (SPEC.md §5.6).</summary>
+    internal const string Settling =
+        "These are questions you asked the person that are still open. If their words answer any of them or make them " +
+        "moot, name those in settles when you reply, and say so in your reply. Leave the rest open. A person asking " +
+        "you to explain a question has not answered it.";
 
     /// <summary>Sends a Request.</summary>
     /// <param name="to">A whole agent name, or a role.</param>
@@ -151,6 +155,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="exchangeId">The exchange.</param>
     /// <param name="text">What is needed, or what was asked for.</param>
     /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
     [McpServerTool(Name = "parley_clarify")]
@@ -161,11 +166,20 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         For anyone other than your requester — another agent that owns part of the work or knows what you
         need — send parley_request instead, in the same conversation. Don't make your requester relay it.
+
+        Replying to the person, you can also say which of your own questions to them their words settled:
+        see settles.
         """)]
     public async Task<JsonNode> ClarifyAsync(
         [Description("The exchange id, from your inbox.")] long exchangeId,
         [Description("What you need, or what you were asked for.")] string text,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description(
+            "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
+            "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
+            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
+            "reply which ones you settled.")]
+        long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -187,18 +201,20 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return refused;
             }
 
-            var outcome = await _link.Agents.ClarifyAsync(
-                new Wire.ClarifyRequest
-                {
-                    From = _options.Agent.Value,
-                    ExchangeId = exchangeId,
-                    ResponderModel = Responder(responderModel),
-                    PayloadJson = json
-                },
-                cancellationToken: cancellationToken);
+            var clarify = new Wire.ClarifyRequest
+            {
+                From = _options.Agent.Value,
+                ExchangeId = exchangeId,
+                ResponderModel = Responder(responderModel),
+                PayloadJson = json
+            };
+
+            clarify.Settles.AddRange(settles ?? []);
+
+            var outcome = await _link.Agents.ClarifyAsync(clarify, cancellationToken: cancellationToken);
 
             return outcome.Ok
-                ? new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }
+                ? WithSettled(new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }, outcome)
                 : Refusal(outcome);
         }
         catch (RpcException failure)
@@ -214,6 +230,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="blocker">The kind of blocker, when blocked.</param>
     /// <param name="sources">The agents whose Results were relied on.</param>
     /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
     /// <remarks>
@@ -234,14 +251,18 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         Before reporting blocked, pursue it. If another agent owns part of the work or holds what you
         need, send it a parley_request in this conversation and use its Result. If no agent can, ask the
-        person seated in the deployment. If nobody is seated, report blocked with missing_information
-        naming exactly what is needed, so your requester can pursue it in turn. A conflict: resolve it,
-        including by asking other agents to do work that unblocks you. A missing permission: name it and
-        who could grant it. "Too big", "someone else should decide" and "I was not told I could" are not
-        blockers.
+        person - the participant whose role is human-user - and wait for their answer. They may be away;
+        waiting for their decision is correct and is not a reason to report blocked. A conflict: resolve it,
+        including by asking other agents to do work that unblocks you. A missing permission: name the
+        exact command or tool that was refused, and who could grant it. "Too big", "someone else should
+        decide" and "I was not told I could" are not blockers.
 
         Name every agent whose Result you relied on in sources. Write decisions into the repository they
         govern and say where.
+
+        A request from the person may answer questions you asked them earlier, which your inbox lists beside
+        it. Name the ones their words answered or made moot in settles, and say so in your text; leave the
+        rest open. A person asking you to explain a question has not answered it.
         """)]
     public async Task<JsonNode> ResultAsync(
         [Description("The exchange id, from your inbox.")] long exchangeId,
@@ -250,6 +271,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description("Only when blocked: missing_information, conflict, or permission.")] string? blocker = null,
         [Description("Optional. The agents whose Results you relied on.")] string[]? sources = null,
         [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description(
+            "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
+            "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
+            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
+            "reply which ones you settled.")]
+        long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -271,57 +298,13 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badSources;
             }
 
-            var sent = await SendResultAsync([answer], exchangeId, responderModel, cancellationToken)
+            var sent = await SendResultAsync([answer], exchangeId, responderModel, settles, cancellationToken)
                 .ConfigureAwait(false);
 
-            // **An exchange opened under 0.5 or 0.6 is still owed its own items**, and nothing times out, so one
-            // can outlive the upgrade by weeks. The broker names what it expected (SPEC.md §5.3), which is the
-            // one move that turns this into an answer rather than a refusal the model has to decode: the same
-            // answer is recorded against each id the stored Request declared. Honest, because what those ids
-            // divided is now one ask.
-            if (sent.Reply is { Ok: false } stale
-                && stale.Refusal == Wire.TransitionError.OutcomesDoNotMatchItems
-                && stale.ExpectedItems.Count > 0
-                && !(stale.ExpectedItems.Count == 1 && stale.ExpectedItems[0] == PayloadShape.WholeRequest))
-            {
-                // **Measured before it is sent, and that is the whole of this branch's care.** Recording one
-                // answer against ten identifiers writes it ten times, so an answer well under the cap can put the
-                // retry far over it. Found by probe, twice over:
-                //
-                // The first version let the send refuse it, and the agent was told "that message is 30405
-                // characters" — a number it never wrote and cannot act on, leaving it to shorten to something
-                // arbitrary or abandon an exchange nothing will time out. So the real constraint is named, with
-                // the length that would fit.
-                //
-                // **And letting the send refuse it also wrote that number into `size_refusals`**, which is the
-                // record SPEC.md §17 question 16 sets the cap from, and the only value in this protocol chosen
-                // from evidence rather than judgement. One agent's three-thousand-character answer became
-                // evidence of a thirty-thousand-character one. Nothing this branch assembles is a message an
-                // agent composed, so nothing this branch assembles belongs in that record.
-                var multiplied = Framed(answer, stale.ExpectedItems);
-
-                if (multiplied.Length > MessageLimits.MaxPayloadCharacters)
-                {
-                    var room = MessageLimits.MaxPayloadCharacters
-                        - Framed(answer with { Text = string.Empty }, stale.ExpectedItems).Length;
-
-                    return Malformed(
-                        $"That exchange was opened under an older version of the protocol, which asked for one "
-                        + $"outcome per item: {string.Join(", ", stale.ExpectedItems)}. Your answer is recorded "
-                        + $"against each, so it has to fit {Math.Max(room / stale.ExpectedItems.Count, 0)} "
-                        + $"characters rather than {MessageLimits.MaxPayloadCharacters}. Say the shorter thing, "
-                        + "or send what does not fit as its own request.");
-                }
-
-                sent = await SendResultAsync(
-                    [.. stale.ExpectedItems.Select(id => answer with { Id = id })],
-                    exchangeId,
-                    responderModel,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
             return sent.Refused
-                ?? (sent.Reply!.Ok ? new JsonObject { ["ok"] = true, ["closed"] = true } : Refusal(sent.Reply));
+                ?? (sent.Reply!.Ok
+                    ? WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply)
+                    : Refusal(sent.Reply));
         }
         catch (RpcException failure)
         {
@@ -333,16 +316,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <param name="outcomes">What to record, already checked.</param>
     /// <param name="exchangeId">The exchange being closed.</param>
     /// <param name="responderModel">What produced this.</param>
+    /// <param name="settles">The person's questions it says were settled, if any.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The broker's reply, or the refusal that stopped it being sent at all.</returns>
-    /// <remarks>
-    /// Separate so the 0.6 retry above assembles and measures its payload the same way the first attempt did.
-    /// A second copy of this would be a second opinion about the cap.
-    /// </remarks>
     private async Task<(Wire.SayReply? Reply, JsonNode? Refused)> SendResultAsync(
         IReadOnlyList<ItemOutcome> outcomes,
         long exchangeId,
         string? responderModel,
+        long[]? settles,
         CancellationToken cancellationToken)
     {
         var json = Framed(outcomes);
@@ -352,17 +333,40 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             return (null, refused);
         }
 
-        var reply = await _link.Agents.ResultAsync(
-            new Wire.ResultRequest
-            {
-                From = _options.Agent.Value,
-                ExchangeId = exchangeId,
-                ResponderModel = Responder(responderModel),
-                PayloadJson = json
-            },
-            cancellationToken: cancellationToken);
+        var request = new Wire.ResultRequest
+        {
+            From = _options.Agent.Value,
+            ExchangeId = exchangeId,
+            ResponderModel = Responder(responderModel),
+            PayloadJson = json
+        };
+
+        request.Settles.AddRange(settles ?? []);
+
+        var reply = await _link.Agents.ResultAsync(request, cancellationToken: cancellationToken);
 
         return (reply, null);
+    }
+
+    /// <summary>Adds what a reply settled to its confirmation, so the agent can say so (SPEC.md §5.6).</summary>
+    /// <param name="confirmation">The confirmation.</param>
+    /// <param name="reply">The broker's reply.</param>
+    /// <returns>The confirmation.</returns>
+    private static JsonObject WithSettled(JsonObject confirmation, Wire.SayReply reply)
+    {
+        if (reply.Settled.Count > 0)
+        {
+            confirmation["settled"] = new JsonArray([.. reply.Settled.Select(id => (JsonNode?)JsonValue.Create(id))]);
+        }
+
+        if (reply.HandedBack.Count > 0)
+        {
+            // The person's own requests you had asked back about: the turn is yours again, so answer each.
+            confirmation["handed_back_to_you"] =
+                new JsonArray([.. reply.HandedBack.Select(id => (JsonNode?)JsonValue.Create(id))]);
+        }
+
+        return confirmation;
     }
 
     /// <summary>Writes outcomes into the document SPEC.md §5.3 stores.</summary>
@@ -373,17 +377,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         {
             ["outcomes"] = new JsonArray([.. outcomes.Select(o => (JsonNode?)o.ToJson())])
         }.ToJsonString();
-
-    /// <summary>The payload one outcome would produce against several identifiers, for measuring the room left.</summary>
-    /// <param name="shape">The outcome, with whatever text is to be measured around.</param>
-    /// <param name="ids">The identifiers it would be recorded against.</param>
-    /// <returns>The payload.</returns>
-    /// <remarks>
-    /// Measured by building the real document rather than by arithmetic on it: the blocker, the sources and the
-    /// identifiers are all part of what the cap counts, and a formula would go stale the first time one of them moved.
-    /// </remarks>
-    private static string Framed(ItemOutcome shape, IEnumerable<string> ids) =>
-        Framed([.. ids.Select(id => shape with { Id = id })]);
 
     /// <summary>Collects what is waiting, and any closure poll outstanding.</summary>
     /// <param name="limit">The most messages to collect at once.</param>
@@ -429,7 +422,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
             foreach (var delivered in inbox.Messages)
             {
-                messages.Add(new JsonObject
+                var entry = new JsonObject
                 {
                     ["exchange_id"] = delivered.Message.ExchangeId,
                     ["type"] = MessageIdentity.FormatType(WireCodec.In(delivered.Message.Type)),
@@ -438,7 +431,42 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
                     // The envelope, not the payload (§13).
                     ["message"] = delivered.Envelope
-                });
+                };
+
+                // **Beside a request from the person, the questions you asked them that are still open** (SPEC.md §5.6):
+                // your own words, returned to you and bounded, so you can say what their words settled without searching.
+                if (delivered.Settleable.Count > 0 || delivered.SettleableLeftOut > 0)
+                {
+                    entry["your_open_questions_to_them"] = new JsonArray([.. delivered.Settleable.Select(q =>
+                        (JsonNode?)new JsonObject
+                        {
+                            ["exchange_id"] = q.ExchangeId,
+                            ["asked_utc"] = q.OpenedUtc,
+                            ["you_asked"] = q.Asked
+                        })]);
+
+                    if (delivered.SettleableLeftOut > 0)
+                    {
+                        entry["more_open_questions"] = delivered.SettleableLeftOut;
+                    }
+
+                    entry["settling"] = Settling;
+                }
+
+                // **What the person said since you asked back** (SPEC.md §5.6), each in its own envelope: their answer may
+                // have gone in another exchange, and a request handed back is only their first words.
+                if (delivered.Since.Count > 0)
+                {
+                    entry["what_they_said_since_you_asked"] = new JsonArray([.. delivered.Since.Select(a =>
+                        (JsonNode?)new JsonObject
+                        {
+                            ["exchange_id"] = a.ExchangeId,
+                            ["sent_utc"] = a.SentUtc,
+                            ["message"] = a.Envelope
+                        })]);
+                }
+
+                messages.Add(entry);
             }
 
             var polls = new JsonArray();
@@ -449,8 +477,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 {
                     ["conversation_id"] = poll.ConversationId,
                     // Every participant asked must answer, and one that has since sent its Result is still asked:
-                    // this note once said only those "still holding work" had to agree, which told a finished agent
-                    // its silence was fine — and silence is what leaves a conversation closing (§5.0).
+                    // silence is what leaves a conversation closing (§5.0).
                     ["note"] =
                         "A participant proposed that this conversation is finished. Answer with " +
                         "parley_conclude: finished=true if you have nothing left to do or say in it, false if " +
@@ -505,7 +532,133 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 }
             }
 
+            // What became of a roadmap this agent proposed (SPEC.md §5.7). Its own title back, and an outcome; nothing is owed.
+            if (inbox.RoadmapNotices.Count > 0 || inbox.RoadmapNoticesWaiting > 0)
+            {
+                result["roadmap_notices"] = new JsonArray([.. inbox.RoadmapNotices.Select(n => (JsonNode?)new JsonObject
+                {
+                    ["proposal_id"] = n.ProposalId,
+                    ["title"] = n.Title,
+                    ["outcome"] = n.Outcome switch
+                    {
+                        Wire.ProposalState.Confirmed => "confirmed",
+                        Wire.ProposalState.Declined => "declined",
+                        Wire.ProposalState.Superseded => "superseded",
+                        _ => "decided"
+                    }
+                })]);
+
+                result["roadmap_notices_note"] =
+                    "What became of a roadmap you proposed. Nothing is owed back. Confirmed means the person made it a " +
+                    "roadmap and will send requests from it; declined or superseded means they did not, or another proposal " +
+                    "replaced it." +
+                    (inbox.RoadmapNoticesWaiting > 0
+                        ? $" {inbox.RoadmapNoticesWaiting} more are waiting; call parley_inbox again for them."
+                        : string.Empty);
+            }
+
             return result;
+        }
+        catch (RpcException failure)
+        {
+            return Unreachable(failure);
+        }
+    }
+
+    /// <summary>Puts a roadmap forward for the person to confirm.</summary>
+    /// <param name="title">A few words.</param>
+    /// <param name="items">The items, in order.</param>
+    /// <param name="conversationId">Where the list was arrived at, if it was in a conversation.</param>
+    /// <param name="revises">The title of a roadmap this would change, if it would.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal's identifier, or the refusal with what to do about it.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The one roadmap operation an agent has, and the whole of what it may do with one</b> (principle 2.12). It stores
+    /// a proposal and nothing else: it creates no roadmap, assigns nobody and opens no exchange. There is no tool to read,
+    /// change or mark done a roadmap, and none may be added; the structural test in
+    /// <c>AgentsCannotChangeARoadmapTests</c> fails if one appears.
+    /// </para>
+    /// <para>
+    /// <b>The description carries the template</b>, because a model reads a description on every call and documentation
+    /// approximately never. A proposal is guided to be factual, point-oriented and short rather than capped, so this is
+    /// advice and is written as advice.
+    /// </para>
+    /// </remarks>
+    [McpServerTool(Name = "parley_propose_roadmap")]
+    [Description(
+        """
+        Put forward a list of work for the person to confirm as a roadmap, when you and other agents have agreed
+        how to get something done and the list should not be lost in a conversation. This proposes only: it creates
+        nothing, assigns nobody, and nothing happens until the person confirms it. You are told what became of it
+        in parley_inbox.
+
+        Keep it short and factual:
+          title: a few words, e.g. "Billing export".
+          items: one line each, verb first, the thing to be done. Optionally who it is for (the whole agent name,
+                 as parley_agents lists it) and which earlier items it needs, by number. Example:
+                   1. Add CSV export endpoint            for: billing@host
+                   2. Call it from the report            for: orders@host   needs: 1
+                   3. Document the new column            needs: 2
+        No background, no reasons, no narrative: detail belongs in the item's own conversation once the person
+        starts it. An item is one line; a line break is refused.
+        """)]
+    public async Task<JsonNode> ProposeRoadmapAsync(
+        [Description("A few words naming the roadmap.")] string title,
+        [Description("The items, in order. Each is one line with optional 'for' and 'needs'.")] RoadmapItemInput[] items,
+        [Description("Optional. The conversation the list was arrived at.")] string? conversationId = null,
+        [Description("Optional. The title of an existing roadmap this would change, if you know one.")] string? revises = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (BadConversation(conversationId) is { } badConversation)
+            {
+                return badConversation;
+            }
+
+            var content = new Wire.RoadmapContent { Title = title ?? string.Empty };
+
+            foreach (var item in items ?? [])
+            {
+                var draft = new Wire.RoadmapItemDraft
+                {
+                    Text = item.Text ?? string.Empty,
+                    IntendedAgent = item.For ?? string.Empty
+                };
+
+                draft.Needs.AddRange(item.Needs ?? []);
+                content.Items.Add(draft);
+            }
+
+            var reply = await _link.Agents.ProposeRoadmapAsync(
+                new Wire.ProposeRoadmapRequest
+                {
+                    Agent = _options.Agent.Value,
+                    Content = content,
+                    ConversationId = conversationId ?? string.Empty,
+                    Revises = revises ?? string.Empty
+                },
+                cancellationToken: cancellationToken);
+
+            if (reply.ProposalId == 0)
+            {
+                return new JsonObject
+                {
+                    ["ok"] = false,
+                    ["refused"] = "proposal",
+                    ["why"] = $"Nothing was stored. {reply.Problem}"
+                };
+            }
+
+            return new JsonObject
+            {
+                ["ok"] = true,
+                ["proposal_id"] = reply.ProposalId,
+                ["note"] =
+                    "Stored for the person to read. It is not a roadmap until they confirm it, and it assigns nobody: " +
+                    "work still reaches an agent as a request from the person. Check parley_inbox for what becomes of it."
+            };
         }
         catch (RpcException failure)
         {
@@ -525,6 +678,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         "owns" is one line written by whoever configured that agent. An agent that is not running is
         started when a request arrives for it. One whose machine is off gets your request when it comes
         back, and the person running the deployment is shown that it is waiting.
+
+        The person is listed apart, under "person", as here or away. Ask them when no agent can help.
+        Away means nobody is at a screen just now, not that they cannot be asked: your request waits for
+        them either way.
         """)]
     public async Task<JsonNode> AgentsAsync(CancellationToken cancellationToken = default)
     {
@@ -535,9 +692,24 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 cancellationToken: cancellationToken);
 
             var listed = new JsonArray();
+            JsonObject? person = null;
 
             foreach (var agent in agents.Agents.Where(a => !string.Equals(a.Name, _options.Agent.Value, StringComparison.Ordinal)))
             {
+                // **The person, as the person rather than as an agent** (SPEC.md §10.1): no adapter, no tier and nothing
+                // owned, which describe a repository; only who they are and whether they are at a screen. Apart from the
+                // agents, so a model reading for who owns the work does not count a person among them.
+                if (AgentName.TryCreate(agent.Name, out var named) && PersonSeat.Is(named))
+                {
+                    person = new JsonObject
+                    {
+                        ["name"] = agent.Name,
+                        ["presence"] = agent.Presence.ToString().ToLowerInvariant()
+                    };
+
+                    continue;
+                }
+
                 var entry = new JsonObject
                 {
                     ["name"] = agent.Name,
@@ -556,7 +728,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 listed.Add(entry);
             }
 
-            return new JsonObject { ["agents"] = listed };
+            var result = new JsonObject { ["agents"] = listed };
+
+            if (person is not null)
+            {
+                result["person"] = person;
+            }
+
+            return result;
         }
         catch (RpcException failure)
         {
@@ -1447,7 +1626,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             ? null
             : Malformed(
                 $"'{responderModel}' is not a responder identity. Use up to 64 characters of letters, digits and " +
-                "'. _ : / -' — a model name, or 'script:something' or 'human:someone'.");
+                "'. _ : / -' — a model name or any other label for what produced the text.");
     }
 
     /// <summary>Validates a conversation identifier.</summary>
@@ -1553,6 +1732,15 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         Wire.WakeOutcome.Unreachable =>
             "not reachable right now; it gets the request when it comes back, and the person running the " +
             "deployment is shown that it is waiting",
+
+        // The one outcome an agent must not read as "nobody will see this" (SPEC.md principle 2.6): a person away for
+        // hours has still been asked, and waiting for their decision is the right thing to do.
+        Wire.WakeOutcome.WithThePerson =>
+            "with the person: they have it and will answer. They may be away; waiting for their decision is correct",
+
+        // SPEC.md §11.7: somebody has that repository open in an editor, and only they can make it read.
+        Wire.WakeOutcome.OpenOutside =>
+            "open in a session Parley did not start; it reads your request when somebody there prompts it",
         _ => "unknown"
     };
 
@@ -1592,6 +1780,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 Wire.RequestRejection.ReceiverRetired =>
                     "The person running the deployment retired that agent. Call parley_agents to find who owns " +
                     "this work now.",
+                Wire.RequestRejection.ReceiverIsTheFacilitator =>
+                    "That is Parley, which asks agents questions and does no work itself. Call parley_agents to " +
+                    "find who owns this work.",
                 Wire.RequestRejection.SenderRetired =>
                     "Your own registration has been retired, so you cannot send new requests. Tell the person " +
                     "you work for.",
@@ -1652,18 +1843,31 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     "This exchange has reached the clarification cap its deployment set. Send your Result with " +
                     "what you have — blocked with missing_information, naming what you still need, if that is " +
                     "the truth.",
-                Wire.TransitionError.OutcomesDoNotMatchItems =>
-                    "Give exactly one outcome for each item of the request; see expected_items.",
                 Wire.TransitionError.ClosedIsTheBrokers =>
                     "\"closed\" is recorded only when a conversation is closed. Choose done, answered, " +
                     "acknowledged or blocked.",
+                Wire.TransitionError.CannotSettle =>
+                    "Nothing was sent: settles named exchanges you cannot settle. Send the reply again without " +
+                    "them; cannot_settle says why for each.",
                 _ => "Refused."
             }
         };
 
-        if (reply.ExpectedItems.Count > 0)
+        if (reply.CannotSettle.Count > 0)
         {
-            refusal["expected_items"] = new JsonArray([.. reply.ExpectedItems.Select(id => (JsonNode?)JsonValue.Create(id))]);
+            refusal["cannot_settle"] = new JsonArray([.. reply.CannotSettle.Select(c => (JsonNode?)new JsonObject
+            {
+                ["exchange_id"] = c.ExchangeId,
+                ["why"] = c.Problem switch
+                {
+                    Wire.SettleProblem.NotFromThePerson =>
+                        "Only a reply to a request the person (human-user) sent you can settle anything.",
+                    Wire.SettleProblem.OtherConversation => "It is in a different conversation from this reply.",
+                    Wire.SettleProblem.NotOpen => "It is already closed, or there is no such exchange.",
+                    Wire.SettleProblem.NotBetweenYou => "It is not between you and the person.",
+                    _ => "The person does not owe the next move on it.",
+                }
+            })]);
         }
 
         return refusal;
@@ -1671,17 +1875,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 }
 
 /// <summary>One entry of a Result's <c>outcomes</c> array, per SPEC.md §5.3.</summary>
-/// <param name="Id">The item's id: <c>request</c>, or an identifier a Request stored before 0.7 declared.</param>
+/// <param name="Id">The item's id: always <c>request</c>, because a Request is answered whole.</param>
 /// <param name="Outcome"><c>done</c>, <c>answered</c>, <c>acknowledged</c> or <c>blocked</c>.</param>
 /// <param name="Text">What was done, the answer, or exactly what blocks it and what was tried.</param>
 /// <param name="Blocker">On <c>blocked</c>: <c>missing_information</c>, <c>conflict</c> or <c>permission</c>.</param>
 /// <param name="Sources">The other agents whose Results this relied on.</param>
 /// <remarks>
-/// <b>Internal since 0.7, and it carries no tool descriptions any more.</b> It was the argument type of
-/// <c>parley_result</c>, so each component described itself for the schema a model fills in; that tool now takes
-/// one outcome and writes the array itself, and an agent never names an identifier. Left public it would have been
-/// a type nothing outside this assembly could reach, still carrying instructions for a form nobody is shown —
-/// which is the shape a stale public surface takes here, recorded once before and found again by lens 3.
+/// <b>Internal, and it carries no tool descriptions.</b> <c>parley_result</c> takes one outcome and writes the
+/// array itself, so an agent never names an identifier and nothing outside this assembly needs the type.
 /// </remarks>
 internal sealed record ItemOutcome(
     string Id,

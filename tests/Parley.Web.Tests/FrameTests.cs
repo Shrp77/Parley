@@ -39,11 +39,10 @@ public sealed class FrameTests
     }
 
     [Theory]
-    [InlineData(".roster {")]
     [InlineData(".timeline {")]
     public void Everything_that_sticks_below_it_is_offset_by_what_it_occupies(string rule)
     {
-        // Both were `top: 1rem`, which put them behind the header the moment it stopped
+        // Each was `top: 1rem`, which put it behind the header the moment it stopped
         // scrolling away.
         var block = Layout[Layout.IndexOf(rule, StringComparison.Ordinal)..];
         var top = block.IndexOf("top:", StringComparison.Ordinal);
@@ -138,7 +137,7 @@ public sealed class FrameTests
         Assert.Contains("src=\"/brand/icon.png\" alt=\"\"", Layout, StringComparison.Ordinal);
 
         // Inverted rather than shipped twice, so the two can never disagree.
-        Assert.Contains(".brand img, .wordmark { filter: invert(1); }", Layout, StringComparison.Ordinal);
+        Assert.Contains(".brand img { filter: invert(1); }", Layout, StringComparison.Ordinal);
     }
 
     /// <summary>Finds a path in the repository from wherever the tests run.</summary>

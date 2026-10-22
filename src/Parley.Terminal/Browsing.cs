@@ -9,9 +9,8 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Asked for by the owner, who was typing a path for every agent.</b> Adding nineteen
-/// repositories meant typing nineteen absolute paths correctly, into a field that could only say
-/// afterwards that one of them was not a directory.
+/// <b>A typed path can only be reported wrong afterwards.</b> Walking to the folder finds it
+/// before it is named.
 /// </para>
 /// <para>
 /// <b>Built from this surface's own list rather than the toolkit's file dialog.</b>
@@ -27,25 +26,34 @@ namespace Parley.Terminal;
 /// that field stays typed into and pasted into — somebody at the end of an SSH connection who
 /// knows the path should not have to walk to it.
 /// </para>
+/// <para>
+/// <b>It looks for one of two things</b>: a repository, when one is being added, or a folder that holds
+/// repositories, when a folder of them is being enrolled. Enrolment is for the folder holding the
+/// checkouts, which is not itself a repository, so that mode takes a folder with repositories directly inside it.
+/// </para>
 /// </remarks>
 internal sealed class Browsing : Dialog
 {
     /// <summary>What the dialog is called.</summary>
     internal const string Name = "Find the repository";
 
+    /// <summary>What the dialog is called when it is looking for a folder of repositories.</summary>
+    internal const string FolderName = "Find the folder of repositories";
+
     /// <summary>The row that takes the folder currently open.</summary>
     internal const string Use = "[ add this repository ]";
+
+    /// <summary>The row that takes the folder currently open, when it holds repositories.</summary>
+    internal const string UseFolder = "[ enrol the repositories in this folder ]";
 
     /// <summary>The row that goes up one.</summary>
     internal const string Up = "[ up one folder ]";
 
     /// <summary>What marks a folder that is a repository.</summary>
     /// <remarks>
-    /// <b>A prefix inside the indent, and it was a suffix.</b> A folder name is somebody else's
-    /// text — on most filesystems it may hold nearly anything — so a name ending in <c>— a
-    /// repository</c> read as one, and the row said something about the folder that was not true.
-    /// The same structural answer the transcript reached in 0.18.6: what a row means is decided by
-    /// where it sits, not by what it happens to end with.
+    /// <b>A prefix inside the indent, never a suffix.</b> A folder name is somebody else's text — on
+    /// most filesystems it may hold nearly anything — so a suffix could be spoofed by a name. What a
+    /// row means is decided by where it sits, as in the transcript, not by what it ends with.
     /// </remarks>
     internal const string Repository = "* ";
 
@@ -69,15 +77,24 @@ internal sealed class Browsing : Dialog
     private readonly Label _where;
     private readonly Label _said;
     private readonly List<Step> _steps = [];
+    private readonly bool _ofRepositories;
 
     /// <summary>One row, and what pressing it does.</summary>
     /// <param name="Row">What it reads.</param>
     /// <param name="Goes">Where it goes, or null when it takes the folder that is open.</param>
     private sealed record Step(string Row, string? Goes);
 
+    /// <summary>Opens a picker that looks for one repository.</summary>
+    /// <param name="opening">Where to start.</param>
     internal Browsing(string opening)
+        : this(opening, ofRepositories: false)
     {
-        Title = Name;
+    }
+
+    private Browsing(string opening, bool ofRepositories)
+    {
+        _ofRepositories = ofRepositories;
+        Title = ofRepositories ? FolderName : Name;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
 
@@ -97,11 +114,9 @@ internal sealed class Browsing : Dialog
 
         Add(_where, _said, _list);
 
-        // **A folder that cannot be opened leaves this with nowhere to go**, which the review gate
-        // found by pointing it at one that does not exist: no path, no rows, one sentence, and no
-        // row to press to get anywhere else. The home directory is the answer for the same reason
-        // it is the answer on a first run, and the machine's root after that — somewhere always
-        // opens, and being somewhere is what makes the rest of the dialog work.
+        // **A folder that cannot be opened leaves this with nowhere to go**: no path, no rows, and no
+        // row to press to get anywhere else. So the home directory is tried, then the machine's
+        // root — somewhere always opens, and being somewhere is what makes the rest of the dialog work.
         foreach (var folder in new[] { opening, Opening(null), Path.GetPathRoot(opening) })
         {
             if (folder is { Length: > 0 })
@@ -116,7 +131,12 @@ internal sealed class Browsing : Dialog
         }
     }
 
-    /// <summary>Raised with the repository chosen, or null when nothing was.</summary>
+    /// <summary>Opens a picker that looks for a folder holding repositories, for enrolling them.</summary>
+    /// <param name="opening">Where to start.</param>
+    /// <returns>The dialog.</returns>
+    internal static Browsing ForFolderOfRepositories(string opening) => new(opening, ofRepositories: true);
+
+    /// <summary>Raised with the folder chosen, or null when nothing was.</summary>
     internal event EventHandler<string?>? Done;
 
     /// <summary>The folder currently open.</summary>
@@ -139,10 +159,9 @@ internal sealed class Browsing : Dialog
     /// them back where they began each time is the walk this exists to remove.
     /// </para>
     /// <para>
-    /// <b>For the first one, the folder the terminal was started in</b>, the owner's call. It used to be the home
-    /// directory, on the reasoning that nothing yet said where somebody keeps their work — but the shell they typed
-    /// <c>parley terminal</c> into says exactly that, and is very often the repository itself. Home is left for a
-    /// start folder that has gone.
+    /// <b>For the first one, the folder the terminal was started in</b>: the shell the person typed
+    /// <c>parley terminal</c> into says where they keep their work, and is very often the repository
+    /// itself. Home is the fallback for a start folder that has gone.
     /// </para>
     /// </remarks>
     internal static string Opening(string? last, string? startedIn = null)
@@ -219,9 +238,18 @@ internal sealed class Browsing : Dialog
         _said.Text = string.Empty;
         _steps.Clear();
 
-        if (IsRepository(full))
+        var children = inside
+            .Where(child => !Hidden(child))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .Select(child => (Path: child, IsRepository: IsRepository(child)))
+            .ToList();
+
+        // **Offered only where choosing it would find something**, so the row never names an act that does
+        // nothing. For a folder of repositories that means one directly inside it, which is where enrolment
+        // looks and no deeper -- the rows marked below are exactly what it will offer next.
+        if (_ofRepositories ? children.Any(child => child.IsRepository) : IsRepository(full))
         {
-            _steps.Add(new Step(Use, null));
+            _steps.Add(new Step(_ofRepositories ? UseFolder : Use, null));
         }
 
         if (Path.GetDirectoryName(full) is { Length: > 0 } above)
@@ -229,17 +257,11 @@ internal sealed class Browsing : Dialog
             _steps.Add(new Step(Up, above));
         }
 
-        foreach (var child in inside.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        foreach (var (child, repository) in children)
         {
-            if (Hidden(child))
-            {
-                continue;
-            }
-
             var name = Path.GetFileName(child);
 
-            _steps.Add(new Step(
-                Indent + (IsRepository(child) ? Repository : Plain) + Safe.Text(name), child));
+            _steps.Add(new Step(Indent + (repository ? Repository : Plain) + Safe.Text(name), child));
         }
 
         _list.Replace([.. _steps.Select(step => step.Row)], _steps.Count > 0 ? 0 : null);

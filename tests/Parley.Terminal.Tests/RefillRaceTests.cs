@@ -64,8 +64,8 @@ public sealed class RefillRaceTests
         using var driving = Driving.Open(width: 100, height: 30);
         using var directory = new BrokerDirectory(
             [
-                new ProjectSettings(Alpha, string.Empty, "http://127.0.0.1:1", null, null),
-                new ProjectSettings(Beta, string.Empty, "http://127.0.0.1:2", null, null),
+                new ProjectSettings(Alpha, string.Empty, "http://127.0.0.1:1", null),
+                new ProjectSettings(Beta, string.Empty, "http://127.0.0.1:2", null),
             ],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
@@ -206,7 +206,7 @@ public sealed class RefillRaceTests
         var rendered = 0;
         var lengths = new System.Collections.Concurrent.ConcurrentDictionary<int, byte>();
 
-        var list = Assert.IsType<GuardedList>(Assert.Single(
+        var list = Assert.IsAssignableFrom<GuardedList>(Assert.Single(
             region.SubViews.OfType<GuardedList>().ToList()));
 
         list.RowRender += (_, _) =>
@@ -297,7 +297,6 @@ public sealed class RefillRaceTests
             ProjectName.Create($"project{at}"),
             string.Empty,
             $"http://127.0.0.1:{9000 + at}",
-            null,
             null))];
 
     private static List<ConversationSummary> Conversations(int many) =>

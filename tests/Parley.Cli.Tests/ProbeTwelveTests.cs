@@ -7,8 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 1: what a person can put into the values this feature writes into
-/// somebody's repository.
+/// What a person can put into the values this tooling writes into somebody's repository.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,7 +17,7 @@ namespace Parley.Cli.Tests;
 /// is safe as JSON can still be unsafe as configuration.
 /// </para>
 /// <para>
-/// The other half is what this feature prints. A refusal quotes a catalogue's path and a role taken
+/// The other half is what this tooling prints. A refusal quotes a catalogue's path and a role taken
 /// from a file, and refusals are read in terminals, so a value able to move the cursor can imitate the
 /// lines around it. This repository has fixed that shape twice before — in the transcript's
 /// column-zero rule and in the destroy dialog quoting a manifest raw.
@@ -43,7 +42,7 @@ public sealed class ProbeTwelveTests : IDisposable
     }
 
     private static EnrollmentEntry Entry(string workspace, string owns = "Carts and totals.") =>
-        new(workspace, "orders", owns, Unattended: false) { Enroll = true, OwnsApproved = true };
+        new(workspace, "orders", owns, Unattended: false) { Enroll = true };
 
     [Theory]
     [InlineData("/src/orders}")]
@@ -81,28 +80,38 @@ public sealed class ProbeTwelveTests : IDisposable
     [Fact]
     public void A_project_name_from_a_hand_edited_manifest_cannot_shape_the_key()
     {
-        // The key is built from a project name. If a manifest could carry a name the grammar refuses,
+        // The key is built from a project name. If a hand edit could carry a name the grammar refuses,
         // that name would reach a JSON key — and a key is one of the few places JSON escaping is not
         // the whole story, because the client uses it to namespace tool names.
-        var manifest = Path.Combine(_root, "projects.json");
+        //
+        // **A project's name is its *directory entry***, not a string somebody types into a field,
+        // so a hand edit has to create a folder — and a folder cannot hold a
+        // quote on Windows or a separator anywhere, which removes most of the attack before the reader
+        // sees it. What is left is a name the grammar refuses but a filesystem allows.
+        foreach (var hostile in new[] { "alpha two", "ALPHA", "9lives", "-leading", "a.b", "évil" })
+        {
+            var folder = Path.Combine(_root, ProjectFolder.ProjectsDirectoryName, hostile);
 
-        File.WriteAllText(
-            manifest,
-            """
-            { "projects": [ {
-              "name": "alpha\", \"evil\": { \"command\": \"rm",
-              "store": "/tmp/a.db",
-              "endpoint": "http://127.0.0.1:51707"
-            } ] }
-            """);
+            Directory.CreateDirectory(folder);
 
-        var read = ProjectManifest.TryRead(manifest, out var projects, out var problem);
+            File.WriteAllText(
+                Path.Combine(folder, ProjectFolder.ConfigurationFileName),
+                """{ "endpoint": "http://127.0.0.1:51707" }""");
+        }
 
-        // Either refused outright, or read as something the grammar accepts. What must not happen is
-        // a project whose name is not a project name.
+        var read = ProjectManifest.TryRead(_root, out var projects, out var problem);
+
+        // Either refused outright, or read as something the grammar accepts. What must not happen is a
+        // project whose name is not a project name.
         Assert.True(
             !read || projects.All(p => ProjectName.IsValid(p.Name.Value)),
-            $"a manifest yielded a name the grammar refuses (problem: {problem})");
+            $"a folder yielded a name the grammar refuses (problem: {problem})");
+
+        // And the refusal names them rather than passing over them: a folder somebody
+        // made in the one directory whose contents are the answer is somebody's mistake, and silence
+        // there is how a project goes missing.
+        Assert.True(projects.Count == 0 && problem is { Length: > 0 }, "a folder named something the grammar refuses was read as a project, or passed over in silence");
+        Assert.Contains("not a project name", problem, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -131,9 +140,8 @@ public sealed class ProbeTwelveTests : IDisposable
         // of a file, and refusals are read in terminals. This repository has fixed this shape twice: the
         // transcript's column-zero rule, and the destroy dialog quoting a manifest's endpoint raw.
         //
-        // The sentence this probes is 018's copied-repository refusal. It replaced FR-013's, which is
-        // where this probe was pointed when it was written; the values are read from the same file and
-        // printed in the same place, so what it is asking is unchanged.
+        // The sentence this probes is the copied-repository refusal; the values are read from a file
+        // and printed in a terminal, which is what this probe asks about.
         var refusal = Catalogues.Copied($"/tmp/orders{mischief}", $"/tmp/copy{mischief}");
 
         foreach (var character in refusal)
@@ -147,14 +155,23 @@ public sealed class ProbeTwelveTests : IDisposable
     }
 
     [Fact]
-    public void An_owns_line_is_still_bounded_and_still_refused_when_it_is_not_approved()
+    public void An_owns_line_that_could_break_its_roster_row_is_still_refused_per_entry()
     {
-        // Not new, and worth one assertion here because this feature multiplied the number of entries
-        // an `owns` line can be written into: what was one line per repository is now one per project.
+        // Not new, and worth one assertion here because this feature multiplied the number of
+        // entries an `owns` line can be written into: what was one line per repository is now one
+        // per project. A rule applied to the first entry and not to the rest is the shape this
+        // probe exists to catch.
+        //
+        // **It drives the character rule, not a length.** 500 characters is perfectly legal, and a
+        // probe asserting a length would pass against nothing, which is worse than none because a
+        // green probe reads as a checked rule.
         var problems = EnrollmentPlan.Validate(
-            [Entry("/src/orders", new string('x', 500))],
+            [Entry("/src/orders", "Carts." + (char)0x2028 + "No tax.")],
             _ => true);
 
         Assert.NotEmpty(problems);
+
+        // And the length half really is gone, which is the other half of the same statement.
+        Assert.Empty(EnrollmentPlan.Validate([Entry("/src/orders", new string('x', 500))], _ => true));
     }
 }

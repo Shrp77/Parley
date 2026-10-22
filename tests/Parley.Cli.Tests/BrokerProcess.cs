@@ -1,3 +1,5 @@
+using Parley.Configuration;
+using Parley.Core;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
@@ -34,16 +36,65 @@ internal sealed partial class BrokerProcess : IDisposable
     /// <summary>Where this broker is listening.</summary>
     public string Address { get; }
 
-    /// <summary>Starts a broker over a database file.</summary>
-    /// <param name="databasePath">The store.</param>
+    /// <summary>What the project this harness serves is called.</summary>
+    internal const string ProjectName = "probe";
+
+    /// <summary>Where the store of the project this harness serves is, given a root.</summary>
+    /// <param name="root">The throwaway root.</param>
+    /// <returns>The store path, whether or not it exists yet.</returns>
+    /// <remarks>
+    /// Derived through <see cref="ProjectFolder"/> rather than composed here, so a test that opens the
+    /// store afterwards opens the one the broker opened. Composing it would be a second answer to where
+    /// a project's store is.
+    /// </remarks>
+    public static string StoreFor(string root) =>
+        ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(ProjectName));
+
+    /// <summary>Starts a broker over a throwaway root, serving one project in it.</summary>
+    /// <param name="root">Where this rig keeps its Parley files. Created if absent.</param>
     /// <param name="environment">Variables to launch it with.</param>
     /// <returns>The running broker.</returns>
     /// <exception cref="InvalidOperationException">It did not report an address.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>It takes neither a store path nor a listen address.</b> A
+    /// project's store is derived from its name and its port is claimed when it is created, so a rig
+    /// names a root and writes a project into it.
+    /// </para>
+    /// <para>
+    /// <b>The project's endpoint is port zero, and that is what keeps the suite parallel.</b> Claiming a
+    /// real port would put every test class on the same band from the bottom — `PortLedger` reconciles
+    /// within one root, and a rig gives every class a root of its own, so two classes would both be
+    /// handed 19100 and one of them would fail to listen. Port zero lets the operating system choose and
+    /// the broker says which it got, which is the mechanism this harness already rested on.
+    /// </para>
+    /// </remarks>
     public static BrokerProcess Start(
-        string databasePath, params (string Name, string Value)[] environment)
+        string root, params (string Name, string Value)[] environment)
     {
-        var process = ToolProcess.Launch(
-            environment, "serve", "--db", databasePath, "--listen", "http://127.0.0.1:0");
+        // **Named, because a rig that is handed a store path instead of a root fails obscurely.** It
+        // `Directory.CreateDirectory` reports that it
+        // cannot create `parley.db`, which reads as a defect in the layout rather than a caller passing
+        // the wrong thing.
+        if (root.EndsWith(ProjectFolder.StoreFileName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                $"'{root}' is a store, not a root. Pass the directory the projects live under; the "
+                + "store is derived from the project's name.",
+                nameof(root));
+        }
+
+        Directory.CreateDirectory(root);
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(
+                Parley.Core.ProjectName.Create(ProjectName),
+                StoreFor(root),
+                "http://127.0.0.1:0",
+                null)]);
+
+        var process = ToolProcess.Launch(environment, "serve", "--config", root);
 
         try
         {
@@ -55,17 +106,40 @@ internal sealed partial class BrokerProcess : IDisposable
             // version every test that starts one failed at once, none of them for a reason to do
             // with what they were testing. What the banner promises is that an address appears,
             // not that it appears first.
+            // **Bounded, because an unbounded read here hangs the whole suite rather than failing a
+            // test.** `ReadLine` blocks until the process writes or exits, and `serve` has a path where
+            // it does neither: told a root with no projects in it, it *waits* for the first one to be
+            // named — which is right for a machine somebody has just installed and fatal for a rig.
+            //
+            // Measured: a suite left in that state stopped at 4,265 lines with five orphaned brokers
+            // behind it, and nothing said why. A named failure after thirty seconds is worth more than
+            // a correct answer that never arrives.
             var said = new List<string>();
-            string? announcement;
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            var line = process.StandardOutput.ReadLineAsync();
 
-            while ((announcement = process.StandardOutput.ReadLine()) is not null)
+            while (DateTime.UtcNow < deadline)
             {
+                if (!line.Wait(TimeSpan.FromSeconds(1)))
+                {
+                    continue;
+                }
+
+                var announcement = line.Result;
+
+                if (announcement is null)
+                {
+                    break;
+                }
+
                 said.Add(announcement);
 
                 if (Listening().Match(announcement) is { Success: true } found)
                 {
                     return new BrokerProcess(process, found.Value);
                 }
+
+                line = process.StandardOutput.ReadLineAsync();
             }
 
             throw new InvalidOperationException(
@@ -98,6 +172,22 @@ internal sealed partial class BrokerProcess : IDisposable
         catch (InvalidOperationException)
         {
             // Already gone, which is the outcome this wanted.
+        }
+        catch (Exception refused) when (refused is AggregateException or System.ComponentModel.Win32Exception)
+        {
+            // Windows refuses to kill a member of the tree that is already exiting ("Access is denied"). The broker is
+            // what matters, so it is stopped on its own; the rest end with it.
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    _ = process.WaitForExit(5000);
+                }
+            }
+            catch (Exception again) when (again is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
         }
 
         process.Dispose();

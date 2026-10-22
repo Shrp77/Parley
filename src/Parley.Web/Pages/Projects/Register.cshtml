@@ -7,10 +7,9 @@
 <h1>Register an agent in @Model.Project</h1>
 
 <p>
-    An agent's name comes from the configuration its server is launched with, and from nowhere
-    else. No call can supply it, which is what makes "a sender cannot forge the agent it claims to
-    be" a property of the design rather than good behaviour. So this page tells you what to write;
-    it cannot register anything on your behalf.
+    Prefer to point at a folder? <a href="/?tab=agents&amp;project=@Model.Project">Register from the agents page</a> instead.
+    This page is for writing the file yourself. An agent's name comes from its launch configuration and nowhere else.
+    No call can supply it, so a sender cannot forge the agent it claims to be. This page can only tell you what to write.
 </p>
 
 <h2>1. Name the agent in the repository</h2>
@@ -23,7 +22,6 @@
       "command": "parley-mcp",
       "env": {
         "PARLEY_AGENT": "&lt;a short name, lower case&gt;",
-        "PARLEY_OWNS": "&lt;one sentence: what this repository owns, and what it does not&gt;",
         "PARLEY_PROJECT": "@Model.Project"
       }
     }
@@ -31,57 +29,34 @@
 }</code></pre>
 
 <p>
-    The key is <code>parley-</code> and this project's name. A repository may answer in more than one
-    project by holding one entry for each, under its own key and with its own <code>owns</code> line;
-    brokers do not federate, so the project an entry names is the only set of peers it can reach. An
-    entry already there under the bare <code>parley</code> key belongs to a deployment that names no
-    projects and should be left as it is.
+    A repository in several projects holds one entry for each, each under its own key. Leave an existing
+    <code>parley</code> entry as it is.
 </p>
 
 <p>
-    <code>PARLEY_PROJECT</code> names the project and the machine's own manifest turns that into an
-    address, which is why it survives the project moving to another port. <b>This page used to show
-    <code>PARLEY_BROKER</code> here instead</b>, and an address is the right answer in exactly one
-    case: the repository is on a machine whose manifest does not name this project, so there is
-    nothing to resolve the name against. Use <code>"PARLEY_BROKER": "@Model.Endpoint"</code> in place
-    of <code>PARLEY_PROJECT</code> there — and note that enrolling such a repository later, with
-    <code>parley enroll</code> or from the terminal, treats an address-pinned entry as belonging to
-    whichever project holds that address and writes this project's entry beside it rather than
-    through it.
+    If this machine does not name the project, use <code>"PARLEY_BROKER": "@Model.Endpoint"</code> in place of
+    <code>PARLEY_PROJECT</code>.
 </p>
 
 <p>
-    The <code>owns</code> line is read by every other agent when it decides who to ask, so it is
-    worth writing as a boundary rather than as a description. Say what the repository does not own
-    as well as what it does.
+    What the repository owns is not written by hand. The agent reports it once it has registered, and you can
+    review and change it under <a href="/Projects/Ownership?project=@Model.Project">Review ownership</a>.
 </p>
 
 <p>
-    No credential belongs in that file. Where one is needed it is a reference —
-    <code>env:</code>, <code>keychain:</code> or <code>file:</code> — which the broker resolves at
-    invocation and never stores. That is what makes the configuration safe to commit.
-</p>
-
-<p>
-    That file is usually tracked, so <strong>which branch is checked out decides whether the
-    agent exists</strong>. Written on a feature branch, it is there while that branch is out and
-    gone on any branch that predates it — and nothing reports it: the session starts, the tools
-    are absent, and a peer's request waits, flagged to the person running the deployment. Put the entry on the
+    That file is usually tracked, so <strong>which branch is checked out decides whether the agent exists</strong>.
+    On a branch without the entry the agent is absent, and nothing reports it. Put the entry on the
     branch everything else is cut from.
 </p>
 
 <h2>2. Open the repository</h2>
 
-<p>
-    Start a session in that repository. The server attaches when it launches, and attaching is
-    what registers the agent — there is no separate step, and no command to run afterwards.
-</p>
+<p>Start a session in that repository. Attaching registers the agent.</p>
 
 <h2>3. Confirm it worked</h2>
 
 <p>
-    Come back to <a href="/Projects/Agents?project=@Model.Project">this project's agents</a>. The
-    new name appears there once its session has attached. If it does not, the server did not
-    start: the session's own output says why, and the usual cause is that the repository was
-    already open when the file was written.
+    Go to <a href="/Projects/Agents?project=@Model.Project">this project's agents</a>.
+    The new name appears there once its session has attached. If it does not, the session's own output says why.
+    A repository already open when the file was written needs reopening.
 </p>

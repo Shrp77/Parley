@@ -51,8 +51,11 @@ public sealed class NoManifestParityTests : IDisposable
         }
     }
 
-    /// <summary>A path in this test's own directory where no file has been written.</summary>
-    private string Absent => Path.Combine(_directory, "projects.json");
+    /// <summary>A root in this test's own directory that has never been created.</summary>
+    /// <remarks>
+    /// A directory that does not exist, so the absent case is what is tested.
+    /// </remarks>
+    private string Absent => Path.Combine(_directory, "never-configured");
 
     // ---- nothing configured resolves exactly as it did ----------------------------------------
 
@@ -75,25 +78,20 @@ public sealed class NoManifestParityTests : IDisposable
         Assert.True(ProjectResolution.TrySelect(null, [], out var project, out _));
         Assert.Null(project);
 
-        Assert.Null(ProjectResolution.Store(null, NoVariables, project).Value);
         Assert.Equal(BrokerEndpoint.Default, ProjectResolution.Endpoint(null, NoVariables, project).Value);
         Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, null).Value);
     }
 
     [Theory]
-    [InlineData(DeploymentEnvironment.DatabaseVariable, "/from/env.db")]
     [InlineData(BrokerEndpoint.Variable, "http://env:1")]
     [InlineData(NodeCatalogue.PathVariable, "/from/env-node.json")]
     public void With_no_manifest_the_environment_still_decides(string name, string value)
     {
         Func<string, string?> variables = asked => asked == name ? value : null;
 
-        var resolved = name switch
-        {
-            DeploymentEnvironment.DatabaseVariable => ProjectResolution.Store(null, variables, null),
-            BrokerEndpoint.Variable => ProjectResolution.Endpoint(null, variables, null),
-            _ => ProjectResolution.NodeConfig(null, variables, null),
-        };
+        var resolved = name == BrokerEndpoint.Variable
+            ? ProjectResolution.Endpoint(null, variables, null)
+            : ProjectResolution.NodeConfig(null, variables, null);
 
         Assert.Equal(value, resolved.Value);
         Assert.Equal(ValueSource.Environment, resolved.Source);
@@ -104,24 +102,30 @@ public sealed class NoManifestParityTests : IDisposable
     [Fact]
     public void An_explicit_value_still_wins_over_a_project_and_says_so()
     {
-        // FR-009. Somebody who has always passed --db keeps passing --db, and the report says
-        // which input won — because the only thing worse than the wrong path is the wrong path
-        // with nothing to say where it came from.
+        // The report says which input won, because the only thing worse than the wrong value is
+        // the wrong value with nothing to say where it came from.
+        //
+        // **This was about `--db` beating a project's store, and that pairing no longer exists** — a
+        // store is derived from the project's name, so there is nothing to override it with. The rule
+        // survives its subject: `--broker` still beats a project's endpoint, and still says so.
         var project = new ProjectSettings(
-            ProjectName.Create("orders"), "/srv/orders.db", "http://127.0.0.1:51801", null, null);
+            ProjectName.Create("orders"),
+            "/srv/orders.db",
+            "http://127.0.0.1:51801",
+            null);
 
-        var store = ProjectResolution.Store("/given/here.db", NoVariables, project);
+        var endpoint = ProjectResolution.Endpoint("http://given:2", NoVariables, project);
 
-        Assert.Equal("/given/here.db", store.Value);
-        Assert.Equal(ValueSource.Argument, store.Source);
-        Assert.Contains("(given)", store.ToString(), StringComparison.Ordinal);
+        Assert.Equal("http://given:2", endpoint.Value);
+        Assert.Equal(ValueSource.Argument, endpoint.Source);
+        Assert.Contains("(given)", endpoint.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
     public void A_machine_with_no_manifest_still_resolves_a_catalogue()
     {
         // A machine may legitimately name no projects, and §4.1 keeps that supported. The catalogue is
-        // the machine's rather than any project's since 018, so there is nothing for a project to fail
+        // the machine's rather than any project's, so there is nothing for a project to fail
         // to supply — what has to hold is that the answer is still the one the node reaches.
         var node = ProjectResolution.NodeConfig(null, NoVariables, null);
 
@@ -148,7 +152,6 @@ public sealed class NoManifestParityTests : IDisposable
         // it. What must not appear is anything reporting the file's absence.
         foreach (var stream in new[] { output, error })
         {
-            Assert.DoesNotContain(ProjectManifest.FileName, stream, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("No projects configured", stream, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(Absent, stream, StringComparison.OrdinalIgnoreCase);
         }
@@ -166,30 +169,46 @@ public sealed class NoManifestParityTests : IDisposable
         // Gating the report on a project having been selected, which is how it was first written,
         // shows it only to somebody who has already adopted the fix. It is asserted here rather
         // than in the project tests for exactly that reason.
+        //
+        // **Described rather than applied**, because the line is printed before anything is
+        // written and nothing here should configure the machine the suite runs on. `--all` is what
+        // reaches that line at all: with stdin redirected there is no picker, and a run with
+        // nothing ticked is refused before the catalogue is named.
+        var checkouts = Path.Combine(_directory, "checkouts");
+
+        Directory.CreateDirectory(Path.Combine(checkouts, "orders", ".git"));
+
         var (_, output, _) = ToolProcess.RunFully(
             [(ProjectManifest.PathVariable, Absent)],
-            "enroll", "plan", Path.Combine(_directory, "absent-manifest.json"));
+            "enroll", checkouts, "--all", "--describe");
 
         Assert.Contains("node catalogue:", output, StringComparison.Ordinal);
         Assert.Contains(NodeCatalogue.DefaultFileName, output, StringComparison.Ordinal);
 
         // And says where that came from, without mentioning the manifest it does not have.
         Assert.Contains("(default)", output, StringComparison.Ordinal);
-        Assert.DoesNotContain(ProjectManifest.FileName, output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Serve_with_no_manifest_and_no_store_refuses_for_the_reason_it_always_did()
+    public void Serve_with_nothing_configured_refuses_and_says_how_to_configure_something()
     {
-        // The refusal must still be about the database. If the manifest had taken over the
-        // selection, this would now fail with something about projects — a different message for
-        // the same mistake, on every machine that has never heard of a project.
+        // **The refusal is about a project, not a database.** There is no store to be missing. What
+        // such a machine lacks is a project, and the refusal says exactly that and how to make one —
+        // which is the whole of what it can usefully say.
+        //
+        // **And it must refuse rather than wait.** `serve --config <root>` waits, because that is the
+        // entry an installer registers and a project named an hour later must come up without it
+        // changing. `parley serve` typed by hand does not: making both wait hung the suite at 4,265
+        // lines with five orphaned brokers and no failure.
         var (code, error) = ToolProcess.Run(
             [(ProjectManifest.PathVariable, Absent)], "serve");
 
         Assert.Equal(78, code);
-        Assert.Contains(DeploymentEnvironment.DatabaseVariable, error, StringComparison.Ordinal);
-        Assert.DoesNotContain("--project", error, StringComparison.Ordinal);
+        Assert.Contains("nothing to serve", error, StringComparison.Ordinal);
+        Assert.Contains("`parley`",error, StringComparison.Ordinal);
+
+        // Nothing about a store, because there is nothing a person could do about one.
+        Assert.DoesNotContain("--db", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,6 +226,5 @@ public sealed class NoManifestParityTests : IDisposable
 
         Assert.NotEqual(0, code);
         Assert.DoesNotContain("--project", error, StringComparison.Ordinal);
-        Assert.DoesNotContain("projects.json", error, StringComparison.OrdinalIgnoreCase);
     }
 }

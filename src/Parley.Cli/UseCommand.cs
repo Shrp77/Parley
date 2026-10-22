@@ -14,7 +14,7 @@ namespace Parley.Cli;
 /// <c>Invoke-Expression (parley use alpha --shell powershell)</c> or <c>eval "$(parley use alpha --shell posix)"</c>.
 /// </para>
 /// <para>
-/// <b>Per terminal, and never saved.</b> The owner chose this over a saved "current project": chosen in one window, a saved
+/// <b>Per terminal, and never saved.</b> A saved "current project" was declined: chosen in one window, a saved
 /// one would quietly apply to a purge in another. A terminal's choice ends with the terminal, and <c>--project</c> on any
 /// one command still wins over it.
 /// </para>
@@ -88,7 +88,7 @@ internal static class UseCommand
             if (!projects.Any(p => string.Equals(p.Name.Value, project, StringComparison.Ordinal)))
             {
                 await error.WriteLineAsync(projects.Count == 0
-                    ? $"No project named '{project}' — this machine has none configured. Add one with `parley project add`."
+                    ? $"No project named '{project}' — this machine has none configured. Name one in `parley`."
                     : $"No project named '{project}'. Configured: "
                       + string.Join(", ", projects.Select(p => p.Name.Value).Order(StringComparer.Ordinal)) + ".")
                     .ConfigureAwait(false);
@@ -119,7 +119,7 @@ internal static class UseCommand
 
         await output.WriteLineAsync(chosen is null
             ? "No project: this machine names none, so a command reaches the local broker. "
-              + "Name the first one with `parley project add`, or from `parley terminal`."
+              + "Name the first one in `parley`."
             : $"{chosen.Name.Value} ({source}).").ConfigureAwait(false);
 
         return 0;

@@ -62,9 +62,9 @@ public sealed class RetentionReachTests : IDisposable
     [Fact]
     public async Task A_bystander_cannot_join_a_finished_conversation_to_hasten_its_forgetting()
     {
-        // In 0.4 an agent that knew a conversation's identifier joined it by naming it, and could then propose
+        // An agent that knew a conversation's identifier must not join it by naming it, or it could propose
         // closure over a finished conversation and have two other agents' text pruned early. A conversation is
-        // assigned now (§5.0): a non-participant naming one it holds no work in is refused.
+        // assigned (§5.0): a non-participant naming one it holds no work in is refused.
         await Discuss(Orders, Billing, "pricing", T0);
 
         var inventory = new Broker(_connection, BrokerOptions.Default);

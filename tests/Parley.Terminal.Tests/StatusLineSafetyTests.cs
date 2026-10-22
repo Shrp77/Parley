@@ -31,7 +31,7 @@ public sealed class StatusLineSafetyTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class StatusLineSafetyTests
         // every conversation view -- by a different code path from the one above.
         using var driving = Driving.Open();
         using var directory = new BrokerDirectory(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
         using var shell = new Shell(directory);

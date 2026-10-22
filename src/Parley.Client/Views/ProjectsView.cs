@@ -10,6 +10,9 @@ namespace Parley.Client.Views;
 /// <param name="Conversations">How many conversations it holds, or null when unreadable.</param>
 /// <param name="Archived">How many of those are archived and therefore not in the ordinary list.</param>
 /// <param name="Problem">Why the project could not be read, when it could not.</param>
+/// <param name="Proposals">
+/// How many roadmap proposals await a person, or null when that could not be counted — never zero for unknown.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b>Counts rather than lists.</b> This answers "which project do I want?" and is read while the
@@ -19,7 +22,7 @@ namespace Parley.Client.Views;
 /// <para>
 /// <b>Null is not zero and the distinction is the whole point.</b> A project whose broker is not
 /// answering has an unknown number of agents; showing it as none would read as a project somebody
-/// has emptied, which is the containment rule 005 wrote and this must not lose in the move.
+/// has emptied.
 /// </para>
 /// </remarks>
 public sealed record ProjectSummary(
@@ -27,7 +30,8 @@ public sealed record ProjectSummary(
     int Running,
     int? Conversations,
     int Archived,
-    string? Problem)
+    string? Problem,
+    int? Proposals = null)
 {
     /// <summary>Whether the project answered at all.</summary>
     public bool Reachable => Problem is null;
@@ -56,12 +60,14 @@ public sealed record ProjectSummary(
             $"{Conversations ?? 0} conversation{(Conversations == 1 ? string.Empty : "s")}";
         var archived = Archived > 0 ? $" ({Archived} archived)" : string.Empty;
 
-        return $"{agents}{running} · {conversations}{archived}";
+        var proposed = Roadmaps.ProposalCount.Says(Proposals);
+
+        return $"{agents}{running} · {conversations}{archived}" + (proposed.Length > 0 ? $" · {proposed}" : string.Empty);
     }
 }
 
 /// <summary>One project, as the projects view lists it.</summary>
-/// <param name="Settings">What the manifest says about it.</param>
+/// <param name="Settings">What its project.json says about it.</param>
 /// <param name="Health">Whether its broker answers, and what it speaks.</param>
 /// <remarks>
 /// The summary is not here. It belongs to whichever project is highlighted and is read when the
@@ -87,9 +93,8 @@ public sealed record ProjectRow(ProjectSettings Settings, ProjectHealth Health)
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The whole of User Story 1.</b> The question a person opens this surface with is which project
-/// they want, and 005 answered it by showing four regions at once and asking them to read all of
-/// them. This answers it with one list and one line beside it that follows the highlight.
+/// The question a person opens this surface with is which project they want. It is answered with one
+/// list and one line beside it that follows the highlight.
 /// </para>
 /// <para>
 /// <b>Derived here rather than in either surface</b>, for the reason seating and transcripts are:
@@ -109,23 +114,23 @@ public static class ProjectsView
     public const string Nothing =
         "This machine names no projects yet. Create one, or name the deployment already running.";
 
-    /// <summary>What to say when the manifest itself could not be read.</summary>
+    /// <summary>What to say when this machine's projects could not be read.</summary>
     /// <remarks>
-    /// A different fact from an empty machine, and 005 recorded why: "this machine names no
-    /// projects" is a machine waiting to be set up, and "the manifest could not be read" is
-    /// somebody's edit thirty seconds ago that they can undo. Showing the first for the second
-    /// hides the edit that caused it.
+    /// <para>
+    /// A different fact from an empty machine: "this machine names no projects" is a machine waiting to
+    /// be set up, and "they could not be read" is somebody's edit thirty seconds ago that they can undo.
+    /// Showing the first for the second hides the edit that caused it.
+    /// </para>
     /// </remarks>
-    public const string Unreadable = "The manifest could not be read: ";
+    public const string Unreadable = "This machine's projects could not be read: ";
 
-    /// <summary>Builds the rows from the manifest and what each broker said.</summary>
-    /// <param name="projects">What the manifest names.</param>
+    /// <summary>Builds the rows from this machine's projects and what each broker said.</summary>
+    /// <param name="projects">This machine's projects.</param>
     /// <param name="health">What each broker answered, keyed by project name.</param>
-    /// <returns>One row per project, in the manifest's order.</returns>
+    /// <returns>One row per project, in name order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="projects"/> is null.</exception>
     /// <remarks>
-    /// The manifest's order rather than sorted, because it is a file a person edits and the order
-    /// they put things in is information. Sorting would silently discard it.
+    /// In the order given, which is name order from the projects directory.
     /// </remarks>
     public static IReadOnlyList<ProjectRow> Rows(
         IReadOnlyList<ProjectSettings> projects,
@@ -149,12 +154,14 @@ public static class ProjectsView
     /// <param name="conversations">How many conversations it holds, or null when unreadable.</param>
     /// <param name="archived">How many of those are archived.</param>
     /// <param name="problem">Why it could not be read, when it could not.</param>
+    /// <param name="proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
     /// <returns>The summary.</returns>
     public static ProjectSummary Summarise(
         IReadOnlyList<AgentRecord>? agents,
         int? conversations,
         int archived,
-        string? problem)
+        string? problem,
+        int? proposals = null)
     {
         if (problem is not null)
         {
@@ -166,6 +173,7 @@ public static class ProjectsView
             agents?.Count(a => a.Presence == AgentPresence.Running) ?? 0,
             conversations,
             archived,
-            null);
+            null,
+            proposals);
     }
 }

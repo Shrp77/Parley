@@ -28,7 +28,7 @@ public sealed class CopyingTests
 {
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static ConversationExport Conversation() =>
@@ -41,8 +41,7 @@ public sealed class CopyingTests
                     AgentName.Create("orders@test"),
                     AgentName.Create("billing@test"),
                     "claude",
-                    "{\"intent\":\"decide\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":"
-                    + "\"who owns the cap?\"}],\"done_when\":\"the owner of the cap is named\"}",
+                    "{\"ask\":\"who owns the cap?\"}",
                     "release-notes",
                     DateTimeOffset.UnixEpoch,
                     null),
@@ -104,7 +103,7 @@ public sealed class CopyingTests
 
         Assert.Contains(shell.Actions(), action => action.Label == Shell.CopyTitle);
 
-        driving.Press(new Key(Shell.CopyKey));
+        driving.Press(new Key(Shell.CopyKey).WithAlt);
 
         Assert.Single(driving.Copied);
     }
@@ -174,6 +173,9 @@ public sealed class CopyingTests
         await shell.Copy();
 
         Assert.Equal(Shell.NotCopied, shell.Said);
-        Assert.Contains("parley export", shell.Said, StringComparison.Ordinal);
+        // The way round it is one that works. It named `parley export` until the combined review gate, which the command
+        // line has refused since 019 -- sending the person to a door that sends them back here.
+        Assert.Contains("F8", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley export", shell.Said, StringComparison.Ordinal);
     }
 }

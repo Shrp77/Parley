@@ -14,8 +14,8 @@ namespace Parley.Core;
 /// </para>
 /// <para>
 /// It exists because a sender told only that the message was stored cannot tell delivery from
-/// silence. That was met in use: a message to an agent nobody had open reported "Sent.",
-/// which was true, and left the person believing a peer was reading it.
+/// silence: a message to an agent nobody has open would report "Sent.", which is true, and leave
+/// the person believing a peer was reading it.
 /// </para>
 /// <para>
 /// An enum rather than a sentence, deliberately. Everything crossing between agents is charged
@@ -35,8 +35,7 @@ public enum WakeOutcome
     /// <remarks>
     /// Asking is not the same as its happening. A node gives a turn only to a resident of its own,
     /// so an agent attached through somebody's editor window is left alone — nothing can make a
-    /// person's window take a turn, which is the case SPEC.md section 17 question 15 was written
-    /// about.
+    /// person's window take a turn.
     /// </remarks>
     AlreadyRunning = 1,
 
@@ -58,8 +57,36 @@ public enum WakeOutcome
     /// <remarks>
     /// Ordinary rather than an error, and the case SPEC.md section 5.5 designs for rather than
     /// around: the message waits, and is collected whenever the agent next runs for any reason.
-    /// Said out loud because the alternative is what was reported — a send that looked identical
-    /// to one that had reached somebody.
+    /// Said out loud because the alternative is a send that looks identical to one that has
+    /// reached somebody.
     /// </remarks>
-    Unreachable = 3
+    Unreachable = 3,
+
+    /// <summary>
+    /// The recipient is the person (SPEC.md §12.3): they have it and will answer, here or away.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not <see cref="AlreadyComing"/>, though that is the nearest.</b> Nothing is coming by itself: a person has to
+    /// decide, and an agent told a turn is on its way would wait for something no machine will do. And never
+    /// <see cref="Unreachable"/>: no node can start the person, and an agent told "unreachable" behaves as if its
+    /// question will never be read, when it waits in the person's mail for as long as it takes.
+    /// </para>
+    /// <para>
+    /// The same whether the person is here or away. What changes with presence is only whether a surface is
+    /// told something arrived, which is the ordinary notice every attached adapter gets.
+    /// </para>
+    /// </remarks>
+    WithThePerson = 4,
+
+    /// <summary>
+    /// The recipient is running only as a process Parley did not start (SPEC.md §11.7): nobody was asked, and it reads the
+    /// message when somebody prompts it.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="AlreadyRunning"/>: asking the node for a turn it cannot give would mark one as coming and
+    /// suppress every wake after it, while the sender was told its receiver was running. Somebody opened that
+    /// repository in an editor, and only they can make it read.
+    /// </remarks>
+    OpenOutside = 5
 }

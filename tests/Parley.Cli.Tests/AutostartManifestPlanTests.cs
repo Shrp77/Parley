@@ -8,31 +8,33 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The autostart entry used to carry one explicit store, which meant every project named after
-/// the install was "not answering" at the next logon and nothing said why. The manifest-serving
-/// entry is the fix, and what this checks is the shape of it: no store, the manifest's path
+/// An autostart entry carrying one explicit store would leave every project named after
+/// the install "not answering" at the next logon with nothing saying why. The manifest-serving
+/// entry avoids that, and what this checks is the shape of it: no store, the manifest's path
 /// written in, the node switched on, the log beside the manifest rather than beside a store it
 /// does not have.
 /// </para>
 /// <para>
 /// Reading an entry back is checked against what <see cref="AutostartPlan"/> writes, because that
-/// is the only writer. The installer used to do this with a regular expression over a scheduled
-/// task's arguments on one platform; a round trip through the same quoting on every platform is
+/// is the only writer. A regular expression over a scheduled
+/// task's arguments would work on one platform; a round trip through the same quoting on every platform is
 /// what stops a path with a space in it coming apart on the way back.
 /// </para>
 /// </remarks>
 public sealed class AutostartManifestPlanTests
 {
-    private const string Manifest = "/tmp/parley/projects.json";
+    // **The root rather than the manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private const string Root = "/tmp/parley";
 
     [Fact]
     public void A_manifest_entry_names_the_manifest_and_no_store()
     {
         var plan = AutostartPlan.DescribeManifest(
-            Manifest, executable: "/usr/local/bin/parley", consoleOn: "http://127.0.0.1:5280");
+            Root, executable: "/usr/local/bin/parley", consoleOn: "http://127.0.0.1:5280");
 
         Assert.StartsWith(
-            $"serve --config {Path.GetFullPath(Manifest)}", plan.Arguments, StringComparison.Ordinal);
+            $"serve --config {Path.GetFullPath(Root)}", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--db", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", plan.Arguments, StringComparison.Ordinal);
 
@@ -46,41 +48,48 @@ public sealed class AutostartManifestPlanTests
     }
 
     [Fact]
-    public void The_manifest_entrys_log_sits_beside_the_manifest()
+    public void The_entrys_log_sits_at_the_root()
     {
-        // There is no single store to be beside, and the manifest's directory is the one this
-        // machine's configuration already lives in.
-        var plan = AutostartPlan.DescribeManifest(Manifest, executable: "parley");
+        // There is no single store to be beside, and the root is the directory this machine's
+        // configuration already lives in.
+        //
+        // **This said "beside the manifest", which was the same place reached by taking a parent.** Once
+        // `--config` named the root, taking its parent put the broker's log outside everything Parley
+        // keeps — asserted here directly rather than as a relationship between two derived paths, since
+        // that is what let the two agree while both were wrong.
+        var plan = AutostartPlan.DescribeManifest(Root, executable: "parley");
 
-        Assert.Equal(
-            Path.GetDirectoryName(Path.GetFullPath(Manifest)),
-            Path.GetDirectoryName(plan.LogPath));
+        Assert.Equal(Path.GetFullPath(Root), Path.GetDirectoryName(plan.LogPath));
     }
 
     [Fact]
     public void A_manifest_entry_reads_back_as_serving_the_manifest()
     {
         var plan = AutostartPlan.DescribeManifest(
-            Manifest, executable: "parley", consoleOn: "http://127.0.0.1:5280");
+            Root, executable: "parley", consoleOn: "http://127.0.0.1:5280");
 
         var entry = InstalledEntry.Parse(plan.Arguments);
 
         Assert.NotNull(entry);
         Assert.True(entry.ServesManifest);
-        Assert.Null(entry.Store);
-        Assert.Equal(Path.GetFullPath(Manifest), entry.Manifest);
+        Assert.Equal(Path.GetFullPath(Root), entry.Manifest);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
         Assert.Contains("every project in", entry.Serves, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void An_explicit_entry_reads_back_with_every_path_intact()
+    public void A_narrowed_entry_reads_back_with_every_path_intact()
     {
         // Paths with spaces on both sides of the round trip, because that is the case the quoting
         // exists for and the one a regular expression got wrong.
+        //
+        // **It carries a project name, not a store or a port.** An entry cannot name
+        // either: both are a project's own, and one repeated in a scheduled task would be a
+        // second place the answer lives. What still has to survive quoting is the root and the
+        // catalogue, which are the two paths a person can put anywhere.
         var plan = AutostartPlan.Describe(
-            "C:/Some Folder/parley.db",
-            "http://127.0.0.1:9999",
+            "C:/Some Folder",
+            "orders",
             executable: "parley",
             nodeConfig: "C:/Some Folder/node.json",
             consoleOn: "http://127.0.0.1:5280");
@@ -88,12 +97,15 @@ public sealed class AutostartManifestPlanTests
         var entry = InstalledEntry.Parse(plan.Arguments);
 
         Assert.NotNull(entry);
-        Assert.False(entry.ServesManifest);
-        Assert.Equal(Path.GetFullPath("C:/Some Folder/parley.db"), entry.Store);
-        Assert.Equal("http://127.0.0.1:9999", entry.Listen);
+        Assert.Equal(Path.GetFullPath("C:/Some Folder"), entry.Manifest);
         Assert.Equal(Path.GetFullPath("C:/Some Folder/node.json"), entry.NodeConfig);
         Assert.Equal("http://127.0.0.1:5280", entry.Console);
-        Assert.Null(entry.Manifest);
+
+        Assert.Contains("--project orders", plan.Arguments, StringComparison.Ordinal);
+
+        // And it reads back as the project it names, which is what `autostart status` reports.
+        Assert.Equal("orders", entry.Project);
+        Assert.False(entry.ServesManifest);
     }
 
     [Fact]

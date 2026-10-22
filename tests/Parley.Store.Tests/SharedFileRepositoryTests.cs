@@ -463,8 +463,8 @@ public sealed class SharedFileRepositoryTests : IDisposable
     [Fact]
     public async Task A_conversation_holding_only_files_is_listed_with_its_placer_and_no_messages()
     {
-        // Found over the wire: the listing joined conversations to their messages, so a conversation started by
-        // placing a file existed, held a file, had a participant, and could not be found by the person.
+        // A listing that joined conversations to their messages would miss a conversation started by
+        // placing a file: it exists, holds a file, has a participant, and must be found by the person.
         await Place("pricing", "a.md", "x", Billing);
         await new ConversationRepository(_connection).JoinByPlacingAsync("pricing", Billing, Now, cancellationToken: Ct);
 

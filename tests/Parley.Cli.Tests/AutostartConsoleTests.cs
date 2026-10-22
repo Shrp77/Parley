@@ -10,7 +10,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SPEC.md §17 question 15 records the reason. An agent attached through somebody's own editor
+/// An agent attached through somebody's own editor
 /// window is the one attachment nothing can hand a turn to — the node gives turns only to
 /// residents it started, and nothing can make a person's window take one. So a person takes part
 /// through the console, and a console that had to be remembered separately would be the half of
@@ -24,14 +24,15 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class AutostartConsoleTests
 {
-    private const string Store = "/tmp/parley/parley.db";
+    // The root, not a store: a project's store is derived from its name and no entry names one.
+    private const string Root = "/tmp/parley";
     private const string Binary = "/usr/local/bin/parley";
 
     [Fact]
     public void The_entry_starts_a_console_when_one_is_asked_for()
     {
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: "http://127.0.0.1:5280");
 
         Assert.Contains("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
@@ -45,7 +46,7 @@ public sealed class AutostartConsoleTests
         // absence is the question this exists to stop being asked. A default left implicit is a
         // default somebody has to already know.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: WebUiAddress.Loopback);
 
         Assert.Contains(
@@ -56,7 +57,7 @@ public sealed class AutostartConsoleTests
     public void An_entry_asked_for_no_console_installs_none()
     {
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null, consoleOn: null);
+            Root, project: null, executable: Binary, nodeConfig: null, consoleOn: null);
 
         Assert.DoesNotContain("--with-web-ui", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--web-ui", plan.Arguments, StringComparison.Ordinal);
@@ -68,7 +69,7 @@ public sealed class AutostartConsoleTests
         // The property that makes the name still right. Three things start, and `remove` finds
         // all of them by the one handle `install` left behind.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary,
+            Root, project: null, executable: Binary,
             nodeConfig: "/tmp/parley/node.json",
             consoleOn: WebUiAddress.Loopback);
 
@@ -85,7 +86,7 @@ public sealed class AutostartConsoleTests
         // split would install an entry that fails at logon, which is the failure nobody sees
         // until the machine is rebooted.
         var plan = AutostartPlan.Describe(
-            Store, listenOn: null, executable: Binary, nodeConfig: null,
+            Root, project: null, executable: Binary, nodeConfig: null,
             consoleOn: "http://127.0.0.1:5280");
 
         var split = AutostartPlan.Split(plan.Arguments);
@@ -147,20 +148,17 @@ public sealed class AutostartConsoleTests
     [Fact]
     public async Task Neither_a_console_nor_a_node_is_refused_across_several_projects()
     {
-        // Found by running it, twice over. A console reads this machine's manifest and is at its
-        // best across several projects, and it was once refused because it shared a hook with the
-        // node. The node was then refused across several projects on its own, on the grounds
-        // that a machine has one identity — until an autostart entry serving the manifest had
-        // nowhere to put the node at all. It is hosted per catalogued project now, so neither
-        // hook may throw at a person. Cancelled up front so nothing binds and the test needs no
+        // A console reads this machine's manifest and is at its best across several projects, so it
+        // must not be refused because it shares a hook with the node. The node is hosted per
+        // catalogued project, so neither hook may throw at a person. Cancelled up front so nothing binds and the test needs no
         // sockets: anything that is not an ArgumentException got past the guard, which is the
         // whole claim.
         var projects = new[]
         {
             new ProjectSettings(
-                ProjectName.Create("alpha"), "alpha.db", "http://127.0.0.1:0", null, null),
+                ProjectName.Create("alpha"), "alpha.db", "http://127.0.0.1:0", null),
             new ProjectSettings(
-                ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:0", null, null)
+                ProjectName.Create("beta"), "beta.db", "http://127.0.0.1:0", null)
         };
 
         using var stopping = new CancellationTokenSource();

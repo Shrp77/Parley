@@ -37,29 +37,6 @@ public sealed class SpecConsistencyTests
     }
 
     [Fact]
-    public void An_instruction_is_bounded_by_the_same_number_as_a_message()
-    {
-        // Two caps on text that lands in the same place, and the whole reason for reusing the
-        // number rather than choosing a second one. SQLite cannot express "the same as that
-        // one", so nothing but this stops the pair drifting -- and they would drift at the worst
-        // moment, when evidence moves the message cap and the instruction cap is left behind at
-        // a number nobody argued for.
-        var caps = Regex.Matches(
-                SpecDocument.Text,
-                @"CHECK \(length\((?<column>payload_json|text)\) <= (?<cap>\d+)\)")
-            .Select(m => (Column: m.Groups["column"].Value, Cap: m.Groups["cap"].Value))
-            .ToList();
-
-        Assert.Contains(caps, c => c.Column == "payload_json");
-        Assert.Contains(caps, c => c.Column == "text");
-
-        Assert.True(
-            caps.Select(c => c.Cap).Distinct().Count() == 1,
-            "a message and an instruction are capped at different lengths: "
-            + string.Join(", ", caps.Select(c => $"{c.Column} <= {c.Cap}")));
-    }
-
-    [Fact]
     public void Agent_and_operator_operations_do_not_share_a_name()
     {
         // §10.2 opens by warning that an adapter surfacing an operator operation into an

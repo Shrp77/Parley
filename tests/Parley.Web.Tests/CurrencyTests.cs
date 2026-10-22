@@ -71,7 +71,6 @@ public sealed class CurrencyTests
             new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain("read-only", served, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("says what it will do before it does it", served, StringComparison.Ordinal);
     }
 
     /// <summary>Finds a path in the repository from wherever the tests run.</summary>

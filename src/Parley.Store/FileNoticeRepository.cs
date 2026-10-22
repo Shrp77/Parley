@@ -11,7 +11,7 @@ namespace Parley.Store;
 /// <para>
 /// <b>A notice is raised in the transaction that changes the file</b>, by <see cref="SharedFileRepository"/>, and
 /// collected in the transaction that drains an inbox. Nothing here wakes anything: a notice waits for whenever
-/// the agent next looks, which is the owner's call and the reason a file saved often costs no turns.
+/// the agent next looks, which is the reason a file saved often costs no turns.
 /// </para>
 /// <para>
 /// <b>At most one per agent per file, carrying the latest state</b>, and the schema holds both halves: one row per

@@ -3,18 +3,15 @@ namespace Parley.Setup;
 /// <summary>
 /// What the supervisor entry on this machine was registered to run, read back from it.
 /// </summary>
-/// <param name="Store">The store an explicit entry serves, or null for one that serves the manifest.</param>
-/// <param name="Listen">Where it was told to listen, or null for the default.</param>
-/// <param name="NodeConfig">The catalogue an explicit entry hosts a node from, or null.</param>
+/// <param name="NodeConfig">The catalogue the entry hosts a node from, or null.</param>
 /// <param name="Console">Where the console listens, or null for an entry that hosts none.</param>
-/// <param name="Manifest">The manifest an entry serves, or null for an explicit one.</param>
+/// <param name="Manifest">The root the entry serves, as <c>--config</c> names it.</param>
 /// <remarks>
 /// <para>
-/// <b>The entry is the one place a deployment's paths are written down on a machine that names no
-/// projects.</b> Everything that used to ask a person for them — the installer's store prompt, the
-/// terminal's naming form — was asking for values already sitting in a scheduled task or a unit
-/// file, and the person answering had to go and look them up there. Reading the entry back is
-/// what lets those questions be pre-filled instead of asked.
+/// <b>The entry is the one place a deployment's root is written down on a machine that names no
+/// projects.</b> Reading the entry back is what lets the terminal's naming form and the installer be
+/// pre-filled instead of asking a person for values already sitting in a scheduled task or a unit
+/// file.
 /// </para>
 /// <para>
 /// Parsed from the argument string <see cref="AutostartPlan"/> composed, with the same
@@ -22,45 +19,35 @@ namespace Parley.Setup;
 /// so a path with a space in it survives the round trip the same way on every platform.
 /// </para>
 /// <para>
-/// <see cref="Serves"/> is the distinction that matters to a reader. An entry with a store serves
-/// one deployment by explicit paths, exactly as before manifests existed; one with none serves
-/// every project the manifest names, and a project added later comes up within seconds without
-/// the entry changing, because the broker watches the manifest.
+/// <see cref="Serves"/> is the distinction that matters to a reader. An entry serves one project
+/// it names, or every project under the root; a project added later comes up within seconds without
+/// the entry changing, because the broker watches the root.
 /// </para>
 /// </remarks>
 public sealed record InstalledEntry(
-    string? Store,
-    string? Listen,
     string? NodeConfig,
     string? Console,
     string? Manifest)
 {
-    /// <summary>The spellings this version no longer accepts, in the order they were written.</summary>
-    /// <remarks>
-    /// <para>
-    /// <b>This is the release that removes them, and a live scheduled task holds one right now.</b>
-    /// The broker still starts — every verb ignores options it has no use for — so the entry keeps
-    /// working and quietly loses its web UI, which is the safer of the two failures and is still a
-    /// change nothing announces. What an operator gets otherwise is an absence: the web UI stops
-    /// appearing and nothing connects that to an upgrade.
-    /// </para>
-    /// <para>
-    /// Recorded here because this type already exists to read an entry back, which makes it the one
-    /// place that can notice. It does not change what is read: <c>--console</c> is still where the web
-    /// UI's address comes from, for ever, which is the half of the deprecation that keeps
-    /// <c>autostart status</c> honest about entries written before 0.19.0.
-    /// </para>
-    /// </remarks>
-    public IReadOnlyList<string> Removed { get; init; } = [];
+    /// <summary>The one project this entry serves, or null when it serves every project.</summary>
+    public string? Project { get; init; }
 
-    /// <summary>Whether this entry serves the manifest rather than one explicit store.</summary>
-    public bool ServesManifest => Store is null;
+    /// <summary>Whether this entry serves every project rather than one named.</summary>
+    public bool ServesManifest => Project is null;
+
+    /// <summary>Whether the entry tells the broker to let go of its console window.</summary>
+    /// <remarks>
+    /// Read so that <c>autostart status</c> can say it. An entry installed without it puts a console
+    /// window on somebody's desktop at every logon, and "why does a black window appear when I log
+    /// in" is a question answered by the status line or by nothing.
+    /// </remarks>
+    public bool Hidden { get; init; }
 
     /// <summary>What the entry serves, in words for a status line.</summary>
     public string Serves =>
         ServesManifest
             ? $"every project in {Manifest ?? "this machine's manifest"}"
-            : $"the store at {Store}";
+            : $"the project {Project}";
 
     /// <summary>Reads the entry back from the argument string it was registered with.</summary>
     /// <param name="arguments">The arguments, as <see cref="AutostartPlan.Arguments"/> rendered them.</param>
@@ -79,12 +66,11 @@ public sealed record InstalledEntry(
             return null;
         }
 
-        string? store = null;
-        string? listen = null;
         string? node = null;
         string? console = null;
         string? manifest = null;
-        var removed = new List<string>();
+        string? project = null;
+        var hidden = false;
 
         for (var i = 1; i < parts.Count; i++)
         {
@@ -94,28 +80,12 @@ public sealed record InstalledEntry(
 
             switch (parts[i])
             {
-                case "--db":
-                    store = value;
-                    i++;
-                    break;
-
-                case "--listen":
-                    listen = value;
-                    i++;
-                    break;
-
                 case "--node-config":
                     node = value;
                     i++;
                     break;
 
-                // Both spellings, and reading the old one is not optional. Every machine with an
-                // entry installed before 0.19.0 has `--console` in its scheduled task right now,
-                // and a reader that knew only the new name would report those entries as having no
-                // web UI -- so `autostart status` would say one thing while the entry did another,
-                // and a reinstall carrying the arguments forward would drop it.
                 case "--web-ui":
-                case "--console":
                     console = value;
                     i++;
                     break;
@@ -125,16 +95,20 @@ public sealed record InstalledEntry(
                     i++;
                     break;
 
-                case "--log":
+                // **The one thing that narrows an entry.** An entry serves this machine or the one
+                // project it names, and `autostart status` has to be able to say which.
+                case "--project":
+                    project = value;
                     i++;
                     break;
 
-                case "--with-console":
-                case "--no-console":
-                    // **Read precisely because they are gone.** They carry nothing this needs, and
-                    // an entry naming one was written by a build older than this and will behave
-                    // differently under it.
-                    removed.Add(parts[i]);
+                // A flag rather than an option, so nothing is consumed after it.
+                case "--hidden":
+                    hidden = true;
+                    break;
+
+                case "--log":
+                    i++;
                     break;
 
                 default:
@@ -144,7 +118,11 @@ public sealed record InstalledEntry(
             }
         }
 
-        return new InstalledEntry(store, listen, node, console, manifest) { Removed = removed };
+        return new InstalledEntry(node, console, manifest)
+        {
+            Project = project,
+            Hidden = hidden,
+        };
     }
 
     /// <summary>Reads the entry this machine's supervisor holds, if there is one.</summary>

@@ -144,44 +144,44 @@ public sealed class PluginTests
     }
 
     [Fact]
-    public void The_setup_command_writes_the_variable_a_server_requires()
+    public void The_setup_command_has_enrolling_write_the_launch_configuration()
     {
-        // One, where there used to be two. The database is not the adapter's business any more
-        // and the broker has a default, so the only thing a launch configuration must still say
-        // is who this process speaks for -- which is the one thing that could never be
-        // defaulted, because guessing it would guess an identity.
+        // Nothing in a launch configuration is written by hand: `parley enroll` writes it. A
+        // configuration shown to copy would be a second implementation of the one LaunchEntries
+        // holds, and the first copy that drifted would start a server under an identity nobody meant.
         //
-        // A configuration missing it produces a server that exits before it serves, which the
-        // user meets as a plugin that installed and did nothing.
-        var configuration = Regex.Match(
-            RepositoryFile.Read(Setup), @"""mcpServers"".*?\n```", RegexOptions.Singleline);
+        // The variable a server cannot start without is still named, because the setup tells a
+        // person how to choose the agent's name before enrolling, and it does that through it.
+        var setup = RepositoryFile.Read(Setup);
 
-        Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
-
-        Assert.Contains(ServerOptions.AgentVariable, configuration.Value, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"mcpServers\"", setup, StringComparison.Ordinal);
+        Assert.Contains("parley enroll", setup, StringComparison.Ordinal);
+        Assert.Contains(ServerOptions.AgentVariable, setup, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void The_setup_command_writes_what_the_repository_owns()
+    public void The_setup_command_leaves_what_the_repository_owns_to_the_agent()
     {
-        // Not required by the server - an agent with no statement starts perfectly well - which
-        // is exactly why this needs a check. A setup that quietly omits it produces a working
-        // deployment whose agents can only be found by name, and the symptom is not an error:
-        // it is peers guessing at each other, which is the failure Parley exists to prevent.
+        // The agent states what it owns when the facilitator asks, and a person may override it.
+        // A setup that told anybody to write the line would put a guess where the agent's own
+        // statement belongs, and the record of who said it would be wrong.
         var setup = RepositoryFile.Read(Setup);
 
-        var configuration = Regex.Match(setup, @"""mcpServers"".*?\n```", RegexOptions.Singleline);
+        Assert.Contains("The `owns` line is not written by enrolling", setup, StringComparison.Ordinal);
+        Assert.DoesNotContain(DeploymentEnvironment.OwnsVariable, setup, StringComparison.Ordinal);
 
-        Assert.True(configuration.Success, "the setup command no longer shows a launch configuration");
-        Assert.Contains(DeploymentEnvironment.OwnsVariable, configuration.Value, StringComparison.Ordinal);
-
-        // And it has to ask for the value rather than inventing one, so it has to say how long
-        // the value may be. A boundary is a decision somebody made; a directory listing does not
-        // imply it.
-        Assert.Contains(
+        // There is no bound on the value, so the number to assert would be the sentinel
+        // -- and printing that in front of a person must never happen, because it names a limit
+        // nobody chose.
+        Assert.DoesNotContain(
             OwnershipStatement.MaxCharacters.ToString(CultureInfo.InvariantCulture),
             setup,
             StringComparison.Ordinal);
+
+        // The reason to be brief goes where the line is written now: the question the agent is
+        // asked. Without it a model has no reason at all to keep the line short.
+        Assert.Contains("read far more often than it is written", Facilitation.Question(autoAccept: true), StringComparison.Ordinal);
+        Assert.Contains("read far more often than it is written", Facilitation.Question(autoAccept: false), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -193,7 +193,10 @@ public sealed class PluginTests
         var peers = RepositoryFile.Read(WritePeers);
 
         Assert.Contains("owns", peers, StringComparison.Ordinal);
-        Assert.Contains(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
+
+        // Ownership is one statement the agent proposes and the person may override, so the command
+        // never tells anyone to write the variable by hand.
+        Assert.DoesNotContain(DeploymentEnvironment.OwnsVariable, peers, StringComparison.Ordinal);
     }
 
     [Fact]

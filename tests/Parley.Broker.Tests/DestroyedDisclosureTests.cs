@@ -10,7 +10,7 @@ namespace Parley.Broker.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 of the review gate, run 2.5 — the first after T035. The record names which agents were
+/// The record names which agents were
 /// party to a conversation. That is precisely the shape of disclosure §10.1 withholds from an
 /// agent: an agent may address a peer and must not be able to enumerate what its peers have
 /// discussed with anybody else.

@@ -48,9 +48,41 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
-        var name = Name(request.Agent);
+        var name = Caller(request.Agent);
+
+        // The other half of the reservation: a row carrying the facilitator's adapter under any role would read as
+        // Parley on every surface. Storage refuses it too, but as a constraint rather than a sentence.
+        if (string.Equals(request.Adapter, Facilitation.Adapter, StringComparison.Ordinal))
+        {
+            throw new RpcException(new Status(StatusCode.PermissionDenied, Facilitation.Reserved));
+        }
+
+        // The person's seat (§12.3): only a surface seating the person attaches under it. The row is written when the
+        // store opens, so an attach under the name fires no storage rule; this comparison is the whole guard, and it
+        // trusts the adapter the caller reports, as §16 concedes of every name. Without it an agent attached here
+        // would speak with the person's standing — a person may always open a conversation (principle 2.10).
+        if (PersonSeat.Is(name) != string.Equals(request.Adapter, PersonSeat.Adapter, StringComparison.Ordinal))
+        {
+            // Both directions (§12.3). The second is the one with the standing in it: the broker recognises the person by
+            // this adapter, so an agent registering under it could name any conversation as only a person may.
+            throw new RpcException(new Status(
+                StatusCode.PermissionDenied,
+                PersonSeat.Is(name)
+                    ? PersonSeat.Reserved
+                    : $"'{PersonSeat.Adapter}' is the adapter of the person's seat, so no agent can attach under it."));
+        }
 
         RequireTheSameProtocol(request.ProtocolVersion);
+
+        // A label, not a credential (§4.1.1): one that is not an identifier is a malformed call, refused whole so a typo
+        // cannot register an agent that will never be found by it.
+        var identity = default(AgentIdentity);
+
+        if (Blank(request.Identity) is { } written && !AgentIdentity.TryRead(written, out identity))
+        {
+            throw new RpcException(new Status(
+                StatusCode.InvalidArgument, $"'{written}' is not an agent identity, so this attach is refused."));
+        }
 
         var registration = new AgentRecord(
             name,
@@ -61,13 +93,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             Blank(request.AdapterConfig),
             Connected: false,
             AgentStatus.Active,
-            Blank(request.Owns));
+            Blank(request.Owns),
+            Identity: identity);
 
         AttachedAgent attached;
 
         try
         {
-            attached = await _runtime.AttachAsync(registration, context.CancellationToken).ConfigureAwait(false);
+            attached = await _runtime.AttachAsync(
+                registration, context.CancellationToken, Blank(request.LaunchToken)).ConfigureAwait(false);
         }
         catch (InvalidOperationException exception)
         {
@@ -115,7 +149,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
         var conversation = Blank(request.ConversationId);
 
         // A bare role reaches every participant registered under it (§5.5); a whole name reaches one.
@@ -152,12 +186,12 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         var outcome = await Run(
             from,
             (broker, now, ct) => broker.ClarifyAsync(
-                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
+                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
             context).ConfigureAwait(false);
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
@@ -171,12 +205,12 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         var outcome = await Run(
             from,
             (broker, now, ct) => broker.ResultAsync(
-                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct),
+                request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
             context).ConfigureAwait(false);
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
@@ -196,7 +230,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var from = Name(request.From);
+        var from = Caller(request.From);
 
         Vote vote;
 
@@ -239,7 +273,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var asking = Name(request.AskingAs);
+        var asking = Caller(request.AskingAs);
 
         var agents = await Run(asking, (broker, _, ct) => broker.ListAgentsAsync(ct), context).ConfigureAwait(false);
 
@@ -255,7 +289,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // The single place a collection is observable, which is why the wake bound keys on it: an agent that
         // attached and has not collected has read nothing. Collected rather than run, so the bound is freed before
@@ -290,7 +324,40 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         reply.FileNotices.AddRange(inbox.Notices.Notices.Select(Conversions.Out));
         reply.FileNoticesWaiting = inbox.Notices.StillWaiting;
 
+        // What became of the caller's own proposals (SPEC.md section 5.7). Not a reason to wake anything either.
+        reply.RoadmapNotices.AddRange(inbox.RoadmapNotices.Select(Conversions.Out));
+
+        reply.RoadmapNoticesWaiting = await _runtime.UseConnectionAsync(
+            async (connection, _, ct) => await new RoadmapRepository(connection).CountNoticesAsync(agent, ct)
+                .ConfigureAwait(false),
+            context.CancellationToken).ConfigureAwait(false);
+
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposeRoadmapReply> ProposeRoadmap(
+        Wire.ProposeRoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var proposer = Caller(request.Agent);
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+
+        // Stores a proposal and nothing else (SPEC.md section 5.7): no wake, no exchange, no message. The one
+        // roadmap operation an agent has, and the whole of what it may do with one (principle 2.12).
+        var outcome = await Run(
+            proposer,
+            (broker, now, ct) => broker.ProposeRoadmapAsync(
+                proposer, content, Blank(request.ConversationId), Blank(request.Revises), now, ct),
+            context).ConfigureAwait(false);
+
+        return new Wire.ProposeRoadmapReply
+        {
+            ProposalId = outcome.Id ?? 0,
+            Problem = outcome.Problem ?? string.Empty,
+        };
     }
 
     /// <inheritdoc/>
@@ -299,7 +366,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // Not routed through an attachment: asked by things that hold no stream.
         return await _runtime.UseConnectionAsync(
@@ -310,7 +377,9 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 ClosurePollsWaiting = await new ConversationRepository(connection)
                     .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
                 FileNoticesWaiting = await new FileNoticeRepository(connection)
-                    .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    .CountWaitingAsync(agent, cancellationToken: ct).ConfigureAwait(false),
+                RoadmapNoticesWaiting = await new RoadmapRepository(connection)
+                    .CountNoticesAsync(agent, ct).ConfigureAwait(false)
             },
             context.CancellationToken).ConfigureAwait(false);
     }
@@ -321,7 +390,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Caller(request.Agent);
 
         // Best effort, and silent when it fails: the adapter has already told the model its message was
         // too long, and that must not depend on the bookkeeping behind it.
@@ -460,8 +529,8 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     /// <remarks>
     /// <para>
     /// The poll reaches a participant through its inbox, and only a participant that collects sees it. One that
-    /// finished its part has no reason to collect again, so without this the conversation stayed closing and
-    /// nothing asked it. The reason names nobody: the poll leaks nothing about who else was asked (§5.0).
+    /// finished its part has no reason to collect again, so without this nothing would
+    /// ask it. The reason names nobody: the poll leaks nothing about who else was asked (§5.0).
     /// </para>
     /// <para>
     /// <b>At most once for each participant in each poll.</b> Each turn is a collection and a collection frees the
@@ -503,7 +572,13 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             MessageId = outcome.Message?.Id ?? 0
         };
 
-        reply.ExpectedItems.AddRange(outcome.ExpectedItems);
+        reply.CannotSettle.AddRange(outcome.CannotSettle.Select(c => new Wire.SettleRefusal
+        {
+            ExchangeId = c.Exchange,
+            Problem = Conversions.Out(c.Problem)
+        }));
+        reply.Settled.AddRange(outcome.Settled);
+        reply.HandedBack.AddRange(outcome.HandedBack);
         return reply;
     }
 
@@ -537,6 +612,30 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
                 StatusCode.InvalidArgument,
                 $"'{value}' is not an agent name. Names are role@machine, lower case, and the machine half " +
                 "is detected rather than configured (SPEC.md §4.1.1)."));
+
+    /// <summary>Reads the name a call is made as, refusing the facilitator's.</summary>
+    /// <param name="value">The name the caller claims.</param>
+    /// <returns>The name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Every operation here that names its caller goes through this, not only attaching.</b> §16 concedes that
+    /// anything able to reach a broker can claim to be any agent, and the facilitator is the one name that claim must
+    /// not reach: its questions are the ones every agent is asked without having asked for anything, so a caller able
+    /// to act under it could put words in the system's mouth (SPEC.md principle 2.11).
+    /// </para>
+    /// <para>
+    /// Refused here, with a sentence, before storage refuses the row. The facilitator itself never calls this service:
+    /// it writes through the broker's own process.
+    /// </para>
+    /// </remarks>
+    private static AgentName Caller(string value)
+    {
+        var name = Name(value);
+
+        return Facilitation.Is(name)
+            ? throw new RpcException(new Status(StatusCode.PermissionDenied, Facilitation.Reserved))
+            : name;
+    }
 
     private static string? Blank(string value) => string.IsNullOrEmpty(value) ? null : value;
 }

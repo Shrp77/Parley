@@ -79,7 +79,9 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
     private string Workspace => Path.Combine(_root, "orders");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     /// <summary>This machine's one catalogue, which sits beside the manifest (018).</summary>
     private string CataloguePath => Path.Combine(_root, NodeCatalogue.DefaultFileName);
@@ -358,13 +360,12 @@ public sealed class WithdrawingTests : IAsyncDisposable
         var ct = TestContext.Current.CancellationToken;
 
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("acme"),
                     Path.Combine(_root, "acme.db"),
                     _broker.Address,
-                    CataloguePath,
                     null),
             ]);
 
@@ -395,9 +396,9 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         Catalogued = identity;
 
-        var directory = BrokerDirectory.FromManifest(ManifestPath);
+        var directory = BrokerDirectory.FromManifest(Root);
         var shell = TerminalCommand.Build(
-            directory, manifestPath: ManifestPath, cataloguePath: CataloguePath);
+            directory, manifestPath: Root, cataloguePath: CataloguePath);
 
         driving.Show(shell);
 

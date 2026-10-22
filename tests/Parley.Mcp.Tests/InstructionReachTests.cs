@@ -8,17 +8,15 @@ namespace Parley.Mcp.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>SC-006, checked mechanically rather than by inspection.</b> SPEC.md §10.2 opens by warning
-/// that an adapter surfacing an operator operation into an agent's tool set would breach §10.1, and
-/// names <c>instruct</c> as the one operation that puts a person's words into an agent's turn. The
-/// readback is the same surface read the other way: an agent able to list instructions could learn
-/// what the operator had told a peer to do.
+/// <b>Instruct was removed, and this keeps it from coming back by the agent's door.</b> A person
+/// speaks to an agent only by sending a Request from the seat, which is a message in a conversation both can
+/// read. A route that put a person's words into an agent's turn outside any conversation would be a second way
+/// in that nobody could read afterwards.
 /// </para>
 /// <para>
-/// The wire split makes it structural — <c>Instructions</c> is on <c>Operators</c> and there is no
-/// method on <c>Agents</c> that reads one. What this adds is the check one level closer to the
-/// model: the tool set an MCP client is handed, by name, so a tool that acquired the word cannot
-/// arrive quietly.
+/// The wire split makes it structural — there is no method on <c>Agents</c> that gives or reads an
+/// instruction. What this adds is the check one level closer to the model: the tool set an MCP client is
+/// handed, by name, so a tool that acquired the word cannot arrive quietly.
 /// </para>
 /// </remarks>
 public sealed class InstructionReachTests
@@ -70,19 +68,5 @@ public sealed class InstructionReachTests
         Assert.True(
             onAgents.Count == 0,
             "the agent service carries an instruction method: " + string.Join(", ", onAgents));
-    }
-
-    [Fact]
-    public void The_operator_wire_service_does_carry_them()
-    {
-        // Non-vacuity for the three above. If the names were spelled differently from what those
-        // tests search for, every one of them would pass by finding nothing anywhere.
-        var onOperators = typeof(Parley.Transport.Operators.OperatorsClient)
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Select(m => m.Name)
-            .Where(name => name.Contains("Instruct", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        Assert.NotEmpty(onOperators);
     }
 }

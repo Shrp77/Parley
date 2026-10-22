@@ -238,8 +238,12 @@ public sealed class LineTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task The_preview_names_the_recipient_and_what_it_will_do()
+    public async Task The_preview_names_who_it_goes_to_and_nothing_else()
     {
+        // **The owner's call of 2026-10-02.** This asserted the preview said "answer" and "closes the exchange" beside
+        // each recipient — what Enter would record — and the owner read that as wrong: a conversation never really
+        // stops, and bookkeeping about exchanges is not what somebody about to send is deciding. The act is still
+        // derived; it is just not narrated.
         var ct = TestContext.Current.CancellationToken;
         using var driving = Driving.Open(width: 140, height: 40);
         using var directory = Directory();
@@ -250,16 +254,11 @@ public sealed class LineTests : IAsyncDisposable
 
         await shell.Settled;
 
-        // **It says "answer", and that is the derivation working.** The fixture's peer asked this person
-        // something, so typing to them is a Result and not a Request — which is the whole point of deriving
-        // the act from who owes whom rather than asking for a verb first.
-        Assert.Contains(Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains("answer", shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains("closes the exchange", shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Equal($"to: {Orders.Value}", shell.Line.Preview.Trim());
     }
 
     [Fact]
-    public async Task With_no_seat_the_line_asks_for_one_rather_than_hiding()
+    public async Task With_no_connection_the_line_says_so_rather_than_hiding()
     {
         // 0.28.2 records what hiding a thing from a seatless person costs: the owner reached for Instruct,
         // which is not a message and never becomes a conversation.
@@ -276,21 +275,14 @@ public sealed class LineTests : IAsyncDisposable
         // this surface says, which ends a sentence with a full stop.
         Assert.Contains(LineRegion.NoSeat, shell.Line.Preview, StringComparison.Ordinal);
 
-        // **And the seat is offered in the room rather than here**, which is where its key can actually
-        // arrive: a focused box wins every printable key, so `j` in this pane types a `j`. 0.28.2's rule is
-        // what still holds -- never hide a thing from a seatless person -- and only the pane changed.
-        shell.Focus(shell.Panes.ToList().FindIndex(p => p is LineRegion));
-
-        Assert.DoesNotContain(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-
-        shell.Focus(shell.Panes.ToList().FindIndex(p => p is RoomRegion));
-
-        Assert.Contains(shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
+        // It went on to assert that a Join was offered in the room. There is no Join now — the terminal
+        // takes the person seat on its own — so what is left of 0.28.2's rule is the half above: the box says why it
+        // cannot send rather than hiding itself.
     }
 
     private BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 
     private static async Task<Shell> SeatedAsync(
@@ -307,13 +299,8 @@ public sealed class LineTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);

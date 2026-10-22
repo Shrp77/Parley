@@ -266,9 +266,9 @@ public sealed class PrunerTests : IDisposable
     [Fact]
     public async Task A_request_is_kept_while_its_result_waits_to_be_collected()
     {
-        // Found by the review gate. The Result was held by the undelivered floor and the Request it answers,
-        // delivered days before, was not: four days on, a requester that had not run since collected a Result
-        // with nothing carried back to say what it answered (§4.2). Nothing times out in 0.5, so a requester
+        // The Result is held by the undelivered floor, so the Request it answers, delivered days before, must be
+        // held too: four days on, a requester that had not run since collected a Result
+        // with nothing carried back to say what it answered (§4.2). Nothing times out, so a requester
         // away for days is ordinary rather than an edge.
         var (exchange, requestId) = await Request(T0);
         var result = await Work.CloseAsync(_connection, exchange, T0.AddMinutes(1), cancellationToken: Ct);

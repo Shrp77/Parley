@@ -66,7 +66,7 @@ public sealed class TrustEnvelopeTests
     [Fact]
     public void The_envelope_says_what_the_participant_may_ask_for()
     {
-        // The half added in 0.5. An envelope that said only what a participant cannot do left the
+        // An envelope that said only what a participant cannot do would leave the
         // reader treating every request as something to decline, which is the opposite of what the
         // protocol is for: work in its own repository is exactly what it may be asked to do.
         var wrapped = TrustEnvelope.Wrap(Billing, "claude-opus-5", Payload, Token);
@@ -89,7 +89,7 @@ public sealed class TrustEnvelopeTests
         // The requester may have lost its context since sending; without its own words beside the
         // Result it cannot tell what "q1: done" refers to. Marked with the same token, because the
         // request is also text a participant wrote.
-        const string request = """{"intent":"reconcile totals","items":[{"id":"q1","kind":"work","text":"round to cents"}]}""";
+        const string request = """{"ask":"reconcile totals, rounding to cents"}""";
 
         var wrapped = TrustEnvelope.Wrap(Billing, "claude-opus-5", Payload, Token, "invoice-rounding", request);
 

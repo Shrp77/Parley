@@ -1,0 +1,19 @@
+@page
+@model Parley.Web.Pages.Roadmaps.IndexModel
+@using Parley.Client.Roadmaps
+@{
+    ViewData["Title"] = $"Roadmaps in {Model.Project}";
+}
+
+<h1>Roadmaps in @Model.Project</h1>
+
+<p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else
+{
+    <partial name="_RoadmapSummary" model="@(new Parley.Web.Pages.Shared.RoadmapSummaryView(Model.Project ?? "", Model.Waiting, Model.Roadmaps))" />
+}

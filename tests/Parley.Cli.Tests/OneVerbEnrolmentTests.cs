@@ -1,0 +1,274 @@
+using Parley.Setup;
+using System.Text.Json.Nodes;
+using Xunit;
+
+namespace Parley.Cli.Tests;
+
+/// <summary>
+/// <c>parley enroll &lt;directory&gt;</c>: one verb, no file for anybody to author.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Enrolment is one operation: the rows are built in memory and applied, with no manifest as a
+/// round trip through the disk between two halves of it.
+/// </para>
+/// <para>
+/// <b>What is checked here is that the file is gone, not merely unused.</b> A collapse that went
+/// on writing a manifest somewhere would pass every test about the repositories it configured, so
+/// each case below asserts the directory afterwards holds nothing but the checkouts.
+/// </para>
+/// </remarks>
+public sealed class OneVerbEnrolmentTests : IDisposable
+{
+    private readonly string _root =
+        Path.Combine(Path.GetTempPath(), "parley-oneverb-" + Path.GetRandomFileName());
+
+    public OneVerbEnrolmentTests()
+    {
+        Directory.CreateDirectory(_root);
+        Repository("Acme.Orders");
+        Repository("Acme.Billing");
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private string Checkouts => Path.Combine(_root, "co");
+
+    private void Repository(string name) =>
+        Directory.CreateDirectory(Path.Combine(Checkouts, name, ".git"));
+
+    private static string LaunchFile(string repository) => Path.Combine(repository, ".mcp.json");
+
+    private async Task<(int Code, string Out, string Error)> RunAsync(
+        bool? selectAll, bool describe, params string[] arguments)
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var code = await EnrollCommand.RunAsync(
+            arguments,
+            selectAll,
+            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
+            output,
+            error,
+            TestContext.Current.CancellationToken,
+            describe: describe);
+
+        return (code, output.ToString(), error.ToString());
+    }
+
+    [Fact]
+    public async Task One_verb_configures_the_repositories_it_is_pointed_at()
+    {
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        // Both repositories configured, from one command naming one directory.
+        Assert.True(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
+        Assert.True(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Billing"))));
+    }
+
+    [Fact]
+    public async Task Every_repository_enrolled_is_catalogued_so_a_peer_can_start_it()
+    {
+        // **The catalogue write must not be dead code.** `EnrollmentPlan` gates the catalogue write on
+        // `EnrollmentEntry.Unattended`, so if nothing on this path or the terminal's sets it, every
+        // repository enrolled from a folder gets a launch configuration and no catalogue line.
+        //
+        // That is the state `Onboarding`'s own summary warns against: enrolled, addressable and
+        // unstartable — an agent that cannot be started cannot answer. And the screen asking for
+        // consent says, in as many words, that each repository is being catalogued so a peer's
+        // request can start it with nobody watching. **The door describes the act**, so the code
+        // must perform it: the operator is told it has happened.
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        var catalogue = Path.Combine(_root, "node.json");
+
+        Assert.True(
+            File.Exists(catalogue),
+            "nothing was catalogued, so no peer's request can start any of these repositories");
+
+        // Both of them, by workspace. Asserted on the file rather than on what the command printed,
+        // because what the command printed is exactly what was true while this was broken.
+        var written = await File.ReadAllTextAsync(catalogue, TestContext.Current.CancellationToken);
+
+        Assert.Contains("Acme.Orders", written, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Acme.Billing", written, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task It_says_what_enrolling_costs_before_it_configures_anything()
+    {
+        // **The command line states it too.** Saying how many repositories it found and nothing about
+        // what enrolling them does — while the terminal's door says, before anything is written, that
+        // each becomes startable by a peer with nobody watching and that a process is started per
+        // repository — would state the consequence on one surface and not the other, and the surface
+        // without it is the one a script reaches.
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        // The count, because "some repositories" is a sentence somebody agrees to without weighing.
+        Assert.Contains("2 repositories will be configured as agents", said, StringComparison.Ordinal);
+
+        // And what it costs: startable by a peer with nobody watching, and a process each.
+        Assert.Contains("with nobody watching", said, StringComparison.Ordinal);
+        Assert.Contains("expect 2 processes", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Describing_says_it_too_and_still_changes_nothing()
+    {
+        // A describe that hid the consequence would be worth less than not running it: the reason
+        // to ask what would happen is to read what you would be agreeing to.
+        var (_, said, _) = await RunAsync(selectAll: true, describe: true, Checkouts);
+
+        Assert.Contains("with nobody watching", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(_root, "node.json")));
+        Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
+    }
+
+    [Fact]
+    public async Task Both_surfaces_say_one_sentence()
+    {
+        // Two spellings of a consent notice drift, and the half that drifts is the half nobody is
+        // reading at the time. Read off the source because the terminal's door cannot be driven
+        // from this project — what is pinned is that neither surface composes its own.
+        var terminal = RepositoryFile.Read("src/Parley.Terminal/Onboarding.cs");
+        var command = RepositoryFile.Read("src/Parley.Setup/EnrollCommand.cs");
+
+        Assert.Contains("EnrolmentConsent.Says(", terminal, StringComparison.Ordinal);
+        Assert.Contains("EnrolmentConsent.Says(", command, StringComparison.Ordinal);
+
+        // Neither writes the sentence itself, checked on its opening clause rather than on
+        // "with nobody watching" — which `Onboarding`'s own summary uses to explain what
+        // cataloguing means, and a guard tripped by a comment is as wrong as one answered by it.
+        Assert.DoesNotContain("will be configured as agents", terminal, StringComparison.Ordinal);
+        Assert.DoesNotContain("will be configured as agents", command, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Nothing_writes_a_manifest_for_a_person_to_author()
+    {
+        _ = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        // **The point of one verb, asserted as an absence.** A collapse that kept writing the file
+        // somewhere would satisfy every other test here. `.mcp.json` inside each checkout is the
+        // launch configuration and is supposed to be there; what must not exist is a worksheet.
+        var authored = Directory
+            .EnumerateFiles(_root, "*.json", SearchOption.AllDirectories)
+            .Where(path => !string.Equals(Path.GetFileName(path), ".mcp.json", StringComparison.Ordinal))
+            .Where(path => !string.Equals(Path.GetFileName(path), "node.json", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(
+            authored.Length == 0,
+            $"a file was written for somebody to fill in: {string.Join(", ", authored)}");
+    }
+
+    [Fact]
+    public async Task Describing_changes_nothing_at_all()
+    {
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: true, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        // The property `plan` has: not "writes less", but writes nothing. Asserted over
+        // the whole tree rather than over the two files this happens to touch, because a describe
+        // that left a catalogue behind would be a describe that configured the machine.
+        Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
+        Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Billing"))));
+        Assert.False(File.Exists(Path.Combine(_root, "node.json")));
+    }
+
+    [Fact]
+    public async Task Choosing_none_configures_nothing_and_says_so()
+    {
+        var (code, said, complained) = await RunAsync(selectAll: false, describe: false, Checkouts);
+
+        // Refused rather than reported as a success that did nothing: somebody who ran this meant
+        // to enrol something, and an exit 0 with no output would read as "already done".
+        Assert.NotEqual(0, code);
+        Assert.False(File.Exists(LaunchFile(Path.Combine(Checkouts, "Acme.Orders"))));
+        Assert.Contains("Nothing was configured", complained + said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_directory_that_is_not_one_is_refused_by_name()
+    {
+        var missing = Path.Combine(_root, "nowhere");
+
+        var (code, _, complained) = await RunAsync(selectAll: true, describe: false, missing);
+
+        Assert.NotEqual(0, code);
+        Assert.Contains(missing, complained, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_directory_holding_no_repositories_is_refused_by_name()
+    {
+        var empty = Path.Combine(_root, "empty");
+
+        Directory.CreateDirectory(empty);
+
+        var (code, _, complained) = await RunAsync(selectAll: true, describe: false, empty);
+
+        Assert.NotEqual(0, code);
+        Assert.Contains(empty, complained, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task What_a_repository_already_says_it_owns_is_carried_forward()
+    {
+        // There is no manifest for a person to type this into, and the lines that exist must not be
+        // lost. They never come from a file — `Discover` reads
+        // them out of the repository's own launch configuration, which is where they were written.
+        var orders = Path.Combine(Checkouts, "Acme.Orders");
+
+        var existing = new JsonObject
+        {
+            ["mcpServers"] = new JsonObject
+            {
+                ["parley"] = new JsonObject
+                {
+                    ["env"] = new JsonObject
+                    {
+                        ["PARLEY_AGENT"] = "orders",
+                        ["PARLEY_OWNS"] = "Carts, totals and the checkout API.",
+                    },
+                },
+            },
+        };
+
+        await File.WriteAllTextAsync(
+            LaunchFile(orders), existing.ToJsonString(), TestContext.Current.CancellationToken);
+
+        // Asserted on the file rather than on the report, because describing does not echo the line.
+        // What is promised is that the line survives, and the file is where it either survives or
+        // does not.
+        var (code, said, complained) = await RunAsync(selectAll: true, describe: false, Checkouts);
+
+        Assert.True(code == 0, $"exit {code}. stderr:\n{complained}\nstdout:\n{said}");
+
+        var after = await File.ReadAllTextAsync(LaunchFile(orders), TestContext.Current.CancellationToken);
+
+        Assert.Contains("Carts, totals and the checkout API.", after, StringComparison.Ordinal);
+    }
+}

@@ -148,8 +148,8 @@ internal sealed class LoopbackOperator : IAsyncDisposable
 /// </summary>
 /// <remarks>
 /// A stub rather than <c>FakeTimeProvider</c>, which would mean a package on the test path for
-/// two members. It exists because retention is measured against the broker's clock now: a prune
-/// test used to pass the instant it wanted, and the instant is the broker's to read.
+/// two members. It exists because retention is measured against the broker's clock: a prune
+/// test cannot pass the instant it wants, because the instant is the broker's to read.
 /// </remarks>
 internal sealed class StubClock(DateTimeOffset now) : TimeProvider
 {

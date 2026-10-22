@@ -11,8 +11,7 @@ namespace Parley.Setup;
 /// <para>
 /// <b>A command's project comes from its context</b>, and the repository somebody is standing in is part of it: enrolment
 /// writes one launch entry per project a repository answers in — <c>parley-&lt;project&gt;</c>, carrying
-/// <c>PARLEY_PROJECT</c> — so a repository names its own projects already. The owner's call, made when a machine naming
-/// several projects had every command asking to be told which one again.
+/// <c>PARLEY_PROJECT</c> — so a repository names its own projects already.
 /// </para>
 /// <para>
 /// <b>The repository is found by its <c>.git</c>, and only its own <c>.mcp.json</c> is read.</b> Walking upward to the

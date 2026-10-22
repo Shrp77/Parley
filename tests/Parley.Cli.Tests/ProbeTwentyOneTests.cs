@@ -4,12 +4,12 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 10: the third file, and the one a person wrote.
+/// The third file, and the one a person wrote.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This feature writes three files. Two are the tooling's own — the launch configuration and the node
-/// catalogue — and lens 1 gave both an exclusive handle spanning their read and their write, because
+/// Enrolment writes three files. Two are the tooling's own — the launch configuration and the node
+/// catalogue — and both are held with an exclusive handle spanning their read and their write, because
 /// a repository in several projects has several writers. <c>CLAUDE.md</c> is the third, is entirely
 /// somebody's prose, and is read at the top of the call and written at the bottom.
 /// </para>
@@ -52,7 +52,6 @@ public sealed class ProbeTwentyOneTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Path.Combine(_root, "node.json"),
@@ -150,12 +149,11 @@ public sealed class ProbeTwentyOneTests : IDisposable
         var entry = new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         await Enrolment.WriteAsync(
             (launch, instructions) =>
-                EnrollmentPlan.Describe(entry, launch, instructions, false, "alpha", null, null),
+                EnrollmentPlan.Describe(entry, launch, instructions, false, "alpha"),
             Workspace,
             Instructions,
             TestContext.Current.CancellationToken);

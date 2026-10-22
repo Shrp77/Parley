@@ -6,9 +6,9 @@ namespace Parley.Core;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A cycle is admitted, not refused.</b> An earlier version of this type rejected any question that
-/// would close one, on the argument that a cycle is a set of questions none of which can be answered.
-/// That holds only when each answer depends on its own outcome, and nothing at admission can tell that
+/// <b>A cycle is admitted, not refused.</b> Refusing any question that would close one assumes a cycle is
+/// a set of questions none of which can be answered. That holds only when each answer depends on its own
+/// outcome, and nothing at admission can tell that
 /// case from the ordinary one — <c>orders</c> asks <c>billing</c> for work, <c>billing</c> asks
 /// <c>inventory</c>, and <c>inventory</c> asks <c>orders</c> which field the price lives in. Refusing
 /// every cycle refused the communication that resolves blockers. The broker records the cycle on the

@@ -148,7 +148,6 @@ public sealed class DestroyTests : IDisposable
             """);
 
         Assert.DoesNotContain("who owns it", row, StringComparison.Ordinal);
-        Assert.DoesNotContain("done_when", row, StringComparison.Ordinal);
     }
 
     [Fact]

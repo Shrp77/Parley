@@ -1,0 +1,34 @@
+@page
+@model Parley.Web.Pages.Roadmaps.DeclineModel
+@{
+    ViewData["Title"] = "Decline a proposed roadmap";
+}
+
+<h1>Decline a proposed roadmap</h1>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status"><strong>@outcome</strong></p>
+    <p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+}
+else if (Model.Proposal is { } proposal)
+{
+    <h2>@proposal.Content.Title</h2>
+    <p>Proposed by <strong>@proposal.Proposer.Value</strong>.</p>
+
+    @* Said before anything happens, as every action on this console is: what declining keeps, who is told, and what is
+       left alone. *@
+    <p>
+        Declining keeps no roadmap. The agent that proposed it is told in its inbox. Nothing else changes.
+    </p>
+
+    <form method="post">
+        <button type="submit">Decline it</button>
+        <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id">Keep it, and go back</a>
+    </form>
+}

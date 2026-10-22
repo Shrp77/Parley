@@ -20,13 +20,10 @@ public sealed record StoreOwner(int ProcessId, DateTimeOffset StartedUtc, string
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>SPEC.md §4 says the broker is the only process that opens the database, and until this nothing
-/// made that so.</b> The owner met the consequence: a scheduled task and a terminal restoring its last
-/// session both started <c>parley serve</c> at logon, the second clearing the first's liveness on its
-/// way to failing to bind a port, and every agent on the machine read as stranded while the machine ran
-/// them. Starting a broker is a thing people arrange more than once without meaning to, so a second
-/// start must be refused before it can write — and must say who holds the store, or the person refused
-/// goes looking through every process on the machine for it.
+/// <b>SPEC.md §4 says the broker is the only process that opens the database; this makes it so.</b>
+/// Starting a broker is a thing people arrange more than once without meaning to (a scheduled task and
+/// a restored terminal session), so a second start is refused before it can write — and says who holds
+/// the store, or the person refused goes looking through every process on the machine for it.
 /// </para>
 /// <para>
 /// <b>A held file rather than a row, and the operating system releases it.</b> A lock recorded in the

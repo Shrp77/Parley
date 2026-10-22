@@ -1,3 +1,4 @@
+﻿using System.Globalization;
 using Parley.Core;
 using Parley.Store;
 using Wire = Parley.Transport;
@@ -77,6 +78,8 @@ internal static class Conversions
         AgentPresence.Stranded => Wire.AgentPresence.Stranded,
         AgentPresence.Startable => Wire.AgentPresence.Startable,
         AgentPresence.Running => Wire.AgentPresence.Running,
+        AgentPresence.Here => Wire.AgentPresence.Here,
+        AgentPresence.Away => Wire.AgentPresence.Away,
         _ => throw new ArgumentOutOfRangeException(nameof(presence), presence, "Not a defined presence.")
     };
 
@@ -129,7 +132,22 @@ internal static class Conversions
         ExchangeOutcome.Complete => Wire.ExchangeOutcome.Complete,
         ExchangeOutcome.Blocked => Wire.ExchangeOutcome.Blocked,
         ExchangeOutcome.Closed => Wire.ExchangeOutcome.Closed,
+        ExchangeOutcome.Settled => Wire.ExchangeOutcome.Settled,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
+    };
+
+    /// <summary>Converts why an exchange could not be settled for the wire (SPEC.md §5.6).</summary>
+    /// <param name="problem">The problem.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The problem is not a defined member.</exception>
+    public static Wire.SettleProblem Out(SettleProblem problem) => problem switch
+    {
+        SettleProblem.NotFromThePerson => Wire.SettleProblem.NotFromThePerson,
+        SettleProblem.OtherConversation => Wire.SettleProblem.OtherConversation,
+        SettleProblem.NotOpen => Wire.SettleProblem.NotOpen,
+        SettleProblem.NotBetweenYou => Wire.SettleProblem.NotBetweenYou,
+        SettleProblem.NotTheirMove => Wire.SettleProblem.NotTheirMove,
+        _ => throw new ArgumentOutOfRangeException(nameof(problem), problem, "Not a defined problem.")
     };
 
     /// <summary>Converts an item outcome for the wire.</summary>
@@ -158,6 +176,35 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined blocker.")
     };
 
+    /// <summary>Converts how a person arrived at an ownership line, for the wire.</summary>
+    /// <param name="source">Which of the four routes produced it.</param>
+    /// <returns>The wire value.</returns>
+    public static Wire.OwnershipSource Out(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
+        OwnershipSource.Edited => Wire.OwnershipSource.Edited,
+        OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        OwnershipSource.Automatic => Wire.OwnershipSource.Automatic,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
+    };
+
+    /// <summary>Reads how a person arrived at an ownership line, off the wire.</summary>
+    /// <param name="source">The wire value.</param>
+    /// <returns>The domain value.</returns>
+    /// <remarks>
+    /// <c>Unspecified</c> is refused rather than defaulted. It is what an unset field arrives as, and
+    /// guessing <see cref="OwnershipSource.Proposed"/> would attribute a line to an agent that may
+    /// never have written one — which is the one thing the values exist to keep apart.
+    /// </remarks>
+    public static OwnershipSource In(Wire.OwnershipSource source) => source switch
+    {
+        Wire.OwnershipSource.Proposed => OwnershipSource.Proposed,
+        Wire.OwnershipSource.Edited => OwnershipSource.Edited,
+        Wire.OwnershipSource.Composed => OwnershipSource.Composed,
+        Wire.OwnershipSource.Automatic => OwnershipSource.Automatic,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
+    };
+
     /// <summary>Converts who closed a conversation for the wire.</summary>
     /// <param name="closer">Who closed it, or <see langword="null"/> where nothing recorded it.</param>
     /// <returns>The wire value, or <c>Unspecified</c>.</returns>
@@ -180,6 +227,7 @@ internal static class Conversions
         FlagKind.NoProgress => Wire.FlagKind.NoProgress,
         FlagKind.Retired => Wire.FlagKind.Retired,
         FlagKind.NotVoted => Wire.FlagKind.NotVoted,
+        FlagKind.PermissionRefused => Wire.FlagKind.PermissionRefused,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a defined flag.")
     };
 
@@ -224,6 +272,7 @@ internal static class Conversions
         RequestRejection.ConversationClosed => Wire.RequestRejection.ConversationClosed,
         RequestRejection.ConversationNotAssignable => Wire.RequestRejection.ConversationNotAssignable,
         RequestRejection.NoSuchRole => Wire.RequestRejection.NoSuchRole,
+        RequestRejection.ReceiverIsTheFacilitator => Wire.RequestRejection.ReceiverIsTheFacilitator,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined rejection.")
     };
 
@@ -260,38 +309,6 @@ internal static class Conversions
         _ => throw new ArgumentOutOfRangeException(nameof(verdict), verdict, "Not a defined verdict.")
     };
 
-    /// <summary>Reads an instruction's outcome from the wire.</summary>
-    /// <param name="outcome">The wire value.</param>
-    /// <returns>The domain value.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The value is unspecified or unknown.</exception>
-    /// <remarks>
-    /// A node reporting a value this build has never heard of is a node from a different version, and
-    /// reading that as failed would tell a person their agent broke when the deployment did.
-    /// </remarks>
-    public static InstructionOutcome In(Wire.InstructionOutcome outcome) => outcome switch
-    {
-        Wire.InstructionOutcome.Pending => InstructionOutcome.Pending,
-        Wire.InstructionOutcome.Taken => InstructionOutcome.Taken,
-        Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,
-        Wire.InstructionOutcome.Undeliverable => InstructionOutcome.Undeliverable,
-        Wire.InstructionOutcome.Failed => InstructionOutcome.Failed,
-        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
-    };
-
-    /// <summary>Converts an instruction's outcome for the wire.</summary>
-    /// <param name="outcome">The outcome.</param>
-    /// <returns>The wire value.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">The outcome is not a defined member.</exception>
-    public static Wire.InstructionOutcome Out(InstructionOutcome outcome) => outcome switch
-    {
-        InstructionOutcome.Pending => Wire.InstructionOutcome.Pending,
-        InstructionOutcome.Taken => Wire.InstructionOutcome.Taken,
-        InstructionOutcome.Declined => Wire.InstructionOutcome.Declined,
-        InstructionOutcome.Undeliverable => Wire.InstructionOutcome.Undeliverable,
-        InstructionOutcome.Failed => Wire.InstructionOutcome.Failed,
-        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined outcome.")
-    };
-
     /// <summary>Converts a refused move for the wire.</summary>
     /// <param name="error">The refusal, or <see langword="null"/> when the move succeeded.</param>
     /// <returns>The wire value.</returns>
@@ -304,8 +321,8 @@ internal static class Conversions
         TransitionError.NotYourTurn => Wire.TransitionError.NotYourTurn,
         TransitionError.OnlyReceiverSendsResult => Wire.TransitionError.OnlyReceiverSendsResult,
         TransitionError.ClarifyDepthExceeded => Wire.TransitionError.ClarifyDepthExceeded,
-        TransitionError.OutcomesDoNotMatchItems => Wire.TransitionError.OutcomesDoNotMatchItems,
         TransitionError.ClosedIsTheBrokers => Wire.TransitionError.ClosedIsTheBrokers,
+        TransitionError.CannotSettle => Wire.TransitionError.CannotSettle,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 
@@ -319,6 +336,8 @@ internal static class Conversions
         Core.WakeOutcome.AlreadyRunning => Wire.WakeOutcome.AlreadyRunning,
         Core.WakeOutcome.AlreadyComing => Wire.WakeOutcome.AlreadyComing,
         Core.WakeOutcome.Unreachable => Wire.WakeOutcome.Unreachable,
+        Core.WakeOutcome.WithThePerson => Wire.WakeOutcome.WithThePerson,
+        Core.WakeOutcome.OpenOutside => Wire.WakeOutcome.OpenOutside,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined wake outcome.")
     };
 
@@ -396,7 +415,28 @@ internal static class Conversions
     {
         ArgumentNullException.ThrowIfNull(delivered);
 
-        return new Wire.DeliveredMessage { Message = Out(delivered.Message), Envelope = delivered.Envelope };
+        var wire = new Wire.DeliveredMessage
+        {
+            Message = Out(delivered.Message),
+            Envelope = delivered.Envelope,
+            SettleableLeftOut = delivered.SettleableLeftOut
+        };
+
+        wire.Settleable.AddRange((delivered.Settleable ?? []).Select(q => new Wire.SettleableQuestion
+        {
+            ExchangeId = q.ExchangeId,
+            OpenedUtc = Stamp(q.OpenedUtc),
+            Asked = q.Asked
+        }));
+
+        wire.Since.AddRange((delivered.Since ?? []).Select(a => new Wire.AnswerSince
+        {
+            ExchangeId = a.ExchangeId,
+            SentUtc = Stamp(a.SentUtc),
+            Envelope = a.Envelope
+        }));
+
+        return wire;
     }
 
     /// <summary>Converts a closure poll for the wire.</summary>
@@ -428,6 +468,37 @@ internal static class Conversions
         };
     }
 
+    /// <summary>Converts one of Parley's questions for the wire (§10.2 <c>facilitation</c>).</summary>
+    /// <param name="question">The question.</param>
+    /// <returns>The wire question.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="question"/> is null.</exception>
+    public static Wire.OwnershipQuestion Out(OwnershipQuestion question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+
+        return new Wire.OwnershipQuestion
+        {
+            Agent = question.Agent.Value,
+            ConversationId = question.Conversation,
+            ExchangeId = question.Exchange,
+            State = question.State switch
+            {
+                QuestionState.Asked => Wire.QuestionState.Asked,
+                QuestionState.AskedBack => Wire.QuestionState.AskedBack,
+                QuestionState.Answered => Wire.QuestionState.Answered,
+                QuestionState.Waiting => Wire.QuestionState.Waiting,
+                QuestionState.Accepted => Wire.QuestionState.Accepted,
+                QuestionState.Discarded => Wire.QuestionState.Discarded,
+                _ => throw new ArgumentOutOfRangeException(nameof(question), question.State, "Not a defined state.")
+            },
+            Answer = question.Answer ?? string.Empty,
+            Flattened = question.Flattened ?? string.Empty,
+            WaitingBecause = question.WaitingBecause ?? string.Empty,
+            AskedUtc = question.AskedUtc.ToString("O", CultureInfo.InvariantCulture),
+            SettledUtc = question.SettledUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty
+        };
+    }
+
     /// <summary>Converts a registry row for the wire.</summary>
     /// <param name="record">The registration.</param>
     /// <returns>The wire row.</returns>
@@ -450,7 +521,23 @@ internal static class Conversions
             Workspace = record.Workspace ?? string.Empty,
             SessionRef = record.SessionRef ?? string.Empty,
             Owns = record.Owns ?? string.Empty,
-            Connected = record.Connected
+            Connected = record.Connected,
+
+            // **Both halves travel rather than a `pending` flag.** A surface says the line is pending
+            // by comparing what a person accepted with what peers read, so it can also show the two
+            // side by side and say which is which -- a flag would carry the comparison and lose the
+            // thing being compared.
+            OwnsAccepted = record.OwnsAccepted ?? string.Empty,
+            OwnsSource = record.OwnsSource is { } source ? Out(source) : Wire.OwnershipSource.Unspecified,
+
+            // The turn standing (SPEC.md §11.6). Absent means nobody read it, which travels as unreported.
+            TurnsReported = record.Turns?.Reported ?? false,
+            TurnRunningSinceUtc = record.Turns?.RunningSince is { } running ? Stamp(running) : string.Empty,
+            LastTurnEndedUtc = record.Turns?.LastEnded is { } ended ? Stamp(ended) : string.Empty,
+            LastTurnClean = record.Turns?.LastClean ?? false,
+            LastTurnPermissionDenials = record.Turns?.LastPermissionDenials ?? 0,
+            OpenOutside = record.OpenOutside,
+            Identity = record.Identity.Known ? record.Identity.ToString() : string.Empty,
         };
     }
 
@@ -468,7 +555,6 @@ internal static class Conversions
         FileRejection.ConversationNotAssignable => Wire.FileRejection.ConversationNotAssignable,
         FileRejection.ConversationClosed => Wire.FileRejection.ConversationClosed,
         FileRejection.Changed => Wire.FileRejection.Changed,
-        FileRejection.Incomplete => Wire.FileRejection.Incomplete,
         FileRejection.NoSpace => Wire.FileRejection.NoSpace,
         FileRejection.ExtensionNotAllowed => Wire.FileRejection.ExtensionNotAllowed,
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,
@@ -619,5 +705,257 @@ internal static class Conversions
         wire.Conversations.AddRange(refusal.Conversations);
 
         return wire;
+    }
+
+    // ---- roadmaps (SPEC.md section 5.7)
+
+    /// <summary>Converts a proposal's state for the wire.</summary>
+    /// <param name="state">The state.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The state is not a defined member.</exception>
+    public static Wire.ProposalState Out(ProposalState state) => state switch
+    {
+        ProposalState.Waiting => Wire.ProposalState.Waiting,
+        ProposalState.Confirmed => Wire.ProposalState.Confirmed,
+        ProposalState.Declined => Wire.ProposalState.Declined,
+        ProposalState.Superseded => Wire.ProposalState.Superseded,
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a proposal state."),
+    };
+
+    /// <summary>Converts a proposal state a client asked for, where unspecified means every state.</summary>
+    /// <param name="state">The wire value.</param>
+    /// <returns>The state, or <see langword="null"/> for every one.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The value is not a defined member.</exception>
+    public static ProposalState? In(Wire.ProposalState state) => state switch
+    {
+        Wire.ProposalState.Unspecified => null,
+        Wire.ProposalState.Waiting => ProposalState.Waiting,
+        Wire.ProposalState.Confirmed => ProposalState.Confirmed,
+        Wire.ProposalState.Declined => ProposalState.Declined,
+        Wire.ProposalState.Superseded => ProposalState.Superseded,
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a proposal state."),
+    };
+
+    /// <summary>Converts how a roadmap began, for the wire.</summary>
+    /// <param name="origin">The origin.</param>
+    /// <returns>The wire value.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The origin is not a defined member.</exception>
+    public static Wire.RoadmapOrigin Out(RoadmapOrigin origin) => origin switch
+    {
+        RoadmapOrigin.Proposed => Wire.RoadmapOrigin.Proposed,
+        RoadmapOrigin.Edited => Wire.RoadmapOrigin.Edited,
+        _ => throw new ArgumentOutOfRangeException(nameof(origin), origin, "Not a roadmap origin."),
+    };
+
+    /// <summary>Reads a roadmap's content a client sent.</summary>
+    /// <param name="content">The wire content.</param>
+    /// <returns>The domain content.</returns>
+    /// <exception cref="Grpc.Core.RpcException">An intended agent is not an agent name.</exception>
+    /// <remarks>
+    /// Shape only. Whether the content is whole is the broker's judgement (<see cref="RoadmapRules"/>), made where a
+    /// refusal can be a sentence a person reads rather than a status code.
+    /// </remarks>
+    public static RoadmapContent In(Wire.RoadmapContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        return new RoadmapContent(
+            content.Title,
+            [
+                .. content.Items.Select(i => new RoadmapItemDraft(
+                    i.Number == 0 ? null : i.Number,
+                    i.Text,
+                    string.IsNullOrEmpty(i.IntendedAgent)
+                        ? null
+                        : AgentName.TryCreate(i.IntendedAgent, out var agent)
+                            ? agent
+                            : throw new Grpc.Core.RpcException(new Grpc.Core.Status(
+                                Grpc.Core.StatusCode.InvalidArgument,
+                                $"'{i.IntendedAgent}' is not an agent name. Names are role@machine (SPEC.md §4.1.1).")),
+                    [.. i.Needs])),
+            ]);
+    }
+
+    /// <summary>Converts a roadmap's content for the wire.</summary>
+    /// <param name="content">The content.</param>
+    /// <returns>The wire content.</returns>
+    public static Wire.RoadmapContent Out(RoadmapContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        var wire = new Wire.RoadmapContent { Title = content.Title };
+
+        foreach (var item in content.Items)
+        {
+            var draft = new Wire.RoadmapItemDraft
+            {
+                Number = item.Number ?? 0,
+                Text = item.Text,
+                IntendedAgent = item.IntendedAgent?.Value ?? string.Empty,
+            };
+
+            draft.Needs.AddRange(item.Needs);
+            wire.Items.Add(draft);
+        }
+
+        return wire;
+    }
+
+    /// <summary>Converts a proposal for the wire.</summary>
+    /// <param name="proposal">The proposal.</param>
+    /// <returns>The wire proposal.</returns>
+    public static Wire.ProposalDetail Out(RoadmapProposal proposal)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        return new Wire.ProposalDetail
+        {
+            Id = proposal.Id,
+            Proposer = proposal.Proposer.Value,
+            SourceConversation = proposal.SourceConversation ?? string.Empty,
+            TargetTitle = proposal.TargetTitle ?? string.Empty,
+            Content = Out(proposal.Content),
+            Size = proposal.Size,
+            State = Out(proposal.State),
+            CreatedUtc = Stamp(proposal.CreatedUtc),
+            DecidedUtc = Stamp(proposal.DecidedUtc),
+        };
+    }
+
+    /// <summary>Converts a roadmap summary for the wire.</summary>
+    /// <param name="summary">The summary.</param>
+    /// <returns>The wire summary.</returns>
+    public static Wire.RoadmapSummary Out(RoadmapSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+
+        return new Wire.RoadmapSummary
+        {
+            Id = summary.Id,
+            Number = summary.Number,
+            Title = summary.Title,
+            Revision = summary.Revision,
+            LiveItems = summary.LiveItems,
+            StartedItems = summary.StartedItems,
+        };
+    }
+
+    /// <summary>Converts the facts about an item's conversation for the wire.</summary>
+    /// <param name="facts">The facts.</param>
+    /// <returns>The wire facts.</returns>
+    public static Wire.ItemFacts Out(ItemFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+
+        var wire = new Wire.ItemFacts
+        {
+            ConversationExists = facts.ConversationExists,
+            OpenExchanges = facts.OpenExchanges,
+            Collected = facts.Collected,
+            CompleteExchanges = facts.CompleteExchanges,
+            BlockedExchanges = facts.BlockedExchanges,
+            ClosedExchanges = facts.ClosedExchanges,
+            Blocker = facts.Blocker ?? string.Empty,
+            ClosedBy = facts.ClosedBy ?? string.Empty,
+            Destroyed = facts.Destroyed,
+            FirstSentText = facts.FirstSentText ?? string.Empty,
+        };
+
+        wire.OpenExchangeIds.AddRange(facts.OpenIds);
+
+        return wire;
+    }
+
+    /// <summary>Converts a roadmap for the wire.</summary>
+    /// <param name="roadmap">The roadmap.</param>
+    /// <returns>The wire roadmap.</returns>
+    public static Wire.RoadmapDetail Out(Roadmap roadmap)
+    {
+        ArgumentNullException.ThrowIfNull(roadmap);
+
+        var wire = new Wire.RoadmapDetail
+        {
+            Id = roadmap.Id,
+            Number = roadmap.Number,
+            Title = roadmap.Title,
+            Origin = Out(roadmap.Origin),
+            Proposer = roadmap.Proposer ?? string.Empty,
+            Revision = roadmap.Revision,
+        };
+
+        foreach (var item in roadmap.Items)
+        {
+            var row = new Wire.RoadmapItemDetail
+            {
+                Id = item.Id,
+                Number = item.Number,
+                Position = item.Position,
+                Text = item.Text,
+                IntendedAgent = item.IntendedAgent?.Value ?? string.Empty,
+                ConversationName = item.ConversationName,
+                RemovedRevision = item.RemovedRevision ?? 0,
+            };
+
+            row.Needs.AddRange(item.Needs);
+
+            if (item.Facts is { } facts)
+            {
+                row.Facts = Out(facts);
+            }
+
+            wire.Items.Add(row);
+        }
+
+        return wire;
+    }
+
+    /// <summary>Converts what a change to a roadmap came to, for the wire.</summary>
+    /// <param name="change">The outcome.</param>
+    /// <returns>The wire reply.</returns>
+    public static Wire.RoadmapChangeReply Out(RoadmapChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        return new Wire.RoadmapChangeReply
+        {
+            Done = change.Done,
+            Problem = change.Problem ?? string.Empty,
+            RoadmapId = change.RoadmapId ?? 0,
+            Revision = change.Revision ?? 0,
+            Origin = change.Origin is { } origin ? Out(origin) : Wire.RoadmapOrigin.Unspecified,
+        };
+    }
+
+    /// <summary>Converts what became of an agent's proposal, for the wire.</summary>
+    /// <param name="notice">The notice.</param>
+    /// <returns>The wire notice.</returns>
+    public static Wire.RoadmapNotice Out(RoadmapNotice notice)
+    {
+        ArgumentNullException.ThrowIfNull(notice);
+
+        return new Wire.RoadmapNotice
+        {
+            ProposalId = notice.ProposalId,
+            Title = notice.Title,
+            Outcome = Out(notice.Outcome),
+            CreatedUtc = Stamp(notice.CreatedUtc),
+        };
+    }
+
+    /// <summary>Converts the roadmap item a conversation belongs to, for the wire.</summary>
+    /// <param name="item">The reference.</param>
+    /// <returns>The wire reference.</returns>
+    public static Wire.RoadmapItemRef Out(RoadmapItemRef item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        return new Wire.RoadmapItemRef
+        {
+            RoadmapId = item.RoadmapId,
+            RoadmapNumber = item.RoadmapNumber,
+            Title = item.Title,
+            ItemNumber = item.ItemNumber,
+            Removed = item.Removed,
+        };
     }
 }

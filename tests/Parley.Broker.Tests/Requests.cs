@@ -24,32 +24,6 @@ internal static class Requests
     public static string Request(string text = "is the price gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    /// <summary>A Request in the shape 0.5 and 0.6 stored, for the tests that answer one by its items.</summary>
-    /// <param name="subject">What it is about, which keeps two distinct.</param>
-    /// <param name="ids">The items' identifiers, in order.</param>
-    /// <returns>The payload as it was stored then.</returns>
-    /// <remarks>
-    /// Storage refuses this from schema 11 on, so a test using it writes into a store built at 10 and migrates, or
-    /// puts it straight into a fixture that does not go through the trigger. What it is for is the half of §5.3 that
-    /// did not change: an exchange opened before 0.7 is still answered by the identifiers its Request carried.
-    /// </remarks>
-    public static string OldRequestOf(string subject, params string[] ids)
-    {
-        var items = new JsonArray();
-
-        foreach (var id in ids)
-        {
-            items.Add(new JsonObject { ["id"] = id, ["kind"] = "question", ["text"] = $"{subject}: {id}" });
-        }
-
-        return new JsonObject
-        {
-            ["intent"] = "deciding where tax is added to an invoice",
-            ["items"] = items,
-            ["done_when"] = "the price is stated as gross or net of tax"
-        }.ToJsonString();
-    }
-
     /// <summary>A Result giving each named item an outcome; a blocked one is written <c>blocked:kind</c>.</summary>
     /// <param name="outcomes">The items and what came of each, or none for <c>q1</c> answered.</param>
     /// <returns>The payload.</returns>
@@ -92,7 +66,7 @@ internal static class Requests
     /// <summary>Registers one participant under a given adapter.</summary>
     /// <param name="connection">The store.</param>
     /// <param name="name">The participant.</param>
-    /// <param name="adapter">Its adapter; <see cref="Seats.Adapter"/> makes it a person.</param>
+    /// <param name="adapter">Its adapter; <see cref="PersonSeat.Adapter"/> makes it a person.</param>
     public static void Register(SqliteConnection connection, AgentName name, string adapter) =>
         new AgentRepository(connection).UpsertAsync(
             new AgentRecord(name, adapter, AgentTier.Full, null, null, null, false, AgentStatus.Active),

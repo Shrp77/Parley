@@ -5,19 +5,24 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 7: what a checkout can hand the scan.
+/// What a checkout can hand the scan.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>parley enroll scan</c> is pointed at a directory of clones and reads whatever it finds: a
+/// <c>parley enroll</c> is pointed at a directory of clones and reads whatever it finds: a
 /// directory name becomes a suggested agent name, and each repository's own <c>.mcp.json</c> is
-/// parsed. Both are content somebody else wrote, and the scan's whole job is to turn them into a file
-/// a person will then approve.
+/// parsed. Both are content somebody else wrote, and the whole job is to put them in front of a
+/// person who then chooses.
 /// </para>
 /// <para>
-/// A suggestion that cannot be a name, and a file that ends the run, defeat the same thing: the scan
-/// exists so a person can look at eleven repositories at once, and it is worth nothing if the twelfth
-/// stops it or hides the rest.
+/// A suggestion that cannot be a name, and a file that ends the run, defeat the same thing: this
+/// exists so a person can look at eleven repositories at once, and it is worth nothing if the
+/// twelfth stops it or hides the rest.
+/// </para>
+/// <para>
+/// <b>Written against <c>enroll scan</c>, which wrote a manifest a person approved.</b> There is no
+/// file now and the probes point at <see cref="EnrollCommand.Find"/>, which is what the scan half
+/// always was; what each one defends is unchanged.
 /// </para>
 /// </remarks>
 public sealed class ProbeEighteenTests : IDisposable
@@ -42,7 +47,6 @@ public sealed class ProbeEighteenTests : IDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "enrol.json");
 
     private void Repository(string name, string? launch = null)
     {
@@ -57,25 +61,8 @@ public sealed class ProbeEighteenTests : IDisposable
         }
     }
 
-    private async Task<(int Code, string Manifest)> ScanAsync()
-    {
-        var code = await EnrollCommand.RunAsync(
-            ["scan", Checkouts, ManifestPath],
-            selectAll: false,
-            new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
-            new StringWriter(),
-            new StringWriter(),
-            TestContext.Current.CancellationToken);
-
-        return (
-            code,
-            File.Exists(ManifestPath)
-                ? await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken)
-                : string.Empty);
-    }
-
     [Fact]
-    public async Task A_repository_whose_launch_configuration_is_enormous_does_not_end_the_scan()
+    public void A_repository_whose_launch_configuration_is_enormous_does_not_end_the_scan()
     {
         // A clone is somebody else's data and its `.mcp.json` is a tracked file of any size they
         // like. The scan's value is that it looks at everything at once, so one repository able to
@@ -90,14 +77,13 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("huge", new JsonObject { ["mcpServers"] = servers }.ToJsonString());
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
-
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
+        // The row for the other repository is what says the find got past this one: it is offered
+        // after `huge` in directory order, so a scan that stopped there would come back without it.
+        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "ordinary");
     }
 
     [Fact]
-    public async Task A_deeply_nested_launch_configuration_does_not_end_the_scan()
+    public void A_deeply_nested_launch_configuration_does_not_end_the_scan()
     {
         // The same attack in a few hundred bytes, which no size limit catches. A parser refuses this
         // rather than choking on it, and the question is whether the refusal is caught here or thrown
@@ -107,14 +93,11 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("bomb", "{\"mcpServers\": {\"parley\": {\"command\": " + deep + " }}}");
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
-
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
+        Assert.Contains(EnrollCommand.Find(Checkouts), entry => entry.Agent == "ordinary");
     }
 
     [Fact]
-    public async Task A_directory_name_that_is_not_a_name_does_not_become_one()
+    public void A_directory_name_that_is_not_a_name_does_not_become_one()
     {
         // Directory names become suggested agent names, and an agent name is an identity. A
         // suggestion that is not well formed must be visible as such rather than travelling into a
@@ -124,14 +107,12 @@ public sealed class ProbeEighteenTests : IDisposable
         Repository("orders_2");
         Repository("ORDERS");
 
-        var (code, manifest) = await ScanAsync();
+        var found = EnrollCommand.Find(Checkouts);
 
-        Assert.Equal(0, code);
+        Assert.Equal(3, found.Count);
 
-        foreach (var agent in JsonNode.Parse(manifest)!["agents"]!.AsArray())
+        foreach (var suggested in found.Select(entry => entry.Agent))
         {
-            var suggested = agent!["agent"]!.GetValue<string>();
-
             Assert.True(
                 EnrollmentPlan.IsWellFormedName(suggested),
                 $"the scan suggested '{suggested}', which is not a name any agent could have");
@@ -139,48 +120,48 @@ public sealed class ProbeEighteenTests : IDisposable
     }
 
     [Fact]
-    public async Task A_launch_configuration_that_is_not_json_leaves_the_row_blank_rather_than_stopping()
+    public void A_launch_configuration_that_is_not_json_leaves_the_row_blank_rather_than_stopping()
     {
         Repository("broken", "{ this is not json");
         Repository("ordinary");
 
-        var (code, manifest) = await ScanAsync();
+        var found = EnrollCommand.Find(Checkouts);
 
-        Assert.Equal(0, code);
-        Assert.Contains("ordinary", manifest, StringComparison.Ordinal);
-        Assert.Contains("broken", manifest, StringComparison.Ordinal);
+        Assert.Contains(found, entry => entry.Agent == "ordinary");
+        Assert.Contains(found, entry => entry.Agent == "broken");
     }
 
     [Fact]
-    public async Task Nothing_a_repository_wrote_reaches_the_manifest_able_to_break_its_own_line()
+    public void Nothing_a_repository_wrote_survives_the_scan_able_to_break_a_surface()
     {
-        // The scan quotes a repository's own `owns` line into a manifest a person then reads and
-        // edits. A value able to break its own line could imitate the rows around it — which is the
-        // rule that file's own guidance states out loud for the roster, and it applies to the file
-        // stating it.
+        // A repository's own `owns` line is quoted back to whoever is choosing what to enrol. A
+        // value able to break its own line could imitate the rows around it, which is the rule the
+        // transcript's column-zero guard exists for, met here in a different list.
         Repository(
             "hostile",
             "{\"mcpServers\":{\"parley\":{\"command\":\"parley-mcp\",\"env\":{"
             + "\"PARLEY_AGENT\":\"orders\","
             + "\"PARLEY_OWNS\":\"Carts.\\u001b[2JSomething else entirely.\"}}}}");
 
-        var (_, manifest) = await ScanAsync();
+        // **The question is about the row, not a file.** Asserting the raw byte absent from a written
+        // manifest would be true only because a JSON serialiser escaped it, so it would measure
+        // System.Text.Json rather than anything this code does. With no file there is nothing to
+        // serialise, and what matters is
+        // that the value is carried faithfully as data: the scan's job is to show somebody what
+        // their repository already says about itself, including that it says something odd.
+        var found = EnrollCommand.Find(Checkouts);
 
-        // **Two things, and the probe first asked for the wrong one.** The raw byte is never in the
-        // file — the serialiser escapes it, so the manifest is JSON a person's editor renders as the
-        // six characters `` and nothing moves. That is carrying it as *data*, which is right:
-        // the scan's job is to show somebody what their repository already says about itself,
-        // including that it says something odd.
-        Assert.DoesNotContain(Escape, manifest, StringComparison.Ordinal);
+        Assert.Contains(found, entry => entry.Owns?.Contains(Escape, StringComparison.Ordinal) == true);
 
-        // What must not happen is the value being approved into a roster every agent reads, and that
-        // is refused where it belongs — with a sentence naming the character, rather than here.
+        // Neutralising it is the displaying surface's job and is done where the text is drawn --
+        // `Onboarding` passes every note through `Safe`. What must not happen is the value being
+        // approved into a roster every agent reads, and that is refused where it belongs, with a
+        // sentence naming the character, rather than here.
         var problems = EnrollmentPlan.Validate(
             [
                 new EnrollmentEntry("/src/orders", "orders", $"Carts.{Escape}[2JSomething else.", false)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
             ],
             _ => true);

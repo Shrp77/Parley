@@ -1,6 +1,5 @@
 ﻿using Parley.Client;
 using Parley.Configuration;
-using Parley.Core;
 using Parley.Setup;
 using Xunit;
 
@@ -40,10 +39,12 @@ public sealed class NamingTests : IDisposable
         }
     }
 
-    private string Manifest => Path.Combine(_directory, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     [Fact]
-    public async Task A_new_project_is_checked_as_it_is_typed_and_proposed_its_own_paths()
+    public async Task A_new_project_is_checked_as_it_is_typed_and_needs_nothing_but_a_name()
     {
         using var driving = Driving.Open();
         using var shell = await OpenAsync(driving, installed: null);
@@ -52,14 +53,18 @@ public sealed class NamingTests : IDisposable
 
         var form = (FormDialog)driving.Find(Naming.CreateTitle);
 
-        // The store is proposed rather than blank, and the port with it.
-        Assert.EndsWith(".db", form.Values[1], StringComparison.Ordinal);
-        Assert.Equal(Naming.DefaultEndpoint, form.Values[2]);
+        // **Two fields, and this asserted four.** It used to check that a store was proposed rather than
+        // blank, and a port with it — which was the best a form could do when a person still had to
+        // supply both. 019 removed the questions rather than improving the answers, so what is asserted
+        // is that they have gone: a name, and a description that is optional.
+        Assert.Equal(2, form.Values.Count);
+        Assert.Equal(string.Empty, form.Values[0]);
+        Assert.Equal(string.Empty, form.Values[1]);
 
         // **Corrected as it is typed, not refused after four more answers — and this assertion
         // changed shape rather than being deleted.** It used to fill "Alpha" and expect the words
         // "lowercase letters" in the problem, which is what the field said when it accepted a
-        // capital and complained about it. The owner typed `TimeTracker` into this field and met no
+        // capital and complained about it. The owner typed `OrderBook` into this field and met no
         // resistance at all, because that complaint sat on a clipped row; the rule is applied now,
         // so a capital never survives to be complained about.
         form.Fill(0, "Alpha");
@@ -80,27 +85,37 @@ public sealed class NamingTests : IDisposable
 
         Assert.Equal(string.Empty, form.Problems[0]);
 
-        form.Fill(2, "http://127.0.0.1:1");
-        form.Fill(4, "the first one");
+        form.Fill(1, "the first one");
         form.Finish(taken: true);
 
         await shell.Settled;
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var projects, out var problem), problem);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
 
         var named = Assert.Single(projects);
 
         Assert.Equal("alpha", named.Name.Value);
-        Assert.EndsWith(".db", named.Store, StringComparison.Ordinal);
-        Assert.Equal("http://127.0.0.1:1", named.Endpoint);
-        Assert.Null(named.NodeConfig);
         Assert.Equal("the first one", named.Description);
 
-        Assert.Contains(Naming.Named, shell.Said, StringComparison.Ordinal);
+        // **Both derived, neither typed**, which is the whole of what this form gave up. The store is
+        // inside the project's own folder and the port comes from the band.
+        Assert.Equal(ProjectFolder.StoreFor(Root, named.Name), named.Store);
+        Assert.InRange(new Uri(named.Endpoint).Port, 19100, 19355);
+
+        Assert.Contains(Naming.Created("alpha"), shell.Said, StringComparison.Ordinal);
 
         // Nothing starts it, and the form says so rather than leaving the first person to use it
         // assuming a broker was spawned.
         Assert.Contains("Nothing starts it yet", shell.Said, StringComparison.Ordinal);
+
+        // **And that is all it says.** The owner's call of 2026-09-27: this printed the command's whole
+        // report for a shell -- the port, the folder, a paragraph about tunnels -- and nobody read it. Where
+        // the project answers is on its row in the list now. Must fail against the old report, which carried
+        // every one of these.
+        Assert.DoesNotContain("serving on", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("files in", shell.Said, StringComparison.Ordinal);
+        Assert.DoesNotContain("tunnel", shell.Said, StringComparison.Ordinal);
+        Assert.Contains(ProjectsRegion.Address(named), Drawn.Rows(shell.Projects.List)[0], StringComparison.Ordinal);
 
         // The description is on the list it returns to.
         Assert.Contains(
@@ -109,95 +124,45 @@ public sealed class NamingTests : IDisposable
     }
 
     [Fact]
-    public async Task The_running_deployment_is_named_from_a_form_that_is_already_filled_in()
+    public void Naming_a_running_deployment_is_not_offered_at_all_any_more()
     {
-        // Every answer is already in the autostart entry, so the form is pre-filled from it. The
-        // one thing typed is the name.
-        var entry = new InstalledEntry(
-            Store: Path.Combine(_directory, "running.db"),
-            Listen: "http://127.0.0.1:1",
-            NodeConfig: Path.Combine(_directory, "node.json"),
-            Console: null,
-            Manifest: null);
+        // **Three tests lived here and the flow they drove has gone.** "Name the running deployment"
+        // adopted a broker already serving, reading its store and port out of an autostart entry:
+        // `The_running_deployment_is_named_from_a_form_that_is_already_filled_in`,
+        // `A_second_project_is_not_proposed_the_first_ones_port`, and
+        // `A_name_a_store_or_a_port_already_taken_is_refused_in_the_field` between them covered the
+        // form, the port it proposed, and the three fields it validated.
+        //
+        // `CanNameRunning` required an entry serving one explicit store — an entry written with
+        // `--db`. Nothing can write one now, so no machine will have one again; and adopting a store
+        // where it lies is not something 019 can do, because a project's store is derived from its
+        // name. Deriving a fresh one and keeping the stated endpoint would have compiled and passed
+        // while pointing the named project at an empty database.
+        //
+        // Asserted as an absence rather than dropped, because a suite that merely lost those three
+        // would leave the next reader unable to tell a rule that was removed from one nobody wrote.
+        var surface = typeof(Naming);
 
-        using var driving = Driving.Open();
-        using var shell = await OpenAsync(driving, entry);
+        foreach (var gone in new[]
+                 {
+                     "NameRunningTitle", "CanNameRunning", "OpenNameRunningAsync",
+                     "ProposedStore", "StoreProblem", "EndpointProblem", "FreeEndpoint",
+                 })
+        {
+            Assert.True(
+                surface.GetMember(gone, Bindings).Length == 0,
+                $"Naming.{gone} is back: it belonged to a flow 019 removed, and a form that "
+                + "proposes a store or a port is a form asking a question that no longer exists");
+        }
 
-        await shell.NameRunning();
-
-        var form = (FormDialog)driving.Find(Naming.NameRunningTitle);
-
-        Assert.Equal(entry.Store, form.Values[1]);
-        Assert.Equal(entry.Listen, form.Values[2]);
-        Assert.Equal(entry.NodeConfig, form.Values[3]);
-
-        form.Fill(0, "prod");
-        form.Finish(taken: true);
-
-        await shell.Settled;
-
-        Assert.True(ProjectManifest.TryRead(Manifest, out var projects, out var problem), problem);
-
-        var named = Assert.Single(projects);
-
-        Assert.Equal(entry.Store, named.Store);
-        Assert.Equal(entry.Listen, named.Endpoint);
-        Assert.Equal(entry.NodeConfig, named.NodeConfig);
-
-        // And what to do next: the entry serves one store and will not serve this manifest until
-        // it is reinstalled without one.
-        Assert.Contains("Re-run `parley autostart install`", shell.Said, StringComparison.Ordinal);
-
-        // Named, so it is no longer offered: the entry's store is claimed.
-        Assert.DoesNotContain(shell.Actions(), action => action.Label == Naming.NameRunningTitle);
+        Assert.Empty(typeof(Shell).GetMember("NameRunning", Bindings));
     }
 
-    [Fact]
-    public void A_second_project_is_not_proposed_the_first_ones_port()
-    {
-        // The default port when nothing holds it — an MCP server told nothing about a broker
-        // looks there — and a free one otherwise, because a second deployment cannot share it.
-        Assert.Equal(Naming.DefaultEndpoint, Naming.FreeEndpoint([]));
-
-        var second = Naming.FreeEndpoint([Naming.DefaultEndpoint]);
-
-        Assert.NotEqual(Naming.DefaultEndpoint, second);
-        Assert.StartsWith("http://127.0.0.1:", second, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void A_name_a_store_or_a_port_already_taken_is_refused_in_the_field()
-    {
-        var alpha = new ProjectSettings(
-            ProjectName.Create("alpha"), Path.Combine(_directory, "alpha.db"), "http://127.0.0.1:1", null, null);
-
-        Assert.Contains("lowercase", Naming.NameProblem("Alpha", [alpha]), StringComparison.Ordinal);
-        Assert.Contains("already named", Naming.NameProblem("alpha", [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.NameProblem("beta", [alpha]));
-
-        Assert.Contains("already owns", Naming.StoreProblem(alpha.Store, [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.StoreProblem(Path.Combine(_directory, "beta.db"), [alpha]));
-
-        Assert.Contains("already listens", Naming.EndpointProblem("http://127.0.0.1:1/", [alpha]), StringComparison.Ordinal);
-        Assert.Contains("not an absolute address", Naming.EndpointProblem("nowhere", [alpha]), StringComparison.Ordinal);
-        Assert.Null(Naming.EndpointProblem("http://127.0.0.1:2", [alpha]));
-    }
-
-    [Fact]
-    public void The_running_deployment_is_offered_only_while_nothing_names_it()
-    {
-        var store = Path.Combine(_directory, "running.db");
-        var explicitEntry = new InstalledEntry(store, null, null, null, null);
-        var manifestEntry = new InstalledEntry(null, null, null, null, Manifest);
-
-        var claimed = new ProjectSettings(
-            ProjectName.Create("prod"), store, "http://127.0.0.1:1", null, null);
-
-        Assert.True(Naming.CanNameRunning([], explicitEntry));
-        Assert.False(Naming.CanNameRunning([claimed], explicitEntry));
-        Assert.False(Naming.CanNameRunning([], manifestEntry));
-        Assert.False(Naming.CanNameRunning([], null));
-    }
+    private const System.Reflection.BindingFlags Bindings =
+        System.Reflection.BindingFlags.Public
+        | System.Reflection.BindingFlags.NonPublic
+        | System.Reflection.BindingFlags.Static
+        | System.Reflection.BindingFlags.Instance;
 
     /// <summary>Opens the surface on this test's manifest.</summary>
     /// <param name="driving">The application.</param>
@@ -205,8 +170,8 @@ public sealed class NamingTests : IDisposable
     /// <returns>The surface, with its projects read.</returns>
     private async Task<Shell> OpenAsync(Driving.Session driving, InstalledEntry? installed)
     {
-        var directory = BrokerDirectory.FromManifest(Manifest);
-        var shell = TerminalCommand.Build(directory, manifestPath: Manifest, installed: installed);
+        var directory = BrokerDirectory.FromManifest(Root);
+        var shell = TerminalCommand.Build(directory, manifestPath: Root, installed: installed);
 
         driving.Show(shell);
 

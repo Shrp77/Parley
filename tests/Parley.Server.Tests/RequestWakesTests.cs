@@ -9,7 +9,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// In 0.5 every message is answered (principle 2.7), so every Request, Clarify and Result asks for its recipient's
+/// Every message is answered (principle 2.7), so every Request, Clarify and Result asks for its recipient's
 /// attention. A Request to an agent nobody has open is how a node learns to start it; a Result to a requester
 /// whose session has ended is how the work it asked for gets picked back up.
 /// </para>
@@ -171,7 +171,9 @@ public sealed class RequestWakesTests
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
         await using var sender = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
-        await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
+
+        // Started by its node, which is what makes it an agent a node gives turns to (SPEC.md §11.7).
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node);
 
         Assert.Equal(Wire.WakeOutcome.AlreadyRunning, Assert.Single((await sender.Client.RequestAsync(Request("one"), cancellationToken: token)).Outcomes).Wake);
         Assert.Equal(Wire.WakeOutcome.AlreadyComing, Assert.Single((await sender.Client.RequestAsync(Request("two"), cancellationToken: token)).Outcomes).Wake);
@@ -227,15 +229,15 @@ public sealed class RequestWakesTests
     [Fact]
     public async Task A_participant_a_poll_waits_on_for_nothing_but_its_vote_is_given_a_turn()
     {
-        // Found by the review gate. Orders proposed closure while billing held the work, so both were polled; billing
-        // then sent its Result and never voted. The poll reaches billing only through its inbox, and billing had no
-        // reason to collect again, so nothing asked it (§5.0). The node offers billing and not orders, so the turn
+        // Orders proposed closure while billing held the work, so both were polled; billing
+        // then sent its Result and never voted. The poll reaches billing only through its inbox, and billing has no
+        // reason to collect again, so something has to ask it (§5.0). The node offers billing and not orders, so the turn
         // below can only be the silent voter's.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["billing"], token);
-        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token, startedBy: node);
         await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
 
         var sent = Assert.Single((await orders.Client.RequestAsync(Request("is it still read?", from: "orders@alpha", to: "billing@alpha"), cancellationToken: token)).Outcomes);
@@ -268,15 +270,14 @@ public sealed class RequestWakesTests
     [Fact]
     public async Task A_decline_turning_into_agreement_asks_the_silent_once_and_repeating_it_buys_nothing()
     {
-        // Found by the review gate, in the fix for the test above. The first version woke the silent voters after
-        // every vote that did not close the conversation, and five repeated agreements bought the silent voter five
-        // turns: each turn is a collection, and a collection frees the next wake. Only inventory is offered by the
+        // Waking the silent voters after every vote that did not close the conversation would let five repeated
+        // agreements buy the silent voter five turns: each turn is a collection, and a collection frees the next wake. Only inventory is offered by the
         // node, so every command below is inventory's.
         var token = TestContext.Current.CancellationToken;
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["inventory"], token);
-        await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@alpha", cancellationToken: token);
+        await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@alpha", cancellationToken: token, startedBy: node);
         await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", cancellationToken: token);
         await using var orders = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
 
@@ -310,8 +311,8 @@ public sealed class RequestWakesTests
             await Assert.ThrowsAsync<TimeoutException>(() => node.WaitForCommandAsync(Settle));
         }
 
-        // And the replay lens 2 found in the rule this test was first written for: waking on a decline turning into
-        // agreement let billing buy inventory a turn for every two calls, by alternating its vote.
+        // And the replay: waking on a decline turning into
+        // agreement would let billing buy inventory a turn for every two calls, by alternating its vote.
         for (var round = 0; round < 3; round++)
         {
             _ = await inventory.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = "inventory@alpha" }, cancellationToken: token);

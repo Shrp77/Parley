@@ -48,11 +48,13 @@ public sealed class VersionShownTests
         driving.App.LayoutAndDraw(true);
 
         Assert.DoesNotContain(Shell.VersionLabel, shell.Status, StringComparison.Ordinal);
-        Assert.Contains(Shell.ActionsKey.ToString(), shell.Status, StringComparison.Ordinal);
+        // What the line exists for survives: which pane has focus. It asserted `?` until 2026-09-28, when the
+        // status line stopped naming it -- the menu bar is the way to the actions now.
+        Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

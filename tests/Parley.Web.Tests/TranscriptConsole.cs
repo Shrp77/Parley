@@ -41,7 +41,7 @@ public sealed class TranscriptConsole : WebApplicationFactory<Program>
             services.RemoveAll<BrokerDirectory>();
 
             services.AddSingleton(_ => new BrokerDirectory(
-                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5405", null, null)],
+                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5405", null)],
                 address => GrpcChannel.ForAddress(
                     address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false })));
         });
@@ -62,6 +62,12 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <summary>The exchanges every export returns.</summary>
     public List<Wire.ExchangeSnapshot> Exchanges { get; } = [];
 
+    /// <summary>The wait-for graph every <c>DescribeWaiting</c> returns; empty unless a test needs one.</summary>
+    public List<Wire.WaitingEdge> Edges { get; } = [];
+
+    /// <summary>The registry rows every <c>DescribeRegistry</c> returns; empty unless a test needs the project's agents.</summary>
+    public List<Wire.RegistryRow> Registry { get; } = [];
+
     /// <summary>How many exports were asked for.</summary>
     public int Exports { get; private set; }
 
@@ -69,8 +75,8 @@ public sealed class ScriptedExport : HttpMessageHandler
     /// <param name="id">The message and exchange identifier.</param>
     /// <param name="from">The sender.</param>
     /// <param name="to">The recipient.</param>
-    /// <param name="intent">What the request says, as the sender wrote it.</param>
-    public void Request(long id, string from, string to, string intent)
+    /// <param name="ask">What the request asks, as the sender wrote it.</param>
+    public void Request(long id, string from, string to, string ask)
     {
         lock (_lock)
         {
@@ -82,7 +88,7 @@ public sealed class ScriptedExport : HttpMessageHandler
                 From = from,
                 To = to,
                 ResponderModel = "test",
-                PayloadJson = "{\"intent\":" + System.Text.Json.JsonSerializer.Serialize(intent) + "}",
+                PayloadJson = "{\"ask\":" + System.Text.Json.JsonSerializer.Serialize(ask) + "}",
                 ConversationId = "shared",
                 CreatedUtc = "2026-09-16T10:00:00Z"
             });
@@ -147,7 +153,9 @@ public sealed class ScriptedExport : HttpMessageHandler
             reply = request.RequestUri!.AbsolutePath switch
             {
                 "/parley.v1.Operators/Export" => Export(),
-                "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply(),
+                "/parley.v1.Operators/DescribeRegistry" => Rows(),
+                "/parley.v1.Operators/DescribeWaiting" => Waiting(),
+                "/parley.v1.Operators/ListConversations" => Conversations(),
                 _ => null
             };
         }
@@ -174,6 +182,35 @@ public sealed class ScriptedExport : HttpMessageHandler
         response.TrailingHeaders.Add("grpc-status", (reply is null ? 12 : 0).ToString(CultureInfo.InvariantCulture));
 
         return response;
+    }
+
+    private Wire.RegistryReply Rows()
+    {
+        var reply = new Wire.RegistryReply();
+
+        reply.Rows.AddRange(Registry);
+
+        return reply;
+    }
+
+    private Wire.ListConversationsReply Conversations()
+    {
+        var reply = new Wire.ListConversationsReply();
+        var row = new Wire.ConversationSummary { ConversationId = "shared", HasOpenExchange = true };
+
+        row.Participants.AddRange(Edges.SelectMany(e => new[] { e.Waiter, e.WaitedOn }).Distinct());
+        reply.Conversations.Add(row);
+
+        return reply;
+    }
+
+    private Wire.WaitingReply Waiting()
+    {
+        var reply = new Wire.WaitingReply();
+
+        reply.Edges.AddRange(Edges);
+
+        return reply;
     }
 
     private Wire.ExportReply Export()

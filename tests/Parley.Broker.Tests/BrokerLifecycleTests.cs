@@ -15,8 +15,8 @@ namespace Parley.Broker.Tests;
 /// knows it has started.
 /// </para>
 /// <para>
-/// <b>Nothing here ends work.</b> In 0.4 attaching orphaned what the agent owed and the tick ghosted it; both
-/// destroyed Requests an agent had not had a turn to read. In 0.5 an exchange stays open until its receiver
+/// <b>Nothing here ends work.</b> Attaching does not orphan what the agent owed and the tick does not ghost it, since
+/// either would destroy Requests an agent had not had a turn to read. An exchange stays open until its receiver
 /// sends a Result or its conversation is closed, so the sequence scoped to the attaching agent hands work back
 /// rather than taking it away.
 /// </para>

@@ -31,38 +31,27 @@ internal static class LogTail
     /// </remarks>
     internal const string FileName = "parley-broker.log";
 
-    /// <summary>Where this project's broker writes its log, if it writes one where it usually does.</summary>
-    /// <param name="project">The project.</param>
-    /// <returns>The path, or <see langword="null"/> when the project names no store.</returns>
-    /// <remarks>
-    /// A guess, and honestly one: a broker started by hand with <c>--log</c> elsewhere writes
-    /// elsewhere, and nothing in the manifest records where. So a missing file is reported as
-    /// "not where it usually is" rather than as "the broker is not logging".
-    /// </remarks>
-    internal static string? For(ProjectSettings project) => For(project, null);
-
     /// <summary>Where this project's broker writes its log, given what the supervisor runs.</summary>
     /// <param name="project">The project.</param>
     /// <param name="installed">The autostart entry, or null for none or unknown.</param>
     /// <returns>The path, or <see langword="null"/> when nothing derivable names one.</returns>
     /// <remarks>
-    /// An entry serving the manifest writes one log for every project, beside the manifest, and
-    /// not beside any store. Derived from the entry when there is one, because the guess beside
-    /// the store is exactly wrong on the machine that switched entries: the old log is still
-    /// there beside the old store, and following it shows a broker that stopped writing hours
-    /// ago while the live one writes somewhere else. Found by reading the spec's assumption
-    /// ("beside the store, as the installer already reports") after the installer stopped
-    /// reporting that.
+    /// Without an entry this is a guess, and honestly one: a broker started by hand with <c>--log</c> elsewhere
+    /// writes elsewhere, and nothing in the manifest records where. So a missing file is reported as
+    /// "not where it usually is" rather than as "the broker is not logging".
+    /// An entry serving this machine writes one log for every project, at the root, and not beside any
+    /// store. Derived from the entry when there is one, because the guess beside the store would follow
+    /// a stale log while the live broker writes somewhere else.
     /// </remarks>
     internal static string? For(ProjectSettings project, InstalledEntry? installed)
     {
-        if (installed is { ServesManifest: true, Manifest: { Length: > 0 } manifest })
+        if (installed is { ServesManifest: true, Manifest: { Length: > 0 } root })
         {
             try
             {
-                var beside = Path.GetDirectoryName(Path.GetFullPath(manifest));
-
-                return beside is null ? null : Path.Combine(beside, FileName);
+                // At the root, which `--config` names itself. Resolving it any other way would follow a
+                // file that does not exist and report the broker as not logging.
+                return Path.Combine(Path.GetFullPath(root), FileName);
             }
             catch (Exception failure) when (failure is ArgumentException
                                                     or NotSupportedException
@@ -109,11 +98,10 @@ internal static class LogTail
     /// </para>
     /// <para>
     /// <b>And reopens when the file it is holding stops being the file at that path.</b> The share
-    /// flags below always allowed the broker to truncate or rotate underneath this — what they did
-    /// not do is make the reader notice. Parked past the end of a file that has just been emptied,
-    /// every read returns nothing for ever, and the screen goes on saying <i>Following …</i> while
-    /// showing nothing: **exactly what a quiet broker looks like**, which is the one thing a log
-    /// view must never be confusable with. Found by truncating the file under a running follow.
+    /// flags below let the broker truncate or rotate underneath this, but do not make the reader
+    /// notice. Parked past the end of a file that has just been emptied, every read returns nothing
+    /// for ever while the screen goes on saying <i>Following …</i>: **exactly what a quiet broker
+    /// looks like**, which is the one thing a log view must never be confusable with.
     /// </para>
     /// </remarks>
     internal static async Task FollowAsync(

@@ -31,7 +31,7 @@ public sealed class ExportStaysUtcTests
             AgentName.Create("orders@test"),
             AgentName.Create("billing@test"),
             "some-model-9",
-            """{"intent":"a question"}""",
+            """{"ask":"a question"}""",
             "alpha",
             new DateTimeOffset(2026, 1, 1, hourUtc, 0, 0, TimeSpan.Zero),
             null);

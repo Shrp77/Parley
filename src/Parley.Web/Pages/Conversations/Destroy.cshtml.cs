@@ -12,9 +12,8 @@ namespace Parley.Web.Pages.Conversations;
 /// <remarks>
 /// <para>
 /// <b>A page of its own rather than a button on the list, and that is the whole design.</b>
-/// <c>CLAUDE.md</c> records the rule twice amended and never weakened: a purge behind a keystroke
-/// is a different risk from one behind a page that describes it first. What the rule asks for is a
-/// description and a deliberate act, and a typed name is a deliberate act.
+/// A destructive act needs a description and a deliberate act, and a typed name is a deliberate act;
+/// a purge behind a keystroke is a different risk from one behind a page that describes it first.
 /// </para>
 /// <para>
 /// <b>Whoever is waiting is named before the identifier is asked for.</b> An open exchange in a

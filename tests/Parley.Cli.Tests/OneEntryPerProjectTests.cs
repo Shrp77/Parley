@@ -10,9 +10,9 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 10. Most of that document is checked already — the four-case precedence by
+/// Most of the launch-configuration document is checked elsewhere — the four-case precedence by
 /// <c>LaunchPrecedenceTests</c>, injectivity and the <c>parley-parley</c> case by
-/// <c>LaunchKeyTests</c>, what is never written by run 15's probe. Two are not.
+/// <c>LaunchKeyTests</c>. Two claims are checked here.
 /// </para>
 /// <para>
 /// <b>The bound.</b> The document says a key is "safe unescaped in JSON and in a client's tool names:
@@ -59,7 +59,6 @@ public sealed class OneEntryPerProjectTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             Path.Combine(_root, "node.json"),
@@ -115,12 +114,12 @@ public sealed class OneEntryPerProjectTests : IDisposable
     }
 
     [Fact]
-    public async Task Re_pointing_a_legacy_entry_does_not_leave_two_answering_for_one_project()
+    public async Task Re_pointing_an_unnamed_entry_does_not_leave_two_answering_for_one_project()
     {
-        // **The case the invariant is actually about.** A repository enrolled before projects existed
-        // holds a `parley` entry naming no project; enrolling it into one re-points that entry in
-        // place. A fifth precedence case that wrote the derived key instead would leave the legacy
-        // entry answering for the same project — two entries, one project, and the invariant gone.
+        // **The case the invariant is actually about.** A `parley` entry naming no project is
+        // re-pointed in place when it is enrolled into one. A precedence case that wrote the derived
+        // key instead would leave that entry answering for the same project: two entries, one
+        // project, and the invariant gone.
         await File.WriteAllTextAsync(
             LaunchFile,
             new JsonObject
@@ -141,7 +140,7 @@ public sealed class OneEntryPerProjectTests : IDisposable
         var servers = await ServersAsync();
 
         Assert.Equal(1, AnsweringFor(servers, "alpha"));
-        Assert.True(servers.ContainsKey(LaunchKey.Unnamed), "the legacy entry was renamed after all");
+        Assert.True(servers.ContainsKey(LaunchKey.Unnamed), "the entry was renamed after all");
     }
 
     [Fact]

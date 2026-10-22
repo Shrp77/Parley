@@ -10,8 +10,8 @@
 
 | Component | What it is for |
 |---|---|
-| `/parley:setup` | Configures this repository as a Parley agent: checks the server is installed, writes `.mcp.json`, creates the database directory, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
-| `/parley:setup-many` | Configures several repositories in one pass, from a manifest you fill in. Does the nine tenths of setup that needs no tools; leaves the `owns` lines to you and the roster to `/parley:write-peers` |
+| `/parley:setup` | Configures this repository as a Parley agent: checks the tools are installed, enrolls this repository with `parley enroll`, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
+| `/parley:setup-many` | Configures several repositories in one pass: finds the git repositories under a directory, offers them to tick, then configures, catalogues and starts the ones chosen. Leaves the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
 | `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
@@ -28,8 +28,7 @@ they act on every agent's files at once.
 
 The inbox is pull, and an agent can only pull when its session takes a turn. A supervisor gives
 an unattended agent a turn precisely because something is waiting; nothing gives one to a
-repository somebody has open. That session sweeps, reports `live`, and never looks - a message
-sat in one for four and a half hours while every indicator said the deployment was healthy.
+repository somebody has open. That session can report `live` and never look.
 
 The hook runs on the events that mean a person is interacting with this repository and says, in
 one line, that there is mail. The human becomes the clock. It is not a push, but it removes the
@@ -87,32 +86,24 @@ once at the end costs *n*, and the blocks that come out are the only ones that w
 Nine tenths of setup does not need the tools at all: the launch configuration, the node entry and
 the placeholder frame are file writes against known values. Only the roster needs a bound server.
 So `/parley:setup-many` does that nine tenths for a list of repositories and refuses the rest -
-it never writes an `owns` line, never replaces an existing `## Peers` section, never replaces an
-`.mcp.json`, and writes nothing at all until a dry run has been read.
+it never writes an `owns` line, never replaces an existing `## Peers` section and never replaces
+an `.mcp.json`.
+
+Before anything is written, the count is named along with what being catalogued costs - a peer's
+request may start each repository with nobody watching. `parley enroll --describe` reports the
+same thing and changes nothing.
 
 The work is `parley enroll`, a verb on the command-line tool, rather than a script shipped beside
-this file. That is not a preference. .NET is the only runtime a deployment is guaranteed to have
-- nothing is an agent without `parley-mcp` on PATH, and that arrives through
-`dotnet tool install` - so a helper in any other language adds a second runtime to a machine that
-already has one. The `parley_waiting` hook is Python and is deliberately written to fail silently
-when its interpreter is missing; that is survivable for a mail check, and not for a program
-writing configuration into eleven repositories at once.
+this file. .NET is the only runtime a deployment is guaranteed to have - nothing is an agent
+without `parley-mcp` on PATH, and that arrives through `dotnet tool install` - so a helper in any
+other language would add a second runtime to a machine that already has one. The `parley_waiting`
+hook is Python and is deliberately written to fail silently when its interpreter is missing; that
+is survivable for a mail check, and not for a program writing configuration into eleven
+repositories at once.
 
-The `owns` line is the interesting one. SPEC.md 17 question 10 originally forbade any tooling
-from writing it: the field is worth routing by *because a person meant it*, and "a field a model
-could write would be no more trustworthy than the prose it replaces, merely centralised."
-
-That question has since been **amended**, because a blank field turned out not to be neutral
-either - onboarding eleven repositories asks for eleven statements in one sitting, and a field
-left empty routes nothing at all. A suggestion is now permitted on three conditions: it travels
-with the evidence it was drawn from, quoted and attributed; approval is a recorded positive act,
-so `enroll` refuses a filled-in line that nobody has affirmed; and the exclusion half - what a
-repository does *not* own - is never invented, because a tree can show what it contains and not
-what somebody decided to leave out.
-
-What the registry promises is therefore narrower than it was: not that a person composed the
-line, but that a person read it and said yes. The residual risk is anchoring, and the amendment
-records it as accepted rather than solved.
+Enrolment never writes an `owns` line. It carries forward whatever a repository already says it
+owns. The line comes from asking the agent what it is responsible for and discussing the answer to
+agreement; nobody is asked to compose or affirm a line during enrolment.
 
 ## What it deliberately does not ship
 
@@ -137,9 +128,8 @@ copy to drift, so the skill here covers the part the server has nothing to say a
 operator's command-line tool, which is not exposed to any agent anywhere.
 
 **A version.** Neither manifest declares one, so an install tracks the repository rather than
-pinning to a string somebody has to remember to bump. Parley is in alpha and these files are
-still moving; a stale plugin that cannot be updated by `/plugin marketplace update` would be a
-worse problem than an unpinned one. This changes at the first release.
+pinning to a string somebody has to remember to bump. A stale plugin that cannot be updated by
+`/plugin marketplace update` would be a worse problem than an unpinned one.
 
 ## Alpha
 
@@ -152,5 +142,5 @@ Parley.Mcp`, and step 1 of setup becomes one line.
 
 Parley is not a Claude Code project and the protocol has no opinion about which client an agent
 lives in. This directory is the Claude Code integration; an equivalent for another client
-belongs beside it. Everything vendor-specific is in these four files - the server's own
+belongs beside it. Everything vendor-specific is in this directory - the server's own
 `instructions` is what every client gets for free, and it needs no adapter at all.

@@ -69,19 +69,11 @@ public static class SchemaMigrator
 
         var current = GetUserVersion(connection);
 
-        // A database written by a newer Parley than this one. Refused rather than served, and
-        // this is a correction: the old broker opened a store one migration ahead of it, printed
-        // "schema 2" over a file at 3, and ran. Nothing was harmed by that particular pair —
-        // the only difference between them was a widened CHECK — but the shape is the thing.
-        // The next migration to drop a column, rename a table or tighten a constraint would be
-        // met by code that believes none of it happened, and the first sign would be a write
-        // that fails or, worse, one that succeeds against the wrong meaning.
-        //
-        // It is reachable in the ordinary course of upgrading: the broker runs from a scheduled
-        // task, so a machine that installs a new Parley and then restarts the old task before
-        // logging out has exactly this. LatestVersion already existed for the mirror image of
-        // this — an operator's tool reading a database older than itself — and the direction
-        // that can write was the one left open.
+        // A database written by a newer Parley than this one is refused rather than served: a
+        // migration that drops a column, renames a table or tightens a constraint would be met by
+        // code that believes none of it happened, and the first sign would be a write that fails
+        // or one that succeeds against the wrong meaning. It is reachable in ordinary upgrading,
+        // when the old scheduled task restarts after a new Parley is installed.
         if (current > LatestVersion)
         {
             throw new InvalidOperationException(
@@ -107,14 +99,9 @@ public static class SchemaMigrator
                 IsolationLevel.Serializable, deferred: false);
 
             // Read again inside the lock. Two processes opening one project at the same moment
-            // both see an empty database, both decide to apply 001, and SQLite serialises them
-            // — so the second arrives here holding the lock, with the tables already created,
-            // and fails with "table agents already exists". It then exits, and what the person
-            // sees is one repository that opened and one that would not, intermittently.
-            //
-            // This is the ordinary case rather than a corner of it. Every agent has its own
-            // process, so a machine coming back after a reboot starts all of them at once
-            // against a database only one of them can create.
+            // both see an empty database and both decide to apply 001; SQLite serialises them, so
+            // the second arrives holding the lock with the tables already created. Every agent has
+            // its own process, so this is the ordinary case after a reboot.
             if (version <= GetUserVersion(connection, transaction))
             {
                 transaction.Rollback();

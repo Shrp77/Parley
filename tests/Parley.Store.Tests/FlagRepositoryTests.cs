@@ -9,7 +9,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing in 0.5 times out, so this read is the only thing standing between a Request nobody is working on
+/// Nothing times out, so this read is the only thing standing between a Request nobody is working on
 /// and it staying open for ever unnoticed. Both of its failure directions are silent: a flag that never
 /// fires hides a vanished agent, and one that fires on ordinary work teaches the person to ignore the list.
 /// </para>
@@ -134,9 +134,9 @@ public sealed class FlagRepositoryTests : IDisposable
     [Fact]
     public async Task A_poll_waiting_on_nothing_but_a_vote_is_flagged_and_names_who()
     {
-        // Found by the review gate. Orders proposed closure while billing still held the work, so both were
-        // polled; billing then sent its Result and never voted. The conversation stayed closing, nothing asked
-        // billing again, and nothing told the person — though §5.0 promises both.
+        // Orders proposed closure while billing still held the work, so both were
+        // polled; billing then sent its Result and never voted. The conversation stays closing, so billing is
+        // asked again and the person is told — as §5.0 promises.
         var conversations = new ConversationRepository(_connection);
         var (exchange, _) = await Work.OpenAsync(_connection, Orders, Billing, T0, cancellationToken: Ct);
 

@@ -1,0 +1,33 @@
+@model Parley.Web.Pages.AgentGroup
+@using Parley.Web.Pages.Shared
+@* One project's agents in the agents grid. An unreadable registry is said, not drawn as no agents: unreachable is not
+   empty, and none here would read as a project somebody has emptied. *@
+@if (Model.Unread)
+{
+    <p class="dgrid-empty" data-unread="@Model.Project" role="alert"><span class="alarm">@Model.Project:</span> its agents cannot be listed.
+        @(Model.Problem is { Length: > 0 } why ? why : "Its broker did not answer.")
+        <a href="/Projects/Settings?project=@Model.Project">Open its settings</a></p>
+}
+
+@foreach (var row in Model.Rows)
+{
+    var who = row.Agent.Name;
+
+    <details class="dgrid-row slot-@Palette.SlotFor(who)" role="row" data-agent="@who.Value">
+    <summary class="dgrid-line">
+        <span role="cell">
+            <span class="who" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(who)</span>
+            <a class="name" title="@who.Value" href="/Projects/Agent?project=@row.Project&amp;agent=@who.Value">@who.Role</a>
+        </span>
+        <span role="cell">@@@who.Machine</span>
+        <span role="cell"><a href="/Projects/Agents?project=@row.Project">@row.Project</a></span>
+        <span role="cell">@row.State</span>
+    </summary>
+    <div class="dgrid-detail">
+        <dl class="facts">
+            <dt>Owns</dt>
+            <dd>@(row.Agent.Owns is { Length: > 0 } owns ? owns : "None stated.")</dd>
+        </dl>
+    </div>
+    </details>
+}

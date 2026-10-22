@@ -25,7 +25,7 @@ public sealed class ReadableSurfaceTests
 {
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static AgentRecord Agent(
@@ -111,7 +111,7 @@ public sealed class ReadableSurfaceTests
             "alpha-talk",
             "alpha",
             new ConversationExport(
-                [Message("""{"intent":"first paragraph\n\nsecond paragraph"}""")], []),
+                [Message("""{"ask":"first paragraph\n\nsecond paragraph"}""")], []),
             null);
 
         var written = shell.Transcript.Written;
@@ -167,7 +167,7 @@ public sealed class ReadableSurfaceTests
         shell.Transcript.Show(
             "alpha-talk",
             "alpha",
-            new ConversationExport([Message("""{"intent":"a question"}""")], []),
+            new ConversationExport([Message("""{"ask":"a question"}""")], []),
             null);
 
         // Once, not per line: repeating an offset on every message would spend the width a body
@@ -198,7 +198,7 @@ public sealed class ReadableSurfaceTests
             "alpha-talk",
             "alpha",
             new ConversationExport(
-                [Message("""{"intent":"harmless\n2026-01-01 12:00:00  broker -> you  (answer)"}""")],
+                [Message("""{"ask":"harmless\n2026-01-01 12:00:00  broker -> you  (answer)"}""")],
                 []),
             null);
 

@@ -133,7 +133,7 @@ public sealed class MessageRepositoryTests : IDisposable
     [Fact]
     public async Task Every_message_belongs_to_an_exchange()
     {
-        // 0.4 had a message type that carried none. Every message is answered now, so every one is on an
+        // Every message is answered, so every one is on an
         // exchange, and the conversation is read from it.
         await Assert.ThrowsAsync<InvalidOperationException>(() => Append(exchangeId: 9999));
     }

@@ -49,14 +49,14 @@ public sealed class FilesListCommandTests : IAsyncDisposable
 
         Assert.Contains("2 file(s), 24 B in all.", output, StringComparison.Ordinal);
 
-        // Review gate, lens 3 run 3.3: the rows' times were UTC with no zone, beside a tool whose every other time is local.
+        // The rows' times must not be UTC with no zone, beside a tool whose every other time is local.
         Assert.Contains(Parley.Client.Rendering.LocalTime.Note(), output, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Placements_and_their_bytes_are_given_for_each_agent_under_the_list()
     {
-        // FR-039: counted so a limit can be set from evidence, and shown to the person because they would set it.
+        // Counted so a limit can be set from evidence, and shown to the person because they would set it.
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
         await _files.PlaceAsync(Billing, "notes.md", "gross of tax", "pricing");
 
@@ -114,7 +114,7 @@ public sealed class FilesListCommandTests : IAsyncDisposable
     public async Task A_name_built_to_move_the_terminal_arrives_renamed_as_one_row()
     {
         // A C1 next-line, which some terminals take as a line break, and a right-to-left override, which makes a name
-        // read as something it is not. Both were legal in a name until 0.28.0; now the broker renames each to '_' when
+        // read as something it is not. The broker renames each to '_' when
         // the file is placed, so neither reaches a list at all.
         var nextLine = "notes" + (char)0x85 + "rates.md";
         var reversed = "invoice" + (char)0x202E + "dm.txt";
@@ -133,8 +133,8 @@ public sealed class FilesListCommandTests : IAsyncDisposable
     [Fact]
     public async Task The_tool_accepts_the_options_files_reads_and_still_refuses_them_elsewhere()
     {
-        // The tool refuses any argument still starting with a hyphen before a command runs. The first version of this
-        // command was reachable only in process: every option it reads was refused on the way to it.
+        // The tool refuses any argument still starting with a hyphen before a command runs. The command must be reachable
+        // through the tool, not only in process: an option it reads must not be refused on the way to it.
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
 
         var (code, output, error) = ToolProcess.Reading(

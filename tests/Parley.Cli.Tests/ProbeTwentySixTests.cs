@@ -6,7 +6,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 15: where an agent's traffic goes, and whether a file may decide it.
+/// Where an agent's traffic goes, and whether a file may decide it.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,7 +36,6 @@ public sealed class ProbeTwentySixTests
         new("/src/orders", "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>A repository's own launch configuration, pinned to an address of its choosing.</summary>

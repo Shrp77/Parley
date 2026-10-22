@@ -17,9 +17,8 @@ namespace Parley.Mcp.Tests;
 /// two — and an agent given the document as its brief calls what the document says.
 /// </para>
 /// <para>
-/// That is the failure this closes, and it is a real one rather than a tidiness argument: it was
-/// found by installing the server, pointing two sessions at it, and watching both of them
-/// correct the tool names in their own summaries. A specification whose operation names cannot
+/// That is the failure this closes, and it is a real one rather than a tidiness argument: sessions
+/// pointed at the server would correct the tool names in their own summaries. A specification whose operation names cannot
 /// be called is worse than one that omits them.
 /// </para>
 /// <para>

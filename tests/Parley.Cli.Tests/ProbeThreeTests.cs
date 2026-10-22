@@ -2,21 +2,19 @@ using Parley.Configuration;
 using Parley.Core;
 using Parley.Setup;
 using System.Text.Json.Nodes;
-using System.Text.Json;
 using Xunit;
 
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 3: the guard that reads one file and writes another, and what a bulk
+/// The guard that reads one file and writes another, and what a bulk
 /// run leaves behind when it stops in the middle.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Runs 1 and 2 attacked single writes to single files and found four defects. This one attacks the
-/// two places where a decision is made from one file and acted on in a different one: FR-013 reads
-/// every <i>other</i> project's catalogue and then writes this project's, and <c>enroll apply</c>
-/// decides per repository while writing as it goes.
+/// Other probes attack single writes to single files. This one attacks the place where a decision
+/// is made from one file and acted on in a different one: <c>enroll apply</c> decides per repository
+/// while writing as it goes.
 /// </para>
 /// <para>
 /// Both are shapes where holding a file cannot help, because the thing being checked is not the
@@ -78,25 +76,21 @@ public sealed class ProbeThreeTests : IAsyncDisposable
         new(workspace, agent, "What it owns. Not what it does not.", unattended)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
-    // **A six-round race stood here and 018 removed the thing it raced for.** Two projects granting one
-    // workspace an unattended start at the same moment each looked, saw nothing, and both wrote — which
-    // is what put the machine-wide gate in `Catalogues`. FR-013 is gone: one catalogue keyed by the
-    // agent's identity means one checkout has one entry, so there is no second grant to win. The gate
-    // stays and is still raced below, because two enrolments still share one file.
+    // **There is no race between two projects over one workspace's grant.** One catalogue keyed by the
+    // agent's identity means one checkout has one entry, so there is no second grant to win. The
+    // machine-wide gate in `Catalogues` is still raced below, because two enrolments still share one file.
 
     [Fact]
     public async Task A_bulk_run_that_refuses_one_repository_has_not_written_the_ones_before_it()
     {
-        // `enroll apply` refuses a half-enrolled set by design — *"the repository that missed out is
+        // Enrolling refuses a half-enrolled set by design — *"the repository that missed out is
         // indistinguishable from one you never meant to enroll"* — and validates every row before
         // writing any. A refusal that arrives during the *writing* phase is a different thing, and this
         // asks whether it undoes that promise.
         //
-        // **The specimen refusal changed with 018 and the question did not.** It used to be FR-013's
-        // second unattended start; it is now the copied repository — one identity offered at a second
+        // **The specimen refusal** is the copied repository — one identity offered at a second
         // path while the first is still there — which is the one refusal left that cannot be decided
         // before the catalogue is read.
         var first = Workspace("orders");
@@ -127,33 +121,31 @@ public sealed class ProbeThreeTests : IAsyncDisposable
               """,
             TestContext.Current.CancellationToken);
 
-        var manifest = Path.Combine(_root, "enrol.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            JsonSerializer.Serialize(new
+        // The rows in the order a surface offers them, which is what makes "the ones before it"
+        // mean anything: `orders` is written first and the copied checkout is what refuses.
+        var chosen = new[]
+        {
+            new EnrollmentEntry(first, "orders", "Carts.", Unattended: true)
             {
-                node_config = CatalogueFor("beta"),
-                agents = new[]
-                {
-                    new { workspace = first, agent = "orders", owns = "Carts.", unattended = true, enroll = true, owns_approved = true },
-                    new { workspace = second, agent = "stock", owns = "Stock.", unattended = true, enroll = true, owns_approved = true },
-                },
-            }),
-            TestContext.Current.CancellationToken);
+                Enroll = true,
+            },
+            new EnrollmentEntry(second, "stock", "Stock.", Unattended: true)
+            {
+                Enroll = true,
+            },
+        };
 
         var output = new StringWriter();
         var error = new StringWriter();
 
-        var code = await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        var code = await EnrollCommand.EnrolAsync(
+            chosen,
+            describe: false,
             new Resolved(CatalogueFor("beta"), ValueSource.Argument),
             output,
             error,
-            TestContext.Current.CancellationToken,
             Project("beta"),
-            [Project("alpha"), Project("beta")]);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEqual(0, code);
 

@@ -8,10 +8,10 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>017's review gate, lens 1, found this by probe.</b> <c>Draft.Says</c> removed each chip at its
-/// <i>first</i> occurrence, and its remark claimed the consequence was benign — "an agent's name written
-/// by hand in the middle of a sentence stays in the sentence, it was never a chip". That holds only while
-/// the hand-written one comes after the chip. Put it before, and the words the person typed are what gets
+/// <b>A chip is removed at its last occurrence.</b> <c>Draft.Says</c> removing each chip at its
+/// <i>first</i> occurrence would let "an agent's name written
+/// by hand in the middle of a sentence" stay in the sentence only while
+/// the hand-written one comes after the chip. Put it before, and the words the person typed would be what gets
 /// removed while the addressing the surface wrote is what gets sent: the exact inversion of the method's
 /// purpose.
 /// </para>

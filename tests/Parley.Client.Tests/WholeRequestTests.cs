@@ -5,12 +5,11 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// That a person holding a Request with no item a Result can name is still offered a way to answer it.
+/// That a person holding a Request is offered a way to answer it, as a whole.
 /// </summary>
 /// <remarks>
-/// Found by the review gate, lens 1 run 1.15. The terminal and the console build their Result form from
-/// <see cref="Delivered.Items"/>, and a question 0.4 wrote whose only id is too long for a Result had none: the terminal
-/// said it carried no items and offered nothing, while the broker would have accepted a Result for it as a whole.
+/// The terminal and the console build their Result form from <see cref="Delivered.Items"/>, and a Request declares
+/// no identifiers (SPEC.md §5.1), so the form answers it under <see cref="PayloadShape.WholeRequest"/>.
 /// </remarks>
 public sealed class WholeRequestTests
 {
@@ -22,21 +21,11 @@ public sealed class WholeRequestTests
         new(new Message(1, 1, type, Orders, Billing, "claude-opus-5", payload, "pricing", T0, T0));
 
     [Fact]
-    public void A_request_whose_only_id_is_too_long_is_answered_as_a_whole()
+    public void A_request_is_answered_as_a_whole()
     {
-        var over = new string('b', MessageLimits.LongestItemId + 1);
-
         Assert.Equal(
             [PayloadShape.WholeRequest],
-            Of(MessageType.Request, $$"""{"intent":"x","sub_questions":[{"id":"{{over}}","text":"gross or net?"}]}""").Items());
-    }
-
-    [Fact]
-    public void A_request_with_items_offers_those_and_nothing_else()
-    {
-        Assert.Equal(
-            ["q1"],
-            Of(MessageType.Request, """{"intent":"x","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the price is stated as gross or net"}""").Items());
+            Of(MessageType.Request, """{"ask":"gross or net?"}""").Items());
     }
 
     [Fact]

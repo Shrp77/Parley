@@ -7,13 +7,11 @@
     must not learn about adapters, and starting a process is exactly the knowledge that
     comment keeps out of the broker.
 
-    It references Store rather than Broker. What it needs is the registry (who may be started,
-    and where they work) and somewhere to record what an invocation cost. Deciding *when* to
-    invoke belongs to whatever hosts the sweep, which is the adapter's own concern.
+    It references Configuration (the node catalogue) and nothing that opens a store: a node
+    reaches the broker over the wire.
   -->
   <ItemGroup>
     <ProjectReference Include="..\Parley.Configuration\Parley.Configuration.csproj" />
-    <ProjectReference Include="..\Parley.Store\Parley.Store.csproj" />
   </ItemGroup>
 
 </Project>

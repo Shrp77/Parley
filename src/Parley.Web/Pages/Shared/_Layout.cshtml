@@ -3,67 +3,34 @@
 
     Legibility is a correctness requirement here rather than a courtesy: the transcript's pair and
     visibility annotations are what stop a reader concluding that every participant saw every
-    message, so they are carried as text and never by colour alone (FR-029, FR-030).
+    message, so they are carried as text and never by colour alone.
 *@
 @inject Parley.Client.Seating.SeatBook Seats
 @inject Parley.Client.BrokerDirectory Directory
+@inject Parley.Web.Notifications.NotificationLog Notices
 @{
-    // Read here rather than passed in by every page, because the frame is the one thing every
-    // page has and a seat shown on some pages and not others is worse than one shown on none.
-    var named = SeatCookie.Read(Context.Request);
+    // **The person's seat in every project, taken here with nothing typed**. The broker provides the seat
+    // and never releases it; what this does is attach as it, if nothing holds it now, and mark the person here.
+    //
+    // A page render is evidence the person is at the console, and that is the whole of what keeps them marked here:
+    // SPEC.md §4.0 has no heartbeat. Doing it in the frame means every page counts, including ones nobody instrumented.
+    // **Except a page reloading itself**, which carries `reloaded` and is a timer, not a person (SPEC.md §14).
+    //
+    // Asked, not remembered, and **counted from every seat this console knows, held or not**. Mail waits against the
+    // name, not the stream, so the count must work while the person is away — which is exactly when it matters. A count
+    // nobody could confirm shows nothing rather than a zero: "no messages" and "could not ask" are different things.
+    //
+    // **A page that sets `Deferred` does not wait for either.** Both are answers from brokers, and a broker that is down
+    // costs the page its timeout; the page asks afterwards (`?handler=Presence`) and fills the badge in.
+    var deferred = ViewData["Deferred"] is true;
 
-    // And then asked of the seat book, because the cookie is not the seat. A seat is an open
-    // attachment held in this process (SPEC.md §4.0); the cookie is a note in somebody's browser
-    // saying which name they were using. The two part company whenever the broker restarts —
-    // an upgrade, a reboot, `autostart` doing its job — and they part company again twenty
-    // minutes after somebody walks away, when SeatBook.IdleAfter releases a seat a tab left open
-    // cannot keep.
-    //
-    // Believing the cookie put a person's name in the frame with a live mark beside it while the
-    // inbox one click away said "You are seated nowhere, so nothing can be waiting". The comment
-    // below already records this lesson being learned about the *count* on the same afternoon;
-    // it was not applied to the seat the count was being counted for.
-    //
-    // Nothing is re-seated automatically. Joining opens an attachment and puts a name in the
-    // registry, and doing that because a browser still had a cookie would be the console
-    // deciding somebody is present when all it knows is that they once were.
-    var here = named is not null && Seats.Seats(named).Count > 0 ? named : null;
+    (int Waiting, bool Certain) waiting = deferred
+        ? (0, false)
+        : await PersonSeats.PresenceAsync(
+            Seats, Directory, Context.RequestAborted,
+            person: !Context.Request.Query.ContainsKey(PersonSeats.Reloaded));
 
-    // A page render is evidence that the person is still at the console, which is the whole of
-    // what keeps their seat: SPEC.md §4.0 has no heartbeat, so somebody who has gone home has to
-    // stop being present some other way, and this is it. Doing it in the frame means every page
-    // counts, including the ones nobody thought to instrument.
-    if (here is not null)
-    {
-        Seats.Touch(here, DateTimeOffset.UtcNow);
-    }
-
-    // Asked, not remembered. This was a sum over counts pushed on the attach streams, and a
-    // notice is only ever sent when something arrives — so the number went up and never came
-    // back down, and the frame contradicted the inbox page standing right underneath it.
-    //
-    // A count nobody could confirm shows nothing at all rather than a zero, because "no messages"
-    // and "could not ask" are different things and only one of them means stop looking.
-    // **Asked whether or not a seat is held, and that is the correction.** A seat is how mail is
-    // collected; it is not where mail waits. Messages queue against the agent name in the store, so
-    // the count is suppressed by having no seat only if you believe the two are the same thing.
-    //
-    // Reported by the owner: four requests sent, two answered, and a console that said nothing --
-    // because the broker had restarted under an upgrade and taken the attachment with it, which is
-    // one of the two ordinary ways to be holding no seat. The other is walking away for twenty
-    // minutes. Both are exactly when somebody needs telling that an answer came back.
-    //
-    // The seat mark above still depends on a live attachment and must: putting a dot beside a name
-    // because a browser remembered one would be the console deciding somebody is present. A count
-    // beside Join claims nothing about presence -- it is the reason to come back.
-    var waiting = here is not null
-        ? await Seats.WaitingAsync(here, Context.RequestAborted)
-        : named is not null
-            ? await Seats.WaitingUnseatedAsync(named, Directory.Projects, Context.RequestAborted)
-            : (Waiting: 0, Certain: false);
-
-    var joinLink = "/Join?Then="
-        + Uri.EscapeDataString(Context.Request.Path + Context.Request.QueryString);
+    var here = Seats.Seats();
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -72,14 +39,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>@ViewData["Title"] — Parley console</title>
     <link rel="icon" href="/brand/icon.png" type="image/png" />
-    @* Inline rather than a file. A file has to survive `dotnet pack` into the tool that starts
-       this console — which it did not: the page rendered unstyled from the installed
-       `parley console` while working perfectly from the build output. Embedding it removes the
-       whole class of problem rather than the instance, and costs a round trip nobody wanted.
+    @* Inline rather than a file, because a file has to survive `dotnet pack` into the tool that
+       starts this console; inlining removes that whole class of problem.
 
        Every colour here reinforces something the text already says. Nothing is carried by hue
        alone: an unreachable project says it is unreachable, and a message nobody else saw names
-       the agents who did not see it. See FR-030. *@
+       the agents who did not see it. *@
     <style>
         :root {
             /* How much of the top of the viewport the sticky frame occupies. Read by everything
@@ -87,7 +52,7 @@
             --frame: 3.6rem;
             --ink: #16181d;
             --ink-soft: #5b6270;
-            --ink-faint: #878e9c;
+            --ink-faint: #667085;
             --page: #f7f8fa;
             --card: #ffffff;
             --rule: #e3e6ec;
@@ -97,13 +62,20 @@
             --quiet-wash: #f2f4f8;
             --radius: 10px;
             --gap: 1.25rem;
+            /* The text and glyphs that sit on --accent and --alarm. White in the light theme; in the dark one both
+               colours are light, and white on them is hard to read. */
+            --on-accent: #ffffff;
+            --on-alarm: #ffffff;
+            /* Tells the browser to draw what it draws itself (scrollbars, date pickers, the menu of a select that is not
+               restyled) in the theme the page is in. */
+            color-scheme: light dark;
         }
 
         @@media (prefers-color-scheme: dark) {
             :root {
                 --ink: #e8eaf0;
                 --ink-soft: #a8b0c0;
-                --ink-faint: #7d8598;
+                --ink-faint: #97a0b4;
                 --page: #14161b;
                 --card: #1c1f26;
                 --rule: #2c313b;
@@ -111,9 +83,14 @@
                 --alarm: #f08b90;
                 --alarm-wash: #2a1c1e;
                 --quiet-wash: #22262e;
+                --on-accent: #0d1a3f;
+                --on-alarm: #3a0d10;
             }
         }
 
+        /* Room for the scrollbar on every page, so a short page and a long one lay out alike and nothing shifts sideways */
+        /* when one gains or loses it. */
+        html { scrollbar-gutter: stable; }
         * { box-sizing: border-box; }
 
         body {
@@ -123,10 +100,85 @@
             color: var(--ink);
             background: var(--page);
             margin: 0;
-            padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem;
+            padding: 0;
         }
 
-        header, main, footer { margin: 0 auto; max-width: 100rem; }
+        header, main { margin: 0 auto; max-width: 100rem; }
+
+        /* The rail: a navigation bar the full height of the window, fixed to its left edge, with the page to its right.
+           Collapsible to icons; the choice is the browser's alone (localStorage, guarded) and the page is complete
+           without it. Expanded is the default so that nothing is hidden from somebody with no script. */
+        :root { --rail-w: 14.5rem; }
+        /* Collapsed is exactly wide enough for an icon with the same padding it has expanded: the icons never move
+           when the bar opens or closes, only the labels beside them appear. */
+        html[data-nav="collapsed"] { --rail-w: 3.85rem; }
+
+        .rail {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 30;
+            width: var(--rail-w);
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: 0.9rem 0.6rem;
+            background: var(--card);
+            border-right: 1px solid var(--rule);
+            box-shadow: 8px 0 28px -18px rgb(0 0 0 / 0.25);
+        }
+
+        .page { margin-left: var(--rail-w); padding: 0 clamp(0.85rem, 2vw, 2rem) 4rem; min-width: 0; }
+
+        /* Its mark is wider than a link's icon, so it starts further left to share their centre line. */
+        .rail .brand { padding: 0.2rem 0.375rem 0.9rem; border-bottom: 1px solid var(--rule); margin-bottom: 0.4rem; white-space: nowrap; }
+
+        .rail .brand img { flex: none; }
+        .rail .brand .rail-label { color: var(--ink); font-weight: 650; }
+        .rail .brand .rail-label span { color: var(--ink-faint); font-weight: 400; }
+
+        .rail-toggle {
+            display: flex; align-items: center; gap: 0.7rem; width: 100%;
+            background: none; border: 0; box-shadow: none; color: var(--ink-soft);
+            height: 2.6rem; padding: 0 0.7rem; border-radius: 12px; cursor: pointer; font: inherit; margin-top: auto; order: 2;
+        }
+        .rail-toggle:hover { background: var(--quiet-wash); color: var(--ink); filter: none; }
+        .rail-toggle .icon { transition: transform 0.15s; }
+        html[data-nav="collapsed"] .rail-toggle .icon { transform: rotate(180deg); }
+
+        .rail nav { display: flex; flex-direction: column; flex-wrap: nowrap; gap: 0.15rem; margin: 0; align-items: stretch; }
+        .rail nav a {
+            display: flex; align-items: center; gap: 0.7rem;
+            height: 2.6rem; padding: 0 0.7rem; border: 0; border-radius: 12px;
+            color: var(--ink-soft); position: relative; white-space: nowrap;
+        }
+        .rail nav a:hover, .rail nav a:focus { background: var(--quiet-wash); color: var(--ink); border: 0; }
+        .rail nav a[aria-current] { color: var(--ink); font-weight: 600; background: var(--quiet-wash); }
+        .rail nav a[aria-current]::before {
+            content: ""; position: absolute; left: -0.6rem; top: 18%; bottom: 18%; width: 3px;
+            background: var(--accent); border-radius: 0 3px 3px 0;
+        }
+        .rail .icon { font-size: 1.4rem; }
+        .rail a[aria-current] .icon { font-variation-settings: "FILL" 1; }
+        .rail-label { overflow: hidden; text-overflow: ellipsis; }
+        /* The same height in both states, so nothing below it moves when the bar collapses: collapsed, the name goes and
+           a rule stays in its place. */
+        .rail-heading { height: 2.2rem; line-height: 2.2rem; margin: 0.4rem 0.7rem 0; border-top: 1px solid transparent; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rail .seat-waiting { margin-left: auto; }
+
+        html[data-nav="collapsed"] .rail-label,
+        html[data-nav="collapsed"] .rail .brand span { position: absolute; left: -100rem; }
+        html[data-nav="collapsed"] .rail-heading { color: transparent; border-top-color: var(--rule); }
+        html[data-nav="collapsed"] .rail .seat-waiting { position: absolute; top: 0.2rem; right: 0.3rem; margin: 0; }
+
+        @@media (max-width: 700px) {
+            :root { --rail-w: 3.85rem; }
+            .rail-label, .rail .brand span { position: absolute; left: -100rem; }
+            .rail-heading { color: transparent; border-top-color: var(--rule); }
+            .rail-toggle { display: none; }
+            .rail .seat-waiting { position: absolute; top: 0.2rem; right: 0.3rem; margin: 0; }
+        }
 
         /* Skipping is for somebody navigating by keyboard, so it has to become visible when it
            is focused rather than merely exist. */
@@ -141,7 +193,7 @@
             margin: 0.5rem 0;
             padding: 0.5rem 0.75rem;
             background: var(--accent);
-            color: #fff;
+            color: var(--on-accent);
             border-radius: var(--radius);
         }
 
@@ -178,6 +230,16 @@
 
         .brand span { color: var(--ink-faint); font-weight: 400; }
 
+        .crumb {
+            font-weight: 650;
+            color: var(--ink);
+            text-decoration: none;
+            overflow-wrap: anywhere;
+        }
+
+        /* A hint beside the name, not part of it: faint and italic so it reads as a gloss and not as the heading. */
+        h1 .item-title { font-size: 0.7em; font-weight: 400; font-style: italic; color: var(--ink-faint); margin-left: 0.6rem; }
+
         /* Drawn in black on transparency, so on a dark ground it is inverted rather than
            swapped for a second file. One asset, and it cannot fall out of step with itself. */
         .brand img {
@@ -187,29 +249,7 @@
         }
 
         @@media (prefers-color-scheme: dark) {
-            .brand img, .wordmark { filter: invert(1); }
-        }
-
-        /* The front door: the mark beside the heading rather than above it, so the page still
-           opens with a sentence and not with a logo the reader has to scroll past. */
-        .doorway {
-            display: flex;
-            align-items: center;
-            gap: 1.25rem;
-            margin: 0.5rem 0 0.25rem;
-        }
-
-        .doorway h1 { margin: 0; }
-
-        .wordmark {
-            width: auto;
-            height: 5.5rem;
-            flex: none;
-        }
-
-        @@media (max-width: 40rem) {
-            .wordmark { height: 4rem; }
-            .doorway { gap: 0.9rem; }
+            .brand img { filter: invert(1); }
         }
 
         /* One delivered message, in the inbox. Bordered rather than bubbled: these arrive out of
@@ -288,34 +328,16 @@
             box-shadow: 0 0 0 2px color-mix(in srgb, #1c7c48 25%, transparent);
         }
 
+        .seat-waiting[hidden] { display: none; }
+
         .seat-waiting {
             font-size: 0.75rem;
             font-weight: 700;
-            color: #fff;
+            color: var(--on-accent);
             background: var(--accent);
             border-radius: 999px;
             padding: 0.05rem 0.4rem;
         }
-
-        /* A form in the nav, so the base card styling has to be undone rather than inherited. */
-        .seat-leave {
-            display: inline;
-            background: none;
-            border: 0;
-            padding: 0;
-            margin: 0;
-        }
-
-        .seat-leave button {
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: var(--ink-soft);
-            background: none;
-            border: 1px solid var(--rule);
-            padding: 0.15rem 0.55rem;
-        }
-
-        .seat-leave button:hover { color: var(--ink); filter: none; border-color: var(--ink-faint); }
 
         h1 {
             font-size: 1.6rem;
@@ -373,7 +395,7 @@
         }
 
         th {
-            font-size: 0.78rem;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
             color: var(--ink-faint);
@@ -428,31 +450,240 @@
 
         label { color: var(--ink-soft); font-size: 0.9rem; }
 
-        input, textarea {
-            font: inherit;
-            color: var(--ink);
-            background: var(--page);
-            border: 1px solid var(--rule);
-            border-radius: 6px;
-            padding: 0.4rem 0.6rem;
+        /* ---- Controls, Material style --------------------------------------------------------------------------------
+           One place, at the element, so a page that adds a bare <input> or <select> looks like the rest without having
+           to know a class. Everything below reads the same tokens as the rest of the frame, so dark mode needs nothing
+           of its own beyond --on-accent. A page that wants something different says so with a more specific rule.
+
+           Glyphs are a font (Material Symbols Outlined, Apache License 2.0), cut down to the icons this console names and
+           served from the assembly at /brand/material-symbols.woff2. They are written as ligatures: the icon's name is the
+           text. A glyph is decoration, so a pseudo-element's gets an empty alternative (`/ ""`) and an element's is
+           aria-hidden; the words beside it carry the meaning, as they did before. */
+        @@font-face {
+            font-family: "Material Symbols Outlined";
+            font-style: normal;
+            font-weight: 400;
+            font-display: block;
+            src: url("/brand/material-symbols.woff2") format("woff2");
         }
 
-        textarea { width: 100%; min-height: 8rem; }
+        /* Clipped to one em, so a browser that never loads the font shows an empty square and not the icon's name. */
+        .icon {
+            display: inline-block;
+            flex: none;
+            width: 1em;
+            height: 1em;
+            overflow: hidden;
+            font-family: "Material Symbols Outlined";
+            font-size: 1.25rem;
+            font-style: normal;
+            font-weight: normal;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            white-space: nowrap;
+            direction: ltr;
+            font-feature-settings: "liga";
+            font-variation-settings: "FILL" 0;
+            -webkit-font-smoothing: antialiased;
+            user-select: none;
+        }
 
-        button {
+        .icon.filled { font-variation-settings: "FILL" 1; }
+
+        input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]), textarea, select {
+            font: inherit;
+            color: var(--ink);
+            background-color: var(--page);
+            border: 1px solid var(--rule);
+            border-radius: 12px;
+            padding: 0.5rem 0.85rem;
+            accent-color: var(--accent);
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]):hover, textarea:hover, select:hover { border-color: var(--ink-faint); }
+
+        /* The focus ring is the border thickening and taking the accent, not an outline drawn outside it. */
+        input:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"]):focus-visible, textarea:focus-visible, select:focus-visible {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        input::placeholder, textarea::placeholder { color: var(--ink-faint); opacity: 1; }
+        input:disabled, textarea:disabled, select:disabled { opacity: 0.55; cursor: not-allowed; }
+        input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1) opacity(0.6); cursor: pointer; }
+        input[type="date"], input[type="datetime-local"], input[type="time"] { min-height: 2.4rem; }
+        ::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.65; }
+
+        textarea { width: 100%; min-height: 8rem; resize: vertical; }
+
+        /* A combo box. The chevron is the expand_more glyph drawn as an image, because a <select> has no element to put a
+           font in; a browser that can restyle the control itself (appearance: base-select) is given the real glyph and a
+           menu that matches, below. */
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+            padding-right: 2.4rem;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath fill='%23878e9c' d='M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.6rem center;
+            background-size: 1.4rem;
+        }
+
+        @@supports (appearance: base-select) {
+            select, ::picker(select) { appearance: base-select; }
+            select { background-image: none; padding-right: 0.6rem; display: inline-flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+            select::picker-icon {
+                font-family: "Material Symbols Outlined";
+                font-size: 1.4rem;
+                line-height: 1;
+                color: var(--ink-faint);
+                content: "expand_more";
+                content: "expand_more" / "";
+                transition: rotate 0.15s;
+            }
+            select:open::picker-icon { rotate: 180deg; }
+            ::picker(select) {
+                margin-top: 0.3rem;
+                padding: 0.35rem;
+                color: var(--ink);
+                background: var(--card);
+                border: 1px solid var(--rule);
+                border-radius: 14px;
+                box-shadow: 0 14px 34px -12px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.08);
+            }
+            option { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-radius: 9px; cursor: pointer; }
+            option:hover, option:focus-visible { background: var(--quiet-wash); outline: none; }
+            option:checked { font-weight: 600; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+            option::checkmark {
+                order: 1;
+                margin-left: auto;
+                font-family: "Material Symbols Outlined";
+                font-size: 1.15rem;
+                color: var(--accent);
+                content: "check";
+                content: "check" / "";
+            }
+        }
+
+        /* Checkbox and radio: a drawn box, with the tick a glyph. 1.25rem is the touch-friendly 20px; the halo on hover is
+           Material's state layer. */
+        input[type="checkbox"], input[type="radio"] {
+            appearance: none;
+            -webkit-appearance: none;
+            position: relative;
+            flex: none;
+            display: inline-grid;
+            place-content: center;
+            width: 1.25rem;
+            height: 1.25rem;
+            margin: 0;
+            padding: 0;
+            vertical-align: middle;
+            color: var(--on-accent);
+            background: transparent;
+            border: 2px solid var(--ink-soft);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+
+        input[type="checkbox"]:hover, input[type="radio"]:hover { box-shadow: 0 0 0 0.4rem color-mix(in srgb, var(--ink) 8%, transparent); }
+        input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+        input[type="checkbox"]::before {
+            font-family: "Material Symbols Outlined";
+            font-size: 1.05rem;
+            line-height: 1;
+            content: "check";
+            content: "check" / "";
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 0.12s, transform 0.12s;
+        }
+
+        input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { background: var(--accent); border-color: var(--accent); }
+        input[type="checkbox"]:checked::before, input[type="checkbox"]:indeterminate::before { opacity: 1; transform: none; }
+        input[type="checkbox"]:indeterminate::before { content: "remove"; content: "remove" / ""; }
+
+        input[type="radio"] { border-radius: 50%; }
+
+        input[type="radio"]::before {
+            content: "";
+            width: 0.6rem;
+            height: 0.6rem;
+            border-radius: 50%;
+            background: var(--accent);
+            transform: scale(0);
+            transition: transform 0.12s;
+        }
+
+        input[type="radio"]:checked { border-color: var(--accent); }
+        input[type="radio"]:checked::before { transform: scale(1); }
+
+        input[type="range"] { accent-color: var(--accent); }
+
+        input[type="file"] { font: inherit; color: var(--ink-soft); max-width: 100%; }
+
+        input[type="file"]::file-selector-button {
             font: inherit;
             font-weight: 600;
-            color: #fff;
+            margin-right: 0.75rem;
+            padding: 0.4rem 1rem;
+            color: var(--accent);
+            background: none;
+            border: 1px solid var(--rule);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background-color 0.15s, border-color 0.15s;
+        }
+
+        input[type="file"]::file-selector-button:hover { background: var(--quiet-wash); border-color: var(--accent); }
+
+        /* A button is filled by default; .quiet is the outlined one. Hover is a brightness step, pressed is a small
+           squeeze. A button that holds a glyph and a word lines them up without a class. */
+        button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font: inherit;
+            font-weight: 600;
+            color: var(--on-accent);
             background: var(--accent);
             border: 1px solid transparent;
-            border-radius: 6px;
-            padding: 0.45rem 0.9rem;
+            border-radius: 999px;
+            padding: 0.5rem 1.25rem;
             cursor: pointer;
+            transition: filter 0.15s, background-color 0.15s, border-color 0.15s, transform 0.08s;
         }
 
         button:hover { filter: brightness(1.08); }
+        button:active { transform: scale(0.98); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; filter: none; transform: none; }
+        button.quiet:hover { background: var(--quiet-wash); filter: none; }
 
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        /* A glyph in front of a summary's words, turning when it opens. Left to the summaries that have no marker of their
+           own: the rows and menus below draw theirs. */
+        .disclosure > summary { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; list-style: none; }
+        .disclosure > summary::-webkit-details-marker { display: none; }
+
+        .disclosure > summary::before {
+            font-family: "Material Symbols Outlined";
+            font-size: 1.3rem;
+            line-height: 1;
+            color: var(--ink-faint);
+            content: "chevron_right";
+            content: "chevron_right" / "";
+            transition: transform 0.15s;
+        }
+
+        .disclosure[open] > summary::before { transform: rotate(90deg); }
 
         /* The transcript, as a conversation. The chat shape is a presentation choice and a
            deliberate one: it is the easiest way to watch agents talk. What it must never do is
@@ -573,6 +804,14 @@
             overflow-wrap: anywhere;
         }
 
+        /* The chips sit on a line below the text, so the text keeps the bubble's full width however many there are. */
+        ol.points .chits {
+            flex: 0 0 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
         /* The receiver's own word for the outcome. "blocked" and "done" are different
            results and only one of them is finished. */
         ol.points .verdict {
@@ -589,10 +828,7 @@
 
         /* Payloads are JSON written by a peer, and the setup pages carry commands with long
            paths in them. Both wrap rather than scroll: a horizontal scrollbar inside a block is
-           a place text hides, and on a phone it is the page itself that runs off the side.
-
-           This rule was lost once in an edit and nothing failed — the pages still rendered, and
-           only measuring the layout at 360px found it. */
+           a place text hides, and on a phone it is the page itself that runs off the side. */
         pre {
             background: var(--quiet-wash);
             border: 1px solid var(--rule);
@@ -611,26 +847,6 @@
             font-size: 0.75rem;
             color: var(--ink-faint);
         }
-
-        /* The line that stops this being a group chat. Centred and quiet, the way a messenger
-           marks something about the conversation rather than something said in it -- and it is
-           a sentence naming the agents, so the styling is the last thing carrying it, never the
-           only one. */
-        li.not-seen {
-            align-self: center;
-            max-width: 40rem;
-            margin: 0.15rem 0;
-            padding: 0.4rem 0.85rem;
-            background: var(--quiet-wash);
-            border: 1px dashed var(--rule);
-            border-radius: 999px;
-            font-size: 0.78rem;
-            line-height: 1.45;
-            color: var(--ink-soft);
-            text-align: center;
-        }
-
-        li.not-seen strong { font-weight: 500; color: var(--ink-soft); }
 
         /* Eight slots, assigned from a hash of the agent's name so it never moves. Decoration:
            every fact these tint is also written in words beside them. */
@@ -658,58 +874,22 @@
            Collapses above the conversation on a narrow screen rather than squeezing it. */
         .conversation {
             display: grid;
-            grid-template-columns: clamp(13rem, 15vw, 18rem) minmax(0, 1fr) 4rem;
+            grid-template-columns: clamp(15rem, 17vw, 20rem) minmax(0, 1fr) 4rem;
             gap: 1.5rem;
             align-items: start;
         }
 
-        .roster {
+        /* The conversation page's left column: both rosters, the legend and what is waiting. The column
+           is what sticks, so the rosters inside it do not; its own height is capped so a long roster
+           scrolls inside it rather than past the bottom of the window. */
+        .side {
             position: sticky;
             top: calc(var(--frame) + 1rem);
-            background: var(--card);
-            border: 1px solid var(--rule);
-            border-radius: var(--radius);
-            padding: 0.9rem 1rem;
-        }
-
-        .roster h2 {
-            margin: 0 0 0.6rem;
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-            color: var(--ink-faint);
-        }
-
-        .roster ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.65rem; }
-
-        .roster li {
             display: grid;
-            grid-template-columns: 1.7rem minmax(0, 1fr);
-            grid-template-rows: auto auto;
-            column-gap: 0.5rem;
-            align-items: center;
+            gap: 1rem;
+            max-height: calc(100vh - var(--frame) - 2rem);
+            overflow-y: auto;
         }
-
-        .roster .who {
-            grid-row: 1 / span 2;
-            width: 1.7rem;
-            height: 1.7rem;
-            border-radius: 50%;
-            display: grid;
-            place-items: center;
-            font-size: 0.6rem;
-            font-weight: 700;
-            color: #fff;
-            background: var(--agent);
-        }
-
-        .roster .name {
-            font-size: 0.82rem;
-            font-weight: 600;
-            overflow-wrap: anywhere;
-        }
-
-        .roster .state { font-size: 0.72rem; color: var(--ink-faint); }
 
         /* A day marker. Centred and quiet, like the visibility note, because both are the
            console speaking about the conversation rather than anybody speaking in it. */
@@ -726,9 +906,9 @@
             border-radius: 999px;
         }
 
-        /* An exchange nobody came back to. Tinted and outlined, and the bubble also carries the
-           word "abandoned" -- the colour is how you find it while scrolling, never how you know
-           what it means. */
+        /* An exchange a person closed. Tinted and outlined, and the bubble also carries the
+           words "closed by a person" -- the colour is how you find it while scrolling, never how
+           you know what it means. */
         li.turn.ghosted .bubble {
             border-color: var(--alarm);
             background: var(--alarm-wash);
@@ -747,37 +927,167 @@
             margin-right: 0.35rem;
         }
 
-        /* The project: who is here on the left, what they have been saying on the right. One
-           page because that is one question, and answering it across two made a reader hold the
-           roster in their head while looking at the conversations. */
-        .project {
-            display: grid;
-            grid-template-columns: clamp(13rem, 17vw, 19rem) minmax(0, 1fr);
-            gap: 1.5rem;
-            align-items: start;
+        .settings-section { margin: 0 0 2rem; max-width: 52rem; }
+        .settings-section fieldset { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.8rem 1rem 1rem; }
+        .settings-section legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.4rem; }
+        .settings-section .toolbar { margin: 0 0 0.6rem; }
+        .settings-tree .tree { list-style: none; margin: 0; padding: 0; }
+        .settings-tree .tree ul { list-style: none; }
+        .settings-tree .tree details > ul { margin: 0.2rem 0 0.5rem 0.55rem; padding-left: 0.6rem; border-left: 1px solid var(--rule); display: grid; gap: 0.4rem; }
+        .settings-tree .tree summary { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+        .settings-tree .tree .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+        .settings-tree .tree li.group { display: block; }
+        .settings-tree .tree li[class*="slot-"] { display: flex; align-items: center; gap: 0.5rem; }
+        .settings-tree .pick-name { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+        .settings-tree .who { width: 1.5rem; height: 1.5rem; border-radius: 50%; display: grid; place-items: center; font-size: 0.55rem; font-weight: 700; color: #fff; background: var(--agent); }
+        .settings-tree .name { font-size: 0.85rem; font-weight: 600; }
+        .settings-tree .state { font-size: 0.72rem; color: var(--ink-faint); }
+        .settings-tree input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+        /* The form only holds the pieces; the expander is the box. */
+        form.default-agent { display: block; background: none; border: 0; padding: 0; margin: 0; box-shadow: none; }
+        .default-expander { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); padding: 0.6rem 1rem; }
+        .default-expander > summary { display: flex; align-items: center; gap: 0.6rem; cursor: pointer; }
+        .default-title { font-weight: 650; }
+        .default-expander .count { font-size: 0.75rem; color: var(--ink-faint); }
+        .select-agents { margin-left: auto; }
+        .chips { list-style: none; margin: 0.7rem 0 0.2rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .chips:empty::before { content: "None chosen."; font-size: 0.85rem; color: var(--ink-faint); }
+        .chip { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--quiet-wash); border: 1px solid var(--rule); border-radius: 999px; padding: 0.1rem 0.2rem 0.1rem 0.7rem; font-size: 0.85rem; }
+        .chip-x { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; border-radius: 50%; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1; font-size: 1rem; }
+        .chip-x:hover, .chip-x:focus { color: var(--alarm); background: var(--alarm-wash); }
+        .chip-x .icon { font-size: 1.05rem; }
+        .default-dialog { position: fixed; inset: 0; margin: auto; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); color: var(--ink); padding: 1rem 1.2rem; width: min(30rem, 92vw); max-height: 80vh; overflow-y: auto; }
+        .default-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+        .default-dialog h3 { margin: 0 0 0.6rem; }
+        .dialog-actions { text-align: right; margin: 0.8rem 0 0; }
+        .act-cards { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.7rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+        .act-cards li { background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.8rem 1rem; }
+        .act-cards li.costly { background: var(--alarm-wash); }
+        .act-cards .act-title { font-weight: 650; }
+        .act-cards li.idle { color: var(--ink-soft); }
+
+        /* The links a project page opens with, laid out as a row rather than a run of words. */
+        nav.page-links { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin: 0 0 1.25rem; font-size: 0.9rem; }
+
+        /* A button that destroys something: outlined in the alarm colour, so it is not the loudest thing on the page. */
+        button.danger { color: var(--alarm); background: none; border: 1px solid var(--alarm); }
+        button.danger:hover { background: var(--alarm-wash); }
+        .act-cards p { margin: 0.35rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
+
+        /* The data-grid views (Projects, Agents, Inbox): a title, then Create, Filters and the grid as one stack that fills
+           the window. The first three never scroll away; the grid is the only thing that scrolls, and its header row sticks
+           to its top. Each grid names its columns once, in --cols, and the header and every row read the same value, so
+           they cannot disagree about where a column is. */
+        .view { display: flex; flex-direction: column; gap: 0.75rem; height: calc(100vh - var(--frame) - 3rem); min-height: 26rem; }
+        .view > * { margin: 0; }
+        .view-title { display: flex; align-items: baseline; gap: 1rem; flex: none; }
+        .view-title h1 { margin: 0; }
+        .view-title .as-of { margin: 0 0 0 auto; }
+        .view-card { flex: none; background: var(--card); border: 1px solid var(--rule); border-radius: 20px; box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.18), 0 2px 6px rgb(0 0 0 / 0.04); }
+        .view-card .composer-note { margin: 0; }
+
+        .view-create > summary { display: flex; align-items: center; gap: 0.7rem; padding: 0.7rem 1.1rem; font-weight: 650; cursor: pointer; list-style: none; }
+        .view-create > summary::-webkit-details-marker { display: none; }
+        .view-create > summary::before { content: "add"; content: "add" / ""; font-family: "Material Symbols Outlined"; display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 1.15rem; line-height: 1; transition: transform 0.15s; }
+        .view-create[open] > summary::before { content: "remove"; content: "remove" / ""; }
+        .view-create form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; border: 0; background: none; box-shadow: none; padding: 0.1rem 1.1rem 1rem; margin: 0; }
+        .view-create .composer-note { flex: 1 1 100%; }
+
+        .view-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem; padding: 0.7rem 1.1rem; margin: 0; }
+        .view-filters .tally { margin-left: auto; align-self: center; font-size: 0.85rem; color: var(--ink-faint); }
+
+        .view .field { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 11rem; min-width: 0; }
+        .view .field.wide { flex-grow: 3; }
+        /* Pill-shaped here; the base rules own everything else about a field, the chevron included. */
+        .view .field input, .view .field select { width: 100%; border-radius: 999px; padding-block: 0.45rem; padding-left: 1rem; }
+        .view .field input { padding-right: 1rem; }
+        .view button, .view .button { border-radius: 999px; padding: 0.5rem 1.4rem; }
+        .view .button { display: inline-block; font-weight: 600; color: var(--on-accent); background: var(--accent); text-decoration: none; border: 1px solid transparent; }
+        .view button.quiet, .view .button.quiet { color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
+        .view .view-filters button, .view .view-filters .button { align-self: flex-end; }
+        .view .button.danger, .view button.danger { color: var(--on-alarm); background: var(--alarm); border-color: transparent; }
+        .conversations { display: flex; flex-direction: column; gap: 0.75rem; }
+        .new-conversation { margin: 0; }
+        #new-conversation-dialog form { display: block; border: 0; background: none; box-shadow: none; padding: 0; margin: 0; }
+        .view .new-button { border-radius: 999px; padding: 0.5rem 1.4rem; font-weight: 600; color: var(--on-accent); background: var(--accent); border: 1px solid transparent; cursor: pointer; }
+        .new-conversation-dialog .field, #new-conversation-dialog .field { display: flex; flex-direction: column; gap: 0.2rem; }
+        #new-conversation-dialog input { width: 100%; border-radius: 999px; padding: 0.45rem 1rem; font: inherit; color: var(--ink); background-color: var(--page); border: 1px solid var(--rule); }
+        #new-conversation-dialog .composer-note { margin: 0.9rem 0.3rem 0; line-height: 1.5; }
+        #new-conversation-dialog .dialog-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin: 1.2rem 0 0; }
+        #new-conversation-dialog button { border-radius: 999px; padding: 0.5rem 1.4rem; font: inherit; font-weight: 600; cursor: pointer; }
+        #new-conversation-dialog button.new-button { color: var(--on-accent); background: var(--accent); border: 1px solid transparent; }
+        #new-conversation-dialog button.quiet { color: var(--ink-soft); background: none; border: 1px solid var(--rule); }
+        .view .view-filters .toggle { display: inline-flex; align-items: center; gap: 0.6rem; align-self: flex-end; padding: 0.45rem 1rem; border-radius: 999px; border: 1px solid var(--rule); background: var(--page); color: var(--ink-soft); font-size: 0.95rem; cursor: pointer; white-space: nowrap; }
+        .view .view-filters .toggle input { appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 2rem; height: 1.15rem; margin: 0; border: 0; border-radius: 999px; background: var(--rule); cursor: pointer; transition: background 0.15s; }
+        .view .view-filters .toggle input::before { content: ""; position: absolute; top: 0.15rem; left: 0.15rem; width: 0.85rem; height: 0.85rem; border-radius: 50%; background: #fff; opacity: 1; transform: none; transition: transform 0.15s; }
+        .view .view-filters .toggle input:checked { background: var(--accent); }
+        .view .view-filters .toggle input:checked::before { transform: translateX(0.85rem); }
+        .view .view-filters .toggle:has(input:checked) { color: var(--ink); border-color: var(--accent); }
+        .view .view-filters .toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        /* On these pages the grid is the scroller, so the page itself must not be: the window is divided between the
+           frame and the view. */
+        .grid-page .page { padding-bottom: 0.5rem; }
+        .grid-page .view { height: calc(100vh - var(--frame) - 1.5rem - 5.2rem); }
+
+        .dgrid { flex: 1 1 auto; min-height: 0; overflow: auto; border-radius: 20px; }
+        .dgrid-inner { min-width: var(--min, 40rem); }
+        .dgrid-head, .dgrid-line { display: grid; grid-template-columns: var(--cols); gap: 0.8rem; align-items: baseline; padding: 0.6rem 1.1rem; }
+        .dgrid-head { position: sticky; top: 0; z-index: 2; background: var(--quiet-wash); border-bottom: 1px solid var(--rule); font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+        .dgrid-row + .dgrid-row { border-top: 1px solid var(--rule); }
+        .dgrid-line > * { min-width: 0; overflow-wrap: anywhere; }
+        details.dgrid-row > summary { list-style: none; cursor: pointer; }
+        details.dgrid-row > summary::-webkit-details-marker { display: none; }
+        details.dgrid-row[open] > summary { background: var(--quiet-wash); }
+        .dgrid-detail { padding: 0.4rem 1.1rem 1rem; border-top: 1px solid var(--rule); }
+        .dgrid-detail .letter { margin-top: 0; }
+        .dgrid-detail .facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: 0.3rem 1rem; margin: 0.6rem 0 0; }
+        .dgrid-detail .facts dt { font-size: 0.76rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); padding-top: 0.15rem; }
+        .dgrid-detail .facts dd { margin: 0; overflow-wrap: anywhere; }
+        .dgrid-detail .note { margin: 0.6rem 0 0; }
+        .dgrid .status-cell .alarm + .alarm, .dgrid .status-cell span + .alarm { margin-left: 0.5rem; }
+        .dgrid .name { font-weight: 650; }
+        .dgrid .faint { color: var(--ink-faint); font-size: 0.85rem; }
+        .dgrid .alarm { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--alarm); font-weight: 600; }
+        .dgrid .alarm .icon { font-size: 1.1rem; }
+        .dgrid .note { display: block; margin: 0.25rem 0 0; font-size: 0.82rem; }
+        .dgrid-empty { padding: 1.4rem 1.1rem; color: var(--ink-soft); }
+
+        /* The conversations as a grid: name, messages, last active. A row opens to show who is in it and the acts. */
+        .grid { margin: 0.5rem 0 1rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); }
+        .grid-head, .grid-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(10rem, 14rem); gap: 0.8rem; align-items: baseline; padding: 0.55rem 1rem; }
+        .grid-head { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); border-bottom: 1px solid var(--rule); }
+        .roadmap-grid .grid-head, .roadmap-grid .grid-row > summary { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
+        .roadmap-grid .grid-head span:not(:first-child) { text-align: right; }
+        .items-grid .grid-head, .items-grid .grid-row > summary { grid-template-columns: 3.5rem minmax(0, 1fr) minmax(10rem, 16rem); }
+        .items-grid .num { text-align: left; white-space: nowrap; }
+        .grid.items-grid .name { font-weight: 400; }
+        .chev { color: var(--ink-faint); font-size: 1.25rem; vertical-align: -0.3em; transition: transform 0.12s; }
+        details[open] > summary .chev { transform: rotate(90deg); }
+        .items-grid .grid-row.next { background: var(--quiet-wash); }
+        .grid-row + .grid-row { border-top: 1px solid var(--rule); }
+        .grid-row > summary { cursor: pointer; list-style: none; }
+        .grid-row > summary::-webkit-details-marker { display: none; }
+        .grid .name { font-weight: 650; overflow-wrap: anywhere; }
+        .grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .grid .when { font-size: 0.82rem; color: var(--ink-soft); }
+        /* A page shown inside another (a roadmap item's conversation) drops the console's frame and keeps its content. */
+        html:has(body.embed) { --frame: 0px; }
+        body.embed .rail, body.embed header, body.embed .as-of, body.embed .skip { display: none !important; }
+        body.embed .page { margin-left: 0; padding: 0 0.75rem 0.75rem; }
+        .item-bar { flex: 1 1 100%; display: flex; align-items: center; gap: 0.8rem; }
+        .item-bar .between { flex: 1; }
+        .item-bar .button { flex: none; white-space: nowrap; }
+        .grid-detail .button { display: inline-block; border-radius: 999px; padding: 0.35rem 1.1rem; font-weight: 600; text-decoration: none; color: var(--on-accent); background: var(--accent); border: 1px solid transparent; }
+        .grid-detail .button.quiet { color: var(--ink-soft); background: none; border-color: var(--rule); }
+        .item-frame { flex: 1 1 100%; width: 100%; height: 70vh; min-height: 24rem; border: 1px solid var(--rule); border-radius: 14px; background: var(--page); }
+        .grid-detail { padding: 0.2rem 1rem 0.8rem; display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
+        .grid-detail .between { flex: 1 1 100%; margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+        .grid-detail form { margin: 0; }
+        @@media (max-width: 40rem) {
+            .grid-head, .grid-row > summary { grid-template-columns: minmax(0, 1fr) 3.5rem; }
+            .grid-head :last-child, .grid .when { grid-column: 1 / -1; }
         }
-
-        .project > section { margin: 0; }
-        .project .roster h2, .project > section > h2 { margin-top: 0; }
-
-        ul.threads {
-            list-style: none;
-            padding: 0;
-            margin: 0.5rem 0 1rem;
-            display: grid;
-            gap: 0.6rem;
-        }
-
-        ul.threads > li {
-            background: var(--card);
-            border: 1px solid var(--rule);
-            border-radius: var(--radius);
-            padding: 0.8rem 1rem;
-        }
-
-        ul.threads .name { font-weight: 650; overflow-wrap: anywhere; }
-        ul.threads .between { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--ink-soft); }
-        ul.threads .meta { margin: 0.35rem 0 0; font-size: 0.78rem; color: var(--ink-faint); }
 
         /* A conversation somebody still owes an answer to. Said in words beside the tint. */
         .tag.open {
@@ -821,7 +1131,7 @@
 
         /* The minimap. One tick per message in the order the broker recorded them, tinted by
            who spoke -- so a long conversation shows its shape: who dominated it, where it
-           changed hands, and where something was abandoned. */
+           changed hands, and where a person closed something. */
         .timeline {
             position: sticky;
             top: calc(var(--frame) + 1rem);
@@ -845,8 +1155,8 @@
 
         .timeline .tick:hover, .timeline .tick:focus-visible { opacity: 1; }
 
-        /* An abandoned exchange, marked by shape as well as tint: it is taller and outlined, so
-           it is findable on a screen where the colours are not. */
+        /* An exchange a person closed, marked by shape as well as tint: it is taller and outlined,
+           so it is findable on a screen where the colours are not. */
         .timeline .tick.ghosted {
             height: 0.85rem;
             background: var(--alarm-wash);
@@ -894,13 +1204,7 @@
 
         .kin-note:empty { display: none; }
 
-        footer {
-            margin-top: 3rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--rule);
-            color: var(--ink-faint);
-            font-size: 0.85rem;
-        }
+        header .build { margin-left: 0.8rem; font-size: 0.8rem; color: var(--ink-faint); white-space: nowrap; }
 
         /* Find within a conversation. */
         .find {
@@ -950,8 +1254,7 @@
         }
 
         /* The composer, pinned so it is reachable from anywhere in a long transcript. It is a
-           form rather than a chat box, and it says so: what it sends is an instruction to the
-           agents, not a message into the conversation. */
+           form, and what it sends is a message into the conversation, from the person's seat. */
         .composer {
             position: sticky;
             bottom: 0;
@@ -968,51 +1271,212 @@
 
         .composer-note {
             margin: 0 0 0.6rem;
-            font-size: 0.78rem;
+            font-size: 0.85rem;
             line-height: 1.45;
             color: var(--ink-soft);
         }
 
-        fieldset.targets {
-            border: none;
+        .composer-to {
             margin: 0 0 0.6rem;
-            padding: 0;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-            align-items: center;
+            font-size: 0.8rem;
+            color: var(--ink-soft);
+            overflow-wrap: anywhere;
         }
 
-        fieldset.targets legend {
-            float: left;
-            width: 100%;
-            font-size: 0.68rem;
+        /* Who to talk to: one group per machine, the person's first. A name is the role alone, so a row
+           is a box, a badge, a name and a state and does not wrap. */
+        .recipients {
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.9rem 1rem;
+        }
+
+        .recipients h2 {
+            margin: 0 0 0.6rem;
+            font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 0.07em;
             color: var(--ink-faint);
-            padding: 0 0 0.35rem;
         }
 
-        label.target {
-            display: inline-flex;
+        .recipients ul { list-style: none; margin: 0; padding: 0; }
+        .recipients .everyone { display: flex; gap: 0.4rem; align-items: center; font-size: 0.8rem; margin: 0 0 0.6rem; }
+
+        .recipients summary {
+            display: flex;
             align-items: center;
-            gap: 0.35rem;
-            font-size: 0.8rem;
+            gap: 0.45rem;
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 0.2rem 0;
+        }
+
+        .recipients .count { margin-left: auto; font-weight: 400; font-size: 0.72rem; color: var(--ink-faint); }
+
+        .recipients details > ul {
+            margin: 0.2rem 0 0.5rem 0.55rem;
+            padding-left: 0.6rem;
+            border-left: 1px solid var(--rule);
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .recipients li.divider {
+            font-size: 0.66rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--ink-faint);
+        }
+
+        .recipients li[class*="slot-"] {
+            display: grid;
+            grid-template-columns: auto auto 1.5rem minmax(0, 1fr) auto;
+            grid-template-rows: auto auto;
+            column-gap: 0.4rem;
+            align-items: center;
+        }
+
+        .recipients li.not-in-it { grid-template-columns: auto 1.5rem minmax(0, 1fr) auto; }
+
+        .recipients li .to-box { grid-row: 1 / span 2; }
+
+        .recipients .who {
+            grid-row: 1 / span 2;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 0.55rem;
+            font-weight: 700;
+            color: #fff;
+            background: var(--agent);
+        }
+
+        .recipients .mark { grid-row: 1 / span 2; font-size: 0.7rem; color: var(--agent); }
+        .recipients .name { font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+        .recipients .state { font-size: 0.72rem; color: var(--ink-faint); }
+        .recipients li.subgroup > details > summary { font-weight: 500; font-size: 0.78rem; color: var(--ink-soft); }
+        .recipients li.subgroup > details > ul { margin-left: 0.3rem; padding-left: 0.5rem; gap: 0.35rem; }
+        .recipients .msgs { grid-column: -1; grid-row: 1 / span 2; font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); background: var(--page); border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.5rem; min-width: 1.4rem; text-align: center; }
+        .reply-line { margin: 0.5rem 0 0; }
+        .reply-to { cursor: pointer; border-radius: 999px; padding: 0.25rem 0.9rem; font-size: 0.85rem; font-weight: 600; color: var(--ink); background: none; border: 1px solid var(--accent); }
+        .composer-replying { display: flex; align-items: center; gap: 0.8rem; margin: 0.4rem 0; padding: 0.4rem 0.8rem; border-left: 3px solid var(--accent); background: var(--quiet-wash); }
+        .composer-replying[hidden] { display: none; }
+        .bell { position: relative; }
+        .bell > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.2rem 0.4rem; border-radius: 999px; color: var(--ink-soft); }
+        .bell > summary::-webkit-details-marker { display: none; }
+        .bell > summary:hover, .bell[open] > summary { color: var(--ink); background: var(--quiet-wash); }
+        .bell .icon { font-size: 1.4rem; }
+        .bell-list { position: absolute; right: 0; top: 100%; z-index: 30; width: min(26rem, 90vw); max-height: 70vh; overflow-y: auto; margin-top: 0.4rem; padding: 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }
+        .bell-list ul, .notices-all { list-style: none; margin: 0; padding: 0; }
+        .notice { margin: 0; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); font-size: 0.88rem; overflow-wrap: anywhere; }
+        .notice:last-child { border-bottom: 0; }
+        .notice p { margin: 0.2rem 0; }
+        .notice-bad { border-left: 3px solid var(--alarm); padding-left: 0.6rem; }
+        .notice-new { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 600; color: var(--accent); }
+        .bell-empty { margin: 0.4rem 0; color: var(--ink-soft); }
+        .bell-all { display: block; padding-top: 0.5rem; font-weight: 600; font-size: 0.88rem; }
+        .convo-head { position: relative; margin: 0 0 0.8rem; }
+        .convo-frame { background: var(--card); border: 1px solid var(--rule); border-radius: 0.9rem; padding: 0.5rem 1rem; }
+        .convo-frame summary { cursor: pointer; list-style: none; display: flex; align-items: center; min-height: 2.4rem; padding-right: 11rem; }
+        .convo-frame summary::-webkit-details-marker { display: none; }
+        .convo-frame summary::before { content: "chevron_right"; content: "chevron_right" / ""; font-family: "Material Symbols Outlined"; margin-right: 0.5rem; font-size: 1.5rem; line-height: 1; color: var(--ink); transition: transform 0.15s; }
+        .convo-frame[open] summary::before { transform: rotate(90deg); }
+        .convo-frame h1 { margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .convo-frame .item-title { margin: 0.5rem 0 0; font-size: 1rem; font-style: normal; color: var(--ink); }
+        .convo-frame .as-of { margin: 0.4rem 0 0.2rem; }
+        .convo-actions { position: absolute; top: 0.5rem; right: 0.8rem; display: flex; align-items: center; gap: 0.5rem; }
+        .convo-actions .file-button { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem; border-radius: 999px; font-weight: 600; font-size: 0.9rem; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--rule); cursor: pointer; list-style: none; }
+        .convo-actions .file-button::-webkit-details-marker { display: none; }
+        .convo-actions .file-button:hover { border-color: var(--accent); }
+        .convo-actions .file-button .icon { font-size: 1.2rem; }
+        /* Offered when a message arrived further down than following may carry the page (see the script in the conversation
+           page). Centred over the page rather than the window, clear of the composer pinned to the bottom. */
+        .new-below { position: fixed; z-index: 25; left: calc(var(--rail-w) + (100vw - var(--rail-w)) / 2); bottom: 10rem; transform: translateX(-50%); color: var(--on-accent); background: var(--accent); box-shadow: 0 8px 24px -8px rgb(0 0 0 / 0.45); }
+        .new-below:active { transform: translateX(-50%) scale(0.98); }
+        .new-below[hidden] { display: none; }
+        .export-menu { position: relative; }
+        .export-list { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 5; display: flex; flex-direction: column; min-width: 9rem; background: var(--card); border: 1px solid var(--rule); border-radius: 0.6rem; box-shadow: 0 6px 18px rgba(0,0,0,0.18); overflow: hidden; }
+        .export-list a { padding: 0.5rem 0.9rem; color: var(--ink); text-decoration: none; white-space: nowrap; }
+        .export-list a:hover { background: var(--rule); }
+
+        /* Filtering the transcript. Hidden rather than removed, so following can replace the transcript and the
+           choice is simply applied again. */
+        .filtered-out { display: none !important; }
+
+        .filter {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 1rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: var(--radius);
+            padding: 0.6rem 1rem;
+            margin: 0.6rem 0 0;
+            font-size: 0.85rem;
+        }
+
+        .filter[hidden] { display: none; }
+        .filter-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); }
+        .only-me { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+        .pick { position: relative; }
+
+        /* Looks like the combo box it stands in for: the same field, the same chevron, turning when it opens. */
+        .pick summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            list-style: none;
+            cursor: pointer;
+            background: var(--page);
             border: 1px solid var(--rule);
             border-radius: 999px;
-            padding: 0.2rem 0.65rem 0.2rem 0.4rem;
-            cursor: pointer;
+            padding: 0.3rem 0.5rem 0.3rem 0.9rem;
+            min-width: 8rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
 
-        /* Checked reads as checked without the tint: the box itself stays visible, and the
-           whole chip takes the agent's edge. */
-        label.target:has(input:checked) {
-            border-color: var(--agent);
-            border-width: 2px;
-            padding: calc(0.2rem - 1px) calc(0.65rem - 1px) calc(0.2rem - 1px) calc(0.4rem - 1px);
+        .pick summary::-webkit-details-marker { display: none; }
+        .pick summary:hover { border-color: var(--ink-faint); }
+        .pick[open] summary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+        .pick summary::after {
+            font-family: "Material Symbols Outlined";
+            font-size: 1.4rem;
+            line-height: 1;
+            color: var(--ink-faint);
+            content: "expand_more";
+            content: "expand_more" / "";
+            transition: transform 0.15s;
         }
 
-        label.target .who { width: 1.4rem; height: 1.4rem; font-size: 0.55rem; }
+        .pick[open] summary::after { transform: rotate(180deg); }
+
+        .pick .menu {
+            position: absolute;
+            z-index: 5;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 100%;
+            max-height: 16rem;
+            overflow-y: auto;
+            display: grid;
+            gap: 0.3rem;
+            background: var(--card);
+            border: 1px solid var(--rule);
+            border-radius: 14px;
+            padding: 0.6rem 0.8rem;
+            box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.08);
+            white-space: nowrap;
+        }
+
+        .pick .menu label { display: flex; align-items: center; gap: 0.6rem; padding: 0.15rem 0; cursor: pointer; color: var(--ink); }
 
         .composer textarea { width: 100%; min-height: 4.5rem; }
 
@@ -1026,33 +1490,6 @@
             font-size: 0.85rem;
             color: var(--ink-soft);
         }
-
-        .composer .wants {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-            margin-top: 0.6rem;
-            font-size: 0.85rem;
-        }
-
-        /* Joined, the panel is a chat box; not joined, it is an instruction form. The edge says
-           which, and the sentence at the top of the panel says it in words -- the colour is the
-           reminder, never the statement. */
-        .composer.as-agent { border-left: 3px solid #1c7c48; }
-
-        /* Rule 8.1's framing, revealed by asking for a reply. Hidden rather than absent so the
-           fields keep whatever was typed into them when a post comes back with a problem. */
-        .composer .framing { display: none; margin-top: 0.6rem; }
-
-        .composer:has(.wants input:checked) .framing { display: block; }
-
-        .composer .framing label {
-            display: block;
-            margin: 0.5rem 0 0.2rem;
-            font-size: 0.85rem;
-        }
-
-        .composer .framing input { width: 100%; }
 
         ul.sent {
             list-style: none;
@@ -1071,8 +1508,7 @@
 
         /* ---- Sizes -------------------------------------------------------------
 
-           One set of breakpoints, replacing four scattered ones that had grown a
-           rule at a time and disagreed about where a column should fold.
+           One set of breakpoints, so every column folds at the same widths.
 
            The shell grows to 100rem and the reading measure does not: a bubble is
            capped, so a wide window buys room for the roster and the rail rather
@@ -1080,7 +1516,7 @@
            page becomes one; below 40rem it is a phone. */
 
         @@media (min-width: 90rem) {
-            .conversation, .project { gap: 2rem; }
+            .conversation { gap: 2rem; }
 
             /* A little more room for a bubble once the shell has stopped growing, so the
                transcript does not end a couple of hundred pixels short of the rail. Still a
@@ -1089,10 +1525,9 @@
         }
 
         @@media (max-width: 60rem) {
-            .conversation, .project { grid-template-columns: minmax(0, 1fr); }
+            .conversation { grid-template-columns: minmax(0, 1fr); }
 
-            .roster { position: static; }
-            .roster ul { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); }
+            .side { position: static; max-height: none; overflow-y: visible; }
 
             /* Horizontal above the conversation, where a vertical rail beside it
                would have nowhere to be. */
@@ -1110,18 +1545,14 @@
 
             /* The health page carries six columns and there is no longer width for
                them. Scrolled inside its own box rather than squeezed, because a
-               figure shrunk to fit is a figure nobody reads.
-
-               Here rather than at phone width, which is where it was: the columns
-               stopped fitting at 768px, in the gap between the two breakpoints, and
-               the page ran off the side. */
+               figure shrunk to fit is a figure nobody reads. */
             table { display: block; overflow-x: auto; }
         }
 
         @@media (max-width: 40rem) {
             body { font-size: 14px; }
 
-            /* Kept as one row here, where it used to stack. A sticky frame that stacks costs
+            /* Kept as one row here. A sticky frame that stacks costs
                five rem of a phone screen on every page, and the frame is worth having only for
                as long as it costs less than what it is covering. The word "console" goes
                instead: the mark and the page say it. */
@@ -1148,7 +1579,6 @@
             .brand img { width: 1.7rem; height: 1.7rem; }
 
             .attribution .stamp { margin-left: 0; }
-            .roster ul { grid-template-columns: minmax(0, 1fr); }
             nav { gap: 0.6rem; }
             ol.points > li { padding-left: 0.5rem; }
         }
@@ -1157,78 +1587,191 @@
     @* List views refresh themselves by reloading; a transcript never reloads. It follows its
        conversation instead, replacing only the region that changed and keeping the message a reader
        is looking at where it was -- a reload would throw away their place, what they had typed into
-       the composer, and what they were searching for. This comment used to say a transcript never
-       changes at all, because a page moving under a reader mid-sentence is worse than one briefly
-       out of date; following is built so that it does not move them, which answers that rather
-       than overruling it. *@
+       the composer, and what they were searching for. Following is built so that it does not
+       move a reader mid-sentence. *@
     @if (ViewData["Refresh"] is string seconds)
     {
-        <meta http-equiv="refresh" content="@seconds" />
+        // The same page, marked as the timer's reload, so it does not count as somebody at the console.
+        var query = Microsoft.AspNetCore.Http.QueryString.Create(
+            Context.Request.Query
+                .Where(pair => pair.Key != PersonSeats.Reloaded)
+                .SelectMany(pair => pair.Value.Select(value => new KeyValuePair<string, string?>(pair.Key, value)))
+                .Append(new KeyValuePair<string, string?>(PersonSeats.Reloaded, "1")));
+        @* The reload waits while a dialog or an opened "create" card is open: it would close either under whoever is typing in it. Without script
+           the page reloads on the timer as before. *@
+        var target = $"{Context.Request.Path}{query}";
+        <noscript><meta http-equiv="refresh" content="@($"{seconds};url={target}")" /></noscript>
+        <meta name="parley-reload" content="@seconds" data-url="@target" />
+        <script>
+            (function () {
+                var m = document.querySelector("meta[name=parley-reload]");
+                var every = Number(m.content) * 1000;
+                (function tick() {
+                    setTimeout(function () {
+                        if (document.querySelector("dialog[open], details.view-create[open]")) { tick(); } else { location.replace(m.getAttribute("data-url")); }
+                    }, every);
+                })();
+            })();
+        </script>
     }
 </head>
-<body>
+<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Context.Request.Query.ContainsKey("embed") ? "embed" : null)">
+    <script>
+        try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
+    </script>
     <a class="skip" href="#main">Skip to content</a>
-    <header>
+    @{
+        var path = Context.Request.Path.Value ?? "/";
+        var agentsView = path == "/" && Context.Request.Query["tab"] == "agents";
+        var project = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
+        var onAgentsTab = agentsView && project.Length == 0;
+        var q = Uri.EscapeDataString(project);
+        var rail = new List<(string Href, string Label, string Icon, bool Current)>
+        {
+            ("/", "Projects", "grid_view", path == "/" && !agentsView),
+            ("/?tab=agents", "All Agents", "group", onAgentsTab),
+            ("/Inbox", "Inbox", "inbox", path.StartsWith("/Inbox", StringComparison.Ordinal)),
+        };
+        var inProjectRail = new List<(string Href, string Label, string Icon, bool Current)>();
+
+        if (project.Length > 0)
+        {
+            inProjectRail =
+            [
+                ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
+                ($"/?tab=agents&project={q}", "Agents", "group", agentsView),
+                ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
+                ($"/Projects/Files?project={q}", "Files", "description", path == "/Projects/Files"),
+                ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health"),
+                ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings"),
+            ];
+        }
+    }
+    <aside class="rail" id="rail" aria-label="Navigation">
         <a class="brand" href="/">
             @* Decorative: the word beside it says the same thing, so a reader who cannot see
                the image loses nothing and a screen reader is not told it twice. *@
             <img src="/brand/icon.png" alt="" width="128" height="125" />
-            Parley <span>console</span>
+            <span class="rail-label">Parley <span>console</span></span>
         </a>
-        <nav aria-label="Console">
-            <a href="/">Projects</a>
-            @if (here is null)
+        <nav aria-label="Sections">
+            @foreach (var item in rail)
             {
-                @* The count rides on Join because Join is what makes it collectable. It says whose
-                   mail it is: somebody coming back to a shared machine must not read a number and
-                   assume it is theirs. *@
-                <a class="seat-join" href="@joinLink">
-                    Join
-                    @if (named is not null && waiting is { Certain: true, Waiting: > 0 })
+                <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                    <span class="icon" aria-hidden="true">@item.Icon</span>
+                    <span class="rail-label">@item.Label</span>
+                    @if (item.Label == "Inbox" && waiting is { Certain: true, Waiting: > 0 })
                     {
-                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
-                            messages waiting for @named.Person</span></span>
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden"> messages waiting for you</span></span>
+                    }
+                    else if (item.Label == "Inbox" && deferred)
+                    {
+                        <span class="seat-waiting" data-inbox-badge hidden></span>
                     }
                 </a>
             }
-            else
+            @if (inProjectRail.Count > 0)
             {
-                @* The count goes to the inbox and not to the seat. It said how much was waiting
-                   and led to a page about where you were sitting, which is the most direct way
-                   to promise something and not deliver it. *@
+                <p class="rail-heading">@project</p>
+                @foreach (var item in inProjectRail)
+                {
+                    <a href="@item.Href" title="@item.Label" aria-current="@(item.Current ? "page" : null)">
+                        <span class="icon" aria-hidden="true">@item.Icon</span>
+                        <span class="rail-label">@item.Label</span>
+                    </a>
+                }
+            }
+        </nav>
+        <button type="button" class="rail-toggle" id="rail-toggle" aria-controls="rail" aria-expanded="true">
+            <span class="icon" aria-hidden="true">chevron_left</span>
+            <span class="rail-label">Collapse</span>
+        </button>
+    </aside>
+    <div class="page">
+    <header>
+        @if ((ViewData["Project"] as string ?? Context.Request.Query["project"].ToString()) is { Length: > 0 } inProject)
+        {
+            @* Where in the deployment the page is, on every page, so a conversation is never without its project. *@
+            <a class="crumb" href="/Projects/Agents?project=@Uri.EscapeDataString(inProject)" title="This project">@inProject</a>
+        }
+        @* Which build is running, small and out of the way: it is how a person tells an install has taken. *@
+        <span class="build" title="The web console build">parley-web-ui @Parley.Web.WebBuild.Version</span>
+        <nav aria-label="Console">
+            @{
+                var unread = Notices.Unread();
+                var recent = Notices.Latest(8);
+                var bellLabel = unread > 0 ? $"Notifications, {unread} new" : "Notifications";
+            }
+            @* What the console told you after you sent something, kept so it can be read again. Opens with no script. *@
+            <details class="bell">
+                <summary title="Notifications" aria-label="@bellLabel">
+                    <span class="icon" aria-hidden="true">notifications</span>
+                    @if (unread > 0)
+                    {
+                        <span class="seat-waiting">@unread</span>
+                    }
+                </summary>
+                <div class="bell-list">
+                    @if (recent.Count == 0)
+                    {
+                        <p class="bell-empty">Nothing yet.</p>
+                    }
+                    else
+                    {
+                        <ul>
+                            @foreach (var note in recent)
+                            {
+                                <li class="@(note.Good ? "notice" : "notice notice-bad")">
+                                    <strong>@note.Source</strong> @note.Text
+                                    @if (note.Conversation is { Length: > 0 } talk)
+                                    {
+                                        <a href="/Conversations/Detail?project=@Uri.EscapeDataString(note.Project)&amp;id=@Uri.EscapeDataString(talk)">Open @talk</a>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <a class="bell-all" href="/Notifications">See all notifications</a>
+                </div>
+            </details>
+            @if (here.Count > 0)
+            {
+                @* The count goes to the inbox, where what is waiting can be collected. There is no Leave
+                   beside it: the seat is the broker's and is never given back, and closing the console is how a
+                   person stops being here. *@
                 <a class="seat-who" href="/Inbox" title="Your messages">
-                    <span class="seat-dot" aria-hidden="true"></span>@here.Person
+                    <span class="seat-dot" aria-hidden="true"></span>@here[0].Seat.Person
                     @if (waiting is { Certain: true, Waiting: > 0 })
                     {
                         <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
                             messages waiting for you</span></span>
                     }
                 </a>
-                @* A form rather than a link. Leaving drops the attachment, and SPEC.md §4.0
-                   makes dropping one a departure — something a page-crawler must not be able
-                   to do to a person by following what looks like navigation. *@
-                <form class="seat-leave" method="post" action="/Leave">
-                    @Html.AntiForgeryToken()
-                    <button type="submit">Leave</button>
-                </form>
+            }
+            else
+            {
+                @* No broker answered, or none has a seat for a person. Nothing to take and nothing to type: the count,
+                   if any could be read, still says there is something to come back for. *@
+                <a class="seat-who" href="/Inbox" title="Your messages">
+                    not connected
+                    @if (waiting is { Certain: true, Waiting: > 0 })
+                    {
+                        <span class="seat-waiting">@waiting.Waiting<span class="visually-hidden">
+                            messages waiting for you</span></span>
+                    }
+                </a>
             }
         </nav>
     </header>
     <main id="main">
-        @if (ViewData["AsOf"] is string asOf)
+
+        @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true)
         {
-            <p class="as-of" role="status">Showing what the broker reported at @asOf.</p>
+            <p class="as-of" role="status">As of @asOf.</p>
         }
         @RenderBody()
     </main>
-    <footer>
-        @* Reading is free; the four operations that are not are each described before they
-           happen and none of them is reachable by following a link. Saying "read-only" here
-           would be the more comforting sentence and the false one. *@
-        <p>Operator view. Everything is a read except retire, reinstate, instruct, purge and
-           force-conclude, and each of those says what it will do before it does it.</p>
-        <p class="build">parley-web-ui @Parley.Web.WebBuild.Version</p>
-    </footer>
+    </div>
     <script>
         // --frame is what the sticky frame occupies, and three other things are positioned
         // against it: the roster, the minimap, and where an anchor lands. A constant is a guess,
@@ -1257,15 +1800,12 @@
         })();
 
         // **A field whose rule can be applied applies it, rather than refusing after the fact.**
-        // The owner named a broadcast `tell everybody test` in the terminal, wrote the whole
-        // message, sent it, and got the rule back with their words gone. This console's
-        // "Start a conversation called" field had the identical defect and a placeholder that
-        // invited prose into it, and its Join field had the quieter half: a capital was lowered
-        // after the form closed, with nothing on screen having said so.
+        // A rule applied after the form is sent loses the words the person typed, so it is
+        // applied as they type.
         //
         // Every rule here is written once, in C#, and reaches this page as the attributes a field
-        // carries: `data-correct` is the character class `ConversationName.Correct` and
-        // `Seat.Correct` keep, and `data-lower` says the rule folds case as `Seat` does. So the
+        // carries: `data-correct` is the character class `ConversationName.Correct` keeps, and
+        // `data-lower` says the rule folds case, as a role's grammar does. So the
         // console and the terminal cannot come to hold two spellings of one rule -- and the
         // `pattern` attribute beside them, from the same constants, is what a browser with no
         // scripts enforces.
@@ -1276,8 +1816,8 @@
         (function () {
             var fields = document.querySelectorAll('[data-correct]');
 
-            // **Character by character, because the obvious two-line version disagreed with the
-            // C# in one case and a test caught it.** Replacing every run of whitespace first and
+            // **Character by character, because the obvious two-line version disagrees with the
+            // C# in one case.** Replacing every run of whitespace first and
             // then dropping what is left over turns `1.2 / notes` into `1.2--notes`, where the
             // rule -- which walks the characters once and only emits a hyphen for a run of spaces
             // it has not already emitted one for -- gives `1.2-notes`. Two surfaces offering
@@ -1343,6 +1883,33 @@
                     }
                 });
             });
+        })();
+    </script>
+    <script>
+        // The rail's collapse. Remembered in this browser only, and every access is guarded: storage can be absent or
+        // refuse, and the rail must still work for the life of the page.
+        (function () {
+            var button = document.getElementById('rail-toggle');
+            var root = document.documentElement;
+
+            if (!button) { return; }
+
+            var sync = function () {
+                var collapsed = root.getAttribute('data-nav') === 'collapsed';
+                button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                button.title = collapsed ? 'Expand the navigation' : 'Collapse the navigation';
+            };
+
+            button.addEventListener('click', function () {
+                var collapsed = root.getAttribute('data-nav') === 'collapsed';
+
+                if (collapsed) { root.removeAttribute('data-nav'); } else { root.setAttribute('data-nav', 'collapsed'); }
+
+                try { localStorage.setItem('parley.nav', collapsed ? 'expanded' : 'collapsed'); } catch (e) { }
+                sync();
+            });
+
+            sync();
         })();
     </script>
     @await RenderSectionAsync("Scripts", required: false)

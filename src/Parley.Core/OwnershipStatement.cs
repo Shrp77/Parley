@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 
 namespace Parley.Core;
@@ -15,11 +15,17 @@ namespace Parley.Core;
 /// to disagree with each other about the same boundary. See SPEC.md §17, the tenth question.
 /// </para>
 /// <para>
-/// <b>It is authored by an operator, not by the agent it describes.</b> That is the whole
-/// reason it is worth reading. A field a model could write would be exactly as trustworthy as
-/// the prose it replaces, merely centralised; sourced from the launch environment, it is
-/// declared by the same person in the same file that fixes the agent's name, and no operation
-/// accepts one. An agent can no more edit its charter than its identity.
+/// <b>An agent may draft it; only a person may accept it.</b> SPEC.md §17 question 10 permits a
+/// drafted line, because the half nobody else can supply is what an agent has decided it does
+/// <em>not</em> own — a repository can be read to find out what it contains and cannot be read to
+/// find out what it has ruled out.
+/// </para>
+/// <para>
+/// <b>What makes it trustworthy:</b> no agent-facing operation writes this field, the registry is
+/// filled from the launch environment on attach (§12.3), and which of three routes produced a
+/// line — the agent's own words, its words edited, or a line a person composed with no ask — is
+/// recorded against it. An agent can no more set its charter than its identity; it can be asked
+/// what it should be.
 /// </para>
 /// <para>
 /// Advisory, and deliberately so. Nothing routes on it, nothing is refused because of it, and
@@ -32,18 +38,37 @@ public static class OwnershipStatement
 {
     /// <summary>The longest statement the registry will hold.</summary>
     /// <remarks>
-    /// Long enough for a domain and an explicit exclusion — <i>"Invoicing, tax and payment
-    /// capture. Does not price orders or reserve stock."</i> is seventy-four characters — and
-    /// short enough that it cannot become a description of a system.
     /// <para>
-    /// The number came from measuring rather than from taste. A roster entry costs about
-    /// seventy-five characters of structure before the statement, so ten peers at a hundred
-    /// characters each cost roughly what one message is allowed to: finding out who to ask
-    /// stays cheaper than asking. At a hundred and sixty, which is where this started, ten
-    /// peers cost 2,352 characters and listing them cost more than a question.
+    /// <b>No bound, by default, and the largest integer is how that is spelled</b> — the same
+    /// spelling <see cref="ExchangePolicy.Unbounded"/> and
+    /// <see cref="ExchangePolicy.UnboundedClarifications"/> already use. Zero was not available: it
+    /// would refuse every statement.
+    /// </para>
+    /// <para>
+    /// <b>The absence of a bound is a recorded reduction in a control, not a tidy-up.</b> An agent is
+    /// asked what it owns, and a two-part answer naming what it does not own and who it believes does
+    /// will frequently not fit in a short bound. A cap censors the evidence that would justify it, but
+    /// that precedent is weaker here, because this text is charged against every agent's context on
+    /// every roster listing: a roster entry costs about seventy-five characters of structure before
+    /// the statement. The constitution says that until the evidence exists a roster may be the largest
+    /// thing an agent reads.
+    /// </para>
+    /// <para>
+    /// <b>What holds is the character rule and the deployment's own bound.</b> Storage still holds a
+    /// bound a deployment reinstates, so a number chosen from what agents actually propose can be put
+    /// back the way the message cap's 8,000 was put in.
     /// </para>
     /// </remarks>
-    public const int MaxCharacters = 100;
+    public const int MaxCharacters = int.MaxValue;
+
+    /// <summary>Whether a length bound is in force at all.</summary>
+    /// <remarks>
+    /// <b>Exists so that nothing has to print the sentinel.</b> A report says <i>"Caps in force: none"</i>
+    /// rather than the number that spells <i>off</i>, because telling somebody a bound was set at
+    /// 2,147,483,647 tells them a value nobody chose. Every surface that would otherwise name a limit asks this
+    /// first, and a surface that names the number when this is <see langword="false"/> is a defect.
+    /// </remarks>
+    public static bool Bounded => MaxCharacters != int.MaxValue;
 
     /// <summary>
     /// Reports whether a statement may be recorded, and why not when it may not.
@@ -59,13 +84,12 @@ public static class OwnershipStatement
     /// entries around it — a second agent, or an instruction, where there was neither.
     /// </para>
     /// <para>
-    /// <b>Refused by Unicode category, because a control-character test is not the rule and was
-    /// found not to be.</b> <c>char.IsControl</c> covers C0 and C1 and nothing else, so
+    /// <b>Refused by Unicode category, because a control-character test is not the rule.</b>
+    /// <c>char.IsControl</c> covers C0 and C1 and nothing else, so
     /// <c>U+2028 LINE SEPARATOR</c> and <c>U+2029 PARAGRAPH SEPARATOR</c> — which are line breaks
-    /// wherever this text is rendered — went straight through it, as did
+    /// wherever this text is rendered — would go straight through it, as would
     /// <c>U+202E RIGHT-TO-LEFT OVERRIDE</c>, which reverses the display of everything after it,
-    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. Every one of those was admitted
-    /// by the first version of this method and by the constraint behind it. So: no
+    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. So: no
     /// <see cref="UnicodeCategory.Control"/>, no
     /// <see cref="UnicodeCategory.Format"/>, and no line or paragraph
     /// separator. Ordinary spaces stay, and so does every letter, accent, dash and emoji in
@@ -95,7 +119,10 @@ public static class OwnershipStatement
         // objected to, which sends whoever wrote it looking for the wrong problem.
         var length = statement.EnumerateRunes().Count();
 
-        if (length > MaxCharacters)
+        // Unreachable while no bound is in force, and kept rather than deleted: a deployment that
+        // reinstates one gets this refusal back, naming the number actually in force. It can never
+        // name the sentinel, because it cannot be reached when the sentinel is what is set.
+        if (Bounded && length > MaxCharacters)
         {
             error =
                 $"it is {length} characters and the limit is {MaxCharacters}. It is read by " +
@@ -105,23 +132,76 @@ public static class OwnershipStatement
             return false;
         }
 
+        // **Counted as it goes, so the refusal can say where.** An agent answers in two halves, and
+        // "it contains U+2028" is not actionable advice about a paragraph. The position is in text
+        // elements, like the length above, so the two numbers a person reads are counted the same way.
+        var at = 0;
+
         foreach (var rune in statement.EnumerateRunes())
         {
+            at++;
+
             if (!Forbidden(Rune.GetUnicodeCategory(rune)))
             {
                 continue;
             }
 
-            error =
-                $"it contains U+{rune.Value:X4}, which is not printable text. A statement is " +
-                "one line and renders as what it says: it is put into a list of peers that " +
-                "every agent reads, and anything that can break the line, hide itself, or " +
-                "reorder what follows can imitate the entries around it.";
+            error = string.Create(
+                CultureInfo.InvariantCulture,
+                $"it contains U+{rune.Value:X4} at position {at}, which is not printable text. A " +
+                $"statement is one line and renders as what it says: it is put into a list of peers " +
+                $"that every agent reads, and anything that can break the line, hide itself, or " +
+                $"reorder what follows can imitate the entries around it.");
 
             return false;
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// An answer as a line: every run of whitespace, line breaks included, becomes one space, and the ends are
+    /// trimmed (SPEC.md §10.2).
+    /// </summary>
+    /// <param name="answer">What the agent wrote.</param>
+    /// <returns>The same words on one line.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Why there is a flatten at all.</b> A model answers in paragraphs, and a statement refuses a line break
+    /// (<see cref="IsValid"/>). Without this, Auto Accept would almost never accept anything.
+    /// </para>
+    /// <para>
+    /// <b>It changes no word, and that is the whole of what keeps <see cref="OwnershipSource.Automatic"/>
+    /// truthful.</b> Only whitespace moves. A format or control character that is not whitespace is left exactly
+    /// where it was, so <see cref="IsValid"/> still refuses it and the answer waits for a person — anything that
+    /// would change what the agent said is a person's decision, recorded as edited.
+    /// </para>
+    /// </remarks>
+    public static string Flatten(string answer)
+    {
+        ArgumentNullException.ThrowIfNull(answer);
+
+        var line = new StringBuilder(answer.Length);
+        var space = false;
+
+        foreach (var rune in answer.EnumerateRunes())
+        {
+            if (Rune.IsWhiteSpace(rune))
+            {
+                space = line.Length > 0;
+                continue;
+            }
+
+            if (space)
+            {
+                line.Append(' ');
+                space = false;
+            }
+
+            line.Append(rune.ToString());
+        }
+
+        return line.ToString();
     }
 
     /// <summary>Whether a category may not appear in a statement.</summary>

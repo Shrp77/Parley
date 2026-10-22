@@ -1,71 +1,87 @@
 @page
 @model Parley.Web.Pages.Projects.AgentsModel
 @using Parley.Core
+@using Parley.Web.Pages.Shared
 @{
     ViewData["Refresh"] = "30";
     ViewData["Title"] = Model.Project;
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 }
 
-<h1>@Model.Project</h1>
+<div class="view" style="height:auto;min-height:0;">
+    <div class="view-title">
+        <h1>Conversations</h1>
+        <p class="as-of" role="status"><strong>@Model.Project</strong></p>
+    </div>
 
-<nav aria-label="This project">
-    <a href="/Projects/Health?project=@Model.Project">Health</a>
-    <a href="/Projects/Files?project=@Model.Project">Files</a>
-    <a href="/Projects/Register?project=@Model.Project">Register an agent</a>
-    <a href="/Projects/Naming?project=@Model.Project">Rename this project</a>
-</nav>
+    <section aria-label="Conversations in this project" class="conversations">
+        @* Starting one belongs beside the list of them. Naming a conversation is what creates it, so a
+           project with none needs a way in from here. *@
+        <p class="new-conversation"><button type="button" id="new-conversation-open" class="new-button">New conversation</button></p>
 
-<div class="project">
-    @* The roster. Compact on purpose: a name, what it is doing, and a way in. Everything else
-       about an agent is on its own page, because a column wide enough to hold the owns line is a
-       column that pushes the conversations off the screen. *@
-    <partial name="_Roster" model="@(new RosterView(
-        Model.Project,
-        "Agents",
-        [.. Model.Agents.Select(a => new RosterEntry(a.Name, Roster.State(a)))],
-        Model.Problem))" />
+        <dialog id="new-conversation-dialog" class="default-dialog" aria-labelledby="new-conversation-title">
+            <form method="get" action="/Conversations/Detail">
+                <h3 id="new-conversation-title">New conversation</h3>
+                <input type="hidden" name="project" value="@Model.Project" />
+                <div class="field">
+                    <input id="new-conversation" name="id" aria-label="Name of the conversation" placeholder="what-it-is-about" required
+                           maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
+                           data-correct="@ConversationName.Allowed"
+                           autocomplete="off" spellcheck="false"
+                           aria-describedby="new-conversation-rule" />
+                </div>
 
-    <section aria-label="Conversations in this project">
-        <h2>Conversations</h2>
+                @* The rule is applied as it is typed rather than reported afterwards. *@
+                <p id="new-conversation-rule" class="composer-note">
+                    @ConversationName.Rule
+                    <span id="new-conversation-corrected" role="status" hidden>
+                        @ConversationName.WasCorrected.
+                    </span>
+                </p>
+                <p class="dialog-actions">
+                    <button type="submit" class="new-button">Start</button>
+                    <button type="button" id="new-conversation-cancel" class="quiet">Cancel</button>
+                </p>
+            </form>
+        </dialog>
 
-        <form method="get">
+        @* Filtered by who is party to them. The agents come from the roster; a name that is not on it (an agent since
+           retired, or one typed into a link) stays in the list so that the filter says what it is applying. *@
+        <form method="get" class="view-card view-filters" aria-label="Filter the conversations">
             <input type="hidden" name="project" value="@Model.Project" />
-            <label for="participant">Party to</label>
-            <input id="participant" name="participant" value="@Model.Participant" />
-            <button type="submit">Search this project</button>
+            <input type="hidden" name="sort" value="@Model.Sort" />
+            <div class="field wide">
+                <label for="participant">Agent</label>
+                <select id="participant" name="participant">
+                    <option value="">Any agent</option>
+                    @foreach (var name in Model.ParticipantChoices)
+                    {
+                        <option value="@name" selected="@(string.Equals(Model.Participant, name, StringComparison.Ordinal) ? "selected" : null)">@name</option>
+                    }
+                </select>
+            </div>
+            <label class="toggle"><input type="checkbox" name="showArchived" value="true" checked="@(Model.ShowArchived ? "checked" : null)" /> <span>Include archived</span></label>
+            <button type="submit">Filter</button>
+            <a class="button quiet" href="/Projects/Agents?project=@Model.Project">Clear</a>
         </form>
 
-        @* **Starting one belongs beside the list of them.** The composer has always been able to open
-           a conversation that does not exist yet -- naming one is what creates it -- and nothing led
-           anybody to it: every route in was a link to a conversation already there, so a project with
-           none had no way in at all and the first was the hardest to start. Reported by the owner
-           against the terminal, which had the same gap in the same shape. *@
-        <form method="get" action="/Conversations/Detail">
-            <input type="hidden" name="project" value="@Model.Project" />
-            <label for="new-conversation">Start a conversation called</label>
-            <input id="new-conversation" name="id" placeholder="what-it-is-about" required
-                   maxlength="@ConversationName.Longest" pattern="@ConversationName.Pattern"
-                   data-correct="@ConversationName.Allowed"
-                   autocomplete="off" spellcheck="false"
-                   aria-describedby="new-conversation-rule" />
-            <button type="submit">Start</button>
-
-            @* **The rule is applied as it is typed rather than reported afterwards**, and the
-               placeholder no longer invites prose into a field that cannot hold it: it read
-               "what it is about", which is a sentence, and a sentence is exactly what the owner
-               typed into the terminal's version of this field before being refused. *@
-            <p id="new-conversation-rule" class="composer-note">
-                @ConversationName.Rule It reaches a filename when the discussion is exported.
-                <span id="new-conversation-corrected" role="status" hidden>
-                    @ConversationName.WasCorrected.
-                </span>
-            </p>
-        </form>
+        @if (Model.Problem is { Length: > 0 } rosterProblem && Model.ConversationProblem is not { Length: > 0 })
+        {
+            <p class="unreachable" role="alert">The agents could not be listed to filter by: @rosterProblem</p>
+        }
 
         @if (Model.FilterProblem is { Length: > 0 } filter)
         {
             <p class="unreachable" role="alert">@filter</p>
+        }
+
+        @if (Model.Hidden is { Length: > 0 } hidden)
+        {
+            @* Said whenever anything is archived: an archived conversation leaves the list, and
+               something must say where it went and how to bring it back. *@
+            <p class="composer-note">
+                @hidden <a href="/Projects/Agents?project=@Model.Project&amp;showArchived=true">Show them</a>
+            </p>
         }
 
         @if (Model.ConversationProblem is { Length: > 0 } unread)
@@ -78,25 +94,50 @@
         }
         else
         {
-            <ul class="threads">
+            <div class="grid" role="table" aria-label="Conversations">
+                <div class="grid-head" role="row">
+                    <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")&amp;sort=name">Name</a>
+                    <span role="columnheader">Messages</span>
+                    <a role="columnheader" href="/Projects/Agents?project=@Model.Project&amp;participant=@Model.Participant&amp;showArchived=@(Model.ShowArchived ? "true" : "false")">Last active</a>
+                </div>
                 @foreach (var conversation in Model.Conversations)
                 {
-                    <li>
-                        <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
-                        <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
-                        <p class="meta">
-                            @conversation.Messages messages ·
-                            last active @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
-                            @if (conversation.HasOpenExchange)
-                            {
-                                @* A question somebody still owes an answer to. Said in words;
-                                   the tint is only how you find it. *@
-                                <span class="tag open">still open</span>
-                            }
-                        </p>
-                    </li>
+                    @* A row opens to show who is in it and what can be done to it. A native details element, so
+                       it works with no script. *@
+                    <details class="grid-row" role="row">
+                        <summary>
+                            <a class="name" href="/Conversations/Detail?project=@Model.Project&amp;id=@conversation.Id">@conversation.Id</a>
+                            <span class="num">@conversation.Messages</span>
+                            <span class="when">
+                                @conversation.LastActivityUtc.ToString("d MMM yyyy, HH:mm")
+                                @if (conversation.HasOpenExchange)
+                                {
+                                    @* A question somebody still owes an answer to. Said in words; the tint is only how you find it. *@
+                                    <span class="tag open">still open</span>
+                                }
+                                @if (conversation.Archived)
+                                {
+                                    <span class="tag">archived</span>
+                                }
+                            </span>
+                        </summary>
+                        <div class="grid-detail">
+                            <p class="between">@string.Join(", ", conversation.Participants.Select(p => p.Value))</p>
+                            @* Archiving is one click because one click reverses it; destroying goes to a page that
+                               describes it and takes the name typed. *@
+                            <form method="post" asp-page-handler="Archive">
+                                <input type="hidden" name="project" value="@Model.Project" />
+                                <input type="hidden" name="id" value="@conversation.Id" />
+                                <input type="hidden" name="archived" value="@(conversation.Archived ? "true" : "false")" />
+                                <input type="hidden" name="showArchived" value="@(Model.ShowArchived ? "true" : "false")" />
+                                <input type="hidden" name="sort" value="@Model.Sort" />
+                                <button type="submit">@(conversation.Archived ? "Bring back" : "Archive")</button>
+                            </form>
+                            <a class="button danger" href="/Conversations/Destroy?project=@Model.Project&amp;id=@conversation.Id">Destroy…</a>
+                        </div>
+                    </details>
                 }
-            </ul>
+            </div>
 
             @if (Model.NextPageToken is { Length: > 0 } next)
             {
@@ -107,3 +148,22 @@
         }
     </section>
 </div>
+
+@section Scripts {
+    <script>
+        // A name is asked for in a dialog rather than in the page, so that the list keeps its place.
+        (function () {
+            var dialog = document.getElementById("new-conversation-dialog");
+            var open = document.getElementById("new-conversation-open");
+            var cancel = document.getElementById("new-conversation-cancel");
+
+            if (!dialog || !open) { return; }
+
+            open.addEventListener("click", function () {
+                dialog.showModal();
+                document.getElementById("new-conversation").focus();
+            });
+            cancel.addEventListener("click", function () { dialog.close(); });
+        })();
+    </script>
+}

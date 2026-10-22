@@ -150,30 +150,6 @@ public sealed class GroupedAgentsTests
         Assert.All(groups, group => Assert.Single(group.Rows));
     }
 
-    [Fact]
-    public void A_withdrawn_seat_is_not_filed_with_the_ones_that_can_be_taken()
-    {
-        // **Found by drawing the owner's own deployment rather than by a test.** Both seats on it
-        // were retired, and one seats group made a seat the broker will refuse look exactly like one
-        // it will not. Enter explains it, but a list that has to be acted on to be understood has
-        // not said what it knows.
-        var region = new AgentsRegion();
-
-        region.Show(
-            [
-                Seat("live@test"),
-                new AgentRecord(
-                    AgentName.Create("gone@test"), Client.Seating.Seat.Adapter, AgentTier.Pull,
-                    null, null, null, true, AgentStatus.Retired, null, AgentPresence.Running),
-            ],
-            NodeCatalogue.Empty,
-            null);
-
-        var rows = Drawn.Rows(region.List);
-
-        Assert.Equal(AgentsRegion.Seats, rows[0]);
-        Assert.Equal("live@test", rows[1].Trim());
-        Assert.Equal(AgentsRegion.RetiredSeats, rows[2]);
-        Assert.Equal("gone@test", rows[3].Trim());
-    }
+    // `A_withdrawn_seat_is_not_filed_with_the_ones_that_can_be_taken` was here. Its group, "seats — withdrawn", went:
+    // the person seat cannot be retired, so the group could never hold anything.
 }

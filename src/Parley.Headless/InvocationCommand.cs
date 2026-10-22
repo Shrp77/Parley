@@ -30,9 +30,7 @@ public sealed record InvocationCommand(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>A turn is for doing the work</b> (§11.1). The prompt this replaced told the agent to deal with
-    /// its mail, end its turn and not start unrelated work — and an agent handed a request for work in its
-    /// repository read that as licence to collect it and stop. A runner that tells an agent to collect and
+    /// <b>A turn is for doing the work</b> (§11.1). A runner that tells an agent to collect its mail and
     /// stop contradicts principle 2.1 and is a defect in the runner.
     /// </para>
     /// <para>
@@ -88,9 +86,7 @@ public sealed record InvocationCommand(
     /// person reads.
     /// </para>
     /// <para>
-    /// Worth almost nothing under the one-shot form this replaces, which is why it was passed
-    /// over then: a printing session that exits has no prompt box and no terminal to title. A
-    /// resident agent persists, so its session is one an operator will later open by hand, and
+    /// A resident agent persists, so its session is one an operator will later open by hand, and
     /// nineteen of them listed by first line rather than by name is a list nobody can use.
     /// </para>
     /// </remarks>
@@ -99,19 +95,13 @@ public sealed record InvocationCommand(
     /// <summary>How long to wait for one turn, when nothing says.</summary>
     /// <remarks>
     /// <para>
-    /// Generous, and it can afford to be now. Under the one-shot invoker a timeout killed the
-    /// process, so waiting too long held a wedged agent open for an afternoon. A resident agent
-    /// survives its own timeouts, so the cost of waiting is small and the cost of giving up early
-    /// is real: an abandoned turn leaves a reply owed to nobody, which has to be discarded before
+    /// Generous, because a resident agent survives its own timeouts, so the cost of waiting is
+    /// small and the cost of giving up early is real: an abandoned turn leaves a reply owed to nobody, which has to be discarded before
     /// the next turn can trust what it reads.
     /// </para>
     /// <para>
-    /// <b>Taken from <see cref="TurnBudget.Longest"/> rather than written here, because it was
-    /// written here and the broker wrote a different one.</b> The broker waited five minutes for an
-    /// instruction and this allowed twenty, so every turn between the two was settled failed while
-    /// the agent was still working and its real answer refused on arrival. Neither number was wrong
-    /// alone; nothing compared them. The value is unchanged — what changed is that there is now one
-    /// of it.
+    /// <b>Taken from <see cref="TurnBudget.Longest"/> rather than written here</b>, so the bound
+    /// on a turn is stated once.
     /// </para>
     /// </remarks>
     public static TimeSpan DefaultTimeout { get; } = TurnBudget.Longest;

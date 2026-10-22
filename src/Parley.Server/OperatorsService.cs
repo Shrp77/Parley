@@ -39,6 +39,31 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         _runtime = runtime;
     }
 
+    /// <summary>Refuses a conversation identifier that is blank, before anything opens the store.</summary>
+    /// <param name="conversationId">What the caller sent.</param>
+    /// <returns>The identifier, when there is one.</returns>
+    /// <exception cref="RpcException">It is blank.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>The guard lives here, not in a client.</b> A blank identifier reaching the repository
+    /// throws, and a broker answering `Unknown: Exception was thrown by handler` says nothing an
+    /// operator can act on and reads like a fault in the deployment. A rule enforced by whichever
+    /// client happens to have it leaves with that client.
+    /// </para>
+    /// <para>
+    /// Blank only, deliberately. The schema constrains the character set and refuses to store an
+    /// identifier outside it, so one this rejected but storage would have accepted is a refusal the
+    /// operator cannot act on; and one storage would have rejected can only ever match nothing,
+    /// which the "no messages in '...'" answer already says clearly.
+    /// </para>
+    /// </remarks>
+    private static string Identified(string conversationId) =>
+        string.IsNullOrWhiteSpace(conversationId)
+            ? throw new RpcException(new Status(
+                StatusCode.InvalidArgument,
+                "A conversation identifier is required, and blank is not one."))
+            : conversationId;
+
     /// <inheritdoc/>
     /// <remarks>
     /// Participants still attached are nudged afterwards, so a receiver working in a live session learns the
@@ -54,13 +79,13 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason;
 
         var changed = await Console(
-            (console, now, ct) => console.ForceConcludeAsync(request.ConversationId, reason, now, ct),
+            (console, now, ct) => console.ForceConcludeAsync(Identified(request.ConversationId), reason, now, ct),
             context).ConfigureAwait(false);
 
         if (changed)
         {
             var exported = await Console(
-                (console, _, ct) => console.ExportAsync(request.ConversationId, ct), context).ConfigureAwait(false);
+                (console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context).ConfigureAwait(false);
 
             foreach (var told in exported.Messages
                          .Where(m => m.ResponderModel == Responder.Broker)
@@ -81,7 +106,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: true, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(Identified(request.ConversationId), archived: true, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -94,7 +119,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(context);
 
         var changed = await Console(
-            (console, now, ct) => console.SetConversationArchivedAsync(request.ConversationId, archived: false, now, ct),
+            (console, now, ct) => console.SetConversationArchivedAsync(Identified(request.ConversationId), archived: false, now, ct),
             context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -106,21 +131,25 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // **Asked before anything is held**, unlike its siblings, which can ask inside the work
+        // because the work is all they do. This one takes a hold over every file in the deployment
+        // first, so a blank identifier reaching the guard further down would stop every download in
+        // progress on its way to being refused.
+        var conversationId = Identified(request.ConversationId);
+
         // Its files go with it (SPEC.md §14), once every download in progress has finished: the rows first, in the
         // destroy's own transaction, then the folder on disk — and only when the rows really went.
         var files = new FileWork(_runtime);
 
         using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-        var folder = string.IsNullOrEmpty(request.ConversationId)
-            ? null
-            : await _runtime.UseConnectionAsync(
-                (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
-                    .GetFolderAsync(request.ConversationId, cancellationToken: ct),
-                context.CancellationToken).ConfigureAwait(false);
+        var folder = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
+                .GetFolderAsync(conversationId, cancellationToken: ct),
+            context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console(
-            (console, now, ct) => console.DestroyConversationAsync(request.ConversationId, now, ct),
+            (console, now, ct) => console.DestroyConversationAsync(conversationId, now, ct),
             context).ConfigureAwait(false);
 
         await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
@@ -148,7 +177,16 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Acted(request.Agent);
+
+        // A second process in one checkout is two models editing it (SPEC.md §11.7).
+        if (_runtime.OpenOutside(agent))
+        {
+            throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is already open outside Parley — somebody started it in an editor — so starting another " +
+                "would put two models in one checkout. Close that session first, or prompt it there."));
+        }
 
         var registry = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context)
             .ConfigureAwait(false);
@@ -170,11 +208,142 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Acted(request.Agent);
         var changed = await Console((console, _, ct) => console.RetireAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
     }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RecordOwnershipReply> RecordOwnership(
+        Wire.RecordOwnershipRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Subject(request.Agent);
+
+        // Zero and empty are how proto3 spells "not set", and both mean something here: a composed
+        // line has no proposal to have a length and no conversation to name. Mapping them to null
+        // rather than to 0 and "" is what keeps `proposed_length` a fact about an agent's message
+        // rather than a number somebody's serialiser chose.
+        var acceptance = new OwnershipAcceptance(
+            request.Statement,
+            Conversions.In(request.Source),
+            request.ProposedLength > 0 ? request.ProposedLength : null,
+            string.IsNullOrEmpty(request.ConversationId) ? null : request.ConversationId);
+
+        var record = await Console(
+            (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
+            context).ConfigureAwait(false);
+
+        // A person's line answers whatever Parley was still waiting on for this agent, so the question settles and its
+        // conversation closes. Left alone it would stay waiting beside a line that already answers it, and the agent
+        // could never be asked again.
+        if (record.Recorded)
+        {
+            _ = await _runtime.UseFacilitatorAsync(
+                (facilitator, parley, now, ct) => facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct),
+                context.CancellationToken).ConfigureAwait(false);
+        }
+
+        return new Wire.RecordOwnershipReply
+        {
+            Recorded = record.Recorded,
+            Problem = record.Problem ?? string.Empty,
+            LiveStatement = record.LiveStatement ?? string.Empty,
+            Pending = record.Pending
+        };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationReply> Facilitation(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var report = await _runtime.UseFacilitatorAsync(
+            (facilitator, _, _, ct) => facilitator.ReportAsync(ct), context.CancellationToken).ConfigureAwait(false);
+
+        var reply = new Wire.FacilitationReply { AutoAccept = report.AutoAccept };
+        reply.Questions.AddRange(report.Questions.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.SetAutoAcceptReply> SetAutoAccept(
+        Wire.SetAutoAcceptRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var on = await _runtime.UseFacilitatorAsync(
+            (facilitator, _, now, ct) => facilitator.SetAutoAcceptAsync(request.On, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        return new Wire.SetAutoAcceptReply { On = on };
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> AskAgain(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        var outcome = await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.AskAgainAsync(parley, agent, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        // Woken exactly as any Request's recipient is, through the same bounded path.
+        if (outcome.Done)
+        {
+            await _runtime.NudgeAsync(agent, context.CancellationToken).ConfigureAwait(false);
+            _ = _runtime.RequestAttentionForMail(agent, "a person asked Parley to ask it what it owns");
+        }
+
+        return Out(outcome);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> ReplyToAskedBack(
+        Wire.ReplyToAskedBackRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        var outcome = await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.ReplyAsync(parley, agent, request.Text, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        if (outcome.Done)
+        {
+            await _runtime.NudgeAsync(agent, context.CancellationToken).ConfigureAwait(false);
+            _ = _runtime.RequestAttentionForMail(agent, "a person replied to what it asked Parley");
+        }
+
+        return Out(outcome);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.FacilitationActionReply> DiscardAnswer(Wire.AgentRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var agent = Name(request.Agent);
+
+        return Out(await _runtime.UseFacilitatorAsync(
+            (facilitator, parley, now, ct) => facilitator.DiscardAsync(parley, agent, now, ct),
+            context.CancellationToken).ConfigureAwait(false));
+    }
+
+    private static Wire.FacilitationActionReply Out(FacilitationAction outcome) =>
+        new() { Done = outcome.Done, Problem = outcome.Problem ?? string.Empty };
 
     /// <inheritdoc/>
     public override async Task<Wire.DidItReply> Reinstate(Wire.AgentRequest request, ServerCallContext context)
@@ -182,7 +351,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Acted(request.Agent);
         var changed = await Console((console, _, ct) => console.ReinstateAsync(agent, ct), context).ConfigureAwait(false);
 
         return new Wire.DidItReply { Changed = changed };
@@ -194,7 +363,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var agent = Name(request.Agent);
+        var agent = Acted(request.Agent);
 
         // Every conversation it took part in goes, and placing a file made it a participant, so its files go too
         // (SPEC.md §14). The folders are read before the purge, because afterwards nothing names them.
@@ -224,8 +393,25 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var rows = await Console((console, _, ct) => console.DescribeRegistryAsync(ct), context).ConfigureAwait(false);
 
+        // **Each agent's turn standing, from what its node reported** (SPEC.md §10.2, §11.6): whether a turn is
+        // running from the broker's memory, how the last one ended from `invocations`. On this read only — the agent
+        // roster carries none of it.
+        var latest = (await _runtime.UseConnectionAsync(
+                (connection, _, ct) => new Parley.Store.InvocationRepository(connection).LatestTurnsAsync(ct),
+                context.CancellationToken).ConfigureAwait(false))
+            .ToDictionary(turn => turn.Agent);
+
         var reply = new Wire.RegistryReply();
-        reply.Rows.AddRange(rows.Select(Conversions.Out));
+        reply.Rows.AddRange(rows.Select(row => Conversions.Out(row with
+        {
+            Turns = new TurnStanding(
+                _runtime.TurnsReported(row.Name),
+                _runtime.TurnRunningSince(row.Name),
+                latest.TryGetValue(row.Name, out var last) ? last.EndedUtc : null,
+                last?.Clean ?? false,
+                last?.PermissionDenials ?? 0),
+            OpenOutside = _runtime.OpenOutside(row.Name),
+        })));
 
         return reply;
     }
@@ -362,7 +548,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        var exported = await Console((console, _, ct) => console.ExportAsync(request.ConversationId, ct), context)
+        var exported = await Console((console, _, ct) => console.ExportAsync(Identified(request.ConversationId), ct), context)
             .ConfigureAwait(false);
 
         var reply = new Wire.ExportReply();
@@ -380,6 +566,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             reply.Destroyed = record;
         }
 
+        if (exported.Item is { } item)
+        {
+            reply.Item = Conversions.Out(item);
+        }
+
         reply.Messages.AddRange(exported.Messages.Select(Conversions.Out));
 
         reply.Exchanges.AddRange(exported.Exchanges.Select(e => new Wire.ExchangeSnapshot
@@ -388,10 +579,106 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             State = Conversions.Out(e.State),
             OpenedUtc = e.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
             ClosedUtc = e.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
-            Outcome = Conversions.Out(e.Outcome)
+            Outcome = Conversions.Out(e.Outcome),
+            SettledBy = e.SettledBy ?? 0
         }));
 
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapsReply> Roadmaps(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var listed = await Console((console, _, ct) => console.ListRoadmapsAsync(ct), context).ConfigureAwait(false);
+
+        var reply = new Wire.RoadmapsReply();
+        reply.Roadmaps.AddRange(listed.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapReply> Roadmap(Wire.RoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var roadmap = await Console((console, _, ct) => console.GetRoadmapAsync(request.Id, ct), context)
+            .ConfigureAwait(false);
+
+        var reply = new Wire.RoadmapReply();
+
+        if (roadmap is not null)
+        {
+            reply.Roadmap = Conversions.Out(roadmap);
+        }
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalsReply> Proposals(Wire.ProposalsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var state = Conversions.In(request.State);
+
+        var listed = await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context)
+            .ConfigureAwait(false);
+
+        var reply = new Wire.ProposalsReply();
+        reply.Proposals.AddRange(listed.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> ConfirmProposal(
+        Wire.ConfirmProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+        long? target = request.TargetRoadmap == 0 ? null : request.TargetRoadmap;
+
+        var change = await Console(
+            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> DeclineProposal(
+        Wire.ProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var change = await Console((console, now, ct) => console.DeclineProposalAsync(request.Id, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.RoadmapChangeReply> EditRoadmap(
+        Wire.EditRoadmapRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
+
+        var change = await Console(
+            (console, now, ct) => console.EditRoadmapAsync(request.Id, request.Revision, content, now, ct), context)
+            .ConfigureAwait(false);
+
+        return Conversions.Out(change);
     }
 
     /// <inheritdoc/>
@@ -413,109 +700,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
-    public override async Task<Wire.InstructReply> Instruct(Wire.InstructRequest request, ServerCallContext context)
+    public override Task<Wire.ImplementsReply> Implements(Wire.Empty request, ServerCallContext context)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        if (!AgentName.TryCreate(request.Agent, out var agent))
+        var reply = new Wire.ImplementsReply
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, $"'{request.Agent}' is not an agent name."));
-        }
-
-        if (request.Text.Length > MessageLimits.MaxPayloadCharacters)
-        {
-            throw new RpcException(new Status(
-                StatusCode.InvalidArgument,
-                $"An instruction may be at most {MessageLimits.MaxPayloadCharacters} characters and this one is " +
-                $"{request.Text.Length}."));
-        }
-
-        // Written before anybody tries to deliver it: the row records that a person asked.
-        var id = await Console(
-            (console, now, ct) => console.RecordInstructionAsync(agent, request.Text, now, ct),
-            context).ConfigureAwait(false);
-
-        var result = await _runtime.DeliverInstructionAsync(
-            id, agent, request.Text, _runtime.InstructionPatience, context.CancellationToken).ConfigureAwait(false);
-
-        // Nothing is settled here but undeliverable, which is knowledge rather than impatience: no turn was
-        // begun. Ceasing to wait is a fact about the broker, and settling on it would destroy the agent's
-        // answer when it arrives (§10.2). Written with no cancellation token, so whether the record says what
-        // the broker knows does not depend on whether anybody is still listening.
-        if (result.Outcome == InstructionOutcome.Undeliverable)
-        {
-            _ = await _runtime.UseConnectionAsync(
-                (connection, now, ct) => new OperatorConsole(connection)
-                    .SettleInstructionAsync(id, result.Outcome, result.Reply, now, ct),
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
-        return new Wire.InstructReply
-        {
-            Outcome = Conversions.Out(result.Outcome),
-            Reply = result.Reply ?? string.Empty,
-            InstructionId = id
-        };
-    }
-
-    /// <inheritdoc/>
-    public override async Task<Wire.InstructionsReply> Instructions(Wire.InstructionsRequest request, ServerCallContext context)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(context);
-
-        AgentName? agent = null;
-
-        if (!string.IsNullOrEmpty(request.Agent))
-        {
-            if (!AgentName.TryCreate(request.Agent, out var named))
-            {
-                throw new RpcException(new Status(
-                    StatusCode.InvalidArgument,
-                    $"'{request.Agent}' is not an agent name, so it cannot narrow this list. Ask again without it " +
-                    "to see everything."));
-            }
-
-            agent = named;
-        }
-
-        var limit = request.PageSize <= 0 ? DefaultPageSize : Math.Min(request.PageSize, MaximumPageSize);
-
-        var resumeAt = long.TryParse(request.PageToken, NumberStyles.Integer, CultureInfo.InvariantCulture, out var before)
-            ? before
-            : (long?)null;
-
-        var found = await Console(
-            (console, _, ct) => console.ListInstructionsAsync(
-                agent, request.InstructionId > 0 ? request.InstructionId : null, limit + 1, resumeAt, ct),
-            context).ConfigureAwait(false);
-
-        var more = found.Count > limit;
-        var page = more ? found.Take(limit).ToList() : found;
-
-        var reply = new Wire.InstructionsReply
-        {
-            NextPageToken = more ? page[^1].Id.ToString(CultureInfo.InvariantCulture) : string.Empty
+            ProtocolVersion = ProtocolVersion.Current,
+            BrokerVersion = Compatibility.VersionOf(typeof(OperatorsService).Assembly),
         };
 
-        reply.Instructions.AddRange(page.Select(i => new Wire.InstructionRecord
-        {
-            Id = i.Id,
-            Agent = i.Agent.Value,
-            Text = i.Text,
-            Outcome = Conversions.Out(i.Outcome),
-            Reply = i.Reply ?? string.Empty,
-            IssuedUtc = Conversions.Stamp(i.IssuedUtc),
-            SettledUtc = i.SettledUtc is { } settled ? Conversions.Stamp(settled) : string.Empty
-        }));
+        reply.StoreProblems.AddRange(_runtime.StoreProblems);
 
-        return reply;
+        return Task.FromResult(reply);
     }
-
-    /// <inheritdoc/>
-    public override Task<Wire.ImplementsReply> Implements(Wire.Empty request, ServerCallContext context) =>
-        Task.FromResult(new Wire.ImplementsReply { ProtocolVersion = ProtocolVersion.Current });
 
     /// <inheritdoc/>
     public override async Task<Wire.ListConversationsReply> ListConversations(
@@ -573,6 +769,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
                 Archived = summary.Archived
             };
 
+            if (summary.Item is { } item)
+            {
+                row.Item = Conversions.Out(item);
+            }
+
             row.Participants.AddRange(summary.Participants.Select(a => a.Value));
             reply.Conversations.Add(row);
         }
@@ -602,7 +803,6 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new Wire.PruneReply
         {
             Removed = result.Removed,
-            InstructionsRemoved = result.InstructionsRemoved,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
             Capped = result.Capped
@@ -697,4 +897,46 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             : throw new RpcException(new Status(
                 StatusCode.InvalidArgument,
                 $"'{value}' is not an agent name. Names are role@machine (SPEC.md §4.1.1)."));
+
+    /// <summary>Reads the agent an operator operation acts on, refusing the facilitator.</summary>
+    /// <param name="value">The name given.</param>
+    /// <returns>The name.</returns>
+    /// <remarks>
+    /// Retiring, reinstating, purging, starting and accepting a line for the facilitator are each
+    /// meaningless or harmful: it is never withdrawn, runs on no node, takes no turn and owns nothing (SPEC.md §14).
+    /// Storage refuses the withdrawals too, but as a constraint rather than a sentence a person can read.
+    /// </remarks>
+    private static AgentName Subject(string value)
+    {
+        var agent = Name(value);
+
+        return Parley.Core.Facilitation.Is(agent) ? throw NotAnAgent() : agent;
+    }
+
+    /// <summary>An agent an operation acts on, refusing Parley and the person with a sentence each.</summary>
+    /// <param name="value">The name on the wire.</param>
+    /// <returns>The agent.</returns>
+    /// <remarks>
+    /// <b>The person is refused by name, with a sentence</b> (SPEC.md §10.2), so `retire`, `purge`, `start` and
+    /// `reinstate` give one answer to one fact rather than a raw constraint or a silent no-op.
+    /// </remarks>
+    private static AgentName Acted(string value)
+    {
+        var agent = Subject(value);
+
+        return PersonSeat.Is(agent)
+            ? throw new RpcException(new Status(
+                StatusCode.FailedPrecondition,
+                $"'{agent.Value}' is the person's seat. A person is asked, never started, retired or purged — " +
+                "there is nothing to do to it."))
+            : agent;
+    }
+
+    /// <summary>What an operator operation on an agent says when it is given the facilitator.</summary>
+    /// <returns>The refusal.</returns>
+    private static RpcException NotAnAgent() =>
+        new(new Status(
+            StatusCode.FailedPrecondition,
+            "That is Parley, the project's own participant. It is not an agent: it runs nowhere, is never retired or " +
+            "purged, and owns nothing, so there is nothing to do to it."));
 }

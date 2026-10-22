@@ -8,7 +8,7 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 1 of the review gate, run 1.7 — the first after T035, which reset every counter. The record
+/// The record
 /// is written by one method and read by another, and between them the participants become a single
 /// string and the instant becomes text. Both are lossy shapes if the round trip is wrong, and both
 /// are read exactly once in the life of a conversation: after it is gone, when there is nothing

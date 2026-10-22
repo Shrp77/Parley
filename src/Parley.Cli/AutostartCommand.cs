@@ -1,7 +1,6 @@
 ﻿using Parley.Setup;
 using System.Diagnostics;
 using System.Globalization;
-using Parley.Core;
 
 namespace Parley.Cli;
 
@@ -11,9 +10,8 @@ namespace Parley.Cli;
 /// <remarks>
 /// <para>
 /// SPEC.md §4 says the broker is long-lived — "a Windows Service, systemd unit, or launchd
-/// agent" — and nothing implemented it, so every deployment's first lesson was that nothing
-/// works until a process somebody has to remember exists is running. That is the worst thing to
-/// leave to a README: it is discovered after a reboot, by an agent refusing to launch, in a
+/// agent" — and this implements it. A broker somebody has to remember to start is the worst thing
+/// to leave to a README: it is discovered after a reboot, by an agent refusing to launch, in a
 /// message about a broker the person had no reason to know about.
 /// </para>
 /// <para>
@@ -42,8 +40,8 @@ public static class AutostartCommand
     /// Runs one autostart subcommand.
     /// </summary>
     /// <param name="action">install, remove or status.</param>
-    /// <param name="databasePath">The store, for install.</param>
-    /// <param name="listenOn">Where to listen, or null for the default.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">The one project to serve, or null to serve every project.</param>
     /// <param name="consoleOn">
     /// Where the installed entry should host the operator's console, or null to install one that
     /// hosts none.
@@ -54,24 +52,30 @@ public static class AutostartCommand
     /// </param>
     /// <param name="manifestToServe">
     /// The manifest the installed entry should serve every project of, or null to install one
-    /// deployment by the explicit paths above. The two are exclusive: an entry serves the
-    /// manifest or a store, and the caller has decided which.
+    /// project (<paramref name="project"/>). The two are exclusive: an entry serves the
+    /// manifest or one project, and the caller has decided which.
     /// </param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="hidden">
+    /// Whether an installed entry should tell the broker to let go of its console window. A logon
+    /// entry starts a console program in the person's own session, so without this one appears on
+    /// their desktop at every logon.
+    /// </param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
         string action,
-        string? databasePath,
-        string? listenOn,
+        string root,
+        string? project,
         string? nodeConfig,
         string? consoleOn,
         string? manifestToServe,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool hidden = false)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
@@ -89,8 +93,8 @@ public static class AutostartCommand
         return action switch
         {
             "install" => await InstallAsync(
-                databasePath, listenOn, nodeConfig, consoleOn, manifestToServe, output, error,
-                cancellationToken)
+                root, project, nodeConfig, consoleOn, manifestToServe, output, error,
+                cancellationToken, hidden)
                 .ConfigureAwait(false),
 
             "remove" => await RemoveAsync(output, error, cancellationToken).ConfigureAwait(false),
@@ -111,36 +115,36 @@ public static class AutostartCommand
     }
 
     /// <summary>Installs the supervisor entry.</summary>
-    /// <param name="databasePath">The store.</param>
-    /// <param name="listenOn">Where to listen.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">The one project to serve, or null to serve every project.</param>
     /// <param name="nodeConfig">The node catalogue to host from, or null for a broker alone.</param>
     /// <param name="consoleOn">Where the console should listen, or null to host none.</param>
     /// <param name="manifestToServe">The manifest to serve every project of, or null.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="error">Where to report a failure.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
+    /// <param name="hidden">Whether the entry should tell the broker to let go of its console window.</param>
     /// <returns>The exit code.</returns>
     private static async Task<int> InstallAsync(
-        string? databasePath,
-        string? listenOn,
+        string root,
+        string? project,
         string? nodeConfig,
         string? consoleOn,
         string? manifestToServe,
         TextWriter output,
         TextWriter error,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool hidden)
     {
-        databasePath ??= Environment.GetEnvironmentVariable(DeploymentEnvironment.DatabaseVariable);
-
-        if (manifestToServe is null && string.IsNullOrWhiteSpace(databasePath))
+        // **The store and the endpoint come from a project or from nowhere.** A supervisor starts the
+        // broker with no shell environment, so a variable read here would name something that is not
+        // set at logon; what is used is the project `--project` selected.
+        if (manifestToServe is null && string.IsNullOrWhiteSpace(project))
         {
             await error.WriteLineAsync(
-                "No database and no projects. Pass --db <path>, set " +
-                $"{DeploymentEnvironment.DatabaseVariable}, or name a project first with " +
-                "`parley project add` and this entry will serve every project named. A " +
-                "supervisor starts the broker with no shell environment, so what it serves has " +
-                "to be written into the entry rather than read from a variable that will not be " +
-                "set at logon.").ConfigureAwait(false);
+                "This machine has no projects yet, so there is nothing for an entry to serve. Name "
+                + "one in `parley`, then run this again — the entry will serve every "
+                + "project on the machine, including any named afterwards.").ConfigureAwait(false);
 
             return Config;
         }
@@ -152,17 +156,14 @@ public static class AutostartCommand
         var catalogue = nodeConfig is { Length: > 0 } named ? Path.GetFullPath(named) : null;
 
         // Read before the entry is replaced, because afterwards there is nothing to read. The
-        // one thing a switch from an explicit entry to a manifest-serving one can lose is the
-        // node: the old entry named a catalogue on its command line, the new one hosts a node
-        // only where a project's manifest entry names one, and a manifest written before that
-        // mattered names none. Said here, with the command that fixes it, rather than left to
-        // arrive days later as a question nobody was started to answer.
+        // one thing a switch from a one-project entry to a manifest-serving one can lose is the
+        // catalogue the old entry named on its command line. Said here, with the command that
+        // fixes it, rather than left to arrive days later as a question nobody was started to answer.
         var replacing = manifestToServe is not null ? InstalledEntry.Installed() : null;
 
         var plan = manifestToServe is not null
-            ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn)
-            : AutostartPlan.Describe(
-                databasePath!, listenOn, executable: null, catalogue, consoleOn);
+            ? AutostartPlan.DescribeManifest(manifestToServe, executable: null, consoleOn, hidden)
+            : AutostartPlan.Describe(root, project, executable: null, catalogue, consoleOn, hidden);
 
         // The directory, not the file. The broker creates the store on first run; what it cannot
         // do is create a directory that a supervisor will try to write a log into before it
@@ -201,6 +202,19 @@ public static class AutostartCommand
         await output.WriteLineAsync($"  runs:  {plan.CommandLine()}").ConfigureAwait(false);
         await output.WriteLineAsync($"  logs:  {plan.LogPath}").ConfigureAwait(false);
 
+        // **Said outright rather than only inside the command line above.** It is in `runs:`, as
+        // `--web-ui <url>` at the end of a line long enough that nobody reads to the end of it --
+        // and it is the one thing this command prints that a person is going to type into a
+        // browser, so it is not left only inside the command line.
+        //
+        // A statement about the entry, not about what is listening. The broker starts the web UI
+        // and does not wait on it, so a held port leaves the broker serving and says so in the log
+        // -- which is the line above this one. Claiming the page answers would be this command
+        // reporting somebody else's success.
+        await output.WriteLineAsync(WebUiLine(
+            consoleOn, "none, because --no-web-ui was given. Re-run without it to add one."))
+            .ConfigureAwait(false);
+
         // Which half was installed, said plainly, because the two are one entry and therefore
         // indistinguishable in a task list. A deployment whose node was left out looks identical
         // to one whose node is running, until a request to a repository nobody has open waits,
@@ -212,11 +226,9 @@ public static class AutostartCommand
                 "named later\n         is started within seconds, without reinstalling this.")
                 .ConfigureAwait(false);
 
-            // **One catalogue for the machine, named once** (018). This said "in each project whose
-            // entry names a catalogue" and the lines under it printed one path per project, because a
-            // catalogue used to belong to one — which is exactly what made a checkout startable in one
-            // project and not the other. The binding is gone, so a path per project would be this
-            // command reading a manifest field nothing else does, and reporting it as fact.
+            // **One catalogue for the machine, named once.** A catalogue belongs to no project, so a
+            // path per project would be this command reading a manifest field nothing else does, and
+            // reporting it as fact.
             //
             // Resolved once into a local, for the reason the store path above it is: the line that
             // reports a path and the check that compares it are two answers to one question, and they
@@ -236,16 +248,14 @@ public static class AutostartCommand
                 && listedProjects.Count == 0)
             {
                 await output.WriteLineAsync(
-                    "  names: no project yet. Name the first one from `parley terminal`, or with `parley project add`;\n" +
+                    "  names: no project yet. Name the first one from `parley`;\n" +
                     "         it starts within seconds, and the web UI shows it.")
                     .ConfigureAwait(false);
             }
 
-            // **Still worth saying, and it now asks a different question.** It used to ask whether any
-            // project named a catalogue, because that is where the replaced entry's one would have had
-            // to be carried to. Nothing names one any more, so what can be lost is narrower and more
-            // specific: the old entry hosted from one file and the new one hosts from another, and
-            // every agent catalogued only in the old file stops being startable at the next logon.
+            // **What can be lost is specific:** the old entry hosted from one file and the new one
+            // hosts from another, and every agent catalogued only in the old file stops being
+            // startable at the next logon.
             if (replacing is { ServesManifest: false, NodeConfig: { Length: > 0 } dropped }
                 && !SamePath(Path.GetFullPath(dropped), hosting))
             {
@@ -304,8 +314,7 @@ public static class AutostartCommand
         // Started here rather than left to the trigger, so that installing means the same thing
         // on all three supervisors. `systemctl --user enable --now` starts the unit and a launch
         // agent with RunAtLoad starts when it is bootstrapped; a logon trigger does not fire
-        // until the next logon, which made this the one platform where a successful install
-        // still left nothing listening.
+        // until the next logon, so without this a successful install would leave nothing listening.
         try
         {
             ScheduledTasks.Start(plan.Label);
@@ -332,17 +341,14 @@ public static class AutostartCommand
     /// <remarks>
     /// <para>
     /// <b>Resolved with no environment, because the entry runs with none.</b> A supervisor starts
-    /// the broker at logon, where nothing has set <c>PARLEY_NODE_CONFIG</c> — the paragraph above
-    /// the manifest check says so in as many words, about what it serves. Reporting the path
-    /// <i>this shell</i> would resolve would therefore be the same defect this output was just
-    /// fixed for: a true-looking answer to a question nobody asked, about a run that will not
+    /// the broker at logon, where nothing has set <c>PARLEY_NODE_CONFIG</c>. Reporting the path
+    /// <i>this shell</i> would resolve would be a true-looking answer about a run that will not
     /// happen. So the variable is not consulted, and what is printed is what the logon broker gets.
     /// </para>
     /// <para>
     /// The lookup is <see cref="ProjectResolution.NodeConfig"/>'s rather than a second copy of the
-    /// rule, for the reason <c>LaunchKey</c> changed assemblies during 018: one rule with two
-    /// implementations is a rule that agrees right up until it does not, and this one decides where
-    /// consent to start an agent is read from.
+    /// rule: one rule with two implementations agrees right up until it does not, and this one decides
+    /// where consent to start an agent is read from.
     /// </para>
     /// </remarks>
     internal static string MachineCatalogue(string? nodeConfig, string manifestPath) =>
@@ -370,25 +376,17 @@ public static class AutostartCommand
     /// <returns>The lines to print, or nothing when the manifest cannot be read.</returns>
     /// <remarks>
     /// <para>
-    /// <b>Both commands read this manifest already and neither said what was in it.</b> `install`
-    /// answered with a rule — <i>each project whose entry names a catalogue</i> — and `status` with a
-    /// file path, so a two-project deployment printed exactly what a one-project deployment prints.
-    /// The owner of a machine running two projects read both and concluded the second was not being
-    /// served; it had been, for hours, with its broker listening and its node able to start three
-    /// agents.
+    /// <b>Both commands read this manifest and say what is in it</b>, so a two-project deployment
+    /// does not print what a one-project deployment prints.
     /// </para>
     /// <para>
     /// <b>The paths, because they are rarely beside the manifest and a path somebody has to go and
-    /// look up is a path they cannot check against what they meant.</b> The manifest is the one thing
-    /// a person is told about, and it is the only one the entry itself names; the store is inside it,
-    /// per project, and on the deployment that found this the two projects' stores were in different
-    /// directories from each other and from the manifest.
+    /// look up is a path they cannot check against what they meant.</b> The manifest is the only
+    /// thing the entry itself names; the store is inside it, per project.
     /// </para>
     /// <para>
-    /// <b>This said "three files" and named a catalogue per project until 018.</b> There is one per
-    /// machine now, so the caller says it once above these lines rather than repeating one path under
-    /// every project — and the reason it had to change is the reason the feature exists: a catalogue
-    /// that belonged to a project is what let a checkout be startable in one and stranded in another.
+    /// There is one catalogue per machine, so the caller says it once above these lines rather than
+    /// repeating one path under every project.
     /// </para>
     /// <para>
     /// Silent when the manifest cannot be read, because the callers have their own words for that and
@@ -409,12 +407,9 @@ public static class AutostartCommand
             lines.Add($"    {project.Name.Value}  {project.Endpoint}");
             lines.Add($"      store:     {project.Store}");
 
-            // **The catalogue line was here and is now said once for the machine** (018). What stood
-            // here named `node_config` from this project's manifest entry, and the paragraph above
-            // still records why three files per project was the right answer then. It is the wrong
-            // answer now for the reason the whole feature exists: one catalogue per machine means a
-            // path printed per project is either the same path repeated or a field nothing reads.
-            // The remaining two really are per project, and really are in different directories.
+            // **The catalogue is said once for the machine, not here.** One catalogue per machine
+            // means a path printed per project is either the same path repeated or a field nothing
+            // reads. The store and endpoint really are per project.
         }
 
         return lines;
@@ -507,7 +502,7 @@ public static class AutostartCommand
     private static async Task<int> RemoveAsync(
         TextWriter output, TextWriter error, CancellationToken cancellationToken)
     {
-        var plan = AutostartPlan.Describe("placeholder.db");
+        var plan = AutostartPlan.Describe("placeholder");
 
         var removed = plan.Supervisor switch
         {
@@ -539,6 +534,48 @@ public static class AutostartCommand
         return 0;
     }
 
+    /// <summary>Whether the supervisor has this entry enabled, or null when it could not be asked.</summary>
+    /// <param name="plan">The entry.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>True, false, or null for could-not-tell.</returns>
+    /// <remarks>
+    /// <para>
+    /// **Three answers, because two would have to lie about one of them.** A unit file that exists
+    /// says an install got as far as writing it; whether the supervisor will act on it is a separate
+    /// question, and on a machine with no systemd at all it is a question nothing can answer. The
+    /// third answer is what keeps `status` from reporting good news it has not checked.
+    /// </para>
+    /// <para>
+    /// `is-enabled` answers non-zero for a unit that exists and is disabled, which is the state this
+    /// exists to catch, and also for one that is absent — harmless, since it is only asked when the
+    /// file is there. A missing `systemctl` throws or exits non-zero with nothing on stdout, and that
+    /// is the case told apart from a genuine "disabled" by there being no verdict to read.
+    /// </para>
+    /// </remarks>
+    private static async Task<bool?> EnabledAsync(AutostartPlan plan, CancellationToken cancellationToken)
+    {
+        if (plan.Supervisor == Supervisor.LaunchAgent)
+        {
+            var listed = await RunAsync(
+                "launchctl", ["print", $"gui/{await UidAsync(cancellationToken).ConfigureAwait(false)}/{plan.Label}"],
+                cancellationToken).ConfigureAwait(false);
+
+            return listed.Output.Length == 0 ? null : listed.ExitCode == 0;
+        }
+
+        var asked = await RunAsync(
+            "systemctl", ["--user", "is-enabled", plan.Label + ".service"], cancellationToken)
+            .ConfigureAwait(false);
+
+        // No verdict at all is a machine that could not be asked -- no systemd, or no session bus.
+        // A verdict of anything is an answer, and only "enabled" is a yes.
+        var said = asked.Output.Trim();
+
+        return said.Length == 0
+            ? null
+            : said.StartsWith("enabled", StringComparison.Ordinal);
+    }
+
     private static async Task<bool> RemoveSystemdAsync(
         AutostartPlan plan, CancellationToken cancellationToken)
     {
@@ -546,7 +583,13 @@ public static class AutostartCommand
             "systemctl", ["--user", "disable", plan.Label + ".service"], cancellationToken)
             .ConfigureAwait(false);
 
-        if (File.Exists(plan.UnitPath))
+        // **Read before the delete, because the delete is what this reports.** Reporting only whether
+        // `systemctl disable` succeeded would, on a machine where systemctl fails or is absent, delete
+        // the unit file and then say there had been nothing to remove: the next thing the operator
+        // does is look for what is still there. `RemoveLaunchAgentAsync` follows the same rule.
+        var existed = File.Exists(plan.UnitPath);
+
+        if (existed)
         {
             File.Delete(plan.UnitPath!);
         }
@@ -554,7 +597,7 @@ public static class AutostartCommand
         _ = await RunAsync("systemctl", ["--user", "daemon-reload"], cancellationToken)
             .ConfigureAwait(false);
 
-        return disabled.ExitCode == 0;
+        return disabled.ExitCode == 0 || existed;
     }
 
     private static async Task<bool> RemoveLaunchAgentAsync(
@@ -582,7 +625,7 @@ public static class AutostartCommand
     /// <returns>Zero if it is, one if it is not.</returns>
     private static async Task<int> StatusAsync(TextWriter output, CancellationToken cancellationToken)
     {
-        var plan = AutostartPlan.Describe("placeholder.db");
+        var plan = AutostartPlan.Describe("placeholder");
 
         var present = plan.Supervisor switch
         {
@@ -592,28 +635,47 @@ public static class AutostartCommand
             _ => File.Exists(plan.UnitPath)
         };
 
+        // **A unit file can exist and start nothing.** `install` writes the unit and then enables it,
+        // and reports honestly when the enable fails -- "Wrote <path>, but could not enable it" -- so
+        // this asks systemd rather than inferring from the file: "written but not enabled" and
+        // "enabled" lead somewhere completely different and are indistinguishable from the outside.
+        // Windows needs no such step -- `ScheduledTasks.Exists` asks the scheduler, which is the real
+        // question there.
+        var enabled = !present || plan.Supervisor == Supervisor.ScheduledTask
+            ? null
+            : await EnabledAsync(plan, cancellationToken).ConfigureAwait(false);
+
         await output.WriteLineAsync(
-            present
-                ? $"Parley's broker starts at logon, as {Describe(plan.Supervisor)}."
-                : "Parley's broker does not start on its own here. `parley autostart install` " +
-                  "registers it; until then something has to run `parley serve`.")
+            (present, enabled) switch
+            {
+                (false, _) => "Parley's broker does not start on its own here. `parley autostart "
+                    + "install` registers it; until then something has to run `parley serve`.",
+
+                (true, false) => $"Parley's broker has an entry here -- {Describe(plan.Supervisor)} "
+                    + "-- and it is NOT enabled, so it will not start at logon. Re-run `parley "
+                    + "autostart install`, which says why if it cannot enable it.",
+
+                (true, null) => $"Parley's broker has an entry here, as {Describe(plan.Supervisor)}. "
+                    + "Whether it is enabled could not be checked on this machine, so this cannot "
+                    + "say it will start at logon.",
+
+                _ => $"Parley's broker starts at logon, as {Describe(plan.Supervisor)}.",
+            })
             .ConfigureAwait(false);
 
-        // What it serves, read back from the entry rather than remembered. "Registered" answered
-        // a question nobody was asking once a machine could name projects: the one they ask is
-        // whether the project they just named will come up at logon, and an entry with one
-        // explicit store is the one that will not.
+        // What it serves, read back from the entry rather than remembered. The question is whether
+        // the project somebody just named will come up at logon, and an entry for one project is
+        // the one that will not.
         if (present && InstalledEntry.Installed() is { } entry)
         {
             await output.WriteLineAsync($"  serves: {entry.Serves}").ConfigureAwait(false);
 
             if (entry.ServesManifest && entry.Manifest is { Length: > 0 } served)
             {
-                // **Said here as well, and read out of the entry rather than resolved in this shell**
-                // (018). Status lost its catalogue line the moment `ServedProjects` stopped printing
-                // one per project — and "which file does the node read" is most of what somebody
-                // running this command is asking, since it is the one that decides what can be
-                // started. The entry's own `--node-config` is what the logon broker will see.
+                // **Said here as well, and read out of the entry rather than resolved in this shell.**
+                // "Which file does the node read" is most of what somebody running this command is
+                // asking, since it decides what can be started. The entry's own `--node-config` is
+                // what the logon broker will see.
                 await output.WriteLineAsync(
                     $"  hosts: this machine's agents, from {MachineCatalogue(entry.NodeConfig, served)}")
                     .ConfigureAwait(false);
@@ -624,32 +686,60 @@ public static class AutostartCommand
                 }
             }
 
+            // **Read out of the entry, for the same reason `install` says it: the address is in the
+            // arguments and nowhere a person can see it.** This is the command somebody runs days
+            // later to ask what is installed, which makes it the place they will look for the page's
+            // address once they have forgotten it -- and an entry written with `--no-web-ui` answers
+            // "why does that address not open" with a sentence instead of with nothing.
+            await output.WriteLineAsync(WebUiLine(
+                entry.Console,
+                "none. This entry starts the broker without one; `parley autostart install` "
+                + "registers one by default."))
+                .ConfigureAwait(false);
+
+            // **Said either way, because both states are a question somebody asks.** Without it, "why
+            // does a black window appear when I log in" is answered by this line or by nothing; with
+            // it, somebody wondering where the broker's output went is told it is in the log.
+            await output.WriteLineAsync(
+                entry.Hidden
+                    ? "  window: none. The broker lets go of its console, so everything it says is "
+                      + "in the log above."
+                    : "  window: a console appears at logon. `parley autostart install --hidden` "
+                      + "installs an entry without one.").ConfigureAwait(false);
+
             if (!entry.ServesManifest)
             {
+                // `--project` is what narrows an entry, and omitting it is what widens one. The same
+                // sentence lives in `Naming.cs`.
                 await output.WriteLineAsync(
-                    "  A project named with `parley project add` is not served by this entry. " +
-                    "Re-run\n  `parley autostart install` with no --db to have it serve every " +
-                    "project in the manifest.").ConfigureAwait(false);
-            }
-
-            // **The one place an operator can be told, and otherwise they are told nothing.** This
-            // version removes these spellings; the broker still starts, because every verb ignores
-            // options it has no use for, so the entry goes on working and quietly stops starting a
-            // web UI. What is left is an absence — a page that no longer answers — with nothing
-            // anywhere connecting it to an upgrade. This command's whole job is to say what is
-            // installed, so it says this too.
-            if (entry.Removed.Count > 0)
-            {
-                await output.WriteLineAsync(
-                    $"  This entry names {string.Join(" and ", entry.Removed)}, which this version "
-                    + "no longer accepts.\n  It still starts, and it no longer starts a web UI. Re-run "
-                    + "`parley autostart install`\n  to write an entry this version understands.")
-                    .ConfigureAwait(false);
+                    "  A project named after this entry was written is not served by it. " +
+                    "Re-run\n  `parley autostart install` with no --project to have it serve every " +
+                    "project on this machine.").ConfigureAwait(false);
             }
         }
 
         return present ? 0 : 1;
     }
+
+    /// <summary>The line naming where the web UI an entry starts will listen.</summary>
+    /// <param name="address">Where it listens, or null or empty when the entry starts none.</param>
+    /// <param name="absent">What to say instead when there is none.</param>
+    /// <returns>The line, ready to print.</returns>
+    /// <remarks>
+    /// <para>
+    /// **One writer, because `install` and `status` answer the same question and would otherwise
+    /// answer it in two spellings.** They differ in what they can say when there is no web UI --
+    /// `install` knows `--no-web-ui` was given and `status` only sees an entry that names none --
+    /// so that half is the caller's, and the key a person scans for is not.
+    /// </para>
+    /// <para>
+    /// **It deliberately does not contain `--web-ui`.** `install.ps1` reads this command's output
+    /// back and scrapes the address out of the `runs:` line by that flag; a second line carrying
+    /// the spelling would give the scrape two things to match. `WebUiLineTests` pins it.
+    /// </para>
+    /// </remarks>
+    internal static string WebUiLine(string? address, string absent) =>
+        address is { Length: > 0 } front ? $"  web UI: {front}" : $"  web UI: {absent}";
 
     /// <summary>Names a supervisor the way somebody would look for it.</summary>
     /// <param name="supervisor">The supervisor.</param>
@@ -685,18 +775,20 @@ public static class AutostartCommand
     /// <remarks>
     /// Arguments go through <see cref="ProcessStartInfo.ArgumentList"/> rather than a single
     /// string, which is the whole reason this helper exists. A command line assembled by hand
-    /// and re-parsed by the operating system is where the quoting defects live, and one of them
-    /// is what made the hand-written version of this command fail with "Invalid argument/option"
-    /// naming the entire line back.
+    /// and re-parsed by the operating system is where the quoting defects live.
     /// </remarks>
     private static async Task<(int ExitCode, string Output)> RunAsync(
         string fileName, string[] arguments, CancellationToken cancellationToken)
     {
+        // `CreateNoWindow` for the same reason the web UI child carries it: this runs `schtasks`,
+        // `launchctl` or `systemctl`, and a console program started by a parent with no console of
+        // its own is given a fresh window. Brief, and a flash nobody asked for is still a flash.
         var start = new ProcessStartInfo(fileName)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            UseShellExecute = false
+            UseShellExecute = false,
+            CreateNoWindow = true,
         };
 
         foreach (var argument in arguments)

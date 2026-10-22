@@ -11,16 +11,21 @@ namespace Parley.Mcp;
 /// protocol and reaches any client that speaks it.
 /// </para>
 /// <para>
-/// <b>It says what Parley is for, because the text it replaced said the opposite.</b> It described Parley
-/// as a way to ask peers questions about their repositories, and agents that read it declined the work
-/// they were asked for. SPEC.md principle 2.1: Parley exists to get work done across repositories, and an
-/// instruction anywhere in a deployment that stops an agent doing work it was asked for is a defect in
-/// that instruction.
+/// <b>It says what Parley is for.</b> SPEC.md principle 2.1: Parley exists to get work done across
+/// repositories, and an instruction anywhere in a deployment that stops an agent doing work it was asked
+/// for is a defect in that instruction.
 /// </para>
 /// <para>
 /// What belongs here is what is true of every deployment. Which agents exist and what each owns changes,
 /// and is available live through <c>parley_agents</c>. Kept short, because it lands in every agent's
 /// context on every session.
+/// </para>
+/// <para>
+/// <b>The bullet about refused permissions earns its length.</b> A refused call ends a turn silently, and a
+/// request picked up and not answered looks like work in progress to the broker. The protocol's answer is a
+/// Result <c>blocked</c> with blocker <c>permission</c>, so an agent must be told that a refusal is not a
+/// pause and that silence strands whoever asked. Turn reports let a surface tell a stopped agent from a
+/// working one whether or not the agent says so.
 /// </para>
 /// </remarks>
 public static class ParleyInstructions
@@ -41,8 +46,22 @@ public static class ParleyInstructions
         - If you cannot tell what a request is for, or how far it goes, ask with parley_clarify rather
           than guessing. You may ask other agents too. Guessing at scope is how work is done twice.
         - Resolve blockers by talking: ask the agent that can provide what you need; if none can, ask the
-          person seated in the deployment; if nobody is seated, report blocked to your requester, naming
-          exactly what is needed.
+          person - the participant whose role is human-user, listed by parley_agents. They may be away.
+          Your message waits for them, and waiting for their decision is correct; it is not a reason to
+          report blocked.
+        - What the person writes to you is always a new request, never an answer filed against one of
+          your questions. Read it, reply to it, and if it answers or makes moot questions you asked them,
+          name those in settles and say so in your reply. A person asking you to explain a question has
+          not answered it: answer them and leave the question open.
+        - You often run with nobody at the keyboard, so a tool call that needs approval is refused, not
+          paused: nobody will see it. If a refusal stops work you owe, never end your turn without saying
+          so - the asker cannot tell a refused command from work in progress. Ask the person to allow it,
+          naming the exact command or tool and why you need it, or send a parley_result with "blocked"
+          and blocker "permission" naming the same.
+        - If you and other agents have agreed how to get something done as a list of steps, put it forward
+          with parley_propose_roadmap so it is not lost in the conversation: a short title, and one line
+          per item, verb first, with who it is for and what it needs only where you know. No background
+          or reasons. It only proposes; the person decides, and work still reaches you as a request.
         - Every message is answered. Sending never blocks — carry on with what does not depend on it.
         - Call parley_inbox when you start work, and whenever you are told work is waiting. What you owe
           comes first. A <channel> event from this server is that telling: it carries only counts, never

@@ -78,11 +78,24 @@ public sealed class ActionShapeTests
 
         Assert.Contains(shell.Actions(), action => action.Label == Naming.CreateTitle);
         Assert.Contains(shell.Actions(), action => action.Label == Removing.Title);
-        Assert.Contains(shell.Actions(), action => action.Label == Onboarding.Title);
+        Assert.DoesNotContain(shell.Actions(), action => action.Label == Onboarding.Title);
 
         await Walking.GoAsync(shell, Viewing.Project);
 
+        // Both ways a project gains agents, from inside the project: a project is named first and agents are
+        // enrolled into it, the owner's call of 2026-09-27.
         Assert.Contains(shell.Actions(), action => action.Label == Adding.Title);
+        Assert.Contains(shell.Actions(), action => action.Label == Onboarding.Title);
+    }
+
+    [Fact]
+    public void The_enrolment_window_names_the_project_first()
+    {
+        // The owner's wording, 2026-09-27: "[project name]: Enroll agents from folders".
+        var alpha = new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null);
+
+        Assert.Equal("alpha: Enroll agents from folders", Onboarding.Caption(alpha));
+        Assert.Equal("Enroll agents from folders", Onboarding.Caption(null));
     }
 
     [Fact]
@@ -95,13 +108,12 @@ public sealed class ActionShapeTests
         {
             Adding.Title,
             Adding.ConfirmTitle,
-            AgentsRegion.JoinTitle,
+            Browsing.Name,
+            Browsing.FolderName,
             Naming.CreateTitle,
-            Naming.NameRunningTitle,
             Onboarding.Title,
             Participation.ResultTitle,
             Participation.RequestTitle,
-            Participation.DeliveryTitle,
             Participation.StartTitle,
             Removing.Title,
             Removing.Destroy,
@@ -131,7 +143,6 @@ public sealed class ActionShapeTests
         var dialogs = new[]
         {
             Adding.Title,
-            AgentsRegion.JoinTitle,
             Naming.CreateTitle,
             Onboarding.Title,
             Removing.Title,
@@ -159,6 +170,6 @@ public sealed class ActionShapeTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

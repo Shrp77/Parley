@@ -28,51 +28,17 @@ public sealed class SeparationTests
             .Where(n => n is not ("Equals" or "GetHashCode" or "ToString"));
 
     [Fact]
-    public void The_operator_commands_are_exactly_the_operations_of_section_10_2()
+    public void The_operator_commands_are_exactly_the_registry_listing()
     {
-        // All five of §10.2 now that prune exists. Whichever arrives next, the check that fails
-        // is this one, which is the point: adding an operator operation should be a decision
-        // about which side of §10.1 it belongs on rather than a question of which class the
-        // method was already in.
-        string[] expected =
-        [
-            "ArchiveAsync",
-
-            // Not "ClarifyAsync". §10.1 gives an agent clarify(exchange_id, text), and this
-            // check is one of the three that caught the collision when the report was first
-            // written under that name.
-            "ClarificationsAsync",
-            "DestroyAsync",
-            "ExportAsync",
-            "FlagsAsync",
-            "ForceConcludeAsync",
-            "InstructAsync",
-            "PruneAsync",
-
-            // No agent operation deletes anything, so there is no name here to collide with —
-            // the §10.2 rule bites where an operator operation shadows an agent one, and an
-            // agent that could purge a peer would be an agent with authority over another,
-            // which the whole protocol refuses.
-            "PurgeAsync",
-            "RefusalsAsync",
-
-            // Not "AgentsAsync". §10.1 gives an agent agents(), and the operator's listing is a
-            // richer one carrying the workspace path that §10.1 withholds -- two operations
-            // differing only in what they disclose. The §10.2 table had no row for it at all,
-            // which is what hid the collision: adding the row made the spec check fail.
-            "RegistryAsync",
-            "ReinstateAsync",
-
-            // Not "ResultAsync". §10.1 gives an agent result(exchange_id, outcomes), and this reads
-            // what every Result said; a single letter apart is exactly the collision §10.2 warns of,
-            // which is why the report is plural and reads rather than writes.
-            "ResultsAsync",
-            "RetireAsync",
-
-            // Not "StartAsync". §10.1's start is an agent attaching; this asks a machine to launch one.
-            "StartAgentAsync",
-            "UnarchiveAsync"
-        ];
+        // Every other operator verb lives in the terminal. Whichever operation arrives next, the
+        // check that fails is this one, which is the point: adding an operator operation to the
+        // command line should be a decision rather than a question of which class the method was
+        // already in.
+        //
+        // Not "AgentsAsync". §10.1 gives an agent agents(), and the operator's listing is a
+        // richer one carrying the workspace path that §10.1 withholds -- two operations
+        // differing only in what they disclose.
+        string[] expected = ["RegistryAsync"];
 
         Assert.Equal(expected, PublicMethodsOf(typeof(OperatorCommands)).OrderBy(n => n, StringComparer.Ordinal));
     }

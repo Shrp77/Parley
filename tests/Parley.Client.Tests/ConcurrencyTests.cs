@@ -42,7 +42,7 @@ public sealed class ConcurrencyTests
 
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null, null)],
+                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null)],
             endpoint =>
             {
                 Interlocked.Increment(ref connects);
@@ -83,7 +83,7 @@ public sealed class ConcurrencyTests
         // never finishing, which the runner reports as a timeout rather than as a pass.
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null, null)],
+                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null)],
             GrpcChannel.ForAddress);
 
         var project = directory.Projects[0];
@@ -100,7 +100,7 @@ public sealed class ConcurrencyTests
         // rather than handed a channel about to be torn out from under it.
         var directory = new BrokerDirectory(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null, null)],
+                ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:5301", null)],
             GrpcChannel.ForAddress);
 
         var project = directory.Projects[0];
@@ -120,7 +120,7 @@ public sealed class ConcurrencyTests
         // ReadAsync exists to prevent.
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
-                ProjectName.Create("alpha"), "a.db", "localhost:5301", null, null)],
+                ProjectName.Create("alpha"), "a.db", "localhost:5301", null)],
             GrpcChannel.ForAddress);
 
         var read = await BrokerDirectory.ReadAsync(() =>

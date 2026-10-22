@@ -52,7 +52,6 @@ public sealed class MultiProjectServeTests : IDisposable
             ProjectName.Create(name),
             store ?? Path.Combine(_directory, name + ".db"),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 
     /// <summary>
@@ -211,8 +210,12 @@ public sealed class MultiProjectServeTests : IDisposable
     }
 
     [Fact]
-    public async Task Starting_none_of_several_is_a_failure_rather_than_an_empty_machine()
+    public async Task Starting_none_of_several_with_nothing_watching_is_a_failure()
     {
+        // **No watcher here** — `ServeAsync` passes no `reread`, which is `serve --project x`: one
+        // project, named on the command line, and nothing that would ever notice a change. Nothing
+        // can change, so a process that stayed up would achieve nothing for ever, and its
+        // supervisor would read "running" as "working".
         var (code, output, error) = await ServeAsync(
             [Unopenable("orders"), Unopenable("billing")],
             () => Task.CompletedTask);
@@ -225,14 +228,62 @@ public sealed class MultiProjectServeTests : IDisposable
     }
 
     [Fact]
+    public async Task Starting_none_of_several_while_watching_stays_up_and_says_why()
+    {
+        // **A machine whose projects can none of them be opened must stay up and report why**, so
+        // that a project named next is served without anything being restarted. An empty root stays
+        // up, and so does this one; exiting 69 is right only for the case of one named project.
+        //
+        // Every store unreadable is a moved directory or a permissions change: a thing somebody is
+        // actively repairing. Exiting meant the repair did nothing until the next logon, because a
+        // scheduled task does not restart a process that ran and stopped.
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        using var stopping = new CancellationTokenSource();
+
+        IReadOnlyList<ProjectSettings> projects = [Unopenable("orders"), Unopenable("billing")];
+
+        var serving = ServeCommand.RunAsync(
+            projects,
+            null,
+            output,
+            error,
+            reread: () => projects,
+            cancellationToken: stopping.Token);
+
+        // It is still running: nothing has completed the task, and the only thing that ends it is
+        // the interrupt below. A process that had exited would have completed it by now.
+        await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
+
+        Assert.False(
+            serving.IsCompleted,
+            "the broker exited although it was watching, so a repaired store waits for a logon");
+
+        await stopping.CancelAsync();
+
+        _ = await serving.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        var said = output.ToString();
+
+        // **Says why, and does not claim to be serving.** Those are two separate properties and the
+        // second is the one that would quietly mislead: "still running" must not read as "working".
+        Assert.Contains("Nothing is being served", said, StringComparison.Ordinal);
+        Assert.Contains("watching", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("Agents connect with PARLEY_AGENT set", said, StringComparison.Ordinal);
+
+        // And the failures were still named individually, with the store each could not open.
+        Assert.Contains("orders", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("billing", error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_interrupt_during_start_up_stops_what_had_already_started()
     {
-        // The window nothing was watching, found by reading the shutdown path adversarially
-        // rather than by running it: the start loop sat outside the try that disposes what it
-        // started, so an interrupt arriving between one broker coming up and the next left the
-        // first holding its port and its store handle for as long as the process lived. FR-021 in
-        // full, and invisible on any machine that serves a single project — which is every machine
-        // that had one before this feature existed.
+        // The window nothing is watching: a start loop outside the try that disposes what it
+        // started would let an interrupt arriving between one broker coming up and the next leave
+        // the first holding its port and its store handle for as long as the process lived. It is
+        // invisible on any machine that serves a single project.
         //
         // Cancelled by the enumerator rather than by a timer, so this reproduces the exact moment
         // rather than usually reproducing it. A flaky guard on a shutdown path is worse than none:
@@ -304,8 +355,7 @@ public sealed class MultiProjectServeTests : IDisposable
     [Fact]
     public async Task An_empty_manifest_being_watched_waits_and_starts_the_first_project_named()
     {
-        // The machine the installer leaves: an entry serving a manifest that names nothing yet. It used to fall through
-        // to one default store nobody had named. Now it waits, and the first project named from `parley terminal` or with
+        // The machine the installer leaves: an entry serving a manifest that names nothing yet. It waits, and the first project named from `parley terminal` or with
         // `parley project add` gets its broker from the watcher within seconds.
         var ct = TestContext.Current.CancellationToken;
         var orders = Project("orders");

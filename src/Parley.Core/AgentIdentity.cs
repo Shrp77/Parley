@@ -8,10 +8,8 @@ namespace Parley.Core;
 /// <remarks>
 /// <para>
 /// <b>An agent is an identity; a name is a project's label for it.</b> One checkout enrolled in two projects
-/// answers to a different name in each, and before this existed the thing that could be started was keyed by
-/// that name — so the same checkout was startable in the project whose catalogue named it and unstartable in
-/// the other. The defect was not what the catalogue held. It was that the arrangement could express the
-/// state at all.
+/// answers to a different name in each, so what can be started is keyed by the identity, never by a name:
+/// keyed by a name, the same checkout would be startable in one project and not in the other.
 /// </para>
 /// <para>
 /// <b>It is opaque, and that is a requirement rather than tidiness.</b> Nothing parses it, orders by it or
@@ -19,11 +17,14 @@ namespace Parley.Core;
 /// changes when that thing changes, and the whole point of this is to survive a move and a rename.
 /// </para>
 /// <para>
-/// <b>It never travels in a call, so Principle III is untouched.</b> An agent's name still comes from the
-/// environment its server was started with and registration is still the adapter's own act on attach
-/// (SPEC.md §12.3). This answers "what does this machine start", which is a question about a launch. If a
-/// node ever started the wrong checkout for a requested name, the adapter that attaches registers what its
-/// own environment says, so the request stays unsatisfied — a visible failure, never a forged identity.
+/// <b>It travels as a label and never as authority, so Principle III is untouched.</b> An agent's name still comes
+/// from the environment its server was started with and registration is still the adapter's own act on attach
+/// (SPEC.md §12.3). The adapter reports the identity beside the name, and the broker uses it for one thing: an
+/// attach that presents an identity the machine already holds under another name, from the same repository, renames
+/// that agent (§4.1.1). It admits nobody the name check would not, and the node is sent it with a start so it
+/// can find the checkout by what it is. If a node ever started the wrong checkout for a requested name, the
+/// adapter that attaches registers what its own environment says, so the request stays unsatisfied — a visible
+/// failure, never a forged identity.
 /// </para>
 /// <para>
 /// <b>It is repository-scoped, not machine-scoped.</b> It lives in the repository, which is frequently

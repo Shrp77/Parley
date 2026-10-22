@@ -12,10 +12,9 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>018's headline claim, and its own quickstart calls it one of the two worth doubting.</b> A resident
-/// table used to belong to a node; 018 made it one per process and keyed it by identity, so that a checkout
-/// answering in two projects is started once however many projects ask. The hazard on the other side is the
-/// one 009's FR-013 partitioned the catalogues to avoid: two nodes launching one working directory.
+/// <b>One checkout, one process.</b> The resident table is one per process, keyed by identity, so
+/// that a checkout answering in two projects is started once however many projects ask. The hazard on the
+/// other side is two nodes launching one working directory.
 /// </para>
 /// <para>
 /// <b>Each project hosts its own node loop, and they share that table.</b> So the two calls below are not

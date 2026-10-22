@@ -29,9 +29,8 @@ using Parley.Mcp;
 // The agent's identity comes from that environment and from nowhere else. No tool takes it as
 // a parameter, so no tool call can change who the caller is — see ServerOptions.
 
-// Before the environment is read, because asking which build this is must not need a launch configuration. The
-// installer asks every tool it installed, from a shell that sets nothing -- and while this answered only with
-// PARLEY_AGENT set, its check printed nothing and passed.
+// Before the environment is read, because asking which build this is must not need a launch configuration: the
+// installer asks every tool it installed, from a shell that sets nothing.
 if (Array.Exists(args, argument => argument is "--version" or "-v"))
 {
     var build = System.Reflection.CustomAttributeExtensions
@@ -89,9 +88,7 @@ builder.Services.AddSingleton(provider =>
     BrokerLink.StartAsync(provider.GetRequiredService<ServerOptions>())
         .GetAwaiter().GetResult());
 
-// No sweep here any more. It ran in every adapter while every adapter opened the store, which
-// meant a deployment of twenty repositories ran twenty sweeps over one file, each taking the
-// write lock for the same work. It belongs to the process that owns the store.
+// No sweep here: it belongs to the process that owns the store.
 
 builder.Services
     // Instructions travel with the protocol, which makes this the one way to tell a model what

@@ -7,18 +7,18 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 24: what one unattended start actually starts.
+/// What one unattended start actually starts.
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-013 makes consent to run unattended per project, and enforces it as <i>one workspace, one
-/// project's catalogue</i> — because a node starts an agent with the workspace as its working
+/// Consent to run unattended is enforced as <i>one workspace, one
+/// catalogue entry</i> — because a node starts an agent with the workspace as its working
 /// directory, and two nodes doing that is two models editing one checkout.
 /// </para>
 /// <para>
 /// <b>That is not the only thing one start starts.</b> The client the node launches reads the
-/// <c>.mcp.json</c> in that directory and brings up <i>every</i> server in it — which, after this
-/// feature, is one per project the repository answers in. So a node acting on alpha's consent also
+/// <c>.mcp.json</c> in that directory and brings up <i>every</i> server in it — which is one per
+/// project the repository answers in. So a node acting on alpha's consent also
 /// attaches the repository as beta's agent and gamma's, in projects whose catalogues say nothing about
 /// starting it unattended, and a peer in either can then have it answer with nobody watching.
 /// </para>
@@ -54,7 +54,10 @@ public sealed class ProbeThirtyFiveTests : IDisposable
 
     private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **A root, not the old manifest file.** Writing through a path ending in `projects.json`
+    // creates a *directory* of that name and every read of it afterwards is refused — which is
+    // why `ProjectManifest.Write` now refuses it too.
+    private string ManifestPath => _root;
 
     /// <summary>The three projects, as a machine's manifest holds them.</summary>
     /// <remarks>
@@ -72,7 +75,6 @@ public sealed class ProbeThirtyFiveTests : IDisposable
                 ProjectName.Create(name),
                 Path.Combine(_root, $"{name}.db"),
                 $"http://127.0.0.1:{port}",
-                Path.Combine(_root, $"{name}-node.json"),
                 null));
         }
 
@@ -84,19 +86,22 @@ public sealed class ProbeThirtyFiveTests : IDisposable
     /// <summary>This machine's one catalogue, which every project on it is started from (018).</summary>
     private string MachineCatalogue => Path.Combine(_root, "node.json");
 
-    private Task<Enrolment.Outcome> EnrolAsync(string project, bool unattended) =>
-        Enrolment.AddAsync(
+    private Task<Enrolment.Outcome> EnrolAsync(string project, bool unattended)
+    {
+        // The three projects exist on disk before anything is enrolled into them.
+        _ = Deployment();
+
+        return Enrolment.AddAsync(
             new EnrollmentEntry(Workspace, "infra", "Pipelines and images. Not the product.", unattended)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             MachineCatalogue,
             Path.Combine(Workspace, "CLAUDE.md"),
             TestContext.Current.CancellationToken,
-            Deployment(),
             ManifestPath);
+    }
 
     [Fact]
     public async Task Granting_an_unattended_start_says_which_other_projects_it_brings_up()
@@ -121,10 +126,9 @@ public sealed class ProbeThirtyFiveTests : IDisposable
         // what this enrolment adds is loaded by the same start. Nothing re-reads the catalogue
         // afterwards, so this is the only moment anybody could be told.
         //
-        // **What the sentence names changed with 018 and what it is for did not.** It used to name the
-        // project holding the unattended consent, because consent was per project and a person who
-        // wanted it moved had to know which project to take it from. There is one catalogue per machine
-        // now, so the thing that already starts this checkout is the machine.
+        // **The sentence names the machine, not a project.** Consent is not per project, so a person
+        // does not need to know which project to take it from. There is one catalogue per machine,
+        // so the thing that already starts this checkout is the machine.
         await EnrolAsync("alpha", unattended: true);
 
         var outcome = await EnrolAsync("beta", unattended: false);

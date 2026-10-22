@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
 using Parley.Broker;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Server;
+using Parley.Setup;
 using Parley.Store;
 
 namespace Parley.Cli;
@@ -12,17 +14,14 @@ namespace Parley.Cli;
 /// <remarks>
 /// <para>
 /// <b>It is the only command that touches a file, and the only one that migrates.</b> Everything
-/// else here is a client. That division used to run the other way — the operator's tool opened
-/// the database and the servers migrated it — and the reason it moved is not tidiness: SQLite in
-/// WAL mode requires coherent shared memory between every process touching the file, which no
-/// network filesystem provides, so more than one opener is a constraint on where the machines
-/// can be rather than a performance note.
+/// else here is a client. SQLite in WAL mode requires coherent shared memory between every
+/// process touching the file, which no network filesystem provides, so more than one opener is a
+/// constraint on where the machines can be rather than a performance note.
 /// </para>
 /// <para>
-/// <b>Migration happens here and nowhere else.</b> It used to run in every adapter's launch
-/// path, which meant a deployment's schema version was whatever the most recently updated
-/// repository happened to carry, and two adapters at different versions raced to apply it. One
-/// process that owns the file is also the one process entitled to change its shape.
+/// <b>Migration happens here and nowhere else.</b> One process that owns the file is also the one
+/// process entitled to change its shape; adapters at different versions would otherwise race to
+/// apply it.
 /// </para>
 /// </remarks>
 public static class ServeCommand
@@ -30,174 +29,6 @@ public static class ServeCommand
     private const int Config = 78;     // EX_CONFIG
     private const int IoError = 74;    // EX_IOERR
     private const int Unavailable = 69; // EX_UNAVAILABLE
-
-    /// <summary>
-    /// Opens the store and serves it until the process is stopped.
-    /// </summary>
-    /// <param name="databasePath">The store, or <see langword="null"/> if nothing named one.</param>
-    /// <param name="listenOn">Where to listen, or <see langword="null"/> for the default.</param>
-    /// <param name="logPath">A file to copy output into, or <see langword="null"/> for none.</param>
-    /// <param name="output">Where to report what it is doing.</param>
-    /// <param name="error">Where to report why it could not.</param>
-    /// <param name="whenListening">
-    /// Something to run alongside the broker once it is listening, given the addresses it is
-    /// listening on and the writer the broker reports through, or <see langword="null"/> to run
-    /// nothing. Its exit code is folded into this one.
-    /// </param>
-    /// <param name="alongside">
-    /// Something to run alongside the broker that is <em>not</em> bound to any one of them: the
-    /// operator's console, which reads this machine's manifest rather than a single endpoint.
-    /// Separate from <paramref name="whenListening"/> because that one joins exactly one broker
-    /// and is refused across several projects, and a console is not.
-    /// </param>
-    /// <param name="cancellationToken">Stops the broker.</param>
-    /// <returns>The exit code.</returns>
-    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    /// <remarks>
-    /// <b>The hook is a callback rather than a reference to the node, and the indirection earns
-    /// its keep.</b> Hosting this machine's node in the broker's process is what lets one
-    /// supervisor entry cover a whole deployment — but a broker that knew how to be a client of
-    /// itself would be a circular dependency in the one component SPEC.md §4 keeps free of them.
-    /// What this class knows is that something may want to run once the port is open, which is
-    /// the only fact it is in a position to report.
-    /// </remarks>
-    public static async Task<int> RunAsync(
-        string? databasePath,
-        string? listenOn,
-        string? logPath,
-        TextWriter output,
-        TextWriter error,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening = null,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(error);
-
-        // Copied rather than redirected, so a broker started from a terminal still prints to it
-        // and one started by a supervisor still leaves a record. The alternative -- wrapping the
-        // broker in a shell that redirects -- means quoting a path inside a command line inside
-        // a task definition, for a feature whose absence is silent.
-        using var log = Logging.Open(logPath, error);
-
-        if (log is not null)
-        {
-            output = TextWriter.Synchronized(new TeeWriter(output, log));
-            error = TextWriter.Synchronized(new TeeWriter(error, log));
-        }
-        else if (whenListening is not null)
-        {
-            // One broker means one sweep, which is why there is no log-less synchronisation here
-            // ordinarily. A hosted node is a second writer on the same instance, running for as
-            // long as the sweep does and saying more than it -- every agent it starts and stops.
-            // A TextWriter is not thread-safe, and interleaved output is what an operator reads
-            // to find out why a machine starts nothing.
-            output = TextWriter.Synchronized(output);
-        }
-
-        // First, and before anything that can fail. A store this build cannot open, a port
-        // already held, a manifest that will not parse -- each of those ends the process, and
-        // the log then holds a failure with nothing saying which build produced it. The version
-        // is most worth having in exactly the runs that print nothing else.
-        await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(databasePath))
-        {
-            // Reached by `parley serve` with no project named and no store given. The way on is a project, which is how
-            // a machine is deployed; the one-store options are named last and as what they are, because a refusal that
-            // offered only them sent a person to set up a deployment by hand outside the manifest.
-            await error.WriteLineAsync(
-                "No database: no project is named, and no store was given. Name a project with " +
-                "`parley project add <name> --db <path> --listen <url>`, and `parley serve` serves every project named " +
-                "(`parley autostart install` does the same at every logon). --db <path> or " +
-                $"{DeploymentEnvironment.DatabaseVariable} serves one store by hand, for testing only.").ConfigureAwait(false);
-
-            return Config;
-        }
-
-        // Created if it is missing, unlike every other command here. This is the first run of a
-        // project, and refusing it would leave nothing able to create the store at all now that
-        // the adapters cannot.
-        BrokerRuntime runtime;
-
-        try
-        {
-            runtime = BrokerRuntime.Open(databasePath, BrokerOptions.Default, TimeProvider.System);
-        }
-        catch (StoreHeldException held)
-        {
-            // A duplicate launch, not a failure: a scheduled task and a terminal restoring its session
-            // both start this. Nothing was written, and the broker already serving is the one to use,
-            // so this says which process that is and goes.
-            await output.WriteLineAsync(HeldElsewhere(databasePath, held)).ConfigureAwait(false);
-
-            return 0;
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            await error.WriteLineAsync($"Could not open '{databasePath}': {exception.Message}")
-                .ConfigureAwait(false);
-
-            return IoError;
-        }
-
-        var endpoint = listenOn is { Length: > 0 } ? listenOn : BrokerEndpoint.Default;
-
-        ParleyServer server;
-
-        try
-        {
-            server = await ParleyServer.StartAsync(runtime, endpoint, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            await runtime.DisposeAsync().ConfigureAwait(false);
-
-            // Almost always the port, and almost always because a broker is already running.
-            // Said plainly, because "address already in use" sends somebody looking for a
-            // conflict with an unrelated program.
-            await error.WriteLineAsync(
-                $"Could not listen on {endpoint}: {exception.Message}. If a broker is already " +
-                "running for this project, that is the one to use — there is one per project " +
-                "and it owns the store.").ConfigureAwait(false);
-
-            return IoError;
-        }
-
-        await using (server.ConfigureAwait(false))
-        {
-            await output.WriteLineAsync(string.Create(
-                CultureInfo.InvariantCulture,
-                $"Parley broker on {string.Join(", ", server.Addresses)}, store at {databasePath}, schema {SchemaMigrator.LatestVersion}."))
-                .ConfigureAwait(false);
-
-            // Said because somebody browsed to it. The broker's address is the first URL on the
-            // screen and looks like the one to open, and what a browser gets there is "an HTTP/1.x
-            // request was sent to an HTTP/2 only endpoint" -- an error about the wrong thing,
-            // which reads as the deployment being broken rather than as the wrong address.
-            await output.WriteLineAsync(
-                "  That address is for agents and speaks gRPC. It is not a web page.")
-                .ConfigureAwait(false);
-
-            await output.WriteLineAsync(
-                "Agents connect with PARLEY_AGENT set; machines join with `parley up`. Ctrl+C stops it.")
-                .ConfigureAwait(false);
-
-            // Started only now, and that ordering is the whole reason this is a callback rather
-            // than two tasks kicked off together. A node does not retry its join: it reports "no
-            // broker is listening" and exits, so a node racing the port it is about to connect to
-            // loses that race often enough to matter and leaves the process serving a machine
-            // that hosts nothing.
-            var hosted = HostAsync(
-                whenListening, alongside, server.Addresses, output, cancellationToken);
-
-            await Task.WhenAll(SweepAsync(runtime, output, cancellationToken), hosted)
-                .ConfigureAwait(false);
-
-            return await hosted.ConfigureAwait(false);
-        }
-    }
 
     /// <summary>
     /// Runs one broker per configured project, in this process.
@@ -213,13 +44,17 @@ public static class ServeCommand
     /// </param>
     /// <param name="alongside">
     /// Something to run alongside the brokers that is <em>not</em> bound to any one of them: the
-    /// operator's console, which reads this machine's manifest rather than a single endpoint.
+    /// web UI, which reads this machine's manifest rather than a single endpoint.
     /// Run once, and handed the first started broker's addresses as its fallback.
     /// </param>
     /// <param name="reread">
     /// Reads the manifest again, returning null when it has not changed or cannot be read, or
     /// <see langword="null"/> to serve only what was given. Given, a project named while this
     /// runs gets its broker within <see cref="WatchInterval"/>.
+    /// </param>
+    /// <param name="checkInstall">
+    /// Whether to ask the other Parley programs on this machine what release they are, and warn about any that is
+    /// not the broker's. Off by default so a test's broker starts no processes.
     /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
@@ -236,21 +71,13 @@ public static class ServeCommand
     /// requires a corrupt database or a failed migration to stop that broker while the others keep
     /// running; what it does not settle is what the process tells its supervisor, and that is the
     /// part an operator cannot see afterwards. A run that starts two of three brokers and exits
-    /// zero is the same shape as the defects this repository has already met twice — an unreadable
-    /// catalogue read as empty, ten repositories written where nothing reads them — where a run
-    /// reported success while doing less than it claimed.
+    /// zero would report success while doing less than it claimed.
     /// </para>
     /// <para>
-    /// <b>A node is hosted per project, and each one joins its own broker.</b> An earlier version
-    /// refused to host a node across several projects, reasoning from §4.1.1 that a machine has
-    /// one identity and a process serving three projects could not choose which deployment it
-    /// belonged to. That reasoning was right about the choosing and wrong about who makes it: the
-    /// manifest names a catalogue <i>per project</i> — "the catalogue of agents this machine may
-    /// start for it", §4.1 — so the projects this machine belongs to are exactly the ones that
-    /// say so. Each project's registry is its own file, so the same machine name in two of them
-    /// collides no more than the same agent name does. What is still refused, at the entry point,
-    /// is one explicit catalogue offered to several projects, because that is the choice nobody
-    /// made.
+    /// <b>A node is hosted per project, and each one joins its own broker.</b> There is one
+    /// catalogue per machine (§4.1), so every project announces what the repositories say it may
+    /// start. Each project's registry is its own file, so the same machine name in two of them
+    /// collides no more than the same agent name does.
     /// </para>
     /// </remarks>
     public static async Task<int> RunAsync(
@@ -261,6 +88,7 @@ public static class ServeCommand
         Func<ProjectSettings, IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? nodeFor = null,
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         Func<IReadOnlyList<ProjectSettings>?>? reread = null,
+        bool checkInstall = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
@@ -275,17 +103,24 @@ public static class ServeCommand
             error = new TeeWriter(error, log);
         }
 
-        // Synchronised whether or not there is a log, which the single-project overload does not
-        // need to be: there is one sweep there and N here, all writing the same failure line to
-        // the same writer. A TextWriter is not thread-safe, and the output that would be
-        // interleaved is the output an operator reads to find out which broker is unwell.
+        // Synchronised whether or not there is a log: there are N sweeps, all writing the same
+        // failure line to the same writer. A TextWriter is not thread-safe, and the output that
+        // would be interleaved is the output an operator reads to find out which broker is unwell.
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
 
         // Said once for the process rather than once per project: one build serves all of them,
         // and a line repeated per project would read as though it could differ. Before the first
-        // store is opened, for the reason the single-store overload gives.
+        // store is opened, so it appears even when no store opens.
         await output.WriteLineAsync(BuildIdentity.Line).ConfigureAwait(false);
+
+        // **Asked of the other programs on this machine, in the background**: the parts of a
+        // deployment are installed one at a time and a release can change what they share. Off for a test's broker, which
+        // must not start processes, and never awaited here, so it cannot be why a broker does not start.
+        if (checkInstall)
+        {
+            _ = Task.Run(() => InstalledTools.CheckAsync(output, cancellationToken), CancellationToken.None);
+        }
 
         // Every project serving right now. Grows when the watcher starts one named since the
         // process began and shrinks when it stops one removed, so it is read under its own lock.
@@ -301,7 +136,7 @@ public static class ServeCommand
 
             try
             {
-                runtime = BrokerRuntime.Open(project.Store, BrokerOptions.Default, TimeProvider.System);
+                runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
             }
             catch (StoreHeldException held)
             {
@@ -359,9 +194,34 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
+            // to every surface that asks what this broker speaks. The schema number cannot say it while the schema is
+            // edited in place.
+            if (runtime.StoreProblems.Count > 0)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: WARNING -- its store is not the shape this build expects: "
+                    + string.Join("; ", runtime.StoreProblems.Take(5))
+                    + (runtime.StoreProblems.Count > 5 ? $"; and {runtime.StoreProblems.Count - 5} more" : string.Empty)
+                    + ". It was made by another build. Reset the project's store, or add what is missing.")
+                    .ConfigureAwait(false);
+            }
+
+            if (!OnlyThisMachine(project.Endpoint))
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: WARNING -- this project answers on {project.Endpoint}, which is not "
+                    + "loopback, so anything that can reach that address can claim to be any agent in it, "
+                    + "read its mail, export its conversations and start agents. The wire "
+                    + "carries no credentials. No command puts a project here; reach a broker from another "
+                    + "machine with a tunnel instead (README, \"For an agent on another machine\").")
+                    .ConfigureAwait(false);
+            }
+
             // The sweep and, where there is one, the node, each contained on its own so that one
             // project's node failing leaves the others hosted.
             hosted.Tasks.Add(Quietly(SweepAsync(runtime, output, hosted.Stopping.Token)));
+            hosted.Tasks.Add(Quietly(FacilitateAsync(runtime, project.Name.Value, output, hosted.Stopping.Token)));
 
             if (nodeFor is not null)
             {
@@ -411,14 +271,10 @@ public static class ServeCommand
 
         try
         {
-            // Inside the try, and that is the whole of why this loop is not where it reads most
-            // naturally. Ctrl+C during start-up cancels the pending StartAsync, which throws
-            // OperationCanceledException — deliberately not caught, because an interrupt is not a
-            // project failing. Started outside the try, that exception left every broker already
-            // running still holding its port and its store handle: the interrupt arrives, the
-            // process exits, and nothing has been shut down. Which is FR-021 exactly, and the
-            // defect fixed one commit earlier, reappearing in the window where it is least
-            // visible — a machine that only ever starts one project never enters it.
+            // Inside the try so that Ctrl+C during start-up, which cancels the pending StartAsync and
+            // throws OperationCanceledException (deliberately not caught: an interrupt is not a
+            // project failing), still reaches the finally that shuts down every broker already
+            // running and holding its port and store handle.
             // Remembered by name, because the watcher may start one of these later -- a port
             // still held by the previous broker at logon is the usual reason -- and a project
             // serving at the end is not one that failed, whatever it did at the start.
@@ -444,13 +300,21 @@ public static class ServeCommand
                 }
             }
 
-            // **A manifest that names nothing yet, being watched, is a machine waiting for its first project**, not a
-            // failure. The installer registers exactly this entry before anybody has named a project, and a person
-            // names one from `parley terminal` or `parley project add`; the watcher starts it within seconds. Without a
-            // watcher nothing could ever start here, and that stays the failure below says it is.
-            var awaitingFirstProject = projects.Count == 0 && reread is not null;
+            // **One rule, applied twice: stay up while something could still change.** A watcher is
+            // what "could still change" means here — it re-reads the root and starts what appears,
+            // so a project named next, or a store repaired next, is served without anything being
+            // restarted. Where there is no watcher nothing can ever change, and a process that
+            // stayed up would be a process achieving nothing for ever.
+            //
+            // A machine whose projects can none of them be opened, or which has no projects, stays
+            // up and reports why: every store unreadable is a moved directory or a permissions
+            // change somebody is actively repairing, and a scheduled task does not restart a
+            // process that ran and stopped. Not "always stay up", which would have a broker report
+            // healthy to its supervisor while serving nothing where nothing is watching.
+            var watching = reread is not null;
+            var awaitingFirstProject = projects.Count == 0 && watching;
 
-            if (started.Count == 0 && !awaitingFirstProject)
+            if (started.Count == 0)
             {
                 // Everything named is already served by another broker: a second launcher at logon,
                 // and a deployment that is working. Anything that genuinely failed beside it makes
@@ -464,10 +328,13 @@ public static class ServeCommand
                     return 0;
                 }
 
-                await error.WriteLineAsync(
-                    "No broker started. Nothing is serving.").ConfigureAwait(false);
+                if (!watching)
+                {
+                    await error.WriteLineAsync(
+                        "No broker started. Nothing is serving.").ConfigureAwait(false);
 
-                return Unavailable;
+                    return Unavailable;
+                }
             }
 
             if (failed > 0)
@@ -484,8 +351,21 @@ public static class ServeCommand
             if (awaitingFirstProject)
             {
                 await output.WriteLineAsync(
-                    "No project is named yet. Name the first one from `parley terminal`, or with `parley project add " +
-                    "<name> --db <path> --listen <url>`; it starts here within seconds. Ctrl+C stops this.")
+                    "No project is named yet. Name the first one from `parley` — it gets " +
+                    "its own store and its own port, and starts here within seconds. Ctrl+C stops this.")
+                    .ConfigureAwait(false);
+            }
+            else if (started.Count == 0)
+            {
+                // **Staying up, and saying so without claiming to serve.** The distinction is the
+                // whole of what this line is for: a person reading it must not take "still running"
+                // for "working". The failures were already named one by one with their stores, so
+                // this says what the process is now doing and what would change it.
+                await output.WriteLineAsync(
+                    "Nothing is being served: no project here could be opened. The failures are "
+                    + "named above, with the store each one could not open. This is still watching "
+                    + "the root, so a store repaired or a project named is served within seconds "
+                    + "without restarting anything. Ctrl+C stops this.")
                     .ConfigureAwait(false);
             }
             else
@@ -563,8 +443,7 @@ public static class ServeCommand
         finally
         {
             // Everything started is stopped, including when one sweep threw. A broker left holding
-            // a port after the process was told to stop is the failure Ctrl+C was just fixed for,
-            // reappearing one level up.
+            // a port after the process was told to stop would outlive the interrupt.
             Hosted[] remaining;
 
             lock (started)
@@ -600,15 +479,57 @@ public static class ServeCommand
     /// </remarks>
     internal static readonly TimeSpan WatchInterval = TimeSpan.FromSeconds(2);
 
+    /// <summary>The <c>reread</c> a served root is watched through: its projects when they changed, or null.</summary>
+    /// <param name="root">The machine's root.</param>
+    /// <returns>A function giving the projects when they changed and read cleanly, and null otherwise.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing changes on a read that left anything out, and the stamp is kept only from a clean one.</b> A project.json
+    /// mid-replace is briefly unreadable and reading leaves it out; taking that as the project being removed would stop its
+    /// broker. With the stamp unchanged the next tick reads again, until the read is clean.
+    /// </para>
+    /// <para>
+    /// The cost is recorded rather than hidden: while any project's file stays unreadable, no change to any other is
+    /// applied either. That is the promise <see cref="WatchAsync"/> already made — nothing is stopped on the strength of a
+    /// file somebody is halfway through editing — kept the only way it can be.
+    /// </para>
+    /// <para>
+    /// Here rather than inline in the program so the test drives the function the program uses, not a copy of it.
+    /// </para>
+    /// </remarks>
+    internal static Func<IReadOnlyList<ProjectSettings>?> Rereader(string root)
+    {
+        var held = ProjectFolder.StampOf(root);
+
+        return () =>
+        {
+            var stamp = ProjectFolder.StampOf(root);
+
+            if (string.Equals(stamp, held, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (!ProjectManifest.TryRead(root, out var current, out var leftOut) || leftOut is { Length: > 0 })
+            {
+                return null;
+            }
+
+            held = stamp;
+
+            return current;
+        };
+    }
+
     /// <summary>What a broker says when it finds its store already being served, before it exits.</summary>
     /// <param name="label">The store, or the project and its store.</param>
     /// <param name="held">The refusal.</param>
     /// <returns>The line.</returns>
     /// <remarks>
-    /// <b>It names the process, because that is the question the owner had to answer by hand.</b>
-    /// Seventeen agents read as stranded and the cause was a second broker started by a terminal
-    /// restoring its session; nothing on screen or in the log said a second process existed. The log
-    /// is shared now, so this line reaches it even from the process that is leaving.
+    /// <b>It names the process, because "who holds it" is the question a refused launcher raises.</b>
+    /// A second broker started by a terminal restoring its session leaves agents reading as
+    /// stranded unless something says a second process exists. The log is shared, so this line
+    /// reaches it even from the process that is leaving.
     /// </remarks>
     internal static string HeldElsewhere(string label, StoreHeldException held)
     {
@@ -650,17 +571,13 @@ public static class ServeCommand
     /// <b>A project has its own broker, so naming one is asking for that broker now — and
     /// removing one is asking for it to stop.</b> SPEC.md §4.1 gives every project a store and
     /// an endpoint of its own and lets one process host them all; the process that hosts them is
-    /// this one, and before this it read the manifest once at start. A project named from the
-    /// terminal was therefore "not answering" until the next logon, with the form politely
-    /// saying so — which is documenting a gap rather than closing it, and was said to be exactly
-    /// that by the first person it happened to. Removal followed for the same reason: the only
-    /// way to stop one project's broker was to restart every other project's with it.
+    /// this one, so a project named from the terminal answers within seconds and removing one
+    /// does not restart every other project's broker.
     /// </para>
     /// <para>
-    /// Stopping is not deleting. A removed project's store stays where it is, as <c>project
-    /// remove</c> has always said; <c>remove --destroy</c> is the command that deletes, and it
-    /// waits for this to have stopped the broker first. A running project whose store, endpoint
-    /// or catalogue changed is stopped and started on the new entry, because the manifest is
+    /// Stopping is not deleting. A removed project's store stays where it is; <c>remove --destroy</c>
+    /// is the command that deletes, and it waits for this to have stopped the broker first. A
+    /// running project whose store or endpoint changed is stopped and started on the new entry, because the manifest is
     /// what this serves and a changed entry is a different broker. And a project that would not
     /// start is tried once per change to its entry rather than once per tick, because a store
     /// that is a directory does not become a file by being asked again every two seconds, and
@@ -714,10 +631,9 @@ public static class ServeCommand
 
                 // Removed or changed first, so a project removed and re-added under the same
                 // name in one edit -- or given a new port or store with `project set` -- is
-                // stopped and started rather than left as it was. Found by probing: matched by
-                // name alone, a re-added "billing" was "already serving" and stayed on the old
-                // entry's port for ever. The description is not compared, because a broker does
-                // not run differently for having been described.
+                // stopped and started rather than left as it was: matched by name alone, a
+                // re-added "billing" would stay on the old entry's port for ever. The description
+                // is not compared, because a broker does not run differently for having been described.
                 var restarting = new HashSet<string>(StringComparer.Ordinal);
 
                 foreach (var hosted in serving)
@@ -776,67 +692,41 @@ public static class ServeCommand
         static bool SameName(ProjectSettings a, ProjectSettings b) =>
             string.Equals(a.Name.Value, b.Name.Value, StringComparison.Ordinal);
 
-        // The same name serving the same store on the same endpoint from the same catalogue:
-        // the parts a broker is made of. A description is not one of them.
+        // The same name serving the same store on the same endpoint: the parts a broker is
+        // made of. A description is not one of them.
         static bool SameDeployment(ProjectSettings a, ProjectSettings b) =>
             SameName(a, b)
             && string.Equals(a.Store, b.Store, StringComparison.Ordinal)
-            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal)
-            && string.Equals(a.NodeConfig, b.NodeConfig, StringComparison.Ordinal);
+            && string.Equals(a.Endpoint, b.Endpoint, StringComparison.Ordinal);
     }
 
-    /// <summary>Runs whatever wanted the port to be open, and survives it failing.</summary>
-    /// <param name="whenListening">What to run, or null to run nothing.</param>
-    /// <param name="alongside">What to run that is not bound to one broker, or null.</param>
-    /// <param name="addresses">Where the broker is listening.</param>
-    /// <param name="output">Where to report a failure worth seeing.</param>
-    /// <param name="cancellationToken">Stops it.</param>
-    /// <returns>Its exit code, or zero when there was nothing to run.</returns>
+    /// <summary>Whether a project's endpoint keeps its broker on the machine it runs on.</summary>
+    /// <param name="endpoint">The endpoint the project records.</param>
+    /// <returns><see langword="true"/> when nothing off this machine can reach it.</returns>
     /// <remarks>
-    /// <b>Contained, for the same reason §4.1 contains a failing project.</b> Hosting this
-    /// machine's node in the broker's process is a deployment convenience, and it must not become
-    /// a way for a node to take the broker down: a node fault would otherwise propagate out of
-    /// the sweep's <c>WhenAll</c> and end a process that every agent in the deployment is
-    /// connected to, converting one machine's supervision problem into everybody's outage.
     /// <para>
-    /// The exit code still carries it. A run that hosted nothing must not report success — that
-    /// is the same lie as a run that started two of three brokers and exited zero.
+    /// <b>No command writes a non-loopback endpoint, which is exactly why this is checked.</b> A
+    /// project is handed a loopback port when it is named and nothing offers to change it, so the
+    /// only way to arrive here is somebody editing <c>project.json</c> by hand. That is permitted —
+    /// SPEC.md §16 allows a private network the operator controls — and it is also the single most
+    /// consequential edit anybody can make to this deployment, because all three services share the
+    /// one port: reaching it grants the operator operations, which export conversations, purge
+    /// agents and start others.
+    /// </para>
+    /// <para>
+    /// <b>Said on every start rather than once at the edit.</b> Whoever made the change is not
+    /// necessarily whoever reads the log six months later, and a broker started by a logon entry
+    /// has no console at all — the log is the only place the fact exists. Warning rather than
+    /// refusing, because refusing would break a deployment on a controlled network that the
+    /// protocol explicitly permits.
     /// </para>
     /// </remarks>
-    private static async Task<int> HostAsync(
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? whenListening,
-        Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside,
-        IReadOnlyList<string> addresses,
-        TextWriter output,
-        CancellationToken cancellationToken)
-    {
-        if (alongside is not null)
-        {
-            // Both, running together rather than one waiting out the other: each is meant to last
-            // as long as the broker does. Recursed with a null `alongside` so the containment
-            // below applies to the node exactly as it did before this parameter existed.
-            var beside = alongside(addresses, output, cancellationToken);
-
-            var codes = await Task.WhenAll(
-                beside,
-                HostAsync(whenListening, null, addresses, output, cancellationToken))
-                .ConfigureAwait(false);
-
-            return Array.Find(codes, code => code != 0);
-        }
-
-        if (whenListening is null)
-        {
-            return 0;
-        }
-
-        return await ContainAsync(
-            () => whenListening(addresses, output, cancellationToken),
-            "This machine's node",
-            output,
-            cancellationToken)
-            .ConfigureAwait(false);
-    }
+    /// <remarks>
+    /// The rule is <see cref="BrokerEndpoint.OnlyThisMachine"/>, shared with `project list`:
+    /// a listing and a start-up warning must not disagree about whether an endpoint is exposed.
+    /// </remarks>
+    internal static bool OnlyThisMachine(string endpoint) =>
+        BrokerEndpoint.OnlyThisMachine(endpoint);
 
     /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
     /// <param name="sweep">The sweep.</param>
@@ -875,9 +765,7 @@ public static class ServeCommand
         {
             // Also how it is meant to end. A node cancelled mid-call sees its gRPC call
             // cancelled, and that arrives as an RpcException rather than the cancellation it
-            // is -- so a project stopped on purpose was reported as its node having failed,
-            // "nothing will be started until `parley up` runs again", and the process exited
-            // non-zero for a stop it had been asked for. Found by probing the watcher.
+            // is; a project stopped on purpose is not a node failure.
             return 0;
         }
         catch (Exception failure)
@@ -898,15 +786,13 @@ public static class ServeCommand
     /// <returns>A task that completes when it stops.</returns>
     /// <remarks>
     /// <para>
-    /// One sweep for the deployment, which is the arrangement that first becomes possible here.
-    /// It used to run inside every adapter, so twenty repositories ran twenty sweeps over one
-    /// file — each taking the write lock for the same work, and none of them wrong in a way anybody
-    /// could see.
+    /// One sweep for the deployment: running it in every adapter would have twenty repositories
+    /// taking the write lock for the same work.
     /// </para>
     /// <para>
     /// A failing pass is reported and the loop continues. The pass concludes polls whose last
-    /// decline lapsed, settles instructions nothing will report on and applies retention, so
-    /// stopping on the first failure would leave all three undone for as long as the broker ran —
+    /// decline lapsed, and applies retention, so
+    /// stopping on the first failure would leave both undone for as long as the broker ran —
     /// and the failures worth surviving are the transient ones a busy file produces.
     /// </para>
     /// </remarks>
@@ -937,6 +823,213 @@ public static class ServeCommand
         {
             // Ctrl+C, which is how this command is meant to end.
         }
+    }
+
+    /// <summary>
+    /// Parley's own loop for one project (SPEC.md principle 2.11): asks every attached agent that is due what it owns,
+    /// decides what becomes of each answer, and refreshes an agent whose first line was accepted automatically.
+    /// </summary>
+    /// <param name="runtime">The project's broker.</param>
+    /// <param name="project">The project's name, which is the launch configuration's key.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Stops the loop.</param>
+    /// <returns>A task that completes when it stops.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Here because this is the one host that can do both halves</b>: drive the broker, and write
+    /// a repository's launch configuration through <see cref="OwnershipLine"/>. <c>Parley.Server</c> may not reach
+    /// <c>Parley.Setup</c>, and <c>Parley.Setup</c> may not reach a store.
+    /// </para>
+    /// <para>
+    /// On the sweep's interval and contained like it: a failing pass is reported and the next one runs, because the
+    /// failures worth surviving are the transient ones a busy file produces, and a facilitator that stopped on the first
+    /// would leave every later agent unasked for as long as the broker ran.
+    /// </para>
+    /// </remarks>
+    private static async Task FacilitateAsync(
+        BrokerRuntime runtime,
+        string project,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(Interval());
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    await FacilitateOnceAsync(runtime, project, output, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    await output.WriteLineAsync($"{project}: Parley could not finish a pass: {exception.Message}")
+                        .ConfigureAwait(false);
+                }
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException)
+        {
+            // The project is being stopped, which is how this loop is meant to end.
+        }
+    }
+
+    /// <summary>One facilitation pass. See <see cref="FacilitateAsync"/>.</summary>
+    /// <param name="runtime">The project's broker.</param>
+    /// <param name="project">The project's name.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>A task that completes when the pass is done.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The switch is read as each answer arrives, not when the question was asked</b>: turning Auto Accept
+    /// off stops answers still to come from becoming lines, and turning it on leaves waiting answers waiting.
+    /// </para>
+    /// <para>
+    /// <b>The file first, then the record.</b> A file with no record is repaired by the next
+    /// acceptance; a record with no file would claim a line the agent will never carry. A write that fails is not an
+    /// error: the answer waits, with the write's own sentence as the reason, which is what the review shows.
+    /// </para>
+    /// </remarks>
+    internal static async Task FacilitateOnceAsync(
+        BrokerRuntime runtime,
+        string project,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(output);
+
+        var answers = await runtime.FacilitateAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var answer in answers)
+        {
+            var autoAccept = await runtime.AutoAcceptAsync(cancellationToken).ConfigureAwait(false);
+            string? because;
+            bool accepted;
+
+            // **Each answer is settled whatever happened to another.** FacilitateAsync has already marked every one
+            // answered, so an answer this pass neither accepts nor holds is never visited again; one
+            // repository's unreadable launch configuration must not strand every answer after it.
+#pragma warning disable CA1031 // Whatever went wrong deciding one answer, it is held for a person rather than lost.
+            try
+            {
+                because = await WhyNotAutomaticallyAsync(runtime, project, answer, autoAccept, cancellationToken)
+                    .ConfigureAwait(false);
+
+                accepted = because is null
+                    && await runtime.AcceptAutomaticallyAsync(answer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception failed) when (failed is not OperationCanceledException)
+            {
+                because = $"deciding it failed: {failed.Message}";
+                accepted = false;
+            }
+#pragma warning restore CA1031
+
+            if (accepted)
+            {
+                await output.WriteLineAsync(
+                    $"{project}: {answer.Agent.Value} answered Parley, and its answer is now its ownership line.")
+                    .ConfigureAwait(false);
+
+                continue;
+            }
+
+            if (because is null)
+            {
+                // **The file was written and the record refused it**, which means a person
+                // decided this question while the pass was deciding it. Their line goes back into the file, so what the
+                // agent carries at its next start is the person's and not the answer they had already overruled.
+                await RestoreAcceptedLineAsync(runtime, project, answer.Agent, cancellationToken).ConfigureAwait(false);
+            }
+
+            because ??= "the line could not be recorded, so it waits for a person.";
+
+            _ = await runtime.HoldAsync(answer, because, cancellationToken).ConfigureAwait(false);
+
+            await output.WriteLineAsync(
+                $"{project}: {answer.Agent.Value} answered Parley; its answer waits for a person: {because}")
+                .ConfigureAwait(false);
+        }
+
+        foreach (var refreshed in await runtime.RefreshAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await output.WriteLineAsync(
+                $"{project}: asked {refreshed.Machine}'s node to restart {refreshed.Value} once it is idle, so its peers " +
+                "read its new ownership line.").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Writes the agent's recorded line back into its launch configuration, or takes the line out if none is.</summary>
+    /// <param name="runtime">The broker.</param>
+    /// <param name="project">The project whose launch entry it is.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>When the file agrees with the record again, as far as it can be made to.</returns>
+    /// <remarks>
+    /// Best effort and said nothing about: the same refusals as any write apply (another machine, a moved repository), and
+    /// a file left disagreeing shows as pending on every surface, which is the truth.
+    /// </remarks>
+    private static async Task RestoreAcceptedLineAsync(
+        BrokerRuntime runtime, string project, AgentName agent, CancellationToken cancellationToken)
+    {
+        var record = (await runtime.UseConnectionAsync(
+                (connection, _, ct) => new AgentRepository(connection).GetAllAsync(ct),
+                cancellationToken).ConfigureAwait(false))
+            .FirstOrDefault(row => row.Name == agent);
+
+        if (record is null)
+        {
+            return;
+        }
+
+        _ = await OwnershipLine.WriteAsync(record.Workspace, project, agent, record.OwnsAccepted, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Why an answer cannot become the agent's line with no person involved, writing it to the launch configuration
+    /// when it can.
+    /// </summary>
+    /// <returns>Null when the file was written and the line should be recorded; otherwise the reason it waits.</returns>
+    private static async Task<string?> WhyNotAutomaticallyAsync(
+        BrokerRuntime runtime,
+        string project,
+        Parley.Broker.FacilitatorAnswer answer,
+        bool autoAccept,
+        CancellationToken cancellationToken)
+    {
+        if (!autoAccept)
+        {
+            return "Auto Accept is off for this project.";
+        }
+
+        if (answer.Blocked)
+        {
+            return "the agent said it was blocked rather than answering.";
+        }
+
+        if (answer.Line.Length == 0)
+        {
+            return "the agent's answer was empty.";
+        }
+
+        if (!OwnershipStatement.IsValid(answer.Line, out var wrong))
+        {
+            return $"it cannot be a line as written: {wrong}";
+        }
+
+        var workspace = await runtime.UseConnectionAsync(
+            (connection, _, ct) => new AgentRepository(connection).WorkspaceOfAsync(answer.Agent, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        // OwnershipLine applies the machine rule itself — no surface writes for an agent whose machine is not this one —
+        // and names the machine in its refusal, so an agent elsewhere waits with the sentence that says where to go.
+        return await OwnershipLine.WriteAsync(workspace, project, answer.Agent, answer.Line, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>How often to sweep.</summary>

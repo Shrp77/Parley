@@ -67,7 +67,13 @@ public sealed class FlagRepository(SqliteConnection connection)
                          ORDER BY m.id DESC LIMIT 1) AS OwedMessageDelivered,
                        (SELECT max(m.created_utc) FROM messages m
                          WHERE m.conversation_id = e.conversation_id
-                           AND m.from_agent = e.owed_by) AS LastFromOwed
+                           AND m.from_agent = e.owed_by) AS LastFromOwed,
+                       (SELECT i.started_utc FROM invocations i
+                         WHERE i.agent = e.owed_by ORDER BY i.id DESC LIMIT 1) AS LastTurnStarted,
+                       coalesce((SELECT i.elapsed_ms FROM invocations i
+                         WHERE i.agent = e.owed_by ORDER BY i.id DESC LIMIT 1), 0) AS LastTurnElapsedMs,
+                       coalesce((SELECT i.permission_denials FROM invocations i
+                         WHERE i.agent = e.owed_by ORDER BY i.id DESC LIMIT 1), 0) AS LastTurnDenials
                   FROM exchanges e
                   JOIN agents a ON a.name = e.owed_by
                  WHERE e.state = 'OPEN'
@@ -109,6 +115,20 @@ public sealed class FlagRepository(SqliteConnection connection)
             if (row.LastFromOwed is { } last && ExchangeRow.ParseTimestamp(last) is var said && said > progress)
             {
                 progress = said;
+            }
+
+            // **Stopped on a refused permission: at once, not after the threshold** (SPEC.md §6). The owing
+            // agent's most recent turn ended after it took this work and after it last said anything here, and refused
+            // at least one tool call for want of permission. A resident agent runs with nobody at the keyboard, so such a
+            // call is refused rather than paused, and nothing the agent can do gets it further — there is nothing to be
+            // patient with. Read off the most recent turn, so a later clean turn clears it.
+            if (row.LastTurnDenials > 0
+                && row.LastTurnStarted is { } began
+                && InvocationRepository.EndOf(ExchangeRow.ParseTimestamp(began), row.LastTurnElapsedMs) is var ended
+                && ended > progress)
+            {
+                flags.Add(new Flag(FlagKind.PermissionRefused, row.Id, row.ConversationId, owedBy, waiting, ended));
+                continue;
             }
 
             if (nowUtc - progress >= TimeSpan.FromMilliseconds(row.StalledMs))
@@ -191,6 +211,12 @@ public sealed class FlagRepository(SqliteConnection connection)
         public string? OwedMessageDelivered { get; init; }
 
         public string? LastFromOwed { get; init; }
+
+        public string? LastTurnStarted { get; init; }
+
+        public long LastTurnElapsedMs { get; init; }
+
+        public long LastTurnDenials { get; init; }
     }
 
     private sealed class SilentRow

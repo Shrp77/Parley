@@ -9,9 +9,9 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 of the review gate, run 2.1. <c>start</c> is the first operation this protocol has that
-/// causes a process to run on somebody's machine, so the question is not whether it works — T039
-/// settled that — but what it can be pointed at.
+/// <c>start</c> is the first operation this protocol has that
+/// causes a process to run on somebody's machine, so the question is not whether it works
+/// but what it can be pointed at.
 /// </para>
 /// <para>
 /// The guard it rests on is one line: a node starts what its own catalogue names and nothing else.

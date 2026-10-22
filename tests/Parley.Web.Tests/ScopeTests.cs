@@ -26,7 +26,6 @@ public sealed class ScopeTests
     [InlineData("/Projects/Agents")]
     [InlineData("/Projects/Register")]
     [InlineData("/Projects/Health")]
-    [InlineData("/Conversations")]
     public async Task Every_page_below_the_list_refuses_to_render_without_a_project(string page)
     {
         // Not "defaults to the first project", and not "shows everything". Either would be a page

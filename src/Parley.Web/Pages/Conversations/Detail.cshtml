@@ -4,33 +4,47 @@
 @{
     ViewData["Title"] = $"Conversation {Model.Id}";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
+    ViewData["Project"] = Model.Project;
 }
 
-<h1>@Model.Id</h1>
+@* The header is one frame. Its title takes the room the two controls leave, and opening it shows what the conversation
+   is. Ordering is said once, plainly: it is the broker's record and not a wall clock, because the agents run on different
+   machines and a timeline sorted on their clocks would misorder itself. *@
+<div class="convo-head">
+    <details class="convo-frame">
+        <summary>
+            <h1>@Model.Id</h1>
+        </summary>
+        @if (Model.ItemTitle is { Length: > 0 } itemTitle)
+        {
+            @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on. *@
+            <p class="item-title">@itemTitle</p>
+        }
+        <p class="as-of">
+            In the order the broker recorded them. Times come from the agents' machines.
+            @Parley.Client.Rendering.LocalTime.Note()
+        </p>
+    </details>
 
-<p>
-    In @Model.Project, between <span id="between">@string.Join(", ", Model.Participants.Select(p => p.Value))</span>.
-</p>
-
-@* Said once, plainly. Ordering is the broker's record and not a wall clock: the agents run on
-   different machines, and a timeline sorted on their clocks would misorder itself. *@
-<p class="as-of">
-    In the order the broker recorded them. Times are shown for information; they come from the
-    machines the agents run on and are not what the order follows.
-    @Parley.Client.Rendering.LocalTime.Note()
-</p>
-
-<p>
-    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript">
-        Take this away as text
-    </a>
-    <span> · </span>
-    <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw">
-        or as the messages the broker returned
-    </a>
-    <span> · </span>
-    <a href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Id">Files in this conversation</a>
-</p>
+    <div class="convo-actions">
+        @* The project's Files page, already narrowed to this conversation. *@
+        <a class="file-button" href="/Projects/Files?project=@Model.Project&amp;conversation=@Model.Id" title="Files placed in this conversation" aria-label="Files placed in this conversation">
+            <span class="icon" aria-hidden="true">description</span>
+        </a>
+        @* Two ways to keep the conversation outside the console: the readable one carries the annotations of who saw what,
+           and the other is the broker's own records, for another program to read. *@
+        <details class="export-menu">
+            <summary class="file-button" title="Export this conversation">
+                <span class="icon" aria-hidden="true">download</span>
+                Export
+            </summary>
+            <div class="export-list">
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Transcript" download title="The conversation as a text file, with who saw what noted on it">Export TXT</a>
+                <a href="/Conversations/Detail?project=@Model.Project&amp;id=@Model.Id&amp;handler=Raw" download title="The messages and exchanges as the broker holds them, as JSON for another program">Export JSON</a>
+            </div>
+        </details>
+    </div>
+</div>
 
 @* The transcript follows the conversation, and this is what it says when it cannot. Kept on screen
    rather than replacing the transcript: a moment's trouble reaching the broker must not take the
@@ -38,8 +52,7 @@
    is current, which is the failure following exists to remove. Hidden again once a read succeeds.
    The terminal says the same sentence for the same reason. *@
 <p id="uncertain" role="alert" hidden>
-    This conversation could not be read again, so what is on screen may be out of date. It is
-    tried again every few seconds.
+    This conversation could not be read again, so what is on screen may be out of date.
 </p>
 
 @if (Model.Problem is { Length: > 0 } problem)
@@ -60,6 +73,21 @@ else
                    placeholder="a word, an agent, a phrase" />
             <p id="found" class="found" role="status"></p>
         </div>
+
+        @* Narrows the transcript to the messages that involve somebody. Client-side for the reason find is: the
+           whole conversation is on the page. Hidden until the script has built it, so with no script the page is
+           the whole transcript and no control that does nothing. *@
+        <div class="filter" id="filter" role="group" aria-label="Show only some of the conversation" hidden
+             data-human="@(Model.Participants.Where(p => p.Role == "human-user").Select(p => p.Value).FirstOrDefault() ?? Model.Seat?.Name.Value)">
+            <span class="filter-title">Show</span>
+            <label class="only-me"><input type="checkbox" id="only-me" /> Only between me and an agent</label>
+            <details class="pick" id="pick">
+                <summary id="pick-summary">Any agent</summary>
+                <div class="menu" id="pick-menu"></div>
+            </details>
+            <button type="button" id="filter-clear" hidden>Show everything</button>
+            <p id="filtered" class="found" role="status"></p>
+        </div>
     }
 
     <partial name="_Followed" model="Model" />
@@ -67,36 +95,12 @@ else
 
 @* Pinned to the bottom, so it is reachable from anywhere in a long transcript.
 
-   It has two voices and says which one it is using, because the difference is the whole of what
-   the panel means. Joined, you are an agent: what you send is a message in this conversation,
-   under your own name, subject to every rule 7 refusal any other participant faces. Not joined,
-   there is no name to send as -- SPEC.md 5.0 derives participants from being party to an
-   exchange -- so what leaves here is an instruction marked as the operator's (11.5), and it
-   never appears above.
-
-   A box at the bottom of a chat that quietly is not a chat box would be the most misleading
-   thing on the page, so which one it is is the first sentence in it. *@
-<form method="post" class="composer@(Model.Seat is null ? " as-operator" : " as-agent")"
+   What you send is a message in this conversation, under your own seat's name, subject to every
+   rule 7 refusal any other participant faces. When the broker cannot be reached as you, the first
+   sentence in the panel says so. *@
+<form method="post" id="composer" class="composer"
       aria-label="Send to agents in this conversation">
-    @if (Model.Seat is { } seat)
-    {
-        <p class="composer-note">
-            You are in this conversation as <strong>@seat.Name.Value</strong>. What you send is a
-            message like any other: it appears in the transcript above, it is attributed to
-            <code>@seat.Seat.Responder</code>, and the peer answers you rather than being told
-            something by an operator.
-        </p>
-    }
-    else
-    {
-        <p class="composer-note">
-            This reaches each agent as an instruction from you and is recorded as yours. It does
-            <strong>not</strong> appear in the transcript above — if an agent then says something
-            to a peer, that message is theirs and shows up here as theirs.
-            <a href="/Join?Then=@Uri.EscapeDataString($"/Conversations/Detail?project={Model.Project}&id={Model.Id}")">Join
-            as yourself</a> to take part instead of instructing.
-        </p>
-    }
+    @* No note about the seat: sending takes it, and says why if it cannot. *@
 
     @if (Model.SendProblem is { Length: > 0 } trouble)
     {
@@ -113,49 +117,166 @@ else
         </ul>
     }
 
-    <fieldset class="targets">
-        <legend>To</legend>
-        @foreach (var who in Model.Participants)
-        {
-            <label class="target slot-@Palette.SlotFor(who)">
-                <input type="checkbox" name="Targets" value="@who.Value" />
-                <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
-                <span>@who.Value</span>
-            </label>
-        }
+    @* Who it goes to is chosen in the tree beside the transcript, whose boxes belong to this form. Said here as
+       well, because the boxes can be a long way from the button. *@
+    <p class="composer-to" id="to-summary" aria-live="polite"></p>
 
-        @if (Model.Participants.Count > 1)
-        {
-            <label class="target everyone">
-                <input type="checkbox" name="Everyone" value="true" />
-                <span>Everyone in this conversation (@Model.Participants.Count)</span>
-            </label>
-        }
-    </fieldset>
+    @* Set by "Reply to this" on an agent's question, and cleared by Cancel or a send. *@
+    <input type="hidden" name="ReplyTo" id="reply-to" value="" />
+    <p class="composer-replying" id="replying" role="status" hidden>
+        <span id="replying-text"></span>
+        <button type="button" id="reply-cancel" class="quiet">Cancel</button>
+    </p>
 
     <textarea name="Says" rows="3" required
-              placeholder="@(Model.Seat is null
-                  ? "What do you want them to do, or to know?"
-                  : Framing.AskExample)">@Model.Says</textarea>
-
-    @if (Model.Seat is not null)
-    {
-        @* One field since 0.7. The composer asked for an intent, a kind and a done_when beside the ask,
-           and §5.1 removed all three: the reason for an ask is the ask, and a receiver that cannot scope
-           one sends a Clarify rather than being handed a form to fill in on the requester's behalf. What
-           is left is a note saying what this costs, which is the thing a person cannot see. *@
-        <div class="framing">
-            <p class="composer-note">A request — @Owing.Requesting.</p>
-            <p class="composer-note">@Framing.AskWhy.</p>
-        </div>
-    }
+              placeholder="@(Model.Hint is { Length: > 0 } hint
+                  ? hint
+                  : Model.Seat is null
+                      ? "What do you want them to do, or to know?"
+                      : Framing.AskExample)">@Model.Says</textarea>
 
     <div class="composer-send">
+        <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>
         <button type="submit">Send</button>
     </div>
 </form>
 
 @section Scripts {
+    <style>
+        form.composer { position: relative; }
+        .mention-list { position: absolute; left: 0; right: 0; bottom: 100%; margin: 0; padding: 0.25rem; list-style: none; max-height: 14rem; overflow: auto; background: var(--surface, Canvas); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); z-index: 20; }
+        .mention-list[hidden] { display: none; }
+        .mention-list li { padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
+        .mention-list li[aria-selected="true"], .mention-list li:hover { background: var(--quiet-wash); }
+    </style>
+    <script>
+        // The recipients tree. Its boxes belong to the composer's form, so this only keeps the
+        // page honest about them: a group's box shows all, some or none of its members, ticking it
+        // ticks them, and the composer says in a sentence who the message will go to.
+        //
+        // The tree is part of the followed region and is replaced every few seconds so its states stay
+        // current. A replaced box knows only what the server was told, so what the reader ticked and
+        // which groups they closed is taken before the swap and put back after it.
+        window.parleyTree = (function () {
+            var summary = document.getElementById("to-summary");
+            var params = new URLSearchParams(location.search);
+            var memory = "parley-to:" + params.get("project") + "/" + params.get("id");
+
+            function boxes() {
+                return [].slice.call(document.querySelectorAll(
+                    'input[name="Targets"], input[name="Everyone"]'));
+            }
+
+            function key(box) { return box.name + "=" + box.value; }
+
+            function refresh() {
+                document.querySelectorAll("details[data-group]").forEach(function (group) {
+                    var members = [].slice.call(group.querySelectorAll('input[name="Targets"]'));
+                    var box = group.querySelector(".group-box");
+                    var on = members.filter(function (m) { return m.checked; }).length;
+
+                    if (!box) { return; }
+
+                    box.checked = members.length > 0 && on === members.length;
+                    box.indeterminate = on > 0 && on < members.length;
+                });
+
+                if (!summary) { return; }
+
+                var all = document.querySelector('input[name="Everyone"]');
+                var named = boxes().filter(function (b) {
+                    return b.name === "Targets" && b.checked;
+                }).map(function (b) { return b.value; });
+
+                summary.textContent = all && all.checked
+                    ? "To: everyone in this conversation."
+                    : named.length
+                        ? "To: " + named.join(", ") + "."
+                        : "To: nobody chosen yet.";
+            }
+
+            function snapshot() {
+                var checked = {};
+                var open = {};
+
+                boxes().forEach(function (b) { checked[key(b)] = b.checked; });
+                document.querySelectorAll("details[data-group]").forEach(function (d) {
+                    open[d.getAttribute("data-group")] = d.open;
+                });
+
+                return { checked: checked, open: open };
+            }
+
+            // Kept with the conversation, in this browser, so who the reader was writing to is still ticked
+            // after a send, a reload or a return another day. Storage can be refused, and the page then
+            // simply starts as the server drew it.
+            function remember() {
+                try { window.localStorage.setItem(memory, JSON.stringify(snapshot())); } catch (e) { }
+            }
+
+            function restore(kept) {
+                boxes().forEach(function (b) {
+                    if (Object.prototype.hasOwnProperty.call(kept.checked, key(b))) {
+                        b.checked = kept.checked[key(b)];
+                    }
+                });
+                document.querySelectorAll("details[data-group]").forEach(function (d) {
+                    var was = kept.open[d.getAttribute("data-group")];
+
+                    if (was !== undefined) { d.open = was; }
+                });
+                refresh();
+                remember();
+            }
+
+            document.addEventListener("change", function (e) {
+                var t = e.target;
+
+                if (!(t instanceof HTMLInputElement)) { return; }
+
+                if (t.classList.contains("group-box")) {
+                    t.closest("details").querySelectorAll('input[name="Targets"]').forEach(function (m) {
+                        m.checked = t.checked;
+                    });
+                }
+
+                refresh();
+                remember();
+            });
+
+            try {
+                var saved = JSON.parse(window.localStorage.getItem(memory) || "null");
+
+                if (saved && saved.checked && saved.open) {
+                    restore(saved);
+                } else if (document.querySelector(".recipients[data-new]")
+                    && !boxes().some(function (b) { return b.checked; })) {
+                    // A conversation with no messages and nothing chosen yet: the project's default agent, from its
+                    // settings page, is ticked first. Only a start; the person can untick it before sending.
+                    var preferred = [];
+
+                    try {
+                        var list = JSON.parse(window.localStorage.getItem("parley-default-to:" + params.get("project")) || "[]");
+
+                        preferred = Array.isArray(list) ? list : [];
+                    } catch (e) { }
+
+                    var ticked = false;
+
+                    boxes().forEach(function (b) {
+                        if (b.name === "Targets" && preferred.indexOf(b.value) >= 0) { b.checked = true; ticked = true; }
+                    });
+
+                    if (ticked) { remember(); }
+                }
+            } catch (e) { }
+
+            refresh();
+
+            return { snapshot: snapshot, restore: restore };
+        })();
+    </script>
+
     <script>
         // Following the conversation, the way the terminal's open transcript does. Progressive
         // enhancement: with no script the page is the conversation as it was when it was read, and
@@ -180,13 +301,31 @@ else
             var url = region.getAttribute("data-follow");
             var every = 3000;
 
-            function scroller() { return document.scrollingElement || document.documentElement; }
+            // **Tailed**: the page opens on the newest message and stays
+            // there while the reader does, as the terminal's transcript does. At the end means the end of
+            // the newest message is on screen -- not the page's own bottom, because the composer sits below
+            // it, and not merely its first line, because a reader on the message before it can see that
+            // much and is still reading back. Anywhere else the reader is not moved at all.
+            function newest() {
+                var turns = region.querySelectorAll("li.turn");
+                return turns.length ? turns[turns.length - 1] : null;
+            }
 
-            // At the bottom only once the reader has moved at all. One who never scrolled is left at
-            // the top, as the terminal leaves a cursor nobody moved.
             function atBottom() {
-                var s = scroller();
-                return s.scrollTop > 0 && s.scrollTop + window.innerHeight >= s.scrollHeight - 8;
+                var last = newest();
+                return !last || last.getBoundingClientRect().bottom <= window.innerHeight + 8;
+            }
+
+            // **Instant, never animated.** The stylesheet smooths scrolling for the reader's own jumps, and a smoothed
+            // tail is a scroll that is still travelling when the next layout change (a message arriving, the page
+            // settling after a send) moves its target, so it stopped partway up a long message. Tailing is a position, not
+            // a journey.
+            function jump(top) { window.scrollTo({ top: top, left: 0, behavior: "instant" }); }
+
+            function tail() {
+                // All the way down, not to the end of the newest message: the composer is pinned over the bottom of the
+                // window, so stopping at the message leaves the entry box out of view.
+                jump(document.documentElement.scrollHeight);
             }
 
             function anchor() {
@@ -201,24 +340,58 @@ else
                 return null;
             }
 
+            // **Following has a limit.** A reader at the end of the page is always followed. A reader whose newest message
+            // merely ends on screen is followed only by a short arrival: following a long one would carry what they are
+            // reading out of sight, which is the page moving under somebody mid-sentence. They stay where they are and are
+            // told, with a button that takes them there when they choose. 30% of the window is the most such a follow may
+            // move the page.
+            var arrived = document.createElement("button");
+
+            arrived.type = "button";
+            arrived.className = "new-below";
+            arrived.hidden = true;
+            arrived.innerHTML = '<span class="icon" aria-hidden="true">expand_more</span> New message';
+            arrived.addEventListener("click", function () { arrived.hidden = true; tail(); });
+            document.body.appendChild(arrived);
+
+            window.addEventListener("scroll", function () {
+                if (!arrived.hidden && atBottom()) { arrived.hidden = true; }
+            }, { passive: true });
+
+            // A reader at the very end of the page has nothing left to read, so is always followed, however long the
+            // arrival. The limit is for a reader whose newest message merely ends on screen.
+            function pageEnd() {
+                return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 24;
+            }
+
+            function farther() {
+                return document.documentElement.scrollHeight - window.scrollY - window.innerHeight > window.innerHeight * 0.3;
+            }
+
             function apply(fresh) {
                 var bottom = atBottom();
-                var top = scroller().scrollTop === 0;
+                var end = pageEnd();
                 var held = anchor();
+                var kept = window.parleyTree ? window.parleyTree.snapshot() : null;
 
                 region.replaceChildren.apply(region, [].slice.call(fresh.childNodes).map(function (n) {
                     return document.adoptNode(n);
                 }));
                 region.setAttribute("data-seen", fresh.getAttribute("data-seen") || "");
 
+                if (kept) { window.parleyTree.restore(kept); }
+
                 if (between) { between.textContent = fresh.getAttribute("data-participants") || ""; }
 
-                if (bottom) {
-                    window.scrollTo(0, scroller().scrollHeight);
-                } else if (!top && held && held.id) {
+                if (bottom && (end || !farther())) {
+                    arrived.hidden = true;
+                    tail();
+                } else if (held && held.id) {
+                    if (bottom) { arrived.hidden = false; }
+
                     var again = document.getElementById(held.id);
 
-                    if (again) { window.scrollBy(0, again.getBoundingClientRect().top - held.top); }
+                    if (again) { jump(window.scrollY + again.getBoundingClientRect().top - held.top); }
                 }
 
                 document.dispatchEvent(new CustomEvent("parley:followed"));
@@ -253,6 +426,14 @@ else
                         if (uncertain) { uncertain.hidden = false; }
                     })
                     .then(next);
+            }
+
+            // Opened at the newest message, unless the address names one to go to. Again once everything has loaded,
+            // because fonts and the recipients tree change the height after the first look, and a message just sent
+            // (this page is the answer to that post) must be the one on screen.
+            if (!window.location.hash) {
+                tail();
+                window.addEventListener("load", tail);
             }
 
             next();
@@ -322,6 +503,176 @@ else
             mark();
         })();
 
+        // Showing only some of the conversation. A message is kept when it involves who was asked for:
+        // "only between me and an agent" keeps the messages the person sent or was sent, and the agents
+        // list keeps those sent by or to any agent ticked. Both together keep what satisfies both, which
+        // is the person's exchanges with those agents.
+        //
+        // Done by hiding, never by removing: following replaces the transcript every few seconds, so the
+        // choice is held here and put back on each replacement, and clearing it shows everything again with
+        // nothing to reload. The agent list is read from the messages themselves so it grows with the
+        // conversation. Nothing is built from message text; the names go in as text nodes.
+        (function () {
+            var bar = document.getElementById("filter");
+
+            if (!bar) { return; }
+
+            var human = bar.getAttribute("data-human") || "";
+            var only = document.getElementById("only-me");
+            var menu = document.getElementById("pick-menu");
+            var label = document.getElementById("pick-summary");
+            var clear = document.getElementById("filter-clear");
+            var note = document.getElementById("filtered");
+            var chosen = {};
+
+            // Sending is a full page load, which would otherwise throw the choice away at exactly the moment
+            // somebody is watching for the answer. Kept for this conversation and this tab only; where storage
+            // is refused the filter simply starts clear, as it did.
+            var params = new URLSearchParams(window.location.search);
+            var memory = "parley-filter:" + params.get("project") + "/" + params.get("id");
+
+            function remember() {
+                try {
+                    window.localStorage.setItem(memory, JSON.stringify({ only: only.checked, chosen: chosen }));
+                } catch (e) { }
+            }
+
+            try {
+                var saved = JSON.parse(window.localStorage.getItem(memory) || "null");
+
+                if (saved && typeof saved === "object") {
+                    only.checked = saved.only === true;
+                    chosen = saved.chosen && typeof saved.chosen === "object" ? saved.chosen : {};
+                }
+            } catch (e) { }
+
+            bar.hidden = false;
+
+            function agents() {
+                var seen = {};
+
+                document.querySelectorAll("li.turn").forEach(function (t) {
+                    // data-to lists every recipient of a send to several agents, separated by spaces.
+                    [t.getAttribute("data-agent")].concat((t.getAttribute("data-to") || "").split(" ")).forEach(function (n) {
+                        if (n && n !== human) { seen[n] = true; }
+                    });
+                });
+
+                return Object.keys(seen).sort();
+            }
+
+            function build() {
+                var names = agents();
+                var have = [].slice.call(menu.querySelectorAll("input")).map(function (i) { return i.value; });
+
+                if (names.join("|") === have.join("|")) { return; }
+
+                menu.replaceChildren();
+
+                names.forEach(function (n) {
+                    var row = document.createElement("label");
+                    var box = document.createElement("input");
+
+                    box.type = "checkbox";
+                    box.value = n;
+                    box.checked = !!chosen[n];
+                    row.appendChild(box);
+                    row.appendChild(document.createTextNode(" " + n));
+                    menu.appendChild(row);
+                });
+            }
+
+            function wanted() { return Object.keys(chosen).filter(function (n) { return chosen[n]; }); }
+
+            function keeps(turn, picked) {
+                var from = turn.getAttribute("data-agent");
+                var to = (turn.getAttribute("data-to") || "").split(" ");
+
+                if (only.checked && from !== human && to.indexOf(human) < 0) { return false; }
+
+                return picked.length === 0 || picked.indexOf(from) >= 0
+                    || to.some(function (n) { return picked.indexOf(n) >= 0; });
+            }
+
+            function run() {
+                build();
+
+                var picked = wanted();
+                var items = [].slice.call(document.querySelectorAll("#followed ol.transcript > li"));
+                var rail = document.querySelector(".timeline");
+                var shown = 0;
+                var total = 0;
+                var lastTurn = true;
+                var day = null;
+                var dayHasOne = false;
+
+                function closeDay() { if (day) { day.classList.toggle("filtered-out", !dayHasOne); } }
+
+                items.forEach(function (li) {
+                    if (li.classList.contains("day")) {
+                        closeDay();
+                        day = li;
+                        dayHasOne = false;
+                        return;
+                    }
+
+                    if (li.classList.contains("turn")) {
+                        total++;
+                        lastTurn = keeps(li, picked);
+                        li.classList.toggle("filtered-out", !lastTurn);
+
+                        if (lastTurn) { shown++; dayHasOne = true; }
+
+                        var tick = rail && rail.querySelector('a[href="#' + li.id + '"]');
+
+                        if (tick) { tick.classList.toggle("filtered-out", !lastTurn); }
+
+                        return;
+                    }
+
+                    // A note between messages belongs to the one before it.
+                    li.classList.toggle("filtered-out", !lastTurn);
+                });
+
+                closeDay();
+
+                var active = only.checked || picked.length > 0;
+
+                label.textContent = picked.length === 0
+                    ? "Any agent"
+                    : picked.length === 1 ? picked[0] : picked.length + " agents";
+                clear.hidden = !active;
+                note.textContent = active ? "Showing " + shown + " of " + total + " messages." : "";
+                remember();
+
+                document.dispatchEvent(new CustomEvent("parley:filtered"));
+            }
+
+            only.addEventListener("change", run);
+
+            menu.addEventListener("change", function (e) {
+                chosen[e.target.value] = e.target.checked;
+                run();
+            });
+
+            clear.addEventListener("click", function () {
+                only.checked = false;
+                chosen = {};
+                menu.querySelectorAll("input").forEach(function (i) { i.checked = false; });
+                run();
+            });
+
+            // A dropdown that stays open over the transcript is in the way.
+            document.addEventListener("click", function (e) {
+                var pick = document.getElementById("pick");
+
+                if (pick && pick.open && !pick.contains(e.target)) { pick.open = false; }
+            });
+
+            document.addEventListener("parley:followed", run);
+            run();
+        })();
+
         // Find within the conversation. It marks whole messages and their ticks, and marks the
         // words themselves inside the bubbles, and marks again when following brings new ones.
         //
@@ -371,7 +722,7 @@ else
 
             function run() {
                 var rail = document.querySelector(".timeline");
-                var turns = [].slice.call(document.querySelectorAll("li.turn"));
+                var turns = [].slice.call(document.querySelectorAll("li.turn:not(.filtered-out)"));
                 var needle = box.value.trim().toLowerCase();
 
                 if (!rail) { return; }
@@ -425,6 +776,166 @@ else
             });
 
             document.addEventListener("parley:followed", run);
+            document.addEventListener("parley:filtered", run);
+        })();
+
+        // Enter sends and Shift+Enter makes a line break, as the terminal does. Ctrl+Enter sends too, for anyone used to it.
+        // Left alone while an input method is composing, where Enter confirms the text and is not the person's send.
+        (function () {
+            var form = document.getElementById("composer");
+            var box = form ? form.querySelector("textarea[name=Says]") : null;
+
+            if (!box) { return; }
+
+            box.addEventListener("keydown", function (e) {
+                if (e.key !== "Enter" || e.isComposing || e.shiftKey || e.altKey) { return; }
+
+                e.preventDefault();
+
+                if (box.value.trim() !== "" && form.requestSubmit) { form.requestSubmit(); }
+            });
+        })();
+
+        // Typing @@ in the box offers the project's agents, narrowing as the person types. Choosing one ticks it in the
+        // recipients tree and completes the @@name in the text, which stays: it is part of what the person said. The
+        // addressing is the "To" list, never the text (a payload is never parsed for addressing). Arrow keys and Enter or Tab choose, Escape closes.
+        (function () {
+            var form = document.getElementById("composer");
+            var box = form ? form.querySelector("textarea[name=Says]") : null;
+
+            if (!box) { return; }
+
+            var list = document.createElement("ul");
+            var shown = [];
+            var at = 0;
+            var start = -1;
+
+            list.id = "mention-list";
+            list.className = "mention-list";
+            list.setAttribute("role", "listbox");
+            list.hidden = true;
+            form.appendChild(list);
+
+            function close() { list.hidden = true; shown = []; start = -1; }
+
+            function agents() {
+                return [].slice.call(document.querySelectorAll('input[name="Targets"]')).filter(function (b) {
+                    return b.value.indexOf("human-user@@") !== 0;
+                });
+            }
+
+            // The @@word being typed, if the caret is at the end of one that begins at a word boundary.
+            function word() {
+                var upto = box.value.slice(0, box.selectionStart);
+                var m = /(^|\s)@@([A-Za-z0-9@@._\-]*)$/.exec(upto);
+
+                return m ? { from: upto.length - m[2].length - 1, query: m[2].toLowerCase() } : null;
+            }
+
+            function draw() {
+                list.replaceChildren();
+
+                shown.forEach(function (b, i) {
+                    var li = document.createElement("li");
+
+                    li.setAttribute("role", "option");
+                    li.setAttribute("aria-selected", i === at ? "true" : "false");
+                    li.textContent = b.value + (b.checked ? " (chosen)" : "");
+                    li.addEventListener("mousedown", function (e) { e.preventDefault(); choose(b); });
+                    list.appendChild(li);
+                });
+
+                list.hidden = shown.length === 0;
+            }
+
+            function update() {
+                var w = word();
+
+                if (!w) { close(); return; }
+
+                start = w.from;
+                shown = agents().filter(function (b) { return b.value.toLowerCase().indexOf(w.query) >= 0; })
+                    .sort(function (a, b) {
+                        var x = a.value.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+                        var y = b.value.toLowerCase().indexOf(w.query) === 0 ? 0 : 1;
+
+                        return x - y || a.value.localeCompare(b.value);
+                    }).slice(0, 8);
+                at = 0;
+                draw();
+            }
+
+            function choose(b) {
+                var end = box.selectionStart;
+                var before = box.value.slice(0, start);
+                var after = box.value.slice(end);
+
+                // The mention stays in the words: it may be an instruction to that agent the others should see.
+                var mention = "@@" + b.value + (/^\s/.test(after) ? "" : " ");
+
+                box.value = before + mention + after;
+                box.selectionStart = box.selectionEnd = before.length + mention.length;
+
+                if (!b.checked) {
+                    b.checked = true;
+                    b.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+
+                close();
+                box.focus();
+            }
+
+            box.addEventListener("input", update);
+            box.addEventListener("click", update);
+            box.addEventListener("blur", close);
+
+            // Captured on the form so it runs before the box's own Enter-sends handler.
+            form.addEventListener("keydown", function (e) {
+                if (list.hidden || e.target !== box) { return; }
+
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
+                    draw();
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    choose(shown[at]);
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    close();
+                }
+            }, true);
+        })();
+
+        // "Reply to this" on an agent's question points the composer at that exchange, so the words answer it. Delegated,
+        // because the transcript is replaced as it is followed.
+        (function () {
+            var field = document.getElementById("reply-to");
+            var bar = document.getElementById("replying");
+            var said = document.getElementById("replying-text");
+            var cancel = document.getElementById("reply-cancel");
+            var form = document.getElementById("composer");
+
+            if (!field || !bar || !form) { return; }
+
+            function clear() { field.value = ""; bar.hidden = true; }
+
+            document.addEventListener("click", function (e) {
+                var button = e.target.closest ? e.target.closest("button.reply-to") : null;
+
+                if (!button) { return; }
+
+                field.value = button.getAttribute("data-exchange");
+                said.textContent = "Replying to " + button.getAttribute("data-agent") + "'s question (exchange " + field.value + "). Your words answer it.";
+                bar.hidden = false;
+
+                var box = form.querySelector("textarea[name=Says]");
+                form.scrollIntoView({ block: "end" });
+                if (box) { box.focus(); }
+            });
+
+            cancel.addEventListener("click", clear);
         })();
     </script>
 }

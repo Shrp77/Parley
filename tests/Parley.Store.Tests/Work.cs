@@ -11,8 +11,7 @@ namespace Parley.Store.Tests;
 /// <para>
 /// One place rather than a copy per file, because storage refuses a malformed payload (§9.3): a Request
 /// with no ask, a Result naming no item. A test that wrote its own would be testing whether its author
-/// remembered the shape — and the day the shape moved, which is what 0.7 did to it, every copy would have
-/// had to find out separately. This one changed, and the suites did not.
+/// remembered the shape — and the day the shape moves, every copy would have to find out separately.
 /// </para>
 /// <para>
 /// The steps are the ones the broker takes, in its order: admit the exchange, then write the Request on it.
@@ -25,13 +24,6 @@ internal static class Work
     /// <summary>The responder every test message claims.</summary>
     public const string Model = "claude-opus-5";
 
-    /// <summary>The shape a Request had before 0.7, for the tests that prove a stored one still reads.</summary>
-    /// <remarks>
-    /// Written only into a store at schema 10 and then migrated: storage refuses it from 11 on, which is the
-    /// point. <see cref="OldRequest"/> builds it.
-    /// </remarks>
-    public const string DoneWhen = "the invoice total is stated as gross or net of tax";
-
     /// <summary>The conversation tests use when they have no reason to name one.</summary>
     public const string Conversation = "invoice-rounding";
 
@@ -41,27 +33,12 @@ internal static class Work
     public static string Request(string text = "is the invoice total gross or net?") =>
         new JsonObject { ["ask"] = text }.ToJsonString();
 
-    /// <summary>A Request payload in the shape 0.5 and 0.6 stored, for the tests that read one back.</summary>
-    /// <param name="text">What the item asks.</param>
-    /// <param name="kind">Work or a question.</param>
-    /// <param name="id">The item's identifier.</param>
-    /// <returns>The payload as it was stored then.</returns>
-    /// <remarks>Storage refuses this from schema 11 on, so a test using it writes at 10 and migrates.</remarks>
-    public static string OldRequest(
-        string text = "is the invoice total gross or net?", string kind = "question", string id = "q1") =>
-        new JsonObject
-        {
-            ["intent"] = "deciding where tax is added to an invoice",
-            ["items"] = new JsonArray(new JsonObject { ["id"] = id, ["kind"] = kind, ["text"] = text }),
-            ["done_when"] = DoneWhen
-        }.ToJsonString();
-
     /// <summary>A Request payload whose ask names several things, for the Results that answer several items.</summary>
     /// <param name="subject">What the Request is about, which keeps two of them distinct.</param>
     /// <param name="ids">What the Result will name its outcomes. The ask mentions them so the pair reads together.</param>
     /// <returns>The payload as stored.</returns>
     /// <remarks>
-    /// A 0.7 Request has no items, and storage never made a Result's outcomes match any. These suites are about the
+    /// A Request has no items, and storage never made a Result's outcomes match any. These suites are about the
     /// result tables, so the Request is the ask it would now be and the Result names what the test needs.
     /// </remarks>
     public static string RequestOf(string subject, params string[] ids) =>

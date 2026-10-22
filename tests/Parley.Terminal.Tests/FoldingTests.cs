@@ -43,15 +43,16 @@ public sealed class FoldingTests
         await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
         var transcript = seated.Shell.Transcript;
 
-        Assert.Equal(TranscriptRegion.RegionTitle, transcript.Title);
+        Assert.DoesNotContain("folded", transcript.Title, StringComparison.Ordinal);
 
         transcript.Fold();
 
-        Assert.Equal(TranscriptRegion.FoldedTitle, transcript.Title);
+        Assert.Contains("folded", transcript.Title, StringComparison.Ordinal);
+        Assert.Contains(Seated.Conversation, transcript.Title, StringComparison.Ordinal);
 
         transcript.Fold();
 
-        Assert.Equal(TranscriptRegion.RegionTitle, transcript.Title);
+        Assert.DoesNotContain("folded", transcript.Title, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -124,11 +125,11 @@ public sealed class FoldingTests
 
         var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.FoldTitle);
 
-        Assert.Equal(Shell.FoldKey.ToString(), offered.Stroke);
+        Assert.Equal(Shell.Alt(Shell.FoldKey), offered.Stroke);
 
         // Pressed rather than called, because a key named on a status line and bound to nothing is the fault
-        // this surface has met twice -- and a letter is only free in this pane because it is a list.
-        shell.NewKeyDownEvent(new Key(Shell.FoldKey));
+        // this surface has met twice. Alt, since every action takes it (`KeysNeedAModifierTests`).
+        shell.NewKeyDownEvent(new Key(Shell.FoldKey).WithAlt);
 
         await shell.Settled;
 

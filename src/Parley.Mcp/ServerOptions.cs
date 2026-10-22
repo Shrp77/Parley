@@ -23,6 +23,15 @@ namespace Parley.Mcp;
 /// Something the launch configuration should be told about how <see cref="Broker"/> was chosen,
 /// or <see langword="null"/> when there is nothing to say.
 /// </param>
+/// <param name="LaunchToken">
+/// What the node that started this process put in its environment (SPEC.md §11.7), presented on attach so the broker
+/// knows Parley started it; null when somebody started it outside Parley.
+/// </param>
+/// <param name="Identity">
+/// The repository's own identifier, read from the launch configuration in <paramref name="Workspace"/>, or the
+/// default when there is none (SPEC.md §4.1.1). Reported on attach as a label and never as authority: it lets the broker
+/// rename this agent when the repository changes the name, and decides nothing about who may attach.
+/// </param>
 /// <remarks>
 /// <para>
 /// <b><see cref="Agent"/> comes from the launch configuration and from nowhere else.</b> It is
@@ -40,12 +49,9 @@ namespace Parley.Mcp;
 /// identities inside one process.
 /// </para>
 /// <para>
-/// <b>What is no longer here is the point of the current shape.</b> This record used to carry a
-/// database path, a sweep interval, a retention policy and a clarify cap — every one of which
-/// describes the deployment rather than the launch, and every one of which each repository could
-/// therefore set differently for the same store. They belong to the broker now, which is the one
-/// process that owns the deployment, and an adapter cannot express an opinion about them because
-/// there is nowhere left to put one.
+/// <b>The launch carries identity and endpoint only.</b> Store path, sweep interval, retention and
+/// clarify cap describe the deployment, so they belong to the broker, the one process that owns it;
+/// an adapter has nowhere to express an opinion about them.
 /// </para>
 /// </remarks>
 public sealed record ServerOptions(
@@ -54,8 +60,11 @@ public sealed record ServerOptions(
     string ResponderModel,
     string? Workspace,
     string? Owns = null,
-    string? BrokerNotice = null)
+    string? BrokerNotice = null,
+    string? LaunchToken = null,
+    AgentIdentity Identity = default)
 {
+
     /// <summary>The environment variable naming the broker to connect to.</summary>
     /// <remarks>
     /// The name itself lives in <see cref="BrokerEndpoint"/>, because all three processes read
@@ -229,7 +238,13 @@ public sealed record ServerOptions(
             responder,
             string.IsNullOrWhiteSpace(workspace) ? null : workspace,
             owns,
-            brokerNotice);
+            brokerNotice,
+            read(Parley.Core.LaunchToken.Variable) is { Length: > 0 } token ? token.Trim() : null,
+
+            // Read from the repository rather than the environment, because the identifier belongs to the repository
+            // and sits beside the entries, not inside one. A file that cannot be read says nothing, which registers by
+            // name alone as before.
+            LaunchConfiguration.TryRead(workspace, out var declared, out _) ? declared.Identity : default);
     }
 
     /// <summary>
@@ -269,7 +284,7 @@ public sealed record ServerOptions(
 
         if (named is null)
         {
-            // Exactly as before this existed, including the loopback default.
+            // No project named: the endpoint variable, else the loopback default.
             return (BrokerEndpoint.Read(read), null);
         }
 
@@ -292,6 +307,14 @@ public sealed record ServerOptions(
         var project = projects.FirstOrDefault(p =>
             string.Equals(p.Name.Value, named, StringComparison.Ordinal));
 
+        // Not found, beside a project that could not be read: the one named may well be it, so what failed to read is the
+        // answer, never "describes no projects".
+        if (project is null && problem is { Length: > 0 })
+        {
+            throw new InvalidOperationException(
+                $"{ProjectVariable} is '{named}', and the manifest could not be read. {problem}");
+        }
+
         if (project is null)
         {
             var configured = projects.Count == 0
@@ -301,9 +324,9 @@ public sealed record ServerOptions(
 
             throw new InvalidOperationException(
                 $"{ProjectVariable} is '{named}', which {manifest} does not describe. {configured} " +
-                $"Add it with `parley project add {named}`, or set {BrokerVariable} to the " +
-                "broker's address. This server will not guess: connecting to another project's " +
-                "broker would put this agent in a roster it does not belong to.");
+                $"Name it in `parley`, or set {BrokerVariable} to the broker's address. " +
+                "This server will not guess: connecting to another project's broker would put " +
+                "this agent in a roster it does not belong to.");
         }
 
         return (project.Endpoint, null);

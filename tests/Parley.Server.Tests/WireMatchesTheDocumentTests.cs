@@ -141,14 +141,19 @@ public sealed class WireMatchesTheDocumentTests
     }
 
     [Fact]
-    public void The_readback_is_among_them()
+    public void The_operations_that_were_removed_are_gone_from_both_and_a_present_one_is_in_both()
     {
-        // Non-vacuity aimed at this feature specifically. Both checks above would pass on a wire
-        // and a document that had each quietly lost the same operation.
-        Assert.Contains("instructions", Documented());
+        // Non-vacuity. Both checks above would pass on a wire and a document that had each quietly lost the
+        // same operation, so one that must be there is asserted, and the two that were removed are asserted gone
+        // from both rather than left to pass by being absent from one.
+        var onWire = OnTheWire().Select(n => Spelled.TryGetValue(n, out var s) ? s : n).ToList();
 
-        Assert.Contains(
-            "instructions",
-            OnTheWire().Select(n => Spelled.TryGetValue(n, out var s) ? s : n));
+        Assert.Contains("export", Documented());
+        Assert.Contains("export", onWire);
+
+        Assert.DoesNotContain("instruct", Documented());
+        Assert.DoesNotContain("instructions", Documented());
+        Assert.DoesNotContain("instruct", onWire);
+        Assert.DoesNotContain("instructions", onWire);
     }
 }

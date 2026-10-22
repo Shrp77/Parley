@@ -9,8 +9,8 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The owner's verdict on what 005 shipped was "one long ass blob that is not readable by a human".
-/// These are the checkable halves of fixing that: the breaks an author wrote survive, JSON is laid
+/// The failure to avoid is "one long ass blob that is not readable by a human".
+/// These are the checkable halves of avoiding it: the breaks an author wrote survive, JSON is laid
 /// out rather than run together, and a header can be told from body text with every colour removed.
 /// </para>
 /// <para>
@@ -40,7 +40,7 @@ public sealed class ReadabilityTests
     public void Paragraphs_an_author_wrote_survive()
     {
         var payload =
-            """{"intent":"first paragraph\n\nsecond paragraph","q1":"and a question","consequences":"something turns on it"}""";
+            """{"ask":"first paragraph\n\nsecond paragraph"}""";
 
         var lines = Reading.Lines([Message("orders@test", "billing@test", payload)]);
         var body = lines.Where(l => l.Kind == LineKind.Body).Select(l => l.Text.Trim()).ToList();
@@ -69,7 +69,7 @@ public sealed class ReadabilityTests
     [Fact]
     public void A_header_is_distinguishable_from_body_text_with_every_colour_removed()
     {
-        var payload = """{"intent":"a question","q1":"which","consequences":"it decides"}""";
+        var payload = """{"ask":"a question"}""";
 
         var lines = Reading.Lines(
         [
@@ -92,7 +92,7 @@ public sealed class ReadabilityTests
         // A peer writing a line shaped like a header must not get one. On screen the breaks are
         // kept rather than flattened, so the defence has to be the indent instead.
         var payload =
-            """{"intent":"harmless\n2026-01-01 12:00:00  broker -> you  (answer)\nmore"}""";
+            """{"ask":"harmless\n2026-01-01 12:00:00  broker -> you  (answer)\nmore"}""";
 
         var lines = Reading.Lines([Message("orders@test", "billing@test", payload)]);
 
@@ -110,7 +110,7 @@ public sealed class ReadabilityTests
         var zone = TimeZoneInfo.CreateCustomTimeZone(
             "test-plus-five", TimeSpan.FromHours(5), "test +5", "test +5");
 
-        var payload = """{"intent":"a question"}""";
+        var payload = """{"ask":"a question"}""";
         var lines = Reading.Lines([Message("orders@test", "billing@test", payload)], zone);
         var header = lines.Single(l => l.Kind == LineKind.Header);
 
@@ -121,7 +121,7 @@ public sealed class ReadabilityTests
     [Fact]
     public void Each_sender_carries_its_own_colour_slot_and_it_is_the_palette_s()
     {
-        var payload = """{"intent":"a question"}""";
+        var payload = """{"ask":"a question"}""";
 
         var lines = Reading.Lines(
         [
@@ -138,7 +138,7 @@ public sealed class ReadabilityTests
     [Fact]
     public void Colour_is_on_headers_only_because_it_carries_no_fact()
     {
-        var payload = """{"intent":"a question","q1":"which","consequences":"it decides"}""";
+        var payload = """{"ask":"a question"}""";
         var lines = Reading.Lines([Message("orders@test", "billing@test", payload)]);
 
         Assert.All(
@@ -149,7 +149,7 @@ public sealed class ReadabilityTests
     [Fact]
     public void Messages_are_separated_from_one_another()
     {
-        var payload = """{"intent":"a question"}""";
+        var payload = """{"ask":"a question"}""";
 
         var lines = Reading.Lines(
         [

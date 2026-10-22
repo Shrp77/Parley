@@ -8,8 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 1 of the review gate, run 1.9 — the last for this lens. Runs 1.7 and 1.8 asked about the
-/// new record; this asks the question a new field always raises and nobody thinks to: whether the
+/// This asks the question a new field always raises and nobody thinks to: whether the
 /// old answers still come back unchanged.
 /// </para>
 /// <para>

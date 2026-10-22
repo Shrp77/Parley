@@ -11,7 +11,7 @@ namespace Parley.Client.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The owner's call, answering <c>/speckit-analyze</c> L1: one test, and no change to either surface.</b> A seat is a
+/// <b>One test, and no change to either surface.</b> A seat is a
 /// person, a person never fetches a file through an agent's operation, and notices are raised only for agents that
 /// did — so a seat holds none. The inbox reply carries a field for them regardless, and this pins what the seat does
 /// if one ever arrives: nothing, rather than recording it as a message the person owes an answer to.
@@ -20,7 +20,7 @@ namespace Parley.Client.Tests;
 public sealed class SeatFileNoticeTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5404", null);
 
     [Fact]
     public async Task A_drain_carrying_file_notices_records_only_the_messages()
@@ -29,9 +29,14 @@ public sealed class SeatFileNoticeTests
         var agents = new NoticesAndOneMessage();
         using var book = new SeatBook(_ => agents);
 
-        Assert.True(Seat.TryRead("arvind", out var me, out _));
+        var taken = await book.TakeAsync(
+            Alpha,
+            [new AgentRecord(
+                PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false,
+                AgentStatus.Active)],
+            token);
 
-        var taken = await book.TakeAsync(Alpha, me, [], token);
+        var me = taken.Hold!.Seat;
 
         Assert.True(taken.Seated);
 
@@ -63,7 +68,7 @@ public sealed class SeatFileNoticeTests
                     From = "orders@alpha",
                     To = request.Agent,
                     Type = Wire.MessageType.Request,
-                    PayloadJson = "{\"intent\":\"probe\",\"questions\":[]}",
+                    PayloadJson = "{\"ask\":\"probe\"}",
                     CreatedUtc = "2026-09-14T00:00:00Z",
                     ConversationId = string.Empty
                 },

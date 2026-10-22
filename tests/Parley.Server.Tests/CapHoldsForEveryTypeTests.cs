@@ -9,7 +9,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 2.</b> The cap is a security control rather than a style preference — a
+/// The cap is a security control rather than a style preference — a
 /// context-poisoning defence — which is why it lives in the schema, where no code path can route around
 /// it. A type that slipped through would be the whole defence with a door in it.
 /// </para>
@@ -21,9 +21,9 @@ namespace Parley.Server.Tests;
 /// agent can send most of.
 /// </para>
 /// <para>
-/// <b>What this deliberately does not assert, and why that is a correction rather than a gap.</b> A first
-/// version required a <c>size_refusals</c> row per refusal, on the grounds that SPEC.md §17 question 16
-/// reads that table as the evidence the cap is set from. That encodes a misreading: <c>RecordRefusal</c>
+/// <b>What this deliberately does not assert, and why that is not a gap.</b> Requiring a
+/// <c>size_refusals</c> row per refusal, on the grounds that SPEC.md §17 question 16
+/// reads that table as the evidence the cap is set from, would encode a misreading: <c>RecordRefusal</c>
 /// is the *adapter's* act — its own proto comment says "records that an adapter refused to send something
 /// for being over the size cap" — so the evidence is gathered where a message is composed, and storage is
 /// the backstop for anything that arrives anyway. Asserting the backstop also records would have reported

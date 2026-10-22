@@ -1,5 +1,4 @@
 using Parley.Client;
-using Parley.Client.Seating;
 using Xunit;
 
 namespace Parley.Web.Tests;
@@ -53,66 +52,8 @@ public sealed class FieldsCarryTheirRuleTests
         Assert.DoesNotContain("placeholder=\"what it is about\"", body, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Joining_says_what_may_name_a_person()
-    {
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        var body = await client.GetStringAsync(
-            new Uri("/Join", UriKind.Relative), TestContext.Current.CancellationToken);
-
-        Assert.Contains("id=\"person\"", body, StringComparison.Ordinal);
-        Assert.Contains(Seat.Pattern, body, StringComparison.Ordinal);
-        Assert.Contains($"data-correct=\"{Seat.Allowed}\"", body, StringComparison.Ordinal);
-
-        // Case is folded rather than refused, and the field has to know that: `Arvind` is not a
-        // mistake anybody should be told about, but the seat really is called `arvind` and the
-        // person should watch it being made.
-        Assert.Contains("data-lower", body, StringComparison.Ordinal);
-        Assert.Contains(
-            Seat.Rule, System.Net.WebUtility.HtmlDecode(body), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task The_composer_says_what_a_request_costs_the_peer()
-    {
-        // **One vocabulary across two surfaces.** The checkbox said "I would like a reply", which
-        // is a preference; in 0.5 every message is answered, so what a send decides is that the
-        // peer owes a Result. The terminal says so in `Owing`'s words and this reads the same
-        // constant, because a console describing the protocol a third way is the drift SC-003 forbids.
-        //
-        // Read from the page source: the framing is drawn only for a seat, and this console has none
-        // to take. What is checked is that the sentence is the constant rather than a copy of it.
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        var body = await client.GetStringAsync(
-            new Uri(
-                $"/Conversations/Detail?project={DeadBrokerConsole.Project}&id=any",
-                UriKind.Relative),
-            TestContext.Current.CancellationToken);
-
-        var read = System.Net.WebUtility.HtmlDecode(body);
-
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Parley.slnx")))
-        {
-            root = root.Parent;
-        }
-
-        Assert.NotNull(root);
-
-        var page = await File.ReadAllTextAsync(
-            Path.Combine(root.FullName, "src", "Parley.Web", "Pages", "Conversations", "Detail.cshtml"),
-            TestContext.Current.CancellationToken);
-
-        Assert.Contains("@Owing.Requesting", page, StringComparison.Ordinal);
-
-        // And the preference wording is gone, rather than sitting beside the new one.
-        Assert.DoesNotContain("I would like a reply", read, StringComparison.Ordinal);
-    }
+    // `Joining_says_what_may_name_a_person` was here. The Join page and its name field are gone: the broker
+    // provides the person seat, so no name is typed.
 
     [Fact]
     public async Task The_frame_carries_one_implementation_of_the_correction()
@@ -123,8 +64,10 @@ public sealed class FieldsCarryTheirRuleTests
         using var client = console.CreateStubbornClient();
 
         var body = await client.GetStringAsync(
-            new Uri("/Join", UriKind.Relative), TestContext.Current.CancellationToken);
+            new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
 
+        // Read from the projects page, as there is no Join page: the script is the frame's,
+        // so every page carries it.
         Assert.Contains("querySelectorAll('[data-correct]')", body, StringComparison.Ordinal);
 
         // A space becomes the separator the rule allows rather than being dropped, which is the

@@ -11,9 +11,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Killing a project used to be four steps, and the second was restarting every other project's
-/// broker to stop this one's. Now the process serving the manifest stops a removed project on
-/// its own, and this command waits for it to have done so before deleting a file the broker
+/// The process serving the manifest stops a removed project on its own, without restarting every
+/// other project's broker, and this command waits for it to have done so before deleting a file the broker
 /// still had open — which is the order that matters, and the one a person doing it by hand gets
 /// wrong.
 /// </para>
@@ -28,7 +27,14 @@ public sealed class ProjectDestroyTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "parley-destroy-" + Guid.NewGuid().ToString("N"));
 
-    public ProjectDestroyTests() => Directory.CreateDirectory(_directory);
+    public ProjectDestroyTests()
+    {
+        Directory.CreateDirectory(_directory);
+
+        // A band of this class's own, because every root otherwise starts at the bottom of the same
+        // one — see TestBand, and research.md R3, which predicted exactly this.
+        TestBand.GiveItsOwn(Root);
+    }
 
     public void Dispose()
     {
@@ -42,15 +48,22 @@ public sealed class ProjectDestroyTests : IDisposable
         }
     }
 
-    private string Manifest => Path.Combine(_directory, "projects.json");
+    /// <summary>Where this machine keeps its Parley files.</summary>
+    /// <remarks>
+    /// **It names the root.** Every reader and writer below takes the same value, so a change is one
+    /// line here rather than one per test.
+    /// </remarks>
+    private string Root => _directory;
 
     [Fact]
-    public async Task With_nothing_serving_the_store_and_an_unshared_catalogue_are_deleted()
+    public async Task With_nothing_serving_the_store_is_deleted_and_the_machines_catalogue_is_not()
     {
-        var catalogue = Path.Combine(_directory, "billing-node.json");
-        var billing = Project("billing", catalogue);
+        // **The catalogue is not the project's to delete.** There is one per machine, shared by every
+        // project, so a destroy that removed it would take the other projects' agents with it.
+        var catalogue = Path.Combine(_directory, NodeCatalogue.DefaultFileName);
+        var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [billing]);
+        ProjectManifest.Write(Root, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(catalogue, "{}", TestContext.Current.CancellationToken);
 
@@ -60,23 +73,24 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Empty(error);
         Assert.Contains("Destroyed 'billing'", output, StringComparison.Ordinal);
         Assert.False(File.Exists(billing.Store), "the store survived");
-        Assert.False(File.Exists(catalogue), "the catalogue survived");
+        Assert.True(File.Exists(catalogue), "the machine's catalogue was deleted with one project");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
     [Fact]
-    public async Task Another_projects_catalogue_and_store_are_not_touched()
+    public async Task Another_projects_store_is_not_touched()
     {
-        // The manifest refuses two projects sharing a catalogue, so "another project's" is the
-        // only other case, and it must stay exactly where it is.
-        var orders = Project("orders", Path.Combine(_directory, "orders-node.json"));
-        var billing = Project("billing", Path.Combine(_directory, "billing-node.json"));
+        // **There is one catalogue per machine** and destroying a project does not touch it at all.
+        // What has to hold — and is the reason this test exists — is that a destroy reaches exactly
+        // one project's store.
+        var orders = Project("orders");
+        var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [orders, billing]);
+        ProjectManifest.Write(Root, [orders, billing]);
 
-        foreach (var path in new[] { orders.Store, orders.NodeConfig!, billing.Store, billing.NodeConfig! })
+        foreach (var path in new[] { orders.Store, billing.Store })
         {
             await File.WriteAllTextAsync(path, "{}", TestContext.Current.CancellationToken);
         }
@@ -85,17 +99,15 @@ public sealed class ProjectDestroyTests : IDisposable
 
         Assert.Equal(0, code);
         Assert.True(File.Exists(orders.Store), "the other project's store was deleted");
-        Assert.True(File.Exists(orders.NodeConfig), "the other project's catalogue was deleted");
         Assert.False(File.Exists(billing.Store));
-        Assert.False(File.Exists(billing.NodeConfig));
     }
 
     [Fact]
     public async Task Without_destroy_nothing_is_deleted_and_the_way_to_is_named()
     {
-        var billing = Project("billing", null);
+        var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [billing]);
+        ProjectManifest.Write(Root, [billing]);
         await File.WriteAllTextAsync(billing.Store, string.Empty, TestContext.Current.CancellationToken);
 
         var (code, output, _) = await RemoveAsync("billing", destroy: false);
@@ -111,14 +123,14 @@ public sealed class ProjectDestroyTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
 
-        var orders = Project("orders", null);
-        var billing = Project("billing", null);
+        var orders = Project("orders");
+        var billing = Project("billing");
 
-        ProjectManifest.Write(Manifest, [orders, billing]);
+        ProjectManifest.Write(Root, [orders, billing]);
 
         // The real reread: the manifest file, when its stamp moves, exactly as the entry point
         // hands it to the command.
-        var stamp = File.GetLastWriteTimeUtc(Manifest);
+        var stamp = File.GetLastWriteTimeUtc(ProjectFolder.ConfigurationFor(Root, orders.Name));
 
         var output = new StringWriter();
 
@@ -131,7 +143,7 @@ public sealed class ProjectDestroyTests : IDisposable
             TextWriter.Null,
             reread: () =>
             {
-                var now = File.GetLastWriteTimeUtc(Manifest);
+                var now = File.GetLastWriteTimeUtc(ProjectFolder.ConfigurationFor(Root, orders.Name));
 
                 if (now == stamp)
                 {
@@ -140,7 +152,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
                 stamp = now;
 
-                return ProjectManifest.TryRead(Manifest, out var current, out _) ? current : null;
+                return ProjectManifest.TryRead(Root, out var current, out _) ? current : null;
             },
             cancellationToken: stopping.Token);
 
@@ -171,19 +183,23 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task A_broker_the_serving_process_does_not_own_is_reported_and_left_alone()
     {
-        // Lens 1 probe, and the adversarial reading of "wait for it to stop": a broker started
+        // The adversarial reading of "wait for it to stop": a broker started
         // by hand on the entry's endpoint never stops when the entry goes, because nothing told
         // it to. The command must not kill it, must not delete a store it is still using, and
         // must say so -- and the entry is gone regardless, which it must also say.
         var ct = TestContext.Current.CancellationToken;
 
-        var store = Path.Combine(_directory, "byhand.db");
+        // **A broker started by hand, in a root of its own.** That is what makes it "not the serving
+        // process's": it is serving a different machine's worth of projects entirely, and `--destroy`
+        // must neither kill it nor delete a store it still holds.
+        var elsewhere = Path.Combine(_directory, "by-hand-root");
 
-        using var byHand = BrokerProcess.Start(store);
+        using var byHand = BrokerProcess.Start(elsewhere);
 
-        var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null, null);
+        var store = BrokerProcess.StoreFor(elsewhere);
+        var project = new ProjectSettings(ProjectName.Create("byhand"), store, byHand.Address, null);
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         var started = DateTime.UtcNow;
         var (code, output, error) = await RemoveAsync("byhand", destroy: true);
@@ -200,7 +216,7 @@ public sealed class ProjectDestroyTests : IDisposable
 
         Assert.True(waited > TimeSpan.FromSeconds(20) && waited < TimeSpan.FromSeconds(60), $"waited {waited}");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
 
         // And the broker is untouched by any of it.
@@ -208,32 +224,49 @@ public sealed class ProjectDestroyTests : IDisposable
     }
 
     [Fact]
-    public async Task The_manifest_itself_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
+    public async Task The_machines_own_files_cannot_be_named_as_a_store_and_so_cannot_be_destroyed()
     {
-        // Lens 2 probe. --destroy deletes whatever the entry names as its store. The one file
-        // whose deletion takes every project with it is the manifest, so an entry naming it must
-        // be refused on the way in -- by `add`, which validates the path -- rather than caught
-        // on the way out.
+        // **Closed by construction rather than by a refusal.**
+        // `--destroy` deletes whatever the project names as its store. The files whose deletion takes
+        // every project with it sit at the root — the port record, the machine's catalogue — so a project
+        // naming one of those would have to be refused on the way in, by `add`, rather than caught on
+        // the way out.
+        //
+        // There is no way in. A store is `parley.db` inside a folder named by the project, and no
+        // flag carries a path, so the value that made this possible cannot be supplied. What is asserted
+        // is the property the refusal was protecting: every store lies inside its own project's folder,
+        // so destroying one cannot reach anything the machine shares.
         var output = new StringWriter();
         var error = new StringWriter();
 
         var code = await ProjectCommand.RunAsync(
             ["add", "trap"],
-            Manifest,
-            new ProjectFields(Manifest, "http://127.0.0.1:1", null, null),
+            Root,
+            new ProjectFields(null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
 
-        Assert.NotEqual(0, code);
-        Assert.False(ProjectManifest.TryRead(Manifest, out var projects, out _) && projects.Count > 0,
-            "an entry naming the manifest as its store was written");
+        Assert.Equal(0, code);
+
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
+
+        var trap = Assert.Single(projects);
+        var folder = ProjectFolder.For(Root, trap.Name);
+
+        Assert.StartsWith(folder + Path.DirectorySeparatorChar, trap.Store, StringComparison.Ordinal);
+
+        // And the root's own files are outside every project folder, which is the other half: a store
+        // confined to a folder is only safe if what must survive is not in one.
+        Assert.False(
+            PortLedger.PathIn(Root).StartsWith(ProjectFolder.ProjectsIn(Root), StringComparison.Ordinal),
+            "the port record sits inside the projects directory, where a destroy could reach it");
     }
 
     [Fact]
     public async Task A_store_that_is_a_directory_is_not_deleted()
     {
-        // Lens 2 probe. Deleting is by file, and a directory named as a store -- which the
+        // Deleting is by file, and a directory named as a store -- which the
         // manifest accepts, since a store need not exist yet -- must not become a recursive
         // delete of whatever is in it.
         var directoryStore = Path.Combine(_directory, "not-a-file");
@@ -241,9 +274,9 @@ public sealed class ProjectDestroyTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(directoryStore, "precious.txt"), "keep", TestContext.Current.CancellationToken);
 
         var project = new ProjectSettings(
-            ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null, null);
+            ProjectName.Create("dir"), directoryStore, "http://127.0.0.1:1", null);
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         var (code, output, _) = await RemoveAsync("dir", destroy: true);
 
@@ -256,13 +289,13 @@ public sealed class ProjectDestroyTests : IDisposable
     [Fact]
     public async Task A_store_something_else_holds_open_is_reported_not_half_deleted_in_silence()
     {
-        // Lens 2 probe. The worst outcome of a delete that meets a locked file is a quiet partial
+        // The worst outcome of a delete that meets a locked file is a quiet partial
         // state: entry gone, some files gone, the rest still there, exit zero. What is required
         // is the truth in the exit code and the message: which files went, which did not, and
         // that the entry is gone either way.
         // Only Windows refuses to delete an open file; on Linux and macOS an unlink succeeds and
         // the last handle keeps the data until it closes, so the loud failure this guards cannot
-        // occur there and the probe has nothing to assert. Found by the Linux run, 3 of 3.
+        // occur there and the probe has nothing to assert.
         if (!OperatingSystem.IsWindows())
         {
             Assert.Skip("a held file can be deleted on this platform, so there is no refusal to report");
@@ -270,9 +303,9 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("held", null);
+        var project = Project("held");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
 
@@ -286,7 +319,7 @@ public sealed class ProjectDestroyTests : IDisposable
         Assert.Contains("Removed 'held'", output, StringComparison.Ordinal);
         Assert.True(File.Exists(project.Store), "a held store was deleted");
 
-        Assert.True(ProjectManifest.TryRead(Manifest, out var left, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
     }
 
@@ -304,9 +337,9 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("held-lock", null);
+        var project = Project("held-lock");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + "-wal", string.Empty, ct);
 
@@ -330,9 +363,9 @@ public sealed class ProjectDestroyTests : IDisposable
         // an owner record naming a process that has since exited is harmless but untrue.
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("with-lock", null);
+        var project = Project("with-lock");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + StoreFiles.Lock, string.Empty, ct);
         await File.WriteAllTextAsync(project.Store + StoreFiles.Owner, "pid=1", ct);
@@ -352,9 +385,9 @@ public sealed class ProjectDestroyTests : IDisposable
         // would leave every file anybody placed on disk under a name nothing refers to any more.
         var ct = TestContext.Current.CancellationToken;
 
-        var project = Project("with-files", null);
+        var project = Project("with-files");
 
-        ProjectManifest.Write(Manifest, [project]);
+        ProjectManifest.Write(Root, [project]);
         await File.WriteAllTextAsync(project.Store, string.Empty, ct);
 
         var folder = Path.Combine(project.Store + StoreFiles.Files, "pricing");
@@ -377,8 +410,8 @@ public sealed class ProjectDestroyTests : IDisposable
 
         var code = await ProjectCommand.RunAsync(
             ["remove", name],
-            Manifest,
-            new ProjectFields(null, null, null, null),
+            Root,
+            new ProjectFields(null),
             output,
             error,
             destroy,
@@ -387,12 +420,14 @@ public sealed class ProjectDestroyTests : IDisposable
         return (code, output.ToString(), error.ToString());
     }
 
-    private ProjectSettings Project(string name, string? catalogue) =>
+    // **The store is derived, so the fixture cannot put one anywhere.** That is the layout, and it is
+    // also what closes two of the probes below: a store inside the project's own folder cannot be
+    // another project's, and cannot be the machine's own configuration.
+    private ProjectSettings Project(string name) =>
         new(
             ProjectName.Create(name),
-            Path.Combine(_directory, name + ".db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create(name)),
             $"http://127.0.0.1:{FreePort()}",
-            catalogue,
             null);
 
 }

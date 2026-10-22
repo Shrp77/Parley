@@ -39,9 +39,9 @@ public sealed class NarrowTerminalTests
     [Theory]
     [InlineData(Narrow)]
     [InlineData(20)]
-    public void What_kind_of_message_it_was_survives_too(int width)
+    public void What_was_asked_survives_too(int width)
     {
-        Assert.Contains("question", Wrapped(width), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("decides", Wrapped(width), StringComparison.Ordinal);
     }
 
     // **There was a test here about the visibility sentence surviving a narrow terminal.** The sentence is
@@ -57,7 +57,7 @@ public sealed class NarrowTerminalTests
         var wide = Wrapped(200);
 
         Assert.Contains("billing", wide, StringComparison.Ordinal);
-        Assert.Contains("question", wide, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("decides", wide, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,8 +94,7 @@ public sealed class NarrowTerminalTests
             AgentName.Create("orders@alpha"),
             AgentName.Create("billing@alpha"),
             "test",
-            "{\"intent\":\"why\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":\"which one\"}],"
-            + "\"done_when\":\"the answer decides which of two paths is taken here\"}",
+            "{\"ask\":\"why: which one decides which of two paths is taken here\"}",
             "conv",
             DateTimeOffset.UnixEpoch,
             null);

@@ -1,6 +1,5 @@
 using Grpc.Net.Client;
 using Parley.Client;
-using Parley.Client.Rendering;
 using Parley.Client.Seating;
 using Parley.Client.Views;
 using Parley.Core;
@@ -30,7 +29,7 @@ public sealed class RoomTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static RoomRegion Filled(bool seated = true, params PairState[] pairs)
@@ -40,7 +39,7 @@ public sealed class RoomTests
         room.Show(
             pairs,
             [.. pairs.Where(p => p.Turn == Turn.Mine && p.OpenExchange is not null)
-                .Select(p => new OutstandingItem(p.Peer, $"{p.Peer.Value} — answer or ask back", p.OpenExchange!.Value, null))],
+                .Select(p => new OutstandingItem(p.Peer, [new WaitingQuestion(p.OpenExchange!.Value, DateTimeOffset.UnixEpoch, null, "a question")]))],
             seated);
 
         return room;
@@ -102,8 +101,8 @@ public sealed class RoomTests
         var room = Filled(true, new PairState(Billing, null, Turn.Nobody), new PairState(Orders, null, Turn.Nobody));
 
         Assert.Contains(RoomRegion.Participants, room.Written);
-        Assert.Contains(room.Written, row => row.Contains(Billing.Value, StringComparison.Ordinal));
-        Assert.Contains(room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Billing.Role, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -126,7 +125,9 @@ public sealed class RoomTests
         var room = Filled(true, new PairState(Billing, 3, Turn.Mine));
 
         Assert.Contains(RoomRegion.ToAddress, room.Written);
-        Assert.Contains(room.Written, row => row.Contains("answer or ask back", StringComparison.Ordinal));
+        // One row for the agent with how many questions are waiting, not the heading said again.
+        Assert.Contains("  billing (1)", room.Written);
+        Assert.DoesNotContain(room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -146,17 +147,9 @@ public sealed class RoomTests
         // was actually read, and 0.28.2 records what hiding things from a seatless person costs.
         var room = Filled(false, new PairState(Billing, null, Turn.Nobody));
 
-        Assert.Contains(room.Written, row => row.Contains(Billing.Value, StringComparison.Ordinal));
+        Assert.Contains(room.Written, row => row.Contains(Billing.Role, StringComparison.Ordinal));
         Assert.Contains("  " + RoomRegion.NoSeat, room.Written);
         Assert.DoesNotContain("  " + RoomRegion.NothingOwed, room.Written);
-    }
-
-    [Fact]
-    public void A_participants_colour_is_the_one_every_other_surface_gives_it()
-    {
-        // Derived from the name rather than from position, so an agent is the same colour here, in the agents
-        // list, in a transcript and in a browser.
-        Assert.Equal(Palette.SlotFor(Billing), ConversationsView.ColourFor(Billing));
     }
 
     [Fact]

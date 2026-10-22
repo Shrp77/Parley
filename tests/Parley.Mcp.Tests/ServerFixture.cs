@@ -33,14 +33,8 @@ internal sealed class StubClock(DateTimeOffset now) : TimeProvider
 /// </summary>
 /// <remarks>
 /// <para>
-/// This used to be one temporary database file and the sessions that opened it, and the file was
-/// the point: two agents on one project share a store, and every question about whether two
-/// servers can see each other's work is a question about the file — an in-memory database is
-/// private to its connection, so two sessions over one would have passed every test here while
-/// sharing nothing.
-/// </para>
-/// <para>
-/// The argument survives and its conclusion inverts. What two agents now share is a
+/// Two agents on one project share a store, and every question about whether two
+/// servers can see each other's work is a question about what they share. What two agents share is a
 /// <em>broker</em>, and one broker holds one connection — so an in-memory database is exactly
 /// right, and the thing that would make these tests vacuous is starting two brokers rather than
 /// opening two connections. The file is gone and so is the temporary directory that had to be
@@ -196,9 +190,9 @@ internal sealed class ServerFixture : IAsyncDisposable
     /// <returns>A task that completes when the pass is done.</returns>
     /// <remarks>
     /// Driven from the test rather than left to a timer, and reached through the runtime rather
-    /// than through an agent's link. The sweep is the broker's own work now — SPEC.md §4 gives a
-    /// deployment one of them — so an adapter has no way to ask for one, which is why a test that
-    /// used to call it through a session calls it here.
+    /// than through an agent's link. The sweep is the broker's own work — SPEC.md §4 gives a
+    /// deployment one of them — so an adapter has no way to ask for one, which is why a test
+    /// calls it here and not through a session.
     /// </remarks>
     public Task TickAsync(CancellationToken cancellationToken) =>
         _server.Runtime.TickAsync(cancellationToken);

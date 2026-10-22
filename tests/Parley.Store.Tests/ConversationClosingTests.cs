@@ -66,8 +66,7 @@ public sealed class ConversationClosingTests : IDisposable
         var outcomes = payload.RootElement.GetProperty("outcomes").EnumerateArray().ToList();
 
         // One closed outcome for the ask, under the identifier a Request answered as a whole has always used
-        // (§5.3). Until 0.7 a Request carried items and this was one outcome per item; a Request stored then is
-        // still closed that way, which MigratedItemIdTests holds.
+        // (§5.3).
         Assert.Equal(["request"], outcomes.Select(o => o.GetProperty("id").GetString()));
         Assert.All(outcomes, o => Assert.Equal("closed", o.GetProperty("outcome").GetString()));
         Assert.Contains("superseded by the pricing rewrite", outcomes[0].GetProperty("text").GetString(), StringComparison.Ordinal);

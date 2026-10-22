@@ -34,27 +34,6 @@ public sealed class AddressingFromTheRoomTests
     }
 
     [Fact]
-    public async Task Taking_a_seat_is_offered_in_the_room_and_not_in_the_box()
-    {
-        // **The owner's report, and my own defect from the night before.** A box with focus wins every
-        // printable key, so the one place Join was offered was the one place its key could not arrive.
-        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
-
-        await seated.Shell.LeaveSeat();
-        await seated.Shell.Settled;
-
-        Assert.Null(seated.Shell.Held);
-
-        seated.Focus<LineRegion>();
-
-        Assert.DoesNotContain(seated.Shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-
-        seated.Focus<RoomRegion>();
-
-        Assert.Contains(seated.Shell.Actions(), a => a.Label == AgentsRegion.JoinTitle);
-    }
-
-    [Fact]
     public async Task Every_participant_starts_ticked_because_typing_goes_to_the_room()
     {
         await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
@@ -62,7 +41,7 @@ public sealed class AddressingFromTheRoomTests
         Assert.Contains(
             seated.Shell.Room.Written,
             row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal)
-                && row.Contains(Seated.Orders.Value, StringComparison.Ordinal));
+                && row.Contains(Seated.Orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -78,9 +57,9 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
 
         await shell.Settled;
 
@@ -90,10 +69,49 @@ public sealed class AddressingFromTheRoomTests
         Assert.Contains(
             shell.Room.Written,
             row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
-                && row.Contains(Seated.Orders.Value, StringComparison.Ordinal));
+                && row.Contains(Seated.Orders.Role, StringComparison.Ordinal));
 
         // And the preview above the box agrees, because it is the same draft.
         Assert.DoesNotContain(Seated.Orders.Value, shell.Line.Preview, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agent_not_in_the_conversation_is_listed_so_it_can_be_brought_in_later()
+    {
+        // The owner's report of 2026-10-05: a line to one agent left every other agent out of the room, so none of
+        // them could be chosen afterwards. Only participants were drawn.
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var rows = seated.Shell.Room.Written.ToList();
+
+        var heading = rows.FindIndex(row => row == RoomRegion.Elsewhere);
+
+        Assert.True(heading >= 0, "the agents outside the conversation were not listed");
+        Assert.Contains(Seated.Billing.Role, rows[heading + 1], StringComparison.Ordinal);
+        Assert.StartsWith(RoomRegion.NotAddressed, rows[heading + 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Ticking_one_outside_adds_it_to_the_room_rather_than_replacing_the_room()
+    {
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var shell = seated.Shell;
+
+        seated.Focus<RoomRegion>();
+        seated.Row(shell.Room.List, Seated.Billing.Role);
+
+        shell.NewKeyDownEvent(Key.Space);
+        await shell.Settled;
+
+        Assert.Contains(Seated.Orders, shell.Drafting!.Recipients);
+        Assert.Contains(Seated.Billing, shell.Drafting!.Recipients);
+
+        // And again takes it back out, leaving the room as it was.
+        seated.Row(shell.Room.List, Seated.Billing.Role);
+        shell.NewKeyDownEvent(Key.Space);
+        await shell.Settled;
+
+        Assert.Equal([Seated.Orders], shell.Drafting!.Recipients);
+        Assert.False(shell.Drafting!.Narrowed);
     }
 
     [Fact]
@@ -106,12 +124,12 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
         await shell.Settled;
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
         await shell.Settled;
 
         Assert.Contains(Seated.Orders, shell.Drafting!.Recipients);
@@ -128,9 +146,9 @@ public sealed class AddressingFromTheRoomTests
         Assert.Single(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
-        shell.Room.List.NewKeyDownEvent(Key.Enter);
+        shell.NewKeyDownEvent(Key.Space);
 
         await shell.Settled;
 
@@ -139,7 +157,36 @@ public sealed class AddressingFromTheRoomTests
     }
 
     [Fact]
-    public async Task Space_does_the_same_thing_and_is_named_where_a_person_would_look()
+    public async Task Enter_on_an_agent_goes_to_the_box_and_leaves_the_ticks_alone()
+    {
+        // **The owner's call of 2026-10-02**: Enter on an agent is somebody about to type, so it puts them in the box.
+        // It ticked and unticked until then, the same as Space; the ticks stay exactly as they were now. Pressed as a
+        // real key, because the list takes Enter before anything else sees it.
+        await using var seated = await Seated.OpenAsync(TestContext.Current.CancellationToken);
+        var shell = seated.Shell;
+
+        shell.Drafting!.Widen(Seated.Billing);
+        shell.Room.Address(shell.Drafting!.Recipients);
+
+        var before = shell.Drafting!.Recipients.ToList();
+
+        seated.Focus<RoomRegion>();
+        seated.Row(shell.Room.List, Seated.Orders.Role);
+        seated.Session.Enter();
+
+        await shell.Settled;
+
+        Assert.True(shell.Line.Editing, "Enter on an agent did not put the cursor in the box");
+        Assert.Equal(before, shell.Drafting!.Recipients);
+
+        // And typing lands there straight away.
+        seated.Session.Type("right away");
+
+        Assert.Equal("right away", shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task Space_ticks_and_is_named_where_a_person_would_look()
     {
         // `contracts/views.md`: no action exists only as a key. The chord is offered only on a row it would
         // do something to, which is the other half of that rule.
@@ -150,7 +197,7 @@ public sealed class AddressingFromTheRoomTests
         shell.Room.Address(shell.Drafting!.Recipients);
 
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, Seated.Orders.Value);
+        seated.Row(shell.Room.List, Seated.Orders.Role);
 
         var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.IncludeTitle);
 
@@ -173,12 +220,18 @@ public sealed class AddressingFromTheRoomTests
 
         seated.Lay();
         seated.Focus<RoomRegion>();
-        seated.Row(shell.Room.List, "answer or ask back");
+        // One row per agent with its count; Enter lists its questions and choosing one reads it.
+        seated.Row(shell.Room.List, "orders (1)");
 
         Assert.Null(shell.Room.SelectedPeer);
         Assert.NotNull(shell.Room.Selected);
 
         shell.Room.List.NewKeyDownEvent(Key.Enter);
+
+        var listing = (ChoiceDialog)seated.Session.Find(RoomRegion.ListTitle(Seated.Orders.Value));
+
+        seated.Session.Row(listing.Choices, "is the build green?");
+        seated.Session.Enter();
 
         await shell.Settled;
 

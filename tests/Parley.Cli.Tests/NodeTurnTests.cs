@@ -29,7 +29,7 @@ public sealed class NodeTurnTests : IDisposable
     /// <param name="role">What the checkout says it is called.</param>
     /// <returns>The catalogue, and the identity it is keyed by.</returns>
     /// <remarks>
-    /// These tests used to hand the node a table keyed by name. A resident is keyed by identity now, so a
+    /// A resident is keyed by identity, not name, so a
     /// turn has to be resolved through what a repository claims — which is the step that lets one process
     /// answer to two projects' names, and therefore the step worth exercising here.
     /// </remarks>
@@ -108,8 +108,9 @@ public sealed class NodeTurnTests : IDisposable
         residents[identity] = dead;
 
         // It is launched with the protocol's own arguments appended, which `dotnet --info` will
-        // not accept, so it exits at once. All this test needs of it is that it has stopped.
-        for (var i = 0; i < 100 && dead.IsAlive; i++)
+        // not accept, so it exits at once. All this test needs of it is that it has stopped. "At once" is the time a
+        // dotnet host takes to start, which on a busy runner has exceeded five seconds, so up to thirty are allowed.
+        for (var i = 0; i < 600 && dead.IsAlive; i++)
         {
             await Task.Delay(50, Ct);
         }

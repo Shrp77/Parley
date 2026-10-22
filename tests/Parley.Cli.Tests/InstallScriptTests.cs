@@ -247,10 +247,16 @@ public sealed class InstallScriptTests
         // Installing the tools is not the end of setting Parley up, and a script that stopped
         // there would leave somebody with two commands on PATH and nothing working -- which is
         // the state a broker being a separate process creates and the one worth naming.
+        //
+        // What to do next is the terminal's flow: make a project, then enrol agents into it
+        // from a folder, not /parley:setup in each repository and `parley registry` to check.
         foreach (var script in new[] { Windows, Unix })
         {
-            Assert.Contains("/parley:setup", script, StringComparison.Ordinal);
-            Assert.Contains("parley registry", script, StringComparison.Ordinal);
+            var code = Code(script);
+
+            Assert.Contains("Next, run:  parley", code, StringComparison.Ordinal);
+            Assert.Contains("Enroll agents from folders", code, StringComparison.Ordinal);
+            Assert.DoesNotContain("/parley:setup", code, StringComparison.Ordinal);
         }
     }
 
@@ -258,8 +264,8 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void Each_script_sets_the_broker_up_rather_than_describing_it(string script)
     {
-        // Both scripts used to end by printing the autostart command for somebody to copy, and
-        // the step nobody ran is the step that was printed. Every agent then failed to attach
+        // A script that ended by printing the autostart command for somebody to copy would
+        // leave the step nobody ran as the step that was printed. Every agent would then fail to attach
         // with "No broker is listening" -- in an editor, later, a long way from here.
         var text = RepositoryFile.Read(script);
 
@@ -271,12 +277,20 @@ public sealed class InstallScriptTests
     public void No_script_asks_where_a_store_goes_or_takes_a_catalogue(string script)
     {
         // Where a deployment lives is a project's to say, and a project is named in `parley terminal` or with
-        // `parley project add`. The scripts used to ask for a store when nothing was named -- registering one deployment by
-        // explicit paths -- and, given one, to register that narrow entry over a working manifest: a reinstall that
-        // stopped serving every project but one. The owner removed the parameter rather than guard it.
+        // `parley project add`. The scripts must not ask for a store when nothing is named -- registering one deployment by
+        // explicit paths -- or, given one, register that narrow entry over a working manifest: a reinstall that
+        // stopped serving every project but one. There is no such parameter to guard.
         var code = Code(RepositoryFile.Read(script));
 
-        foreach (var gone in new[] { "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store", "$store", "resolve_store", "node_config", "--node-config" })
+        // **`--db`, `--listen` and `PARLEY_DB` are on this list**, which is what makes their
+        // removal hold: prose that tells somebody to type a flag the tool refuses is worse than
+        // no prose at all.
+        foreach (var gone in new[]
+                 {
+                     "$Store", "-Store", "Resolve-Store", "$NodeConfig", "-NodeConfig", "--store",
+                     "$store", "resolve_store", "node_config", "--node-config",
+                     "--db", "--listen", "PARLEY_DB",
+                 })
         {
             Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
         }
@@ -290,9 +304,19 @@ public sealed class InstallScriptTests
         // last thing the person read, so it says the next step rather than leaving it to be found.
         var code = Code(RepositoryFile.Read(script));
 
+        // **And the terminal is the only next step there is now.** `parley project add` went on
+        // 2026-09-25, so a script still offering it would be handing somebody a command the tool
+        // refuses, at the one moment they have nothing else to go on.
         Assert.Contains("No projects configured", code, StringComparison.Ordinal);
-        Assert.Contains("parley project add", code, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", code, StringComparison.Ordinal);
+
+        // **And the steps are the terminal's flow, spelled the way it is typed.** The script must not
+        // send people to /parley:setup in each repository and to `parley registry`, and must not name
+        // the terminal `parley terminal`, which is not what anybody types.
+        Assert.Contains("Next, run:  parley", code, StringComparison.Ordinal);
+        Assert.Contains("Enroll agents from folders", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("/parley:setup", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley terminal", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("parley project add", code, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -312,10 +336,13 @@ public sealed class InstallScriptTests
     {
         // The same distinction as checking the version on PATH: "the entry was created" and "an
         // agent can attach" are different claims, and only the second is the one being made.
-        // `parley registry` is a client, so it can only succeed against a broker that is up.
+        // What proves it is the poll that reads `project list` for a broker answering.
+        //
+        // **Not the last `registry` in the script**, which would be a line telling the person to
+        // run `parley registry` -- advice, not the check.
         var code = Code(RepositoryFile.Read(script));
         var registers = code.IndexOf("autostart install", StringComparison.Ordinal);
-        var proves = code.LastIndexOf("registry", StringComparison.Ordinal);
+        var proves = code.LastIndexOf("answering", StringComparison.Ordinal);
 
         Assert.True(
             registers < proves,
@@ -347,8 +374,8 @@ public sealed class InstallScriptTests
     [MemberData(nameof(BothScripts))]
     public void Each_script_stops_the_broker_before_replacing_its_binary(string script)
     {
-        // Found by probing rather than by reading. A reinstall over a live broker reported
-        // complete success and installed nothing: Windows will not unlink a mapped binary, so
+        // A reinstall over a live broker would report
+        // complete success and install nothing: Windows will not unlink a mapped binary, so
         // `dotnet tool uninstall` failed, and the install after it did nothing while exiting 0.
         var code = Code(RepositoryFile.Read(script));
         var stops = code.IndexOf("top", StringComparison.Ordinal);
@@ -402,5 +429,228 @@ public sealed class InstallScriptTests
             line => line.Contains("parley.db", StringComparison.Ordinal)
                 && (line.Contains("Remove-Item", StringComparison.Ordinal)
                     || line.Contains("rm ", StringComparison.Ordinal)));
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_can_register_an_entry_that_opens_no_window(string script)
+    {
+        // **The scripts register the entry themselves, which is what made this a gap.** A person
+        // installing Parley never types `autostart install`; the script does it for them. So a
+        // script with no way to ask for `--hidden` is a machine that gets a console window at
+        // every logon, and the only remedy is the one command the terminal cannot run -- on a
+        // deployment whose whole direction is that setting up happens on a screen, not in a shell.
+        var code = Code(RepositoryFile.Read(script));
+
+        Assert.Contains("--hidden", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Neither_script_hides_the_window_unless_it_was_asked_to(string script)
+    {
+        // **Opt-in, and the check is that the flag sits behind a condition.** A script that always
+        // passed it would change what every machine already installed does at logon, which is a
+        // decision for the person running it rather than for whoever edited the script -- and the
+        // surprise would be silent, since the symptom is a window that stops appearing.
+        //
+        // Checked as "the flag is never on the line that runs the command". A script that wired it
+        // into the invocation would pass it on every run, and that is the one shape this has to
+        // refuse. A first draft of this test asked instead whether the flag sat on a line
+        // containing `if` or `=`, which every reasonable line does -- it could not have failed.
+        var lines = Executable(RepositoryFile.Read(script));
+
+        var wired = lines
+            .Where(line => line.Contains("autostart install", StringComparison.Ordinal)
+                && line.Contains("--hidden", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(
+            wired.Length == 0,
+            $"{script} passes --hidden on the line that registers the entry, so every install "
+            + $"would get it: {string.Join(" | ", wired)}");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void A_web_UI_the_broker_started_does_not_refuse_the_install(string script)
+    {
+        // **An ordinary machine must not refuse its own install.** The broker is
+        // up, it had started `parley-web-ui` beside itself as it is meant to, and the pre-flight
+        // counted that child as a process somebody had to go and close — naming a pid with no
+        // window and offering -Force to end something the script was three steps from ending
+        // itself. The broker is excluded from that check for exactly this reason, in a comment
+        // that says so; the web UI was simply never added to it.
+        //
+        // Checked as "the exclusion is written", because what it guards is a process tree this
+        // suite cannot build. A hand-started web UI is still caught, after the broker stops, by
+        // the sweep over every replacing command — so this defers the question rather than
+        // dropping it.
+        var code = Code(RepositoryFile.Read(script));
+
+        Assert.Contains("parley-web-ui", code, StringComparison.Ordinal);
+
+        var excluded = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("$_ -ne $webUiCommand", StringComparison.Ordinal)
+            : code.Contains("\"${commands[$i]}\" = \"parley-web-ui\" ] && [ \"$replacing_broker\"", StringComparison.Ordinal);
+
+        Assert.True(
+            excluded,
+            $"{script} counts the broker's own web UI as a holder, so a machine with a running "
+            + "broker refuses its own install");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Stopping_the_broker_waits_for_the_web_UI_it_started(string script)
+    {
+        // **The other half, and it is the dangerous one.** The broker ends its child, so the child
+        // goes — a moment later. Continuing straight on runs `dotnet tool uninstall` against a
+        // binary that may still be mapped, which fails; `dotnet tool install` then exits *zero*
+        // saying "is already installed"; and the version check cannot tell, because the version it
+        // finds is the version it expected. This script's own comments call that its worst
+        // failure, and excluding the web UI from the guard above is what would have opened it.
+        var code = Code(RepositoryFile.Read(script));
+
+        // Two waits, not one. Waiting for the broker and the web UI together
+        // would spend the whole budget on exactly the machine this exists to help: an orphaned
+        // web UI never exits on its own, so the combined wait runs to its deadline every time and
+        // only then reaches the code that ends it.
+        var waitsForBroker = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("Get-Process -Name 'parley' -ErrorAction", StringComparison.Ordinal)
+            : code.Contains("-z \"$(holding parley)\"", StringComparison.Ordinal);
+
+        var waitsForWebUi = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("Get-Process -Name 'parley-web-ui' -ErrorAction", StringComparison.Ordinal)
+            : code.Contains("-z \"$(holding parley-web-ui)\"", StringComparison.Ordinal);
+
+        Assert.True(
+            waitsForBroker && waitsForWebUi,
+            $"{script} stops the broker without waiting for it and for the web UI it started, so "
+            + "the uninstall can race a binary that is still mapped");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Stopping_the_broker_clears_the_web_UI_it_orphaned(string script)
+    {
+        // **The loop to avoid.** Stopping a scheduled task or a systemd unit
+        // terminates the broker rather than asking it to exit, so it never reaches the code that
+        // ends the child it started. The child keeps running, keeps the port and keeps the binary
+        // busy — and then refuses the very install that stopped the broker. Same pid, twice, in a
+        // refusal naming a process they had never started and could not see.
+        //
+        // The test is that the parent is consulted. Ending every `parley-web-ui` by name would
+        // reach one somebody started themselves, which is the thing this script refuses to do
+        // anywhere else.
+        var code = Code(RepositoryFile.Read(script));
+
+        var byParent = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("ParentProcessId", StringComparison.Ordinal)
+            : code.Contains("ps -o ppid=", StringComparison.Ordinal);
+
+        Assert.True(
+            byParent,
+            $"{script} does not clear the web UI it orphans when it stops the broker, or does not "
+            + "tell an orphan from one somebody started");
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void The_orphan_is_waited_for_after_it_is_ended(string script)
+    {
+        // **A kill asks; it does not wait.** `Remove-Holders` carries a whole paragraph about
+        // this, and an orphan cleanup placed above that paragraph would reintroduce it: the script would print "ending the web UI the stopped broker left behind,
+        // pid 26996" and then refuse the install naming pid 26996, in consecutive lines.
+        //
+        // Read as ordering: the wait for the web UI must come after the code that ends it. A wait
+        // before the kill is the defect, and it is the arrangement a careless edit produces.
+        var code = Code(RepositoryFile.Read(script));
+
+        var ends = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.IndexOf("Stop-Process -Id $stray.ProcessId", StringComparison.Ordinal)
+            : code.IndexOf("ending the web UI the stopped broker left behind", StringComparison.Ordinal);
+
+        // Anchored on the *wait*, not on the name: install.sh names `holding parley-web-ui` twice,
+        // once to enumerate the orphans and once to wait for them, and the enumeration comes
+        // first. A looser anchor found that one and reported the ordering defect against a script
+        // that had it right — which is the same class of mistake as the defect itself.
+        var waits = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.IndexOf("Get-Process -Name 'parley-web-ui' -ErrorAction", StringComparison.Ordinal)
+            : code.IndexOf("-z \"$(holding parley-web-ui)\"", StringComparison.Ordinal);
+
+        Assert.True(ends >= 0, $"{script} no longer ends the web UI it orphaned");
+        Assert.True(waits >= 0, $"{script} never waits for the web UI to go");
+        Assert.True(
+            waits > ends,
+            $"{script} waits for the web UI before ending it, so the kill is announced and the "
+            + "install then refuses on the process it just killed");
+    }
+
+    [Fact]
+    public void The_help_reaches_the_usage_and_not_only_the_preamble()
+    {
+        // **`./install.sh --help` must show the flags.** Printing a fixed range of lines would show only
+        // the paragraphs explaining why the script exists, and stop immediately before the usage list —
+        // the one part anybody runs `--help` for.
+        //
+        // The help reads to the first non-comment line rather than to a number, so a paragraph
+        // added to the header is in the help by construction. This checks that: no line range, and
+        // every flag the parser takes named in the header it prints.
+        var text = RepositoryFile.Read("install.sh");
+
+        // Executable lines only. The comment explaining this fix necessarily quotes the range it
+        // replaced, and a check over the whole file is answered by the sentence describing the
+        // defect — which is the trap this repository records against removal stubs naming the verb
+        // they removed, met again here by the person writing the guard.
+        Assert.DoesNotContain("sed -n '2,25p'", Code(text), StringComparison.Ordinal);
+
+        var header = string.Join('\n', text.Split('\n').TakeWhile(line => line.StartsWith('#') || line.Length == 0));
+
+        foreach (var flag in new[] { "--uninstall", "--surfaces", "--only", "--force", "--hidden" })
+        {
+            Assert.Contains(flag, header, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_leaves_the_terminal_able_to_take_typing(string script)
+    {
+        // **Reported three runs running: every mouse movement printing `[555;47;16M` at the
+        // prompt.** A terminal left in mouse-reporting mode, which belongs to the window rather
+        // than to any process and so outlives whatever set it.
+        //
+        // This script was established not to be what sets it — one of those runs refused before
+        // executing a single Parley binary and produced it anyway — so what it does is clear it.
+        // Disabling a mode that is already off does nothing, which makes this free on a healthy
+        // terminal and a repair on a stuck one, and means a terminal ruined after running this
+        // cannot be this script's doing.
+        var code = Code(RepositoryFile.Read(script));
+
+        foreach (var mode in new[] { 1003, 1015, 1006 })
+        {
+            Assert.Contains($"?{mode}l", code, StringComparison.Ordinal);
+        }
+
+        // The alternate screen is deliberately not among them: switching back to the main screen
+        // would throw away the screen of somebody running this from inside a full-screen program.
+        Assert.DoesNotContain("?1049l", code, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(BothScripts))]
+    public void Each_script_declares_the_switch_a_person_passes(string script)
+    {
+        // The other half of the pair above: "not wired into the call" is satisfied perfectly by a
+        // script that cannot pass the flag at all, which is the state this change started from. So
+        // the switch itself is named, in the place each shell declares one.
+        var code = Code(RepositoryFile.Read(script));
+
+        var declared = script.EndsWith(".ps1", StringComparison.Ordinal)
+            ? code.Contains("[switch] $Hidden", StringComparison.Ordinal)
+            : code.Contains("--hidden) hidden=1", StringComparison.Ordinal);
+
+        Assert.True(declared, $"{script} names --hidden somewhere but does not take it as an argument");
     }
 }

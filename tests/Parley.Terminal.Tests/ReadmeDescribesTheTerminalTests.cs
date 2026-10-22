@@ -31,7 +31,12 @@ public sealed class ReadmeDescribesTheTerminalTests
 
         Assert.NotNull(directory);
 
-        return File.ReadAllText(Path.Combine(directory!.FullName, "README.md"));
+        // The README and the pages under docs/ it links to are one body of documentation.
+        var pages = Directory.GetFiles(Path.Combine(directory!.FullName, "docs"), "*.md")
+            .Order(StringComparer.Ordinal)
+            .Prepend(Path.Combine(directory.FullName, "README.md"));
+
+        return string.Join("\n", pages.Select(p => File.ReadAllText(p))).Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     [Fact]
@@ -43,15 +48,13 @@ public sealed class ReadmeDescribesTheTerminalTests
         var readme = Readme();
 
         Assert.Contains("### From a terminal", readme, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", readme, StringComparison.Ordinal);
+        Assert.Contains("`parley` on its own opens it", readme, StringComparison.Ordinal);
 
         foreach (var offered in new[]
                  {
                      ("create a new project", Naming.CreateTitle),
-                     ("name the deployment this machine already runs", Naming.NameRunningTitle),
                      ("a project can be removed", Removing.Title),
                      ("typed back", Removing.Destroy),
-                     ("a seat", AgentsRegion.JoinTitle),
 
                      // 005 added the two the README had no reason to describe before, and each
                      // is the half of "who is in a project" the terminal could not touch.

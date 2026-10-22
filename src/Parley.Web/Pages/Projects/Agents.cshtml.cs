@@ -4,22 +4,16 @@ using Parley.Core;
 using Parley.Client;
 using Parley.Client.Views;
 
+
 namespace Parley.Web.Pages.Projects;
 
 /// <summary>
-/// One project: who is registered in it, and what they have been talking about.
+/// One project's conversations, which can be narrowed to the ones an agent is party to.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The two halves are on one page because they are read together. An operator opening a project
-/// is asking some version of "who is here and what is happening", and answering that across two
-/// pages made them hold the roster in their head while looking at the conversations.
-/// </para>
-/// <para>
-/// Two contained reads rather than one. A registry that does not answer must cost the roster and
-/// leave the conversations, and the reverse — they come from the same broker but they are
-/// separate questions, and half a page is worth more than an error.
-/// </para>
+/// The roster, roadmaps, health, files and settings each have their own page in the project's rail. The roster
+/// is read here only to offer the filter. Two contained reads rather than one: a registry that does not answer must cost
+/// the filter and leave the conversations, and the reverse.
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
 public sealed class AgentsModel(BrokerDirectory directory) : PageModel
@@ -81,6 +75,10 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// </remarks>
     public string? FilterProblem { get; private set; }
 
+    /// <summary>The agents the conversations can be narrowed to, as the filter offers them.</summary>
+    /// <remarks>The roster, plus the agent being filtered on when it is not on it, so the filter never hides what it applies.</remarks>
+    public IReadOnlyList<string> ParticipantChoices { get; private set; } = [];
+
     /// <summary>When the broker answered.</summary>
     public DateTimeOffset AsOf { get; private set; }
 
@@ -102,8 +100,20 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
         var roster = await BrokerDirectory.ReadAsync(async () =>
             await broker.RegistryAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
 
-        Agents = roster.Value ?? [];
+        // Parley is not an agent, so it is not on the roster (SPEC.md principle 2.11): a row for it would link to a page
+        // offering retire and purge, each of which the broker refuses. It is shown where it acts — as the sender
+        // of its questions, and on the ownership review.
+        Agents = [.. (roster.Value ?? []).Where(agent => !agent.Facilitator)];
         Problem = roster.Problem;
+
+        var choices = Agents.Select(agent => agent.Name.Value).ToList();
+
+        if (!string.IsNullOrWhiteSpace(Participant) && !choices.Contains(Participant, StringComparer.Ordinal))
+        {
+            choices.Add(Participant);
+        }
+
+        ParticipantChoices = choices;
 
         AgentName? participant = null;
 
@@ -131,9 +141,7 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
             string.Equals(Sort, "name", StringComparison.Ordinal) ? SortBy.Name : SortBy.Activity);
 
         // Ordered through the shared derivation and then mapped back, so the console and the
-        // terminal cannot sort the same list differently. The alternative -- an OrderBy here and
-        // another there -- is how the two surfaces came to disagree about who was in a conversation
-        // twice in one week, which is why anything both of them decide is decided once.
+        // terminal cannot sort the same list differently: anything both surfaces decide is decided once.
         Conversations =
         [
             .. rows.Select(row => (listed.Value?.Items ?? []).First(c => c.Id == row.Id))
@@ -152,8 +160,8 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// <param name="archived">Whether it is archived now, so this reverses it.</param>
     /// <returns>The page again, showing the result.</returns>
     /// <remarks>
-    /// No typed name, which is the line 004 drew and this does not move: nothing is destroyed and
-    /// one click reverses it, so a confirmation here would be a dialog in front of a light switch.
+    /// No typed name: nothing is destroyed and one click reverses it, so a confirmation here
+    /// would be a dialog in front of a light switch.
     /// </remarks>
     public async Task<IActionResult> OnPostArchiveAsync(string id, bool archived)
     {

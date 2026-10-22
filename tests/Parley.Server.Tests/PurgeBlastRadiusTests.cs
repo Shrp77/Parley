@@ -8,7 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 2.</b> Purge is the most destructive operation the protocol has, and SPEC.md
+/// Purge is the most destructive operation the protocol has, and SPEC.md
 /// §10.2 states its reach precisely: it deletes "an agent and every conversation it was party to, with
 /// those conversations' files… Destroys its peers' side of those conversations too, and cannot be
 /// undone." So the property worth probing is **blast radius** — that it takes all of what it names and

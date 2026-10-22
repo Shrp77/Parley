@@ -40,15 +40,10 @@ internal sealed class LoopbackBroker : IAsyncDisposable
 
     /// <summary>Starts a broker over an in-memory store.</summary>
     /// <param name="cancellationToken">Cancels startup.</param>
-    /// <param name="instructionPatience">
-    /// How long the broker waits for a turn before answering that it is still running, or null for
-    /// the shipped default.
-    /// </param>
     /// <param name="clock">The clock to stamp from, or null for the system one.</param>
     /// <returns>The running broker.</returns>
     public static async Task<LoopbackBroker> StartAsync(
         CancellationToken cancellationToken,
-        TimeSpan? instructionPatience = null,
         TimeProvider? clock = null)
     {
         // **Settable for the same reason the patience above is.** The wake ceiling is two minutes,
@@ -57,16 +52,7 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         // reach. Defaults to the system clock, so every existing test is unaffected.
         clock ??= TimeProvider.System;
 
-        // **The wait is settable so a test can watch it elapse, which is the path that used to
-        // destroy an agent's answer.** An operator who gave up cancelled the settling write and
-        // kept the reply; an operator who waited got `failed` written first and lost it. Only the
-        // second is the defect, and at the shipped thirty seconds no test could sit through it —
-        // so the case that mattered was the one nothing could reach.
-        var options = instructionPatience is { } patience
-            ? BrokerOptions.Default with { InstructionPatience = patience }
-            : BrokerOptions.Default;
-
-        var runtime = BrokerRuntime.OpenInMemory(options, clock);
+        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
 
         var server = await ParleyServer
             .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken)
@@ -229,27 +215,64 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <param name="name">The agent name.</param>
     /// <param name="workspace">Where it is launching from, or null.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <param name="owns">What the launch environment says this agent owns, or null for nothing.</param>
+    /// <param name="adapter">
+    /// The adapter it attaches through. <c>test</c> unless a test is attaching as the person, whose seat adapter is
+    /// what a surface reports.
+    /// </param>
+    /// <param name="launchToken">The token a node put in its environment, when a node started it (SPEC.md §11.7).</param>
+    /// <param name="startedBy">
+    /// The node that started it, which names the launch to the broker first and gives it the token — the way every agent
+    /// a node runs attaches. Without one it is an agent somebody opened outside Parley, which no node gives a turn.
+    /// </param>
+    /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
         string name,
         string? workspace = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? owns = null,
+        string adapter = "test",
+        string? launchToken = null,
+        JoinedNodeClient? startedBy = null,
+        string? identity = null)
     {
+        if (startedBy is not null)
+        {
+            launchToken = Guid.NewGuid().ToString("N");
+
+            _ = await startedBy.Nodes.ReportLaunchAsync(
+                new Wire.LaunchReport { Machine = startedBy.Machine, Agent = name, Token = launchToken },
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
         var client = broker.Connect();
 
         var stream = client.Attach(
             new Wire.AttachRequest
             {
                 Agent = name,
-                Adapter = "test",
+                Adapter = adapter,
                 Tier = Wire.AgentTier.Pull,
                 Workspace = workspace ?? string.Empty,
+
+                // **The only way a line reaches the registry** (§12.3): an adapter says what its
+                // launch environment carries, and no operator operation writes it. A test that needs
+                // an agent whose peers already read a line has to attach as one, which is also the
+                // honest shape -- there is no other route.
+                Owns = owns ?? string.Empty,
 
                 // Announced, because the broker checks it. Taken from the constant rather than
                 // written out, so a version bump does not need this file edited -- and so the
                 // check cannot be satisfied by a literal that happens to match.
-                ProtocolVersion = Parley.Core.ProtocolVersion.Current
+                ProtocolVersion = Parley.Core.ProtocolVersion.Current,
+
+                // What a node put in the process's environment, when a node started it (SPEC.md §11.7).
+                LaunchToken = launchToken ?? string.Empty,
+
+                // Reported as a label, never as authority (§4.1.1).
+                Identity = identity ?? string.Empty
             },
             cancellationToken: cancellationToken);
 
@@ -410,23 +433,29 @@ internal sealed class JoinedNodeClient : IAsyncDisposable
     /// <param name="startable">The roles this node can launch.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
     /// <param name="facts">What the node observed about itself.</param>
+    /// <param name="reportsTurns">Whether this node says it reports the turns it gives (SPEC.md §11.6).</param>
+    /// <param name="identities">The identifiers of the checkouts it can launch, which let it be asked for one by what it is.</param>
     /// <returns>The joined node.</returns>
     public static async Task<JoinedNodeClient> JoinAsync(
         LoopbackBroker broker,
         string machine,
         IEnumerable<string> startable,
         CancellationToken cancellationToken = default,
-        Wire.NodeFacts? facts = null)
+        Wire.NodeFacts? facts = null,
+        bool reportsTurns = false,
+        IEnumerable<string>? identities = null)
     {
         var nodes = broker.ConnectAsNode();
 
         var request = new Wire.JoinRequest
         {
             Machine = machine,
-            Facts = facts ?? new Wire.NodeFacts { Os = "test-os" }
+            Facts = facts ?? new Wire.NodeFacts { Os = "test-os" },
+            ReportsTurns = reportsTurns,
         };
 
         request.StartableRoles.AddRange(startable);
+        request.StartableIdentities.AddRange(identities ?? []);
 
         var stream = nodes.Join(request, cancellationToken: cancellationToken);
 

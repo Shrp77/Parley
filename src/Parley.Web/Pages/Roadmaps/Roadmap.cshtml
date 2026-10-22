@@ -1,0 +1,84 @@
+@page
+@model Parley.Web.Pages.Roadmaps.RoadmapModel
+@using Parley.Client.Roadmaps
+@{
+    ViewData["Title"] = Model.Roadmap is { } shown ? $"Roadmap: {shown.Title}" : "Roadmap";
+}
+
+<h1>@(Model.Roadmap is { } named ? $"#{named.Number} {named.Title}" : "Roadmap")</h1>
+
+<p><a href="/Roadmaps?project=@Model.Project">Back to the roadmaps in @Model.Project</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
+{
+    @* Every word below an agent wrote, or the person did, is escaped by Razor. Where an item stands is derived from its
+       conversation and never set here. *@
+    <p role="status">@ItemWording.Next(standing)</p>
+
+    <p><a href="/Roadmaps/Edit?project=@Model.Project&amp;id=@roadmap.Id">Edit this roadmap</a></p>
+
+    @if (Model.Agents.Count > 0)
+    {
+        <p>Agents on this roadmap: @string.Join(", ", Model.Agents.Select(a => a.Value)).</p>
+    }
+
+    @* The same grid as the conversations. The item to do next starts open, because it is the one a person came to act on. *@
+    <div class="grid items-grid roadmap-items" role="table" aria-label="Items">
+        <div class="grid-head" role="row">
+            <span role="columnheader">#</span>
+            <span role="columnheader">Item</span>
+            <span role="columnheader">Where it stands</span>
+        </div>
+        @foreach (var state in standing.Items)
+        {
+            <details class="grid-row@(state.IsNext ? " next" : null)" role="row" open="@(state.IsNext ? "open" : null)">
+                <summary>
+                    <span class="num"><span class="chev icon" aria-hidden="true">chevron_right</span> @state.Item.Number</span>
+                    @* The row opens the item, and with it its conversation. *@
+                    <span class="name">@(state.IsNext ? "Next: " : "")@state.Item.Text</span>
+                    <span class="when">@ItemWording.Standing(state)</span>
+                </summary>
+                <div class="grid-detail">
+                    @if (state.Item.IntendedAgent is { } agent)
+                    {
+                        <p class="between">for @agent.Value</p>
+                    }
+                    @if (state.Item.Needs.Count > 0)
+                    {
+                        <p class="between">needs @string.Join(", ", state.Item.Needs.Order())</p>
+                    }
+                    @* The conversation is shown here, in the roadmap's context, and is loaded when the item is first opened
+                       so that a long roadmap does not open every conversation at once. Pop out takes it to the conversation
+                       page, where it is the whole of the screen. *@
+                    <div class="item-bar">
+                        <span class="between">@(state.Item.Facts is { ConversationExists: true } ? "Its conversation" : "Not started")</span>
+                        <a class="button quiet" href="@Model.OpenPath(state)" title="Open this conversation on its own page">Pop out</a>
+                    </div>
+                    <iframe class="item-frame" title="Conversation for item @state.Item.Number" data-src="@Model.OpenPath(state, embedded: true)"></iframe>
+                </div>
+            </details>
+        }
+    </div>
+
+    <script>
+        // A conversation is loaded the first time its item is open, and the item to do next starts open.
+        (function () {
+            function load(row) {
+                var frame = row.querySelector(".item-frame");
+
+                if (frame && !frame.getAttribute("src")) { frame.setAttribute("src", frame.getAttribute("data-src")); }
+            }
+
+            document.querySelectorAll(".roadmap-items details.grid-row").forEach(function (row) {
+                if (row.open) { load(row); }
+                row.addEventListener("toggle", function () { if (row.open) { load(row); } });
+            });
+        })();
+    </script>
+
+    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words ready; you press Send.</small></p>
+}

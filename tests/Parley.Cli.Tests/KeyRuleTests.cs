@@ -8,8 +8,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 1. The plan for this feature asked one question above all others: <i>how
-/// the "is this entry ours" decision becomes one implementation rather than six.</i> The answer was
+/// The "is this entry ours" decision is one implementation rather than six:
 /// <see cref="LaunchKey"/>, and until something checks it that is an intention rather than a property
 /// — the same distinction <c>GraphTests</c> and <c>SurfaceTests</c> exist to make for their own rules.
 /// </para>
@@ -47,7 +46,7 @@ public sealed class KeyRuleTests
     /// <summary>The lines of a file that are code rather than comment.</summary>
     /// <remarks>
     /// Comments are where this feature's reasoning lives and several of them quote the key on purpose —
-    /// the adapter's own header shows an example <c>.mcp.json</c>, which FR-014 requires. A check that
+    /// the adapter's own header shows an example <c>.mcp.json</c>, which is required. A check that
     /// could not tell those apart would either fail on documentation or have to be switched off.
     /// </remarks>
     private static IEnumerable<(int Number, string Text)> CodeLines(string text)
@@ -121,10 +120,10 @@ public sealed class KeyRuleTests
 
             foreach (var (number, line) in CodeLines(text))
             {
-                // **Qualified, because `Prefix +` also matches `FocusPrefix +`.** The first version
-                // of this check reported the terminal's status line as a second key rule, which is
+                // **Qualified, because `Prefix +` also matches `FocusPrefix +`.** An unqualified
+                // match would report the terminal's status line as a second key rule, which is
                 // the shape a source-scanning check fails in: a substring that is a word somewhere
-                // else. It names `LaunchKey.Prefix` now, which is what a second implementation would
+                // else. It names `LaunchKey.Prefix`, which is what a second implementation would
                 // actually have to write.
                 if (line.Contains("LaunchKey.Prefix +", StringComparison.Ordinal)
                     || line.Contains("+ LaunchKey.Prefix", StringComparison.Ordinal)
@@ -143,11 +142,11 @@ public sealed class KeyRuleTests
     [Fact]
     public void Every_reader_of_a_launch_configuration_goes_through_one_reader()
     {
-        // FR-004 says every path that reads a repository's enrolment finds entries under both
+        // Every path that reads a repository's enrolment finds entries under both
         // spellings. That is achievable by discipline or by construction, and this is which: the
         // `mcpServers` object is only ever handed to `LaunchEntries.Read`.
         // **Matched across the whole file rather than line by line, because the calls span lines.**
-        // The first version of this check reported two correct call sites: `LaunchEntries.Read(` on
+        // A line-by-line check would report two correct call sites: `LaunchEntries.Read(` on
         // one line and its `["mcpServers"]` argument on the next. A rule about code that is written
         // to fit in a hundred columns cannot be enforced by a check that assumes it is not.
         var offenders = new List<string>();

@@ -14,7 +14,7 @@ namespace Parley.Server;
 /// a store, because the location is that store's and nothing else may write it.
 /// </para>
 /// <para>
-/// <b>A placement is staged beside the location and moved in when complete</b>, which is the owner's call: the
+/// <b>A placement is staged beside the location and moved in when complete</b>: the
 /// folder a person opens and the watcher watches never hold a half-uploaded file, and on the same disk the move
 /// is one step. A staged file that is never committed is deleted, and the staging directory is emptied when the
 /// broker starts, because nothing survives a broker that could have finished writing it.

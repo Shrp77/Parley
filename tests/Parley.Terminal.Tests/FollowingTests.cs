@@ -30,7 +30,7 @@ public sealed class FollowingTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static Message Question(long id, string text) =>
@@ -41,8 +41,7 @@ public sealed class FollowingTests
             Orders,
             Billing,
             "claude",
-            "{\"intent\":\"decide\",\"items\":[{\"id\":\"q1\",\"kind\":\"question\",\"text\":"
-            + System.Text.Json.JsonSerializer.Serialize(text) + "}],\"done_when\":\"the owner of the cap is named\"}",
+            "{\"ask\":" + System.Text.Json.JsonSerializer.Serialize(text) + "}",
             Conversation,
             DateTimeOffset.UnixEpoch.AddMinutes(id),
             null);
@@ -165,10 +164,11 @@ public sealed class FollowingTests
     }
 
     [Fact]
-    public async Task A_reader_who_has_not_moved_is_not_carried_to_the_bottom()
+    public async Task A_reader_who_has_not_moved_is_carried_to_the_new_end()
     {
-        // Nothing says a reader who never touched the cursor is waiting at the end; they are more likely
-        // reading from the top, which is where the transcript opens.
+        // **Reversed on 2026-10-01, on the owner's call: a conversation taking place is tailed.** This asserted the
+        // opposite since 0.25.7 — that a reader who never touched the cursor was reading from the top. Nothing on
+        // screen is waited on more than the next thing said, so no row now counts as being at the end.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var shell = new Shell(directory);
@@ -182,7 +182,81 @@ public sealed class FollowingTests
         Assert.True(shell.Transcript.Follow(
             Conversation, "alpha", Holding(Question(1, "who owns the cap?"), Answer(2, "the billing team owns it"))));
 
-        Assert.Null(list.SelectedItem);
+        Assert.Equal(list.Source!.Count - 1, list.SelectedItem);
+    }
+
+    [Fact]
+    public async Task A_reader_scrolled_back_with_the_wheel_is_not_moved_at_all()
+    {
+        // **The owner's nuance, 2026-10-01: at the bottom, tail; anywhere else, do not even move the reader.** The wheel
+        // scrolls the view and leaves the cursor where it was, so a rule read off the cursor would think somebody reading
+        // the start of a conversation was still at the end and carry them away from it. What decides is what is on screen.
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        var long_ = Enumerable.Range(1, 30).Select(id => Question(id, $"question number {id}?")).ToArray();
+
+        await ReadingAsync(driving, shell, Holding(long_));
+
+        var list = shell.Transcript.List;
+
+        Assert.True(list.Source!.Count > list.Viewport.Height, "the conversation fits on screen, so nothing can scroll");
+
+        list.Viewport = list.Viewport with { Y = 0 };
+
+        var selected = list.SelectedItem;
+
+        Assert.True(shell.Transcript.Follow(
+            Conversation, "alpha", Holding([.. long_, Answer(31, "the last answer")])));
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Equal(0, list.Viewport.Y);
+        Assert.Equal(selected, list.SelectedItem);
+    }
+
+    [Fact]
+    public async Task A_reader_at_the_bottom_sees_the_new_bottom()
+    {
+        // The other half: on screen at the end means the newest message is what is shown next.
+        using var driving = Driving.Open(width: 100, height: 30);
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        var long_ = Enumerable.Range(1, 30).Select(id => Question(id, $"question number {id}?")).ToArray();
+
+        await ReadingAsync(driving, shell, Holding(long_));
+
+        var list = shell.Transcript.List;
+
+        Assert.True(shell.Transcript.Follow(
+            Conversation, "alpha", Holding([.. long_, Answer(31, "the last answer")])));
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(
+            list.Viewport.Y + list.Viewport.Height >= list.Source!.Count,
+            $"rows {list.Viewport.Y}..{list.Viewport.Y + list.Viewport.Height} of {list.Source!.Count} are on screen, not the end");
+    }
+
+    [Fact]
+    public async Task A_conversation_opens_at_its_end()
+    {
+        // Somebody opening a conversation is there for what has just been said, which is the bottom of it.
+        using var driving = Driving.Open();
+        using var directory = Directory();
+        using var shell = new Shell(directory);
+
+        await ReadingAsync(
+            driving,
+            shell,
+            Holding(Question(1, "who owns the cap?"), Answer(2, "the billing team owns it"), Question(3, "and the floor?")));
+
+        var list = shell.Transcript.List;
+
+        Assert.Equal(list.Source!.Count - 1, list.SelectedItem);
+        Assert.Contains("and the floor?", string.Join("\n", Drawn.Rows(list)), StringComparison.Ordinal);
     }
 
     [Fact]

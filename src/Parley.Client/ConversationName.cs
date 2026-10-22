@@ -5,12 +5,9 @@ namespace Parley.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The rule was only ever enforced after the fact, and the owner met it.</b> They named a
-/// broadcast <c>tell everybody test</c>, filled in the form, sent it, and got a sentence back
-/// about which characters a name may hold — with the form closed and what they had written gone.
-/// A rule that can be applied as it is typed should be: a field that will not take a space cannot
-/// fail that way. <c>Naming.NameCorrection</c> made exactly this argument for a project's name and
-/// this field was the one left out.
+/// <b>The rule is applied as it is typed.</b> A field that will not take a space cannot fail after
+/// the form is closed and the person's words are gone, as a refusal on send would. This is the same
+/// argument as <c>Parley.Core.NameCorrection</c> makes for a project's name.
 /// </para>
 /// <para>
 /// <b>Here rather than on either surface</b>, for the reason <c>Parley.Client</c> exists at all:

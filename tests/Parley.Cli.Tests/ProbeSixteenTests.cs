@@ -7,7 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 5: the file a node runs.
+/// The file a node runs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -57,7 +57,6 @@ public sealed class ProbeSixteenTests : IDisposable
             new EnrollmentEntry(workspace, agent, "What it owns. Not what it does not.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Catalogue,

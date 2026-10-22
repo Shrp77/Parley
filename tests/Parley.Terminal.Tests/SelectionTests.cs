@@ -184,5 +184,5 @@ public sealed class SelectionTests
             false);
 
     private static ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), string.Empty, "http://127.0.0.1:1", null, null);
+        new(ProjectName.Create(name), string.Empty, "http://127.0.0.1:1", null);
 }

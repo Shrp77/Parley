@@ -7,7 +7,7 @@ namespace Parley.Core;
 /// <param name="Cycles">Cycles of Requests recorded in conversations that still have work open.</param>
 /// <remarks>
 /// <para>
-/// <b>This replaced ghosting, and it changes nothing about the work.</b> Nothing ends a piece of work
+/// <b>Flagging changes nothing about the work.</b> Nothing ends a piece of work
 /// but its participants or its person (principle 2.8), so an exchange that stops moving is shown to
 /// the person — naming the stage, the participant it waits on and since when — and the person, who
 /// can see why, starts the agent, asks it, or closes the conversation.
@@ -44,7 +44,18 @@ public enum FlagKind
     /// Flagged at once rather than after a threshold: there is no work left to be patient with, and a
     /// participant that finished its part has no reason to come back and vote unless something asks it.
     /// </remarks>
-    NotVoted = 3
+    NotVoted = 3,
+
+    /// <summary>
+    /// The owing agent's last turn ended with tool calls refused for want of permission, and it has said nothing in the
+    /// conversation since (SPEC.md §6).
+    /// </summary>
+    /// <remarks>
+    /// Flagged at once, like <see cref="NotVoted"/> and for the opposite reason: there the work is done, here it cannot be
+    /// done without a person. An agent running with nobody at the keyboard has a call needing approval refused rather than
+    /// paused, and nothing it can do gets it past that.
+    /// </remarks>
+    PermissionRefused = 4
 }
 
 /// <summary>One piece of open work, or one closure poll, needing the person's attention.</summary>

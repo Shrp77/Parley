@@ -14,10 +14,9 @@ namespace Parley.Core;
 /// </para>
 /// <para>
 /// <b>Why a correction exists at all.</b> A rule that can be applied as it is typed should be:
-/// the owner typed a capitalised name such as <c>OrderLedger</c> into a project name and met no resistance, because the only
-/// thing enforcing lowercase was a sentence on a row that had been clipped — and later named a
-/// conversation <c>tell everybody test</c>, wrote the whole message, and was refused once the form
-/// had closed. A field that will not take a capital or a space cannot fail either of those ways.
+/// a capitalised name such as <c>OrderLedger</c>, or a conversation named <c>tell everybody test</c>,
+/// would otherwise be refused only after the whole form was filled in. A field that will not take a
+/// capital or a space cannot fail either of those ways.
 /// </para>
 /// <para>
 /// <b>It corrects and never completes.</b> An empty name, and one whose first character is a digit

@@ -1,31 +1,31 @@
-﻿using Parley.Setup;
-using System.Globalization;
-using System.Net;
-using System.Net.Sockets;
 using Parley.Broker;
 using Parley.Configuration;
+using Parley.Core;
 using Parley.Server;
+using Parley.Setup;
 using Xunit;
 
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Maintaining the manifest without knowing where it lives.
+/// Naming a project, and never having to say where anything goes.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The manifest exists to stop operators maintaining paths by hand, so a file they must
-/// hand-create — in a location they have to look up — would keep most of the problem. Writing it
-/// through the tool also puts every rule in one place: a duplicate endpoint is caught here, at the
-/// moment somebody types it, rather than three days later as a broker that will not start with
-/// nothing connecting the two events.
+/// <b>The command takes one argument.</b> A person naming a project does not invent a
+/// filesystem path or pick a free port. A project's store is derived from its name and its port is
+/// claimed, so those two questions do not arise.
 /// </para>
 /// <para>
-/// <b>Removal is where the danger is, and it is danger by omission.</b> Taking a project out of
-/// the manifest forgets how to reach it and destroys nothing — the same distinction <c>retire</c>
-/// and <c>purge</c> already draw. A configuration command that deleted a store as a side effect
-/// would be the most destructive operation in this tool wearing the least alarming name, so what
-/// is asserted below is that the files are still there afterwards and that the output says so.
+/// So the tests assert the <b>absence</b> where the behaviour does not exist — that two projects cannot
+/// be given one store because there is no store to give, rather than that the attempt is refused.
+/// </para>
+/// <para>
+/// <b>Removal is where the danger is, and it is danger by omission.</b> Taking a project out forgets how
+/// to reach it and destroys nothing — the same distinction <c>retire</c> and <c>purge</c> already draw. A
+/// configuration command that deleted a store as a side effect would be the most destructive operation in
+/// this tool wearing the least alarming name, so what is asserted below is that the files are still there
+/// afterwards and that the output says so.
 /// </para>
 /// </remarks>
 public sealed class ProjectCommandTests : IDisposable
@@ -33,7 +33,14 @@ public sealed class ProjectCommandTests : IDisposable
     private readonly string _directory =
         Path.Combine(Path.GetTempPath(), "parley-project-" + Guid.NewGuid().ToString("N"));
 
-    public ProjectCommandTests() => Directory.CreateDirectory(_directory);
+    public ProjectCommandTests()
+    {
+        Directory.CreateDirectory(_directory);
+
+        // A band of this class's own, because every root otherwise starts at the bottom of the same
+        // one — see TestBand, and research.md R3, which predicted exactly this.
+        TestBand.GiveItsOwn(Root);
+    }
 
     public void Dispose()
     {
@@ -47,14 +54,18 @@ public sealed class ProjectCommandTests : IDisposable
         }
     }
 
-    /// <summary>Where a manifest would live, inside a directory that does not exist yet.</summary>
+    /// <summary>The root, inside a directory that does not exist yet.</summary>
     /// <remarks>
-    /// Nested on purpose: <c>add</c> has to create the directory as well as the file, because the
-    /// real default is under a per-user configuration directory that no Parley has ever written to.
+    /// Nested on purpose: <c>add</c> has to create the whole layout, because the real default is under a
+    /// per-user configuration directory that no Parley has ever written to.
     /// </remarks>
-    private string ManifestPath => Path.Combine(_directory, "config", "Parley", "projects.json");
+    private string Root => Path.Combine(_directory, "config", "Parley");
 
-    private string Store(string name) => Path.Combine(_directory, name + ".db");
+    private string Store(string name) =>
+        ProjectFolder.StoreFor(Root, ProjectName.Create(name));
+
+    private string ConfigurationOf(string name) =>
+        ProjectFolder.ConfigurationFor(Root, ProjectName.Create(name));
 
     private async Task<(int Code, string Out, string Error)> RunAsync(
         string[] arguments, ProjectFields? fields = null)
@@ -64,8 +75,8 @@ public sealed class ProjectCommandTests : IDisposable
 
         var code = await ProjectCommand.RunAsync(
             arguments,
-            ManifestPath,
-            fields ?? new ProjectFields(null, null, null, null),
+            Root,
+            fields ?? new ProjectFields(null),
             output,
             error,
             cancellationToken: TestContext.Current.CancellationToken);
@@ -73,68 +84,91 @@ public sealed class ProjectCommandTests : IDisposable
         return (code, output.ToString(), error.ToString());
     }
 
+    // **One argument.** The store and the endpoint are not supplied anywhere in this file.
     private Task<(int Code, string Out, string Error)> AddAsync(
-        string name, string? store = null, string? endpoint = null, string? node = null) =>
-        RunAsync(
-            ["add", name],
-            new ProjectFields(store ?? Store(name), endpoint ?? $"http://127.0.0.1:{Port(name)}", node, null));
-
-    /// <summary>A stable, distinct port per project name, so fixtures cannot collide.</summary>
-    /// <param name="name">The project's name.</param>
-    /// <returns>A port in the ephemeral range.</returns>
-    private static int Port(string name) => 51800 + (Math.Abs(name.GetHashCode(StringComparison.Ordinal)) % 100);
+        string name, string? description = null) =>
+        RunAsync(["add", name], new ProjectFields(description));
 
     // ---- add -------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Adding_creates_the_manifest_and_the_directory_holding_it()
+    public async Task Adding_creates_the_layout_and_says_where_everything_went()
     {
-        Assert.False(Directory.Exists(Path.GetDirectoryName(ManifestPath)));
+        // The projects directory, not the root: `TestBand` has written this class's band at the root
+        // already, which is what a machine looks like after anything has touched it.
+        Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
 
-        var (code, output, _) = await AddAsync("orders");
+        var (code, output, error) = await AddAsync("orders");
 
         Assert.Equal(0, code);
-        Assert.True(File.Exists(ManifestPath));
-        Assert.Contains(ManifestPath, output, StringComparison.Ordinal);
+        Assert.True(File.Exists(ConfigurationOf("orders")), error);
 
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
-        Assert.Equal("orders", Assert.Single(projects).Name.Value);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
+
+        var project = Assert.Single(projects);
+
+        Assert.Equal("orders", project.Name.Value);
+        Assert.Equal(Store("orders"), project.Store);
+
+        // **Both facts, because a person supplies neither.** The endpoint is what
+        // every other command needs to reach it, and the folder is what a backup has to include —
+        // neither is anywhere they can look up without being told once.
+        Assert.Contains(project.Endpoint, output, StringComparison.Ordinal);
+        Assert.Contains(ProjectFolder.For(Root, ProjectName.Create("orders")), output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_name_is_the_whole_of_it()
+    {
+        // **The claim** that an operator types one project name and has a working
+        // deployment. Nothing is passed but the name, and what comes back is a port in the band and a
+        // store inside the project's own folder.
+        var (code, _, error) = await AddAsync("orders");
+
+        Assert.Equal(0, code);
+
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _), error);
+
+        var project = Assert.Single(projects);
+        var port = new Uri(project.Endpoint).Port;
+
+        // **The band this root was given, not the built-in one.** `TestBand` writes a narrow band per
+        // class so parallel classes cannot be handed the same ports; what this asserts is that the port
+        // came from a band at all rather than from anywhere else.
+        Assert.InRange(port, 20000, 31000);
+        Assert.Equal(Store("orders"), project.Store);
+        Assert.StartsWith(ProjectFolder.For(Root, ProjectName.Create("orders")), project.Store, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Writing_leaves_no_half_written_file_behind()
     {
-        // The manifest is written beside itself and moved over, because it names every store on
-        // the machine and nothing else holds a copy: writing in place truncates first, and a
-        // process stopped between the truncate and the write leaves a file every reader then
-        // refuses — correctly, and permanently. What is asserted here is the visible half of that,
-        // the part that would rot if the temporary file were ever orphaned.
-        //
-        // The lock is named as well, rather than the assertion loosened to ignore extra files.
-        // It is a real sibling now — adding a project takes it, and it stays behind on purpose,
-        // because a lock somebody has to delete is a lock that eventually is not taken. Listing
-        // it keeps this strict: a stray `.writing`, or a backup some future rewrite leaves, still
-        // fails here rather than passing through a wildcard.
+        // Each project's configuration is written beside itself and moved over, because nothing else
+        // holds a copy of where its broker listens: writing in place truncates first, and a process
+        // stopped between the truncate and the write leaves a file every reader then refuses —
+        // correctly, and permanently. What is asserted here is the visible half of that, the part that
+        // would rot if a temporary file were ever orphaned.
         await AddAsync("orders");
         await AddAsync("billing");
 
-        var directory = Path.GetDirectoryName(ManifestPath)!;
-        var manifest = Path.GetFileName(ManifestPath);
+        foreach (var name in new[] { "orders", "billing" })
+        {
+            Assert.Equal(
+                [ProjectFolder.ConfigurationFileName],
+                Directory.GetFiles(ProjectFolder.For(Root, ProjectName.Create(name)))
+                    .Select(Path.GetFileName)
+                    .Order(StringComparer.Ordinal));
+        }
 
+        // The lock is named rather than the assertion loosened to ignore extra files. It is a real
+        // sibling and stays behind on purpose, because a lock somebody has to delete is a lock that
+        // eventually is not taken. Listing it keeps this strict: a stray `.writing`, or a backup some
+        // future rewrite leaves, still fails here rather than passing through a wildcard.
         Assert.Equal(
-            [manifest, manifest + ".lock"],
-            Directory.GetFiles(directory).Select(Path.GetFileName).Order(StringComparer.Ordinal));
-    }
-
-    [Fact]
-    public async Task A_project_needs_a_store_and_an_endpoint()
-    {
-        var (code, _, error) = await RunAsync(["add", "orders"]);
-
-        Assert.Equal(64, code);
-        Assert.Contains("--db", error, StringComparison.Ordinal);
-        Assert.Contains("--listen", error, StringComparison.Ordinal);
-        Assert.False(File.Exists(ManifestPath));
+            [".lock"],
+            Directory.GetFiles(ProjectFolder.ProjectsIn(Root))
+                .Select(Path.GetFileName)
+                .Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -144,159 +178,245 @@ public sealed class ProjectCommandTests : IDisposable
 
         Assert.Equal(64, code);
         Assert.Contains("lowercase", error, StringComparison.Ordinal);
+
+        // And nothing was created on the way to refusing it — the name is the folder, so a refusal that
+        // had already made one would leave a directory nothing can read back as a project.
+        Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
     }
 
     [Fact]
-    public async Task A_duplicate_endpoint_is_refused_and_the_manifest_is_unchanged()
+    public async Task Two_projects_are_never_handed_one_port()
     {
-        await AddAsync("orders", endpoint: "http://127.0.0.1:51801");
+        // **A duplicate endpoint, from the other side.** Nobody types an
+        // endpoint, so the way to collide is to be handed the same one — which is what the claim
+        // exists to prevent, and what `PortLedgerTests` probes concurrently. Here it is the ordinary
+        // sequential case, through the command a person actually runs.
+        await AddAsync("orders");
+        await AddAsync("billing");
+        await AddAsync("inventory");
 
-        var before = await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out var problem), problem);
 
-        var (code, _, error) = await AddAsync("billing", endpoint: "http://127.0.0.1:51801");
+        var ports = projects.Select(p => new Uri(p.Endpoint).Port).ToList();
 
-        Assert.Equal(78, code);
-        Assert.Contains("only one broker can hold a port", error, StringComparison.Ordinal);
-        Assert.Contains("unchanged", error, StringComparison.Ordinal);
-
-        Assert.Equal(
-            before,
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken));
+        Assert.Equal(3, ports.Count);
+        Assert.Equal(ports.Count, ports.Distinct().Count());
     }
 
     [Fact]
-    public async Task A_duplicate_store_is_refused_and_the_manifest_is_unchanged()
+    public async Task An_endpoint_cannot_be_stated_at_all_and_the_refusal_says_where_it_lives()
     {
-        // The one with teeth. Two brokers on one SQLite file breaks the isolation SPEC.md §4.1
-        // relies on, and it does not fail loudly — WAL mode needs coherent shared memory between
-        // every opener, so the damage is to the file rather than to either process.
-        await AddAsync("orders", store: Store("shared"));
+        // SPEC.md §16 does permit a broker on a private network, and nothing here can know which
+        // interface somebody means, so what is handed out is always loopback. The remedy does not
+        // belong on a command line: it would be one more thing a person supplies and two rules about
+        // which source wins, where the point is that a project is named rather than pathed.
+        //
+        // **So the refusal has to say where the endpoint does live**, or this is a capability removed
+        // with nowhere to go. Driven through the real binary, because the refusal is in the entry point.
+        var (code, _, error) = ToolProcess.RunFully(
+            [], "project", "add", "orders", "--listen", "http://0.0.0.0:19100");
 
-        var before = await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken);
+        Assert.Equal(64, code);
+        Assert.Contains("--listen", error, StringComparison.Ordinal);
 
-        var (code, _, error) = await AddAsync("billing", store: Store("shared"));
-
-        Assert.Equal(78, code);
-        Assert.Contains("share a store", error, StringComparison.Ordinal);
-
-        Assert.Equal(
-            before,
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken));
+        // And nothing was created on the way to refusing it.
+        Assert.False(Directory.Exists(ProjectFolder.ProjectsIn(Root)));
     }
 
     [Fact]
-    public async Task A_duplicate_name_is_refused()
+    public async Task Two_projects_cannot_be_given_one_store_because_neither_is_given_one()
+    {
+        // **This asserted a refusal and now asserts an absence.** The refusal had teeth: two brokers on
+        // one SQLite file breaks the isolation SPEC.md §4.1 relies on, and it does not fail loudly — WAL
+        // mode needs coherent shared memory between every opener, so the damage is to the file rather
+        // than to either process.
+        //
+        // That hazard is gone rather than guarded. A store is `parley.db` inside a folder named by the
+        // project, so distinct names give distinct stores by construction — there is no flag that could
+        // point two projects at one file, which is stronger than refusing it. Kept as a test, because a
+        // suite that simply dropped the case would leave the next reader unable to tell a rule that was
+        // removed from one nobody wrote.
+        await AddAsync("orders");
+        await AddAsync("billing");
+
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
+
+        var stores = projects.Select(p => p.Store).ToList();
+
+        Assert.Equal(2, stores.Count);
+        Assert.Equal(stores.Count, stores.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public async Task A_duplicate_name_is_refused_and_the_project_that_is_there_is_untouched()
     {
         await AddAsync("orders");
 
-        var (code, _, error) = await AddAsync("orders", store: Store("other"), endpoint: "http://127.0.0.1:51999");
+        var before = await File.ReadAllTextAsync(ConfigurationOf("orders"), TestContext.Current.CancellationToken);
+
+        var (code, _, error) = await AddAsync("orders");
 
         Assert.Equal(78, code);
-        Assert.Contains("share a name", error, StringComparison.Ordinal);
+        Assert.Contains("already a project", error, StringComparison.Ordinal);
+
+        // **The refusal is what makes the folder-is-the-name model safe.** Without it a second add would
+        // write over the first project's configuration and hand it a different port, and the broker
+        // serving the old one would go on holding the store under a name that now means something else.
+        Assert.Equal(
+            before,
+            await File.ReadAllTextAsync(ConfigurationOf("orders"), TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task A_relative_path_is_refused_because_it_means_whatever_the_caller_was_standing_in()
+    public async Task A_store_cannot_be_named_at_all_and_saying_so_is_the_point()
     {
-        var (code, _, error) = await AddAsync("orders", store: "orders.db");
+        // **Said rather than ignored.** Somebody who made a deployment with
+        // `project add --db <path>` will type it again from memory or from a script — and a
+        // flag silently passed over is a person believing their store went where they said it would.
+        //
+        // Driven through the real binary, because the refusal lives in the entry point: an in-process
+        // call never reaches it, which is the reason `FilesCommand.OwnOptions` is tested this way too.
+        var (exitCode, _, error) = ToolProcess.RunFully(
+            [], "project", "add", "orders", "--db", Path.Combine(_directory, "somewhere.db"));
 
-        Assert.Equal(78, code);
-        Assert.Contains("relative", error, StringComparison.Ordinal);
-        Assert.False(File.Exists(ManifestPath));
+        Assert.Equal(64, exitCode);
+        Assert.Contains("--db", error, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Adding_refuses_rather_than_starting_a_fresh_manifest_over_an_unreadable_one()
+    public async Task Adding_refuses_rather_than_starting_fresh_over_a_configuration_it_cannot_read()
     {
-        // The failure this repository has now met three times, arriving at the file that names
-        // every store. Overwriting a configuration that could not be read destroys the only record
-        // of what the machine was configured for — and the run that does it reports success.
-        Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath)!);
+        // The failure this repository has now met three times, arriving at the file that says where a
+        // broker listens. Overwriting a configuration that could not be read destroys the only record of
+        // what the machine was configured for — and the run that does it reports success.
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("orders")));
 
-        const string damaged = "{ \"projects\": [ { \"name\": \"orders\", ";
-        await File.WriteAllTextAsync(ManifestPath, damaged, TestContext.Current.CancellationToken);
+        const string damaged = "{ \"endpoint\": ";
+        await File.WriteAllTextAsync(ConfigurationOf("orders"), damaged, TestContext.Current.CancellationToken);
 
         var (code, _, error) = await AddAsync("billing");
 
         Assert.Equal(78, code);
-        Assert.Contains(ManifestPath, error, StringComparison.Ordinal);
+        Assert.Contains(ConfigurationOf("orders"), error, StringComparison.Ordinal);
 
         Assert.Equal(
             damaged,
-            await File.ReadAllTextAsync(ManifestPath, TestContext.Current.CancellationToken));
+            await File.ReadAllTextAsync(ConfigurationOf("orders"), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_refused_add_leaves_no_port_stranded()
+    {
+        // The claim happens before the folder is written, so a write that then fails would leave a port
+        // recorded against a project that does not exist — unavailable for ever, and invisible, because
+        // the record is exactly what the next claim steps over.
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("orders")));
+
+        await File.WriteAllTextAsync(
+            ConfigurationOf("orders"), "{ \"endpoint\": ", TestContext.Current.CancellationToken);
+
+        Assert.Equal(78, (await AddAsync("billing")).Code);
+
+        Assert.DoesNotContain("billing", PortLedger.Read(Root).Keys, StringComparer.Ordinal);
     }
 
     // ---- remove ----------------------------------------------------------------------------
 
     [Fact]
-    public async Task Removing_takes_out_the_entry_and_deletes_nothing()
+    public async Task Removing_one_project_beside_an_unreadable_one_changes_nothing()
     {
-        await AddAsync("orders", node: Path.Combine(_directory, "node.json"));
+        // Reading leaves an unreadable project out, and the writer removes every configuration not in what it is
+        // handed — so removing `orders` must not delete `billing`'s file too and say "Nothing was deleted".
+        await AddAsync("orders");
 
-        // Real files, so "deletes nothing" is a fact about the disk rather than about the prose.
-        await File.WriteAllTextAsync(Store("orders"), "not really a database", TestContext.Current.CancellationToken);
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("billing")));
+        const string damaged = "{ \"endpoint\": ";
+        await File.WriteAllTextAsync(ConfigurationOf("billing"), damaged, TestContext.Current.CancellationToken);
+
+        var (code, _, error) = await RunAsync(["remove", "orders"]);
+
+        Assert.Equal(78, code);
+        Assert.Contains("cannot be read", error, StringComparison.Ordinal);
+        Assert.Equal(damaged, await File.ReadAllTextAsync(ConfigurationOf("billing"), TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(ConfigurationOf("orders")), "orders was removed although the change was refused");
+    }
+
+    [Fact]
+    public async Task Removing_takes_out_the_configuration_and_deletes_nothing()
+    {
+        await AddAsync("orders");
+
+        // A real file, so "deletes nothing" is a fact about the disk rather than about the prose.
         await File.WriteAllTextAsync(
-            Path.Combine(_directory, "node.json"), "{}", TestContext.Current.CancellationToken);
+            Store("orders"), "not really a database", TestContext.Current.CancellationToken);
 
         var (code, output, _) = await RunAsync(["remove", "orders"]);
 
         Assert.Equal(0, code);
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
         Assert.Empty(projects);
 
         Assert.True(File.Exists(Store("orders")), "the store was deleted");
-        Assert.True(File.Exists(Path.Combine(_directory, "node.json")), "the catalogue was deleted");
 
-        // Said every time, because somebody removing a project may well have meant to delete its
-        // data too — and the only safe way to offer that is to say what still exists and let them
-        // do it deliberately.
+        // Said every time, because somebody removing a project may well have meant to delete its data
+        // too — and the only safe way to offer that is to say what still exists and let them do it
+        // deliberately.
         Assert.Contains("Nothing was deleted", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);
-        Assert.Contains(Path.Combine(_directory, "node.json"), output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_gives_the_port_back()
+    {
+        // A port kept against a project that has gone is a port nothing can ever use again, and
+        // nothing would say so — the band would simply be one narrower every time somebody changed their
+        // mind about a name.
+        await AddAsync("orders");
+
+        Assert.True(ProjectManifest.TryRead(Root, out var before, out _));
+
+        var was = Assert.Single(before).Endpoint;
+
+        Assert.Equal(0, (await RunAsync(["remove", "orders"])).Code);
+        Assert.DoesNotContain("orders", PortLedger.Read(Root).Keys, StringComparer.Ordinal);
+
+        Assert.Equal(0, (await AddAsync("billing")).Code);
+
+        Assert.True(ProjectManifest.TryRead(Root, out var after, out _));
+        Assert.Equal(was, Assert.Single(after).Endpoint);
     }
 
     [Fact]
     public async Task Removing_a_project_whose_broker_is_still_running_says_so()
     {
-        // FR-029, which was implemented and never exercised — the branch existed, and nothing had
-        // ever taken it. Forgetting how to reach a broker does not stop the broker: the process
-        // keeps its port and its store, and the entry just deleted was the only record of where it
-        // was. Somebody who meant to shut a project down and ran this instead needs telling, and
-        // they need telling at the moment they do it.
+        // Forgetting how to reach a broker does not stop the broker: the process keeps its
+        // port and its store, and the configuration just deleted was the only record of where it was.
+        // Somebody who meant to shut a project down and ran this instead needs telling, and they need
+        // telling at the moment they do it.
         //
-        // A real broker on a real port, because the check is a connection attempt and a listener
-        // that does not speak HTTP/2 would be reported unreachable — which is the answer that
-        // makes this test pass while proving nothing.
-        var port = Free();
-        var endpoint = $"http://127.0.0.1:{port.ToString(CultureInfo.InvariantCulture)}";
+        // A real broker on a real port, because the check is a connection attempt and a listener that
+        // does not speak HTTP/2 would be reported unreachable — which is the answer that makes this test
+        // pass while proving nothing.
+        // **The endpoint is read back rather than chosen.** The
+        // project is handed one from the band, and a broker started on that address is what makes
+        // the check a real connection attempt rather than a listener that cannot speak HTTP/2.
+        Assert.Equal(0, (await AddAsync("orders")).Code);
+
+        Assert.True(ProjectManifest.TryRead(Root, out var named, out var unreadable), unreadable);
+
+        var endpoint = Assert.Single(named).Endpoint;
 
         var runtime = BrokerRuntime.Open(
-            Path.Combine(_directory, "live.db"), BrokerOptions.Default, TimeProvider.System);
+            ProjectName.Create("orders"), Store("orders"), BrokerOptions.Default, TimeProvider.System);
 
         await using var server = await ParleyServer.StartAsync(
             runtime, endpoint, TestContext.Current.CancellationToken);
-
-        await RunAsync(
-            ["add", "orders"],
-            new ProjectFields(Path.Combine(_directory, "live.db"), endpoint, null, null));
 
         var (code, output, _) = await RunAsync(["remove", "orders"]);
 
         Assert.Equal(0, code);
         Assert.Contains("still appears to be running", output, StringComparison.Ordinal);
         Assert.Contains(endpoint, output, StringComparison.Ordinal);
-    }
-
-    /// <summary>A port free at the moment of asking.</summary>
-    /// <returns>The port number.</returns>
-    private static int Free()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
     }
 
     [Fact]
@@ -323,74 +443,63 @@ public sealed class ProjectCommandTests : IDisposable
     // ---- list ------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Listing_nothing_is_not_an_error_and_says_where_a_manifest_would_live()
+    public async Task Listing_nothing_is_not_an_error_and_says_where_a_project_would_live()
     {
-        // Exit zero, because a machine with no projects is an ordinary machine. Telling the
-        // operator where the file would go is more use than telling them it is missing — this is
-        // the one command where naming the manifest is the answer rather than noise.
+        // Exit zero, because a machine with no projects is an ordinary machine. Telling the operator
+        // where they would go is more use than telling them there are none.
         var (code, output, _) = await RunAsync(["list"]);
 
         Assert.Equal(0, code);
-        Assert.Contains(ManifestPath, output, StringComparison.Ordinal);
-        Assert.Contains("parley project add", output, StringComparison.Ordinal);
+        Assert.Contains(ProjectFolder.ProjectsIn(Root), output, StringComparison.Ordinal);
+
+        // And it says where to go. It offered the whole command until 2026-09-25, when creating a
+        // project became the terminal's — so a listing that still named `project add` would be the
+        // one place a person with no projects is looking, pointing at a command that refuses them.
+        Assert.Contains("`parley`",output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task An_unreadable_manifest_is_refused_rather_than_listed_as_empty()
+    public async Task An_unreadable_configuration_is_refused_rather_than_listed_as_empty()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(ManifestPath)!);
-        await File.WriteAllTextAsync(ManifestPath, "[]", TestContext.Current.CancellationToken);
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("orders")));
+        await File.WriteAllTextAsync(ConfigurationOf("orders"), "[]", TestContext.Current.CancellationToken);
 
         var (code, _, error) = await RunAsync(["list"]);
 
         Assert.Equal(78, code);
-        Assert.Contains("not a JSON object", error, StringComparison.Ordinal);
+        Assert.Contains("does not hold an object", error, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task An_unreachable_project_is_listed_as_such_rather_than_dropped()
     {
-        // A project whose broker is down is still configured, and the listing is how an operator
-        // finds out it is down. Omitting it would answer "what is configured here" with a subset,
-        // which is the answer most likely to be believed and least likely to be true.
-        await AddAsync("orders", endpoint: $"http://127.0.0.1:{Closed()}");
+        // A project whose broker is down is still configured, and the listing is how an operator finds
+        // out it is down. Omitting it would answer "what is configured here" with a subset, which is the
+        // answer most likely to be believed and least likely to be true.
+        await AddAsync("orders");
 
         var (code, output, _) = await RunAsync(["list"]);
 
         Assert.Equal(0, code);
         Assert.Contains("orders", output, StringComparison.Ordinal);
-        Assert.Contains("not reachable", output, StringComparison.Ordinal);
+        // **`not answering`, not `not reachable`.** The latter would mean "this process connected to
+        // it" and read as "reachable from the network" — which is what somebody planning a firewall
+        // rule would act on, and no rule they could write would make a loopback port reachable. The
+        // listing keeps the two facts apart.
+        Assert.Contains("not answering", output, StringComparison.Ordinal);
+        Assert.Contains("only this machine can address it", output, StringComparison.Ordinal);
         Assert.Contains(Store("orders"), output, StringComparison.Ordinal);
-        Assert.Contains(ManifestPath, output, StringComparison.Ordinal);
+        Assert.Contains(ProjectFolder.ProjectsIn(Root), output, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task A_description_is_shown_because_that_is_the_only_reason_to_record_one()
     {
-        await RunAsync(
-            ["add", "orders"],
-            new ProjectFields(Store("orders"), "http://127.0.0.1:51801", null, "the shop's own deployment"));
+        await AddAsync("orders", description: "the shop's own deployment");
 
         var (_, output, _) = await RunAsync(["list"]);
 
         Assert.Contains("the shop's own deployment", output, StringComparison.Ordinal);
     }
 
-    /// <summary>A port nothing is listening on.</summary>
-    /// <returns>A port number, free at the moment of asking.</returns>
-    /// <remarks>
-    /// Taken from the kernel and released, rather than picked. A hardcoded "nothing runs here"
-    /// port is a guess about the machine running the suite, and the failure it produces — a
-    /// reachability probe that succeeds against somebody else's service — reads as this feature
-    /// being broken.
-    /// </remarks>
-    private static int Closed()
-    {
-        using var probe = new TcpListener(IPAddress.Loopback, 0);
-        probe.Start();
-        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
-        probe.Stop();
-
-        return port;
-    }
 }

@@ -11,8 +11,7 @@ namespace Parley.Broker.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 2 run 2.14, written when the refusal under test was an item id no Result could name; 0.7 removed item ids and
-/// the case it guards is unchanged, so the payload is now one storage refuses for having no ask. The adapter refuses
+/// The payload is one storage refuses for having no ask. The adapter refuses
 /// such a payload before sending and storage refuses it on insert, but only the adapter is tested for the first and
 /// only the store for the second. Anything else reaching the broker — a surface, another
 /// adapter — meets the storage refusal in the middle of an operation that has already opened the exchange. Were that not
@@ -20,8 +19,8 @@ namespace Parley.Broker.Tests;
 /// conversation open.
 /// </para>
 /// <para>
-/// Probed before it was kept: the refusal took the exchange, the conversation and the message with it, and the sender's
-/// next Request was admitted.
+/// A refusal takes the exchange, the conversation and the message with it, and the sender's
+/// next Request is admitted.
 /// </para>
 /// </remarks>
 public sealed class RefusedRequestRollsBackTests
@@ -33,7 +32,7 @@ public sealed class RefusedRequestRollsBackTests
     private const string Model = "claude-opus-5";
 
     /// <summary>A payload storage refuses: it carries no ask (§5.1).</summary>
-    private const string NoAsk = """{"intent":"x","text":"move the rate"}""";
+    private const string NoAsk = """{"text":"move the rate"}""";
 
     [Fact]
     public async Task A_refused_request_opens_nothing_and_the_next_one_is_admitted()

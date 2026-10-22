@@ -23,10 +23,18 @@ public sealed class MigrationDiscoveryTests
 {
     /// <summary>How many migrations this build is expected to carry.</summary>
     /// <remarks>
+    /// <para>
     /// Bumped deliberately when one is added, which is the point: the number is the assertion,
     /// and a migration that appears without anybody deciding it should is what this catches.
+    /// </para>
+    /// <para>
+    /// <b>There is one migration.</b> <c>001_initial.sql</c> holds the whole schema, on the one ground
+    /// that permits it: nothing has been released and no store outside a test process holds anything
+    /// worth keeping. The header of that file carries the argument and what it cost. **The next
+    /// change to the schema is a migration**, and this number moving to 2 is how that is noticed.
+    /// </para>
     /// </remarks>
-    private const int Expected = 11;
+    private const int Expected = 1;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

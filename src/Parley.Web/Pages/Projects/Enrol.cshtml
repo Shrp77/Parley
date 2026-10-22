@@ -1,0 +1,189 @@
+@page
+@model Parley.Web.Pages.Projects.EnrolModel
+@using Parley.Setup
+@{
+    ViewData["Title"] = $"Register agents in {Model.Project}";
+    ViewData["Project"] = Model.Project;
+}
+
+<h1>Register agents in @Model.Project</h1>
+
+@if (Model.Attempted)
+{
+    @* Said as it is, and in the order it happened: a start that was asked for and an agent that registered are two facts,
+       and the second is the only one that makes the agent addressable. *@
+    @if (Model.Outcome is { RegisteredAgents.Count: > 0 } done)
+    {
+        <p class="outcome" role="status">Registered and ready to be asked: @string.Join(", ", done.RegisteredAgents).</p>
+    }
+
+    @if (Model.Outcome is { Unregistered.Count: > 0 } waiting)
+    {
+        @foreach (var not in waiting.Unregistered)
+        {
+            <p class="unreachable" role="alert">@not.Role was written but has not registered yet: @not.Why Until it has, it cannot be asked or told. Check <a href="/?tab=agents&amp;project=@Model.Project">the agents</a> shortly.</p>
+        }
+    }
+
+    @foreach (var line in Model.Said)
+    {
+        <p class="unreachable" role="alert">@line</p>
+    }
+
+    <p><a class="button" href="/?tab=agents&amp;project=@Model.Project">Back to the agents</a></p>
+}
+else if (Model.RunId is { Length: > 0 } run)
+{
+    @* Each repository's own line, as the command reports it: written, starting, waiting for the node, registering. The page asks
+       every moment and moves to the result when the run is over. Without script it says so and the result is a link away. *@
+    <section aria-live="polite" class="enrol-progress">
+        <p><span class="spinner" aria-hidden="true"></span> <strong id="enrol-headline">Registering @Model.Working.Count @(Model.Working.Count == 1 ? "repository" : "repositories")…</strong></p>
+        <p class="composer-note">
+            Each is written, then started once so that it registers itself, one after another. That can take up to a minute for each.
+            You can leave this page; it carries on.
+        </p>
+        <ul id="enrol-activity" class="enrol-activity">
+            @foreach (var role in Model.Working)
+            {
+                <li data-role="@role"><strong>@role</strong> <span class="says">queued</span></li>
+            }
+        </ul>
+        <noscript>
+            <p><a class="button" href="/Projects/Enrol?handler=Result&amp;run=@run&amp;project=@Model.Project">Show the result</a></p>
+        </noscript>
+    </section>
+
+    <style>
+        .spinner { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: enrol-spin 0.8s linear infinite; }
+        @@keyframes enrol-spin { to { transform: rotate(360deg); } }
+        @@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+        .enrol-activity { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.4rem; }
+        .enrol-activity .says { color: var(--ink-soft); margin-left: 0.5rem; }
+    </style>
+    <script>
+        (function () {
+            var list = document.getElementById('enrol-activity');
+            var url = '/Projects/Enrol?handler=Progress&run=@run';
+            var next = '/Projects/Enrol?handler=Result&run=@run&project=@Uri.EscapeDataString(Model.Project ?? "")';
+            var misses = 0;
+
+            function draw(rows) {
+                rows.forEach(function (row) {
+                    var li = list.querySelector('li[data-role="' + CSS.escape(row.role) + '"]');
+                    if (li) { li.querySelector('.says').textContent = row.says; }
+                });
+            }
+
+            function ask() {
+                fetch(url).then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); }).then(function (p) {
+                    misses = 0;
+                    draw(p.activity);
+                    if (p.done) { location.replace(next); } else { setTimeout(ask, 700); }
+                }).catch(function () {
+                    misses++;
+                    if (misses > 20) {
+                        document.getElementById('enrol-headline').textContent = 'The console stopped answering. The agents page shows who registered.';
+                    } else { setTimeout(ask, 1500); }
+                });
+            }
+
+            ask();
+        })();
+    </script>
+}
+else if (Model.Problems.Count > 0 && (!Model.FolderMode || Model.Entries.Count == 0))
+{
+    @foreach (var problem in Model.Problems)
+    {
+        <p class="unreachable" role="alert">@problem</p>
+    }
+
+    <p>Nothing was written. <a href="/?tab=agents&amp;project=@Model.Project">Back to the agents</a>.</p>
+}
+else if (Model.FolderMode)
+{
+    @* Nothing starts ticked: a person looking at a list of thirty has not yet said yes to any of them, and a pre-ticked
+       list enrols whatever they did not notice. *@
+    <form method="post" asp-page-handler="Apply">
+        <input type="hidden" name="Project" value="@Model.Project" />
+        <input type="hidden" name="Folder" value="@Model.Folder" />
+
+        <p>@Model.Entries.Count repositories under <code>@Model.Folder</code>. Tick the ones that should become agents of @Model.Project.</p>
+
+        <table>
+            <thead><tr><th></th><th>Agent</th><th>Repository</th><th>Note</th></tr></thead>
+            <tbody>
+                @foreach (var entry in Model.Entries)
+                {
+                    <tr>
+                        <td><input type="checkbox" name="Chosen" value="@entry.Workspace" aria-label="Enrol @entry.Agent" /></td>
+                        <td>
+                            @entry.Agent
+                            @if (!string.IsNullOrWhiteSpace(entry.Owns))
+                            {
+                                @* What the repository already says it owns, in a popup rather than a column: it can be long. *@
+                                <button type="button" class="quiet owns-note" data-agent="@entry.Agent" data-owns="@entry.Owns"
+                                        aria-label="What @entry.Agent owns" title="What it owns">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6Zm7 1.5L18.5 9H13V3.5ZM8 13h8v1.5H8V13Zm0 3h8v1.5H8V16Zm0-6h4v1.5H8V10Z"/></svg>
+                                </button>
+                            }
+                        </td>
+                        <td>@entry.Workspace</td>
+                        <td>@entry.Note</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <dialog id="owns-dialog" class="default-dialog" aria-labelledby="owns-title">
+            <h3 id="owns-title"></h3>
+            <p id="owns-text"></p>
+            <p class="dialog-actions"><button type="button" id="owns-close">Close</button></p>
+        </dialog>
+        <style>
+            .owns-note { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; padding: 0; margin-left: 0.4rem; border-radius: 50%; vertical-align: middle; }
+            #owns-text { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 36rem; }
+        </style>
+        <script>
+            (function () {
+                var dialog = document.getElementById('owns-dialog');
+                document.querySelectorAll('.owns-note').forEach(function (button) {
+                    button.addEventListener('click', function () {
+                        document.getElementById('owns-title').textContent = 'What ' + button.getAttribute('data-agent') + ' owns';
+                        document.getElementById('owns-text').textContent = button.getAttribute('data-owns');
+                        dialog.showModal();
+                    });
+                });
+                document.getElementById('owns-close').addEventListener('click', function () { dialog.close(); });
+            })();
+        </script>
+
+        <p>Enrolling writes into each repository you tick and adds a line for it to <code>@Model.Catalogue</code>, so a peer's request can start it with nobody watching. That spends what the agent costs to run. Each is started once to register, so expect one process each.</p>
+        <button type="submit">Enrol the ticked repositories</button>
+        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+    </form>
+}
+else
+{
+    <form method="post" asp-page-handler="Apply">
+        <input type="hidden" name="Project" value="@Model.Project" />
+        <input type="hidden" name="Workspace" value="@Model.Workspace" />
+        <input type="hidden" name="Role" value="@Model.Role" />
+
+        <p>These files will be written. Nothing has been yet.</p>
+
+        <dl class="facts">
+            <dt>Launch</dt>
+            <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — launches this repository as <code>@Model.Role</code> in @Model.Project.</dd>
+            <dt>Instructions</dt>
+            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</dd>
+            <dt>Catalogue</dt>
+            <dd>@Model.Catalogue — lets this machine start it when a question arrives.</dd>
+        </dl>
+
+        <p>It is then started once to register. That runs the repository's own server on this machine and may take up to a minute.</p>
+
+        <button type="submit">Write them and start it</button>
+        <a class="button quiet" href="/?tab=agents&amp;project=@Model.Project">Not now</a>
+    </form>
+}

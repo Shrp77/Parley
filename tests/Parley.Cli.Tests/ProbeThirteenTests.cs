@@ -4,11 +4,11 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 2: where a write can be made to land, and how long a quoted value can be.
+/// Where a write can be made to land, and how long a quoted value can be.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Run 1 attacked the *values* written into a repository. This attacks the *destination*: this tooling
+/// Other probes attack the *values* written into a repository. This attacks the *destination*: this tooling
 /// is pointed at a directory of checkouts it did not create, and decides from what it finds there
 /// which files to overwrite. A checkout is somebody else's data — often a clone of somebody else's
 /// repository — and `.mcp.json` is a tracked file that a repository can therefore ship as a link.
@@ -50,14 +50,13 @@ public sealed class ProbeThirteenTests : IDisposable
         new(workspace, "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     [Fact]
     public async Task A_launch_configuration_that_is_a_link_does_not_carry_the_write_out_of_the_repository()
     {
         // **`.mcp.json` is a tracked file, so a repository can ship one as a symlink.** This tooling
-        // is pointed at directories of checkouts it did not create — `parley enroll scan /src` — and
+        // is pointed at directories of checkouts it did not create — `parley enroll /src` — and
         // then writes into each one. A write that follows a link writes wherever the link says.
         //
         // What this asserts is deliberately the weaker of the two possible rules: the *target* must
@@ -128,8 +127,8 @@ public sealed class ProbeThirteenTests : IDisposable
     [Fact]
     public void A_lone_surrogate_does_not_end_the_quoting()
     {
-        // Paths and roles are read as UTF-16 from JSON, which can hold an unpaired surrogate. The
-        // truncation in this repository has already cut one in half once, in 008's gate.
+        // Paths and roles are read as UTF-16 from JSON, which can hold an unpaired surrogate. A
+        // truncation that cuts one in half must not end the quoting.
         var flat = Quoting.Flat("orders\ud800tail");
 
         Assert.Contains("orders", flat, StringComparison.Ordinal);
@@ -137,11 +136,12 @@ public sealed class ProbeThirteenTests : IDisposable
     }
 
     [Fact]
-    public async Task A_manifest_naming_a_directory_that_is_not_a_repository_says_so()
+    public async Task A_row_naming_a_directory_that_is_not_a_repository_says_so()
     {
-        // **The probe expected a refusal and the codebase's own rule is a warning.** `scan` only
-        // offers git repositories, so a directory without one arrived through a hand-edited manifest
-        // — the person typed the path. The worktree case decided this already, in as many words: said
+        // **The probe expected a refusal and the codebase's own rule is a warning.** Finding only
+        // offers git repositories, so a directory without one arrives from somewhere else — a row a
+        // surface built for itself, or a checkout that stopped being one between the finding and the
+        // writing. The worktree case decided this already, in as many words: said
         // rather than refused, because "it is the person's directory and there may be a reading of it
         // I have not thought of". Refusing here would be a second rule for one situation.
         //
@@ -150,34 +150,15 @@ public sealed class ProbeThirteenTests : IDisposable
 
         Directory.CreateDirectory(notARepository);
 
-        var manifest = Path.Combine(_root, "enrol.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Path.Combine(_root, "node.json").Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{notARepository.Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "orders",
-                  "owns": "Carts and totals.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
         var output = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["plan", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Entry(notARepository.Replace(Path.DirectorySeparatorChar, '/'))],
+            describe: true,
             new Resolved(Path.Combine(_root, "node.json"), ValueSource.Argument),
             output,
             new StringWriter(),
-            TestContext.Current.CancellationToken);
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains("not a git repository", output.ToString(), StringComparison.Ordinal);
     }

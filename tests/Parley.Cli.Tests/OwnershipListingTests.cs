@@ -82,6 +82,68 @@ public sealed class OwnershipListingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_line_accepted_and_not_yet_live_is_marked_pending()
+    {
+        // **The pending mark applies to any surface showing the line, and this listing is one.** It
+        // is the listing somebody runs to check that an acceptance worked, so printing the live line
+        // with nothing said about a line already accepted would show them the old line and no reason
+        // to think anything had happened.
+        //
+        // Must fail against reading the registry off the wire directly: the
+        // comparison lives in `AgentRecord.OwnsPending` and the sentence in `Roster.PendingMark`, and
+        // neither is reachable from a `RegistryRow`.
+        await Register(Billing, "Invoicing and tax.");
+
+        var (recorded, _) = await _agents.RecordOwnershipAsync(
+            Billing,
+            new OwnershipAcceptance("Invoicing, tax and refunds.", OwnershipSource.Composed, null, null),
+            DateTimeOffset.UtcNow,
+            cancellationToken: Ct);
+
+        Assert.True(recorded);
+
+        await _commands.RegistryAsync(Ct);
+
+        var printed = _output.ToString();
+
+        // The live line, because that is what peers route by -- showing the accepted one would tell a
+        // reader that peers read a sentence they have never been given.
+        Assert.Contains("Invoicing and tax.", printed, StringComparison.Ordinal);
+        Assert.DoesNotContain("refunds", printed, StringComparison.Ordinal);
+
+        // And the one sentence the other two surfaces append, not a wording of its own.
+        Assert.Contains(
+            Parley.Client.Rendering.Roster.PendingMark(
+                new AgentRecord(
+                    Billing, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active,
+                    "Invoicing and tax.", AgentPresence.Startable, "Invoicing, tax and refunds.")),
+            printed,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_agent_whose_accepted_line_is_already_live_is_not_marked_pending()
+    {
+        // The mark clears itself when the agent comes back carrying the line, with no event and no
+        // bookkeeping. Must fail against a mark driven by the row existing rather than by the
+        // comparison, which is the obvious implementation and the wrong one.
+        await Register(Orders, "Orders and refunds.");
+
+        var (recorded, _) = await _agents.RecordOwnershipAsync(
+            Orders,
+            new OwnershipAcceptance("Orders and refunds.", OwnershipSource.Composed, null, null),
+            DateTimeOffset.UtcNow,
+            cancellationToken: Ct);
+
+        Assert.True(recorded);
+
+        await _commands.RegistryAsync(Ct);
+
+        Assert.DoesNotContain(
+            "peers do not read it yet", _output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_operator_sees_the_statement_and_the_workspace_together()
     {
         // The two halves of telling one agent from another: where it works, which no peer sees,

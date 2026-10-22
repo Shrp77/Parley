@@ -30,9 +30,8 @@ public sealed class AgentRepositoryTests : IDisposable
     /// <param name="record">The loaded record.</param>
     /// <returns>Its presence, which the read observed rather than this test computing.</returns>
     /// <remarks>
-    /// Kept as a helper even though it is now a property access, because every assertion below
-    /// used to call a derivation and the point of the change is that there is no longer one to
-    /// call. Inlining it would hide that these tests stopped doing arithmetic.
+    /// Kept as a helper even though it is a property access, because the point is that there is no
+    /// derivation to call. Inlining it would hide that these tests do no arithmetic.
     /// </remarks>
     private static AgentPresence Reported(AgentRecord record) => record.Presence;
 
@@ -60,10 +59,9 @@ public sealed class AgentRepositoryTests : IDisposable
     [Fact]
     public void A_reachability_reading_is_not_a_status_the_compiler_will_let_you_store()
     {
-        // This replaces a theory that tried to store NotResponding and Unreachable and expected
-        // a throw. Those values are gone from AgentStatus entirely and live in AgentPresence, so
-        // the mistake the theory guarded against no longer compiles -- which is a better guard
-        // than a runtime one and worth asserting rather than silently deleting.
+        // NotResponding and Unreachable are not in AgentStatus at all; they live in AgentPresence, so
+        // storing one as a status does not compile -- which is a better guard
+        // than a runtime one and worth asserting.
         //
         // What is left to check is that the two enums have not quietly grown back together.
         Assert.Equal(
@@ -71,16 +69,16 @@ public sealed class AgentRepositoryTests : IDisposable
             Enum.GetNames<AgentStatus>().Order(StringComparer.Ordinal));
 
         Assert.Equal(
-            ["Running", "Startable", "Stranded"],
+            ["Away", "Here", "Running", "Startable", "Stranded"],
             Enum.GetNames<AgentPresence>().Order(StringComparer.Ordinal));
     }
 
     [Fact]
     public async Task Silence_reads_as_unreachable_without_anything_writing_it()
     {
-        // The defect this replaced: 'unreachable' used to be a stored value, and the only thing
-        // that could write it was a process that had stopped. Read off the timestamp instead and
-        // the answer is right whether or not anything is running.
+        // 'unreachable' is not a stored value, because the only thing that could write it would be
+        // a process that had stopped. Read off the timestamp, the answer is right whether or not
+        // anything is running.
         await Register(Orders);
         Disconnect(Orders);
 
@@ -263,95 +261,6 @@ public sealed class AgentRepositoryTests : IDisposable
             a => a.Name == Orders);
     }
 
-    // ---- credentials ----
-
-    [Fact]
-    public async Task Credentials_round_trip_by_name()
-    {
-        await Register(Orders);
-
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("org_token", "keychain:parley/org"), TestContext.Current.CancellationToken);
-
-        var creds = await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            [new AgentCredential("api_key", "env:VENDOR_API_KEY"),
-             new AgentCredential("org_token", "keychain:parley/org")],
-            creds);
-    }
-
-    [Fact]
-    public async Task Setting_a_credential_twice_replaces_the_reference()
-    {
-        // Rotation moves the secret in its store; if it also moved store, the reference has to
-        // follow. Two rows for one name would leave which one wins undefined.
-        await Register(Orders);
-
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "env:OLD"), TestContext.Current.CancellationToken);
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "file:/etc/parley/new.token"), TestContext.Current.CancellationToken);
-
-        var creds = await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken);
-
-        Assert.Equal("file:/etc/parley/new.token", Assert.Single(creds).Reference);
-    }
-
-    [Fact]
-    public async Task A_secret_value_cannot_be_stored_as_a_reference()
-    {
-        // The guarantee SPEC 12 rests on. The schema refuses, so it does not depend on every
-        // caller remembering to.
-        await Register(Orders);
-
-        await Assert.ThrowsAsync<SqliteException>(() => _agents.SetCredentialAsync(
-            Orders, new AgentCredential("api_key", "sk-live-1a2b3c4d"),
-            TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task Removing_a_credential_reports_whether_there_was_one()
-    {
-        await Register(Orders);
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
-
-        Assert.True(await _agents.RemoveCredentialAsync(
-            Orders, "api_key", TestContext.Current.CancellationToken));
-        Assert.False(await _agents.RemoveCredentialAsync(
-            Orders, "api_key", TestContext.Current.CancellationToken));
-        Assert.Empty(await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task Credentials_are_scoped_to_their_agent()
-    {
-        await Register(Orders);
-        await Register(Billing);
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "env:ORDERS_KEY"), TestContext.Current.CancellationToken);
-
-        Assert.Empty(await _agents.GetCredentialsAsync(Billing, TestContext.Current.CancellationToken));
-    }
-
-    [Fact]
-    public async Task Reloading_a_manifest_leaves_credentials_alone()
-    {
-        // Upsert carries configuration. Credentials are not configuration in that sense: they
-        // are registered once, and a manifest reload that dropped them would break invocation
-        // for every agent on the next start.
-        await Register(Orders);
-        await _agents.SetCredentialAsync(Orders,
-            new AgentCredential("api_key", "env:VENDOR_API_KEY"), TestContext.Current.CancellationToken);
-
-        await Register(Orders);
-
-        Assert.Single(await _agents.GetCredentialsAsync(Orders, TestContext.Current.CancellationToken));
-    }
-
     [Fact]
     public async Task Adapter_configuration_round_trips()
     {
@@ -362,13 +271,6 @@ public sealed class AgentRepositoryTests : IDisposable
             TestContext.Current.CancellationToken);
 
         Assert.Equal(config, (await Load(Orders)).AdapterConfig);
-    }
-
-    [Fact]
-    public async Task A_null_credential_is_rejected()
-    {
-        await Assert.ThrowsAsync<ArgumentNullException>(() => _agents.SetCredentialAsync(
-            Orders, null!, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -392,8 +294,7 @@ public sealed class AgentRepositoryTests : IDisposable
     /// <summary>Takes an agent's machine off the air, the way a lost node does.</summary>
     /// <param name="agent">The agent to strand.</param>
     /// <remarks>
-    /// This used to rewind a heartbeat into the past, because unreachability was arithmetic on a
-    /// timestamp and there was no other way to produce one. It is now an event with a writer, so
+    /// Unreachability is an event with a writer, not arithmetic on a timestamp, so
     /// the test performs the same two writes the broker does and there is nothing to simulate.
     /// </remarks>
     private void Disconnect(AgentName agent)

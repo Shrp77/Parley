@@ -161,21 +161,28 @@ public sealed class Pruner(SqliteConnection connection)
                                    AND unixepoch(r.created_utc) > @NowSeconds - @MaximumAgeSeconds));
         """;
 
-    /// <summary>Removes instructions past the age cap, whatever became of them.</summary>
+    /// <summary>Removes what became of proposals once it is old: decided proposals and delivered notices.</summary>
     /// <remarks>
     /// <para>
-    /// Its own statement, because not one of the message floors means anything for an instruction.
+    /// <b>A roadmap, its items and a waiting proposal are never removed here</b> (SPEC.md §9.4). Retention is a
+    /// bound on traffic, and a roadmap is not traffic: it is the list the person kept so that it would not be lost
+    /// in one. A waiting proposal is work waiting on the person, and removing it would be deciding for them.
     /// </para>
     /// <para>
-    /// <b>Aged from <c>issued_utc</c>.</b> A row still running has no settled instant by construction, so a
-    /// rule measured from settlement would never reach the rows nothing ever settled — exactly the set
-    /// most in need of a bound.
+    /// A roadmap that came of a removed proposal keeps its identifier and its proposer's name as text, so nothing
+    /// is lost by it. Its own statement, because none of the message
+    /// floors means anything for rows that are not messages.
     /// </para>
     /// </remarks>
-    private const string DeleteInstructions =
+    private const string DeleteDecidedProposals =
         """
-        DELETE FROM instructions
-         WHERE unixepoch(issued_utc) <= @NowSeconds - @MaximumAgeSeconds;
+        DELETE FROM roadmap_notices
+         WHERE delivered_utc IS NOT NULL
+           AND unixepoch(delivered_utc) <= @NowSeconds - @MaximumAgeSeconds;
+
+        DELETE FROM roadmap_proposals
+         WHERE state <> 'waiting'
+           AND unixepoch(decided_utc) <= @NowSeconds - @MaximumAgeSeconds;
         """;
 
     private readonly SqliteConnection _connection =
@@ -252,18 +259,18 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
-        using var instructions = WriteScope.Begin(_connection, ambient: null);
+        using var proposals = WriteScope.Begin(_connection, ambient: null);
 
-        var instructionsRemoved = await _connection.ExecuteAsync(
+        await _connection.ExecuteAsync(
             new CommandDefinition(
-                DeleteInstructions,
+                DeleteDecidedProposals,
                 parameters,
-                instructions.Transaction,
+                proposals.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        instructions.Complete();
+        proposals.Complete();
 
-        return new PruneResult(removed, held, contended, capped, instructionsRemoved);
+        return new PruneResult(removed, held, contended, capped);
     }
 
     /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>

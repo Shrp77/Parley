@@ -11,9 +11,7 @@ namespace Parley.Store;
 /// <param name="Waiting">
 /// How many things are waiting on it: exchanges it owes an answer, plus messages it has not
 /// collected. Counted together because both are reasons to give an agent a turn and neither is
-/// visible to the other — an answer to a question this agent asked leaves no debt at all, and
-/// was the case that went unnoticed until an agent sat live beside an uncollected message for
-/// twenty minutes.
+/// visible to the other — an answer to a question this agent asked leaves no debt at all.
 /// </param>
 /// <param name="Connected">Whether its own adapter is attached right now.</param>
 /// <param name="StuckAt">
@@ -31,16 +29,14 @@ namespace Parley.Store;
 /// <b>No launch command.</b> The node on the agent's machine owns how to start it, and the
 /// broker holds no executable command line at all — see SPEC.md §4. A candidate says who needs
 /// a turn and how much is waiting; whether it can be started, and starting it, belong to the
-/// machine it is on. This also removes a chicken-and-egg the older design had: the command was
-/// written by the agent itself, so an agent that had never run had no record of how to start it.
+/// machine it is on.
 /// </para>
 /// <para>
-/// <see cref="Connected"/> is reported rather than filtered on, which is a change from the
-/// one-shot form and a necessary one. It used to mean "somebody else is running this, do not
-/// start a second copy". A supervisor that keeps agents resident connects its own agents —
-/// they hold open sessions precisely because it started them — so a query that excluded
-/// connected agents would return every candidate exactly once and then never again. Who is
-/// connected and who is mine is a distinction only the supervisor can draw, so it draws it.
+/// <see cref="Connected"/> is reported rather than filtered on. A supervisor that keeps agents
+/// resident connects its own agents — they hold open sessions precisely because it started
+/// them — so a query that excluded connected agents would return every candidate exactly once
+/// and then never again. Who is connected and who is mine is a distinction only the supervisor
+/// can draw, so it draws it.
 /// </para>
 /// </remarks>
 public sealed record InvocationCandidate(
@@ -50,36 +46,12 @@ public sealed record InvocationCandidate(
     bool Connected,
     long? StuckAt);
 
-/// <summary>
-/// What invocation has cost, per agent.
-/// </summary>
-/// <param name="Agent">Who was started.</param>
-/// <param name="Invocations">How many times.</param>
-/// <param name="Answered">How many left the agent owing less than it did before.</param>
-/// <param name="TimedOut">How many were killed for taking too long.</param>
-/// <param name="Failed">How many exited non-zero without timing out.</param>
-/// <param name="TotalMs">Time spent inside those turns.</param>
-/// <param name="LastUtc">When the most recent one started.</param>
-/// <param name="CostUsd">What they cost in total, as the runner reported it.</param>
-/// <param name="PermissionDenials">Tool calls refused for want of permission.</param>
-public sealed record InvocationSummary(
-    string Agent, long Invocations, long Answered, long TimedOut, long Failed,
-    long TotalMs, string LastUtc, double CostUsd, long PermissionDenials)
-{
-    /// <summary>Gets how long an invocation takes on average.</summary>
-    public long MeanMs => Invocations == 0 ? 0 : TotalMs / Invocations;
-
-    /// <summary>
-    /// Gets invocations that changed nothing: the agent ran and still owed what it owed.
-    /// </summary>
-    /// <remarks>
-    /// The number to watch. An invocation that answers nothing still spends tokens, so a rising
-    /// count here is the shape a runaway takes before it looks like one — an agent being started
-    /// repeatedly for work it will not do, because it cannot, or because the question is one it
-    /// has already declined.
-    /// </remarks>
-    public long Fruitless => Invocations - Answered - TimedOut - Failed;
-}
+/// <summary>How an agent's most recent recorded turn ended (SPEC.md §11.6).</summary>
+/// <param name="Agent">The agent.</param>
+/// <param name="EndedUtc">When it ended: its start plus how long it ran.</param>
+/// <param name="Clean">Whether it finished cleanly: exit code nought and not cut off.</param>
+/// <param name="PermissionDenials">Tool calls it had refused for want of permission.</param>
+public sealed record LatestTurn(AgentName Agent, DateTimeOffset EndedUtc, bool Clean, int PermissionDenials);
 
 /// <summary>
 /// Who can be started, and what starting them has cost.
@@ -107,12 +79,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// a workspace.
     /// </para>
     /// <para>
-    /// <b>Consent is the caller's question and lives in the node catalogue.</b> This remark used to
-    /// claim four conditions and name an <c>invoke_when_idle</c> column as the opt-in. There is no
-    /// such column, in this schema or in SPEC.md — consent moved to the catalogue, and
-    /// <c>AgentFleet</c> applies it by asking whether this machine has a launch command for the
-    /// role. Corrected here rather than deleted, because a reader sent to this method to find out
-    /// what bounds an unattended start was being told to look for a guard that does not exist.
+    /// <b>Consent is the caller's question and lives in the node catalogue.</b> <c>AgentFleet</c>
+    /// applies it by asking whether this machine has a launch command for the role.
     /// </para>
     /// <para>
     /// A retired agent is excluded by the status filter for the same reason §14 refuses to route
@@ -175,19 +143,12 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// Finds every agent that must not be kept running.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Agents an operator has retired or withdrawn consent for.</returns>
+    /// <returns>Agents a person has retired.</returns>
     /// <remarks>
     /// <para>
-    /// Two ways an operator withdraws an agent, and both must reach a process that is already
-    /// running. Retiring it is §14's judgement that it will not come back. Removing the invoke
-    /// command from its launch configuration is the consent being taken away, which the next
-    /// launch of that agent's own server writes through.
-    /// </para>
-    /// <para>
-    /// Without this, either control would apply only to agents not yet started — the shape of
-    /// control §14 warns about, where the register says one thing and the deployment does
-    /// another. An agent already resident would keep answering under an identity its operator
-    /// had withdrawn.
+    /// Retiring an agent is §14's judgement that it will not come back, and it must reach a process
+    /// that is already running: otherwise an agent already resident would keep answering under an
+    /// identity its operator had withdrawn.
     /// </para>
     /// <para>
     /// Returns everyone withdrawn rather than taking the caller's list and filtering to it. The
@@ -203,11 +164,9 @@ public sealed class InvocationRepository(SqliteConnection connection)
 
         using var command = _connection.CreateCommand();
         command.CommandText =
-            // Retirement alone. Withdrawing the permission to start an agent is now removing it
-            // from the node's own catalogue, which the node reads and the broker never sees --
-            // so an agent that has been de-listed there simply stops being started, with no row
-            // to notice. What is left here is the operator's judgement, which is the one
-            // statement about an agent that does live in the store.
+            // Retirement alone. Permission to start an agent lives in the node's own catalogue,
+            // which the broker never sees, so the only statement about an agent held in the store
+            // is the operator's judgement.
             "SELECT name FROM agents WHERE status = 'retired';";
 
         using var reader = await command
@@ -275,11 +234,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// make a deployment burning tokens on failures look idle.
     /// </para>
     /// <para>
-    /// <paramref name="exitCode"/> outlived the one-shot form that named it. There is no process
-    /// exit to report for a resident agent, so it now carries the turn's verdict — zero for a
-    /// clean finish — and the column keeps its name because renaming it would make the rows
-    /// written by the older form unreadable beside the newer ones without telling anybody
-    /// anything they could not get from <c>started_utc</c>.
+    /// <paramref name="exitCode"/> is the turn's verdict — zero for a clean finish — since a
+    /// resident agent has no process exit to report.
     /// </para>
     /// </remarks>
     public async Task<int> RecordAsync(
@@ -323,42 +279,57 @@ public sealed class InvocationRepository(SqliteConnection connection)
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Reads what invocation has cost, per agent.</summary>
+    /// <summary>Reads how each agent's most recent recorded turn ended.</summary>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>One row per agent ever started, busiest first.</returns>
-    public async Task<IReadOnlyList<InvocationSummary>> SummariseAsync(
-        CancellationToken cancellationToken = default)
+    /// <returns>One per agent that has a recorded turn.</returns>
+    /// <remarks>
+    /// <b>The most recently recorded, not the most recently started</b>: a node reports a turn when it ends,
+    /// so the order rows arrive in is the order turns finished, and that is what "the last turn" means to somebody asking
+    /// why an agent has stopped. The read the registry makes on every room refresh, so it is one statement.
+    /// </remarks>
+    public async Task<IReadOnlyList<LatestTurn>> LatestTurnsAsync(CancellationToken cancellationToken = default)
     {
-        var rows = new List<InvocationSummary>();
-
         using var command = _connection.CreateCommand();
         command.CommandText =
             """
-            SELECT agent,
-                   count(*),
-                   coalesce(sum(waiting_after < waiting_before), 0),
-                   coalesce(sum(timed_out), 0),
-                   coalesce(sum(timed_out = 0 AND exit_code <> 0), 0),
-                   coalesce(sum(elapsed_ms), 0),
-                   max(started_utc),
-                   coalesce(sum(cost_usd), 0.0),
-                   coalesce(sum(permission_denials), 0)
-              FROM invocations
-             GROUP BY agent
-             ORDER BY count(*) DESC, agent;
+            SELECT i.agent, i.started_utc, i.elapsed_ms, i.exit_code, i.timed_out, i.permission_denials
+              FROM invocations i
+             WHERE i.id = (SELECT max(id) FROM invocations WHERE agent = i.agent);
             """;
 
-        using var reader = await command
-            .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var latest = new List<LatestTurn>();
+
+        using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            rows.Add(new InvocationSummary(
-                reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3),
-                reader.GetInt64(4), reader.GetInt64(5), reader.GetString(6),
-                reader.GetDouble(7), reader.GetInt64(8)));
+            if (!AgentName.TryCreate(reader.GetString(0), out var agent))
+            {
+                continue;
+            }
+
+            latest.Add(new LatestTurn(
+                agent,
+                EndOf(ExchangeRow.ParseTimestamp(reader.GetString(1)), reader.GetInt64(2)),
+                reader.GetInt64(3) == 0 && reader.GetInt64(4) == 0,
+                (int)reader.GetInt64(5)));
         }
 
-        return rows;
+        return latest;
     }
+
+    /// <summary>When a turn ended: its start plus its length, held to the calendar.</summary>
+    /// <param name="started">When it began.</param>
+    /// <param name="elapsedMs">How long it ran.</param>
+    /// <returns>The end, or the last representable instant.</returns>
+    /// <remarks>
+    /// A row is a node's say-so (§16), and an end past the year 9999 would make the addition throw on every
+    /// read of the registry and of the flags, so the sum is clamped to the calendar.
+    /// </remarks>
+    internal static DateTimeOffset EndOf(DateTimeOffset started, long elapsedMs) =>
+        elapsedMs <= 0
+            ? started
+            : elapsedMs >= (DateTimeOffset.MaxValue - started).TotalMilliseconds
+                ? DateTimeOffset.MaxValue
+                : started.AddMilliseconds(elapsedMs);
 }

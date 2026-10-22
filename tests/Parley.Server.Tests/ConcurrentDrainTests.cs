@@ -8,7 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 1.</b> <c>ConcurrencyTests</c> probes two sessions of one agent *sending*
+/// <c>ConcurrencyTests</c> probes two sessions of one agent *sending*
 /// together, and drains once to count what arrived. This probes the other direction: two sessions
 /// draining at the same moment.
 /// </para>

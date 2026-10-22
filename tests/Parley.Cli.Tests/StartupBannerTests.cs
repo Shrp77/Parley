@@ -1,3 +1,4 @@
+using Parley.Configuration;
 ﻿using System.Globalization;
 using System.Runtime.InteropServices;
 using Parley.Core;
@@ -24,12 +25,27 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class StartupBannerTests
 {
+    /// <summary>One project at a chosen endpoint, in a throwaway root.</summary>
+    /// <remarks>
+    /// `serve` takes projects now: a store is derived from a project's name and its endpoint is its own,
+    /// so a rig names a root and writes a project into it rather than passing two paths.
+    /// </remarks>
+    private static ProjectSettings At(string root, string endpoint, string name = "probe") =>
+        new(
+            Parley.Core.ProjectName.Create(name),
+            ProjectFolder.StoreFor(root, Parley.Core.ProjectName.Create(name)),
+            endpoint,
+            null);
+
     [Fact]
     public async Task The_broker_says_its_address_is_not_a_web_page()
     {
         var (output, _) = await ServeUntilListeningAsync();
 
-        Assert.Contains("not a web page", output, StringComparison.Ordinal);
+        // **Worded by the projects path now**, which is the only path there is: the one-store serve
+        // said "not a web page" and this says "None of them is a web page", because it is reporting
+        // several addresses rather than one.
+        Assert.Contains("None of them is a web page", output, StringComparison.Ordinal);
 
         // And still says the thing every other reader depends on.
         Assert.Contains("Ctrl+C stops", output, StringComparison.Ordinal);
@@ -44,7 +60,9 @@ public sealed class StartupBannerTests
 
         // Non-vacuous first. A harness that captured nothing would pass both
         // assertions below it and report a banner nobody had checked.
-        Assert.Contains("Parley broker on", output, StringComparison.Ordinal);
+        // Non-vacuous, and read off the line the projects path prints: `<project> on <addresses>,
+        // store at <path>, schema N`. The one-store path's "Parley broker on" went with the path.
+        Assert.Contains("probe on http://127.0.0.1:", output, StringComparison.Ordinal);
 
         Assert.DoesNotContain('\u001b', output);
         Assert.DoesNotContain('\u001b', error);
@@ -77,14 +95,19 @@ public sealed class StartupBannerTests
     {
         // The run this line exists for. Everything else the banner says comes after the store is
         // open, so a build that refuses a store — "this store is at schema 5 and this Parley only
-        // knows 4" — used to leave a log with the complaint in it and nothing saying which Parley.
+        // knows 4" — must not leave a log with the complaint in it and nothing saying which Parley.
         //
         // A directory rather than a locked or malformed file, because it fails the same way on
         // every platform this suite runs on and needs no cleanup of its own.
         var directory = Path.Combine(
             Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
 
-        Directory.CreateDirectory(directory);
+        // **A directory where the project's `parley.db` goes**, which is the only way to reach this now
+        // that no flag names a store. Creating the root alone was not enough — the store path did not
+        // exist, SQLite happily created it, and the broker served for ever: the test hung rather than
+        // failing, and took the suite with it.
+        Directory.CreateDirectory(
+            ProjectFolder.StoreFor(directory, Parley.Core.ProjectName.Create("probe")));
 
         await using var output = new StringWriter();
         await using var error = new StringWriter();
@@ -92,8 +115,7 @@ public sealed class StartupBannerTests
         try
         {
             var code = await ServeCommand.RunAsync(
-                directory,
-                "http://127.0.0.1:0",
+                [At(directory, "http://127.0.0.1:0")],
                 null,
                 output,
                 error,
@@ -101,7 +123,10 @@ public sealed class StartupBannerTests
 
             // Non-vacuous: a run that started normally would prove nothing about the failing one.
             Assert.NotEqual(0, code);
-            Assert.Contains("Could not open", error.ToString(), StringComparison.Ordinal);
+            // Named by project: the projects path says `<project>: could not open ...`, where the
+            // one-store path had no project to name. That is the more useful sentence on a machine
+            // serving several, which is every machine now.
+            Assert.Contains("probe: could not open", error.ToString(), StringComparison.Ordinal);
         }
         finally
         {
@@ -121,11 +146,9 @@ public sealed class StartupBannerTests
         if (BuildIdentity.Commit is null)
         {
             // **Only the version's own parenthesis, not any parenthesis.** The line always ends
-            // with the runtime identifier in brackets, so asserting the whole line has none was a
+            // with the runtime identifier in brackets, so asserting the whole line has none is a
             // check that could not pass in the state it describes — and it only ever runs on a tree
-            // with no `.git`, which is why every Windows run took the other branch and this stood.
-            // Found by running the suite in a container from `git archive`, which is exactly that
-            // tree.
+            // with no `.git`, such as one made by `git archive`.
             var version = BuildIdentity.Line[..BuildIdentity.Line.IndexOf(',', StringComparison.Ordinal)];
 
             Assert.DoesNotContain('(', version);
@@ -158,7 +181,7 @@ public sealed class StartupBannerTests
     [Fact]
     public void The_console_address_is_set_apart_from_everything_else()
     {
-        // It used to be the third line of five, in the same weight as the broker's address and
+        // It must not be the third line of five, in the same weight as the broker's address and
         // the node's catalogue. A person scanning for somewhere to click found the first URL.
         //
         // Asserted against the source because the announcement is in top-level statements with no
@@ -173,11 +196,9 @@ public sealed class StartupBannerTests
         // against a concurrent writer, none split.
         var block = ConsoleAnnouncement(program);
 
-        // **The label and the interpolation, not the variable's name.** This asserted
-        // `{consoleAt}` and broke when that local was renamed to say what it holds rather than which
-        // removed flag used to set it — a rename that changed no behaviour and no output. It is the
-        // third anchor in this file to break on something that was never the point: the other two
-        // are recorded in CLAUDE.md, both `var body`. What the test is about is that the address is
+        // **The label and the interpolation, not the variable's name.** An anchor on a local's name
+        // breaks on a rename that changes no behaviour and no output; the anchors recorded in
+        // CLAUDE.md, both `var body`, are the same kind. What the test is about is that the address is
         // on its own labelled line and is interpolated rather than written in, and both survive a
         // rename.
         Assert.Contains("Web UI:   {", block, StringComparison.Ordinal);
@@ -193,20 +214,21 @@ public sealed class StartupBannerTests
         // after deciding the deployment had no way in.
         var block = ConsoleAnnouncement(RepositoryFile.Read("src/Parley.Cli/Program.cs"));
 
-        Assert.Contains("parley terminal", block, StringComparison.Ordinal);
+        Assert.Contains("Terminal: parley", block, StringComparison.Ordinal);
         Assert.Contains("no browser needed", block, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Both_ways_in_are_pointed_at_the_manifest_being_served()
     {
-        // Found by the gate over the installer change, by running `serve --config <file> --with-web-ui` and reading the
-        // page: it listed this machine's own projects, because the child located a manifest on its own. The web UI is
-        // handed the one being served, and the terminal line names it whenever it is not this machine's default.
+        // With `serve --config <file> --with-web-ui` the page must not list this machine's own projects because the
+        // child located a manifest on its own. The web UI is handed the one being served, and the terminal line names it whenever it is not this machine's default.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 
         Assert.Contains("start.Environment[ProjectManifest.PathVariable] = manifestPath;", program, StringComparison.Ordinal);
-        Assert.Contains("Terminal: parley terminal{(configPath is null ? string.Empty : $\" --config", program, StringComparison.Ordinal);
+        // Bare `parley` when this machine's own manifest is served, which is what a person types; spelled out as
+        // `parley terminal --config` when another is, so the arguments reach the terminal tool.
+        Assert.Contains("Terminal: parley{(configPath is null ? string.Empty : $\" terminal --config", program, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -228,7 +250,7 @@ public sealed class StartupBannerTests
         // Non-vacuous first: a capture that missed the block would make every assertion below it
         // true of an empty list.
         Assert.Equal(2, rules.Count);
-        Assert.Contains(content, line => line.Contains("parley terminal", StringComparison.Ordinal));
+        Assert.Contains(content, line => line.Contains("Terminal: parley", StringComparison.Ordinal));
 
         var widest = content.Max(line => line.TrimEnd().Length);
 
@@ -251,16 +273,21 @@ public sealed class StartupBannerTests
     /// </remarks>
     private static async Task<IReadOnlyList<string>> ConsoleBlockAsync()
     {
-        var store = Path.Combine(
-            Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N") + ".db");
+        // A root with one project in it, on port zero so the operating system picks and the banner
+        // reports what it got — which is the thing this file reads.
+        var root = Path.Combine(Path.GetTempPath(), "parley-banner-" + Guid.NewGuid().ToString("N"));
+        var probe = Parley.Core.ProjectName.Create("probe");
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(probe, ProjectFolder.StoreFor(root, probe), "http://127.0.0.1:0", null)]);
 
         var console = $"http://127.0.0.1:{Loopback.FreePort()}";
 
         var process = ToolProcess.Launch(
             [],
             "serve",
-            "--db", store,
-            "--listen", "http://127.0.0.1:0",
+            "--config", root,
             "--with-web-ui",
             "--web-ui", console);
 
@@ -322,8 +349,9 @@ public sealed class StartupBannerTests
 
             process.Dispose();
 
-            foreach (var leftover in Directory.GetFiles(
-                Path.GetDirectoryName(store)!, Path.GetFileName(store) + "*"))
+            foreach (var leftover in Directory.Exists(root)
+                         ? Directory.GetFiles(root, "*", SearchOption.AllDirectories)
+                         : [])
             {
                 try
                 {
@@ -383,10 +411,10 @@ public sealed class StartupBannerTests
     {
         var body = HostingWebUiBlock(program);
 
-        // From where the block is composed, not from the call. It used to start at the call,
-        // which worked while every line of the block was a literal argument to it — and the
-        // moment the block grew a second route wide enough to need measuring, the text moved
-        // into a variable one line above and the extraction found an empty box.
+        // From where the block is composed, not from the call. Starting at the call works only while
+        // every line of the block is a literal argument to it — and once the block has a second route
+        // wide enough to need measuring, the text moves into a variable one line above and the
+        // extraction finds an empty box.
         //
         // The single-write property that start was protecting is now asserted directly, below,
         // rather than implied by everything happening to sit inside one set of parentheses.
@@ -442,12 +470,11 @@ public sealed class StartupBannerTests
         try
         {
             await ServeCommand.RunAsync(
-                store,
-                "http://127.0.0.1:0",
+                [At(store, "http://127.0.0.1:0")],
                 null,
                 output,
                 error,
-                whenListening: async (_, _, _) =>
+                nodeFor: async (_, _, _, _) =>
                 {
                     await stopping.CancelAsync().ConfigureAwait(false);
 

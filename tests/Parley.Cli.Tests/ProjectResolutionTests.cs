@@ -30,7 +30,7 @@ public sealed class ProjectResolutionTests
         string store = "/srv/orders/parley.db",
         string endpoint = "http://127.0.0.1:51707",
         string? node = "/srv/orders/node.json") =>
-        new(ProjectName.Create(name), store, endpoint, node, null);
+        new(ProjectName.Create(name), store, endpoint, null);
 
     // ---- selection -------------------------------------------------------------------------
 
@@ -73,10 +73,10 @@ public sealed class ProjectResolutionTests
     }
 
     [Fact]
-    public void Naming_a_project_on_a_machine_with_none_says_how_to_add_one()
+    public void Naming_a_project_on_a_machine_with_none_says_where_one_is_made()
     {
         Assert.False(ProjectResolution.TrySelect("orders", [], out _, out var problem));
-        Assert.Contains("parley project add", problem, StringComparison.Ordinal);
+        Assert.Contains("`parley`",problem, StringComparison.Ordinal);
     }
 
     // ---- parity with the behaviour that came before -----------------------------------------
@@ -84,7 +84,6 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void With_no_project_every_value_resolves_as_it_did_before()
     {
-        Assert.Null(ProjectResolution.Store(null, NoVariables, null).Value);
         Assert.Equal(BrokerEndpoint.Default, ProjectResolution.Endpoint(null, NoVariables, null).Value);
         Assert.Equal(NodeCatalogue.DefaultFileName, ProjectResolution.NodeConfig(null, NoVariables, null).Value);
     }
@@ -100,7 +99,6 @@ public sealed class ProjectResolutionTests
             _ => null,
         };
 
-        Assert.Equal("/from/env.db", ProjectResolution.Store(null, variables, null).Value);
         Assert.Equal("http://env:1", ProjectResolution.Endpoint(null, variables, null).Value);
         Assert.Equal("/from/env-node.json", ProjectResolution.NodeConfig(null, variables, null).Value);
     }
@@ -130,14 +128,16 @@ public sealed class ProjectResolutionTests
     }
 
     [Fact]
-    public void The_manifest_decides_where_the_machines_catalogue_is()
+    public void The_root_decides_where_the_machines_catalogue_is()
     {
-        // **A project used to supply this and 018 took it away.** Its entry named a catalogue, which made
-        // "what this machine can start" a per-project fact — and a checkout answering in two projects was
+        // **No project supplies this.** A catalogue named by a project entry would make "what this
+        // machine can start" a per-project fact — and a checkout answering in two projects would be
         // startable in whichever project's file named it and unstartable in the other, while being
         // addressable in both. One catalogue per machine cannot express that, so there is no project in
-        // this resolution at all: what is left is the flag, the variable, and the manifest's own folder.
-        var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley/projects.json");
+        // this resolution at all: what there is, is the flag, the variable, and the root.
+        // **The root supplies it.** `--config` names the root itself, and the catalogue is one of the
+        // two files at the root that are not a project.
+        var resolved = ProjectResolution.NodeConfig(null, NoVariables, "/etc/parley");
 
         Assert.Equal(
             Path.Combine(Path.GetFullPath("/etc/parley"), NodeCatalogue.DefaultFileName),
@@ -149,11 +149,13 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void Precedence_applies_per_value_independently()
     {
-        // A project supplies the store while an explicit endpoint overrides only the endpoint.
-        // Resolving them together would make one flag silently discard two unrelated values.
+        // **A store is not resolved at all**: it is `parley.db`
+        // inside the project's own folder, so there is no argument, no variable and no precedence rule.
+        // What is left resolving is the endpoint and the machine's catalogue, and an explicit endpoint
+        // still overrides only the endpoint — resolving them together would make one flag silently
+        // discard two unrelated values.
         var project = Project();
 
-        Assert.Equal(ValueSource.Project, ProjectResolution.Store(null, NoVariables, project).Source);
         Assert.Equal(ValueSource.Argument, ProjectResolution.Endpoint("http://given:2", NoVariables, project).Source);
 
         // The catalogue is the machine's, so no project supplies it and the argument still wins.
@@ -179,11 +181,11 @@ public sealed class ProjectResolutionTests
     [Fact]
     public void A_resolved_value_says_where_it_came_from()
     {
-        // This line is the point of the feature: it is what was missing when enrolling would have
-        // written consent into a catalogue nothing reads.
+        // This line is the point: enrolling would otherwise write consent into a catalogue nothing
+        // reads. Read off the endpoint, because a store does not resolve from anywhere — it is derived.
         Assert.Contains(
             "(project \"orders\")",
-            ProjectResolution.Store(null, NoVariables, Project()).ToString(),
+            ProjectResolution.Endpoint(null, NoVariables, Project()).ToString(),
             StringComparison.Ordinal);
 
         Assert.Contains(

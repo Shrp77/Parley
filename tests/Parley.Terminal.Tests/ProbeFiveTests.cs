@@ -62,7 +62,9 @@ public sealed class ProbeFiveTests : IAsyncDisposable
 
     private string Store => Path.Combine(_root, "acme.db");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string CataloguePath => Path.Combine(_root, "acme-node.json");
 
@@ -75,14 +77,14 @@ public sealed class ProbeFiveTests : IAsyncDisposable
     private async Task<Shell> OpenInsideProjectAsync(Driving.Session driving)
     {
         var project = new ProjectSettings(
-            ProjectName.Create("acme"), Store, _broker.Address, CataloguePath, null);
+            ProjectName.Create("acme"), Store, _broker.Address, null);
 
-        ProjectManifest.Write(ManifestPath, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         await File.WriteAllTextAsync(
             CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
 
-        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(ManifestPath), manifestPath: ManifestPath);
+        var shell = TerminalCommand.Build(BrokerDirectory.FromManifest(Root), manifestPath: Root);
 
         driving.Show(shell);
 
@@ -127,7 +129,8 @@ public sealed class ProbeFiveTests : IAsyncDisposable
         using var driving = Driving.Open();
         using var shell = await OpenInsideProjectAsync(driving);
 
-        if (shell.Agents.Selected is null)
+        // Arriving at a project reads it, so the list holds the seats the broker provides, which cannot be withdrawn.
+        if (shell.Agents.Selected is not { } chosen || PersonSeat.Is(AgentName.Create(chosen.Name)) || Facilitation.Is(AgentName.Create(chosen.Name)))
         {
             // An empty deployment has nothing to withdraw. The probe above drives the same
             // `Current`-versus-selection decision through Add, and asserting on an empty list here

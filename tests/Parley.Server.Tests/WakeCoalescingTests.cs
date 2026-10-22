@@ -8,8 +8,8 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This is not an optimisation and these are not performance tests.</b> SPEC.md §17 question 15
-/// refuses the wake outright on the grounds that it would be unbounded, so the coalescing is the
+/// <b>This is not an optimisation and these are not performance tests.</b> Without
+/// coalescing (SPEC.md §5.4) the wake would be unbounded, so the coalescing is the
 /// condition on which the feature ships at all. If these fail, the wake goes back.
 /// </para>
 /// <para>
@@ -99,7 +99,7 @@ public sealed class WakeCoalescingTests
     [Fact]
     public async Task A_questions_wake_stops_a_notification_stacking_a_second_turn()
     {
-        // FR-008a. Every wake marks; only mail consults the mark. The common case this is for is
+        // Every wake marks; only mail consults the mark. The common case this is for is
         // "ask a peer, then tell it something" -- two messages, one reading, and without this two
         // turns charged to whoever hosts the peer.
         var token = TestContext.Current.CancellationToken;

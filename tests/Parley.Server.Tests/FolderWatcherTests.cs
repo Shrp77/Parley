@@ -322,7 +322,8 @@ public sealed class FolderWatcherTests
 
         public static async Task<Served> StartAsync(string store, CancellationToken cancellationToken)
         {
-            var runtime = BrokerRuntime.Open(store, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
+            var runtime = BrokerRuntime.Open(
+                ProjectName.Create("test"), store, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
 
             return new Served(await ParleyServer.StartAsync(runtime, "http://127.0.0.1:0", cancellationToken));
         }

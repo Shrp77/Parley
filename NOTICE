@@ -2,3 +2,7 @@ Parley
 Copyright 2026 Arvind Knudsen
 
 Licensed under the Apache License, Version 2.0.
+
+This product bundles Material Symbols Outlined (Copyright Google LLC), cut down to the
+icons the web console uses, in src/Parley.Web/Brand/material-symbols.woff2. It is licensed
+under the Apache License, Version 2.0: https://github.com/google/material-design-icons

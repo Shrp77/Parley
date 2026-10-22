@@ -36,39 +36,22 @@ public sealed class StartingAConversationTests
 
         var start = Assert.Single(shell.Actions(), action => action.Key == 'k');
 
-        Assert.Equal(Participation.StartSeatFirstTitle, start.Label);
+        // **The owner's report of 0.36.0**: this said "Start a conversation (takes a seat first)" beside a seat they
+        // already had. There is no seat to take first, so there is one spelling of the action, and it
+        // says nothing about a seat whether or not the terminal is connected yet.
+        Assert.Equal(Participation.StartTitle, start.Label);
+        Assert.DoesNotContain("seat", start.Label, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("exchange", start.Costs ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Choosing_it_without_a_seat_says_why_and_asks_for_a_name()
-    {
-        using var driving = Driving.Open();
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = TerminalCommand.Build(directory, seats, manifestPath: "nowhere");
-
-        driving.Show(shell);
-        await Walking.GoAsync(shell, Viewing.Project);
-
-        await shell.StartSeatFirst();
-
-        Assert.Equal(Participation.SeatFirst, shell.Said);
-    }
+    // `Choosing_it_without_a_seat_says_why_and_asks_for_a_name` was here. There is no name to ask for.
 
     [Fact]
     public void Every_row_of_the_empty_list_fits_the_narrowest_pane()
     {
         // Forty columns is the narrowest terminal this surface is held to, less the pane's two border columns.
         Assert.All(ConversationsRegion.Nothing, row => Assert.True(row.Length <= 38, $"{row.Length}: {row}"));
-        Assert.Contains(ConversationsRegion.Nothing, row => row.Contains("press k", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Undeliverable_names_both_causes_and_what_to_do()
-    {
-        Assert.Contains("not running", InstructionWording.Undeliverable, StringComparison.Ordinal);
-        Assert.Contains("not connected", InstructionWording.Undeliverable, StringComparison.Ordinal);
-        Assert.Contains("request", InstructionWording.Undeliverable, StringComparison.Ordinal);
+        Assert.Contains(ConversationsRegion.Nothing, row => row.Contains("press Alt+k", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -77,7 +60,7 @@ public sealed class StartingAConversationTests
         using var directory = Directory();
         using var shell = new Shell(directory);
 
-        Assert.Equal($"parley terminal {BuildIdentity.Version}", shell.Title);
+        Assert.Equal($"parley {BuildIdentity.Version}", shell.Title);
 
         using var driving = Driving.Open();
         var dialog = Prompting.Choose("What this region can do", "described", ["one"]);
@@ -94,6 +77,6 @@ public sealed class StartingAConversationTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

@@ -4,14 +4,14 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 3: the other files a link could redirect.
+/// The other files a link could redirect.
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2.3 refused a linked <c>.mcp.json</c>. An enrolment writes <b>three</b> files — the launch
-/// configuration, the standing instructions, and the project's catalogue — and the fix went into the
-/// funnel only two of them use. Lens 1 found that exact shape four times: a fix is a claim about every
-/// caller, and it is only ever true of the callers the probe that found it happened to run.
+/// A linked <c>.mcp.json</c> is refused. An enrolment writes <b>three</b> files — the launch
+/// configuration, the standing instructions, and the project's catalogue — and a fix in a
+/// funnel only two of them use would miss the third: a fix is a claim about every
+/// caller, and it is only ever true of the callers a probe happened to run.
 /// </para>
 /// <para>
 /// The standing instructions are the interesting one. They are a tracked file in the same checkout,
@@ -51,7 +51,6 @@ public sealed class ProbeFourteenTests : IDisposable
         new(workspace, "orders", "Carts and totals.", Unattended: true)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>Links <paramref name="at"/> to <paramref name="target"/>, or says it cannot.</summary>
@@ -117,8 +116,8 @@ public sealed class ProbeFourteenTests : IDisposable
     public async Task A_catalogue_that_is_a_link_does_not_carry_the_write_out_either()
     {
         // The third file. This one goes through the same funnel the launch configuration does, so the
-        // expectation is that 2.3's fix already covers it — asserted rather than assumed, because
-        // "the fix covers this too" is the sentence lens 1 disproved four times.
+        // expectation is that the refusal already covers it — asserted rather than assumed, because
+        // "the fix covers this too" is a sentence that is often wrong.
         var workspace = Workspace("orders");
         var outside = Path.Combine(_root, "outside.json");
 

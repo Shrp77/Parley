@@ -92,7 +92,6 @@ public sealed class SchemaConformanceTests : IDisposable
 
     [Theory]
     [InlineData("agents")]
-    [InlineData("agent_credentials")]
     [InlineData("exchanges")]
     [InlineData("conversations")]
     [InlineData("conversation_participants")]

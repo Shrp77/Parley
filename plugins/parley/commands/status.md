@@ -77,14 +77,14 @@ roster. Four findings, and the first is the one this command is for:
   will answer from this repository and guess at the rest, which is the failure Parley exists to
   prevent, reached by installing it correctly. Name them and say to run `/parley:write-peers`.
 - **The placeholder is still there.** A block saying the roster has not been read, while the
-  roster has peers in it, is the same finding with a timestamp: setup finished and step 8 never
+  roster has peers in it, is the same finding with a timestamp: setup finished and the final step never
   ran.
 - **Lines in the block for agents not in the roster.** Retired, purged, or never restarted after
   being configured. Worth reporting and not worth acting on alone - a peer that is merely
-  switched off is still a peer, and §5.5 says a question reaches an agent on a machine that is
+  switched off is still a peer, and §5.5 says a request reaches an agent on a machine that is
   off.
-- **No `## Peers` section at all.** Run `/parley:setup` step 6, or `/parley:write-peers` if
-  the tools are already bound.
+- **No `## Peers` section at all.** Tell the user to enroll this repository (see `/parley:setup`), or
+  run `/parley:write-peers` if the tools are already bound.
 
 Do not read the peers' `owns` lines out in this report. Whether each line is a fair statement of
 that peer's boundary is `/parley:write-peers`' judgement to make and it makes it carefully;
@@ -92,19 +92,15 @@ repeating the claims here invites somebody to act on a description that has not 
 
 ## 4. What was left behind
 
-Two files survive a purge and a re-run, and both are the class of thing that looks like a fresh
+One file survives a purge and a re-run, and it is the class of thing that looks like a fresh
 install and is not:
 
-- **`.mcp.json`** may carry variables from an older shape. A `parley` or `parley-<project>` entry naming a store path,
-  a sweep cadence, a retention pair or a clarify cap predates the broker, and nothing reads them
-  now - they belong to the broker process. Report them; they are not harmful, but they are
-  evidence that this repository was configured against a Parley that no longer exists.
-- **`node.json`**, beside where the node is started or wherever `PARLEY_NODE_CONFIG` points, may
-  hold an entry for a role that is not registered. That entry is standing consent for this
+- **`node.json`**, in the same folder as the projects or wherever `PARLEY_NODE_CONFIG` points, may
+  hold an entry for an identity that is not registered. That entry is standing consent for this
   machine to start a repository unattended, and it outlives the registration it was written for
   - a purge clears the broker's store and touches neither the repository nor the machine.
 
-  **This repository's own role is not evidence of anything here.** The roster omits the caller,
+  **This repository's own identity is not evidence of anything here.** The roster omits the caller,
   so its entry looks unregistered from inside and always will; judging it by what step 1 returned
   reports a stale consent that is nothing of the kind. Check the other entries and leave this
   one alone.

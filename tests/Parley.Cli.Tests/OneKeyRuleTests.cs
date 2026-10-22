@@ -22,9 +22,9 @@ namespace Parley.Cli.Tests;
 /// decides which of the four things it is.
 /// </para>
 /// <para>
-/// <b>Writing it found a fourth illustration the spec had not catalogued.</b> FR-014 named the README,
-/// the plugin's setup instructions and the console's registration page; the adapter's own header
-/// comment shows a launch configuration too, and an illustration that disagrees with the tool is read
+/// <b>There are four illustrations.</b> The README,
+/// the plugin's setup instructions and the console's registration page show a launch configuration, and the
+/// adapter's own header comment shows a launch configuration too, and an illustration that disagrees with the tool is read
 /// by exactly the person who has not used the tool yet.
 /// </para>
 /// <para>

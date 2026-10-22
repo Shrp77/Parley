@@ -4,17 +4,17 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 8: every sentence built out of a file's contents.
+/// Every sentence built out of a file's contents.
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2.2 neutralised the values <c>Catalogues.Refusal</c> quotes. It is not the only sentence built from
+/// The values <c>Catalogues.Refusal</c> quotes are neutralised. It is not the only sentence built from
 /// a file: the enrolment plan and the withdrawal both quote keys, agent names, project names and
 /// broker addresses read out of somebody's <c>.mcp.json</c>, into notes printed on a terminal.
 /// </para>
 /// <para>
-/// This is lens 2's version of the pattern lens 1 found four times — a fix is a claim about every
-/// caller, and it is only ever true of the ones the probe that found it happened to run. So this
+/// A fix is a claim about every
+/// caller, and it is only ever true of the ones a probe happened to run. So this
 /// enumerates them rather than sampling: every message either half can produce from a hostile file.
 /// </para>
 /// </remarks>
@@ -51,7 +51,6 @@ public sealed class ProbeNineteenTests : IDisposable
         new("/src/orders", "orders", "Carts and totals.", Unattended: false)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
     /// <summary>Every note a plan produces, joined.</summary>

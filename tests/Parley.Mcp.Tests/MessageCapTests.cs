@@ -25,7 +25,7 @@ public sealed class MessageCapTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Room left for the Request around the ask: since 0.7, the JSON and one key.</summary>
+    /// <summary>Room left for the Request around the ask: the JSON and one key.</summary>
     /// <remarks>
     /// The cap counts the stored payload, so an item's text can never be the whole of it. Generous on
     /// purpose; what is checked near the boundary is searched for rather than assumed from this.

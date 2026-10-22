@@ -12,8 +12,7 @@ namespace Parley.Server.Tests;
 /// equate, a junction under a destroy, and refusals that must be sentences (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
-/// Written as probes by the review gate (runs 1.2, 2.2 and 3.2) and kept, because each holds a property no other test
-/// reaches: they passed when written, and they are here so a change that breaks one of them says so.
+/// Each holds a property no other test reaches, so a change that breaks one of them says so.
 /// </remarks>
 public sealed class FilesUnderRaceAndOnDiskTests
 {

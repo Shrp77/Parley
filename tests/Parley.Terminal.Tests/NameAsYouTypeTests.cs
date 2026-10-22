@@ -10,7 +10,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both halves come from one report.</b> The owner typed <c>TimeTracker</c> into the create
+/// <b>Both halves come from one report.</b> The owner typed <c>OrderBook</c> into the create
 /// form and met no resistance at all — no warning, no correction — and separately found the form
 /// running off the screen. The two are the same failure: the only thing enforcing lowercase was a
 /// sentence on a row that had been clipped, under a label that had itself overflowed.
@@ -23,18 +23,18 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 public sealed class NameAsYouTypeTests
 {
-    // **`Time Tracker` was `timetracker` and is `time-tracker` now**, which is the one thing about
+    // **`Order Book` was `orderbook` and is `order-book` now**, which is the one thing about
     // this correction that changed after 0.25.1. The owner chose the hyphen for the conversation
     // field on the grounds that `telleverybodytest` is a name nobody can read back, and the field
     // beside it had no business going on swallowing spaces. One grammar, one correction:
     // `Parley.Core.NameCorrection` is what a project's name, an enrolled agent's role and a seat
     // are all held to now.
     [Theory]
-    [InlineData("TimeTracker", "timetracker")]
-    [InlineData("Time Tracker", "time-tracker")]
-    [InlineData("Time  Tracker", "time-tracker")]
-    [InlineData("TIME_TRACKER", "timetracker")]
-    [InlineData("time-tracker", "time-tracker")]
+    [InlineData("OrderBook", "orderbook")]
+    [InlineData("Order Book", "order-book")]
+    [InlineData("Order  Book", "order-book")]
+    [InlineData("ORDER_BOOK", "orderbook")]
+    [InlineData("order-book", "order-book")]
     [InlineData("Café/Bar!", "cafbar")]
     [InlineData("north-helm", "north-helm")]
     public void A_name_is_corrected_to_something_the_rule_accepts(string typed, string expected)
@@ -86,12 +86,12 @@ public sealed class NameAsYouTypeTests
 
         driving.Show((View)form);
 
-        foreach (var key in "TimeTracker")
+        foreach (var key in "OrderBook")
         {
             driving.Press(new global::Terminal.Gui.Input.Key(key));
         }
 
-        Assert.Equal("timetracker", form.Values[0]);
+        Assert.Equal("orderbook", form.Values[0]);
     }
 
     [Fact]
@@ -157,9 +157,12 @@ public sealed class NameAsYouTypeTests
     {
         // **The other half of the report.** FormDialog gave each label one row and counted three
         // rows per field, so a label longer than the dialog was cut where it ran out -- and these
-        // are sentences: the node catalogue's is a hundred and ten characters, explaining that a
-        // question to an agent nobody has open waits, times out and is ghosted. That is the reason
-        // somebody would fill the field in, and it was the part that went missing.
+        // are sentences rather than words. The reason somebody would fill a field in is the part
+        // that went missing, which is the half that matters: a rule nobody can read is a rule the
+        // field does not have.
+        //
+        // The label this was written against was the node catalogue's, at a hundred and ten
+        // characters; 019 removed that field, so it asks the same question of the name's.
         //
         // Driven through the real action rather than a stand-in form, so the labels under test are
         // the ones the surface actually shows.
@@ -182,7 +185,12 @@ public sealed class NameAsYouTypeTests
 
         var screen = driving.Text();
 
-        var missing = "without one, a request to an agent nobody has open waits until somebody opens it"
+        // **Repointed rather than deleted when 019 took the catalogue field.** What this guards is
+        // that a field's label reaches the screen whole, which 0.18.11 paid for: the rule saying a
+        // project name is lowercase sat on a clipped row, so the owner typed a capital and met no
+        // resistance at all. The label happened to be the longest one; the property is about any of
+        // them, and the name field's is the one whose words matter most for the same reason.
+        var missing = "a label for this machine only, never sent anywhere"
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Select(word => word.Trim(',', '.'))
             .Where(word => !screen.Contains(word, StringComparison.Ordinal))
@@ -190,12 +198,12 @@ public sealed class NameAsYouTypeTests
 
         Assert.True(
             missing.Count == 0,
-            $"at {width}x{height}, {missing.Count} words of the catalogue field's label are off "
+            $"at {width}x{height}, {missing.Count} words of the name field's label are off "
             + $"screen: {string.Join(" ", missing.Take(12))}");
     }
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],
             _ => Grpc.Net.Client.GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

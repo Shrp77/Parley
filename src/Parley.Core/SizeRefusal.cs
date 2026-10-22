@@ -10,10 +10,8 @@
 /// <param name="Total">
 /// Every refused payload's length added together. Sixty-four bit, and not defensively: a
 /// thirty-two bit total passes two billion after roughly fifty thousand refusals at forty
-/// thousand characters, which one looping agent produces in an afternoon. Past that the read
-/// threw an overflow and the operator's command stopped working for that deployment
-/// permanently, with no way back short of editing the database — for a feature whose whole
-/// purpose is to still be readable years later. Found by probing rather than by reading.
+/// thousand characters, which one looping agent produces in an afternoon, and the read would then
+/// overflow permanently — for a feature whose whole purpose is to still be readable years later.
 /// </param>
 /// <param name="Cap">The cap in force at the most recent refusal.</param>
 /// <param name="LastUtc">When the most recent one happened.</param>

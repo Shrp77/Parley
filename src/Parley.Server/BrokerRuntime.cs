@@ -51,23 +51,26 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // Immutable arrays under AddOrUpdate rather than a lock around a list. Nudging reads this on
     // every write to any inbox, and a reader that had to take a lock would be contending with
     // attach and detach for the privilege of sending a notice that is disposable anyway.
+    /// <summary>The token each node said it gave the agent it is starting, until that agent attaches (SPEC.md §11.7).</summary>
+    private readonly ConcurrentDictionary<AgentName, string> _launches = new();
+
+    /// <summary>The identity each agent was last registered with, so a command for a node can name the checkout.</summary>
+    /// <remarks>
+    /// A copy, filled when an agent attaches, is renamed or is read for a node that joins, because a wake is not
+    /// asynchronous and must not wait on a read. It is only ever a hint to the node, which falls back to the name.
+    /// </remarks>
+    private readonly ConcurrentDictionary<AgentName, AgentIdentity> _identities = new();
+
     private readonly ConcurrentDictionary<string, ImmutableArray<AttachedAgent>> _attached =
         new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Callers waiting on a node's report, keyed by instruction.
-    /// </summary>
-    /// <remarks>
-    /// The command stream to a node runs one way, so an instruction's outcome arrives as its own
-    /// call some time later. This is what joins the two: the operator's request parks here, the
-    /// node's report completes it. Keyed by instruction rather than by agent, because an operator
-    /// may reasonably instruct the same agent twice before the first has settled.
-    /// </remarks>
-    private readonly ConcurrentDictionary<long, TaskCompletionSource<InstructionResult>> _awaited =
-        new();
-
     private readonly ConcurrentDictionary<string, JoinedNode> _nodes =
         new(StringComparer.Ordinal);
+
+    // The turns nodes have said are running and not yet said are over (SPEC.md §11.6). In memory on purpose: it is a
+    // fact about live connections, like a node being joined, and a broker that has just started holds none — so a
+    // restart forgetting them is right by construction, where a column would be false after every crash.
+    private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
 
     /// <summary>The silent participants each closure poll has already asked again, keyed by poll.</summary>
     /// <remarks>
@@ -101,17 +104,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The bound that makes waking every message's recipient affordable.</b> SPEC.md §17
-    /// question 15 once refused a wake on the grounds that it would be unbounded, and the answer is
-    /// in question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
+    /// <b>The bound that makes waking every message's recipient affordable.</b> A wake
+    /// might be thought unbounded, and the answer is
+    /// in SPEC.md §17 question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
     /// turn drains sixty messages and asking a second time buys nothing.
     /// </para>
     /// <para>
-    /// <b>Two things the review gate changed about when it clears</b> (SPEC.md §5.4). It is removed as a
-    /// collection begins rather than after it returns (<see cref="CollectAsync{T}"/>), so a message stored
-    /// during one asks for its own turn. And a collection its caller limited to fewer than are waiting is
-    /// followed by a wake for the rest (<c>AgentsService.DrainInbox</c>), because there asking again is what
-    /// the messages left behind are owed.
+    /// <b>When it clears</b> (SPEC.md §5.4). It is removed as a collection begins rather than after it
+    /// returns (<see cref="CollectAsync{T}"/>), so a message stored during one asks for its own turn. A
+    /// collection its caller limited to fewer than are waiting is followed by a wake for the rest
+    /// (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
     /// </para>
     /// <para>
     /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>
@@ -157,6 +159,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private readonly StoreLock? _storeLock;
 
     private BrokerRuntime(
+        ProjectName project,
         SqliteConnection connection,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
@@ -184,11 +187,28 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = new NodeRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
         _ = new AgentRepository(connection).DisconnectAllAsync(now).GetAwaiter().GetResult();
 
+        // The two rows the broker writes itself (SPEC.md §12.3), before anything could want to send as, or to, either:
+        // the facilitator, and the person seat an agent asks when no agent can help (principle 2.6). Nothing launches
+        // either, which makes them the two identities no launch fixes (constitution, Principle III). Both are named for
+        // the project, not a machine, because neither is hosted on one (§4.1.1).
+        Project = project;
+        Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(project).GetAwaiter().GetResult();
+        Person = new AgentRepository(connection).EnsurePersonAsync(project).GetAwaiter().GetResult();
+
         // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
         // write, and changes made while no broker was running are found before anybody asks.
         Watcher = new FolderWatcher(this);
         Watcher.Start();
     }
+
+    /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
+    public AgentName Facilitator { get; }
+
+    /// <summary>Gets the person seat's name in this store (SPEC.md §12.3).</summary>
+    public AgentName Person { get; }
+
+    /// <summary>Gets the project this store serves, which both broker-provided participants are named for.</summary>
+    public ProjectName Project { get; }
 
     /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
     internal FolderWatcher Watcher { get; }
@@ -230,25 +250,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Gets the clock every operation is stamped from.</summary>
     public TimeProvider Clock { get; }
 
-    /// <summary>
-    /// Gets how long <c>Instruct</c> waits for a turn before answering that it is still running.
-    /// </summary>
-    /// <remarks>
-    /// Surfaced from the options rather than written in the service, because it was written in the
-    /// service and that is most of why it was wrong: nothing could compare it against the turn
-    /// budget it silently contradicted, and nothing could shorten it for a test that needed to
-    /// watch the wait elapse.
-    /// </remarks>
-    public TimeSpan InstructionPatience => _options.InstructionPatience;
+    /// <summary>Gets how the store this runtime serves differs from the shape this build expects.</summary>
+    /// <value>Empty when it matches, and for an in-memory store, which is made by this build.</value>
+    public IReadOnlyList<string> StoreProblems { get; init; } = [];
 
     /// <summary>
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
     /// <remarks>
-    /// The broker's, read from the broker's own environment. It used to be read by whoever ran
-    /// the CLI, which meant an operator on another machine could prune to a different floor than
-    /// the sweep used — from a box that does not hold the store and cannot see what the setting
-    /// there is.
+    /// The broker's, read from the broker's own environment, so an operator on another machine cannot
+    /// prune to a different floor than the sweep uses.
     /// </remarks>
     public RetentionPolicy Retention { get; }
 
@@ -278,6 +289,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>
     /// Opens a database and prepares it to be served.
     /// </summary>
+    /// <param name="project">
+    /// The project this store serves, which the broker names its two own participants for (SPEC.md §4.1.1, §12.3).
+    /// </param>
     /// <param name="databasePath">The store, on this machine.</param>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
@@ -289,23 +303,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <exception cref="StoreHeldException">Another broker is serving this store.</exception>
     /// <remarks>
     /// <para>
-    /// Migration happens here, once, rather than in every client. It used to run in each
-    /// adapter's launch path, which meant a deployment's schema version was whatever the
-    /// most recently updated repository happened to carry — and two adapters at different
-    /// versions raced to apply it.
+    /// Migration happens here, once, rather than in every client, so a deployment's schema version
+    /// never depends on which adapter was updated last.
     /// </para>
     /// <para>
-    /// <b>The store is locked before anything else touches it, and the order is the fix.</b> The
-    /// constructor clears every <c>connected</c> it finds, which is right for a broker that is
-    /// about to serve and ruinous for one that is not: two launchers at logon — a scheduled task
-    /// and a terminal restoring its last session — both reached it, the one that then failed to
-    /// bind its port had already marked the other's live node disconnected, and seventeen agents
-    /// read as stranded on the machine that was running them. Nothing put the flag back, because
-    /// the live node's stream never ended. Taken here, a second broker is refused before it has
-    /// opened a connection, run a migration or written a row.
+    /// <b>The store is locked before anything else touches it.</b> The constructor clears every
+    /// <c>connected</c> it finds, which is right for a broker that is about to serve and ruinous for
+    /// one that is not: a second launcher that then failed to bind its port would already have marked
+    /// the first one's live node disconnected, and nothing would put the flag back because that
+    /// node's stream never ends. Taken here, a second broker is refused before it has opened a
+    /// connection, run a migration or written a row.
     /// </para>
     /// </remarks>
     public static BrokerRuntime Open(
+        ProjectName project,
         string databasePath,
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
@@ -337,11 +348,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
             var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
             files.Prepare();
 
+            // Looked at after the migration, and only reported. The schema number is not a witness while it is
+            // edited in place, so the shape is compared directly; `StoreShape` says why a difference is never
+            // repaired here.
+            var shape = StoreShape.Problems(connection);
+
             return new BrokerRuntime(
-                connection, options, clock,
+                project, connection, options, clock,
                 retention ?? RetentionPolicyEnvironment.Read(Environment.GetEnvironmentVariable),
                 files,
-                storeLock: held);
+                storeLock: held)
+            {
+                StoreProblems = shape,
+            };
         }
         catch
         {
@@ -360,6 +379,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
+    /// <param name="project">The project it serves, or <see langword="null"/> for <c>test</c>.</param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -371,7 +391,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy? retention = null,
-        string? filesRoot = null)
+        string? filesRoot = null,
+        ProjectName? project = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
@@ -381,7 +402,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot));
+                project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+                FilesAt(filesRoot));
         }
         catch
         {
@@ -404,10 +426,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// to look.
     /// </para>
     /// <para>
-    /// This check used to live in the adapter, which was where migration used to happen. It
-    /// moved here with the migration rather than being dropped with the file it was in, because
-    /// the risk moved too: one process now creates every store, so it is the only thing left
-    /// that can create one in the wrong place.
+    /// The check lives with the migration because one process creates every store, so it is the
+    /// only thing that can create one in the wrong place.
     /// </para>
     /// <para>
     /// Both reads under one transaction, which is not tidiness. They are two statements, so
@@ -453,6 +473,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
+    /// <param name="project">The project it serves, or <see langword="null"/> for <c>test</c>.</param>
     /// <returns>The runtime.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <remarks>
@@ -472,15 +493,25 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Parley.Broker.BrokerOptions options,
         TimeProvider clock,
         RetentionPolicy? retention = null,
-        string? filesRoot = null)
+        string? filesRoot = null,
+        ProjectName? project = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            connection, options, clock, retention ?? RetentionPolicy.Default, FilesAt(filesRoot), ownsConnection: false);
+            project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+            FilesAt(filesRoot), ownsConnection: false);
     }
+
+    /// <summary>The project a runtime opened for a test serves, when the test does not name one.</summary>
+    /// <remarks>
+    /// Only <see cref="OpenInMemory"/> and <see cref="Over"/> default it, and nothing but tests calls either. A runtime
+    /// over a real store must be told its project (<see cref="Open"/>), because the name is written into the two rows
+    /// the broker provides and cannot be corrected later.
+    /// </remarks>
+    private static readonly ProjectName TestProject = ProjectName.Create("test");
 
     /// <summary>A file location for a runtime that has no store path to put one beside.</summary>
     /// <param name="root">The directory asked for, or <see langword="null"/> for a temporary one.</param>
@@ -505,6 +536,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="registration">What the adapter said about itself.</param>
     /// <param name="cancellationToken">Cancels the attach.</param>
+    /// <param name="launchToken">What the node that started this process put in its environment, or null (SPEC.md §11.7).</param>
     /// <returns>The attachment, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
     /// <exception cref="InvalidOperationException">
@@ -512,7 +544,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </exception>
     public async Task<AttachedAgent> AttachAsync(
         AgentRecord registration,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? launchToken = null)
     {
         ArgumentNullException.ThrowIfNull(registration);
 
@@ -531,10 +564,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // The workspace is the only distinguishing fact available, so a registration that
             // supplies none cannot be checked. That is the honest limit rather than a reason to
             // guess.
-            // Compared through WorkspacePath rather than as text. Two spellings of one directory
-            // were being refused as two repositories -- `C:/repo` against `C:\repo` -- and two
-            // directories differing only in case were being admitted as one, which on a
-            // case-sensitive filesystem is the collision this check exists to refuse.
+            // Compared through WorkspacePath rather than as text, so two spellings of one directory
+            // (`C:/repo`, `C:\repo`) are one repository, and two directories differing only in case on a
+            // case-sensitive filesystem are not.
             if (registration.Workspace is { Length: > 0 } here
                 && await agents.WorkspaceOfAsync(registration.Name, cancellationToken)
                     .ConfigureAwait(false) is { Length: > 0 } held
@@ -544,6 +576,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     $"'{registration.Name.Value}' is already registered to '{held}', and this " +
                     $"one is attaching from '{here}'. An agent name belongs to one repository: " +
                     "give this one a different role, or retire the other.");
+            }
+
+            await ReconcileIdentityAsync(agents, registration, cancellationToken).ConfigureAwait(false);
+
+            if (registration.Identity.Known)
+            {
+                _identities[registration.Name] = registration.Identity;
             }
 
             await agents.RegisterIfAbsentAsync(registration, cancellationToken)
@@ -569,10 +608,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 throw new InvalidOperationException(
                     $"'{registration.Name.Value}' is retired and cannot attach. An operator " +
-                    "reinstates it with `parley reinstate`.");
+                    "reinstates it from the agents pane in `parley`, or from its page in the web UI.");
             }
 
-            var attached = new AttachedAgent(this, registration.Name, broker, started);
+            // **Started by Parley only by the token its node reported for this launch** (SPEC.md §11.7), and spent here, so
+            // a second process presenting it — an editor started from a shell that inherited it — reads as outside.
+            var byParley = launchToken is { Length: > 0 }
+                && _launches.TryGetValue(registration.Name, out var launched)
+                && string.Equals(launched, launchToken, StringComparison.Ordinal)
+                && _launches.TryRemove(new KeyValuePair<AgentName, string>(registration.Name, launched));
+
+            var attached = new AttachedAgent(this, registration.Name, broker, started, byParley);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -590,11 +636,94 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
+    /// Applies the identity an attach presented: records it, or renames the agent that already holds it (SPEC.md §4.1.1).
+    /// </summary>
+    /// <param name="agents">The registry, inside the attach's gate.</param>
+    /// <param name="registration">What the adapter said about itself.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The identity is held by another repository, the old name is attached, or the new name belongs to another agent.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A label, never authority.</b> The identity can only move a row to a new name, and only when the attach comes
+    /// from the same repository on the same machine, by the workspace comparison §4.1.1 already uses for a name. It
+    /// admits nobody the name check would not, so a forged identifier gets a refusal and nothing else.
+    /// </para>
+    /// <para>
+    /// A rename refuses while a session is attached under the old name, because that session would go on reading and
+    /// writing a name that no longer exists. A start the node had been told for the old name is carried to the new one.
+    /// </para>
+    /// </remarks>
+    private async Task ReconcileIdentityAsync(
+        AgentRepository agents,
+        AgentRecord registration,
+        CancellationToken cancellationToken)
+    {
+        if (!registration.Identity.Known || PersonSeat.Is(registration.Name) || Facilitation.Is(registration.Name))
+        {
+            return;
+        }
+
+        var holder = await agents.HolderOfIdentityAsync(
+            registration.Identity, registration.Machine, cancellationToken).ConfigureAwait(false);
+
+        if (holder is null)
+        {
+            _ = await agents.RecordIdentityAsync(registration.Name, registration.Identity, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (holder.Name == registration.Name)
+        {
+            return;
+        }
+
+        if (registration.Workspace is not { Length: > 0 } here
+            || holder.Workspace is not { Length: > 0 } held
+            || !WorkspacePath.SameRepository(here, held))
+        {
+            throw new InvalidOperationException(
+                $"This repository's identity is already registered here as '{holder.Name.Value}', from " +
+                $"'{holder.Workspace ?? "no recorded workspace"}', and '{registration.Name.Value}' is attaching from " +
+                $"'{registration.Workspace ?? "no workspace"}'. An identity belongs to one repository on a machine: " +
+                "give this checkout its own, or retire the other.");
+        }
+
+        if (_attached.TryGetValue(holder.Name.Value, out var running) && !running.IsEmpty)
+        {
+            throw new InvalidOperationException(
+                $"'{holder.Name.Value}' is still attached, so it cannot be renamed to '{registration.Name.Value}' " +
+                "yet. Close its session and open this one again.");
+        }
+
+        _ = await agents.RenameAsync(holder.Name, registration.Name, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (_launches.TryRemove(holder.Name, out var token))
+        {
+            _launches[registration.Name] = token;
+        }
+
+        _ = _identities.TryRemove(holder.Name, out _);
+    }
+
+    /// <summary>The identity an agent was registered with, or the default when none is known.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The identity.</returns>
+    private AgentIdentity IdentityOf(AgentName agent) =>
+        _identities.TryGetValue(agent, out var identity) ? identity : default;
+
+    /// <summary>
     /// Records that a machine's node is connected and holds it until its stream ends.
     /// </summary>
     /// <param name="node">What the node observed about its machine.</param>
     /// <param name="startableRoles">The roles it says it can launch.</param>
     /// <param name="cancellationToken">Cancels the join.</param>
+    /// <param name="reportsTurns">Whether the node said it reports the turns it gives (SPEC.md §11.6).</param>
+    /// <param name="startableIdentities">The identifiers of the checkouts it can launch for the project (SPEC.md §4.1.1).</param>
     /// <returns>The join, which the caller disposes when the stream ends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="node"/> is null.</exception>
     /// <exception cref="InvalidOperationException">A node is already joined for that machine.</exception>
@@ -607,13 +736,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<JoinedNode> JoinNodeAsync(
         NodeRecord node,
         IEnumerable<string> startableRoles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool reportsTurns = false,
+        IEnumerable<string>? startableIdentities = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(startableRoles);
 
         var joined = new JoinedNode(
-            this, node.Machine, startableRoles.ToHashSet(StringComparer.Ordinal));
+            this,
+            node.Machine,
+            startableRoles.ToHashSet(StringComparer.Ordinal),
+            reportsTurns,
+            startableIdentities?.ToHashSet(StringComparer.Ordinal));
 
         if (!_nodes.TryAdd(node.Machine, joined))
         {
@@ -629,6 +764,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 {
                     await new NodeRepository(connection).JoinAsync(node, now, ct)
                         .ConfigureAwait(false);
+
+                    foreach (var known in await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
+                    {
+                        if (known.Identity.Known)
+                        {
+                            _identities[known.Name] = known.Identity;
+                        }
+                    }
 
                     return true;
                 },
@@ -673,6 +816,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 var agents = (await new AgentRepository(connection).GetAllAsync(ct).ConfigureAwait(false))
                     .Where(a => a.Status == AgentStatus.Active && a.Name.Machine == machine)
+                    // The two broker-provided participants are hosted on no machine; their second half is the project,
+                    // so a node that happens to share a project's name must not be taken to host them.
+                    .Where(a => !PersonSeat.Is(a.Name) && !Facilitation.Is(a.Name))
                     .Select(a => a.Name)
                     .ToList();
 
@@ -696,6 +842,221 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
     }
 
+    /// <summary>Records that a node began a turn for one of its agents (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="startedUtc">When the turn began, as the node says.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    public async Task<bool> TurnStartedAsync(
+        string machine, AgentName agent, DateTimeOffset startedUtc, CancellationToken cancellationToken = default)
+    {
+        if (!Plausible(startedUtc) || !_nodes.TryGetValue(machine, out var reporter))
+        {
+            return false;
+        }
+
+        var before = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
+
+        if (before is not { } waiting)
+        {
+            return false;
+        }
+
+        var running = new RunningTurn(startedUtc, machine, waiting);
+
+        _ = _turns.AddOrUpdate(agent, running, (_, was) => was.Started > startedUtc ? was : running);
+
+        // The node may have left while the count was read, and its release swept the table before this landed. Taken
+        // back, or the agent would read as working until its next report.
+        if (!_nodes.TryGetValue(machine, out var still) || !ReferenceEquals(still, reporter))
+        {
+            _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>Whether a node's word about when a turn began is within a day of this broker's clock.</summary>
+    /// <param name="startedUtc">The node's time.</param>
+    /// <returns>Whether to believe it.</returns>
+    /// <remarks>
+    /// Machines' clocks differ, so this is loose on purpose; what it stops is a start a year ahead, which would hold an
+    /// agent "working" until then, or put a turn's end past the calendar.
+    /// </remarks>
+    private bool Plausible(DateTimeOffset startedUtc) =>
+        (startedUtc - Clock.GetUtcNow()).Duration() <= TimeSpan.FromDays(1);
+
+    /// <summary>Records that a node's turn for one of its agents ended (SPEC.md §11.6).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="ended">What the node said about the turn.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Recorded in <c>invocations</c> with waiting counts the broker took itself</b> — before from when it heard the turn
+    /// begin, after from now — because they are its inbox, which the node cannot see. An end whose beginning this broker
+    /// never heard (it restarted mid-turn) is still recorded, counting before as after: nothing better is known.
+    /// </para>
+    /// <para>
+    /// <b>An end clears a running turn only if that turn is not newer than it.</b> A slow report of one turn's end arriving
+    /// after the next turn's start must not make the agent read as idle while it works.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> TurnEndedAsync(
+        string machine, AgentName agent, EndedTurn ended, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ended);
+
+        if (!Plausible(ended.StartedUtc))
+        {
+            return false;
+        }
+
+        var after = await AcceptedTurnAsync(machine, agent, cancellationToken).ConfigureAwait(false);
+
+        if (after is not { } waitingAfter)
+        {
+            return false;
+        }
+
+        var before = _turns.TryGetValue(agent, out var running) && running.Started == ended.StartedUtc
+            ? running.WaitingBefore
+            : waitingAfter;
+
+        if (running is not null && running.Started <= ended.StartedUtc)
+        {
+            _ = _turns.TryRemove(new KeyValuePair<AgentName, RunningTurn>(agent, running));
+        }
+
+        _ = await UseConnectionAsync(
+            (connection, _, ct) => new InvocationRepository(connection).RecordAsync(
+                agent,
+                before,
+                waitingAfter,
+                ended.StartedUtc,
+                ended.Elapsed,
+                ended.Clean ? 0 : 1,
+                ended.TimedOut,
+                ended.CostUsd,
+                ended.ModelTurns,
+                ended.PermissionDenials,
+                ct),
+            cancellationToken).ConfigureAwait(false);
+
+        return true;
+    }
+
+    /// <summary>When the turn running now for an agent began, or null when none is.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The start.</returns>
+    public DateTimeOffset? TurnRunningSince(AgentName agent) =>
+        _turns.TryGetValue(agent, out var running) ? running.Started : null;
+
+    /// <summary>Records that a node is about to start an agent with a token in its environment (SPEC.md §11.7).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent it is starting.</param>
+    /// <param name="token">The token it chose for this launch.</param>
+    /// <returns>Whether the report was accepted.</returns>
+    /// <remarks>
+    /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
+    /// same checks a turn report meets. A newer launch's token replaces an older one's, which is what a restart is.
+    /// </remarks>
+    public bool LaunchReported(string machine, AgentName agent, string token)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || string.IsNullOrWhiteSpace(token)
+            || token.Length > 128
+            || !_nodes.ContainsKey(machine)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _launches[agent] = token;
+
+        return true;
+    }
+
+    /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>True when it is attached and no attachment presented its node's token.</returns>
+    /// <remarks>
+    /// <b>Never the person or Parley</b>. Open outside Parley means a process Parley could have started and did
+    /// not, and no node ever starts either of them: the person's attachment is a surface, which is always "not started by
+    /// Parley", so a surface reading the flag for every row would mark the person with the agents' warning.
+    /// </remarks>
+    public bool OpenOutside(AgentName agent) =>
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _attached.TryGetValue(agent.Value, out var sessions)
+        && !sessions.IsEmpty
+        && sessions.All(session => !session.StartedByParley);
+
+    /// <summary>Whether this agent's turns are reported (SPEC.md §11.6).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>
+    /// True only while a node that said so is joined for the agent's machine and can start it — never for the person or
+    /// Parley, whom no node gives a turn.
+    /// </returns>
+    /// <remarks>
+    /// <b>Per agent, not per machine.</b> Decided by machine alone, an agent nobody's node runs — one opened in an
+    /// editor on a machine whose node reports turns — would read as reported and could be shown stopped on a turn some
+    /// earlier run left behind; and a node joined under a project's name would make the person and Parley read as
+    /// reported. <b>The limit is recorded rather than hidden</b>: an agent the node could start but somebody opened in an
+    /// editor instead still reads as reported, because the broker sees two attachments of one name alike.
+    /// </remarks>
+    public bool TurnsReported(AgentName agent) =>
+        !PersonSeat.Is(agent)
+        && !Facilitation.Is(agent)
+        && _nodes.TryGetValue(agent.Machine, out var node)
+        && node.ReportsTurns
+        && (_attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty
+            // Running: only as a process the node started, by its token (§11.7) — one opened outside is unknown.
+            ? sessions.Any(session => session.StartedByParley)
+            // Not running: what the node last said about a process it could start again.
+            : node.Startable.Contains(agent.Role));
+
+    /// <summary>Checks a turn report and counts the agent's waiting work, or says no.</summary>
+    /// <param name="machine">The reporting machine.</param>
+    /// <param name="agent">The agent.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>What the agent has waiting, or null when the report is not accepted.</returns>
+    /// <remarks>
+    /// <b>Only for an agent on the reporting node's own machine, from a node that is joined, about an agent this broker
+    /// knows</b> (§11.6). §16 concedes anything that reaches a broker can claim to be anything; a node's claim about another
+    /// machine's agent is the cheap forgery, and refusing it costs one comparison.
+    /// </remarks>
+    private async Task<long?> AcceptedTurnAsync(string machine, AgentName agent, CancellationToken cancellationToken)
+    {
+        // The person and Parley are hosted nowhere: the half of their names after '@' is the project, so the machine
+        // comparison would admit any node joined under the project's name (WakeForOutstandingWorkAsync has the same
+        // exclusion). No node gives either of them a turn.
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_nodes.ContainsKey(machine)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return await UseConnectionAsync(
+            async (connection, _, ct) =>
+                await new AgentRepository(connection).IsRegisteredAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    ? await new InvocationRepository(connection).CountWaitingAsync(agent, ct).ConfigureAwait(false)
+                    : (long?)null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>A turn a node has said began and not yet said ended.</summary>
+    /// <param name="Started">When it began.</param>
+    /// <param name="Machine">The node that said so, whose leaving ends the claim.</param>
+    /// <param name="WaitingBefore">What the agent had waiting when it began.</param>
+    private sealed record RunningTurn(DateTimeOffset Started, string Machine, long WaitingBefore);
+
     /// <summary>Releases a node when its stream has ended.</summary>
     /// <param name="joined">The join.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
@@ -706,121 +1067,22 @@ public sealed class BrokerRuntime : IAsyncDisposable
     {
         _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(joined.Machine, joined));
 
+        // **Nothing a departed node said is running is claimed to be running any more** (§11.6). A turn
+        // reported as begun and never as ended would otherwise read as working for ever.
+        foreach (var turn in _turns.Where(entry => entry.Value.Machine == joined.Machine).ToList())
+        {
+            _ = _turns.TryRemove(turn);
+        }
+
         _ = await UseConnectionAsync(
             async (connection, now, ct) =>
             {
                 await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
                     .ConfigureAwait(false);
-
-                // **A departing node does NOT settle the instructions it was holding, and the
-                // temptation to make it do so is why this comment is here.**
-                //
-                // It looks obviously right: §11.5 gives delivery to the node, so when the node goes
-                // its turns went with it, and `failed` is exactly "the turn was attempted and did
-                // not complete". It was built that way and then probed, and the probe is in
-                // `InstructionSurvivesTests`.
-                //
-                // A *stream* ending is not a node process dying. A network blip ends the stream
-                // while the agent carries on working, and settling on that destroys the answer when
-                // it arrives — settlement is first-come, so the real report is refused. That is
-                // precisely the defect this feature exists to remove, reintroduced through a
-                // different door, and it gets likelier the moment a deployment is reached over a
-                // private network rather than loopback, which §16 explicitly permits.
-                //
-                // So the broker does not claim to know. A turn whose node has gone stays *still
-                // running* until the sweep presumes it dead past TurnBudget.PresumedDead — an
-                // unknown honestly reported, rather than a false claim that also destroys evidence.
-
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
     }
-
-    /// <summary>Delivers an operator's instruction, and waits for the agent to have its turn.</summary>
-    /// <param name="instructionId">The instruction being delivered.</param>
-    /// <param name="agent">Who it is for.</param>
-    /// <param name="text">What the operator said.</param>
-    /// <param name="patience">How long to wait for the node's report.</param>
-    /// <param name="cancellationToken">Cancels the wait.</param>
-    /// <returns>What became of it.</returns>
-    /// <remarks>
-    /// <para>
-    /// Undeliverable rather than failed when no node holds the agent's machine, and the
-    /// distinction is the point: §11.5 says an agent whose node is not connected cannot be
-    /// instructed and must be told so rather than left looking as though it was. The remedies
-    /// differ — one is a machine that is switched off, and re-sending will not change it.
-    /// </para>
-    /// <para>
-    /// A turn is a model thinking, so the wait is generous and bounded rather than indefinite. An
-    /// instruction that outlives its patience is reported as failed and the row settles: the
-    /// alternative is an operator holding a page open against a turn that may never end.
-    /// </para>
-    /// </remarks>
-    public async Task<InstructionResult> DeliverInstructionAsync(
-        long instructionId,
-        AgentName agent,
-        string text,
-        TimeSpan patience,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_nodes.TryGetValue(agent.Machine, out var node))
-        {
-            return new InstructionResult(InstructionOutcome.Undeliverable, null);
-        }
-
-        var waiting = new TaskCompletionSource<InstructionResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-
-        if (!_awaited.TryAdd(instructionId, waiting))
-        {
-            return new InstructionResult(InstructionOutcome.Failed, null);
-        }
-
-        try
-        {
-            if (!node.RequestInstruction(instructionId, agent, text))
-            {
-                return new InstructionResult(InstructionOutcome.Undeliverable, null);
-            }
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(patience);
-
-            // **Pending, not failed, and this is the same defect one layer in.** Removing the
-            // settling write stopped the broker *recording* a verdict it had no grounds for; this
-            // stops it *reporting* one. `Failed` is defined as "the turn was attempted and did not
-            // complete", which is a claim about the turn — and while the patience elapses the turn
-            // is simply still running. An operator told `failed` reissues the instruction, which
-            // §10.2 names as the one response that makes the situation worse.
-            //
-            // Note that the linked token covers the caller giving up as well as the patience
-            // elapsing, and both mean the same thing here: this call is over and the turn is not.
-            // Which of the two happened is a fact about the operator, and neither is a fact about
-            // the agent.
-            await using var registration = timeout.Token.Register(
-                () => waiting.TrySetResult(new InstructionResult(InstructionOutcome.Pending, null)))
-                .ConfigureAwait(false);
-
-            return await waiting.Task.ConfigureAwait(false);
-        }
-        finally
-        {
-            _ = _awaited.TryRemove(instructionId, out _);
-        }
-    }
-
-    /// <summary>Completes whoever is waiting on an instruction's outcome.</summary>
-    /// <param name="instructionId">The instruction.</param>
-    /// <param name="result">What became of it.</param>
-    /// <returns><see langword="true"/> if somebody was waiting.</returns>
-    /// <remarks>
-    /// False is ordinary rather than an error: the operator's request may have given up before
-    /// the node answered, and a node reporting into an empty slot has still done its job. The row
-    /// is settled by the reporting path regardless, so the record does not depend on anybody
-    /// still listening.
-    /// </remarks>
-    public bool CompleteInstruction(long instructionId, InstructionResult result) =>
-        _awaited.TryGetValue(instructionId, out var waiting) && waiting.TrySetResult(result);
 
     /// <summary>
     /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.
@@ -837,10 +1099,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </para>
     /// <para>
     /// <b>Not named for the start, because the start is only half of it.</b> An agent that is
-    /// already attached needs a turn rather than a process, and this used to fall silent in that
-    /// case — which read as correct and meant every message after the first reached nobody. A
-    /// name that promised only a start is how that stayed invisible: the call did what it said,
-    /// and what it said was not what the traffic needed.
+    /// already attached needs a turn rather than a process; falling silent there would mean every
+    /// message after the first reached nobody.
     /// </para>
     /// <para>
     /// Silent and false when the machine has no node, or when that node did not list the role
@@ -867,18 +1127,33 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <b>The path every message's wake takes.</b> A Request, a Clarify and a Result all wake their
     /// recipient through here, so a burst from any number of senders costs one turn until the
     /// recipient collects, and a message will not stack a turn on top of one already coming: that
-    /// turn collects it. 0.4 kept questions on <see cref="RequestAttention"/>, bounded instead by
-    /// §7.1's per-pair cap; 0.5 has one message path and that cap is off by default.
+    /// turn collects it.
     /// </para>
     /// <para>
     /// Returns an outcome rather than a flag because a sender told only that its message was
-    /// stored cannot tell delivery from silence, which is the half of the reported defect that was
-    /// not about waking at all. None of the outcomes is a refusal — see
+    /// stored cannot tell delivery from silence. None of the outcomes is a refusal — see
     /// <see cref="WakeOutcome"/>.
     /// </para>
     /// </remarks>
     public WakeOutcome RequestAttentionForMail(AgentName agent, string because)
     {
+        // Mail for the facilitator is an agent answering it or asking it something back, and the facilitation sweep is
+        // what reads it (FacilitateAsync). No node runs the facilitator, so asking one would come back unreachable and
+        // tell the sender nothing can see its message, which is untrue: the next sweep will.
+        if (Facilitation.Is(agent))
+        {
+            return WakeOutcome.AlreadyComing;
+        }
+
+        // Mail for the person waits for the person (SPEC.md §5, §12.3), here or away. Nothing starts a person, so no node is
+        // asked; asking one would come back unreachable and tell the sender its message would never be read. A surface
+        // the person has open has already been told something arrived: the nudge runs before this, for every
+        // recipient. Not claimed either, because a claim bounds turns and a person takes none.
+        if (PersonSeat.Is(agent))
+        {
+            return WakeOutcome.WithThePerson;
+        }
+
         // **Claimed before asking, not checked before asking.** Reading the mark and then acting on
         // it is two operations, and the flood this bound exists for is precisely the case where
         // sixty of them interleave: every one would read "nothing pending" and every one would ask.
@@ -918,15 +1193,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// clock does not only move forwards: an NTP correction steps it back and a resumed snapshot
     /// steps it back a long way, so a mark can be stamped in what is now the future. Comparing only
     /// against the ceiling answers <em>yes</em> for such a mark, which would suspend waking for that
-    /// agent for the length of the step — this feature's own defect, reintroduced by arithmetic that
-    /// reads as though it handles it.
+    /// agent for the length of the step.
     /// </para>
     /// <para>
-    /// <b>But treating every negative elapsed as expired is worse, and an existing test caught it
-    /// doing so.</b> Each caller reads the clock once and compares its own instant against another
-    /// caller's stamp, so under a flood the callers whose read landed a fraction before the winner's
-    /// write see a negative elapsed — and would each replace the mark and claim. Sixty concurrent
-    /// notices went back to buying up to forty-three turns, which is the bound not holding at all.
+    /// <b>But treating every negative elapsed as expired is worse.</b> Each caller reads the clock
+    /// once and compares its own instant against another caller's stamp, so under a flood the
+    /// callers whose read landed a fraction before the winner's write see a negative elapsed — and
+    /// would each replace the mark and claim, which defeats the bound.
     /// </para>
     /// <para>
     /// So the two cases are told apart by <em>how far</em> into the future the stamp is. Slightly
@@ -998,9 +1271,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <remarks>
     /// <para>
     /// <b>The mark is cleared before the drain reads, not after it returns.</b> Cleared after, a message stored in
-    /// between found the mark still held, asked for nothing, and then lost the mark to a collection that had never
-    /// seen it: the message sat with no turn coming, and nothing in 0.5 times out. Found by the review gate by
-    /// replaying the two halves in their shipped order (lens 1 run 1.17).
+    /// between would find the mark still held, ask for nothing, and then lose the mark to a collection that had
+    /// never seen it: the message would sit with no turn coming, and nothing times out.
     /// </para>
     /// <para>
     /// Cleared before, a message stored after the clear claims a turn of its own. If the drain then reads it anyway,
@@ -1068,13 +1340,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return WakeOutcome.Unreachable;
         }
 
-        // Attached already, so a start would duplicate a process. What the traffic needs is not a
-        // start but a turn, and falling silent here is what left a second message reaching
-        // nobody: written and never collected while the registry reported the agent live. The node gives the turn only to a resident of its own, so an
-        // agent attached through somebody's editor window is left alone rather than duplicated.
+        // Attached already, so a start would duplicate a process. What the traffic needs is a turn. The node
+        // gives the turn only to a resident of its own, so an agent attached through somebody's editor window
+        // is left alone rather than duplicated.
         var running = _attached.TryGetValue(agent.Value, out var sessions) && !sessions.IsEmpty;
 
-        if (!(running ? node.RequestTurn(agent, because) : node.RequestStart(agent, because)))
+        // **Open only outside Parley** (§11.7): no node can give it a turn and starting a second process would put two
+        // models in one checkout, so nobody is asked — and nothing is marked as coming, or every wake after the first
+        // would be suppressed.
+        if (running && sessions.All(session => !session.StartedByParley))
+        {
+            return WakeOutcome.OpenOutside;
+        }
+
+        if (!(running ? node.RequestTurn(agent, IdentityOf(agent), because) : node.RequestStart(agent, IdentityOf(agent), because)))
         {
             // The node holds this machine but does not name the role among what it can launch, so
             // nothing here will run it. Not marked pending: nothing is coming, and marking would
@@ -1116,8 +1395,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         }
 
         // Any of them. They are brokers for the same agent over the same connection, and differ
-        // only in when each attached -- which nothing reads now that 0.5 has no ghosting clock.
-        // The newest is taken because it needs no comparison.
+        // only in when each attached. The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1167,20 +1445,186 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// Runs the broker's maintenance pass — polls, instructions nothing will report on, and retention — on the
+    /// Runs the broker's maintenance pass — polls and retention — on the
     /// broker the host owns.
     /// </summary>
     /// <param name="cancellationToken">Cancels the pass.</param>
     /// <returns>What it did.</returns>
     /// <remarks>
-    /// The pass belongs to the process that owns the store, and this is the first arrangement
-    /// in which such a process exists. It used to run inside every adapter, so a deployment of
-    /// twenty repositories ran twenty passes over one file, each taking the write lock for the same work.
+    /// The pass belongs to the process that owns the store, so a deployment runs one pass over one file
+    /// rather than one per repository.
     /// </remarks>
     public Task<Parley.Broker.TickResult> TickAsync(CancellationToken cancellationToken = default) =>
         UseConnectionAsync(
             (_, now, ct) => _house.TickAsync(now, ct),
             cancellationToken);
+
+    /// <summary>
+    /// The facilitator's pass (SPEC.md principle 2.11, §10.2): asks every attached agent that is due, wakes each, and
+    /// reads back what agents have answered since the last pass.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>The answers that arrived, each recorded and waiting on a decision.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>On the sweep rather than on an event.</b> There is no attach event to hook, and a pass over the
+    /// store is also what makes a broker restart harmless: nothing is remembered in memory that the store does not say,
+    /// so an agent that was running before the broker started is asked on the first pass after it.
+    /// </para>
+    /// <para>
+    /// <b>The decision about each answer is not made here.</b> Accepting one writes the agent's launch configuration,
+    /// which this project cannot reach; the host that can, decides and calls back into
+    /// <see cref="AcceptAutomaticallyAsync"/> or <see cref="HoldAsync"/>.
+    /// </para>
+    /// <para>
+    /// Each agent asked is woken exactly as a Request from an agent wakes it, through the same bounded path, so the
+    /// facilitator buys no turn an ordinary message would not have.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<Parley.Broker.FacilitatorAnswer>> FacilitateAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var attached = _attached.Keys.ToArray();
+
+        var (asked, answers) = await UseConnectionAsync(
+            async (connection, now, ct) =>
+            {
+                var facilitator = new Parley.Broker.Facilitator(connection, _options);
+
+                var asked = await facilitator.AskDueAsync(Facilitator, attached, now, ct).ConfigureAwait(false);
+                var answers = await facilitator.ReadBackAsync(Facilitator, now, ct).ConfigureAwait(false);
+
+                return (asked, answers);
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var agent in asked)
+        {
+            await NudgeAsync(agent, cancellationToken).ConfigureAwait(false);
+            _ = RequestAttentionForMail(agent, "Parley asked what it owns");
+        }
+
+        return answers;
+    }
+
+    /// <summary>Runs one unit of the facilitator's work, alone, under the store's gate.</summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="work">The work, given the facilitator, its name in this store and the instant to stamp it with.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned.</returns>
+    /// <remarks>
+    /// For the operator's operations on Parley's questions (§10.2), which act through the facilitator rather than
+    /// through <see cref="Parley.Broker.OperatorConsole"/>: that type may not send a Request, and asking again is one.
+    /// </remarks>
+    public Task<T> UseFacilitatorAsync<T>(
+        Func<Parley.Broker.Facilitator, AgentName, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        return UseConnectionAsync(
+            (connection, now, ct) => work(new Parley.Broker.Facilitator(connection, _options), Facilitator, now, ct),
+            cancellationToken);
+    }
+
+    /// <summary>Makes an answer the agent's line, once its launch configuration has been written.</summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it was recorded.</returns>
+    public Task<bool> AcceptAutomaticallyAsync(
+        Parley.Broker.FacilitatorAnswer answer,
+        CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, now, ct) => new Parley.Broker.Facilitator(connection, _options)
+                .AcceptAutomaticallyAsync(Facilitator, answer, now, ct),
+            cancellationToken);
+
+    /// <summary>Holds an answer for a person, saying why.</summary>
+    /// <param name="answer">The answer.</param>
+    /// <param name="because">Why it was not accepted automatically.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether it is now waiting.</returns>
+    public Task<bool> HoldAsync(
+        Parley.Broker.FacilitatorAnswer answer,
+        string because,
+        CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).HoldAsync(answer, because, ct),
+            cancellationToken);
+
+    /// <summary>The project's Auto Accept switch.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether it is on.</returns>
+    public Task<bool> AutoAcceptAsync(CancellationToken cancellationToken = default) =>
+        UseConnectionAsync(
+            (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).AutoAcceptAsync(ct),
+            cancellationToken);
+
+    /// <summary>
+    /// Asks each agent's node to refresh it, once, after its first line was accepted automatically, when it owes nothing
+    /// (SPEC.md §11.1).
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the pass.</param>
+    /// <returns>The agents a refresh was sent for.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Only when the agent owes no open exchange and no turn is on its way to it.</b> The broker cannot see a turn in
+    /// progress, so it sends only when it has no reason to think one is coming, and the node — which
+    /// can see — waits for the turn lock before stopping anything. An agent that is never idle is never refreshed, and
+    /// its line stays pending, visibly.
+    /// </para>
+    /// <para>
+    /// <b>Recorded as sent only once a node took it</b>, so an agent whose node has not joined yet is refreshed when it
+    /// does, rather than never. Once recorded it is never sent again, whatever the node did with it.
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<AgentName>> RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var due = await UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                var candidates = await new Parley.Broker.Facilitator(connection, _options).RefreshDueAsync(ct)
+                    .ConfigureAwait(false);
+
+                var idle = new List<(long Question, AgentName Agent)>();
+
+                foreach (var candidate in candidates)
+                {
+                    if (await new ExchangeRepository(connection).CountOwedByAsync(candidate.Agent, ct)
+                            .ConfigureAwait(false) == 0)
+                    {
+                        idle.Add(candidate);
+                    }
+                }
+
+                return idle;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        var sent = new List<AgentName>();
+
+        foreach (var (question, agent) in due)
+        {
+            if (_pending.TryGetValue(agent.Value, out var claimed) && Live(Clock.GetUtcNow() - claimed))
+            {
+                continue;
+            }
+
+            if (!_nodes.TryGetValue(agent.Machine, out var node)
+                || !node.RequestRefresh(agent, IdentityOf(agent), "its first ownership line was accepted automatically"))
+            {
+                continue;
+            }
+
+            await UseConnectionAsync(
+                (connection, _, ct) => new Parley.Broker.Facilitator(connection, _options).RefreshSentAsync(question, ct),
+                cancellationToken).ConfigureAwait(false);
+
+            sent.Add(agent);
+        }
+
+        return sent;
+    }
 
     /// <summary>
     /// Tells an agent that something is waiting, if it is attached.

@@ -1,4 +1,5 @@
-﻿using Parley.Setup;
+using Parley.Core;
+using Parley.Setup;
 using Terminal.Gui.App;
 
 namespace Parley.Terminal;
@@ -9,148 +10,218 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <b>It calls <see cref="EnrollCommand"/> rather than reimplementing enrolment</b>, so what is
-/// written is what the command writes. The three steps are the command's own — scan, plan, apply —
-/// and they are separate here for the reason they are separate there: applying writes into
-/// repositories that are not this one, and a person should have read the plan first.
+/// written is what the command writes. What this surface supplies is the choosing.
 /// </para>
 /// <para>
-/// The one thing this adds is the confirmation before applying, because a full-screen surface
-/// makes it easy to arrive at a step without having read what it does.
+/// <b>One step</b>: a folder picker, a list to tick, and a confirmation. What each repository owns is
+/// asked of the agent, not typed here.
+/// </para>
+/// <para>
+/// <b>Enrolling is the consent, and the door says so before anything is written.</b> A catalogued
+/// repository can be started by a peer's request with nobody watching, which spends the owner's tokens —
+/// so the count is named and the sentence is plain. A per-repository opt-in defaulting to off would leave
+/// repositories enrolled, addressable and unstartable: an agent that cannot be started cannot answer.
 /// </para>
 /// </remarks>
 internal static class Onboarding
 {
     /// <summary>What the dialog is called.</summary>
-    internal const string Title = "Enrolment";
-
-    /// <summary>Finding repositories under a directory and writing them into a manifest.</summary>
-    private const string Scan = "Scan a directory for repositories";
-
-    /// <summary>Saying what enrolling the ticked ones would change, without changing anything.</summary>
     /// <remarks>
-    /// Private, like <see cref="Scan"/> beside it and unlike <see cref="Apply"/>: nothing outside
-    /// this file names it, and it read as shared only because the dead-member check counted a file
-    /// elsewhere in the tool that used the bare word. Splitting the terminal into its own project
-    /// narrowed what that check reads and the accidental match went with it.
+    /// Names what the act does (scan a folder for agents) rather than the act's jargon.
     /// </remarks>
-    private const string Plan = "Say what enrolling them would change";
+    internal const string Title = "Enroll agents from folders";
 
-    /// <summary>Doing it.</summary>
-    internal const string Apply = "Configure the ticked ones as agents";
+    /// <summary>What the window listing the repositories is called.</summary>
+    /// <param name="project">The project they would join, or null when none is named.</param>
+    /// <returns>The caption.</returns>
+    /// <remarks>
+    /// The project first: ticking a repository makes it an agent of one particular project, and the caption
+    /// is the one thing on that window certain to be read.
+    /// </remarks>
+    internal static string Caption(ProjectSettings? project) =>
+        project is { } named ? $"{named.Name.Value}: {Title}" : Title;
 
-    /// <summary>What is offered, in the order it is offered.</summary>
-    internal static readonly IReadOnlyList<string> Choices = [Plan, Scan, Apply];
+    /// <summary>What the confirmation offers.</summary>
+    internal const string Apply = "Enrol them";
 
-    /// <summary>What is said after a successful apply.</summary>
-    private const string Applied =
-        "Applied. Each repository still has to be opened once for its adapter to attach and "
-        + "register it — nothing here can do that for them.";
-
-    /// <summary>Opens the enrolment dialog.</summary>
+    /// <summary>Opens the enrolment flow.</summary>
     /// <param name="app">The application the dialogs open in.</param>
+    /// <param name="project">The project being enrolled into, or null when none is named.</param>
+    /// <param name="deployment">Every project this machine describes.</param>
+    /// <param name="manifestPath">Where this machine's projects live.</param>
+    /// <param name="startedIn">Where the tool was started, so the picker opens somewhere useful.</param>
+    /// <param name="lastBrowsed">The folder last browsed to, or null.</param>
+    /// <param name="remember">Told where the person browsed, so the next run starts there.</param>
     /// <param name="queue">Runs the command, so the caller can wait for it.</param>
     /// <param name="done">Told what the command said.</param>
+    /// <param name="saying">Told, per agent, what is happening to it while the enrolment runs, or null.</param>
     /// <returns>When the first dialog is open.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     internal static Task OpenAsync(
         IApplication app,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? manifestPath,
+        string? startedIn,
+        string? lastBrowsed,
+        Action<string> remember,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying = null)
     {
-        ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(done);
+        ArgumentNullException.ThrowIfNull(remember);
 
-        var choosing = Prompting.Choose(
-            Title,
-            "Scanning writes a manifest of what it found. The plan says what enrolling the ticked "
-            + "ones would change. Applying writes configuration into every ticked repository.",
-            Choices);
+        // **A picker rather than a field**: a typed path can only be reported wrong afterwards.
+        var browsing = Browsing.ForFolderOfRepositories(Browsing.Opening(lastBrowsed, startedIn));
+        var token = Prompting.Open(app, browsing);
 
-        var token = Prompting.Open(app, choosing);
-
-        choosing.Done += (_, step) =>
+        browsing.Done += (_, directory) =>
         {
             Prompting.Close(app, token);
 
-            if (step is null)
+            if (directory is null)
             {
                 _ = done(string.Empty);
 
                 return;
             }
 
-            Ask(app, step, queue, done);
+            Offer(app, directory, project, deployment, manifestPath, remember, queue, done, saying);
         };
 
         return Task.CompletedTask;
     }
 
-    /// <summary>Asks for the paths a step needs, then runs it.</summary>
-    private static void Ask(
+    /// <summary>Shows what was found and takes the ones to enrol.</summary>
+    private static void Offer(
         IApplication app,
-        string step,
+        string directory,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? manifestPath,
+        Action<string> remember,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying)
     {
-        var fields = step == Scan
-            ?
-            [
-                new FormField("Directory to scan:", string.Empty, Participation.RequiredProblem),
-                new FormField("Enrolment manifest to write:", string.Empty, Participation.RequiredProblem),
-                new FormField("Tick every repository found? (yes / no)", "no", YesOrNo),
-            ]
-            : new List<FormField>
-            {
-                new("Enrolment manifest path:", string.Empty, Participation.RequiredProblem),
-            };
+        var found = EnrollCommand.Find(directory);
 
-        var form = new FormDialog(step, fields);
-        var token = Prompting.Open(app, form);
+        if (found.Count == 0)
+        {
+            _ = done($"No git repositories directly under {Safe.Text(directory)}.");
 
-        form.Done += (_, values) =>
+            return;
+        }
+
+        // **A repository inside the folder is remembered, not the folder.** What is remembered is shared with
+        // adding one repository, and the next picker opens beside it, at its parent, which is where the
+        // repositories are.
+        remember(found[0].Workspace);
+
+        // **Nothing starts ticked.** `--all` on the command line is for scripts; a person looking at
+        // a list of thirty has not yet said yes to any of them, and a pre-ticked list is a default
+        // that enrols whatever they did not notice.
+        var rows = found
+            .Select(entry => new Tickable(entry.Agent, Note(entry), Ticked: false, Owns(entry)))
+            .ToList();
+
+        var ticking = new TickDialog(
+            Caption(project),
+            $"{found.Count} repositories under {Safe.Text(directory)}. Tick the ones that should "
+            + "become agents"
+            + (project is { } named ? $" of {named.Name.Value}" : string.Empty)
+            + ".",
+            rows);
+
+        var token = Prompting.Open(app, ticking);
+
+        ticking.Done += (_, chosen) =>
         {
             Prompting.Close(app, token);
 
-            if (values is null)
+            if (chosen is null)
             {
                 _ = done(string.Empty);
 
                 return;
             }
 
-            if (step == Apply)
+            var wanted = chosen
+                .Select((row, index) => (row, index))
+                .Where(pair => pair.row.Ticked)
+                .Select(pair => found[pair.index] with { Enroll = true })
+                .ToArray();
+
+            if (wanted.Length == 0)
             {
-                Confirm(app, values[0], queue, done);
+                _ = done("Nothing was ticked, so nothing was enrolled.");
 
                 return;
             }
 
-            var arguments = step == Scan
-                ? (IReadOnlyList<string>)["scan", values[0], values[1]]
-                : ["plan", values[0]];
-
-            var all = step == Scan ? Yes(values[2]) : (bool?)null;
-
-            queue(_ => RunAsync(arguments, all, step, done));
+            Confirm(app, wanted, project, deployment, manifestPath, queue, done, saying);
         };
-
-        static string? YesOrNo(string typed) =>
-            Yes(typed) || string.Equals(typed.Trim(), "no", StringComparison.OrdinalIgnoreCase)
-                ? null
-                : "yes or no";
     }
 
-    /// <summary>Asks before writing into repositories that are not this one.</summary>
+    /// <summary>What is worth knowing about a repository before ticking it.</summary>
+    /// <remarks>
+    /// <para>
+    /// Read off the row the command produced rather than worked out here, so the note and what the
+    /// command will do cannot disagree. What a scan reads is the repository's own
+    /// text, so it is neutralised: <see cref="Safe"/> exists because a control character in somebody
+    /// else's file can otherwise draw whatever it likes on this screen.
+    /// </para>
+    /// <para>
+    /// Internal rather than private so that a test can press on the composition itself; a test that
+    /// built the row from <see cref="EnrollmentEntry.Note"/> would pass whatever this method did.
+    /// </para>
+    /// </remarks>
+    internal static string Note(EnrollmentEntry entry)
+    {
+        // The row's own note ("worktree of another checkout", "already an agent", "has an .mcp.json"), so
+        // the note and the command cannot disagree.
+        //
+        // Not neutralised: it is one of three fixed phrases this program chooses. The owns line is its
+        // own column, in `Owns`, so this column holds only those phrases and lines up.
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return entry.Note;
+    }
+
+    /// <summary>What a repository says it owns, for its own column, or empty.</summary>
+    /// <remarks>
+    /// Neutralised, because it is the repository's own text: <see cref="Safe"/> exists because a control
+    /// character in somebody else's file can otherwise draw whatever it likes on this screen. The grid
+    /// gives it its own column so it lines up.
+    /// </remarks>
+    internal static string Owns(EnrollmentEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        return entry.Owns is { Length: > 0 } owns ? Safe.Text(owns) : string.Empty;
+    }
+
+    /// <summary>States what enrolling costs, then does it.</summary>
     private static void Confirm(
         IApplication app,
-        string manifest,
+        IReadOnlyList<EnrollmentEntry> wanted,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? manifestPath,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        Action<string, string>? saying)
     {
+        // Said before anything is configured, and it names the number. "Some repositories" is a sentence
+        // somebody agrees to without weighing; a count is one they can.
+        //
+        // The sentence is `EnrolmentConsent`'s, shared with `parley enroll`, so the two surfaces cannot drift.
         var asking = Prompting.Choose(
             Apply,
-            $"Applying {Safe.Text(manifest)} writes configuration into every ticked repository. "
-            + "Run the plan first if you have not.",
+            EnrolmentConsent.Says(wanted.Count, project?.Name),
             ["Not now", Apply]);
 
         var token = Prompting.Open(app, asking);
@@ -166,16 +237,41 @@ internal static class Onboarding
                 return;
             }
 
-            queue(_ => RunAsync(["apply", manifest], null, Apply, done));
+            // **Every agent chosen is shown as starting the moment the person agrees**, not when the work
+            // reaches the front of the queue: each agent is started and waited for in turn, which can take
+            // the better part of a minute. Shown on each agent's row rather than on the message line.
+            foreach (var entry in wanted)
+            {
+                saying?.Invoke(entry.Agent, Waiting);
+            }
+
+            queue(cancellationToken =>
+                RunAsync(wanted, project, deployment, manifestPath, done, saying, cancellationToken));
         };
     }
 
-    /// <summary>Runs the command and reports what it said, in its own words.</summary>
+    /// <summary>What an agent's row says between the person agreeing and its turn to be started.</summary>
+    internal const string Waiting = "queued";
+
+    /// <summary>Runs the enrolment and says, in one line, what came of it.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>It says what happened, not everything the command wrote for a shell</b>: which agents joined, and
+    /// whether each came up; the agents pane beside it shows the rest.
+    /// </para>
+    /// <para>
+    /// A failure still says why, in the command's own words: that is the one thing a person needs when it
+    /// did not work, and a summary of it would take away which rule was broken.
+    /// </para>
+    /// </remarks>
     private static async Task RunAsync(
-        IReadOnlyList<string> arguments,
-        bool? all,
-        string step,
-        Func<string, Task> done)
+        IReadOnlyList<EnrollmentEntry> wanted,
+        ProjectSettings? project,
+        IReadOnlyList<ProjectSettings>? deployment,
+        string? manifestPath,
+        Func<string, Task> done,
+        Action<string, string>? saying,
+        CancellationToken cancellationToken)
     {
         var said = new StringWriter();
         var complained = new StringWriter();
@@ -183,25 +279,59 @@ internal static class Onboarding
         // The node catalogue is resolved the way every other command resolves it, so a machine
         // configured by environment or by project gets the same answer here as from a shell.
         var nodeConfig = ProjectResolution.NodeConfig(
-            null, Environment.GetEnvironmentVariable, null);
+            null, Environment.GetEnvironmentVariable, manifestPath);
+
+        // The command says which agent it is starting and what it is waiting on, as it happens.
+        var outcome = new EnrolmentOutcome(saying);
 
         var code = await EnrollCommand
-            .RunAsync(arguments, all, nodeConfig, said, complained, CancellationToken.None)
+            .EnrolAsync(
+                wanted,
+                describe: false,
+                nodeConfig,
+                said,
+                complained,
+                project,
+                manifestPath,
+                cancellationToken,
+                outcome)
             .ConfigureAwait(false);
 
-        var lines = (said.ToString() + complained)
+        await done(Summary(code, outcome, complained.ToString())).ConfigureAwait(false);
+    }
+
+    /// <summary>What the message line says when an enrolment is over: nothing, unless it failed.</summary>
+    /// <param name="code">The command's exit code.</param>
+    /// <param name="outcome">What it recorded.</param>
+    /// <param name="complained">What it wrote as errors.</param>
+    /// <returns>Why nothing was enrolled, or empty when something was.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A success says nothing here.</b> Each agent's row showed what was happening to it while it happened,
+    /// and the list drawn afterwards shows where each one landed -- running, or never run yet. A sentence
+    /// restating that is clutter.
+    /// </para>
+    /// <para>
+    /// A failure still says why, in the command's own words: nothing is on any row to say it, and a summary of
+    /// it would take away which rule was broken. Joined through <see cref="Reports.Sentences"/>, never with a
+    /// line break: the message line makes every control character visible on purpose.
+    /// </para>
+    /// </remarks>
+    internal static string Summary(int code, EnrolmentOutcome outcome, string complained)
+    {
+        ArgumentNullException.ThrowIfNull(outcome);
+        ArgumentNullException.ThrowIfNull(complained);
+
+        if (code == 0 && outcome.EnrolledAgents.Count > 0)
+        {
+            return string.Empty;
+        }
+
+        var why = complained
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.TrimEnd())
             .ToList();
 
-        if (code == 0 && step == Apply)
-        {
-            lines.Add(Applied);
-        }
-
-        await done(Reports.Sentences(lines)).ConfigureAwait(false);
+        return Reports.Sentences(why.Count > 0 ? [.. why, "Nothing was enrolled."] : ["Nothing was enrolled."]);
     }
-
-    private static bool Yes(string typed) =>
-        string.Equals(typed.Trim(), "yes", StringComparison.OrdinalIgnoreCase);
 }

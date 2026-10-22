@@ -12,15 +12,13 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The defect these pin was met by the owner and traced from a symptom that looked like
-/// nothing.</b> Most rows in the roster carried no <c>@machine</c> suffix, which means nothing has
+/// <b>An enrolled agent must be registered.</b> A roster row with no <c>@machine</c> suffix which means nothing has
 /// ever attached under that name — and a name nothing has registered is unroutable under §14, so
 /// <em>every</em> message type is refused. Not a quiet agent: one nothing can address at all.
 /// </para>
 /// <para>
-/// The cause was that <c>enroll apply</c> wrote two files and started nothing, and said so in its
-/// own success message — *"Restart your editor in each repository"* — a step that existed only to
-/// compensate. The terminal's enrolment already started what it wrote; the CLI did not.
+/// So <c>enroll apply</c> must start what it writes, and not say *"Restart your editor in each
+/// repository"* — a step that would exist only to compensate. The terminal's enrolment does the same.
 /// </para>
 /// <para>
 /// <b>Nothing here may write a registration.</b> §12.3 makes it the adapter's own act on attach, so
@@ -96,6 +94,42 @@ public sealed class EnrolmentRegistersTests : IAsyncDisposable
         {
             Assert.DoesNotContain(wrong, outcome.Says, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    [Fact]
+    public async Task A_node_that_has_not_read_the_new_catalogue_yet_is_asked_again()
+    {
+        // **Enrolling four agents must not leave none registered.** Enrolment writes the catalogue and asks
+        // for the starts in the same breath, and the node re-reads its catalogue on a poll -- so the first
+        // ask can reach a node that does not know the role yet, which answers "not something I can
+        // start", and that must not be taken as final. Must fail against a start that asks once.
+        var token = TestContext.Current.CancellationToken;
+
+        var before = await NodeStub.JoinAsync(_broker.Address, ["billing"], token);
+        var heard = new List<string>();
+
+        var starting = Registering.StartAsync(
+            _broker.Address, Orders, TimeProvider.System, token, said => { lock (heard) { heard.Add(said); } });
+
+        // The node's poll catching up: it leaves and comes back knowing the new role.
+        await Task.Delay(TimeSpan.FromSeconds(1), token);
+        await before.DisposeAsync();
+
+        await using var after = await NodeStub.JoinAsync(_broker.Address, ["orders"], token);
+
+        var command = await after.NextAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(Wire.NodeCommand.CommandOneofCase.Start, command.CommandCase);
+        Assert.Equal(Orders.Value, command.Start.Agent);
+
+        await using var attached = await AttachedStub.AttachAsync(_broker.Address, Orders, token);
+
+        var outcome = await starting;
+
+        Assert.True(outcome.Registered, outcome.Says);
+
+        // And it said so while it waited, which is what a person watching the screen has to go on.
+        Assert.Contains(Registering.WaitingForNode, heard);
     }
 
     [Fact]
@@ -180,7 +214,7 @@ public sealed class EnrolmentRegistersTests : IAsyncDisposable
     [Fact]
     public async Task An_endpoint_that_is_not_an_address_is_reported_rather_than_thrown()
     {
-        // **Found by the fixtures rather than by thinking.** One probe recorded its endpoint as
+        // **A fixture can record its endpoint** as
         // `127.0.0.1:51707`, with no scheme — which `GrpcChannel.ForAddress` refuses by throwing.
         // This runs among the manifest's other refusals, and one of them throwing would take the
         // whole run down where every other says what is wrong with it.

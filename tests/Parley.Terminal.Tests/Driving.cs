@@ -274,6 +274,24 @@ internal static class Driving
             App.LayoutAndDraw(true);
         }
 
+        /// <summary>Presses a key that starts queued work, and redraws only once that work has settled.</summary>
+        /// <param name="key">The key to press.</param>
+        /// <param name="settled">The surface's settled task, read after the key has queued its work.</param>
+        /// <returns>When the work has settled and the screen is drawn.</returns>
+        /// <remarks>
+        /// A key whose work opens a view draws that view from the pool, because the harness never pumps a loop. Drawing
+        /// on this thread in the same breath races it ("Collection was modified" inside the line canvas), so the draw
+        /// waits for the work.
+        /// </remarks>
+        internal async Task PressThenSettleAsync(Key key, Func<Task> settled)
+        {
+            ArgumentNullException.ThrowIfNull(settled);
+
+            App.InjectKey(key);
+            await settled();
+            App.LayoutAndDraw(true);
+        }
+
         /// <summary>Moves focus to the next region.</summary>
         internal void Tab() => Press(Key.Tab);
 
@@ -349,6 +367,20 @@ internal static class Driving
             var at = new Point(frame.X + 1, frame.Y + row);
 
             Deliver(list, at, flags);
+        }
+
+        /// <summary>Clicks one cell of the screen, whatever is there.</summary>
+        /// <param name="at">The cell, in screen coordinates.</param>
+        /// <remarks>
+        /// For a row that draws several things and is one view, where the middle of the view is not the
+        /// thing being aimed at: the menu bar's titles are the case that needed it.
+        /// </remarks>
+        internal void ClickAt(Point at)
+        {
+            var top = App.TopRunnableView ?? throw new InvalidOperationException("nothing is on screen");
+
+            Deliver(top, at, MouseFlags.LeftButtonClicked);
+            App.LayoutAndDraw(true);
         }
 
         private void Click(View view, MouseFlags flags)

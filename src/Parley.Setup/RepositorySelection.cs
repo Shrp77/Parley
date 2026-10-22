@@ -6,10 +6,8 @@ namespace Parley.Setup;
 /// <remarks>
 /// <para>
 /// <b>Enrolling is opt-in, and this is what makes that cheap.</b> Scanning a directory finds
-/// every checkout under it, and most of them are usually not meant to be agents. Left as a file
-/// to edit, "I never looked at this row" and "this is a peer whose boundary nobody has agreed
-/// yet" are the same blank field — so the second, which SPEC.md §17 question 10 explicitly
-/// allows, cannot be told from the first, which would enroll repositories nobody considered.
+/// every checkout under it, and most of them are usually not meant to be agents. Every row starts
+/// unticked, so a repository is enrolled only by somebody choosing it.
 /// </para>
 /// <para>
 /// <b>A state machine rather than a read loop</b> for the same reason
@@ -141,7 +139,7 @@ public sealed record RepositorySelection
         // Every line, not just the repository rows. The picker redraws by moving the cursor up
         // by the number of lines it wrote, so a line that wraps occupies two rows and the next
         // frame lands one row lower than the last — which walks the list down the screen on
-        // every keystroke. Found by a header longer than a narrow terminal.
+        // every keystroke, as a header longer than a narrow terminal would.
         return [.. lines.Select(l => l.Length > width ? l[..Math.Max(0, width - 1)] + "…" : l)];
     }
 

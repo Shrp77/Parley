@@ -8,9 +8,9 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Found by the review gate, lens 1 run 1.17. The drain ran and then cleared the wake bound as a separate step, so a
-/// Request completing between the two found the bound held, asked for nothing, and lost it to a collection that had
-/// never read it. Probed over a loopback broker with a joined node: one command in all, nothing pending, the Request
+/// The drain must not clear the wake bound as a separate step, or a
+/// Request completing between the two would find the bound held, ask for nothing, and lose it to a collection that had
+/// never read it: with a joined node, one command in all, nothing pending, the Request
 /// uncollected. An attached adapter only records a stream notice; a turn is what makes it collect.
 /// </para>
 /// <para>
@@ -32,7 +32,9 @@ public sealed class WakeDuringCollectionTests
 
         await using var broker = await LoopbackBroker.StartAsync(token);
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["orders"], token);
-        await using var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token);
+
+        // Started by its node (SPEC.md §11.7), which is what makes it a resident a node gives turns to.
+        await using var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node);
 
         // The turn that is collecting was asked for by an earlier message.
         Assert.NotEqual(WakeOutcome.AlreadyComing, broker.Runtime.RequestAttentionForMail(Orders, "first"));

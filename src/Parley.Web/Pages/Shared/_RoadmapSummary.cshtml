@@ -1,0 +1,63 @@
+@model Parley.Web.Pages.Shared.RoadmapSummaryView
+@using Parley.Client.Roadmaps
+@*
+    What is waiting for a person to decide, and the roadmaps that came of it, on the roadmaps list. It only reads: every decision is a link to a page that describes what it
+    would do before anything is sent.
+*@
+<section class="waiting-proposals" aria-label="Proposed roadmaps">
+    <h2>Proposed by agents, awaiting your decision (@Model.Waiting.Count)</h2>
+
+    @if (Model.Waiting.Count == 0)
+    {
+        <p>No roadmap is awaiting your decision.</p>
+    }
+    else
+    {
+        @* An agent's words, escaped like every other agent-written text. *@
+        <ul>
+            @foreach (var proposal in Model.Waiting)
+            {
+                <li>
+                    <a href="/Roadmaps/Proposal?project=@Model.Project&amp;id=@proposal.Id">@ProposalText.Row(proposal)</a>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+<section class="roadmaps" aria-label="Roadmaps">
+    <h2>Roadmaps (@Model.Roadmaps.Count)</h2>
+
+    @if (Model.Roadmaps.Count == 0)
+    {
+        <p>There is no roadmap in this project yet.</p>
+    }
+    else
+    {
+        @* The same grid as the conversations: a row says how big the roadmap is, and opens to say a little more. *@
+        <div class="grid roadmap-grid" role="table" aria-label="Roadmaps">
+            <div class="grid-head" role="row">
+                <span role="columnheader">Title</span>
+                <span role="columnheader">Items</span>
+                <span role="columnheader">Started</span>
+            </div>
+            @foreach (var roadmap in Model.Roadmaps)
+            {
+                <details class="grid-row" role="row">
+                    <summary>
+                        <a class="name" href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">@roadmap.Title</a>
+                        <span class="num">@roadmap.LiveItems</span>
+                        <span class="num">@roadmap.StartedItems</span>
+                    </summary>
+                    <div class="grid-detail">
+                        <p class="between">
+                            @roadmap.LiveItems item@(roadmap.LiveItems == 1 ? "" : "s"), @roadmap.StartedItems started
+                            · revision @roadmap.Revision
+                        </p>
+                        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@roadmap.Id">Open this roadmap</a>
+                    </div>
+                </details>
+            }
+        </div>
+    }
+</section>

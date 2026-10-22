@@ -8,7 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 2.</b> SPEC.md §10.2 defines the operation exactly: <c>retire(agent)</c> marks an
+/// SPEC.md §10.2 defines the operation exactly: <c>retire(agent)</c> marks an
 /// agent retired "so it is no longer routed to or listed". Two claims, both checkable, and neither
 /// covered over the wire — <c>NeverRegisteredTests</c> probes an agent that never registered, which §14
 /// treats as a different state with a different remedy.

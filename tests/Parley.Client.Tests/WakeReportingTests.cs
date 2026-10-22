@@ -48,7 +48,7 @@ public sealed class WakeReportingTests
     [MemberData(nameof(Outcomes))]
     public void No_outcome_reads_as_a_failure_to_send(Wire.WakeOutcome outcome)
     {
-        // FR-013, and it is the requirement most easily lost to a rewording. The message is stored
+        // This is the requirement most easily lost to a rewording. The message is stored
         // before any of this is decided, and SPEC.md §17 question 1 requires that whatever bounds
         // notification traffic must not make an event undeliverable — so a surface that said
         // "could not send" about a recipient nothing can start would be reporting a contract change
@@ -79,7 +79,7 @@ public sealed class WakeReportingTests
     [Fact]
     public void An_unreachable_recipient_is_told_the_request_is_kept()
     {
-        // The case the owner met, worded so that it is actionable rather than alarming: the thing
+        // Worded so that it is actionable rather than alarming: the thing
         // to know is that the message survives and who is not going to read it yet.
         var said = SeatVoice.Waking(Wire.WakeOutcome.Unreachable, Orders);
 

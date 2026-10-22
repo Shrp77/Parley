@@ -61,6 +61,9 @@ public sealed class ExchangeRow
     /// <summary>Gets the <c>version</c> column: the optimistic concurrency stamp.</summary>
     public long Version { get; init; }
 
+    /// <summary>Gets the <c>settled_by</c> column, set only on an exchange closed as settled (SPEC.md §5.6).</summary>
+    public long? SettledBy { get; init; }
+
     /// <summary>Translates this row into the domain aggregate.</summary>
     /// <returns>The rehydrated exchange.</returns>
     /// <exception cref="ArgumentException">A stored agent name does not satisfy the grammar.</exception>
@@ -103,7 +106,8 @@ public sealed class ExchangeRow
             DeliveredUtc is null ? null : ParseTimestamp(DeliveredUtc),
             ClosedUtc is null ? null : ParseTimestamp(ClosedUtc),
             OutcomeTokens.ParseExchange(Outcome),
-            Version);
+            Version,
+            SettledBy);
     }
 
     /// <summary>Formats an instant for storage.</summary>

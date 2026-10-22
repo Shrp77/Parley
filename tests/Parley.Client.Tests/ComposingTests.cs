@@ -5,16 +5,16 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// What one line of text turns into, per recipient.
+/// Who one line of text goes to.
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-002: every message is recorded as the act the preview named. That is a property of this derivation, so the
-/// derivation is probed for every state it can be in, including the one it must refuse to settle by itself.
+/// <b>Every line is a Request</b> (SPEC.md §5.6), because with several of an agent's questions open the surface
+/// would file the person's reply against whichever one the broker listed first. What a line becomes is held over a
+/// real socket by <c>LineIsARequestOverTheWireTests</c> in the terminal's suite, where the broker records it.
 /// </para>
 /// <para>
-/// The reason the act is derived rather than chosen first: a person knows what they want to say, and which of
-/// §5.1's Request, §5.2's Clarify and §5.3's Result that amounts to is bookkeeping about who owes whom.
+/// What is tested here is addressing: who a line goes to, narrowing and widening it.
 /// </para>
 /// </remarks>
 public sealed class ComposingTests
@@ -24,155 +24,6 @@ public sealed class ComposingTests
     private static readonly AgentName Inventory = AgentName.Create("inventory@test");
 
     private static Draft Over(params PairState[] pairs) => new(pairs);
-
-    [Fact]
-    public void Nothing_open_is_a_request()
-    {
-        var plan = Assert.Single(Over(new PairState(Orders, null, Turn.Nobody)).Plan());
-
-        Assert.Equal(Act.Ask, plan.Act);
-        Assert.Null(plan.Exchange);
-        Assert.False(plan.Choosable);
-    }
-
-    [Fact]
-    public void Waiting_on_them_opens_a_new_exchange_rather_than_clarifying_theirs()
-    {
-        // **This asserted a Clarify, and the broker refuses one.** 017's own spec said that where this person
-        // asked and is waiting, typing is a Clarify "because nobody may Result their own request" — which is
-        // true about the Result and wrong about the remedy. SPEC.md §5.2 gives the Clarify to the *receiver*
-        // asking the requester for more, so a requester clarifying their own open request is refused with
-        // "the other side holds the next move on that exchange". The owner met it as a message that reached
-        // nobody. There is nothing to add to an exchange whose next move is not yours, so typing opens one.
-        var plan = Assert.Single(Over(new PairState(Orders, 7, Turn.Theirs)).Plan());
-
-        Assert.Equal(Act.Ask, plan.Act);
-        Assert.Null(plan.Exchange);
-        Assert.False(plan.Choosable);
-    }
-
-    [Fact]
-    public void And_a_move_owed_on_ones_own_request_is_a_clarify_rather_than_a_result()
-    {
-        // The other half of the same correction: whose move it is does not say which act. Where this person
-        // asked and the peer clarified, what is owed is the answer to that clarification — and §5.3 keeps the
-        // Result for the receiver, which is why a Result here came back as "you sent that request, so its
-        // receiver sends the Result".
-        var plan = Assert.Single(Over(new PairState(Orders, 7, Turn.Mine, Asked: true)).Plan());
-
-        Assert.Equal(Act.Clarify, plan.Act);
-        Assert.Equal(7, plan.Exchange);
-        Assert.False(plan.Choosable);
-    }
-
-    [Fact]
-    public void Holding_their_request_answers_by_default_and_says_so()
-    {
-        var draft = Over(new PairState(Billing, 3, Turn.Mine));
-
-        var plan = Assert.Single(draft.Plan());
-
-        Assert.Equal(Act.Answer, plan.Act);
-        Assert.Equal(3, plan.Exchange);
-
-        // Choosable is what the preview reads to offer the other side. Without it the person is never told the
-        // alternative exists, which is the whole of FR-008.
-        Assert.True(plan.Choosable);
-        Assert.True(draft.Answering(Billing));
-    }
-
-    [Fact]
-    public void And_the_other_side_of_that_one_choice_can_be_taken()
-    {
-        var draft = Over(new PairState(Billing, 3, Turn.Mine));
-
-        draft.Flip(Billing);
-
-        Assert.Equal(Act.AskBack, Assert.Single(draft.Plan()).Act);
-        Assert.False(draft.Answering(Billing));
-
-        // And back, because a person who reconsiders must not have to clear the line to do it.
-        draft.Flip(Billing);
-
-        Assert.Equal(Act.Answer, Assert.Single(draft.Plan()).Act);
-    }
-
-    [Fact]
-    public void Flipping_one_recipient_leaves_the_others_alone()
-    {
-        var draft = Over(
-            new PairState(Billing, 3, Turn.Mine),
-            new PairState(Inventory, 4, Turn.Mine));
-
-        draft.Flip(Billing);
-
-        var plan = draft.Plan();
-
-        Assert.Equal(Act.AskBack, plan.First(a => a.Peer == Billing).Act);
-        Assert.Equal(Act.Answer, plan.First(a => a.Peer == Inventory).Act);
-    }
-
-    [Fact]
-    public void One_line_to_three_recipients_is_three_different_acts()
-    {
-        // The case the preview exists for. Each is correct for its own pair, and a person who could not see all
-        // three would be pressing Enter on something they had no way to predict.
-        var draft = Over(
-            new PairState(Billing, 3, Turn.Mine),
-            new PairState(Orders, 7, Turn.Mine, Asked: true),
-            new PairState(Inventory, null, Turn.Nobody));
-
-        draft.Text = "and refunds?";
-
-        var plan = draft.Plan();
-
-        // Billing asked and this person holds it, so it closes. Orders was asked *by* this person and has
-        // clarified, so what is owed is the answer to that clarification. Inventory has nothing open.
-        Assert.Equal(Act.Answer, plan.First(a => a.Peer == Billing).Act);
-        Assert.Equal(Act.Clarify, plan.First(a => a.Peer == Orders).Act);
-        Assert.Equal(Act.Ask, plan.First(a => a.Peer == Inventory).Act);
-    }
-
-    [Fact]
-    public void The_cost_is_counted_in_exchanges_because_that_is_what_a_plural_ask_is()
-    {
-        var draft = Over(
-            new PairState(Billing, 3, Turn.Mine),
-            new PairState(Orders, 7, Turn.Mine, Asked: true),
-            new PairState(Inventory, null, Turn.Nobody));
-
-        var cost = draft.Costs();
-
-        Assert.Equal(1, cost.Opens);
-        Assert.Equal(1, cost.Closes);
-        Assert.Equal(1, cost.HandsBack);
-    }
-
-    [Fact]
-    public void Waiting_on_a_peer_costs_a_new_exchange_rather_than_nothing()
-    {
-        // The bill has to say so: there is nothing to add to an exchange whose move is theirs, so typing to
-        // somebody who owes you opens a second one — which is an obligation, and §5.5 is why it is shown
-        // before Enter rather than found in `parley flags` the next day.
-        var cost = Over(new PairState(Orders, 7, Turn.Theirs)).Costs();
-
-        Assert.Equal(1, cost.Opens);
-        Assert.Equal(0, cost.Closes);
-        Assert.Equal(0, cost.HandsBack);
-    }
-
-    [Fact]
-    public void Asking_back_moves_a_close_into_a_handed_back_turn()
-    {
-        var draft = Over(new PairState(Billing, 3, Turn.Mine));
-
-        Assert.Equal(1, draft.Costs().Closes);
-
-        draft.Flip(Billing);
-
-        Assert.Equal(0, draft.Costs().Closes);
-        Assert.Equal(1, draft.Costs().HandsBack);
-    }
 
     [Fact]
     public void Every_participant_is_a_recipient_until_it_is_narrowed()
@@ -186,7 +37,6 @@ public sealed class ComposingTests
         draft.AddressTo([Orders]);
 
         Assert.Equal([Orders], draft.Recipients);
-        Assert.Equal(1, draft.Costs().Opens);
     }
 
     [Fact]
@@ -202,16 +52,15 @@ public sealed class ComposingTests
     }
 
     [Fact]
-    public void Addressing_somebody_with_no_pair_state_opens_a_request()
+    public void Addressing_somebody_with_no_pair_state_keeps_them()
     {
-        // `/add` widens to an agent that is not a participant, so no pair state exists for them. That is
-        // nothing-open by definition, and it must not throw or silently drop them.
+        // `/add` widens to an agent that is not a participant, so no pair state exists for them. It must not throw or
+        // silently drop them.
         var draft = Over(new PairState(Orders, null, Turn.Nobody));
 
         draft.AddressTo([Orders, Inventory]);
 
-        Assert.Equal(Act.Ask, draft.Plan().First(a => a.Peer == Inventory).Act);
-        Assert.Equal(2, draft.Costs().Opens);
+        Assert.Equal([Orders, Inventory], draft.Recipients);
     }
 
     [Fact]
@@ -240,7 +89,7 @@ public sealed class ComposingTests
     [Fact]
     public void The_first_at_sign_replaces_and_the_rest_add()
     {
-        // The owner's own example: `@billing, @inventory; I want this` targets those two, so the second sigil
+        // For example: `@billing, @inventory; I want this` targets those two, so the second sigil
         // cannot be a second replacement. Nothing means "and everyone else as well", because addressing
         // somebody in particular is the act of not addressing the room.
         var draft = Over(
@@ -286,37 +135,14 @@ public sealed class ComposingTests
     }
 
     [Fact]
-    public void Adding_widens_without_narrowing_and_the_added_agent_gets_a_request()
+    public void Adding_widens_without_narrowing()
     {
-        // What `/add` does. An agent that is not a participant has no pair state, so it gets a Request, which
-        // is how an agent joins a conversation at all.
+        // What `/add` does. An agent that is not a participant joins by being sent a Request, like everyone else.
         var draft = Over(new PairState(Billing, null, Turn.Nobody));
 
         draft.Widen(Inventory);
 
         Assert.Equal([Billing, Inventory], draft.Recipients);
         Assert.False(draft.Narrowed);
-
-        var added = Assert.Single(draft.Plan(), addressed => addressed.Peer == Inventory);
-
-        Assert.Equal(Act.Ask, added.Act);
-        Assert.Null(added.Exchange);
-    }
-
-    [Fact]
-    public void Narrowing_does_not_change_what_any_recipient_act_is()
-    {
-        // The act is the pair's own answer, so who is addressed and what each gets are two independent facts.
-        var draft = Over(
-            new PairState(Billing, null, Turn.Nobody),
-            new PairState(Orders, 7, Turn.Mine));
-
-        draft.Narrow(Orders);
-
-        var plan = Assert.Single(draft.Plan());
-
-        Assert.Equal(Act.Answer, plan.Act);
-        Assert.Equal(7, plan.Exchange);
-        Assert.Equal(new Cost(0, 1, 0), draft.Costs());
     }
 }

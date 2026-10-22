@@ -1,0 +1,86 @@
+@page
+@model Parley.Web.Pages.Projects.OwnershipModel
+@using Parley.Client
+@using Parley.Core
+@{
+    ViewData["Title"] = $"Ownership in {Model.Project}";
+}
+
+<h1>What each agent owns in @Model.Project</h1>
+
+<p><a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+else
+{
+    @* The switch, said first and in words, with the one link that changes it. *@
+    <section aria-label="Auto Accept">
+        <h2>Auto Accept is @(Model.AutoAccept ? "on" : "off")</h2>
+        <p>
+            @(Model.AutoAccept
+                ? "Parley asks every agent what it owns, and its answer becomes its line with no person reading it, unless it cannot be one."
+                : "Parley asks every agent what it owns, and every answer waits here for a person.")
+            <a href="/Projects/Act?project=@Model.Project&amp;action=autoaccept&amp;subject=@(Model.AutoAccept ? "off" : "on")">Turn it @(Model.AutoAccept ? "off" : "on")</a>
+        </p>
+    </section>
+
+    @if (Model.Rows.Count == 0)
+    {
+        <p>There is no agent in this project yet.</p>
+    }
+
+    @foreach (var (agent, question) in Model.Rows)
+    {
+        <section class="ownership" id="agent-@agent.Name.Value" aria-label="@agent.Name.Value">
+            <h2>@agent.Name.Value</h2>
+
+            <dl>
+                <dt>Peers read</dt>
+                <dd>@(agent.Owns is { Length: > 0 } owns ? owns : "no line")</dd>
+
+                <dt>Accepted</dt>
+                @* In words, never a colour alone: a line accepted automatically is one nobody read, and that has to
+                   survive a screen reader and a stylesheet that did not load. *@
+                <dd>
+                    @(agent.OwnsAccepted is { Length: > 0 } line ? line : "")
+                    <em class="@(agent.OwnsSource == OwnershipSource.Automatic ? "automatic" : null)">@Provenance.Of(agent.OwnsSource)</em>
+                </dd>
+
+                <dt>Parley</dt>
+                <dd>@Provenance.Of(question)</dd>
+            </dl>
+
+            @if (question?.Answer is { Length: > 0 } said)
+            {
+                <p>Its answer:</p>
+                <blockquote class="agent-words">@said</blockquote>
+            }
+
+            <p>
+                @switch (question?.State)
+                {
+                    case QuestionState.Waiting:
+                        <a href="/Projects/Act?project=@Model.Project&amp;action=acceptanswer&amp;subject=@agent.Name.Value">Accept or edit its answer</a>
+                        <a href="/Projects/Act?project=@Model.Project&amp;action=discardanswer&amp;subject=@agent.Name.Value">Discard its answer</a>
+                        break;
+
+                    case QuestionState.AskedBack:
+                        <a href="/Projects/Act?project=@Model.Project&amp;action=replyaskedback&amp;subject=@agent.Name.Value">Reply to what it asked</a>
+                        break;
+
+                    case QuestionState.Asked or QuestionState.Answered:
+                        break;
+
+                    default:
+                        <a href="/Projects/Act?project=@Model.Project&amp;action=askownership&amp;subject=@agent.Name.Value">Have Parley ask it again</a>
+                        break;
+                }
+
+                <a href="/Projects/Act?project=@Model.Project&amp;action=ownership&amp;subject=@agent.Name.Value">Write its line yourself</a>
+            </p>
+        </section>
+    }
+}

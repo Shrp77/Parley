@@ -1,4 +1,3 @@
-using System.Globalization;
 using Xunit;
 
 namespace Parley.Core.Tests;
@@ -50,19 +49,26 @@ public sealed class OwnershipStatementTests
     }
 
     [Fact]
-    public void A_statement_at_the_limit_is_accepted_and_one_over_it_is_not()
+    public void No_length_is_refused_while_no_bound_is_in_force()
     {
-        Assert.True(OwnershipStatement.IsValid(new string('x', OwnershipStatement.MaxCharacters), out _));
+        // There is no bound, so that an agent
+        // asked what it owns can answer in two halves and name a peer. A statement far longer
+        // than a hundred characters is accepted; the character rule below is what still refuses.
+        Assert.False(OwnershipStatement.Bounded);
 
-        Assert.False(
-            OwnershipStatement.IsValid(new string('x', OwnershipStatement.MaxCharacters + 1), out var error));
+        Assert.True(OwnershipStatement.IsValid(new string('x', 4_000), out _));
+    }
 
-        // The message says the number, because whoever reads it is editing a launch
-        // configuration and needs to know how much to cut.
-        Assert.Contains(
-            OwnershipStatement.MaxCharacters.ToString(CultureInfo.InvariantCulture),
-            error!,
-            StringComparison.Ordinal);
+    [Fact]
+    public void The_sentinel_is_never_put_in_front_of_a_person()
+    {
+        // `parley clarifications` keeps this rule by saying "Caps in force:
+        // none": printing 2,147,483,647 tells somebody a bound was set at a value nobody chose.
+        // The only path that names a number is the refusal, and it cannot be reached while the
+        // sentinel is what is set -- so a message carrying it is a defect rather than a surprise.
+        Assert.True(OwnershipStatement.IsValid(new string('x', 4_000), out var error));
+
+        Assert.Null(error);
     }
 
     [Theory]
@@ -93,8 +99,8 @@ public sealed class OwnershipStatementTests
     [InlineData(0xFEFF, "ZERO WIDTH NO-BREAK SPACE")]
     public void A_character_that_is_not_printable_text_is_refused(int point, string name)
     {
-        // Every one of these was accepted by the first version of this rule, which tested
-        // char.IsControl and therefore covered C0 and C1 and nothing else. U+2028 and U+2029
+        // A test of char.IsControl alone covers C0 and C1 and nothing else, and every one of these
+        // gets past it. U+2028 and U+2029
         // are line breaks wherever this text is rendered; U+202E reverses the display of
         // everything after it, so a statement can appear to say the opposite of what is stored;
         // the rest are invisible. All of them let one entry imitate the entries around it in a

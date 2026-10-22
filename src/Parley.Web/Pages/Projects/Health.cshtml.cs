@@ -12,7 +12,7 @@ namespace Parley.Web.Pages.Projects;
 /// <remarks>
 /// <para>
 /// These are the reads SPEC.md §10.2 keeps so that the protocol's provisional numbers can be argued about
-/// from evidence. The message cap is 8,000 because these reads said so, and §9.3 keeps the count precisely
+/// from evidence. The message cap is 8,000 and provisional (§17 question 16), and §9.3 keeps the count precisely
 /// so the number is not moved on the strength of whoever complained most recently.
 /// </para>
 /// <para>
@@ -57,17 +57,8 @@ public sealed class HealthModel(BrokerDirectory directory) : PageModel
 
         var since = flag.SinceUtc.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
-        return flag.Kind switch
-        {
-            FlagKind.NotCollected =>
-                $"{flag.WaitingOn.Value} has not collected what {flag.Waiting.Value} sent, since {since}.",
-            FlagKind.NoProgress =>
-                $"{flag.WaitingOn.Value} collected {flag.Waiting.Value}'s request and has done nothing on it since {since}.",
-            FlagKind.NotVoted =>
-                $"The work in {flag.ConversationId} is all closed and {flag.Waiting.Value} is finished; closing it has waited on {flag.WaitingOn.Value} to say whether it is too since {since}.",
-            _ =>
-                $"{flag.WaitingOn.Value} is retired and still holds {flag.Waiting.Value}'s request, since {since}.",
-        };
+        // The one sentence every surface uses, so the terminal and this page cannot word a flag differently.
+        return Parley.Client.Rendering.FlagWording.Describe(flag, since);
     }
 
     /// <summary>Reads every health report for one project.</summary>

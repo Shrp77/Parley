@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 6: which agent an entry is for, when a repository is several.
+/// Which agent an entry is for, when a repository is several.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -51,7 +51,6 @@ public sealed class ProbeSeventeenTests : IDisposable
             new EnrollmentEntry(Workspace, agent, "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project,
             Path.Combine(_root, $"{project}-node.json"),

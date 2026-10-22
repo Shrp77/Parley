@@ -12,17 +12,15 @@ namespace Parley.Mcp.Tests;
 /// back starts all of them at once.
 /// </para>
 /// <para>
-/// <b>What this used to catch is now impossible, and the test is kept for what remains.</b> The
-/// race was over migration — each server opened the database itself, two would read an empty
-/// schema version, both would apply the first migration, and the loser exited with "table agents
-/// already exists". One repository opened and one would not, differently each time. Only one
-/// process opens the store now, so that interleaving has nowhere to occur.
+/// <b>Only one process opens the store, so a migration race has nowhere to occur.</b> Were each
+/// server to open the database itself, two would read an empty schema version, both would apply the
+/// first migration, and the loser would exit with "table agents already exists".
 /// </para>
 /// <para>
-/// Six simultaneous attaches is still worth checking, and against a different hazard: they all
+/// Six simultaneous attaches is worth checking against a different hazard: they all
 /// register, all refresh an ownership statement, and all open a held stream, through one gate on
-/// one connection. A deadlock or a lost registration there would present exactly as this test's
-/// predecessor did — one repository that came up and one that did not.
+/// one connection. A deadlock or a lost registration there would present as one repository that
+/// came up and one that did not.
 /// </para>
 /// <para>
 /// <b>Real processes, and that is not incidental.</b> The same race written with threads inside
@@ -54,7 +52,7 @@ public sealed class ConcurrentLaunchTests : IDisposable
     private static async Task<Parley.Server.ParleyServer> BrokerAsync(string databasePath)
     {
         var runtime = Parley.Server.BrokerRuntime.Open(
-            databasePath, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
+            Parley.Core.ProjectName.Create("test"), databasePath, Parley.Broker.BrokerOptions.Default, TimeProvider.System);
 
         return await Parley.Server.ParleyServer.StartAsync(runtime, "http://127.0.0.1:0");
     }
@@ -84,8 +82,8 @@ public sealed class ConcurrentLaunchTests : IDisposable
     /// two, which reads as a product defect and is not one.
     /// </para>
     /// <para>
-    /// <b>From the server's own output directory, not from beside the tests.</b> It used to be
-    /// the latter, which worked until this project began referencing Parley.Server — that brings
+    /// <b>From the server's own output directory, not from beside the tests.</b> A copy beside
+    /// the tests breaks because this project references Parley.Server — that brings
     /// a framework reference to ASP.NET Core, whose shared framework supplies
     /// Microsoft.Extensions.Hosting, so the package copy stops being written to the output. The
     /// tests run fine on the shared framework; the MCP server is a plain console apphost and

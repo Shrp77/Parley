@@ -9,19 +9,16 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The one destructive thing this surface did first, and why it is here.</b> Every operator
-/// operation that destroys something was kept off the terminal, on the grounds that a purge behind
-/// a keystroke is a different risk from one behind a page that describes it first. Destroying a
-/// project was kept off on the same grounds until the owner pointed out that a surface which can
-/// create a project and cannot destroy one is half a surface — and that what the rule actually
-/// asks for is a description first and a deliberate act, neither of which a keystroke is.
+/// <b>Destroying something is behind a description and a deliberate act</b>, neither of which a keystroke
+/// is. The project is described — store and broker — and forgetting
+/// it, which deletes nothing, is offered beside destroying it. Destroying takes the project's own
+/// name typed back, and nothing else is accepted: not a "y", not Enter. It is reached through the
+/// command it runs, which is the only writer of the manifest and the only thing that deletes a
+/// store.
 /// </para>
 /// <para>
-/// So it is not a keystroke. The project is described — store, broker, catalogue — and forgetting
-/// it, which deletes nothing, is offered beside destroying it. Destroying takes the project's own
-/// name typed back, and nothing else is accepted: not a "y", not Enter. That is the same act
-/// <c>parley project remove --destroy</c> is, reached through the command it runs, which is the
-/// only writer of the manifest and the only thing that deletes a store.
+/// <b>That command is not reachable from a shell</b>, so this door is the only one there is, and the
+/// description and the typed name are unavoidable rather than merely available.
 /// </para>
 /// <para>
 /// <b>The word stays in this file.</b> <c>SurfaceTests</c> holds it here, so a second path to the
@@ -45,7 +42,7 @@ internal static class Removing
     internal const string Forget = "Forget it (stops its broker; deletes nothing)";
 
     /// <summary>Destroying it, which does not come back.</summary>
-    internal const string Destroy = "Destroy it (deletes its store and catalogue)";
+    internal const string Destroy = "Destroy it (deletes its store)";
 
     /// <summary>What the first dialog is called.</summary>
     internal const string Title = "Remove this project from this machine";
@@ -65,12 +62,12 @@ internal static class Removing
 
     /// <summary>What forgetting does, said before it is done.</summary>
     internal const string Forgetting =
-        "Forgetting deletes nothing. The store and catalogue stay where they are, and the broker "
-        + "serving the manifest stops this project's within a few seconds.";
+        "Forgetting deletes nothing. The store stays where it is, and this project's broker "
+        + "stops within a few seconds.";
 
     /// <summary>What destroying does, said before it is done.</summary>
     internal const string Destroying =
-        "Destroying stops this project's broker, deletes its store and catalogue, and forgets it. "
+        "Destroying stops this project's broker, deletes its store, and forgets it. "
         + "Every conversation in it goes with the store. Repositories that were agents in it keep "
         + "their launch configuration and will find no broker.";
 
@@ -82,18 +79,12 @@ internal static class Removing
         ArgumentNullException.ThrowIfNull(project);
 
         // **Every one of these is a manifest's, and a manifest is a file this person may not have
-        // written.** `ProjectsRegion` has always neutralised the same values on its way to a row;
-        // this dialog did not, and it is the more dangerous of the two — it is the description
-        // somebody reads before typing a project's name to destroy it, and an escape sequence in
-        // an endpoint clears it.
-        var catalogue = Safe.Text(project.NodeConfig) is { Length: > 0 } named
-            ? named
-            : "none: nothing is started for it";
-
+        // written**, so each is neutralised: this is the description somebody reads before typing a
+        // project's name to destroy it, and an escape sequence in an endpoint would clear it.
+        // The catalogue is not named: there is one per machine, shared by every project and untouched by this.
         return $"{Safe.Text(project.Name.Value)}{Environment.NewLine}"
             + $"  broker     {Safe.Text(project.Endpoint)}{Environment.NewLine}"
-            + $"  store      {Safe.Text(project.Store)}{Environment.NewLine}"
-            + $"  catalogue  {catalogue}";
+            + $"  store      {Safe.Text(project.Store)}";
     }
 
     /// <summary>Why a typed name would not be accepted, or null when it would.</summary>
@@ -198,7 +189,11 @@ internal static class Removing
         };
     }
 
-    /// <summary>Runs the command, and reports what it said in its own words.</summary>
+    /// <summary>Runs the command, and says in one line what came of it.</summary>
+    /// <remarks>
+    /// <b>One sentence on success, the command's own words on failure.</b> The list the person returns to
+    /// already says the project is gone.
+    /// </remarks>
     private static async Task Apply(
         string manifestPath,
         ProjectSettings project,
@@ -211,22 +206,31 @@ internal static class Removing
         var code = await ProjectCommand.RunAsync(
             ["remove", project.Name.Value],
             manifestPath,
-            new ProjectFields(null, null, null, null),
+            new ProjectFields(null),
             said,
             complained,
             destroy,
             CancellationToken.None).ConfigureAwait(false);
 
-        var lines = (said.ToString() + complained)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.TrimEnd());
-
         // The command's exit code is the answer. Destroying that removed the entry and could not
         // delete a file reports a failure, and the project is nonetheless gone from the list --
-        // which is what the command said, line by line.
+        // so a failure says why in the command's own words, whatever became of the entry.
         var gone = code == 0 || !StillNamed(manifestPath, project.Name.Value);
 
-        await done(Reports.Sentences(lines), gone).ConfigureAwait(false);
+        if (code != 0)
+        {
+            var why = complained.ToString()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.TrimEnd());
+
+            await done(Reports.Sentences(why), gone).ConfigureAwait(false);
+
+            return;
+        }
+
+        await done(
+            destroy ? $"Destroyed '{project.Name.Value}'." : $"Forgot '{project.Name.Value}'. Nothing was deleted.",
+            gone).ConfigureAwait(false);
     }
 
     private static bool StillNamed(string manifestPath, string name) =>

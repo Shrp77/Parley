@@ -1,3 +1,5 @@
+using Parley.Core;
+using Parley.Configuration;
 using System.Net;
 using System.Net.Sockets;
 using Xunit;
@@ -9,7 +11,7 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-017 and SC-008. The web UI is a child process now rather than a host inside the broker, and
+/// The web UI is a child process, not a host inside the broker, and
 /// the containment matters as much either way: its likeliest failures are a port already in use
 /// and a tool that is not installed on this machine — and both are ordinary, since the surfaces
 /// are chosen per machine. A broker that refused to serve for either would take a whole deployment
@@ -34,16 +36,20 @@ public sealed class WebUiContainmentTests
 
         held.Start();
 
-        var store = Path.Combine(
-            Path.GetTempPath(), $"parley-contain-{Guid.NewGuid():N}", "parley.db");
-
-        Directory.CreateDirectory(Path.GetDirectoryName(store)!);
-
+        var root = Path.Combine(Path.GetTempPath(), $"parley-contain-{Guid.NewGuid():N}");
         var brokerAt = $"http://127.0.0.1:{Loopback.FreePort()}";
+
+        // A project rather than a store and a port: `serve` takes neither, and the endpoint this test
+        // needs to dial goes in the project's own file.
+        var probe = Parley.Core.ProjectName.Create("probe");
+
+        ProjectManifest.Write(
+            root,
+            [new ProjectSettings(probe, ProjectFolder.StoreFor(root, probe), brokerAt, null)]);
 
         using var broker = ToolProcess.Launch(
             [],
-            "serve", "--db", store, "--listen", brokerAt, "--with-web-ui", "--web-ui", address);
+            "serve", "--config", root, "--with-web-ui", "--web-ui", address);
 
         try
         {
@@ -71,7 +77,7 @@ public sealed class WebUiContainmentTests
 
             try
             {
-                Directory.Delete(Path.GetDirectoryName(store)!, recursive: true);
+                Directory.Delete(root, recursive: true);
             }
             catch (IOException)
             {
@@ -83,7 +89,7 @@ public sealed class WebUiContainmentTests
     [Fact]
     public void The_broker_knows_the_web_ui_by_a_command_name_and_nothing_else()
     {
-        // FR-015, read off the source because it is a property of what this tool references rather
+        // Read off the source because it is a property of what this tool references rather
         // than of what it does. The graph walk in Parley.Client.Tests says the assembly is not
         // reachable; this says the code does not name it either — a `using Parley.Web` that
         // compiled would mean the reference had come back.

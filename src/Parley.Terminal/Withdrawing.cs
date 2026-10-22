@@ -28,8 +28,8 @@ namespace Parley.Terminal;
 /// would be reachable, unstartable, and invisible to the surface that broke it.
 /// </para>
 /// <para>
-/// <c>ForceConclude</c>, <c>Instruct</c> and <c>Prune</c> are still not here. Admitting one is a
-/// decision to argue in <c>contracts/operations.md</c> first, not a call to add.
+/// <c>ForceConclude</c> and <c>Prune</c> each live in one file of their own, carrying their door. Admitting
+/// another destructive operation is a decision to argue first, not a call to add.
 /// </para>
 /// </remarks>
 internal static class Withdrawing
@@ -202,35 +202,6 @@ internal static class Withdrawing
         return Task.CompletedTask;
     }
 
-    /// <summary>Puts a retired seat back, so its holder can take it.</summary>
-    /// <param name="client">The operator's client for this project.</param>
-    /// <param name="name">The seat's name.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>When the registry has it again.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Here rather than beside the seat, and that placement is the check working.</b>
-    /// <c>SurfaceTests</c> allows <c>Reinstate</c> in exactly one file, which must be the one
-    /// holding the typed-name prompt — so an operator operation cannot acquire a second, quieter
-    /// door somewhere else. Taking a retired seat needs the operation, so the call belongs in this
-    /// file with the rest of them.
-    /// </para>
-    /// <para>
-    /// <b>It asks for no typed name, and that is argued rather than assumed.</b> The name is
-    /// demanded where an act is destructive and irreversible — retiring, purging, destroying — and
-    /// reinstating is the undo of one of those. What the seat path does ask for is a sentence
-    /// saying what will happen and a deliberate answer to it, which is the half of the rule that
-    /// carries the meaning; a name typed back to restore your own seat would be ceremony.
-    /// </para>
-    /// </remarks>
-    internal static Task ReinstateSeatAsync(
-        BrokerClient client, string name, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(client);
-
-        return client.ReinstateAsync(AgentName.Create(name), cancellationToken);
-    }
-
     /// <summary>Opens the dialog that reinstates a retired agent.</summary>
     /// <param name="app">The application the dialogs open in.</param>
     /// <param name="client">The operator's client for this project.</param>
@@ -265,7 +236,7 @@ internal static class Withdrawing
 
     /// <summary>Names the asker and what they will see, and takes an explicit acceptance.</summary>
     /// <remarks>
-    /// FR-014's second confirmation, and the reason it exists: retirement's outcome is the kinder
+    /// The second confirmation, and the reason it exists: retirement's outcome is the kinder
     /// one — those exchanges stay open, flagged as held by a retired agent, for a person to close or
     /// to reinstate it — so somebody
     /// choosing the permanent one should be choosing between them knowingly rather than agreeing to

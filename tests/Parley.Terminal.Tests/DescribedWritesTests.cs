@@ -51,14 +51,14 @@ public sealed class DescribedWritesTests : IDisposable
         Directory.CreateDirectory(Path.Combine(workspace, ".git"));
 
         var token = TestContext.Current.CancellationToken;
-        var manifest = Path.Combine(_root, "projects.json");
+        var manifest = _root;
         var catalogue = Path.Combine(_root, "alpha-node.json");
 
         ProjectManifest.Write(
             manifest,
             [new ProjectSettings(
                 ProjectName.Create("alpha"), Path.Combine(_root, "alpha.db"),
-                "http://127.0.0.1:1", catalogue, null)]);
+                "http://127.0.0.1:1", null)]);
 
         await File.WriteAllTextAsync(catalogue, """{ "agents": {} }""", token);
 
@@ -68,12 +68,11 @@ public sealed class DescribedWritesTests : IDisposable
         var entry = new EnrollmentEntry(workspace, "orders", "the orders service", Unattended: true)
         {
             Enroll = true,
-            OwnsApproved = true,
         };
 
         _ = await Enrolment.AddAsync(
             entry, "alpha", catalogue, Path.Combine(workspace, Adding.Instructions),
-            token, null, manifest);
+            token, manifest);
 
         var appeared = Directory.GetFiles(workspace, "*", SearchOption.AllDirectories)
             .Except(before)

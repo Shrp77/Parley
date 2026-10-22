@@ -27,7 +27,7 @@ public sealed class ConversationActionsTests
 {
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     private static ConversationSummary Conversation(
@@ -205,11 +205,10 @@ public sealed class ConversationActionsTests
 
         Assert.Equal(Destroying.Keep, consequence.Choices.Source!.ToList()[0]?.ToString());
 
-        // The words from the dialog itself, and a phrase from them from the screen. Asserting the whole phrase on the
-        // screen broke when 0.5 shortened the sentence: "never" ended one row and "told anything at all." began the
-        // next, so a check about what is said became a check about where the wrap falls.
+        // The words from the dialog itself, and its opening words from the screen. Any phrase from the middle is a check
+        // on where the wrap falls, which differs between machines; the opening words begin the first row.
         Assert.Equal(Destroying.Waiting, consequence.Described);
-        Assert.Contains("told anything at all", driving.Text(), StringComparison.Ordinal);
+        Assert.Contains("An exchange in this", driving.Text(), StringComparison.Ordinal);
     }
 
     [Fact]

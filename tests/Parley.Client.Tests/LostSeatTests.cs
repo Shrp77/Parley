@@ -33,24 +33,23 @@ namespace Parley.Client.Tests;
 public sealed class LostSeatTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null);
 
     [Fact]
     public async Task A_refused_reattachment_ends_the_seat()
     {
         var token = TestContext.Current.CancellationToken;
         using var book = new SeatBook(_ => new SeatDoubles.Stubborn(StatusCode.PermissionDenied));
-        var seat = Seated("arvind");
 
-        var taken = await book.TakeAsync(Alpha, seat, [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
         await Eventually.UntilAsync(
             () => taken.Hold!.Lost, "the seat never gave up on a broker refusing it", token);
 
-        Assert.Null(book.Held(Alpha.Name.Value, seat));
-        Assert.Empty(book.Seats(seat));
+        Assert.Null(book.Held(Alpha.Name.Value));
+        Assert.Empty(book.Seats());
     }
 
     [Fact]
@@ -62,9 +61,8 @@ public sealed class LostSeatTests
         var token = TestContext.Current.CancellationToken;
         var flaky = new SeatDoubles.Stubborn(StatusCode.Unavailable);
         using var book = new SeatBook(_ => flaky);
-        var seat = Seated("arvind");
 
-        var taken = await book.TakeAsync(Alpha, seat, [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
@@ -72,23 +70,21 @@ public sealed class LostSeatTests
             () => flaky.Refusals > 0, "the reattach was never attempted", token);
 
         Assert.False(taken.Hold!.Lost);
-        Assert.NotNull(book.Held(Alpha.Name.Value, seat));
+        Assert.NotNull(book.Held(Alpha.Name.Value));
     }
 
     [Fact]
     public async Task Rejoining_after_a_lost_seat_attaches_again_rather_than_handing_back_the_dead_one()
     {
-        // The door the first version of this guard did not cover. TakeAsync returns an existing
-        // hold under the same key without looking at it, so somebody rejoining after their
-        // attachment ended was told they were already seated -- and handed the dead hold, whose
-        // pump had stopped. The surface would then draw them as present forever, through the one
-        // path they took in order to fix it.
+        // TakeAsync must not return an existing hold under the same key without looking at it, or
+        // somebody rejoining after their attachment ended is told they are already seated -- and
+        // handed the dead hold, whose pump has stopped. The surface would then draw them as present
+        // forever, through the one path they took in order to fix it.
         var token = TestContext.Current.CancellationToken;
         var agents = new SeatDoubles.Stubborn(StatusCode.PermissionDenied);
         using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
 
-        var first = await book.TakeAsync(Alpha, seat, [], token);
+        var first = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(first.Seated);
 
@@ -99,7 +95,7 @@ public sealed class LostSeatTests
         // stopped retrying, which is what made it lost in the first place.
         agents.Allow();
 
-        var again = await book.TakeAsync(Alpha, seat, [], token);
+        var again = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(again.Seated);
         Assert.NotSame(first.Hold, again.Hold);
@@ -113,9 +109,8 @@ public sealed class LostSeatTests
         // entry would buy nothing, since every reader already treats it as gone.
         var token = TestContext.Current.CancellationToken;
         using var book = new SeatBook(_ => new SeatDoubles.Stubborn(StatusCode.PermissionDenied));
-        var seat = Seated("arvind");
 
-        var taken = await book.TakeAsync(Alpha, seat, [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
@@ -126,13 +121,10 @@ public sealed class LostSeatTests
     }
 
 
-    /// <summary>A person's seat, by the name they typed.</summary>
-    /// <param name="person">What they typed.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
-
-        return seat;
-    }
+    /// <summary>The person seat the broker writes for this project.</summary>
+    private static IReadOnlyList<AgentRecord> Person { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 }

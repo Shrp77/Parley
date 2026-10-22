@@ -1,0 +1,43 @@
+@model Parley.Web.Pages.Conversations.DetailModel
+@using Parley.Core
+@*
+    Who to talk to, as a tree: one group per machine, the person's own group first.
+
+    Names are shown as the role alone because the group already says the machine, which keeps a
+    line from running onto a second row.
+
+    The boxes live here and belong to the composer's form (`form="composer"`), so choosing them
+    here is choosing them there. `name`, `value` and `checked` stay adjacent and in that order:
+    tests and the form both read them that way.
+
+    This is inside the followed region, which is replaced every few seconds so the states stay
+    current. What was ticked and which groups were open is carried over by the page's script when
+    it is replaced, because the markup it is replaced with knows only what the server was told.
+*@
+@{
+    var everyone = Model.Participants.Concat(Model.NotInIt).ToList();
+    var inIt = new HashSet<string>(Model.Participants.Select(p => p.Value), StringComparer.Ordinal);
+
+    var tree = new Parley.Web.Pages.Shared.AgentTreeView(
+        Model.Project ?? "",
+        [.. everyone.Select(who => new Parley.Web.Pages.Shared.AgentTreeEntry(
+            who,
+            inIt.Contains(who.Value),
+            Model.With.Contains(who.Value, StringComparer.Ordinal),
+            Model.Doing(who) ?? (Model.Roll.TryGetValue(who.Value, out var known) ? Roster.State(known) : "not in the registry"),
+            Model.Messages.Count(m => m.From == who || m.To == who)))],
+        Pick: true);
+}
+<aside class="recipients" aria-label="Who to talk to" data-new="@(Model.Messages.Count == 0 ? "true" : null)">
+    <h2>To</h2>
+
+    @if (Model.Participants.Count > 1)
+    {
+        <label class="everyone">
+            <input type="checkbox" name="Everyone" value="true" form="composer" />
+            <span>Everyone in this conversation (@Model.Participants.Count)</span>
+        </label>
+    }
+
+    <partial name="_AgentTree" model="@tree" />
+</aside>

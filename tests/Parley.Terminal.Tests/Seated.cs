@@ -32,8 +32,12 @@ internal sealed class Seated : IAsyncDisposable
     /// <summary>The conversation the fixture opens.</summary>
     internal const string Conversation = "room";
 
-    /// <summary>The name the person is seated under.</summary>
-    internal const string Me = "arvind";
+    /// <summary>Who the person is: the role of the seat the broker provides.</summary>
+    /// <remarks>
+    /// It was <c>arvind</c>, typed into the Join dialog. There is no dialog now and no name to type: the broker writes
+    /// <c>human-user@&lt;project&gt;</c> and the shell attaches as it when the project opens.
+    /// </remarks>
+    internal const string Me = PersonSeat.Role;
 
     /// <summary>A peer that is in the conversation and waiting on this person.</summary>
     internal static AgentName Orders { get; } = AgentName.Create("orders@test");
@@ -85,11 +89,17 @@ internal sealed class Seated : IAsyncDisposable
     /// <param name="cancellationToken">Stops the reads.</param>
     /// <param name="width">How wide the terminal is.</param>
     /// <param name="height">How tall the terminal is.</param>
+    /// <param name="addressing">Where who-each-line-goes-to is kept, or null for this run only.</param>
+    /// <param name="mailEvery">How often the waiting count is asked for, or null (the default) not to poll at all.</param>
+    /// <param name="followEvery">How often the open conversation is read again, or null (the default) not to follow.</param>
     /// <returns>The fixture.</returns>
     internal static async Task<Seated> OpenAsync(
         CancellationToken cancellationToken,
         int width = 140,
-        int height = 40)
+        int height = 40,
+        AddressBook? addressing = null,
+        TimeSpan? mailEvery = null,
+        TimeSpan? followEvery = null)
     {
         var connection = ParleyDatabase.OpenInMemory();
         var agents = new AgentRepository(connection);
@@ -103,7 +113,7 @@ internal sealed class Seated : IAsyncDisposable
 
         var broker = LoopbackOperator.Start(connection);
         var directory = new BrokerDirectory(
-            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
         var seats = new SeatBook(directory.AgentsFor);
@@ -111,24 +121,27 @@ internal sealed class Seated : IAsyncDisposable
 
         // The mail poll and the follow are off: both queue reads on their own schedule, which would make
         // `Settled` mean "nothing is in flight just now" rather than "the screen is true".
-        var shell = new Shell(directory) { Seats = seats, MailEvery = null, FollowEvery = null };
+        var shell = new Shell(directory)
+        {
+            Seats = seats, MailEvery = mailEvery, FollowEvery = null, Addressing = addressing ?? new AddressBook(null),
+        };
 
         driving.Show(shell);
+
+        // After `Show`, which turns following off on every driven surface; a test that asks for it gets it back.
+        shell.FollowEvery = followEvery;
 
         await shell.RefreshAsync(cancellationToken).ConfigureAwait(false);
         await shell.Settled.ConfigureAwait(false);
 
         await Walking.GoAsync(shell, Viewing.Project).ConfigureAwait(false);
-        await shell.Join().ConfigureAwait(false);
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type(Me);
-        dialog.Finish(taken: true);
-
         await shell.Settled.ConfigureAwait(false);
 
+        // **Seated by opening the project, with no key pressed**: the broker provides the person seat and
+        // the shell takes it. This fixture typed a name into a Join dialog until then; that the seat is here without one
+        // is itself the property FR-014 asks for.
         Assert.NotNull(shell.Held);
+        Assert.True(PersonSeat.Is(shell.Held!.Seat.Name), $"seated as '{shell.Held.Seat.Name}'");
 
         var speaking = new Broker.Broker(connection, Parley.Broker.BrokerOptions.Default);
 
@@ -151,12 +164,77 @@ internal sealed class Seated : IAsyncDisposable
         return new Seated(connection, broker, directory, seats, driving, shell);
     }
 
+    /// <summary>The person's seat, as the broker named it.</summary>
+    internal AgentName Person => _seats.Known(Walking.Alpha.Value)!.Name;
+
+    /// <summary>Sends a request straight to the broker, as somebody other than this surface.</summary>
+    /// <param name="from">Who asks: an agent, or the person on another surface.</param>
+    /// <param name="to">Who is asked.</param>
+    /// <param name="ask">What is asked.</param>
+    /// <param name="conversation">Where.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>The exchange the request opened.</returns>
+    internal async Task<long> AsksAsync(
+        AgentName from, AgentName to, string ask, string conversation, CancellationToken cancellationToken)
+    {
+        var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await speaking.StartAsync(from, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+
+        var sent = await speaking.RequestAsync(
+            from,
+            to,
+            "model-a",
+            System.Text.Json.JsonSerializer.Serialize(new { ask }),
+            DateTimeOffset.UtcNow,
+            conversation,
+            cancellationToken).ConfigureAwait(false);
+
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
+
+        return sent.Exchange!.Id;
+    }
+
     /// <summary>Lays the screen out, which is what makes a frame true.</summary>
     /// <remarks>
     /// The harness never pumps the loop, so a frame read without this is whatever was last drawn — which for
     /// a region sized from the space left over is nothing at all.
     /// </remarks>
     internal void Lay() => Session.App.LayoutAndDraw(true);
+
+    /// <summary>Has the person ask an agent something in a conversation, and goes to that conversation.</summary>
+    /// <param name="to">Who is asked, which makes them a participant.</param>
+    /// <param name="conversation">Where; a new name starts one.</param>
+    /// <param name="cancellationToken">Stops the work.</param>
+    /// <param name="go">Whether to go to the conversation afterwards, or leave the screen to find out by itself.</param>
+    /// <returns>When the request is stored and the screen agrees.</returns>
+    /// <remarks>
+    /// The person rather than the agent, because that is how an agent joins a conversation: a person may name any
+    /// conversation (principle 2.10), and an agent naming one it is not in is refused as not assignable.
+    /// </remarks>
+    internal async Task AskAsync(AgentName to, string conversation, CancellationToken cancellationToken, bool go = true)
+    {
+        var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await speaking.StartAsync(to, T0, cancellationToken).ConfigureAwait(false);
+
+        var sent = await speaking.RequestAsync(
+            Shell.Held!.Seat.Name,
+            to,
+            "human",
+            $$"""{"ask":"which of you should I talk to in {{conversation}}?"}""",
+            T0.AddMinutes(2),
+            conversation,
+            cancellationToken).ConfigureAwait(false);
+
+        Assert.True(sent.Exchange is not null, $"the request was refused: {sent.Admission.Rejection}");
+
+        if (go)
+        {
+            await Walking.GoAsync(Shell, Viewing.Conversation, conversation).ConfigureAwait(false);
+            await Shell.Settled.ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Puts the cursor in a pane.</summary>
     /// <typeparam name="T">The region to focus.</typeparam>

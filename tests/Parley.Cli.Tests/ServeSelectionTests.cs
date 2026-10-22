@@ -10,15 +10,15 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both were found by the gate over the installer change, and neither was visible to the suite</b>, because every test
-/// that starts a broker by explicit store isolates its manifest — which is exactly the arrangement in which the store is
-/// honoured. On a machine whose manifest names projects, `serve --db` and <c>PARLEY_DB</c> served the manifest and ignored
-/// the store, while the help and the README said they serve one store instead of it.
+/// <b>Neither is visible to a test that isolates its manifest</b>, because every test that starts a broker by
+/// explicit store isolates its manifest — which is exactly the arrangement in which the store is honoured. On a
+/// machine whose manifest names projects, `serve --db` and <c>PARLEY_DB</c> must not serve the manifest and ignore
+/// the store, while the help and the README say they serve one store instead of it.
 /// </para>
 /// <para>
 /// The second is the waiting path's own. A machine with one project hosts its node with the resolution `parley up` has,
-/// so <c>PARLEY_NODE_CONFIG</c> wins over the entry — but a project named while serve waited was treated as a manifest
-/// being served and hosted from its entry instead, so the same machine changed catalogues at its next start.
+/// so <c>PARLEY_NODE_CONFIG</c> wins over the entry — and a project named while serve waits must not be treated as a manifest
+/// being served and hosted from its entry instead, or the same machine would change catalogues at its next start.
 /// </para>
 /// </remarks>
 public sealed class ServeSelectionTests : IDisposable
@@ -40,78 +40,62 @@ public sealed class ServeSelectionTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_directory, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _directory;
 
     private void WriteManifest(string? catalogue = null) =>
         ProjectManifest.Write(
-            ManifestPath,
+            Root,
             [
                 new ProjectSettings(
                     ProjectName.Create("orders"),
                     Path.Combine(_directory, "manifest.db"),
                     $"http://127.0.0.1:{FreePort()}",
-                    catalogue,
                     null),
             ]);
 
-    public static TheoryData<bool> ByVariable => [false, true];
-
-    [Theory]
-    [MemberData(nameof(ByVariable))]
-    public async Task A_store_named_beside_a_manifest_is_served_instead_of_it(bool byVariable)
+    [Fact]
+    public async Task Nothing_can_make_serve_open_a_store_this_machine_did_not_name()
     {
+        // **Two tests lived here and both were about which of two sources wins.**
+        // `A_store_named_beside_a_manifest_is_served_instead_of_it` checked that `--db` and `PARLEY_DB`
+        // beat a manifest; `A_store_variable_does_not_replace_a_manifest_named_on_the_command_line`
+        // checked that the variable did *not* beat `--config`. Both rules were written after the review
+        // gate found the defect each exists to prevent — a machine serving projects while ignoring the
+        // store it was told, and a stray variable turning the logon entry into a broker for a test store.
+        //
+        // **Both questions are gone, because there is one source.** A project's store is derived from its
+        // name; nothing names one. So what is asserted is that the flags are refused rather than
+        // honoured, and that what gets served is what the root holds.
         var ct = TestContext.Current.CancellationToken;
         var store = Path.Combine(_directory, "named.db");
 
         WriteManifest();
 
-        using var process = byVariable
-            ? ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, ManifestPath), (DeploymentEnvironment.DatabaseVariable, store)],
-                "serve", "--listen", "http://127.0.0.1:0")
-            : ToolProcess.Launch(
-                [(ProjectManifest.PathVariable, ManifestPath)],
-                "serve", "--db", store, "--listen", "http://127.0.0.1:0");
-
-        var log = ToolLog.Of(process);
-
-        try
+        foreach (var attempt in new[]
+                 {
+                     new[] { "serve", "--db", store },
+                     new[] { "serve", "--listen", "http://127.0.0.1:0" },
+                 })
         {
-            await log.UntilAsync(l => l.Said("http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
-        }
-        finally
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                _ = process.WaitForExit(5000);
-            }
+            var (code, _, error) = ToolProcess.RunFully([(ProjectManifest.PathVariable, Root)], attempt);
+
+            Assert.Equal(64, code);
+            Assert.Contains(attempt[1], error, StringComparison.Ordinal);
         }
 
-        Assert.True(File.Exists(store), $"the named store was not opened. The tool said:{Environment.NewLine}{log}");
-        Assert.False(File.Exists(Path.Combine(_directory, "manifest.db")), $"the manifest's project was served. The tool said:{Environment.NewLine}{log}");
-        Assert.False(log.Said("orders"), $"the manifest's project was named. The tool said:{Environment.NewLine}{log}");
-    }
-
-    [Fact]
-    public async Task A_store_variable_does_not_replace_a_manifest_named_on_the_command_line()
-    {
-        // The logon entry names its manifest with --config. The first version of the rule above let a PARLEY_DB left in
-        // the environment turn that entry into a broker for the leftover store, serving none of the manifest's projects.
-        var ct = TestContext.Current.CancellationToken;
-        var leftover = Path.Combine(_directory, "leftover.db");
-
-        WriteManifest();
-
+        // And what is served is what the root holds.
         using var process = ToolProcess.Launch(
-            [(ProjectManifest.PathVariable, ManifestPath), (DeploymentEnvironment.DatabaseVariable, leftover)],
-            "serve", "--config", ManifestPath);
+            [(ProjectManifest.PathVariable, Root)],
+            "serve");
 
         var log = ToolLog.Of(process);
 
         try
         {
-            await log.UntilAsync(l => l.Said("orders on http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
+            await log.UntilAsync(
+                l => l.Said("http://127.0.0.1:") || process.HasExited, TimeSpan.FromSeconds(20), ct);
         }
         finally
         {
@@ -122,9 +106,15 @@ public sealed class ServeSelectionTests : IDisposable
             }
         }
 
-        Assert.True(log.Said("orders on http://127.0.0.1:"), $"the manifest's project was not served. The tool said:{Environment.NewLine}{log}");
-        Assert.False(File.Exists(leftover), $"the leftover store was opened. The tool said:{Environment.NewLine}{log}");
+        Assert.False(
+            File.Exists(store),
+            $"a store this machine did not name was opened. The tool said:{Environment.NewLine}{log}");
+
+        Assert.True(
+            log.Said("orders"),
+            $"the root's own project was not served. The tool said:{Environment.NewLine}{log}");
     }
+
 
     [Fact]
     public async Task A_lone_project_hosts_from_the_same_catalogue_whether_it_was_named_before_the_start_or_after()
@@ -135,7 +125,7 @@ public sealed class ServeSelectionTests : IDisposable
 
         (string Name, string Value)[] environment =
         [
-            (ProjectManifest.PathVariable, ManifestPath),
+            (ProjectManifest.PathVariable, Root),
             (NodeCatalogue.PathVariable, fromVariable),
         ];
 
@@ -152,7 +142,7 @@ public sealed class ServeSelectionTests : IDisposable
     private async Task<string> HostedFromAsync(
         (string Name, string Value)[] environment, Action whileRunning, CancellationToken ct)
     {
-        using var process = ToolProcess.Launch(environment, "serve", "--config", ManifestPath, "--with-node");
+        using var process = ToolProcess.Launch(environment, "serve", "--config", Root, "--with-node");
 
         var log = ToolLog.Of(process);
 

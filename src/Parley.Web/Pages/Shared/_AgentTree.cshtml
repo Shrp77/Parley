@@ -1,0 +1,110 @@
+@model Parley.Web.Pages.Shared.AgentTreeView
+@using Parley.Core
+@*
+    The agents as a tree: one group per machine, the person's own group first. Used by the conversation page,
+    where each agent carries a box that belongs to the composer's form (`form="composer"`) so choosing one
+    here is choosing it there, and by the settings page, for choosing default agents.
+
+    `name`, `value` and `checked` stay adjacent and in that order: tests and the form both read them that way.
+*@
+@{
+    // One agent's row in the picking tree. The state is the heading of the subgroup the row is in, so it is not repeated.
+    Func<AgentTreeEntry, Microsoft.AspNetCore.Html.IHtmlContent> row = @<li class="slot-@Palette.SlotFor(item.Name)@(item.InIt ? null : " not-in-it")">
+        @if (Model.Pick)
+        {
+            <input type="checkbox" class="to-box" name="Targets" value="@item.Name.Value" checked="@(item.Ticked ? "checked" : null)" form="composer" aria-label="@item.Name.Value" />
+        }
+        @if (Model.Pick && item.InIt)
+        {
+            <span class="mark" aria-hidden="true">@Parley.Client.Rendering.RoomRoster.ParticipantMark</span>
+        }
+        <span class="who" aria-hidden="true">@Palette.BadgeFor(item.Name)</span>
+        <a class="name" title="@item.Name.Value" href="/Projects/Agent?project=@Model.Project&amp;agent=@item.Name.Value">@item.Name.Role</a>
+        @if (item.Messages is { } messages)
+        {
+            <span class="msgs" title="Messages in this conversation sent by this agent or to it">@messages</span>
+        }
+    </li>;
+
+    var groups = Model.Entries
+        .GroupBy(e => e.Name.Machine, StringComparer.Ordinal)
+        .OrderByDescending(g => g.Any(e => e.Name.Role == "human-user"))
+        .ThenBy(g => g.Key, StringComparer.Ordinal)
+        .ToList();
+}
+<ul class="tree">
+    @foreach (var group in groups)
+    {
+        <li class="group">
+            <details open data-group="@group.Key">
+                <summary>
+                    <input type="checkbox" class="group-box" aria-label="Everyone at @group.Key" />
+                    <span class="group-name">@@@group.Key</span>
+                    <span class="count">@group.Count()</span>
+                </summary>
+                @if (Model.Pick)
+                {
+                    @* Under each machine, the people first and then one subgroup for each state the agents are in. *@
+                    <ul>
+                        @foreach (var person in group.Where(e => e.Name.Role == "human-user"))
+                        {
+                            @row(person)
+                        }
+                        @foreach (var state in group.Where(e => e.Name.Role != "human-user").GroupBy(e => e.State).OrderBy(g => g.Key, StringComparer.Ordinal))
+                        {
+                            var shownDivider = false;
+
+                            <li class="group subgroup">
+                                <details open data-group="@group.Key/@state.Key">
+                                    <summary>
+                                        <input type="checkbox" class="group-box" aria-label="Every agent @state.Key at @group.Key" />
+                                        <span class="group-name">@state.Key</span>
+                                        <span class="count">@state.Count()</span>
+                                    </summary>
+                                    <ul>
+                                        @foreach (var entry in state.OrderBy(e => e.InIt ? 0 : 1).ThenBy(e => e.Name.Role, StringComparer.Ordinal))
+                                        {
+                                            @if (!entry.InIt && !shownDivider)
+                                            {
+                                                shownDivider = true;
+                                                <li class="divider">Not in it yet</li>
+                                            }
+
+                                            @row(entry)
+                                        }
+                                    </ul>
+                                </details>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <ul>
+                        @{ var dividerShown = false; }
+                        @foreach (var entry in group.OrderBy(e => e.Name.Role != "human-user").ThenBy(e => e.InIt ? 0 : 1).ThenBy(e => e.Name.Role, StringComparer.Ordinal))
+                        {
+                            var who = entry.Name;
+
+                            @if (!entry.InIt && !dividerShown)
+                            {
+                                dividerShown = true;
+                                @* Said in words as well as by the mark the others carry. *@
+                                <li class="divider">Not in it yet</li>
+                            }
+
+                            <li class="slot-@Palette.SlotFor(who)">
+                                <input type="checkbox" class="default-box" id="default-@who.Value" name="default" value="@who.Value" aria-label="@who.Value" />
+                                <label for="default-@who.Value" class="pick-name">
+                                    <span class="who" aria-hidden="true">@Palette.BadgeFor(who)</span>
+                                    <span class="name">@who.Role</span>
+                                </label>
+                                <span class="state">@entry.State</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </details>
+        </li>
+    }
+</ul>

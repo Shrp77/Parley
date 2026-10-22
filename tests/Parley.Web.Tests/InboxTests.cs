@@ -1,4 +1,3 @@
-using System.Net;
 using Parley.Core;
 using Parley.Client.Seating;
 using Xunit;
@@ -10,10 +9,9 @@ namespace Parley.Web.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The load-bearing distinction is between looking and taking. Delivery is recorded by the inbox
-/// drain, and what is delivered is what the flags of §15 measure progress from, so a page that
-/// drained while rendering would mark work collected for somebody who only followed a link. The
-/// count is free; the contents are not.
+/// Delivery is recorded by the inbox drain, and what is delivered is what the flags of §15 measure progress from.
+/// Showing a message to the person is what counts it as picked up, so the page drains as it renders, as the terminal
+/// does on opening a conversation.
 /// </para>
 /// <para>
 /// Reading and resolving shipped together on purpose. An inbox that could take a Request and not
@@ -30,57 +28,25 @@ public sealed class InboxTests
         File.ReadAllText(RepositoryPath("src/Parley.Web/Pages/Inbox.cshtml.cs"));
 
     [Fact]
-    public void Opening_the_inbox_does_not_take_delivery()
+    public void Showing_the_inbox_takes_delivery_and_there_is_no_button_for_it()
     {
-        // The GET reads counts and nothing else. Draining from OnGet would be indistinguishable
-        // on the page and would start everybody's clock the moment they glanced at it.
-        var get = Model[Model.IndexOf("OnGetAsync()", StringComparison.Ordinal)..];
-        var body = get[..get.IndexOf("public async Task<IActionResult> OnPostTake", StringComparison.Ordinal)];
-
-        Assert.DoesNotContain("Drain", body, StringComparison.Ordinal);
-
-        // And the thing it does call is the one documented as changing nothing.
-        Assert.Contains("WaitingAsync", Model, StringComparison.Ordinal);
+        // Delivered as it is drawn, like the terminal. A button for it was a count that never went down.
+        Assert.Contains("TakeDeliveryAsync", Model, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnPostTakeAsync", Model, StringComparison.Ordinal);
+        Assert.DoesNotContain("asp-page-handler=\"Take\"", Page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Take delivery", Page, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Taking_delivery_is_a_post_that_says_what_it_costs()
-    {
-        Assert.Contains("asp-page-handler=\"Take\"", Page, StringComparison.Ordinal);
-        Assert.Contains("OnPostTakeAsync", Model, StringComparison.Ordinal);
-
-        // Described before it happens, like every other operation in this console that changes
-        // something. "You cannot put them back" is the part somebody needs before clicking.
-        Assert.Contains("marks them collected", Page, StringComparison.Ordinal);
-        Assert.Contains("cannot put them back", Page, StringComparison.Ordinal);
-    }
+    // `The_inbox_sends_nobody_who_has_not_joined` was here: it expected a redirect to Join. There is no
+    // Join and the inbox is always about the person — `NoJoinOnTheWebTests` asserts the page answers with no name.
 
     [Fact]
-    public async Task The_inbox_sends_nobody_who_has_not_joined()
+    public void Only_answering_clears_work_owed()
     {
-        // There is no inbox without a seat: the messages are addressed to an agent, and somebody
-        // who has not joined is not one.
-        using var console = new DeadBrokerConsole();
-        using var client = console.CreateStubbornClient();
-
-        using var response = await client.GetAsync(
-            new Uri("/Inbox", UriKind.Relative), TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Contains("/Join", response.Headers.Location?.ToString()!, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Work_owed_cannot_be_dismissed_and_a_result_can()
-    {
-        // Clearing removes what owes nothing back. A Request that could be cleared would let
-        // somebody tidy the page while the exchange behind it stayed open with nobody working it,
-        // which is the one outcome the inbox exists to prevent.
+        // A Request that could be cleared would let somebody tidy the page while the exchange behind
+        // it stayed open with nobody working it, which is the one outcome the inbox exists to prevent.
         var hold = File.ReadAllText(RepositoryPath("src/Parley.Client/Seating/SeatHold.cs"));
 
-        Assert.Contains("RemoveAll(one => !one.Owes)", hold, StringComparison.Ordinal);
-
-        // And the only thing that clears a debt is answering it.
         Assert.Contains("RemoveAll(one => one.Message.ExchangeId == exchangeId)", hold,
             StringComparison.Ordinal);
     }
@@ -103,19 +69,17 @@ public sealed class InboxTests
     }
 
     [Fact]
-    public void The_items_a_result_covers_are_the_ones_the_request_carried()
+    public void A_result_is_offered_for_a_request_as_a_whole_and_for_nothing_else()
     {
-        // §5.3 resolves by item id, and the broker refuses a Result that does not give exactly one
-        // outcome per item — naming the ones it expected. So the form is built from the Request
-        // as stored, and a Result is never offered for anything else.
+        // The form is built from the Request, and a Result is never offered for anything else.
         var request = new Delivered(
             new Message(
                 1, 7, MessageType.Request,
                 AgentName.Create("orders@alpha"), AgentName.Create("arvind@alpha"), "claude-opus-5",
-                """{"intent":"moving tax","items":[{"id":"r1","kind":"work","text":"a"},{"id":"q2","kind":"question","text":"b"}],"done_when":"both are resolved and said so"}""",
+                """{"ask":"moving tax"}""",
                 "c", DateTimeOffset.UnixEpoch, null));
 
-        Assert.Equal(["r1", "q2"], request.Items());
+        Assert.Equal(["request"], request.Items());
         Assert.Contains("item.Items()", Page, StringComparison.Ordinal);
 
         var result = request with { Message = request.Message with { Type = MessageType.Result } };
@@ -195,7 +159,7 @@ public sealed class InboxTests
         var layout = File.ReadAllText(
             RepositoryPath("src/Parley.Web/Pages/Shared/_Layout.cshtml"));
 
-        Assert.Contains("Seats.WaitingAsync(here", layout, StringComparison.Ordinal);
+        Assert.Contains("PersonSeats.PresenceAsync(", layout, StringComparison.Ordinal);
 
         // And nowhere else renders one, so a third source cannot appear by being added.
         var pages = Directory.GetFiles(

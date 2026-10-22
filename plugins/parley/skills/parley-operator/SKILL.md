@@ -1,302 +1,246 @@
 ﻿---
 name: parley-operator
-description: Run the Parley operator commands - list registered agents, export a discussion, retire, reinstate or purge an agent, force-conclude a discussion, or prune the message log. Use when someone asks who is registered with Parley, what was said in a discussion, or to close, withdraw or clean up.
-when_to_use: The user asks who is registered with Parley, what two agents said to each other, to remove or restore an agent, to close a discussion its participants have not closed, or to apply the retention policy now.
+description: Run the Parley commands a person uses on a deployment - list registered agents, see open conversations, check waiting mail, manage shared files, enroll repositories, and set up the broker - and point the person to the terminal or web UI for everything else (reading a whole conversation, retiring, reinstating or purging an agent, closing a conversation, pruning, and the health reports). Use when someone asks who is registered with Parley, what was said in a discussion, or to close, withdraw or clean up.
+when_to_use: The user asks who is registered with Parley, what two agents said to each other, to remove or restore an agent, to close a discussion its participants have not closed, to apply the retention policy now, or what needs their attention in a deployment.
 ---
 
 # The Parley operator commands
 
-`parley` is a command-line tool, installed by a person and **never given to an agent**. It holds
-the operations that act on other agents' work: reading a whole discussion, withdrawing a
+`parley` is a tool for a person. It is installed by a person and **never given to an agent**.
+Some of what it does acts on other agents' work: reading a whole discussion, withdrawing a
 registration, closing a discussion over its participants' votes, deleting message text.
 
-They are not tools and cannot become tools by accident. `parley-mcp`, the server an MCP client
-launches, does not have them compiled into it - a test asserts that by reflecting over the real
-binary. Reaching them means running this program.
+These are not agent tools and cannot become tools by accident. `parley-mcp`, the server an MCP
+client launches, does not have them compiled into it. A test checks that against the real binary.
+
+## Most operator actions are on a screen
+
+The actions that change other agents' work are not on the command line. A person does them in
+one of two places:
+
+- **The terminal.** Type `parley` (or `parley terminal`, the same thing spelled out). It needs a
+  real terminal, not a script.
+- **The web UI.** `parley web-ui` opens it in a browser. It is on `127.0.0.1:5280` by default.
+
+The command line refuses those verbs. Each one exits with code 64, says it is not a command, and
+names the terminal. **Do not try to run them.** Tell the person where the action is, and
+let them do it.
+
+In the terminal, every action is **Alt and a letter**. **F10** opens the menu bar, which lists
+every action with its key. **F3** opens a project's configuration (Auto Accept and the like).
+
+| What the person wants | Terminal | Web UI |
+|---|---|---|
+| Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. "Take this away as text" saves it as a file. |
+| Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag. |
+| Archive or unarchive a conversation | Conversations list, Alt+h. | The project page: *Archive* or *Bring back* beside each conversation. |
+| Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project page: *Destroy…* beside each conversation, which takes the identifier typed back. |
+| Retire or purge an agent | Agents list, Alt+r (*Remove this agent*). It describes the agent, offers keeping it first, and takes the agent's name typed back. | The agent's page: Retire, Purge. |
+| Reinstate a retired agent | Agents list, Alt+i. | The agent's page: Reinstate. |
+| See or change what an agent is responsible for, or have it say it again | Agents list, Alt+n. | The agent's page: *What this agent is responsible for*. |
+| Start an agent | Agents list, Enter on its row. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
+| Apply the retention policy now | Projects list, Alt+p. | Health page, "Apply the retention policy now". |
+| What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
+| Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | Use the terminal: the web UI cannot name a project. |
 
 ## The boundary
 
-Run these when the person asks for them. Do not run them to get around the protocol.
+Point the person to these when they ask for them. Do not suggest them as a way around the
+protocol.
 
-- `force-conclude` closes a discussion the participants have not agreed to close. It is not a
-  way past something an agent is waiting on. If a request is blocked on an answer, the answer is to
+- **Closing a conversation** ends one the participants have not agreed to end. It is not a way
+  past something an agent is waiting on. If a request is blocked on an answer, the answer is to
   give it.
-- `export` prints every message in a discussion, across agents. That is exactly the context
-  Parley keeps apart, so it is for a person reading back a decision - not a way to hand one
-  agent another's reasoning. Do not paste an export into an agent's session as a shortcut for
-  asking it.
-- `retire` stops an agent's server from starting at all. It is a withdrawal, not a mute.
-- `purge` deletes a registration outright, and is refused the moment anything references
-  the agent. It is for a registration that should never have existed - a mistyped name,
-  a repository somebody opened once. An agent that has traded is retired, never purged.
+- **Reading a whole conversation** shows every message, across agents. That is exactly the context
+  Parley keeps apart. It is for a person reading back a decision, not for handing one agent
+  another's reasoning. Do not paste a transcript into an agent's session as a shortcut for asking
+  it.
+- **Retiring** stops an agent's server from starting at all. It is a withdrawal, not a mute.
+- **Purging** deletes the agent and every conversation it took part in: every message, exchange and
+  file in them, including the other agents' side of those conversations. It frees the name and
+  cannot be undone. The person is told what was deleted, table by table. Retiring keeps all of
+  that, so retire when the record matters, which is almost always. Purge only when the record
+  itself is what should go: a mistyped name, a repository somebody opened once. The person seat
+  cannot be purged.
 
-None of this is a rule the tool enforces; it is the reason the tool is separate from the tools.
-No agent has authority over another, and these commands are how a **person** intervenes.
+None of this is a rule a tool enforces. It is the reason these actions are kept away from agents.
+No agent has authority over another, and these are how a **person** steps in.
 
-## The broker
-
-Every command is a client. One process owns the store and everything else connects to it, so
-there is no path to get wrong any more - only an address:
-
-```
-parley --broker <host:port> <command>
-```
-
-`--broker` defaults to `PARLEY_BROKER`, and that to the local broker on port 51707. Most of the
-time nothing needs setting. If nothing is listening, every command says so and says how to
-start one - **that is a broker nobody started, not a mistake in what you typed.**
-
-**Your shell is not the environment the broker was started with**, and that used to matter a
-great deal: `prune` read the retention variables from wherever it ran, so an operator could
-delete text to a floor the deployment had not chosen. It cannot now. The broker holds the
-policy, applies it, and this command asks it to.
-
-## Projects, when there is more than one deployment
-
-A machine can host several Parley deployments at once - each with its own store, its own port
-and its own agents, and no visibility of each other. SPEC.md 4.1 calls that a *project*, and is
-careful that it is a deployment concept only: nothing about a project crosses the wire, and the
-same agent name may appear in two of them without either knowing.
-
-`parley project add` records one, so commands stop being told its paths a flag at a time:
-
-```
-parley project add orders --db C:/parley/orders.db --listen http://127.0.0.1:51707
-parley --project orders registry
-```
-
-A command acts on the project `--project` names; failing that, `PARLEY_PROJECT`, which `parley
-use <name>` prints the line to set for one terminal; failing that, the one the repository it
-runs in names in `.mcp.json`, when exactly one of them is a project this machine has; failing
-that, the only project. With several and nothing of those choosing, **every command refuses and
-lists them rather than choosing** - picking silently would act on a deployment nobody asked for,
-and the output would look entirely normal. On such a machine each command says on standard error
-which project it acted on and why. Run from inside a repository enrolled in one project, nothing
-needs naming.
-
-**A machine with no projects is an ordinary machine.** The manifest is optional, nothing reports
-its absence, and every flag and environment variable that worked before still works and still
-wins over a project's values.
-
-`parley project set <name>` changes an entry in place - only the fields given, and an empty value
-clears an optional one. The process serving the manifest restarts that project on its new store,
-endpoint or catalogue within seconds; a description changes nothing running.
-
-`parley project remove` takes out the entry and **deletes nothing** - not the store, not the node
-catalogue, not any repository's launch configuration. It says so each time, and names what is
-still there; the process serving the manifest stops that project's broker and leaves the rest.
-Removing a project and deleting its store are two decisions, so deleting has its own name:
-`parley project remove <name> --destroy` waits for the broker to stop, deletes the store and the
-catalogue, and lists the repositories that were agents in it, whose launch configuration still
-names it. A broker it does not own - one started by hand - is reported and left running.
-
-**Retiring and purging an agent can also be done from `parley terminal`, since 2026-09-05.** The rule
-that kept them off it was that a purge behind a keystroke is a different risk from one behind a page
-describing it first; what the rule asks for is a description and a deliberate act, and the terminal
-now gives both. It describes the agent — what it is, where it runs, what it owns, and any answer it
-owes right now — offers keeping first, and takes the agent's own name typed back before retiring or
-purging. A purge that would leave an asker waiting names them and what they will see, and takes that
-acceptance before the name. `force-conclude`, `instruct` and `prune` remain command-line only, and a
-test fails the build if one appears on that surface.
-
-The terminal can also add an agent: a repository is picked by walking to it, and the same files
-`parley enroll apply` writes for one repository are written — the launch configuration, the
-repository's own instructions file, and a line in the project's catalogue. It then asks the machine
-to start the agent once, and the agent registers itself as it attaches: nothing on an operator's
-surface may register on a repository's behalf, so the start is a request and the registration is the
-agent's own act.
-
-A repository already started unattended by another project gets no catalogue line in the second one,
-and is started through the project that does start it.
-
-**`parley autostart install` serves the manifest.** The entry serves every project in it from
-one process, hosts this machine's node in each project whose entry
-names a catalogue (on a machine with one project `PARLEY_NODE_CONFIG` wins when it is set, as it
-does for `parley up`), and starts a project named later within seconds. `parley autostart status`
-says which form is installed and, for the one-store form, how to switch. That form -
-`autostart install --db` - and `parley serve --db` and `PARLEY_DB` are for testing only: a
-deployment names its stores with `parley project add`.
-
-## The commands
+## What the command line still does
 
 ```
 parley serve                          run the broker: the one process that opens the stores
-parley serve --db <path>              one store by hand, outside the manifest: testing only
+parley serve --project <name>         one project alone: testing only
 parley serve --with-node              and this machine's node in the same process
-parley autostart install              start both whenever you log in, serving every project
-                                      in the manifest (--db: one store, testing only)
+parley autostart install              start the broker whenever you log in, serving every project
+                                      on this machine
 parley autostart remove               stop doing that
 parley autostart status               say whether it is set up, and what it serves
 parley up                             run this machine's node, so its agents can be started
-parley web-ui [<url>]                 the operator's web UI in a browser; loopback by default
+parley web-ui [<url>]                 the web UI in a browser; loopback by default
                                       (its own tool: parley-web-ui, installed separately)
-parley terminal                       the same deployment in this terminal; needs a real one
-                                      (its own tool: parley-terminal, installed separately)
+parley                                the terminal; needs a real one
+                                      (its own tool: parley-terminal, installed separately;
+                                      parley terminal is the same thing, spelled out)
 
 parley project list                   what this machine is configured for
+                                      (creating, changing and removing one are in the terminal)
 parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
-parley project add <name> --db <path> --listen <url>    name a deployment
-parley project set <name> [--db] [--listen] [--node-config] [--description]   change one
-parley project remove <name>          forget how to reach one; deletes nothing
-parley project remove <name> --destroy    ...and stop its broker, delete its store and catalogue
 
-parley enroll scan <dir> [<file>]     find repositories and tick the ones to enroll
-parley enroll scan <dir> --all        tick every one found, for scripts with no terminal
-parley enroll plan <manifest>         say what enrolling them would change
-parley enroll apply <manifest>        configure them all as agents, naming the project when
-                                      this machine resolves one (PARLEY_PROJECT)
+parley enroll <dir>                   find the repositories under a directory, tick the ones
+                                      to enroll, and configure, catalogue and start them
+parley enroll <dir> --all             tick every one found, for scripts with no terminal
+parley enroll <dir> --describe        say what enrolling them would change, and change nothing
 
 parley registry                       every registered agent, with its workspace
-parley retire <agent>                 withdraw a registration
-parley reinstate <agent>              the only thing that clears a retirement
-parley purge <agent>                  DESTROY an agent and everything it was party to
-parley export <conversation>          every message in a discussion, across agents
-parley force-conclude <conv> [<reason>]  close a conversation now, over its participants' votes
-parley prune                          apply the retention policy now
-parley instruct <agent> <words>       give an agent a person's words as a turn; it may decline
-parley start <agent>                  ask the machine that holds an agent to start it
-parley archive <conversation>         take a conversation off the list; deletes nothing
-parley unarchive <conversation>       put an archived conversation back
-parley destroy <conversation>         DESTROY a conversation and every message in it
+parley open                           conversations with an exchange still open, and who is in
+                                      them; what stopping the broker would interrupt
+parley waiting <agent|role>           how many messages and polls await an agent
 parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
 parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
-parley refusals                       what the message size cap refused
-parley clarifications                 how deep clarification went, and whether a cap binds
-parley results                        what Results reported: outcomes, and what blocked
-parley flags                          open work nobody collected or nobody is moving, and
-                                      conversations waiting only on somebody's vote
-parley waiting <agent|role>           how many messages and polls await an agent
-parley open                           conversations with an exchange still open, and who is in
-                                      them; what stopping the broker would interrupt
-parley instructions [<agent>]         what you told your agents, what became of each, and what
-                                      they said back. A turn can outlast the call that asked for
-                                      it, so "still running" is an ordinary answer and this is
-                                      where the reply turns up afterwards
 parley --help                         the same list, on stdout, exiting zero
 ```
 
-`enroll` configures several repositories at once, and is a person's command rather than an
-agent's for the same reason the rest of this file is: it writes the launch configuration that
-decides what an agent *is*. Scanning writes a manifest, somebody fills in what each repository
-owns, `plan` says what would change and `apply` changes it.
+`registry` is the whole roster, including the folder each agent works in. The roster agents see
+leaves that out on purpose. It is how you tell two similar names apart, and how you find the
+repository behind a name.
 
-**It never composes an `owns` line and never rewrites a `## Peers` section it did not write.** The
-first because SPEC.md §17 question 10 makes that field worth reading only when a person meant it;
-the second because the block carries project rules no tool can tell apart from the roster around
-them. Reading the roster is still `/parley:write-peers`, and it comes last — every agent that
-registers makes every block already written stale, so onboarding *n* repositories one at a time
-rewrites the first one's block *n* times.
+`open` lists conversations with work still open, and who is in them. It shows identifiers and
+names, not message text. To read what was said, the person opens the conversation in the terminal
+or the web UI.
 
-`autostart` is what stops "nothing works until somebody runs `parley serve`" being a thing a
-person has to remember. It installs a scheduled task on Windows, a systemd user unit on Linux,
-or a launch agent on macOS.
+## The broker
 
-**All three are user-level and none needs administrator rights.** That is worth saying because
-the opposite is widely assumed, and because it was assumed here: `schtasks.exe /Create` refuses
-with "Access is denied" from an ordinary shell, while the same task registered through the Task
-Scheduler API from the same shell succeeds. Parley uses the API. What genuinely needs privilege
-is a task that runs elevated or as SYSTEM, and a broker needs neither -- it binds a loopback
-port and writes under the user's own profile.
+Every command except `serve`, `autostart` and `project` is a client. One process owns the store and
+everything else connects to it:
 
-**What it costs is that the broker starts at logon and stops at logout.** For a machine somebody
-works at that is exactly right: the agents are editor sessions, and there are none when nobody
-is signed in. For a server that must answer with nobody signed in it is wrong, and the answer
-there is a real service, which does need privilege.
+```
+parley --broker <host:port> <command>
+```
 
-`serve` and `up` are the two that do not return.
+`--broker` defaults to `PARLEY_BROKER`, and then to the project's own broker. Most of the time
+nothing needs setting. If nothing is listening, every command says so and says how to start one.
+**That is a broker nobody started, not a mistake in what you typed.**
 
-`serve` is the broker. It opens the store, migrates it, and serves every agent and node in the
-project. Nothing else opens the file - so this is also the only command that can create one, and
-the only one that takes `--db` - which is for testing only, since a deployment's stores are
-named with `parley project add`.
+## Projects
 
-`up` is this machine's node. It tells the broker the machine is here, which is what makes the
-agents registered to it startable rather than stranded, and starts one when a question arrives
-for it. What it can start comes from `node.json`, on this machine - the broker never holds a
-command line for a box it is not on. Ctrl+C stops the node and every agent it started.
+A machine can run several Parley deployments at once. Each is a *project*, with its own store, its
+own port and its own agents, and none can see the others. Nothing about a project crosses the wire,
+and the same agent name may appear in two projects without either knowing.
 
-**It spends money while nobody is watching.** That is the whole feature and it is also the whole
-risk: each turn is a real agent session on the person's account. Do not start it because it
-seems useful; start it when the person asks. It prints what each turn cost, and
-`invocations` records the same numbers for reading back later.
+A project is created in the terminal. Naming it is the whole of it: its store and its port are
+derived and claimed for you. After that, commands find it by name:
 
-`registry` is the whole roster, including the workspace directory each agent works in - which
-the agent-facing roster deliberately withholds. It is how you tell two similarly named agents
-apart, and how you find the repository behind a name.
+```
+parley
+parley --project orders registry
+```
 
-`retire` makes that agent's server refuse to start; the person running it will see a
-configuration error, not a crash. `reinstate` is the only way back.
+A command acts on the project `--project` names. Failing that, on `PARLEY_PROJECT`, which `parley
+use <name>` prints the line to set for one terminal. Failing that, on the one the repository it
+runs in names in `.mcp.json`, when exactly one of those is a project this machine has. Failing
+that, on the only project. With several and nothing choosing, **every command refuses and lists
+them**, because picking silently would act on a deployment nobody asked for. On such a machine,
+each command says on standard error which project it acted on, and why.
 
-`purge` is the narrow complement to it, not a stronger version. Retirement costs a name
-that can never be registered again and a row that outlives the repository, and it buys
-the record of what that agent said and every counterparty's history of dealing with it.
-An agent that never traded has nothing to buy, so purge deletes those and refuses
-everything else - naming the table and column that held it, so the refusal is something
-the person can act on. It never deletes an exchange or a message to make room.
+**Creating, changing and removing a project are done in the terminal, not on the command line.**
+`parley project list` stays, because it reads and changes nothing.
 
-## Retention, and the thing that goes wrong
+Removing a project **deletes nothing**: not the store, not any repository's launch configuration.
+Destroying is a separate act. It waits for the broker to stop, deletes the store, and lists the
+repositories that were agents in it. It takes the project's own name typed back.
 
-`prune` brings the next sweep forward. It does not define the policy - the agents' servers apply
-it on every sweep, on their own, using `PARLEY_RETENTION_IDLE_HOURS` and
-`PARLEY_RETENTION_MAX_AGE_HOURS` from the environment each server was launched with. Three days
-idle and thirty days maximum age if unset.
+## Enrolling
 
-So `prune` prints the policy it applied before it prints what it removed. Read that line. If it
-does not match what the servers were launched with, the numbers you are looking at are your
-shell's, not the deployment's, and the agents have been quietly enforcing something else.
+`enroll` configures several repositories at once. It is a person's command, not an agent's, because
+it writes the launch configuration that decides what an agent *is*. It finds the git repositories
+under a folder, offers them, and configures, catalogues and starts the ones chosen, so that each
+registers itself. The terminal does the same from inside a project, as *Enroll agents from folders*
+(Alt+f in the agents list), and Alt+a adds one repository.
 
-**It removes text permanently.** Export first if the discussion is worth keeping - the export is
-a file the person owns, and it is the only copy that outlives the policy.
+**Enrolling a repository is the consent to start it.** A catalogued checkout can be started by a
+peer's request with nobody watching, which spends whatever that agent costs to run. The command
+says so and names the count before it configures anything.
 
-A floor bounds it in the other direction and is not configurable: no amount of tightening
-deletes a message nobody has collected yet, anything on an exchange that is still open, the
-request a result nobody has collected yet carries back, or the recent rows deduplication is still
-reading.
+**It never writes an `owns` line, and never rewrites a `## Peers` section it did not write.** The
+agent is asked what it owns once it is running. Reading the roster is still `/parley:write-peers`,
+and it comes last: every agent that registers makes every block already written out of date.
 
-## The caps, and the evidence for them
+## Starting the broker at logon
 
-Two commands report what a limit actually did. Neither changes anything, and both
-exist because a number nobody measured is a number argued from taste.
+`autostart` stops "nothing works until somebody runs `parley serve`" being something a person has
+to remember. It installs a scheduled task on Windows, a systemd user unit on Linux, or a launch
+agent on macOS.
 
-`refusals` is the evidence for the message size cap. It reports, per agent and message type,
-how often a message was refused for length, the worst case and the mean, and the cap in force at
-the time. No refused text is kept anywhere - only how long it was - because storing the payload
-that was refused for being too long would retain exactly what the cap exists to keep out. If
-somebody wants the cap raised, this is what the argument should be made from.
+**None of them needs administrator rights.** They are user-level. What genuinely needs privilege
+is a task that runs elevated or as SYSTEM, and a broker needs neither.
 
-`clarifications` is the same idea for the other cap, and it reads a question the spec has left
-open rather than settling one. It reports how deep clarification actually goes and how often an
-exchange reached its limit.
+**The cost is that the broker starts at logon and stops at logout.** That is right for a machine
+somebody works at. A server that must answer with nobody signed in needs a real service, which
+does need privilege.
 
-Read the caps it prints beside the distribution, because a cap censors its own evidence: depths
-pile up at whatever limit was in force, whether the true need was one more or forty more. A
-distribution with a heap at the top is a truncated measurement, not a finding. Raising the cap
-far above any plausible need and watching where depth actually settles is the only way to learn
-what it should be - and if depth is almost always zero, the cap was never what kept it low.
+**`parley autostart install` serves every project.** One process runs each project's broker, and
+this machine's node in each of them. It starts a project named later within seconds. `parley
+autostart status` says what is installed. `--project` narrows it to one project, for testing.
 
-`results` is the one that points at something a person can fix. It reports what Results said,
-item by item: how much was done, answered or acknowledged, and how much came back blocked -
-and on what, `missing_information`, `conflict` or `permission`. A blocker is not an agent
-behaving badly. It is the protocol handing a person the one thing no agent could resolve, and
-the Result's text says exactly what is needed. Read the blocked ones first.
+## serve and up
 
-`flags` is what needs a person *now*. Nothing in Parley times out, so work that has stopped
-moving is not closed for you - it is flagged: a message its recipient has not collected past its
-threshold, an open exchange where nobody has sent anything for too long, work owed by an agent
-that has been retired, or a conversation whose work is all closed and which is waiting only on a
-participant saying whether it is finished. A flag on work names the exchange and who holds the
-next move; a flag on a vote names the conversation and who has not answered. Starting the agent,
-answering what it is waiting on, or `force-conclude` with a reason are the remedies.
+`serve` and `up` are the two commands that do not return.
 
-The cap is set per agent, by `PARLEY_CLARIFY_CAP` in that repository's `.mcp.json`, and it is the
-**requester's** cap that governs an exchange. Unset, there is no cap. Raising it in one repository widens only the requests
-that repository sends. To measure across a project, raise it everywhere - and check the range this
-command prints, because a half-applied change shows up there as two different caps in force.
+`serve` is the broker. It opens each project's store, migrates it, and serves every agent and node
+in that project. Nothing else opens a store, and **no option anywhere names one**: a project's store
+is `parley.db` inside its own folder.
+
+`up` is this machine's node. It tells the broker the machine is here, which makes the agents on it
+startable, and starts one when a request arrives for it. What it can start comes from `node.json`.
+There is **one per machine**, in the same folder as the projects, and every project starts from it.
+`PARLEY_NODE_CONFIG` or `--node-config` names a different file. Enrolling writes its entries, so a
+person rarely edits it. Ctrl+C stops the node and every agent it started.
+
+**It spends money while nobody is watching.** That is the whole feature and also the whole risk:
+each turn is a real agent session on the person's account. Do not start it because it seems
+useful. Start it when the person asks.
+
+## Retention
+
+Pruning brings the next sweep forward. It does not set the policy. The broker applies it on every
+sweep, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
+environment the broker was started with: three days idle and thirty days maximum age if unset.
+
+**It removes text permanently.** If a discussion is worth keeping, the person should save it first
+(Alt+c in the terminal, or "Take this away as text" in the web UI). That copy is a file they own,
+and it is the only one that outlives the policy.
+
+A floor bounds it the other way, and is not configurable. Nothing deletes a message nobody has
+collected yet, anything on an exchange that is still open, the request a result nobody has
+collected yet carries back, or the recent rows deduplication still reads.
+
+## The health reports
+
+The Health view (Alt+y in the terminal, the Health page in the web UI) is where a person reads what
+a deployment did. None of it changes anything.
+
+- **Flags** are what needs a person *now*. Nothing in Parley times out, so work that has stopped is
+  not closed for you. It is flagged: a message not collected past its threshold, an open exchange
+  nobody has touched for too long, work owed by a retired agent, or a conversation waiting only on
+  a participant saying it is finished. The remedies are starting the agent, answering what it is
+  waiting on, or closing the conversation with a reason.
+- **Results** say what came back, item by item: done, answered, acknowledged, or blocked, and on
+  what (`missing_information`, `conflict` or `permission`). A blocker is not an agent behaving
+  badly. It is the protocol handing a person the one thing no agent could settle. Read the blocked
+  ones first.
+- **Size refusals** are the evidence for the message size cap: how often a message was refused for
+  length, the worst case and the average. No refused text is kept, only its length. If somebody
+  wants the cap raised, this is what the argument should be made from.
+- **Clarifications** show how deep clarification goes and how often an exchange reached its limit.
+  By default there is no cap. Where a deployment has set one, read it beside the numbers, because a
+  cap hides its own evidence: depths pile up at whatever limit was in force.
 
 ## Reporting back
 
-These commands print for a person. Summarise what came back; do not re-paste an export in full
-into the session unless the person asks for it, and say plainly when something was deleted.
+Summarise what a command printed. Do not paste a whole transcript into the session unless the
+person asks for it. When the person needs to act on a screen, say exactly where: the terminal's
+key, or the web UI's page.

@@ -27,7 +27,7 @@ public sealed class OwingIsSaidTests
 {
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     [Fact]
@@ -35,7 +35,7 @@ public sealed class OwingIsSaidTests
     {
         // Pinned because both wrong answers are tempting and one of them was proposed. "Fire and forget"
         // is true of every send, since nobody waits (§4.2); what a Request adds is a Result owed.
-        Assert.Contains("owe a result", Owing.Requesting, StringComparison.Ordinal);
+        Assert.Contains("owe you an answer", Owing.Requesting, StringComparison.Ordinal);
         Assert.DoesNotContain("fire and forget", Owing.Requesting, StringComparison.OrdinalIgnoreCase);
     }
 

@@ -37,9 +37,8 @@ public sealed class GuardOwnershipTests
     [Fact]
     public void An_ask_is_held_to_being_said_at_all_and_to_no_length_this_surface_invented()
     {
-        // The floor that used to live here was `done_when`'s twenty characters, and it went with the
-        // field in 0.7: §5.1 asks for the ask and nothing else, and a receiver that cannot scope one
-        // sends a Clarify. So the only rule left is that something was typed -- and a short ask is
+        // §5.1 asks for the ask and nothing else, and a receiver that cannot scope one sends a
+        // Clarify. So the only rule is that something was typed -- and a short ask is
         // admitted, which is the half worth pinning. A surface that grew its own minimum back would
         // be refusing what the protocol accepts, and nothing but this would notice.
         Assert.NotNull(Participation.RequiredProblem(string.Empty));
@@ -49,13 +48,20 @@ public sealed class GuardOwnershipTests
     }
 
     [Fact]
-    public void The_ownership_limit_is_the_schemas_rather_than_a_number_typed_here()
+    public void The_ownership_rule_is_the_schemas_rather_than_one_written_here()
     {
-        // The cap is a CHECK in the broker's schema. A second copy here would eventually disagree
+        // The rule is a CHECK in the broker's schema. A second copy here would eventually disagree
         // with the one actually enforced, and the disagreement would surface as a registration
         // refused at launch -- which reads as an agent that simply never appeared.
-        Assert.Null(Adding.OwnsProblem(new string('a', EnrollmentPlan.OwnsLimit)));
-        Assert.NotNull(Adding.OwnsProblem(new string('a', EnrollmentPlan.OwnsLimit + 1)));
+        //
+        // It used to be a length, and 0.33.0 removed the length. The field therefore has to apply
+        // the rule that is left -- that the statement renders as what it says, on one line -- or it
+        // applies nothing at all while still looking like a guard.
+        Assert.Null(Adding.OwnsProblem("Carts and order totals. No tax, no stock."));
+        Assert.Null(Adding.OwnsProblem(new string('a', 4_000)));
+
+        Assert.NotNull(Adding.OwnsProblem("Carts." + (char)0x2028 + "No tax."));
+        Assert.NotNull(Adding.OwnsProblem("Carts." + (char)0x202E + "No tax."));
     }
 
     [Fact]
@@ -68,16 +74,8 @@ public sealed class GuardOwnershipTests
         Assert.Null(Participation.ResultProblem("because the totals are computed downstream"));
     }
 
-    [Fact]
-    public void A_seat_name_is_checked_by_the_grammar_that_makes_agent_names()
-    {
-        // Not a pattern written here. A name this accepted and the registry did not would be a
-        // join that failed at the broker, and one the registry accepted that this refused would be
-        // a person unable to sit down for no stated reason.
-        Assert.Null(AgentsRegion.NameProblem("arvind"));
-        Assert.NotNull(AgentsRegion.NameProblem("Arvind Knudsen"));
-        Assert.NotNull(AgentsRegion.NameProblem(string.Empty));
-    }
+    // `A_seat_name_is_checked_by_the_grammar_that_makes_agent_names` was here. There is no seat name to type:
+    // the broker provides the person seat.
 
     [Fact]
     public void A_role_is_checked_by_the_same_rule_the_enrolment_command_applies()

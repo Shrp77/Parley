@@ -33,19 +33,15 @@ else
     </ul>
 
     <p>
-        Every participant's half goes with it, including peers who did nothing but take part.
-        That is what deleting a conversation means: one with a side removed is a record that
-        misleads whoever reads it next. <strong>It cannot be undone.</strong>
-    </p>
+        Every participant's half goes with it. <strong>It cannot be undone.</strong>    </p>
 
     @if (Model.Conversation.HasOpenExchange)
     {
         @* The consequence an operator is least likely to predict, which is why it is not a
            footnote. The exchange is not closed: it stops existing. *@
         <p class="warning">
-            An exchange in this conversation is still open. Destroying it does not close that
-            exchange: the exchange stops existing, so whoever is waiting is
-            <strong>never told anything at all</strong>.
+            An exchange in this conversation is still open. Destroying it does not close it:
+            whoever is waiting is <strong>never told</strong>.
         </p>
     }
 

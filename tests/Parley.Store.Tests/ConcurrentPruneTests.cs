@@ -127,9 +127,9 @@ public sealed class ConcurrentPruneTests : IDisposable
     [Fact]
     public async Task Losing_the_race_is_not_reported_as_the_floor_holding_traffic()
     {
-        // The defect this test exists for. The first version of the accounting folded "another
-        // sweep removed it" into "the floor kept it", so six concurrent sweeps over thirty
-        // thousand spent messages had four of them reporting thirty thousand held. An operator
+        // The accounting must not fold "another sweep removed it" into "the floor kept it", or six
+        // concurrent sweeps over thirty thousand spent messages would have four of them reporting
+        // thirty thousand held. An operator
         // reading that would be told their agents had stopped collecting their inboxes and their
         // exchanges were stuck open, on a deployment where nothing at all was wrong.
         //

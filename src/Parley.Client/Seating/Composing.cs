@@ -2,29 +2,6 @@ using Parley.Core;
 
 namespace Parley.Client.Seating;
 
-/// <summary>What typing to one recipient would do.</summary>
-public enum Act
-{
-    /// <summary>A Request. Opens an exchange the recipient will owe a Result on.</summary>
-    Ask = 0,
-
-    /// <summary>A Clarify on a request this person sent. The turn goes back to the recipient.</summary>
-    Clarify = 1,
-
-    /// <summary>A Result. Closes the exchange the recipient opened.</summary>
-    Answer = 2,
-
-    /// <summary>A Clarify on a request this person holds. The turn goes back, and nothing closes.</summary>
-    AskBack = 3
-}
-
-/// <summary>One recipient and what Enter would do to them.</summary>
-/// <param name="Peer">Who it goes to.</param>
-/// <param name="Act">What it would be recorded as.</param>
-/// <param name="Exchange">The exchange it lands in, or <see langword="null"/> when it opens one.</param>
-/// <param name="Choosable">Whether this recipient's act is the one the person may take the other side of.</param>
-public sealed record Addressed(AgentName Peer, Act Act, long? Exchange, bool Choosable);
-
 /// <summary>What became of a send.</summary>
 /// <param name="Count">How many recipients got it.</param>
 /// <param name="Says">The sentence to put in front of the person.</param>
@@ -35,32 +12,20 @@ public sealed record Addressed(AgentName Peer, Act Act, long? Exchange, bool Cho
 /// </remarks>
 public sealed record Sent(int Count, string Says);
 
-/// <summary>What a send would cost, in the units the protocol counts.</summary>
-/// <param name="Opens">How many exchanges it opens, each owing a Result.</param>
-/// <param name="Closes">How many it closes.</param>
-/// <param name="HandsBack">How many hand a turn back without closing anything.</param>
-/// <remarks>
-/// Counted in exchanges rather than messages because that is what SPEC.md §5.5 makes a plural ask: N recipients
-/// is N exchanges, each an obligation somebody owes a Result on. A person deciding whether to press Enter is
-/// deciding about obligations, not about lines of text.
-/// </remarks>
-public sealed record Cost(int Opens, int Closes, int HandsBack);
-
 /// <summary>
-/// One line of text, its recipients, and what Enter would do to each.
+/// One line of text and who it goes to. Every recipient receives it as a Request (SPEC.md §5.6).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The act is derived, never chosen first.</b> A person knows what they want to say; which of §5.1's Request,
-/// §5.2's Clarify and §5.3's Result that amounts to is bookkeeping about who owes whom, and
-/// <see cref="Pairing"/> already answers it. One line to three recipients may be three different acts and each
-/// is correct for its own pair.
+/// <b>The surface does not decide what a line answers.</b> Deriving an act from who owed whom would, with several of
+/// an agent's questions open, file the reply against whichever exchange the wait-for graph listed first — the store's
+/// order, nobody's choice — and a Result asks nothing back.
 /// </para>
 /// <para>
-/// <b>One case is not derivable and is never guessed.</b> Holding a Request, what somebody types may be the
-/// answer — which closes the exchange — or a question they need settled first, which hands the turn back. A wrong
-/// guess closes work that was never done, and an exchange closed on work that was not done is a record asserting
-/// it was. So both are offered, the default is said, and <see cref="Answering"/> takes the other.
+/// <b>Only the agent can know what its questions were for, so the agent decides.</b> What the person types is a
+/// Request, which the agent must answer, and the agent names in its reply which of its own questions the words settled.
+/// A person who wants to answer one particular question still can, where a surface lets them pick it (the web UI's
+/// inbox, the terminal's delivery dialogs): that is the person's choice, not a guess.
 /// </para>
 /// <para>
 /// <b>Addressing never reaches the text.</b> <see cref="Recipients"/> is resolved agents and <see cref="Text"/>
@@ -79,7 +44,6 @@ public sealed class Draft
     /// </remarks>
     public const string All = "all";
 
-    private readonly Dictionary<AgentName, bool> _answering = [];
     private readonly List<string> _chips = [];
 
     private bool _narrowed;
@@ -95,7 +59,7 @@ public sealed class Draft
         Recipients = [.. pairs.Select(p => p.Peer)];
     }
 
-    /// <summary>The pair state this draft derives its acts from.</summary>
+    /// <summary>The pair state of every participant, which is who the draft may go to.</summary>
     public IReadOnlyList<PairState> Pairs { get; }
 
     /// <summary>What the person has typed, exactly as typed.</summary>
@@ -110,9 +74,7 @@ public sealed class Draft
     /// <remarks>
     /// <para>
     /// <b>Completing fills the name in, because a completion that makes text vanish reads as a broken key.</b>
-    /// The first version resolved the agent and deleted what had been typed — the recipient was recorded and
-    /// correct, and the owner pressed Tab, saw an empty box, and reported that Tab did nothing. What a person
-    /// is looking at when they press it is the thing they typed.
+    /// What a person is looking at when they press Tab is the thing they typed.
     /// </para>
     /// <para>
     /// <b>And it is still never parsed back out.</b> This records the exact spelling the surface itself wrote,
@@ -145,13 +107,10 @@ public sealed class Draft
     /// moment a chip is recorded it is therefore the last occurrence of itself, by construction.
     /// </para>
     /// <para>
-    /// <b>Removing the first was wrong, and the review gate caught it by probe.</b> Somebody who had typed
-    /// the agent's name into their sentence and then completed that same agent had the words they wrote
-    /// taken out of the middle of the message, while the addressing the surface wrote was the part that
-    /// went on to be sent — the exact inversion of this method's purpose. The paragraph above used to end
-    /// "so a person who writes an agent's name again on purpose keeps the second one", which was true in
-    /// the only case it considered and backwards in the one that mattered: what they keep is the one they
-    /// typed.
+    /// <b>Removing the first would invert the method's purpose.</b> Somebody who typed the agent's name into
+    /// their sentence and then completed that same agent would have the words they wrote taken out of the
+    /// middle of the message while the addressing the surface wrote was sent. What they keep is the one
+    /// they typed.
     /// </para>
     /// <para>
     /// <b>A chip the person has since edited is left alone</b>, and that is deliberate. It no longer matches
@@ -204,7 +163,7 @@ public sealed class Draft
     /// <param name="peer">The resolved agent.</param>
     /// <remarks>
     /// <para>
-    /// <b>The first <c>@</c> replaces and the rest add</b>, which is what the owner's own example means:
+    /// <b>The first <c>@</c> replaces and the rest add</b>, which is what this example means:
     /// <c>@billing, @inventory; I want this</c> targets those two, so the second sigil cannot be a second
     /// replacement. Nothing says "and everyone else as well", because addressing somebody in particular is the
     /// act of not addressing the room.
@@ -225,9 +184,8 @@ public sealed class Draft
     /// <param name="peer">The resolved agent.</param>
     /// <remarks>
     /// What <c>/add</c> does. It widens whatever is addressed rather than replacing it, and it does not count as
-    /// narrowing: a person who adds an agent to a message meant for the room means the room and that agent. The
-    /// added agent has no pair state, so <see cref="Plan"/> gives it a Request — which is exactly right, since
-    /// membership is derived (§5.0) and an agent joins by being party to an exchange.
+    /// narrowing: a person who adds an agent to a message meant for the room means the room and that agent. It is
+    /// sent a Request like everyone else, which is how an agent joins (§5.0): membership is derived from exchanges.
     /// </remarks>
     public void Widen(AgentName peer) => Recipients = [.. Recipients.Append(peer).Distinct()];
 
@@ -237,65 +195,5 @@ public sealed class Draft
     {
         Recipients = [.. Pairs.Select(p => p.Peer)];
         _narrowed = false;
-    }
-
-    /// <summary>Whether a recipient in the answer-or-ask-back state will be answered rather than asked back.</summary>
-    /// <param name="peer">The recipient.</param>
-    /// <returns>Whether Enter would close their exchange.</returns>
-    /// <remarks>
-    /// Defaults to answering, because holding a request and typing is far more often an answer than a question
-    /// back. Said on screen rather than assumed, and one keystroke takes the other.
-    /// </remarks>
-    public bool Answering(AgentName peer) => !_answering.TryGetValue(peer, out var chosen) || chosen;
-
-    /// <summary>Takes the other side of the one choice this draft offers.</summary>
-    /// <param name="peer">The recipient whose act to flip.</param>
-    public void Flip(AgentName peer) => _answering[peer] = !Answering(peer);
-
-    /// <summary>What Enter would do, one entry per recipient.</summary>
-    /// <returns>The recipients and their acts, in the order the pairs were given.</returns>
-    public IReadOnlyList<Addressed> Plan()
-    {
-        var planned = new List<Addressed>();
-
-        foreach (var peer in Recipients)
-        {
-            var pair = Pairs.FirstOrDefault(p => p.Peer == peer)
-                ?? new PairState(peer, null, Turn.Nobody);
-
-            // **Three states, not two, and the third is what lost the owner's messages.** A move owed by this
-            // person is a Result only where the peer asked: where this person asked and the peer clarified,
-            // the move owed is the answer to that clarification, which is a Clarify — §5.3 gives the Result to
-            // the receiver alone. And where the peer holds the move there is nothing to add to that exchange
-            // at all, so typing opens a new one rather than being refused with somebody's words in it.
-            planned.Add(pair switch
-            {
-                { Turn: Turn.Mine, Asked: false } => new Addressed(
-                    peer,
-                    Answering(peer) ? Act.Answer : Act.AskBack,
-                    pair.OpenExchange,
-                    Choosable: true),
-                { Turn: Turn.Mine, Asked: true } => new Addressed(
-                    peer,
-                    Act.Clarify,
-                    pair.OpenExchange,
-                    Choosable: false),
-                _ => new Addressed(peer, Act.Ask, null, Choosable: false),
-            });
-        }
-
-        return planned;
-    }
-
-    /// <summary>What the plan costs, in exchanges.</summary>
-    /// <returns>How many exchanges open, close, and have a turn handed back.</returns>
-    public Cost Costs()
-    {
-        var plan = Plan();
-
-        return new Cost(
-            plan.Count(a => a.Act == Act.Ask),
-            plan.Count(a => a.Act == Act.Answer),
-            plan.Count(a => a.Act is Act.Clarify or Act.AskBack));
     }
 }

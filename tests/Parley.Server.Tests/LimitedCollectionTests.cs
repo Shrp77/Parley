@@ -10,9 +10,9 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Found by the review gate, lens 1 run 1.18. <c>parley_inbox</c> offers a limit, and a collection freed the wake bound
-/// whatever it left: probed over a loopback broker with a joined node, orders collected one of two Requests and
-/// detached, nothing was pending, the node had been asked once, and the second Request waited with no turn coming.
+/// <c>parley_inbox</c> offers a limit, and a collection must not free the wake bound
+/// whatever it left: with a joined node, orders collecting one of two Requests and
+/// detaching must not leave nothing pending, the node asked once, and the second Request waiting with no turn coming.
 /// </para>
 /// <para>
 /// Through the real <c>DrainInbox</c> handler, because the decision to ask again lives there.
@@ -67,7 +67,8 @@ public sealed class LimitedCollectionTests
         await using (node)
         await using (sender)
         {
-            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+            // The resident its node started (SPEC.md §11.7): one opened outside Parley is asked for nothing at all.
+            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node))
             {
                 var reply = await resident.Client.DrainInboxAsync(
                     new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 1 }, cancellationToken: token);
@@ -90,7 +91,8 @@ public sealed class LimitedCollectionTests
         await using (node)
         await using (sender)
         {
-            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token))
+            // Started by its node, as above, so that asking for nothing more is a decision rather than §11.7's silence.
+            await using (var resident = await AttachedClient.AttachAsync(broker, "orders@alpha", cancellationToken: token, startedBy: node))
             {
                 var reply = await resident.Client.DrainInboxAsync(
                     new Wire.DrainInboxRequest { Agent = "orders@alpha", Limit = 2 }, cancellationToken: token);

@@ -9,9 +9,8 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This used to be a lease on a timestamp, and the suite it replaces tested the arithmetic of
-/// one: renewal, lapse, and the string comparison the two halves depended on agreeing about.
-/// None of that exists now. A connection is open or it is not, so what is left to check is that
+/// An attachment is not a lease on a timestamp, so there is no renewal, lapse or string comparison
+/// to test. A connection is open or it is not, so what there is to check is that
 /// the two writers agree about which column says so and that retirement still outranks both.
 /// </para>
 /// <para>
@@ -148,10 +147,9 @@ public sealed class AttachmentTests : IDisposable
         // stranded, which is the difference between "nobody has this open" and "there is nothing
         // left that could open it".
         //
-        // The node is joined explicitly, because that is now the only thing that marks a machine
-        // reachable. Attaching an agent used to do it as a stopgap for there being no node
-        // process, which meant a deployment with no supervisor anywhere reported every idle
-        // agent as startable when nothing could start one.
+        // The node is joined explicitly, because that is the only thing that marks a machine
+        // reachable. Attaching an agent does not, or a deployment with no supervisor anywhere
+        // would report every idle agent as startable when nothing could start one.
         await new NodeRepository(_connection).JoinAsync(
             new NodeRecord("test", "test-os", null, null, null, Connected: true, T0),
             T0,

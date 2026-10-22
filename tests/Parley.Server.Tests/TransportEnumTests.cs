@@ -43,12 +43,12 @@ public sealed class TransportEnumTests
             { typeof(Core.Vote), typeof(Wire.Vote) },
             { typeof(Store.RequestRejection), typeof(Wire.RequestRejection) },
             { typeof(Core.PurgeVerdict), typeof(Wire.PurgeVerdict) },
-            { typeof(Core.InstructionOutcome), typeof(Wire.InstructionOutcome) },
             { typeof(Core.TransitionError), typeof(Wire.TransitionError) },
             { typeof(Broker.ClosureError), typeof(Wire.ClosureError) },
             { typeof(Core.WakeOutcome), typeof(Wire.WakeOutcome) },
             { typeof(Core.FileRejection), typeof(Wire.FileRejection) },
-            { typeof(Core.PlaceOutcome), typeof(Wire.PlaceOutcome) }
+            { typeof(Core.PlaceOutcome), typeof(Wire.PlaceOutcome) },
+            { typeof(Core.SettleProblem), typeof(Wire.SettleProblem) }
         };
 
     [Theory]

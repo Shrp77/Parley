@@ -7,14 +7,14 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 11: whether the two writers agree.
+/// Whether the two writers agree.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <c>Enrolment</c> exists because two writers of these files "would agree today and differ in six
-/// months" — the terminal adds one repository at a time and <c>enroll apply</c> drives a manifest in
-/// bulk. This feature gave the bulk path its own hold, its own decision function and its own
-/// catalogue handling, which is exactly the drift that argument warns about, and no probe has asked
+/// months" — the terminal adds one repository at a time and <c>parley enroll</c> drives a whole
+/// directory in bulk. The bulk path has its own hold, its own decision function and its own
+/// catalogue handling, which is exactly the drift that argument warns about, so this asks
 /// whether what they write is still the same thing.
 /// </para>
 /// <para>
@@ -61,7 +61,10 @@ public sealed class ProbeElevenTests : IAsyncDisposable
 
     private string Checkouts => Path.Combine(_root, "checkouts");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **A root, not the old manifest file.** Writing through a path ending in `projects.json`
+    // creates a *directory* of that name and every read of it afterwards is refused — which is
+    // why `ProjectManifest.Write` now refuses it too.
+    private string ManifestPath => _root;
 
     private string Catalogue => Path.Combine(_root, "alpha-node.json");
 
@@ -75,48 +78,39 @@ public sealed class ProbeElevenTests : IAsyncDisposable
             new EnrollmentEntry(Workspace(name), agent, "What it owns. Not what it does not.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             Catalogue,
             Path.Combine(Workspace(name), "CLAUDE.md"),
             TestContext.Current.CancellationToken,
-            [Project()],
             ManifestPath);
 
-    /// <summary>What the command does: the same repository, through a manifest.</summary>
-    private async Task<int> CommandAsync(string name, string agent)
-    {
-        var manifest = Path.Combine(_root, $"enrol-{name}.json");
+    /// <summary>The row either surface hands to the bulk writer, ticked and approved.</summary>
+    /// <remarks>
+    /// It was a manifest the command wrote and read straight back; it is the row that file held. The
+    /// drift this probe is about is between two <i>writers</i>, and neither of them was ever the file.
+    /// </remarks>
+    private EnrollmentEntry Chosen(string name, string agent) =>
+        new(
+            Workspace(name).Replace(Path.DirectorySeparatorChar, '/'),
+            agent,
+            "What it owns. Not what it does not.",
+            Unattended: false)
+        {
+            Enroll = true,
+        };
 
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace(name).Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "{{agent}}",
-                  "owns": "What it owns. Not what it does not.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
-        return await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+    /// <summary>What the command does: the same repository, in bulk.</summary>
+    private async Task<int> CommandAsync(string name, string agent) =>
+        await EnrollCommand.EnrolAsync(
+            [Chosen(name, agent)],
+            describe: false,
             new Resolved(Catalogue, ValueSource.Argument),
             new StringWriter(),
             new StringWriter(),
-            TestContext.Current.CancellationToken,
             Project(),
-            [Project()],
-            ManifestPath);
-    }
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
     private async Task<JsonNode> EntryAsync(string name) =>
         JsonNode.Parse(await File.ReadAllTextAsync(
@@ -134,8 +128,8 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         Assert.Equal(0, await CommandAsync("byCommand", "orders"));
 
         // Normalised on the one thing that legitimately differs: they are two repositories, so their
-        // workspaces differ and must. The first version of this probe compared them raw and reported
-        // that as a finding — a probe that has not said what it expects to differ cannot tell drift
+        // workspaces differ and must. Comparing them raw would
+        // report that as drift — a probe that has not said what it expects to differ cannot tell drift
         // from its own fixture.
         var terminal = (await EntryAsync("byTerminal")).ToJsonString()
             .Replace("byTerminal", "X", StringComparison.Ordinal);
@@ -161,7 +155,7 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         var command = await File.ReadAllTextAsync(
             Path.Combine(Workspace("byCommand"), ".mcp.json"), TestContext.Current.CancellationToken);
 
-        // **One field cannot be equal and must not be** (018). The identity is minted per repository
+        // **One field cannot be equal and must not be.** The identity is minted per repository
         // and these are two, so comparing it would be asking two agents to be one. Both must carry one,
         // which is asserted rather than assumed, and the rest of the file is compared as before —
         // including where the member sits and how it is spelled, since those are what a diff shows.
@@ -198,37 +192,17 @@ public sealed class ProbeElevenTests : IAsyncDisposable
         var before = await File.ReadAllBytesAsync(
             Path.Combine(Workspace("byTerminal"), ".mcp.json"), TestContext.Current.CancellationToken);
 
-        var manifest = Path.Combine(_root, "enrol-again.json");
-
-        await File.WriteAllTextAsync(
-            manifest,
-            $$"""
-              {
-                "node_config": "{{Catalogue.Replace(Path.DirectorySeparatorChar, '/')}}",
-                "agents": [ {
-                  "workspace": "{{Workspace("byTerminal").Replace(Path.DirectorySeparatorChar, '/')}}",
-                  "agent": "orders",
-                  "owns": "What it owns. Not what it does not.",
-                  "unattended": false,
-                  "enroll": true,
-                  "owns_approved": true
-                } ]
-              }
-              """,
-            TestContext.Current.CancellationToken);
-
         var output = new StringWriter();
 
-        await EnrollCommand.RunAsync(
-            ["apply", manifest],
-            selectAll: null,
+        await EnrollCommand.EnrolAsync(
+            [Chosen("byTerminal", "orders")],
+            describe: false,
             new Resolved(Catalogue, ValueSource.Argument),
             output,
             new StringWriter(),
-            TestContext.Current.CancellationToken,
             Project(),
-            [Project()],
-            ManifestPath);
+            ManifestPath,
+            TestContext.Current.CancellationToken);
 
         Assert.Contains("already correct", output.ToString(), StringComparison.Ordinal);
         Assert.Equal(before, await File.ReadAllBytesAsync(

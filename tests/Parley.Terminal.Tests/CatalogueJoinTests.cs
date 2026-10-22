@@ -69,6 +69,30 @@ public sealed class CatalogueJoinTests : IDisposable
     }
 
     [Fact]
+    public void A_checkout_renamed_since_it_registered_is_not_listed_a_second_time()
+    {
+        // The broker still holds the old name until the agent attaches under the new one, and the repository already
+        // answers to the new one. The identity is what says they are one agent.
+        var machine = Catalogued.Offering("payments");
+        _machines.Add(machine);
+
+        var registered = Agent("orders@" + NodeCatalogue.Machine) with { Identity = machine.Identities["payments"] };
+
+        var rows = AgentsRegion.Join([registered], machine.Catalogue, Catalogued.Project);
+
+        Assert.Equal("orders@" + NodeCatalogue.Machine, Assert.Single(rows).Name);
+    }
+
+    [Fact]
+    public void A_registration_with_no_identity_is_matched_by_the_role_as_before()
+    {
+        var rows = AgentsRegion.Join(
+            [Agent("orders@" + NodeCatalogue.Machine)], Catalogue("orders"), Catalogued.Project);
+
+        Assert.Single(rows);
+    }
+
+    [Fact]
     public void An_agent_only_in_the_catalogue_says_it_has_not_registered()
     {
         // What adding an agent from this surface produces, and the state SC-003 promises within

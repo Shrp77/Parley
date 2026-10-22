@@ -24,8 +24,8 @@ public sealed class ServerOptionsTests
     [Fact]
     public void One_required_variable_is_enough()
     {
-        // One, where there used to be two. The database is not the adapter's business any more
-        // and the broker has a default, so the only thing a launch configuration must still say
+        // One. The database is not the adapter's business
+        // and the broker has a default, so the only thing a launch configuration must say
         // is who this process speaks for -- which is the one thing that could never be defaulted,
         // because guessing it would guess an identity.
         var options = ServerOptions.Read(Env(Minimal));
@@ -134,15 +134,12 @@ public sealed class ServerOptionsTests
     [Fact]
     public void The_sweep_interval_is_not_the_adapters_to_set()
     {
-        // Four tests used to live here: that the interval was read in seconds, that an unusable
-        // one was refused rather than defaulted, that a blank one fell back. Every one of them
-        // was about a variable this process no longer reads.
+        // This process does not read the interval, so there is no test of its parsing here.
         //
-        // The reasoning behind them was right and now applies somewhere else. The sweep enforces
-        // every deadline in SPEC.md §6, and a deployment that ran twenty of them -- one per
-        // adapter, each on its own cadence -- had twenty answers to "how often are deadlines
-        // checked" and no way to see any of them. There is one now, in the broker, and the
-        // variable is read there.
+        // The sweep enforces every deadline in SPEC.md §6, and a deployment that ran twenty of
+        // them -- one per adapter, each on its own cadence -- would have twenty answers to "how
+        // often are deadlines checked" and no way to see any of them. There is one, in the
+        // broker, and the variable is read there.
         Assert.DoesNotContain(
             typeof(ServerOptions).GetProperties(),
             p => p.Name.Contains("Tick", StringComparison.Ordinal));

@@ -5,18 +5,18 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 14: what a failed enrolment leaves behind, and whether it says so.
+/// What a failed enrolment leaves behind, and whether it says so.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Every earlier run asked what a successful run writes. An enrolment writes three files in order, and
+/// Other probes ask what a successful run writes. An enrolment writes three files in order, and
 /// the catalogue — the one that grants a node standing consent to start the repository — is written
 /// last. A failure there arrives after the launch configuration has already been replaced.
 /// </para>
 /// <para>
 /// The exception carries the reason and nothing else, so the list of what was already written is
-/// discarded with it. This repository has recorded twice, in two different features, that <i>the
-/// damage is not the failure, it is the report</i>: a run that says it failed, having made the
+/// discarded with it. <i>The damage is not the failure, it is the
+/// report</i>: a run that says it failed, having made the
 /// repository announce itself as an agent, is telling somebody the opposite of what happened.
 /// </para>
 /// </remarks>
@@ -64,7 +64,6 @@ public sealed class ProbeTwentyFiveTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             catalogue,

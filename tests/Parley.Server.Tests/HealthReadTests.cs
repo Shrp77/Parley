@@ -61,7 +61,13 @@ public sealed class HealthReadTests
 
         var operators = broker.ConnectAsOperator();
 
-        Assert.Empty((await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows);
+        // Empty of agents: the only rows an empty store holds are the two the broker writes itself (SPEC.md §12.3) —
+        // the facilitator, which the adapter marks as Parley, and the person seat.
+        var rows = (await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: token)).Rows;
+
+        Assert.Equal(
+            [Parley.Core.PersonSeat.Adapter, Parley.Core.Facilitation.Adapter],
+            rows.Select(r => r.Adapter).Order(StringComparer.Ordinal));
         Assert.Empty((await operators.ListConversationsAsync(new Wire.ListConversationsRequest(), cancellationToken: token)).Conversations);
     }
 }

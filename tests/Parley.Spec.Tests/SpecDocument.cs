@@ -7,11 +7,11 @@ namespace Parley.Spec.Tests;
 /// </summary>
 /// <remarks>
 /// CLAUDE.md calls SPEC.md the primary artifact of this repository, which makes it the one
-/// file with no automated gate: the build checks the code, and nothing checked the document.
-/// Every defect these tests look for is one that actually reached a merged commit — a section
-/// reference to a heading that had been renumbered, a schema fragment that no longer executed,
-/// two operations sharing a name across the boundary §10.2 warns about. Reviews caught them
-/// only sometimes, and a check that runs only sometimes is a convention.
+/// file the build's code checks do not reach, so these tests check the document.
+/// The defects they look for are a section
+/// reference to a heading that has been renumbered, a schema fragment that does not execute,
+/// and two operations sharing a name across the boundary §10.2 warns about. A check that
+/// runs only sometimes is a convention.
 /// </remarks>
 internal static class SpecDocument
 {

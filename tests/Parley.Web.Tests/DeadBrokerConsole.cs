@@ -38,7 +38,7 @@ public sealed class DeadBrokerConsole : WebApplicationFactory<Program>
 
             services.AddSingleton(_ => new BrokerDirectory(
                 [new ProjectSettings(
-                    ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:1", null, null)],
+                    ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:1", null)],
                 GrpcChannel.ForAddress));
         });
     }

@@ -142,10 +142,6 @@ public sealed class MessageIdentityTests
         // was rebuilt from empty in the same change, so nothing was stranded -- had it not
         // been, this failing is what would have said so.
         //
-        // It moved again in 0.5, twice: "question" became "request" (the type token is hashed),
-        // and the exchange's version joined the identity, after the exchange identifier. Migration
-        // 008 copies stored hashes verbatim rather than recomputing them, so only deduplication
-        // against a 0.4 message sent in the same minute as the upgrade is lost.
         Assert.Equal(
             "252fabab45718e0aba7f178b7f5ca460a57dc24c2d23946637c0186d8f98e4de",
             MessageIdentity.Compute(1, 0, MessageType.Request, Orders, Billing, "{}"));

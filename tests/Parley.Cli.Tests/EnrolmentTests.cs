@@ -14,7 +14,7 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// <para>
 /// <c>Enrolment</c> exists so the terminal and <c>parley enroll apply</c> write the same two
-/// files through the same code (FR-008), and the failure it prevents is not a crash: it is two
+/// files through the same code, and the failure it prevents is not a crash: it is two
 /// writers that agree today and differ in six months, leaving a repository that is an agent
 /// according to one of them.
 /// </para>
@@ -77,7 +77,7 @@ public sealed class EnrolmentTests : IDisposable
         Assert.Equal("orders", env["PARLEY_AGENT"]!.GetValue<string>());
         Assert.Equal("acme", env["PARLEY_PROJECT"]!.GetValue<string>());
 
-        // **The catalogue is keyed by the identity the enrolment minted, not by the role** (018). A role
+        // **The catalogue is keyed by the identity the enrolment minted, not by the role**. A role
         // is what one project calls this checkout, and the catalogue has no projects in it; the identity
         // is written into the repository, which is where the node reads it back from.
         var identity = AgentIdentity.Read(launch[LaunchConfiguration.IdentityMember]!.GetValue<string>());
@@ -236,10 +236,9 @@ public sealed class EnrolmentTests : IDisposable
         // The probe: withdrawing 'orders' must not take 'billing' with it, even though both are
         // in the same file and only one of them is being withdrawn.
         //
-        // **What decides is the identity the withdrawn repository declares** (018), where it used to be
-        // the name typed. That is the stronger answer to the same question: a name is what one project
-        // calls something and two checkouts can claim one, which is the case 005's gate found from the
-        // other side — a withdrawal that removed a second agent's launch entry and reported success.
+        // **What decides is the identity the withdrawn repository declares**, not the name typed.
+        // That is the stronger answer: a name is what one project
+        // calls something and two checkouts can claim one — a withdrawal that removed a second agent's launch entry and reported success.
         await Enrolment.AddAsync(
             Entry("orders", Workspace), "acme", CatalogueFile, InstructionsFile,
             TestContext.Current.CancellationToken);

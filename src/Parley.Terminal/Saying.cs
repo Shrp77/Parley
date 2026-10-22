@@ -11,10 +11,9 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <b>The message line expands and is still bounded, so this is where the rest lives.</b> A
-/// broadcast to nineteen agents reports a count, a cause and the names it was refused for, and the
-/// cause is whatever came back from the far end of a gRPC call — so the one row the line used to
-/// be was cut off mid-sentence, which the owner met and reported. The line grows to a paragraph
-/// now; past that it says how much more there is and names this.
+/// broadcast to many agents reports a count, a cause and the names it was refused for, and the
+/// cause is whatever came back from the far end of a gRPC call. The line grows to a paragraph;
+/// past that it says how much more there is and names this.
 /// </para>
 /// <para>
 /// A list rather than a label, because a label is sized to what it is given and this is given

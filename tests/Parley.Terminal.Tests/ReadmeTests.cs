@@ -33,7 +33,12 @@ public sealed class ReadmeTests
 
         Assert.NotNull(directory);
 
-        return File.ReadAllText(Path.Combine(directory!.FullName, "README.md"));
+        // The README and the pages under docs/ it links to are one body of documentation.
+        var pages = Directory.GetFiles(Path.Combine(directory!.FullName, "docs"), "*.md")
+            .Order(StringComparer.Ordinal)
+            .Prepend(Path.Combine(directory.FullName, "README.md"));
+
+        return string.Join("\n", pages.Select(p => File.ReadAllText(p))).Replace("\r\n", "\n", StringComparison.Ordinal);
     }
 
     [Theory]
@@ -96,7 +101,7 @@ public sealed class ReadmeTests
     [Fact]
     public void The_key_it_tells_people_to_press_is_the_key_that_is_bound()
     {
-        Assert.Contains($"Press `{Shell.ActionsKey}`", Readme(), StringComparison.Ordinal);
+        Assert.Contains($"Press `{Shell.Alt(Shell.ActionsKey)}`", Readme(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,7 +130,7 @@ public sealed class ReadmeTests
     [Fact]
     public void The_check_is_looking_at_something()
     {
-        Assert.Contains("parley terminal", Readme(), StringComparison.Ordinal);
+        Assert.Contains("`parley` on its own opens it", Readme(), StringComparison.Ordinal);
         Assert.True(Readme().Length > 10_000);
     }
 }

@@ -8,8 +8,8 @@ namespace Parley.Store;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This exists because several repository operations are individually atomic and were being
-/// composed into operations that were not. Opening an exchange and writing its Request are one
+/// This exists because several repository operations are individually atomic and are composed
+/// into operations that must be. Opening an exchange and writing its Request are one
 /// act from the protocol's point of view — SPEC.md §10.1 calls it <c>request</c> — but two commits
 /// here, and a failure between them leaves an exchange open with no Request in it. That exchange
 /// holds an entry in the distinctness index and owes a Result on work nobody sent, and it is
@@ -53,18 +53,10 @@ public sealed class WriteScope : IDisposable
 
     /// <summary>Gets the transaction the work runs in, owned or borrowed.</summary>
     /// <value>
-    /// Pass this to every command issued inside the scope — but not because forgetting would
-    /// fail. An earlier version of this comment claimed Microsoft.Data.Sqlite refuses a command
-    /// that carries no transaction while one is open, and a probe showed otherwise: the command
-    /// runs, joins the connection's transaction anyway, and is rolled back with it. That is the
-    /// safe direction, and it is worth stating accurately rather than leaving a warning nobody
-    /// can act on.
-    /// <para>
-    /// What the parameter actually buys is that the intent is visible where the query is, so a
-    /// reviewer can see which reads a decision was made against without tracing the call stack
-    /// to find out whether a transaction happened to be open. The load-bearing part of this type
-    /// is <see cref="Begin"/>'s own-or-borrow decision, not the pass-through.
-    /// </para>
+    /// Pass this to every command issued inside the scope. Forgetting would not fail, because a
+    /// command without it joins the connection's open transaction anyway; passing it makes the
+    /// intent visible where the query is, so a reviewer can see which reads a decision was made
+    /// against. The load-bearing part of this type is <see cref="Begin"/>'s own-or-borrow decision.
     /// </value>
     public SqliteTransaction Transaction { get; }
 

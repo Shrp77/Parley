@@ -7,7 +7,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// Protocol 0.7 carried end to end, and what a second implementation gets for writing 0.6.
+/// The ask carried end to end, and what a second implementation gets for sending a Request with none.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +18,8 @@ namespace Parley.Server.Tests;
 /// </para>
 /// <para>
 /// The probes below are written the way SPEC.md §18 tests a version change: by asking what a second
-/// implementation observes. One built against 0.6 sends an intent, items and a finish line; it must be
-/// refused, and refused on the way in rather than half-admitted.
+/// implementation observes. A Request without an ask must be refused, and refused on the way in rather than
+/// half-admitted.
 /// </para>
 /// </remarks>
 public sealed class AskOverTheWireTests
@@ -95,7 +95,6 @@ public sealed class AskOverTheWireTests
     }
 
     [Theory]
-    [InlineData("""{"intent":"deciding where tax lives","items":[{"id":"q1","kind":"question","text":"gross or net?"}],"done_when":"the rate is stated as gross or net"}""")]
     [InlineData("""{"ask":""}""")]
     [InlineData("""{"ask":"   "}""")]
     [InlineData("""{"ask":null}""")]
@@ -104,8 +103,8 @@ public sealed class AskOverTheWireTests
     [InlineData("{}")]
     public async Task A_request_that_does_not_carry_an_ask_is_refused_on_the_way_in(string payload)
     {
-        // Each of these is what some second implementation would plausibly send: one built against 0.6, one
-        // that trimmed its field to nothing, and three that guessed at the type. A string is what §5.1 says,
+        // Each of these is what some second implementation would plausibly send: one that trimmed its field to
+        // nothing, and three that guessed at the type. A string is what §5.1 says,
         // and a number admitted here would be stored as an ask nobody could read.
         var token = TestContext.Current.CancellationToken;
 

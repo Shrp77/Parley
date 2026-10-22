@@ -84,13 +84,8 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "deciding whether " + Hostile + ": is " + Hostile + " true?");
-        form.Fill(1, "verbatim");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(
+            driving, shell, Orders.Value, "verbatim", "deciding whether " + Hostile + ": is " + Hostile + " true?");
 
         var said = await ExportedAsync();
 
@@ -139,29 +134,16 @@ public sealed class VerbatimTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         using var shell = await SeatedAsync(driving, directory, seats);
 
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, "   ");
-        form.Fill(1, "verbatim");
-
         Assert.NotNull(Participation.RequiredProblem("   "));
 
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Orders.Value, "verbatim", "   ");
 
         Assert.Equal(string.Empty, await ExportedAsync());
     }
 
     private async Task TellAsync(Driving.Session driving, Shell shell, string words)
     {
-        var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
-        form.Fill(0, words);
-        form.Fill(1, "verbatim");
-        form.Finish(taken: true);
-
-        await shell.Settled;
+        await Composing.StartAndSayAsync(driving, shell, Orders.Value, "verbatim", words);
     }
 
     private async Task<Shell> SeatedAsync(
@@ -173,13 +155,8 @@ public sealed class VerbatimTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);
@@ -239,7 +216,7 @@ public sealed class VerbatimTests : IAsyncDisposable
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

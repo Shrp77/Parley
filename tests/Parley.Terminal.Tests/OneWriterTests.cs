@@ -23,6 +23,19 @@ namespace Parley.Terminal.Tests;
 /// </remarks>
 public sealed class OneWriterTests
 {
+    /// <summary>A source file without its comment lines.</summary>
+    /// <param name="text">The file.</param>
+    /// <returns>Its executable lines, joined.</returns>
+    /// <remarks>
+    /// A line filter rather than a parser: it covers <c>//</c> and <c>///</c>, which is every comment
+    /// in this project. A block comment would slip through, and that is an honest limit rather than a
+    /// hidden one -- nothing here uses them, and a half-right stripper is worse than a stated one.
+    /// </remarks>
+    private static string Executable(string text) =>
+        string.Join(
+            '\n',
+            text.Split('\n').Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
     private static IEnumerable<FileInfo> Sources()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -81,9 +94,19 @@ public sealed class OneWriterTests
         // FR-008. Adding and withdrawing write a repository's launch configuration and a project's
         // catalogue, and so does `parley enroll apply`. Two copies of those writes would agree
         // today and differ in six months.
+        // **Executable lines only, because a comment cannot write a file.** This read whole files
+        // and so refused a remark in `Onboarding` explaining why a worktree matters -- that a
+        // worktree's `.mcp.json` is tracked, so two agents on one codebase share one launch
+        // configuration across two branches. That is the reason the note exists and it belongs where
+        // the note is composed; it writes nothing.
+        //
+        // The rule itself is unchanged and is not weakened: what it forbids is a second writer, and
+        // a second writer is code. The same narrowing was made to `InstallScriptManifestTests` on
+        // 2026-09-25 for the opposite fault -- a guard *answered* by a comment rather than tripped
+        // by one.
         var offenders = Sources()
-            .Where(file => File.ReadAllText(file.FullName) is var text
-                && text.Contains(".mcp.json", StringComparison.Ordinal)
+            .Where(file => Executable(File.ReadAllText(file.FullName))
+                .Contains(".mcp.json", StringComparison.Ordinal)
                 && !file.Name.Equals("Adding.cs", StringComparison.Ordinal))
             .Select(file => file.Name)
             .ToList();

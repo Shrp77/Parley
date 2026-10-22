@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using Parley.Configuration;
 using Parley.Core;
 using Xunit;
 using static Parley.Cli.Tests.Loopback;
@@ -108,7 +109,7 @@ public sealed class ManifestWatchTests : IDisposable
         Directory.CreateDirectory(brokenStore);
 
         var broken = new ProjectSettings(
-            ProjectName.Create("broken"), brokenStore, $"http://127.0.0.1:{FreePort()}", null, null);
+            ProjectName.Create("broken"), brokenStore, $"http://127.0.0.1:{FreePort()}", null);
 
         var reads = 0;
 
@@ -226,7 +227,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_project_removed_and_renamed_back_in_one_edit_is_restarted_on_its_new_settings()
     {
-        // Lens 1 probe. The watcher stops removed projects before starting new ones so that a
+        // The watcher stops removed projects before starting new ones so that a
         // name reused in a single edit -- destroy and recreate between two ticks -- comes up on
         // the new entry rather than being left on the old one because "billing" was already
         // serving. The evidence is the ports: the old one frees and the new one answers.
@@ -293,7 +294,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task An_interrupt_during_a_late_start_leaves_no_port_held()
     {
-        // Lens 1 probe. FR-021's failure, reached through the watcher: a project named while
+        // A failure reached through the watcher: a project named while
         // serving is starting when Ctrl+C arrives. The start throws OperationCanceledException
         // inside the watcher, which must not swallow a half-started broker -- every port is
         // free once the command returns, or a broker is running that nothing can stop.
@@ -338,7 +339,7 @@ public sealed class ManifestWatchTests : IDisposable
 
         // Zero, not "zero or unavailable": an interrupt is how this is meant to end, and a
         // process that reports failure for being asked to stop teaches its supervisor to
-        // restart it. The looser assertion that stood here briefly would have let that through.
+        // restart it. A looser assertion would let that through.
         Assert.Equal(0, code);
 
         foreach (var project in late.Prepend(orders))
@@ -350,7 +351,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_manifest_emptied_and_refilled_leaves_the_process_serving_the_new_project()
     {
-        // Lens 1 probe. Every project removed at once is the state after somebody destroys the
+        // Every project removed at once is the state after somebody destroys the
         // last one, and the process must neither exit -- the supervisor would restart it into
         // the same emptiness -- nor lose the watcher, so that the next project named is served.
         var ct = TestContext.Current.CancellationToken;
@@ -419,7 +420,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_project_that_could_not_start_is_started_when_its_port_frees_and_the_manifest_changes()
     {
-        // Lens 1 probe. A port held by something else at start is the transient failure a
+        // A port held by something else at start is the transient failure a
         // machine actually meets -- the previous broker still exiting at logon -- and the watcher
         // must not treat "failed once" as "never". It tries again on the next change to the
         // manifest, and by then the port is free.
@@ -485,20 +486,29 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_manifest_that_cannot_be_read_stops_nothing_and_a_fixed_one_is_served_again()
     {
-        // Lens 1 probe. Somebody halfway through editing projects.json by hand, or a write that
-        // was interrupted: the file is there and is not a manifest. The one thing the watcher
-        // must not do on the strength of that is stop every project -- "removed from the
-        // manifest" is a claim the unreadable file cannot make. Then the file is fixed with a
-        // project added, and that project is served.
+        // Somebody halfway through editing a project's configuration by hand, or a write
+        // that was interrupted: the file is there and is not configuration. The one thing the watcher
+        // must not do on the strength of that is stop every project -- "removed" is a claim the
+        // unreadable file cannot make. Then the file is fixed with a project added, and that project is
+        // served.
+        //
+        // **Repointed at one project's own file, which is where a hand edit lands now.** The probe used
+        // to damage the single manifest; with a directory of them the equivalent damage is to one
+        // project's configuration, and the guarantee is the same or stronger -- an unreadable *one* must
+        // not stop the others either.
         var ct = TestContext.Current.CancellationToken;
 
-        var manifestPath = Path.Combine(_directory, "projects.json");
         var orders = Project("orders");
         var billing = Project("billing");
 
-        Parley.Configuration.ProjectManifest.Write(manifestPath, [orders]);
+        Parley.Configuration.ProjectManifest.Write(_directory, [orders]);
 
-        var stamp = File.GetLastWriteTimeUtc(manifestPath);
+        var damaged = ProjectFolder.ConfigurationFor(_directory, billing.Name);
+
+        Directory.CreateDirectory(ProjectFolder.For(_directory, billing.Name));
+        await File.WriteAllTextAsync(damaged, "{ this is not configuration", ct);
+
+        var stamp = File.GetLastWriteTimeUtc(damaged);
         var output = new StringWriter();
 
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -510,7 +520,7 @@ public sealed class ManifestWatchTests : IDisposable
             TextWriter.Null,
             reread: () =>
             {
-                var now = File.GetLastWriteTimeUtc(manifestPath);
+                var now = File.GetLastWriteTimeUtc(damaged);
 
                 if (now == stamp)
                 {
@@ -519,7 +529,7 @@ public sealed class ManifestWatchTests : IDisposable
 
                 stamp = now;
 
-                return Parley.Configuration.ProjectManifest.TryRead(manifestPath, out var current, out _)
+                return Parley.Configuration.ProjectManifest.TryRead(_directory, out var current, out _)
                     ? current
                     : null;
             },
@@ -529,23 +539,27 @@ public sealed class ManifestWatchTests : IDisposable
         {
             Assert.True(await AnswersAsync(orders.Endpoint, ct));
 
-            await File.WriteAllTextAsync(manifestPath, "{ this is not a manifest", ct);
-            File.SetLastWriteTimeUtc(manifestPath, DateTime.UtcNow.AddSeconds(1));
+            File.SetLastWriteTimeUtc(damaged, DateTime.UtcNow.AddSeconds(1));
 
-            // Long enough for several ticks on the broken file.
+            // Long enough for several ticks with the broken file in place.
             await Task.Delay(ServeCommand.WatchInterval * 3, ct);
 
-            Assert.True(await AnswersAsync(orders.Endpoint, ct, attempts: 3), "an unreadable manifest stopped a serving project");
+            Assert.True(
+                await AnswersAsync(orders.Endpoint, ct, attempts: 3),
+                "one unreadable project stopped another that was serving");
+
             Assert.DoesNotContain("stopping its broker", output.ToString(), StringComparison.Ordinal);
 
-            // Deleted before it is rewritten, because the writer refuses to write over a file it
-            // cannot parse -- the same refusal that keeps a person's broken edit from being
-            // silently replaced -- and this probe is the person fixing it.
-            File.Delete(manifestPath);
-            Parley.Configuration.ProjectManifest.Write(manifestPath, [orders, billing]);
-            File.SetLastWriteTimeUtc(manifestPath, DateTime.UtcNow.AddSeconds(2));
+            // Deleted before it is rewritten, because the writer refuses to write over a file it cannot
+            // parse -- the same refusal that keeps a person's broken edit from being silently replaced --
+            // and this probe is the person fixing it.
+            File.Delete(damaged);
+            Parley.Configuration.ProjectManifest.Write(_directory, [orders, billing]);
+            File.SetLastWriteTimeUtc(damaged, DateTime.UtcNow.AddSeconds(2));
 
-            Assert.True(await AnswersAsync(billing.Endpoint, ct), "a project named in the repaired manifest never came up");
+            Assert.True(
+                await AnswersAsync(billing.Endpoint, ct),
+                "a project whose configuration was repaired never came up");
         }
         finally
         {
@@ -560,7 +574,7 @@ public sealed class ManifestWatchTests : IDisposable
     [Fact]
     public async Task A_change_to_the_description_alone_restarts_nothing()
     {
-        // Lens 2 probe. A broker restarted for a harmless edit drops every attached agent's
+        // A broker restarted for a harmless edit drops every attached agent's
         // session for nothing; the watcher compares what a broker is made of and not the
         // description, and this holds it to that. The port never frees and no stop is announced.
         var ct = TestContext.Current.CancellationToken;
@@ -621,8 +635,7 @@ public sealed class ManifestWatchTests : IDisposable
     private ProjectSettings Project(string name) =>
         new(
             ProjectName.Create(name),
-            Path.Combine(_directory, name + ".db"),
+            ProjectFolder.StoreFor(_directory, ProjectName.Create(name)),
             $"http://127.0.0.1:{FreePort()}",
-            null,
             null);
 }

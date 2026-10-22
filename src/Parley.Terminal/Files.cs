@@ -228,7 +228,7 @@ internal static class Files
 
             var acting = Prompting.Choose(
                 Safe.Text(file.Name.Value),
-                Row(file).TrimStart() + "\n\nOpen it in its editor, or remove it from the location.",
+                Row(file).TrimStart(),
                 [Back, OpenIt, RemoveIt]);
 
             var actingToken = Prompting.Open(app, acting);

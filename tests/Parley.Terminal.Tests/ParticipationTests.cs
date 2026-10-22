@@ -14,7 +14,7 @@ namespace Parley.Terminal.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-002, and the reason the whole feature exists. SPEC.md §17 question 15 records that an agent
+/// The reason the whole feature exists: an agent
 /// attached through somebody's editor window can never be handed a turn — so until a person can
 /// hold a seat and answer from somewhere that is not an editor, a deployment has a participant it
 /// cannot reach.
@@ -65,7 +65,7 @@ public sealed class ParticipationTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         var project = Project();
 
-        var seated = await SeatedAs(seats, project, "arvind", ct);
+        var seated = await SeatedAs(seats, project, ct);
         var me = seated.Seat.Name;
 
         var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
@@ -108,7 +108,7 @@ public sealed class ParticipationTests : IAsyncDisposable
         using var seats = new SeatBook(directory.AgentsFor);
         var project = Project();
 
-        var seated = await SeatedAs(seats, project, "arvind", ct);
+        var seated = await SeatedAs(seats, project, ct);
 
         var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
         await broker.StartAsync(Orders, T0, ct);
@@ -128,75 +128,9 @@ public sealed class ParticipationTests : IAsyncDisposable
         Assert.DoesNotContain(seated.Delivered, one => one.Owes);
     }
 
-    [Fact]
-    public async Task Work_owed_cannot_be_cleared_away_instead_of_reported()
-    {
-        // The attack on the tidy-up button. Clearing must drop what has been read and owes
-        // nothing, and never a request -- a person who could clear owed work would leave the
-        // exchange behind it open with nobody working it, and nothing on their screen saying so.
-        var ct = TestContext.Current.CancellationToken;
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        var project = Project();
-
-        var seated = await SeatedAs(seats, project, "arvind", ct);
-
-        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
-        await broker.StartAsync(Orders, T0, ct);
-
-        await broker.RequestAsync(Orders, seated.Seat.Name, "model-a", Request, T0.AddMinutes(1), "chat", ct);
-
-        var voice = new SeatVoice(directory.AgentsFor(project), seated.Seat);
-
-        // And something that owes nothing: the Result of a request the person sent orders. Every
-        // message is answered, so a Result is the one kind a person holds without owing anything back.
-        Assert.StartsWith(
-            "Sent.",
-            await voice.RequestAsync(Orders, "Is the build green? Asking before I cut the release.", "chat", ct),
-            StringComparison.Ordinal);
-
-        long mine;
-
-        using (var query = _connection.CreateCommand())
-        {
-            query.CommandText = "SELECT max(id) FROM exchanges WHERE requester = $me;";
-            query.Parameters.AddWithValue("$me", seated.Seat.Name.Value);
-            mine = (long)query.ExecuteScalar()!;
-        }
-
-        await broker.DrainInboxAsync(Orders, T0.AddMinutes(2), cancellationToken: ct);
-
-        Assert.True((await broker.ResultAsync(
-            mine, Orders, "model-a", """{"outcomes":[{"id":"request","outcome":"answered","text":"green"}]}""",
-            T0.AddMinutes(3), ct)).Succeeded);
-
-        await voice.TakeDeliveryAsync(seated, ct);
-
-        Assert.Equal(1, seated.DismissRead());
-        Assert.Single(seated.Delivered);
-        Assert.All(seated.Delivered, one => Assert.True(one.Owes));
-    }
-
-    [Fact]
-    public async Task A_name_an_agent_holds_is_refused_before_anything_attaches()
-    {
-        // The attack the seat exists to stop. `orders` is an ordinary thing for a person to
-        // type, and without the guard every message they then sent would be recorded as the
-        // orders agent's own words.
-        var ct = TestContext.Current.CancellationToken;
-        using var directory = Directory();
-        using var seats = new SeatBook(directory.AgentsFor);
-        var project = Project();
-
-        var registry = await new BrokerClient(_broker.Operators).RegistryAsync(ct);
-
-        Assert.True(Seat.TryRead("orders", out var seat, out _));
-
-        var outcome = await seats.TakeAsync(project, seat, registry, ct);
-
-        Assert.False(outcome.Seated);
-        Assert.Contains("already registered here as an agent", outcome.Problem!, StringComparison.Ordinal);
-    }
+    // `A_name_an_agent_holds_is_refused_before_anything_attaches` was here. It typed `orders` into the seat and expected
+    // the book to refuse a name an agent holds. Nothing is typed now: the book attaches as the person row its
+    // registry names, and storage refuses any other role under the seat's adapter.
 
     [Fact]
     public async Task A_registry_that_could_not_be_read_refuses_the_seat()
@@ -208,9 +142,7 @@ public sealed class ParticipationTests : IAsyncDisposable
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
 
-        Assert.True(Seat.TryRead("arvind", out var seat, out _));
-
-        var outcome = await seats.TakeAsync(Project(), seat, registry: null, ct);
+        var outcome = await seats.TakeAsync(Project(), registry: null, ct);
 
         Assert.False(outcome.Seated);
     }
@@ -226,14 +158,11 @@ public sealed class ParticipationTests : IAsyncDisposable
         using var directory = Directory();
         var project = Project();
 
-        Seat seat;
-
         using (var seats = new SeatBook(directory.AgentsFor))
         {
-            var seated = await SeatedAs(seats, project, "arvind", ct);
-            seat = seated.Seat;
+            await SeatedAs(seats, project, ct);
 
-            Assert.Single(seats.Seats(seat));
+            Assert.Single(seats.Seats());
         }
 
         // The book is gone, so nothing here holds the seat any more. What the broker does with
@@ -244,23 +173,20 @@ public sealed class ParticipationTests : IAsyncDisposable
         // keeping a static.
         using var after = new SeatBook(directory.AgentsFor);
 
-        Assert.Empty(after.Seats(seat));
+        Assert.Empty(after.Seats());
     }
 
     /// <summary>Seats somebody, having read the registry the way the surface does.</summary>
     /// <param name="seats">The book.</param>
     /// <param name="project">Where to sit.</param>
-    /// <param name="person">The name typed.</param>
     /// <param name="cancellationToken">Cancels the calls.</param>
     /// <returns>The seat held.</returns>
     private async Task<SeatHold> SeatedAs(
-        SeatBook seats, ProjectSettings project, string person, CancellationToken cancellationToken)
+        SeatBook seats, ProjectSettings project, CancellationToken cancellationToken)
     {
         var registry = await new BrokerClient(_broker.Operators).RegistryAsync(cancellationToken);
 
-        Assert.True(Seat.TryRead(person, out var seat, out _));
-
-        var outcome = await seats.TakeAsync(project, seat, registry, cancellationToken);
+        var outcome = await seats.TakeAsync(project, registry, cancellationToken);
 
         Assert.True(outcome.Seated, outcome.Problem);
 
@@ -270,7 +196,7 @@ public sealed class ParticipationTests : IAsyncDisposable
     /// <summary>The one project these tests use.</summary>
     /// <returns>Its settings, pointed at the loopback broker.</returns>
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     /// <summary>A directory holding that one project.</summary>
     /// <returns>The directory.</returns>

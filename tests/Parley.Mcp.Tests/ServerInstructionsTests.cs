@@ -42,14 +42,14 @@ public sealed class ServerInstructionsTests : IDisposable
     /// <summary>Launches the server and performs the initialize handshake.</summary>
     /// <returns>The <c>result</c> object of the initialize response.</returns>
     /// <remarks>
-    /// A broker has to be running, which it did not before: the server used to open a database
-    /// and would start against a path that did not exist yet. It is now a client, and a client
+    /// A broker has to be running: the server is a client, and a client
     /// with nothing to connect to exits rather than serving — so a test about what the server
     /// says at initialize has to give it something to attach to first.
     /// </remarks>
     private JsonNode Initialize()
     {
         var runtime = Parley.Server.BrokerRuntime.Open(
+            Parley.Core.ProjectName.Create("test"),
             Path.Combine(_directory, "parley.db"),
             Parley.Broker.BrokerOptions.Default,
             TimeProvider.System);
@@ -139,6 +139,21 @@ public sealed class ServerInstructionsTests : IDisposable
         {
             Assert.Contains(needed, ParleyInstructions.Text, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void The_instructions_say_a_refused_permission_must_be_reported_not_left_silent()
+    {
+        // **A refused command must be reported**: an agent's command may be refused for want of approval, its turn end
+        // without a word, and the room say "working" for hours. The protocol has the answer already; what
+        // the agent has to be told is that a refusal is not a pause, and that silence is indistinguishable from work.
+        // Read with its line breaks folded to spaces, because where a sentence wraps in the source is not what it says.
+        var said = string.Join(' ', ParleyInstructions.Text.Split((char[])[' ', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.Contains("is refused, not paused", said, StringComparison.Ordinal);
+        Assert.Contains("never end your turn without saying so", said, StringComparison.Ordinal);
+        Assert.Contains("blocker \"permission\"", said, StringComparison.Ordinal);
+        Assert.Contains("exact command", said, StringComparison.Ordinal);
     }
 
     [Fact]

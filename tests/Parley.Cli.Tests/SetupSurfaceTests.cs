@@ -27,12 +27,11 @@ public sealed class SetupSurfaceTests
     /// <param name="type">The type.</param>
     /// <returns>Whether somebody outside can name it.</returns>
     /// <remarks>
-    /// <b>Found by lens 3, and the guard had the hole from the day it was written.</b>
+    /// <b>A nested public type is reachable too.</b>
     /// <see cref="Type.IsPublic"/> is true only of a <em>top-level</em> public type; a public type
     /// nested inside a public one answers <see cref="Type.IsNestedPublic"/> instead. So
-    /// <c>Enrolment.Outcome</c> — public since the split, and returned by every write this
-    /// assembly performs — was never on the list, and neither was the type added beside it in this
-    /// branch. The check's own claim is that a member appearing here is a decision somebody makes
+    /// <c>Enrolment.Outcome</c> — returned by every write this assembly performs — has to be on the
+    /// list. The check's own claim is that a member appearing here is a decision somebody makes
     /// in this file, and it could not keep that promise for the shape a nested record has.
     /// </remarks>
     private static bool Reachable(Type type) =>
@@ -59,21 +58,46 @@ public sealed class SetupSurfaceTests
                 "ConsolePicker",
                 "EnrollCommand",
                 "EnrollmentEntry",
-                "EnrollmentManifest",
                 "EnrollmentPlan",
                 "Enrolment",
 
-                // Nested, and invisible to this check until lens 3 widened it. `Outcome` is what
-                // every write here returns and has been public since the split.
+                // Nested. `Outcome` is what every write here returns.
                 //
-                // `Enrolment.Shared` was beside it and 018 removed it: it said which project already
-                // started a repository, so a surface could describe the launch entry it was about to
-                // write and the catalogue line it was not. One catalogue per machine keyed by the
-                // agent's identity means every project shares the one entry, so there is no second
-                // shape to describe.
+                // There is no `Enrolment.Shared`: one catalogue per machine keyed by the agent's
+                // identity means every project shares the one entry, so there is no second shape to
+                // describe.
                 "Enrolment.Outcome",
+
+                // **One sentence, two surfaces.** The terminal's door says before anything is written
+                // that each repository becomes startable by a peer with nobody watching, and
+                // `parley enroll` says it too. Public because `Parley.Terminal` reads it — a consent notice with two
+                // spellings drifts, and the half that drifts is the half nobody is reading at the
+                // time.
+                "EnrolmentConsent",
+
+                // **What an enrolment did, as facts, and what it is doing while it does it.** The
+                // terminal must not reprint everything the command wrote for a shell into a one-row
+                // message line, nor say nothing while each agent is started and waited for. Public because `Parley.Terminal` builds its one-line
+                // summary and its progress line from these rather than parsing the command's prose.
+                "EnrolmentOutcome",
+
                 "InstalledEntry",
                 "InterruptedEnrolment",
+
+                // Handing a web address to the platform's browser, which `parley web-ui --open` and the terminal's
+                // "Open the web console" both do. Here so there is one guard on what the shell is asked to open.
+                "Launch",
+
+                // One agent that was enrolled and did not register, with why. `EnrolmentOutcome` lists them.
+                "NotStarted",
+
+                // **The only thing that makes an accepted ownership line reach anybody.** The
+                // registry's `owns` is filled from the launch environment on attach and no operation
+                // writes it, so `record_ownership` stores a decision and this puts it where the
+                // decision takes effect. Public because both surfaces call it: accepting a
+                // line is something the terminal and the web UI both do, and the rule that no surface
+                // writes for an agent whose machine is not this one is `NotHere` here rather than twice.
+                "OwnershipLine",
                 "ProjectCommand",
                 "ProjectFields",
                 "ProjectResolution",
@@ -82,8 +106,8 @@ public sealed class SetupSurfaceTests
                 // A command's project comes from its context, and `parley` reads which projects the repository it runs
                 // in names. Here rather than in the CLI because the terminal enrols repositories through this assembly
                 // and the key rule it reads -- `parley-<project>` -- is `LaunchKey`'s, which must not be written twice.
-                // `LaunchKey` itself moved to Parley.Configuration in 018, where a node's own reader of that file can
-                // see it; this assembly still reads it from there rather than keeping a second spelling.
+                // `LaunchKey` itself lives in Parley.Configuration, where a node's own reader of that file can
+                // see it; this assembly reads it from there rather than keeping a second spelling.
                 "RepositoryProjects",
                 "RepositorySelection",
                 "Resolved",

@@ -62,13 +62,10 @@ public sealed record AutostartPlan(
     /// else somebody installed.
     /// </para>
     /// <para>
-    /// <b>One entry, even though it now starts three things.</b> The process it launches hosts
-    /// the broker, this machine's node, and the operator's console, so a deployment needs a
-    /// single supervisor entry rather than one per part — which is what further entries would
-    /// have been: more things to install, remove, and find already removed. The name did not
-    /// change with the scope, because it is the handle by which <c>remove</c> finds what
-    /// <c>install</c> left behind, and a rename would strand every entry installed by an earlier
-    /// build.
+    /// <b>One entry, which starts three things.</b> The process it launches hosts the broker, this
+    /// machine's node, and the operator's console, so a deployment needs a single supervisor entry
+    /// rather than one per part. The name is the handle by which <c>remove</c> finds what
+    /// <c>install</c> left behind.
     /// </para>
     /// </remarks>
     public const string Name = "parley-broker";
@@ -76,8 +73,10 @@ public sealed record AutostartPlan(
     /// <summary>
     /// Works out what installing would do on this machine.
     /// </summary>
-    /// <param name="databasePath">The store the broker will own.</param>
-    /// <param name="listenOn">Where it should listen, or null for the default.</param>
+    /// <param name="root">Where this machine keeps its Parley files.</param>
+    /// <param name="project">
+    /// The one project this entry should serve, or null to serve every project on the machine.
+    /// </param>
     /// <param name="executable">The broker binary, or null to use the running one.</param>
     /// <param name="nodeConfig">
     /// The node catalogue to host this machine's agents from, or null to install a broker that
@@ -86,14 +85,19 @@ public sealed record AutostartPlan(
     /// <param name="consoleOn">
     /// Where the operator's console should listen, or null to install a broker that hosts none.
     /// </param>
+    /// <param name="hidden">
+    /// Whether the broker should let go of its console window. A logon entry starts a console
+    /// program in the person's own session, so without this one appears on their desktop every time
+    /// they log in.
+    /// </param>
     /// <returns>The plan.</returns>
-    /// <exception cref="ArgumentException"><paramref name="databasePath"/> is blank.</exception>
+    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
     /// <remarks>
     /// <para>
-    /// The database path is required and is resolved to an absolute one. A logon task has no
-    /// working directory worth relying on, so a relative path installed today would name a
-    /// different file tomorrow — and the failure is a broker that comes up healthy against an
-    /// empty store, which reads as every agent having lost its registration.
+    /// The root is required and is resolved to an absolute path. A logon task has no working
+    /// directory worth relying on, so a relative path installed today would name a different
+    /// folder tomorrow — and the failure is a broker that comes up healthy against an empty
+    /// store, which reads as every agent having lost its registration.
     /// </para>
     /// <para>
     /// The executable defaults to the running process rather than to whatever is on PATH at
@@ -103,31 +107,32 @@ public sealed record AutostartPlan(
     /// </para>
     /// </remarks>
     public static AutostartPlan Describe(
-        string databasePath,
-        string? listenOn = null,
+        string root,
+        string? project = null,
         string? executable = null,
         string? nodeConfig = null,
-        string? consoleOn = null)
+        string? consoleOn = null,
+        bool hidden = false)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
 
-        var store = Path.GetFullPath(databasePath);
+        var machine = Path.GetFullPath(root);
 
-        // Beside the store, because that is the directory this deployment already owns and the
-        // one somebody looking for the broker will already have open.
-        var log = Path.Combine(
-            Path.GetDirectoryName(store) ?? ".", Name + ".log");
+        // At the root, because that is the directory this machine's Parley files already live in.
+        var log = Path.Combine(machine, Name + ".log");
 
         // --log rather than a shell redirection, which is the shape this took first. A
         // supervisor's Exec action runs a program, not a command line, so redirecting means
         // wrapping the broker in cmd.exe or sh -c and quoting a path twice -- for the one
         // feature whose absence is silent. The broker writing its own log needs no wrapper on
         // any platform, and the same argument is testable everywhere.
-        var arguments = listenOn is { Length: > 0 } endpoint
+        // A narrowed entry names a project; where its store is and what port it holds are that
+        // project's own business.
+        var arguments = project is { Length: > 0 } named
             ? string.Create(CultureInfo.InvariantCulture,
-                $"serve --db {Quote(store)} --listen {Quote(endpoint)} --log {Quote(log)}")
+                $"serve --config {Quote(machine)} --project {Quote(named)} --log {Quote(log)}")
             : string.Create(CultureInfo.InvariantCulture,
-                $"serve --db {Quote(store)} --log {Quote(log)}");
+                $"serve --config {Quote(machine)} --log {Quote(log)}");
 
         // The catalogue is written in absolute, for the same reason the store is: a logon task
         // has no working directory worth relying on.
@@ -145,7 +150,7 @@ public sealed record AutostartPlan(
         }
 
         // The console, for the same reason as the node and with the same shape. A person's own
-        // window is the one attachment nothing can give a turn to (SPEC.md §17 question 15), so
+        // window is the one attachment nothing can give a turn to, so
         // the console is not a convenience beside the deployment — it is how a person takes part
         // in one without falling into that hole. An entry that started the broker and left the
         // console to be remembered would be an entry that works for agents and not for people.
@@ -159,6 +164,17 @@ public sealed record AutostartPlan(
                 $"{arguments} --with-web-ui --web-ui {Quote(front)}");
         }
 
+        // **Last, so that `autostart status` reads it at the end where a person will see it.** The
+        // entry starts a console program in somebody's own session, which is what puts a window on
+        // their desktop at every logon; this is the broker letting go of it. Written into the
+        // arguments rather than into the task's own settings because Task Scheduler's `Hidden` flag
+        // controls whether the task is listed, not whether a window appears -- and because a systemd
+        // unit and a launchd job read arguments too, while none of them shares that setting.
+        if (hidden)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture, $"{arguments} --hidden");
+        }
+
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
     }
 
@@ -170,15 +186,17 @@ public sealed record AutostartPlan(
     /// <param name="consoleOn">
     /// Where the operator's console should listen, or null to install a broker that hosts none.
     /// </param>
+    /// <param name="hidden">
+    /// Whether the broker should let go of its console window, so that a logon does not put one on
+    /// the person's desktop.
+    /// </param>
     /// <returns>The plan.</returns>
     /// <exception cref="ArgumentException"><paramref name="manifestPath"/> is blank.</exception>
     /// <remarks>
     /// <para>
-    /// <b>No store and no port, because the manifest holds them.</b> SPEC.md §4.1 gives every
+    /// <b>No store and no port, because each project holds its own.</b> SPEC.md §4.1 gives every
     /// project its own store and endpoint and says one process may host them all; <c>serve</c>
-    /// with nothing named does exactly that. An entry written with one explicit store was the
-    /// installer's only shape for a long time, and it is what left every project named
-    /// afterwards "not answering" until somebody found out the entry had never heard of it.
+    /// with nothing named does exactly that.
     /// </para>
     /// <para>
     /// The manifest's path is written in, for the reason the catalogue is in
@@ -197,22 +215,34 @@ public sealed record AutostartPlan(
     public static AutostartPlan DescribeManifest(
         string manifestPath,
         string? executable = null,
-        string? consoleOn = null)
+        string? consoleOn = null,
+        bool hidden = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(manifestPath);
 
-        var manifest = Path.GetFullPath(manifestPath);
+        // The root itself: its parent would put the broker's log beside the Parley folder.
+        var root = Path.GetFullPath(manifestPath);
 
-        var log = Path.Combine(
-            Path.GetDirectoryName(manifest) ?? ".", Name + ".log");
+        var log = Path.Combine(root, Name + ".log");
 
         var arguments = string.Create(CultureInfo.InvariantCulture,
-            $"serve --config {Quote(manifest)} --log {Quote(log)} --with-node");
+            $"serve --config {Quote(root)} --log {Quote(log)} --with-node");
 
         if (consoleOn is { Length: > 0 } front)
         {
             arguments = string.Create(CultureInfo.InvariantCulture,
                 $"{arguments} --with-web-ui --web-ui {Quote(front)}");
+        }
+
+        // **Last, so that `autostart status` reads it at the end where a person will see it.** The
+        // entry starts a console program in somebody's own session, which is what puts a window on
+        // their desktop at every logon; this is the broker letting go of it. Written into the
+        // arguments rather than into the task's own settings because Task Scheduler's `Hidden` flag
+        // controls whether the task is listed, not whether a window appears -- and because a systemd
+        // unit and a launchd job read arguments too, while none of them shares that setting.
+        if (hidden)
+        {
+            arguments = string.Create(CultureInfo.InvariantCulture, $"{arguments} --hidden");
         }
 
         return Compose(executable ?? Environment.ProcessPath ?? "parley", arguments, log);
@@ -224,10 +254,7 @@ public sealed record AutostartPlan(
     /// <param name="log">Where its output goes.</param>
     /// <returns>The plan.</returns>
     /// <remarks>
-    /// The one place the supervisor is chosen and the unit path derived. The manifest plan used
-    /// to be built by describing a placeholder store and overwriting two properties, which
-    /// worked and read as a trick — and a trick in the function that decides what runs at
-    /// logon is a trick somebody will one day extend.
+    /// The one place the supervisor is chosen and the unit path derived.
     /// </remarks>
     private static AutostartPlan Compose(string binary, string arguments, string log) =>
         Detect() switch

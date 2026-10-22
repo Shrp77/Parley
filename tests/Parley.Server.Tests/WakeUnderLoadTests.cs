@@ -99,9 +99,8 @@ public sealed class WakeUnderLoadTests
     public async Task Drains_landing_mid_flood_lose_no_message()
     {
         // **The invariant that would be silent if it broke**, and the assertion is worth reading
-        // carefully because the first version of it was wrong. `DrainInbox` returns what it
-        // *collected*, not what remains — so "the last drain returned one message" is the safe case
-        // and this test read it as the failing one, and sent me to reorder code that was correct.
+        // carefully. `DrainInbox` returns what it *collected*, not what remains — so "the last drain
+        // returned one message" is the safe case, not the failing one.
         //
         // What actually has to hold is that every notice sent is collected by some drain. Counted
         // across all of them, which is the only way to see a message that fell between two.

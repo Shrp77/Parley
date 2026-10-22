@@ -7,20 +7,15 @@ namespace Parley.Setup;
 /// <para>
 /// <b>A type rather than a message, because a surface has to be able to ask.</b> Three files are
 /// written in order and the last one can fail with the first already replaced, so "it failed" and
-/// "nothing happened" are different facts. The message says which files changed; that is enough for a
-/// shell, which prints it, and not enough for a screen, which had its own sentence to decide.
-/// </para>
-/// <para>
-/// It decided wrongly. The terminal caught every failure alike and added <i>Nothing was written.</i>
-/// underneath — so on the one path where something had been, the screen printed the list of changed
-/// files and then denied it on the next line. A report that merely omits something leaves somebody
-/// uncertain; one that asserts the opposite settles it, wrongly. Parsing the prose to tell the two
-/// apart would have been a second implementation of a fact the throwing code already had.
+/// "nothing happened" are different facts. The message says which files changed, which is enough for a
+/// shell that prints it; a screen asks the type, so it never says <i>Nothing was written.</i> on the one
+/// path where something was. Parsing the prose would be a second implementation of a fact the throwing
+/// code already has.
 /// </para>
 /// <para>
 /// <b>It derives from <see cref="IOException"/> because <see cref="InvalidDataException"/> is sealed
 /// — and that was checked against every caller rather than assumed.</b> Both terminal surfaces catch
-/// <see cref="IOException"/> already, so neither loses a failure it used to handle; the bulk command
+/// <see cref="IOException"/> already, so neither loses a failure it handles; the bulk command
 /// takes <c>WriteAsync</c>, which does not raise this. The parent is also the honest one: what
 /// happened is an I/O failure that arrived part-way through, not a file whose contents were wrong.
 /// </para>

@@ -8,8 +8,7 @@ namespace Parley.Spec.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lens 3 of the review gate, run 3.6, and the last of them. Run 3.3 checked the feature's own
-/// documents against each other. This checks the two that outlive the feature: `CLAUDE.md`, which
+/// This checks the two documents that outlive any feature: `CLAUDE.md`, which
 /// the next person working here reads first, and `SPEC.md`, which somebody building another
 /// implementation reads instead of the code.
 /// </para>
@@ -42,9 +41,15 @@ public sealed partial class ProjectRecordTests
     {
         // The first thing somebody arriving needs: which feature is in progress and what number it
         // ships as. A note naming the previous one sends them to the wrong plan.
+        //
+        // The feature is read from `.specify/feature.json`, which is where the toolchain records it, rather than
+        // written here: a literal naming one feature checked that somebody had typed the same name twice, and was
+        // already a feature behind. The notes hold this one fact and not the history of the ones before it.
         var notes = Read("CLAUDE.md");
+        var feature = FeatureDirectory().Match(Read(".specify/feature.json"));
 
-        Assert.Contains("specs/006-three-view-operator/", notes, StringComparison.Ordinal);
+        Assert.True(feature.Success, ".specify/feature.json names no feature_directory");
+        Assert.Contains(feature.Groups[1].Value + "/", notes, StringComparison.Ordinal);
         Assert.Contains(Shipping(), notes, StringComparison.Ordinal);
     }
 
@@ -55,9 +60,9 @@ public sealed partial class ProjectRecordTests
         // there — and therefore the one most worth checking from outside.
         //
         // Derived rather than written out, and that is the whole substance of this test. Both
-        // halves used to name 0.18.0 as a literal, which checked that somebody had typed the same
-        // number twice here rather than that the two documents agree — so the first patch bump
-        // failed it, in the file that is not the one at fault, and the cheapest way past a test
+        // halves naming the version as a literal would check that somebody had typed the same
+        // number twice here rather than that the two documents agree — the first patch bump
+        // would fail it, in the file that is not the one at fault, and the cheapest way past a test
         // like that is to update the literal without reading the file it is about.
         var props = Read("Directory.Build.props");
 
@@ -87,17 +92,8 @@ public sealed partial class ProjectRecordTests
     [GeneratedRegex(@"<VersionPrefix>([^<]+)</VersionPrefix>")]
     private static partial Regex VersionPrefix();
 
-    [Fact]
-    public void The_notes_record_what_the_feature_reversed_rather_than_only_what_it_built()
-    {
-        // The most valuable thing in that file is the argument, not the inventory. 006 reversed a
-        // decision 005 recorded as settled, and a note that listed the new operations without
-        // saying that would leave the next reader to rediscover why the old reasoning was wrong.
-        var notes = Read("CLAUDE.md");
-
-        Assert.Contains("12.3", notes, StringComparison.Ordinal);
-        Assert.Contains("T039", notes, StringComparison.Ordinal);
-    }
+    [GeneratedRegex(@"""feature_directory""\s*:\s*""([^""]+)""")]
+    private static partial Regex FeatureDirectory();
 
     [Fact]
     public void The_specification_carries_the_four_operations_and_the_state_they_need()
@@ -134,10 +130,13 @@ public sealed partial class ProjectRecordTests
     {
         // It is the one document that must not require the specification to be readable, which is
         // a standing rule here rather than a preference for 006.
-        var readme = Read("README.md");
+        var pages = Directory.GetFiles(Path.Combine(Root(), "docs"), "*.md")
+            .Prepend(Path.Combine(Root(), "README.md"))
+            .Select(File.ReadAllText)
+            .ToList();
 
-        Assert.DoesNotContain("SPEC.md §", readme, StringComparison.Ordinal);
-        Assert.Contains("parley terminal", readme, StringComparison.Ordinal);
+        Assert.All(pages, page => Assert.DoesNotContain("SPEC.md §", page, StringComparison.Ordinal));
+        Assert.Contains(pages, page => page.Contains("`parley` on its own opens the terminal", StringComparison.Ordinal));
     }
 
     [Fact]

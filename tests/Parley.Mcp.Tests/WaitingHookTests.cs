@@ -230,11 +230,10 @@ public sealed class WaitingHookTests
     }
 
     [Fact]
-    public void An_older_tool_without_the_file_count_is_still_asked()
+    public void The_file_count_is_asked_for_and_all_three_counts_are_required()
     {
-        // The plugin and the tool are upgraded separately. A tool from before files refuses --with-files, and a hook
-        // that read that as nothing waiting would go quiet about mail as well — the failure this file exists to end.
         Assert.Contains("--with-files", Code, StringComparison.Ordinal);
-        Assert.Contains("if len(counts) > 2 else 0", Code, StringComparison.Ordinal);
+        Assert.DoesNotContain("if len(counts) > 2 else 0", Code, StringComparison.Ordinal);
+        Assert.Contains("return counts[0], counts[1], counts[2]", Code, StringComparison.Ordinal);
     }
 }

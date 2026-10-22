@@ -12,8 +12,8 @@ using Parley.Terminal;
 // the arguments would be a second parser to keep in step, and the whole reason this is a separate
 // tool is that the two are versioned and installed apart.
 //
-// The four it takes are the four `parley top` took before the forwarding: where the manifest is, a broker to offer when
-// the manifest names none, and the two that answer a question and exit.
+// What it takes: where the manifest is, a broker to offer when the manifest names none, and the two options that
+// answer a question and exit. It is not scoped to one project: the first screen lists them all.
 
 // The manual, kept short because this surface explains itself once it is open: everything a person
 // can do from it is on the screen, and the two arguments here are only about which deployment it
@@ -23,12 +23,13 @@ parley-terminal: the operator's terminal surface.
 
   parley-terminal [--config <path>] [--broker <address>]
 
-  --config <path>     The project manifest to read. Defaults to this machine's.
-  --broker <address>  A broker to offer when the manifest names no project.
+  --config <path>     The folder that holds this machine's projects/ folder.
+                      Defaults to this machine's.
+  --broker <address>  A broker to offer when that folder holds no project.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 
-Started by `parley terminal` as well, which forwards here and parses nothing.
+Started by `parley` on its own as well, which forwards here and parses nothing.
 """;
 
 var arguments = new List<string>(args);
@@ -43,9 +44,8 @@ if (arguments.Exists(argument => argument is "--help" or "-h"))
 if (arguments.Exists(argument => argument is "--version" or "-v"))
 {
     // Two numbers for the reason `parley --version` gives two: the package version says which
-    // build is on PATH, and the protocol version says what this speaks. They are more likely to
-    // differ here than they ever were, because this tool and the broker are now installed apart —
-    // which is the point of the split and the thing somebody diagnosing a deployment needs to see.
+    // build is on PATH, and the protocol version says what this speaks. They can differ, because this
+    // tool and the broker are installed apart.
     await Console.Out.WriteLineAsync(string.Create(
         CultureInfo.InvariantCulture,
         $"parley-terminal {BuildIdentity.Version}, speaking Parley protocol {ProtocolVersion.Current}"))
@@ -59,17 +59,6 @@ string? missingValue = null;
 
 var configPath = TakeOption("--config");
 var brokerAddress = TakeOption("--broker", "-b");
-
-// Taken and warned about rather than refused, because `parley top --project x` used to say this
-// and forwarding must not turn a warning into a failure. It is not scoped to one project: the
-// first screen is the list of them, and it re-reads the manifest while it runs, so a project named
-// elsewhere appears without restarting it.
-if (TakeOption("--project", "-p") is { } named)
-{
-    await Console.Error.WriteLineAsync(
-        $"parley-terminal is not scoped to one project, so --project {named} was not used. "
-        + "Every project this machine knows is on its first screen.").ConfigureAwait(false);
-}
 
 if (missingValue is not null)
 {
@@ -119,16 +108,22 @@ catch (InvalidOperationException noHome)
 // The same fallback the web UI offers, so the two surfaces list the same deployments on a machine
 // that has named none. A person who can reach a broker from `parley registry` and not from here
 // would reasonably conclude this surface was broken.
-var fallback = ProjectResolution
-    .Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null).Value;
+//
+// **Only when somebody said where.** `Endpoint` answers with a built-in default when nothing names a
+// broker, and a made-up address would cost the `ConnectTimeout` in `BrokerDirectory.Connect` on an
+// address no one chose, worst during setup.
+//
+// A broker reached by address works, which is what the fallback is for (watching a broker that runs
+// elsewhere, through a tunnel): --broker and PARLEY_BROKER are the ways of saying so. The default is
+// not a guess to offer.
+var endpoint = ProjectResolution.Endpoint(brokerAddress, Environment.GetEnvironmentVariable, null);
+
+var fallback = endpoint.Source == ValueSource.Default ? null : endpoint.Value;
 
 return await TerminalCommand.RunAsync(manifestPath, fallback).ConfigureAwait(false);
 
-// **An option with no value is its own answer, not "no such option".** The first draft returned
-// null and left the flag in the list, so `parley-top --config` was refused with "parley-top does
-// not take --config" -- which is false: it does take it, and what was missing was the path. A
-// refusal that misnames the problem sends somebody to check the spelling of an option that was
-// spelled correctly.
+// **An option with no value is its own answer, not "no such option".** A refusal that misnames the
+// problem sends somebody to check the spelling of an option that was spelled correctly.
 string? TakeOption(string name, string? shortName = null)
 {
     for (var index = 0; index < arguments.Count; index++)

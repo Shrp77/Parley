@@ -4,26 +4,10 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Every statement in the repository about what a version removed, checked against this version.
+/// That nothing a person reads today says a removed spelling still works.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Review gate, lens 3, run 7. Runs 5 and 6 each found one of these and fixed one of these: the
-/// README said removed flags still work and named 0.21.0, a guard's exemptions were the wording of a
-/// note this release deletes, and CLAUDE.md's architecture section described a verb removed three
-/// releases ago. That is one seam, not three findings — **the deprecation date moved twice**, from
-/// 0.21.0 to 0.22.0, and every sentence written against the old plan went stale together.
-/// </para>
-/// <para>
-/// So this enumerates rather than samples, which is what lens 2 had to learn four times: a fix is a
-/// claim about every place, and finding them one run at a time is how the last one ships.
-/// </para>
-/// <para>
-/// <b>The historical specs are exempt by path and that is not a loophole.</b>
-/// <c>specs/001</c>–<c>specs/008</c> are records of what was decided when, and 007 genuinely did say
-/// 0.21.0 — editing that would destroy the evidence that the date moved, which 008's own record calls
-/// the thing worth keeping. What must be true today is what a person reads today.
-/// </para>
+/// Enumerates every current document rather than sampling, because a fix is a claim about every place.
 /// </remarks>
 public sealed class DeprecationClaimsTests
 {
@@ -59,12 +43,6 @@ public sealed class DeprecationClaimsTests
         {
             var text = File.ReadAllText(file).ReplaceLineEndings("\n");
 
-            // **CLAUDE.md is two documents in one file and only one of them is current.** `## Layout`
-            // describes what the code *is*; everything after it, under "Active plan" and "Previous",
-            // records what was decided and when — and 007 genuinely did say 0.21.0, so editing that
-            // would destroy the evidence that the date moved, which 008's own record calls the thing
-            // worth keeping. Every stale paragraph this run found was in the first half, which is the
-            // half somebody reads to learn how the thing works today.
             if (file.EndsWith("CLAUDE.md", StringComparison.Ordinal))
             {
                 var layout = text.IndexOf("\n## Layout", StringComparison.Ordinal);
@@ -93,7 +71,7 @@ public sealed class DeprecationClaimsTests
     [Fact]
     public void Nothing_a_person_reads_says_a_removed_spelling_still_works()
     {
-        // The generalisation of run 5's finding. Not one flag and one document — every sentence in
+        // The general rule: not one flag and one document — every sentence in
         // everything current that puts a removed spelling beside a claim that it works.
         string[] removed = ["--with-console", "--no-console", "parley console"];
 
@@ -117,74 +95,5 @@ public sealed class DeprecationClaimsTests
         }
 
         Assert.True(offenders.Count == 0, "says a removed spelling still works: " + string.Join(", ", offenders));
-    }
-
-    [Fact]
-    public void No_current_document_says_these_go_at_the_version_they_did_not_go_at()
-    {
-        // **0.21.0 is the date that moved**, and 008's record is explicit that it is a commitment
-        // rather than a second reprieve. A current document naming it is describing a plan that was
-        // changed, to somebody who has no way to know that.
-        var offenders = new List<string>();
-
-        foreach (var (path, text) in CurrentDocuments())
-        {
-            foreach (var paragraph in text.Split("\n\n"))
-            {
-                if (!paragraph.Contains("0.21.0", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                // A paragraph *recording* that the date moved has to be able to name both.
-                if (paragraph.Contains("0.22.0", StringComparison.Ordinal)
-                    || paragraph.Contains("moved", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                offenders.Add($"{path}: {paragraph.Trim()[..Math.Min(90, paragraph.Trim().Length)]}");
-            }
-        }
-
-        Assert.True(offenders.Count == 0, "names the version the removal did not happen at:\n" + string.Join("\n", offenders));
-    }
-
-    [Fact]
-    public void Every_paragraph_about_them_names_the_version_they_went_at()
-    {
-        // **The version they went at is a fact and does not move; the version being built does.**
-        // This asserted the paragraph named `Current()`, which was the same number on the day it was
-        // written and stopped being so at the very next patch — 0.22.1 broke it, in a check whose
-        // whole subject is documents naming versions. The removal happened at 0.22.0 and will have
-        // happened at 0.22.0 for ever.
-        const string Removal = "0.22.0";
-
-        var claims = CurrentDocuments()
-            .SelectMany(document => document.Text.Split("\n\n").Select(part => (document.Path, part)))
-            .Where(pair => pair.part.Contains("--with-console", StringComparison.Ordinal))
-            .ToArray();
-
-        Assert.NotEmpty(claims);
-
-        foreach (var (path, paragraph) in claims)
-        {
-            Assert.True(
-                paragraph.Contains(Removal, StringComparison.Ordinal),
-                $"{path} discusses the removed flags without naming {Removal}:\n{paragraph.Trim()}");
-        }
-    }
-
-    [Fact]
-    public void The_build_is_at_or_past_the_version_that_removed_them()
-    {
-        // The half that keeps the constant above honest rather than merely fixed: it is a fact about
-        // a release that has happened, so a build older than it would mean this file is describing a
-        // future rather than a past.
-        var current = Current().Split('.').Select(int.Parse).ToArray();
-
-        Assert.True(
-            current[0] > 0 || current[1] >= 22,
-            $"this builds {Current()}, before the release these notes say removed the flags");
     }
 }

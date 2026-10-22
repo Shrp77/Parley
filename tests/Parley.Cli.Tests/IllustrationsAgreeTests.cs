@@ -9,9 +9,8 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 8. FR-014 requires every illustration a person is shown to carry the
-/// project-keyed shape, and T043 updated them by hand — a task which named three of the four, the
-/// fourth being the adapter's own header comment. Nothing checked that they agree, and a rule
+/// Every illustration a person is shown must carry the project-keyed shape, and there are four, the
+/// fourth being the adapter's own header comment. A rule
 /// satisfied by hand across four files is a rule that holds until somebody edits one.
 /// </para>
 /// <para>
@@ -27,10 +26,10 @@ public sealed class IllustrationsAgreeTests
     private static readonly string Root =
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
-    /// <summary>The four, named by FR-014 and by the task that missed one of them.</summary>
+    /// <summary>The four illustrations a person is shown.</summary>
     public static TheoryData<string> Illustrations =>
     [
-        "README.md",
+        Path.Combine("docs", "configuration.md"),
         Path.Combine("plugins", "parley", "commands", "setup.md"),
         Path.Combine("src", "Parley.Web", "Pages", "Projects", "Register.cshtml"),
         Path.Combine("src", "Parley.Mcp", "Program.cs"),
@@ -62,7 +61,7 @@ public sealed class IllustrationsAgreeTests
         // **The half that decides which deployment an agent joins.** An entry carrying only
         // `PARLEY_BROKER` is what this tooling treats as pinned to an address: enrolling that
         // repository later writes the project's entry *beside* it rather than through it, and two of
-        // FR-008's three outcomes are refusals. An illustration may mention the address form — there
+        // Two of the three outcomes are refusals. An illustration may mention the address form — there
         // is a real case for it, a machine whose manifest does not name the project — but it may not
         // be the only thing it shows, or it teaches the shape the rest of the system works around.
         var text = Read(relative);
@@ -80,7 +79,6 @@ public sealed class IllustrationsAgreeTests
             new EnrollmentEntry("/src/orders", "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             null,
             null,

@@ -37,7 +37,7 @@ public sealed class PaintedTests
 {
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(Walking.Alpha, string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 
     [Fact]
@@ -92,8 +92,8 @@ public sealed class PaintedTests
 
         region.Show(
             [
-                new ProjectSettings(ProjectName.Create("up"), string.Empty, "http://127.0.0.1:1", null, null),
-                new ProjectSettings(ProjectName.Create("down"), string.Empty, "http://127.0.0.1:2", null, null),
+                new ProjectSettings(ProjectName.Create("up"), string.Empty, "http://127.0.0.1:1", null),
+                new ProjectSettings(ProjectName.Create("down"), string.Empty, "http://127.0.0.1:2", null),
             ],
             new Dictionary<string, ProjectHealth>(StringComparer.Ordinal)
             {

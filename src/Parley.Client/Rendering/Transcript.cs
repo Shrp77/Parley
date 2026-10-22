@@ -51,6 +51,9 @@ public static class Transcript
             states[exchange.ExchangeId] = exchange;
         }
 
+        // What each reply settled (SPEC.md §5.6) is read from the same record the screens read it from.
+        var whole = new ConversationExport([.. messages], [.. states.Values], null);
+
         var written = new StringBuilder()
             .Append(CultureInfo.InvariantCulture, $"Conversation {conversationId} in project {project}")
             .AppendLine()
@@ -68,7 +71,7 @@ public static class Transcript
                 .Append(
                     CultureInfo.InvariantCulture,
                     $"[{message.CreatedUtc.ToString("u", CultureInfo.InvariantCulture)}] ")
-                .Append(CultureInfo.InvariantCulture, $"{message.From.Value} -> {message.To.Value} ")
+                .Append(CultureInfo.InvariantCulture, $"{Speaker.From(message)} -> {Speaker.To(message)} ")
                 .Append(
                     CultureInfo.InvariantCulture,
                     $"({message.Type}, answered by {message.ResponderModel}, "
@@ -83,6 +86,12 @@ public static class Transcript
             }
 
             written.Append("  ").AppendLine(OneLine(message.PayloadJson));
+
+            if (Reading.Settled(message, whole) is { Count: > 0 } settled)
+            {
+                // Each question's start is already one line: Reading.Settled collapses every run of whitespace.
+                written.Append("  ").AppendLine(Reading.SettledLine(settled));
+            }
 
             var absent = Visibility.Describe(message, participants);
 

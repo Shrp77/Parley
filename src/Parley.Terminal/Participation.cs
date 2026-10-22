@@ -21,35 +21,29 @@ namespace Parley.Terminal;
 /// on.
 /// </para>
 /// <para>
-/// There is one way to say something to an agent, and it is answered (principle 2.7). The surface that had
-/// "Ask" and "Announce" had two, and one of them expected nothing back. An announcement is a Request asking
+/// There is one way to say something to an agent, and it is answered. An announcement is a Request asking
 /// for an acknowledgement.
 /// </para>
 /// </remarks>
 internal static class Participation
 {
-    /// <summary>What taking delivery does, said before it is done.</summary>
+    /// <summary>What is said when the connection went while somebody was still writing.</summary>
     /// <remarks>
-    /// Collecting a Request is where §6's second stage begins, so it is not a look at an inbox — work
-    /// collected and left is flagged as stalled rather than as never picked up.
+    /// Not "your seat was released": the seat is the broker's and is never released. What went is this
+    /// terminal's stream, and the key that asked has already started taking it back.
     /// </remarks>
-    internal const string DeliveryWarning =
-        "Taking delivery marks these messages collected. Anything you are asked to do then counts as picked up, "
-        + "and is shown to the person running the deployment if it goes untouched. It is not a look at the inbox.";
-
-    /// <summary>What is said when the seat went while somebody was still writing.</summary>
     internal const string Gone =
-        "Your seat was released while you were writing, so nothing was sent. Take a seat again to send it.";
+        "You are not connected to this project, so nothing was sent.";
 
-    /// <summary>What the dialog offering delivery is called.</summary>
-    internal const string DeliveryTitle = "Take delivery";
+    /// <summary>What the dialog that names a conversation is called.</summary>
+    internal const string NameTitle = "Name the conversation";
 
     /// <summary>What the peer picker asks.</summary>
     internal const string WhichPeer = "Who are you sending this to?";
 
     /// <summary>When a project holds nobody to speak to.</summary>
     internal const string NoPeers =
-        "There is nobody in this project to send anything to yet. Add an agent, or wait for one to register.";
+        "There is nobody in this project to send to yet. Add an agent first.";
 
     /// <summary>The row that sends to every agent in the project at once.</summary>
     /// <param name="howMany">How many agents it will reach.</param>
@@ -79,19 +73,6 @@ internal static class Participation
     /// </remarks>
     internal const string StartTitle = "Start a conversation with a request";
 
-    /// <summary>The same action before a seat is held, which takes one first.</summary>
-    /// <remarks>
-    /// <b>Offered rather than hidden.</b> The owner opened this menu to start a conversation, found no such action, and
-    /// reached for Instruct instead — which is not a message and never appears as a conversation. The action was hidden
-    /// because a request needs somebody to speak as; hiding it said nothing about why, so this names the step and takes it.
-    /// </remarks>
-    internal const string StartSeatFirstTitle = "Start a conversation (takes a seat first)";
-
-    /// <summary>What is said when the seat is being taken so that a conversation can be started.</summary>
-    internal const string SeatFirst =
-        "A request is sent as somebody, so starting a conversation takes a seat first: name yourself, and the request " +
-        "opens once you are seated.";
-
     /// <summary>What the dialog sending a Result is called.</summary>
     internal const string ResultTitle = "Send the result of something you were asked";
 
@@ -102,63 +83,8 @@ internal static class Participation
     /// </remarks>
     internal const string ClarifyTitle = "Ask for, or give, a clarification";
 
-    private const string NothingWaiting = "Nothing was waiting.";
-
-    private const string HoldingNothing = "You are holding nothing. Take delivery to see what is waiting.";
-
     /// <summary>What is said beside a Request a Result is owed on.</summary>
     internal const string Owes = "you owe a result";
-
-    /// <summary>What is said beside a clarification a reply is owed on.</summary>
-    private const string OwesReply = "you owe a reply";
-
-    private const string OwesNothing = "nothing owed";
-
-    /// <summary>Takes delivery, and says what that did.</summary>
-    /// <param name="voice">The person's own participant operations.</param>
-    /// <param name="hold">The seat to record against.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>What to say about it.</returns>
-    internal static async Task<string> TakeDeliveryAsync(SeatVoice voice, SeatHold hold, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(voice);
-
-        var (taken, polls) = await voice.TakeDeliveryAsync(hold, cancellationToken).ConfigureAwait(false);
-
-        return taken.Count == 0 && polls == 0
-            ? NothingWaiting
-            : $"{taken.Count} taken. Anything you were asked to do now counts as picked up.";
-    }
-
-    /// <summary>What the person is already holding, one line each.</summary>
-    /// <param name="hold">The seat.</param>
-    /// <returns>The lines, what is owed first.</returns>
-    /// <remarks>
-    /// The owed column is a word before it is a position, so the distinction survives without the ordering.
-    /// </remarks>
-    internal static IReadOnlyList<string> Held(SeatHold hold)
-    {
-        ArgumentNullException.ThrowIfNull(hold);
-
-        if (hold.Delivered.Count == 0)
-        {
-            return [HoldingNothing];
-        }
-
-        return
-        [
-            .. hold.Delivered
-                .OrderByDescending(one => one.Owes)
-                .Select(one =>
-                {
-                    var payload = Payload.Read(one.Message.PayloadJson);
-                    var said = payload.Raw is { Length: > 0 } raw ? raw : payload.Said;
-                    var owed = one.OwesResult ? Owes : one.OwesReply ? OwesReply : OwesNothing;
-
-                    return Safe.Text($"{one.Message.From.Value}  [{one.Message.Type.ToString().ToLowerInvariant()}]  [{owed}]  {Shorten(said)}");
-                }),
-        ];
-    }
 
     /// <summary>How one owed message reads in a chooser.</summary>
     /// <param name="owed">The delivered message.</param>
@@ -193,9 +119,8 @@ internal static class Participation
     /// <param name="owed">The delivered message.</param>
     /// <returns>The text to show above the Result form.</returns>
     /// <remarks>
-    /// Everything the Request carried, because a Result written without reading it is a Result for a narrower piece
-    /// of work than was asked for. A Request stored before 0.7 carried an intent, items and a <c>done_when</c>, and
-    /// they are all shown; one written since carries the ask.
+    /// The whole ask, because a Result written without reading it is a Result for a narrower piece of work than was
+    /// asked for. A Request carries nothing else (SPEC.md §5.1).
     /// </remarks>
     internal static string Asked(Delivered owed)
     {
@@ -209,19 +134,8 @@ internal static class Participation
             .AppendLine()
             .AppendLine(payload.Raw is { Length: > 0 } raw ? raw : payload.Said);
 
-        foreach (var point in payload.Points)
-        {
-            body.Append("  - ").AppendLine(Reading.Point(point));
-        }
-
-        if (payload.DoneWhen is { Length: > 0 } doneWhen)
-        {
-            body.AppendLine().Append("Done when: ").AppendLine(doneWhen);
-        }
-
-        // Every word here after the first line is the requester's, and it is drawn as a form's title. Found by the
-        // review gate: an escape sequence in a Request's intent, an item or done_when reached the screen a person
-        // answers from. Line by line, so the breaks that lay the request out survive.
+        // Every word here after the first line is the requester's, and it is drawn as a form's title, so it is
+        // neutralised line by line, keeping the breaks that lay the request out.
         return Safe.Lines(body.ToString());
     }
 
@@ -264,8 +178,7 @@ internal static class Participation
     /// <summary>A conversation name nobody has to think of.</summary>
     /// <returns>Something short and unlikely to collide.</returns>
     /// <remarks>
-    /// Prefixed with the surface's name, so a conversation nobody named says where it was started. It said `top-` until
-    /// the gate over the rename found it — the one place the old name was still written for somebody to read.
+    /// Prefixed with the surface's name, so a conversation nobody named says where it was started.
     /// </remarks>
     internal static string Suggested() =>
         "terminal-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);

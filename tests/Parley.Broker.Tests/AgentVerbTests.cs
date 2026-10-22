@@ -143,7 +143,7 @@ public sealed class AgentVerbTests : IDisposable
     [Fact]
     public async Task A_request_whose_ask_differs_is_a_different_request()
     {
-        // The whole payload is hashed, which since 0.7 is the ask. Different words are a different piece of work,
+        // The whole payload is hashed, which is the ask. Different words are a different piece of work,
         // and the distinctness rule of §7.1 admits the second.
         Assert.True((await Send()).Succeeded);
 
@@ -165,7 +165,7 @@ public sealed class AgentVerbTests : IDisposable
     [Fact]
     public async Task A_request_that_closes_a_cycle_is_admitted_and_recorded()
     {
-        // §7.2 in 0.5: agents asking each other for work in a loop is ordinary, and nothing waits
+        // §7.2: agents asking each other for work in a loop is ordinary, and nothing waits
         // synchronously, so nothing is deadlocked. The loop is recorded where the person can see it stall.
         Assert.True((await Send(from: Orders, to: Billing)).Succeeded);
 
@@ -209,8 +209,8 @@ public sealed class AgentVerbTests : IDisposable
     public async Task A_person_may_start_a_conversation_whatever_it_holds()
     {
         // Principle 2.10: a person is where lines of work begin.
-        var person = AgentName.Create("arvind@test");
-        Requests.Register(_connection, person, Seats.Adapter);
+        var person = PersonSeat.On(ProjectName.Create("test"));
+        Requests.Register(_connection, person, PersonSeat.Adapter);
 
         await Send(from: Orders, to: person, conversationId: "pricing");
 
@@ -277,20 +277,6 @@ public sealed class AgentVerbTests : IDisposable
             Requests.Result((PayloadShape.WholeRequest, "blocked:missing_information")))).Succeeded);
 
         Assert.Equal(ExchangeOutcome.Blocked, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.Outcome);
-    }
-
-    [Fact]
-    public async Task A_result_answers_the_ask_and_is_told_so_when_it_names_something_else()
-    {
-        // A Request is answered whole (§5.3), under the identifier the protocol already used for one carrying no
-        // items a Result could name. A Result naming anything else is refused and told what to send.
-        var sent = await Send();
-
-        var elsewhere = await Result(sent.Exchange!.Id, Requests.Result(("q1", "done")));
-
-        Assert.Equal(TransitionError.OutcomesDoNotMatchItems, elsewhere.Error);
-        Assert.Equal([PayloadShape.WholeRequest], elsewhere.ExpectedItems);
-        Assert.Equal(ExchangeState.Open, (await _exchanges.GetAsync(sent.Exchange.Id, cancellationToken: Ct))!.State);
     }
 
     [Theory]
@@ -434,10 +420,9 @@ public sealed class AgentVerbTests : IDisposable
     [Fact]
     public async Task The_same_reply_to_a_second_clarification_hands_the_turn_back()
     {
-        // Found by the review gate. This test once asserted the opposite, calling a clarification repeated
-        // after its reply a retry. It is a participant saying the same thing at a later point, and a reply
-        // of "yes" to two questions inside a minute was declined as a duplicate of the first, reported as
-        // sent, and left the turn where it was — with nothing to time the exchange out.
+        // A clarification repeated after its reply is not a retry. It is a participant saying the same thing at a
+        // later point, and a reply of "yes" to two questions inside a minute must not be declined as a duplicate of
+        // the first, reported as sent, and leave the turn where it was — with nothing to time the exchange out.
         var sent = await Send();
 
         await Clarify(sent.Exchange!.Id, Billing, "Which invoice run?", 2);

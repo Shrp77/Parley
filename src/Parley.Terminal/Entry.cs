@@ -28,10 +28,9 @@ namespace Parley.Terminal;
 /// holding one is finished from the button rather than from the field.
 /// </para>
 /// <para>
-/// <b>The owner asked for this against the composer.</b> A request's text may be eight
-/// thousand characters — SPEC.md rule 8.4's cap, and the one this surface is most used for — and
-/// it was collected in a field one row tall, which shows about sixty of them at a time. Somebody
-/// writing a paragraph could not see the paragraph.
+/// <b>A paragraph is for the composer.</b> A request's text may be eight thousand characters —
+/// SPEC.md rule 8.4's cap, and the one this surface is most used for — and a field one row tall shows
+/// about sixty of them at a time, so somebody writing a paragraph could not see the paragraph.
 /// </para>
 /// <para>
 /// <b>Which fields are long is declared rather than guessed.</b> Making every field several rows
@@ -101,10 +100,10 @@ internal sealed class Entry
     /// <returns>The box.</returns>
     /// <remarks>
     /// <para>
-    /// <b>A paragraph rather than a line, because a message is one.</b> The owner asked for it after writing a
-    /// long one: a single-line field scrolls sideways, so what somebody had written slid out of sight a
-    /// character at a time and the only way to read their own message back was to walk the cursor through it.
-    /// Rule 8.4's cap is eight thousand characters and this is the box those are written in.
+    /// <b>A paragraph rather than a line, because a message is one.</b> A single-line field scrolls
+    /// sideways, so what somebody had written would slide out of sight and the only way to read it back
+    /// would be to walk the cursor through it. Rule 8.4's cap is eight thousand characters and this is
+    /// the box those are written in.
     /// </para>
     /// <para>
     /// <b>Here rather than in the line region, so the deprecation stays suppressed in one file.</b> That was
@@ -118,9 +117,9 @@ internal sealed class Entry
     /// is in a form.
     /// </para>
     /// <para>
-    /// <b>It shows where you are once there is more than fits</b>, which the owner asked for by name: a box
-    /// that grows to a bound and then scrolls is a box that has hidden something, and a reader with no
-    /// scrollbar cannot tell that from having written less than they thought.
+    /// <b>It shows where you are once there is more than fits</b>: a box that grows to a bound and
+    /// then scrolls has hidden something, and a reader with no scrollbar cannot tell that from having
+    /// written less than they thought.
     /// </para>
     /// </remarks>
     internal static Entry Speaking()
@@ -141,6 +140,64 @@ internal sealed class Entry
 
         return new Entry(box);
     }
+
+    /// <summary>Builds a paragraph somebody reads and scrolls but cannot change.</summary>
+    /// <param name="text">What it holds.</param>
+    /// <param name="takes">Offered every key first; returns whether it took it.</param>
+    /// <returns>The view, wrapping at its own width and showing a scrollbar once there is more than fits.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Here so the deprecation stays suppressed in one file</b>, which is what this file is for. The proposal view draws
+    /// an agent's roadmap and who it names, and a list would have shown one row per line and cut every long item off at
+    /// the edge; a paragraph wraps, and the arrow keys scroll it.
+    /// </para>
+    /// <para>
+    /// The caller passes text that has already been made safe to draw. This view displays what it is given.
+    /// </para>
+    /// </remarks>
+    internal static View Reader(string text, Func<Key, bool>? takes = null)
+    {
+        var box = new TextView
+        {
+            Multiline = true,
+            WordWrap = true,
+            ReadOnly = true,
+            Text = text ?? string.Empty,
+        };
+
+        box.VerticalScrollBar.VisibilityMode = ScrollBarVisibilityMode.Auto;
+
+        // **Offered the key first, because a focused view is.** Without this a letter a screen binds to a choice is eaten
+        // by the paragraph that has focus and never reaches the screen's own handler.
+        if (takes is not null)
+        {
+            box.KeyDown += (_, key) =>
+            {
+                if (takes(key))
+                {
+                    key.Handled = true;
+                }
+            };
+        }
+
+        return box;
+    }
+
+    /// <summary>Replaces what a view built by <see cref="Reader"/> holds.</summary>
+    /// <param name="reader">The view.</param>
+    /// <param name="text">The new text, already made safe to draw.</param>
+    internal static void SetReaderText(View reader, string text)
+    {
+        if (reader is TextView box)
+        {
+            box.Text = text ?? string.Empty;
+        }
+    }
+
+    /// <summary>What a view built by <see cref="Reader"/> holds.</summary>
+    /// <param name="reader">The view.</param>
+    /// <returns>Its text, or empty for a view this class did not build.</returns>
+    internal static string ReaderText(View reader) => (reader as TextView)?.Text ?? string.Empty;
 
     /// <summary>The view itself.</summary>
     internal View View => (View?)_line ?? _paragraph!;
@@ -224,21 +281,73 @@ internal sealed class Entry
     /// <param name="paragraph">The view.</param>
     /// <returns>The rows, at least one.</returns>
     /// <remarks>
+    /// <para>
     /// Measured from the text rather than asked of the toolkit, because the answer is needed while deciding
-    /// the layout that would give the toolkit something to measure. The width used is the view's own once it
-    /// has been laid out and an estimate before that, self-correcting on the first real layout.
+    /// the layout that would give the toolkit something to measure. An estimate before the first layout,
+    /// self-correcting on it.
+    /// </para>
+    /// <para>
+    /// <b>Against a width that does not move, and counted the way word wrap counts.</b> The text's
+    /// current width loses a column whenever the scrollbar appears, and the scrollbar appears whenever
+    /// the box is shorter than the text, so measuring it would make the box grow, lose the scrollbar,
+    /// shrink and flicker. The width is the frame's less the scrollbar's column, whether or not the
+    /// scrollbar is showing, so the measure cannot depend on what it decides; and at that narrower width a
+    /// greedy word wrap never needs fewer rows than the toolkit's, so the scrollbar stays away until the
+    /// box is at its bound.
+    /// </para>
     /// </remarks>
     private static int Deep(TextView paragraph)
     {
-        var width = paragraph.Viewport.Width > 0 ? paragraph.Viewport.Width : 60;
+        var width = paragraph.Frame.Width > 2 ? paragraph.Frame.Width - 1 : 60;
         var rows = 0;
 
         foreach (var line in paragraph.Text.Split('\n'))
         {
-            rows += Math.Max(1, (int)Math.Ceiling(line.TrimEnd('\r').Length / (double)width));
+            rows += Wrapped(line.TrimEnd('\r'), width);
         }
 
         return Math.Max(1, rows);
+    }
+
+    /// <summary>How many rows one line takes when wrapped at words.</summary>
+    /// <param name="line">The line, with no line break in it.</param>
+    /// <param name="width">The columns available.</param>
+    /// <returns>The rows, at least one.</returns>
+    /// <remarks>
+    /// Greedy: a word goes on the row it is typed on if it fits there with a space before it, and on the next row if
+    /// not; a word longer than a whole row is broken across as many rows as it needs. Never fewer rows than counting
+    /// characters gives, which keeps it on the safe side of the toolkit's own wrap.
+    /// </remarks>
+    private static int Wrapped(string line, int width)
+    {
+        var rows = 1;
+        var column = 0;
+
+        foreach (var word in line.Split(' '))
+        {
+            var length = word.Length;
+
+            if (column > 0 && column + 1 + length > width)
+            {
+                rows++;
+                column = 0;
+            }
+            else if (column > 0)
+            {
+                column++;
+            }
+
+            while (length > width - column)
+            {
+                length -= width - column;
+                rows++;
+                column = 0;
+            }
+
+            column += length;
+        }
+
+        return Math.Max(rows, (int)Math.Ceiling(line.Length / (double)width));
     }
 }
 

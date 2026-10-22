@@ -1,7 +1,10 @@
+using System.Globalization;
 using Parley.Client.Rendering;
+using Parley.Client.Views;
 using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Drawing;
+using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
 
 namespace Parley.Terminal;
@@ -11,21 +14,18 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The narrow column of the room.</b> The owner asked for it after 0.29.2 put a count of waiting mail on the
-/// status line: knowing that something is waiting is not knowing what, and the answer to "what" was a key pressed
-/// inside a transcript they had no reason to open.
+/// <b>The narrow column of the room.</b> Knowing that something is waiting is not knowing what; this column says
+/// what.
 /// </para>
 /// <para>
 /// <b>Every row is readable with colour stripped.</b> An agent's colour is <see cref="Palette"/>'s, so it is the
 /// same hue here, in every other view and in the web console — but it repeats a name that is already written, and
 /// never carries a fact of its own. `ColourTests` reads this screen with every attribute removed and asserts
-/// nothing is lost, which is a rule this repository has already broken once by dimming an archived row that said
-/// nothing else about being archived.
+/// nothing is lost.
 /// </para>
 /// <para>
-/// <b>What is outstanding comes from the same pair state the input line derives its acts from</b>
-/// (<see cref="Pairing"/>), so the list and the line cannot disagree about what is owed. Two sources for one fact
-/// is how a surface comes to promise something it will not do.
+/// <b>What is outstanding comes from the pair state</b> (<see cref="Pairing"/>). It is shown only; it never
+/// decides what a line sends, which is always a new Request.
 /// </para>
 /// </remarks>
 internal sealed class RoomRegion : FrameView
@@ -36,11 +36,19 @@ internal sealed class RoomRegion : FrameView
     /// <summary>The heading the participants are listed under.</summary>
     internal const string Participants = "in this conversation";
 
+    /// <summary>The heading the project's other agents are listed under.</summary>
+    /// <remarks>
+    /// Listed so they can be brought in later: a conversation grows by sending an agent a Request, and an agent
+    /// that is not shown cannot be chosen. It says what ticking one does rather than
+    /// that they are absent, because the person is here to decide who joins.
+    /// </remarks>
+    internal const string Elsewhere = "not in it yet (Space adds)";
+
     /// <summary>The heading the person's own seat is listed under.</summary>
     /// <remarks>
-    /// <b>On its own line, above the agents, because a person is not one of them.</b> The owner asked for it
-    /// after taking a seat and then hunting for where it said so: every other row here is somebody they might
-    /// send to, and the one row that is them was indistinguishable in the middle of that list.
+    /// <b>On its own line, above the agents, because a person is not one of them.</b> Every other row here is
+    /// somebody they might send to, and the one row that is them would be indistinguishable in the middle of
+    /// that list.
     /// </remarks>
     internal const string You = "you";
 
@@ -67,8 +75,9 @@ internal sealed class RoomRegion : FrameView
     /// <summary>What is said where nothing is owed, so an empty list is never mistaken for a list that failed.</summary>
     internal const string NothingOwed = "nothing owed by you";
 
-    /// <summary>What is said before a seat has been taken.</summary>
-    internal const string NoSeat = "take a seat to take part";
+    /// <summary>What is said while this terminal is not connected to the project as the person.</summary>
+    /// <remarks>Not "take a seat": there is no seat to take, only a connection coming back.</remarks>
+    internal const string NoSeat = "you are not connected to this project";
 
     /// <summary>What is said when somebody tries to exclude the last recipient left.</summary>
     internal const string LastOne =
@@ -81,6 +90,21 @@ internal sealed class RoomRegion : FrameView
     /// </remarks>
     internal const string Unreachable = "That message is not in the transcript as it stands. Read it again.";
 
+    /// <summary>What is said when a question chosen from the list was settled after the list was drawn.</summary>
+    /// <remarks>
+    /// Said rather than moving the reader somewhere misleading: the agent settled it while the list was open, and the
+    /// transcript beside it now says so (SPEC.md §5.6).
+    /// </remarks>
+    internal const string SettledSince = "That question has been settled since.";
+
+    /// <summary>What the list of one agent's questions is called.</summary>
+    /// <param name="peer">The agent, as the column names it.</param>
+    /// <returns>The title.</returns>
+    internal static string ListTitle(string peer) => $"Waiting on you from {peer}";
+
+    /// <summary>What the list of one agent's questions says above them.</summary>
+    internal const string ListSays = "Oldest first.";
+
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
 
     private List<Row> _rows = [];
@@ -89,6 +113,22 @@ internal sealed class RoomRegion : FrameView
     // without asking a broker anything. A column that had to be re-read to change a checkbox would put a
     // network round trip between a keystroke and the mark it makes.
     private IReadOnlyList<PairState> _pairs = [];
+
+    /// <summary>The project's agents that are not in the conversation on screen.</summary>
+    private IReadOnlyList<AgentName> _others = [];
+
+    /// <summary>
+    /// The agents this machine can start that have not registered yet, by role, for the room to name.
+    /// </summary>
+    /// <remarks>
+    /// <b>Named, never ticked.</b> A name nothing has registered is not one a message can be addressed to, so
+    /// there is nothing to tick; but leaving it out would say the agent does not exist. It is listed so it can be
+    /// seen, and says what is wrong with it.
+    /// </remarks>
+    internal IReadOnlyList<string> Unstarted { get; set; } = [];
+
+    /// <summary>What follows the name of an agent that has not registered. Short, since the column is narrow.</summary>
+    internal const string NotStarted = " (never run)";
     private IReadOnlyList<OutstandingItem> _outstanding = [];
     private IReadOnlyList<AgentName> _addressed = [];
     private AgentName? _me;
@@ -106,12 +146,25 @@ internal sealed class RoomRegion : FrameView
         // `contracts/views.md` means by nothing existing only as a key.
         _list.Accepting += (_, args) =>
         {
-            // **Enter does what the row under it is for**, which is FR-031 read at the level of a list: a
-            // participant is somebody you are addressing or not, and a thing owed is something to go and read.
+            // **An agent that has not registered cannot be ticked or written to, so choosing it starts it.** Once it
+            // has registered it is an ordinary row.
+            if (SelectedUnstarted is { } role)
+            {
+                args.Handled = true;
+                StartRequested?.Invoke(this, role);
+
+                return;
+            }
+
+            // **Enter does what the row under it is for**: on a participant it is going to say something, and on a
+            // thing owed it is going to read it.
+            //
+            // **Enter on a participant goes to the box and leaves the ticks alone**: pressing Enter on an agent is
+            // somebody about to type. Space is the tick.
             if (SelectedPeer is { } peer)
             {
                 args.Handled = true;
-                Toggling?.Invoke(this, peer);
+                Choosing?.Invoke(this, peer);
 
                 return;
             }
@@ -132,11 +185,29 @@ internal sealed class RoomRegion : FrameView
     /// <summary>Raised when somebody included or excluded a participant from what they are writing.</summary>
     internal event EventHandler<AgentName>? Toggling;
 
+    /// <summary>Raised with the role of an agent that has not registered when somebody chose it, which means start it.</summary>
+    internal event EventHandler<string>? StartRequested;
+
+    /// <summary>The role of the agent that has not registered under the cursor, or null when the cursor is not on one.</summary>
+    internal string? SelectedUnstarted => Under?.Role;
+
+    /// <summary>Raised when somebody pressed Enter on a participant, which means they are about to write.</summary>
+    internal event EventHandler<AgentName>? Choosing;
+
     /// <summary>What the list is showing, for a test to read without the screen.</summary>
     internal IReadOnlyList<string> Written => [.. _rows.Select(r => r.Text)];
 
     /// <summary>The list itself, so a test drives this column the way it drives every other one.</summary>
     internal GuardedList List => _list;
+
+    /// <summary>Every agent with questions the column last showed as waiting on this person.</summary>
+    internal IReadOnlyList<OutstandingItem> Outstanding => _outstanding;
+
+    /// <summary>The questions of one agent the column last showed as waiting on this person.</summary>
+    /// <param name="peer">The agent.</param>
+    /// <returns>Its questions, or null when it has none waiting.</returns>
+    internal IReadOnlyList<WaitingQuestion>? Waiting(AgentName peer) =>
+        _outstanding.FirstOrDefault(item => item.Peer == peer)?.Questions;
 
     /// <summary>The outstanding item under the cursor, or null when the cursor is not on one.</summary>
     internal OutstandingItem? Selected => Under?.Item;
@@ -150,11 +221,18 @@ internal sealed class RoomRegion : FrameView
 
     /// <summary>Includes or excludes the participant under the cursor.</summary>
     /// <remarks>
-    /// Raises the same event the row's own Enter raises rather than changing anything itself. This column
-    /// draws who a message is going to; it does not decide it.
+    /// Raises an event rather than changing anything itself. This column draws who a message is going to; it does
+    /// not decide it. Space ticks; Enter on a participant goes to the box instead.
     /// </remarks>
     internal void Toggle()
     {
+        if (SelectedUnstarted is { } role)
+        {
+            StartRequested?.Invoke(this, role);
+
+            return;
+        }
+
         if (SelectedPeer is { } peer)
         {
             Toggling?.Invoke(this, peer);
@@ -168,7 +246,24 @@ internal sealed class RoomRegion : FrameView
     {
         ArgumentNullException.ThrowIfNull(addressed);
 
-        Show(_pairs, _outstanding, _seated, _me, addressed);
+        // With the activity it already has: a tick changes who a line goes to, not what anybody is doing, and drawing
+        // without it blanked every mark until the next read.
+        Show(_pairs, _outstanding, _seated, _me, addressed, _activity, _now, _others);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Drawn again at a new width, because where a row splits depends on it. The rows are what the column was last
+    /// given, so nothing is read again.
+    /// </remarks>
+    protected override void OnViewportChanged(DrawEventArgs e)
+    {
+        base.OnViewportChanged(e);
+
+        if (Viewport.Width != _width && _width >= 0)
+        {
+            Show(_pairs, _outstanding, _seated, _me, _addressed, _activity, _now, _others);
+        }
     }
 
     /// <summary>Shows a conversation's participants and what this person owes in it.</summary>
@@ -177,6 +272,9 @@ internal sealed class RoomRegion : FrameView
     /// <param name="seated">Whether a seat is held.</param>
     /// <param name="me">The name the person holds a seat under, or null when they hold none.</param>
     /// <param name="addressed">Who what is being written goes to, or null for every participant.</param>
+    /// <param name="activity">What each participant is doing, or null when it could not be read.</param>
+    /// <param name="now">The time to measure how long somebody has been working against.</param>
+    /// <param name="others">The project's agents that are not in this conversation, or null for none.</param>
     /// <remarks>
     /// Headings are rows rather than decoration, for the reason the agents list groups by state: a row does not
     /// wrap, and a heading said once is shorter than a qualifier repeated on every row.
@@ -186,12 +284,19 @@ internal sealed class RoomRegion : FrameView
         IReadOnlyList<OutstandingItem> outstanding,
         bool seated,
         AgentName? me = null,
-        IReadOnlyList<AgentName>? addressed = null)
+        IReadOnlyList<AgentName>? addressed = null,
+        IReadOnlyDictionary<AgentName, Activity>? activity = null,
+        DateTimeOffset? now = null,
+        IReadOnlyList<AgentName>? others = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
         ArgumentNullException.ThrowIfNull(outstanding);
 
+        _activity = activity ?? new Dictionary<AgentName, Activity>();
+        _now = now ?? DateTimeOffset.UtcNow;
+
         _pairs = pairs;
+        _others = others ?? [];
         _outstanding = outstanding;
         _seated = seated;
         _me = me;
@@ -211,11 +316,44 @@ internal sealed class RoomRegion : FrameView
 
         foreach (var pair in pairs)
         {
+            // Parley is named as Parley rather than by its registry name, and is not a row a person can address: it
+            // receives nobody's work, and ticking it would put a recipient on a message the broker refuses.
+            if (Facilitation.Is(pair.Peer))
+            {
+                rows.Add(new Row("  " + Facilitation.DisplayName + " -- this project's facilitator", null, null, null));
+
+                continue;
+            }
+
+            // The participation mark is a character and not a colour: the heading above
+            // says who has taken part and the mark says it on the row, so a row read alone still says so.
             rows.Add(new Row(
-                Mark(pair.Peer) + Safe.Text(pair.Peer.Value) + Standing(pair),
+                Mark(pair.Peer) + RoomRoster.ParticipantMark + Glyph(pair.Peer) + " " + Safe.Text(Shown(pair.Peer, pairs)) + Standing(pair),
                 null,
                 Palette.SlotFor(pair.Peer),
                 pair.Peer));
+        }
+
+        // **Listed whether or not a seat is held**: every agent of the project is in the room, so what a person
+        // reads here does not depend on whether they have connected. Ticking one is only possible with a seat.
+        if (_others.Count > 0 || Unstarted.Count > 0)
+        {
+            rows.Add(new Row(string.Empty, null, null, null));
+            rows.Add(new Row(Elsewhere, null, null, null));
+
+            foreach (var other in _others)
+            {
+                rows.Add(new Row(
+                    Mark(other) + " " + Glyph(other) + " " + Safe.Text(_others.Count(o => o.Role == other.Role) > 1 ? other.Value : other.Role),
+                    null,
+                    Palette.SlotFor(other),
+                    other));
+            }
+
+            foreach (var role in Unstarted)
+            {
+                rows.Add(new Row("[ ] " + Safe.Text(role) + NotStarted, null, null, null, role));
+            }
         }
 
         rows.Add(new Row(string.Empty, null, null, null));
@@ -231,15 +369,177 @@ internal sealed class RoomRegion : FrameView
         }
         else
         {
+            // **One row per agent, with how many of its questions are waiting**; Enter on the row lists them.
             foreach (var item in outstanding)
             {
-                rows.Add(new Row("  " + Safe.Text(item.Says), item, Palette.SlotFor(item.Peer), null));
+                rows.Add(new Row(
+                    "  " + Safe.Text(Shown(item.Peer, pairs)) + " (" + item.Questions.Count.ToString(CultureInfo.InvariantCulture) + ")",
+                    item,
+                    Palette.SlotFor(item.Peer),
+                    null));
             }
         }
 
+        // **What the marks mean, said on screen**, because a mark nothing explains is a fact that exists only for the
+        // person who wrote it — the same rule that keeps colour from carrying anything alone.
+        if (pairs.Any(pair => !Facilitation.Is(pair.Peer)) || _others.Count > 0)
+        {
+            rows.Add(new Row(string.Empty, null, null, null));
+            rows.Add(new Row(RoomRoster.ParticipantLegend, null, null, null));
+            rows.AddRange(Activities.Legend.Select(line => new Row(line, null, null, null)));
+        }
+
+        _width = Viewport.Width;
+        rows = Fit(rows, _width);
+
+        // **The cursor stays on what it was on, not on the row number it was at.** A row that splits or joins above it
+        // moves everything below by one, and every refresh can do that when a status grows past the edge — so a
+        // cursor kept by position would land on a different agent, and Space would tick somebody else.
+        var was = Under;
+        var at = was is null ? _list.SelectedItem : rows.FindIndex(row => Same(row, was));
+
         _rows = rows;
-        _list.Replace([.. rows.Select(r => r.Text)], _list.SelectedItem);
+        _list.Replace([.. rows.Select(r => r.Text)], at is >= 0 ? at : _list.SelectedItem);
     }
+
+    /// <summary>Whether two rows are about the same agent or the same thing owed.</summary>
+    /// <param name="row">A row.</param>
+    /// <param name="other">Another.</param>
+    /// <returns><see langword="true"/> when they name one thing.</returns>
+    private static bool Same(Row row, Row other) =>
+        (other.Peer is { } peer && row.Peer == peer)
+        || (other.Item is { } item && row.Item is { } mine && mine.Peer == item.Peer)
+        || (other.Peer is null && other.Item is null && row.Text == other.Text);
+
+    /// <summary>The width the rows were last fitted to, or -1 before anything was shown.</summary>
+    private int _width = -1;
+
+    /// <summary>Splits a row too wide for the column at its dash, with what follows on an indented row of its own.</summary>
+    /// <param name="rows">The rows as written.</param>
+    /// <param name="width">The column's width, or nought before it has one.</param>
+    /// <returns>The rows as they fit.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>What an agent is doing is the half of the row worth reading</b>, and at the edge of a column some thirty
+    /// characters wide it would be the half that was cut.
+    /// </para>
+    /// <para>
+    /// <b>Both rows belong to the same thing</b>, so a key on either acts on the agent or the item it names — the second
+    /// row is not a separate place for the cursor to mean nothing. A row with no dash, or one that fits, is left alone.
+    /// </para>
+    /// </remarks>
+    private static List<Row> Fit(List<Row> rows, int width)
+    {
+        if (width <= 0)
+        {
+            return rows;
+        }
+
+        var fitted = new List<Row>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            var dash = row.Text.IndexOf(" — ", StringComparison.Ordinal);
+
+            if (row.Text.Length <= width || dash < 0)
+            {
+                fitted.Add(row);
+
+                continue;
+            }
+
+            // Under the name, which starts after the tick and the mark; the leading spaces of an owed row otherwise.
+            var indent = row.Peer is not null
+                ? Addressed.Length + 3
+                : row.Text.Length - row.Text.TrimStart().Length;
+
+            fitted.Add(row with { Text = row.Text[..dash] });
+
+            // What follows the dash can be wider than the column too ("stopped <1m � 2 permission refusals ..."), and a
+            // row that is cut hides the half somebody opened the screen to read. It wraps at words, every row indented.
+            var pad = new string(' ', indent + 2);
+
+            foreach (var piece in WrapWords(row.Text[(dash + 3)..], Math.Max(width - pad.Length, 1)))
+            {
+                fitted.Add(row with { Text = pad + piece });
+            }
+        }
+
+        return fitted;
+    }
+
+    /// <summary>Breaks words into lines no wider than a limit; a word longer than the limit is cut.</summary>
+    /// <param name="text">The words.</param>
+    /// <param name="limit">The widest a line may be.</param>
+    /// <returns>At least one line.</returns>
+    private static List<string> WrapWords(string text, int limit)
+    {
+        var lines = new List<string>();
+        var current = string.Empty;
+
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var rest = word;
+
+            while (rest.Length > limit)
+            {
+                if (current.Length > 0)
+                {
+                    lines.Add(current);
+                    current = string.Empty;
+                }
+
+                lines.Add(rest[..limit]);
+                rest = rest[limit..];
+            }
+
+            if (current.Length == 0)
+            {
+                current = rest;
+            }
+            else if (current.Length + 1 + rest.Length <= limit)
+            {
+                current += " " + rest;
+            }
+            else
+            {
+                lines.Add(current);
+                current = rest;
+            }
+        }
+
+        if (current.Length > 0 || lines.Count == 0)
+        {
+            lines.Add(current);
+        }
+
+        return lines;
+    }
+
+    private IReadOnlyDictionary<AgentName, Activity> _activity = new Dictionary<AgentName, Activity>();
+
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+
+    /// <summary>The mark in front of a participant, from what they are doing.</summary>
+    /// <param name="peer">The participant.</param>
+    /// <returns>One character; a space when nothing is known, so nothing is claimed.</returns>
+    /// <remarks>
+    /// <see cref="Activities"/>' own, so the web UI marks the same agent the same way.
+    /// </remarks>
+    private string Glyph(AgentName peer) => Activities.Mark(_activity.GetValueOrDefault(peer));
+
+    /// <summary>A participant's name as the column draws it.</summary>
+    /// <param name="peer">The participant.</param>
+    /// <param name="pairs">Everybody in the conversation.</param>
+    /// <returns>The role alone where no other participant shares it, else the whole name.</returns>
+    /// <remarks>
+    /// <b>The machine half is usually noise.</b> Agents in one deployment are nearly always on one
+    /// machine, so <c>@machine</c> on every row is the same word repeated in a column twenty-odd characters wide — and it
+    /// pushed what each agent was doing off the edge. Where two participants share a role the machine is what tells them
+    /// apart, and the whole name is kept.
+    /// </remarks>
+    private static string Shown(AgentName peer, IReadOnlyList<PairState> pairs) =>
+        pairs.Count(pair => pair.Peer.Role == peer.Role) > 1 ? peer.Value : peer.Role;
 
     /// <summary>Whether what is being written goes to this participant.</summary>
     /// <param name="peer">The participant.</param>
@@ -256,14 +556,23 @@ internal sealed class RoomRegion : FrameView
     /// <returns>The clause, or nothing where nothing is open.</returns>
     /// <remarks>
     /// Written out rather than left to the colour, and phrased from this person's side: "owes you" and "waiting on
-    /// you" are the two facts somebody reads this column to learn.
+    /// you" are the two facts somebody reads this column to learn. Then what the participant is doing, in
+    /// <see cref="Activities.Says"/>' words: working while a turn runs, waiting on somebody, or stopped with
+    /// what it was refused — unless the turn is this person's, which wins.
     /// </remarks>
-    private static string Standing(PairState pair) => pair.Turn switch
+    private string Standing(PairState pair)
     {
-        Turn.Mine => " — waiting on you",
-        Turn.Theirs => " — owes you",
-        _ => string.Empty,
-    };
+        if (pair.Turn == Turn.Mine)
+        {
+            return " — waiting on you";
+        }
+
+        var says = _activity.TryGetValue(pair.Peer, out var doing) ? Activities.Says(doing, _now) : string.Empty;
+
+        return says.Length > 0
+            ? " — " + says
+            : pair.Turn == Turn.Theirs ? " — owes you" : string.Empty;
+    }
 
     /// <summary>The colour of one row, derived from a name already written on it.</summary>
     /// <param name="row">Which row.</param>
@@ -277,23 +586,22 @@ internal sealed class RoomRegion : FrameView
     /// <param name="Item">The thing owed this row activates, or null.</param>
     /// <param name="Slot">The colour slot, or null for a heading.</param>
     /// <param name="Peer">The participant this row is a checkbox for, or null.</param>
+    /// <param name="Role">The role of an agent that has not registered, which choosing starts, or null.</param>
     /// <remarks>
     /// <b>At most one of <paramref name="Item"/> and <paramref name="Peer"/> is ever set</b>, and which one
     /// decides what Enter does. A row that was both would be a keystroke whose meaning depended on the order
     /// two branches were written in.
     /// </remarks>
-    private sealed record Row(string Text, OutstandingItem? Item, int? Slot, AgentName? Peer);
+    private sealed record Row(string Text, OutstandingItem? Item, int? Slot, AgentName? Peer, string? Role = null);
 }
 
 /// <summary>
-/// Something this person must address, and the message it refers to.
+/// One agent and every question of its waiting on this person, which Enter on its row lists.
 /// </summary>
-/// <param name="Peer">Who is waiting, or who asked.</param>
-/// <param name="Says">What is owed, in words a person reads.</param>
-/// <param name="Exchange">The exchange it belongs to.</param>
-/// <param name="At">The message to put on screen when this is activated, or null when there is none to show.</param>
+/// <param name="Peer">The agent waiting.</param>
+/// <param name="Questions">Its questions, oldest first, from <see cref="WaitingOnYou"/>.</param>
 /// <remarks>
-/// Built from the same pair state the input line derives its acts from, so the column and the line cannot
-/// disagree about what is outstanding.
+/// Built from the one derivation the web page reads too, so the two surfaces cannot disagree about who is waiting on the
+/// person or how many questions each has.
 /// </remarks>
-internal sealed record OutstandingItem(AgentName Peer, string Says, long Exchange, long? At);
+internal sealed record OutstandingItem(AgentName Peer, IReadOnlyList<WaitingQuestion> Questions);

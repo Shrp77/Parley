@@ -7,252 +7,206 @@ using Wire = Parley.Transport;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// The guards around a person taking a seat.
+/// The guards around the person's seat: whose it is, where the name comes from, and how long it is held.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A seat is the one thing the console gained that an operator never had. §10.2 lets an operator
-/// retire, purge and force-conclude any agent in the deployment, so a console has never been
-/// short of power — what it could not do was <em>speak as</em> somebody, and a transcript
-/// recording words an agent never said is a different kind of wrong from an operator visibly
-/// instructing it.
+/// <b>Rewritten for the broker-provided seat.</b> This file once probed a person typing a name: an
+/// agent's name refused, capitals folded, a malformed name refused with the rule, a person leaving every project at
+/// once. There is no typed name now. The broker provides <c>human-user@&lt;project&gt;</c> and the book attaches as the
+/// row its registry names — so the attack those tests were written against, a person speaking as <c>orders</c>, is
+/// refused in storage instead, where the seat's adapter cannot sit under any other role.
 /// </para>
 /// <para>
-/// These probe that rather than read it. Every one of them was written as the attack first: seat
-/// somebody on a name an agent holds, seat them while the registry is unknown, leave one project
-/// and check the others, and walk the clock past the idle window.
+/// What is probed here is what a surface still decides: <b>that the name comes from the registry and nothing the
+/// surface knows about itself</b> (a surface on a laptop speaks as the project's
+/// person); that an unreadable registry, and one with no person row, refuse rather than guess; that one project's seat
+/// says nothing about another's; and that the idle window drops the stream while keeping the seat known.
 /// </para>
 /// </remarks>
 public sealed class SeatTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null);
 
     private static readonly ProjectSettings Beta =
-        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5302", null, null);
+        new(ProjectName.Create("beta"), string.Empty, "http://127.0.0.1:5302", null);
 
     [Fact]
-    public async Task A_name_an_agent_already_holds_is_refused()
+    public async Task The_seat_is_the_registrys_person_row_and_not_this_machine()
     {
-        // The attack. `orders` is a perfectly ordinary thing for a person to type, and without
-        // this the console attaches under that name -- the broker registers what is absent and
-        // updates what is not -- and every message the person then sends is recorded as the
-        // orders agent's own words.
+        // `Seat.Name` must not add `MachineName.Current` to whatever was typed, or a surface on a laptop reaching a
+        // broker through a tunnel becomes a second person in the project. The
+        // row here names a project, `alpha`, that is not this machine's name, and the attach must say exactly that.
+        var agents = new StubAgents();
+        using var book = new SeatBook(_ => agents);
+
+        var outcome = await book.TakeAsync(Alpha, [Person(Alpha)], TestContext.Current.CancellationToken);
+
+        Assert.True(outcome.Seated, outcome.Problem);
+        Assert.Equal("human-user@alpha", outcome.Hold!.Seat.Name.Value);
+        Assert.Equal("human-user@alpha", agents.LastAttach);
+        Assert.NotEqual(MachineName.Current, outcome.Hold.Seat.Name.Machine);
+    }
+
+    [Fact]
+    public async Task A_registry_with_no_person_row_refuses_and_says_why()
+    {
+        // Inventing a name here would be a failure, so it refuses — with nothing on the wire, since an
+        // attach that is undone is still a registration written.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
 
         var outcome = await book.TakeAsync(
-            Alpha,
-            Seated("orders"),
-            [Registered("orders", adapter: "claude-code")],
-            TestContext.Current.CancellationToken);
+            Alpha, [Registered("orders", "claude-code")], TestContext.Current.CancellationToken);
 
         Assert.False(outcome.Seated);
-        Assert.Contains("already registered here as an agent", outcome.Problem!, StringComparison.Ordinal);
-
-        // Refused before anything was attached, not after. An attach that is undone is still a
-        // registration written and a presence announced.
+        Assert.Equal(SeatBook.NoPersonSeat, outcome.Problem);
         Assert.Equal(0, agents.Attaches);
     }
 
     [Fact]
-    public async Task A_seat_this_console_already_holds_is_not_a_collision()
+    public async Task A_typed_seat_left_from_before_is_not_taken_for_the_person()
     {
-        // The other direction, and the reason the check is on the adapter rather than on the
-        // name being present at all. Somebody who joins, is swept for idleness and comes back
-        // finds their own registry row waiting, and must not be locked out of their own name.
+        // The person is found by role; a row that merely shares the adapter is somebody's typed seat, and adopting
+        // it would speak as the wrong name.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
 
         var outcome = await book.TakeAsync(
-            Alpha,
-            Seated("arvind"),
-            [Registered("arvind", adapter: Seat.Adapter)],
-            TestContext.Current.CancellationToken);
+            Alpha, [Registered("arvind", Seat.Adapter)], TestContext.Current.CancellationToken);
 
-        Assert.True(outcome.Seated);
-        Assert.Equal(1, agents.Attaches);
+        Assert.False(outcome.Seated);
+        Assert.Equal(0, agents.Attaches);
     }
 
     [Fact]
     public async Task A_registry_that_could_not_be_read_refuses_the_seat()
     {
-        // The vacuous case, which is the one that matters. A guard that reads a registry and
-        // then proceeds when the read failed is a guard that passes hardest exactly when the
-        // deployment is least well known -- and it would pass silently, because an unreachable
-        // broker and a registry with nobody in it are the same empty list.
+        // The vacuous case, which is the one that matters: an unreachable broker and a registry with nobody in it must
+        // not be the same value, or a guard passes hardest exactly when the deployment is least well known.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
 
-        var outcome = await book.TakeAsync(
-            Alpha, Seated("orders"), registry: null, TestContext.Current.CancellationToken);
+        var outcome = await book.TakeAsync(Alpha, registry: null, TestContext.Current.CancellationToken);
 
         Assert.False(outcome.Seated);
         Assert.Equal(0, agents.Attaches);
     }
 
     [Fact]
-    public async Task Leaving_releases_the_seat_in_every_project_at_once()
-    {
-        // A person leaves a console, not a page. Releasing only the project they happened to be
-        // looking at would leave them present in the others, with no surface anywhere saying so
-        // and nothing but the idle sweep to eventually notice.
-        var agents = new StubAgents();
-        using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
-        var token = TestContext.Current.CancellationToken;
-
-        await book.TakeAsync(Alpha, seat, [], token);
-        await book.TakeAsync(Beta, seat, [], token);
-
-        Assert.Equal(2, book.Seats(seat).Count);
-        Assert.Equal(2, book.Leave(seat));
-        Assert.Empty(book.Seats(seat));
-    }
-
-    [Fact]
-    public async Task One_person_leaving_does_not_unseat_another()
+    public async Task One_seat_per_project_and_one_says_nothing_of_another()
     {
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
         var token = TestContext.Current.CancellationToken;
 
-        await book.TakeAsync(Alpha, Seated("arvind"), [], token);
-        await book.TakeAsync(Alpha, Seated("sam"), [], token);
+        await book.TakeAsync(Alpha, [Person(Alpha)], token);
 
-        Assert.Equal(1, book.Leave(Seated("arvind")));
-        Assert.Single(book.Seats(Seated("sam")));
+        Assert.NotNull(book.Held("alpha"));
+        Assert.Null(book.Held("beta"));
+
+        await book.TakeAsync(Beta, [Person(Beta)], token);
+
+        Assert.Equal(["alpha", "beta"], book.Seats().Select(h => h.Project));
     }
 
     [Fact]
-    public async Task A_seat_nobody_has_used_is_released()
+    public async Task Taking_it_twice_holds_one_seat_and_not_two()
     {
-        // SPEC.md §4.0 makes an open connection the evidence that an agent is reachable, and it
-        // has no heartbeat because a heartbeat manufactures presence for something that has
-        // died. A browser tab is exactly that: it holds the console open long after the person
-        // has gone home, and a peer reading the roster would be told somebody is there to ask.
+        // Two attachments for one name is two arrivals in the registry and two departures on the way out.
         var agents = new StubAgents();
         using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
-
-        await book.TakeAsync(Alpha, seat, [], TestContext.Current.CancellationToken);
-
-        Assert.Equal(0, book.Sweep(DateTimeOffset.UtcNow));
-        Assert.Equal(1, book.Sweep(DateTimeOffset.UtcNow + SeatBook.IdleAfter + TimeSpan.FromMinutes(1)));
-        Assert.Empty(book.Seats(seat));
-    }
-
-    [Fact]
-    public async Task Using_the_console_keeps_the_seat()
-    {
-        // The other half, and the one that makes the sweep safe to have. Without it a person
-        // reading a long transcript is thrown out of the deployment mid-read.
-        var agents = new StubAgents();
-        using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
-
-        await book.TakeAsync(Alpha, seat, [], TestContext.Current.CancellationToken);
-
-        var later = DateTimeOffset.UtcNow + SeatBook.IdleAfter - TimeSpan.FromMinutes(1);
-
-        book.Touch(seat, later);
-
-        Assert.Equal(0, book.Sweep(later + TimeSpan.FromMinutes(2)));
-        Assert.Single(book.Seats(seat));
-    }
-
-    [Fact]
-    public async Task Joining_twice_holds_one_seat_and_not_two()
-    {
-        // Two attachments for one name is two arrivals in the registry and two departures on the
-        // way out, and the second release would report an agent gone that is still connected.
-        var agents = new StubAgents();
-        using var book = new SeatBook(_ => agents);
-        var seat = Seated("arvind");
         var token = TestContext.Current.CancellationToken;
 
-        await book.TakeAsync(Alpha, seat, [], token);
-        await book.TakeAsync(Alpha, seat, [], token);
+        await book.TakeAsync(Alpha, [Person(Alpha)], token);
+        await book.TakeAsync(Alpha, [Person(Alpha)], token);
 
-        Assert.Single(book.Seats(seat));
+        Assert.Single(book.Seats());
         Assert.Equal(1, agents.Attaches);
     }
 
-    [Theory]
-    [InlineData("Arvind", "arvind")]
-    [InlineData("  sam  ", "sam")]
-    public void A_name_is_read_as_a_person_would_write_it(string typed, string expected)
+    [Fact]
+    public async Task Ensuring_a_held_seat_asks_nothing_of_the_registry()
     {
-        // The constraint is the protocol's spelling of a role, not a rule about how anybody
-        // writes their own name. Refusing "Arvind" and making somebody guess why would be the
-        // console enforcing a wire format on a person.
-        Assert.True(Seat.TryRead(typed, out var seat, out _));
-        Assert.Equal(expected, seat.Person);
-    }
+        // What every page and every key calls. The ordinary case — somebody is here — must cost no broker call.
+        var agents = new StubAgents();
+        using var book = new SeatBook(_ => agents);
+        var token = TestContext.Current.CancellationToken;
+        var asked = 0;
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    [InlineData("2fast")]
-    [InlineData("has space")]
-    [InlineData("orders@alpha")]
-    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    public void A_name_that_cannot_be_an_agent_is_refused_with_the_rule(string typed)
-    {
-        Assert.False(Seat.TryRead(typed, out _, out var problem));
-        Assert.NotNull(problem);
+        await book.TakeAsync(Alpha, [Person(Alpha)], token);
+
+        var outcome = await book.EnsureAsync(
+            Alpha,
+            _ =>
+            {
+                asked++;
+
+                return Task.FromResult<IReadOnlyList<AgentRecord>?>([Person(Alpha)]);
+            },
+            token);
+
+        Assert.True(outcome.Seated);
+        Assert.Equal(0, asked);
     }
 
     [Fact]
-    public void A_seat_reports_a_human_responder()
+    public async Task Nobody_at_the_surface_drops_the_stream_and_the_seat_stays_known()
     {
-        // SPEC.md §11.3: identity uses a scheme rather than a model name, and `human:<name>` is
-        // the one for a person. Getting this wrong would make a person's answers indistinguishable
-        // from a model's, which is the whole failure §11.3 exists to prevent.
-        Assert.Equal("human:arvind", Seated("arvind").Responder);
-        Assert.StartsWith("arvind@", Seated("arvind").Name.Value, StringComparison.Ordinal);
+        // SPEC.md §4.0: an open connection is the evidence of presence, and a tab left open is not somebody at a desk.
+        // So the stream goes after the idle window and the broker reads the person as away — but the seat is the
+        // broker's and is remembered here, so the count of what is waiting still works.
+        var agents = new StubAgents();
+        using var book = new SeatBook(_ => agents);
+
+        var taken = await book.TakeAsync(Alpha, [Person(Alpha)], TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, book.Sweep(DateTimeOffset.UtcNow));
+        Assert.Equal(1, book.Sweep(DateTimeOffset.UtcNow + SeatBook.IdleAfter + TimeSpan.FromMinutes(1)));
+        Assert.Empty(book.Seats());
+        Assert.Equal(taken.Hold!.Seat, book.Known("alpha"));
     }
 
     [Fact]
-    public void A_seat_cannot_claim_the_brokers_own_namespace()
+    public async Task Using_the_surface_keeps_the_person_here()
     {
-        // §11.3 reserves `parley:` and has the broker refuse an adapter claiming it, because §15
-        // counts broker-authored closes to find an unhealthy deployment. A person cannot reach
-        // that namespace here because the prefix is fixed and the name is a role, but the check
-        // is worth having: it is one edit away from being an interpolation somebody widens.
-        Assert.DoesNotContain("parley:", Seated("parley").Responder, StringComparison.Ordinal);
+        // The other half, and the one that makes the sweep safe to have.
+        var agents = new StubAgents();
+        using var book = new SeatBook(_ => agents);
+
+        await book.TakeAsync(Alpha, [Person(Alpha)], TestContext.Current.CancellationToken);
+
+        var later = DateTimeOffset.UtcNow + SeatBook.IdleAfter - TimeSpan.FromMinutes(1);
+
+        book.Touch(later);
+
+        Assert.Equal(0, book.Sweep(later + TimeSpan.FromMinutes(2)));
+        Assert.Single(book.Seats());
     }
 
-    /// <summary>A seat for a person, with the name read the way the form reads it.</summary>
-    /// <param name="person">What they typed.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
+    [Fact]
+    public void A_seat_reports_its_own_name_as_the_responder()
     {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
+        // SPEC.md §11.3: the responder is a label, and the person's is the seat's own name like any participant's.
+        var seat = new Seat(PersonSeat.On(ProjectName.Create("alpha")));
 
-        return seat;
+        Assert.Equal("human-user", seat.Responder);
+        Assert.Equal(PersonSeat.Role, seat.Person);
+        Assert.DoesNotContain("parley:", seat.Responder, StringComparison.Ordinal);
     }
 
-    /// <summary>A registry row for a name on this machine.</summary>
-    /// <param name="role">The role half.</param>
-    /// <param name="adapter">What the row says is running it.</param>
-    /// <returns>The row.</returns>
-    private static AgentRecord Registered(string role, string adapter) =>
-        new(AgentName.Create($"{role}@{MachineName.Current}"),
-            adapter,
-            AgentTier.Pull,
-            null,
-            null,
-            null,
-            Connected: true,
+    /// <summary>The person seat a broker writes for a project.</summary>
+    private static AgentRecord Person(ProjectSettings project) =>
+        new(PersonSeat.On(project.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, Connected: false,
             AgentStatus.Active);
 
+    /// <summary>A registry row for a role on this machine.</summary>
+    private static AgentRecord Registered(string role, string adapter) =>
+        new(AgentName.Create($"{role}@{MachineName.Current}"), adapter, AgentTier.Pull, null, null, null,
+            Connected: true, AgentStatus.Active);
+
     /// <summary>An agent client that acknowledges an attach and holds a stream that never ends.</summary>
-    /// <remarks>
-    /// Enough to be attached and no more. What these tests are about is which attaches happen and
-    /// which do not, so the stream's job is to acknowledge and then block — which is also what a
-    /// real one does for almost all of its life.
-    /// </remarks>
     private sealed class StubAgents : Wire.Agents.AgentsClient
     {
         private int _attaches;
@@ -260,11 +214,15 @@ public sealed class SeatTests
         /// <summary>How many times an attach was actually put on the wire.</summary>
         public int Attaches => Volatile.Read(ref _attaches);
 
+        /// <summary>The name the last attach was for.</summary>
+        public string? LastAttach { get; private set; }
+
         /// <inheritdoc/>
         public override AsyncServerStreamingCall<Wire.Event> Attach(
             Wire.AttachRequest request, CallOptions options)
         {
             Interlocked.Increment(ref _attaches);
+            LastAttach = request.Agent;
 
             return new AsyncServerStreamingCall<Wire.Event>(
                 new Acknowledged(),

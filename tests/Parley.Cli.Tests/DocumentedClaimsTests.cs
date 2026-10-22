@@ -9,16 +9,15 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 3. The <c>remarks</c> in this feature carry the reasoning, which is the
+/// The <c>remarks</c> in this feature carry the reasoning, which is the
 /// house style and the reason the code is readable — and several of them are not reasoning but
 /// <i>assertions of fact</i>: a legacy key is never renamed, withdrawing never touches the standing
 /// instructions, an entry at our key that carries no variable is still ours if it runs the adapter.
 /// </para>
 /// <para>
 /// A sentence like that is a promise to whoever reads it while deciding whether this is safe to point
-/// at a checkout, and nothing was checking any of them. This gate has already found two comments that
-/// had stopped being true — one naming a removed flag, one arguing for behaviour that had been the
-/// wrong behaviour all along. Those were found by reading; these are checked.
+/// at a checkout, and a comment can stop being true — naming a removed flag, or arguing for behaviour that is
+/// wrong. These claims are checked rather than read.
 /// </para>
 /// </remarks>
 public sealed class DocumentedClaimsTests : IDisposable
@@ -54,7 +53,6 @@ public sealed class DocumentedClaimsTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             project ?? "alpha",
             Path.Combine(_root, "node.json"),
@@ -71,7 +69,7 @@ public sealed class DocumentedClaimsTests : IDisposable
         // `LaunchKey`: "Reading it is permanent; it is never renamed in place, because the key is a
         // component of every tool name the agent behind it already sees." Renaming would edit an
         // agent's vocabulary — `mcp__parley__parley_request` becomes `mcp__parley-alpha__parley_request` — to
-        // change nothing, which is the one cost this feature refused to pay.
+        // change nothing, which is a cost not worth paying.
         await File.WriteAllTextAsync(
             LaunchFile,
             new JsonObject
@@ -124,7 +122,7 @@ public sealed class DocumentedClaimsTests : IDisposable
     {
         // `EnrollmentPlan.AdapterCommand`: "an entry at a key this would write at, carrying no parley
         // variable at all, is still ours if it runs the adapter. A person who cleared an environment
-        // by hand has not handed their entry to somebody else." The alternative is FR-009 refusing to
+        // by hand has not handed their entry to somebody else." The alternative is refusing to
         // touch an entry this program wrote.
         await File.WriteAllTextAsync(
             LaunchFile,

@@ -60,7 +60,7 @@ public sealed class StoreLockTests : IDisposable
     [Fact]
     public void The_refusal_names_the_process_holding_it()
     {
-        // The question the owner had to answer by going through every process on the machine.
+        // Otherwise the question is answered by going through every process on the machine.
         using var first = StoreLock.Acquire(Store);
 
         var refused = Assert.Throws<StoreHeldException>(() => StoreLock.Acquire(Store));

@@ -1,62 +1,30 @@
-﻿using System.Security;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using Parley.Core;
+﻿using Parley.Core;
 
 namespace Parley.Configuration;
 
 /// <summary>
-/// The projects configured on this machine: where the file is, what it holds, and what it refuses.
+/// The projects configured on this machine: where the root is, what it holds, and what it refuses.
 /// </summary>
 /// <remarks>
 /// <para>
-/// SPEC.md §4.1 establishes projects as a deployment concept — each with its own store and its own
-/// endpoint, the protocol unaware that any of it exists. What it did not settle is where the list
-/// lives, and the absence had a cost: with no manifest, every path was supplied separately and the
-/// node catalogue fell back to <i>the working directory</i>, so nothing was in a position to notice
-/// when the three disagreed. Enrolling ten repositories from the wrong directory would have written
-/// a new catalogue there while the one the node reads sat elsewhere — ten agents recorded as
-/// consenting to run unattended, none of them startable, and a successful-looking run.
+/// SPEC.md §4.1 makes each project a store and an endpoint of its own, the protocol unaware of any
+/// of it. A machine has one root, named once and never inferred from the working directory, so
+/// every command and the node agree on where the projects are.
 /// </para>
 /// <para>
-/// <b>An unreadable manifest is refused, never treated as empty.</b> This is the third time that
-/// distinction has had to be made in this codebase: an unparseable node catalogue was once read as
-/// "no agents" and overwritten, and a well-formed catalogue whose <c>agents</c> was the wrong JSON
-/// type was cast away and replaced. Absent is the only shape that means "none". Anything else is a
-/// file somebody wrote, in a state this does not understand, and writing over it destroys the only
-/// copy.
+/// <b>An unreadable project is refused, never treated as empty.</b> Absent is the only shape that
+/// means "none". Anything else is a file somebody wrote, in a state this does not understand, and
+/// writing over it destroys the only copy.
 /// </para>
 /// </remarks>
 public static class ProjectManifest
 {
-    /// <summary>The environment variable naming the manifest.</summary>
+    /// <summary>The environment variable naming the machine's root.</summary>
     public const string PathVariable = "PARLEY_CONFIG";
-
-    /// <summary>The file name looked for in the per-user configuration directory.</summary>
-    public const string FileName = "projects.json";
 
     /// <summary>The directory, under the platform's configuration location, that holds it.</summary>
     public const string DirectoryName = "Parley";
 
-    private static readonly string[] Guidance =
-    [
-        "Projects on this machine. Each is an independent Parley deployment: its own store, its",
-        "own endpoint, its own agents. Names may repeat across projects - two projects may each",
-        "have an `orders` - because a broker's connection cannot see another's file.",
-        "",
-        "What may not repeat is a store, an endpoint or a node catalogue. Two brokers on one",
-        "database corrupt it, two cannot hold one port, and one catalogue cannot be two projects'",
-        "answer to which repositories may run with nobody watching.",
-        "",
-        "Managed with `parley project add|remove|list`. Editing by hand is fine; the same rules",
-        "are applied on read, so a mistake is refused rather than half-applied - and whatever this",
-        "version does not recognise is carried across untouched, so an older Parley editing a newer",
-        "one's file does not eat it.",
-        "",
-        "This block is the exception: it is rewritten on every write, so notes of your own belong",
-        "anywhere else in the file rather than here.",
-    ];
 
     /// <summary>
     /// Where the manifest lives when nothing names one.
@@ -83,25 +51,19 @@ public static class ProjectManifest
     /// </exception>
     /// <remarks>
     /// <para>
-    /// <b><see cref="Environment.GetFolderPath(Environment.SpecialFolder)"/> is documented to
-    /// return the empty string when it cannot locate the folder, and on Unix it does.</b> Combined
-    /// straight into a path that produced <c>Parley/projects.json</c> — <i>relative</i>, resolved
-    /// against whatever directory the command was typed in. That is precisely the ambiguity this
-    /// whole feature exists to remove, reintroduced one level above everything it fixed: two
-    /// invocations from two directories would each find, create and write a different manifest,
-    /// and every one of them would look like the manifest.
+    /// <b><see cref="Environment.GetFolderPath(Environment.SpecialFolder)"/> returns the empty
+    /// string when it cannot locate the folder, and on Unix it does.</b> Combined straight into a
+    /// path that would be <i>relative</i>, resolved against whatever directory the command was typed
+    /// in, so two invocations from two directories would each use a different root.
     /// </para>
     /// <para>
     /// So it falls back to the home directory and the XDG default beneath it, and refuses when
-    /// there is no home either. Refusing is right rather than defensive: with no per-user
-    /// location there is nowhere a machine-level manifest could go, and the honest answer is to
-    /// say so and name <c>--config</c>, not to invent a path that happens to be writable.
+    /// there is no home either: with no per-user location there is nowhere a machine-level root
+    /// could go, and the honest answer is to say so and name <c>--config</c>.
     /// </para>
     /// <para>
-    /// Takes the lookup as an argument so the empty case can be tested. It cannot be reached by
-    /// setting a variable — the mapping is inside the runtime — and it was not reached by
-    /// inspection either: the failure was found by running the suite on Linux, where the default
-    /// was silently relative and a test asserting it was absolute is the only thing that said so.
+    /// Takes the lookup as an argument so the empty case can be tested; it cannot be reached by
+    /// setting a variable.
     /// </para>
     /// </remarks>
     public static string DefaultPathFrom(Func<Environment.SpecialFolder, string> folder)
@@ -117,15 +79,16 @@ public static class ProjectManifest
             configuration = string.IsNullOrEmpty(home)
                 ? throw new InvalidOperationException(
                     "This machine has no per-user configuration directory, so there is nowhere " +
-                    $"to keep {FileName}. Name one with --config, or set {PathVariable}.")
+                    $"to keep its projects. Name one with --config, or set {PathVariable}.")
                 : Path.Combine(home, ".config");
         }
 
-        return Path.Combine(configuration, DirectoryName, FileName);
+        return Path.Combine(configuration, DirectoryName);
     }
 
+
     /// <summary>
-    /// Finds the manifest this invocation should use.
+    /// Finds the root this invocation should use.
     /// </summary>
     /// <param name="explicitPath">A path given on the command line, or null.</param>
     /// <param name="variable">Reads an environment variable.</param>
@@ -146,194 +109,122 @@ public static class ProjectManifest
     }
 
     /// <summary>
-    /// Reads the manifest at a path.
+    /// Reads every project a machine has, from the contents of its projects directory.
     /// </summary>
-    /// <param name="path">Where to read from.</param>
-    /// <param name="projects">The projects, empty when the file is absent.</param>
-    /// <param name="problem">Why it could not be read, when this returns false.</param>
-    /// <returns><see langword="true"/> when the manifest was absent or usable.</returns>
+    /// <param name="root">The machine's root.</param>
+    /// <param name="projects">The projects, empty when the machine has none.</param>
+    /// <param name="problem">
+    /// Why the projects could not be read, when this returns false; and what was left out, when it returns true having
+    /// skipped a folder that is not a usable project. Null when there is nothing to say.
+    /// </param>
+    /// <returns><see langword="true"/> unless the projects directory itself could not be listed.</returns>
     /// <remarks>
-    /// Absent returns true with no projects: a machine that has never had a manifest is an
-    /// ordinary machine, not a broken one. Present-and-unreadable returns false, and the caller
-    /// must refuse rather than continue — see the type's own remarks for why that is not
-    /// pedantry.
+    /// <para>
+    /// <b>The directory listing is the set of projects, and there is no index.</b> So there is nothing for
+    /// an index to disagree with: creating a directory is one act.
+    /// </para>
+    /// <para>
+    /// No projects returns true: a machine that has never had one is an ordinary machine, not a broken
+    /// one. What cannot be read returns false and is reported <b>in terms of the project and its file</b>,
+    /// never as the machine having no projects.
+    /// </para>
+    /// <para>
+    /// <b>One bad folder costs that project and no other.</b> A folder that is not a project, or whose
+    /// configuration does not read, is left out and said; two projects claiming one endpoint are both left out, since
+    /// serving either would be a guess about which the person meant.
+    /// </para>
     /// </remarks>
     public static bool TryRead(
-        string path,
+        string root,
         out IReadOnlyList<ProjectSettings> projects,
         out string? problem)
     {
         projects = [];
         problem = null;
 
-        if (!File.Exists(path))
+        var directory = ProjectFolder.ProjectsIn(root);
+
+        // A machine that has never had a project is an ordinary machine, not a broken one.
+        if (!Directory.Exists(directory))
         {
             return true;
         }
 
-        JsonNode? root;
+        string[] folders;
 
         try
         {
-            root = JsonNode.Parse(ReadShared(path));
+            folders = Directory.GetDirectories(directory);
         }
-        catch (Exception exception) when (exception is IOException or JsonException
-                                              or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            problem = $"{path} exists but could not be read: {exception.Message}";
-            return false;
-        }
-
-        if (root is not JsonObject document)
-        {
-            problem = $"{path} is not a JSON object.";
-            return false;
-        }
-
-        var listed = document["projects"];
-
-        if (listed is null)
-        {
-            return true;
-        }
-
-        if (listed is not JsonArray entries)
-        {
-            // Well-formed JSON of the wrong shape. Casting it away and writing an array over it
-            // loses whatever it held just as completely as an unparseable file would.
-            problem = $"{path} has a \"projects\" entry that is not a list.";
+            problem = $"{directory} could not be listed: {exception.Message}";
             return false;
         }
 
         var found = new List<ProjectSettings>();
         var problems = new List<string>();
 
-        for (var index = 0; index < entries.Count; index++)
+        foreach (var folder in folders.OrderBy(Path.GetFileName, StringComparer.Ordinal))
         {
-            if (entries[index] is not JsonObject entry)
-            {
-                problems.Add($"projects[{index}] is empty; delete the row or fill it in");
-                continue;
-            }
+            var entry = Path.GetFileName(folder);
 
-            var name = Text(entry, "name");
-
-            if (!ProjectName.TryCreate(name, out var projectName))
+            // **The folder's name is the project's**, so a folder that is not named like one is not a
+            // project. Reported rather than passed over: it is somebody's mistake in the one directory
+            // whose contents are the answer, and silence there is how a project goes missing.
+            if (!ProjectName.TryCreate(entry, out var name))
             {
+                // **Only when it holds a configuration.** A folder with none is nobody's project whatever its name,
+                // and the stamp the watchers compare counts configurations only, so the two agree by construction
+                // (see ProjectFolder.StampOf).
+                if (!File.Exists(Path.Combine(folder, ProjectFolder.ConfigurationFileName)))
+                {
+                    continue;
+                }
+
                 problems.Add(
-                    $"projects[{index}]: '{name}' is not a project name. Names are lowercase " +
+                    $"'{entry}' is not a project name, so it is not a project. Names are lowercase " +
                     $"letters, digits and hyphens, starting with a letter, at most " +
                     $"{ProjectName.MaxLength} characters");
 
                 continue;
             }
 
-            var settings = new ProjectSettings(
-                projectName,
-                Text(entry, "store") ?? string.Empty,
-                Text(entry, "endpoint") ?? string.Empty,
-                Text(entry, "node_config"),
-                Text(entry, "description"));
-
-            foreach (var fault in settings.Problems())
+            // A folder with no configuration in it is half-created, or somebody's scratch directory.
+            // Silent on purpose — see ProjectFolder.TryRead.
+            if (!ProjectFolder.TryRead(root, name, out var settings, out var fault))
             {
-                problems.Add($"projects[{index}] ({projectName}): {fault}");
+                if (fault is { Length: > 0 })
+                {
+                    problems.Add(fault);
+                }
+
+                continue;
             }
 
-            foreach (var fault in PathProblems(settings, path))
-            {
-                problems.Add($"projects[{index}] ({projectName}): {fault}");
-            }
-
-            found.Add(settings);
+            found.Add(settings!);
         }
 
+        // **Collisions is the one check the filesystem cannot make.** A name is a directory entry and a store is
+        // derived from it, so only two projects claiming one endpoint can clash; a hand edit produces it and it is
+        // reported naming both rather than resolved in favour of either.
         problems.AddRange(Collisions(found));
+
+        var clashing = found
+            .Where(p => !string.IsNullOrEmpty(p.Endpoint))
+            .GroupBy(p => p.Endpoint, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .SelectMany(g => g)
+            .ToHashSet();
 
         if (problems.Count > 0)
         {
-            problem = $"{path} is not usable yet:{Environment.NewLine}  - " +
-                string.Join($"{Environment.NewLine}  - ", problems);
-
-            return false;
+            problem = $"{directory} holds something that is not a usable project, and it was left out:" +
+                $"{Environment.NewLine}  - " + string.Join($"{Environment.NewLine}  - ", problems);
         }
 
-        projects = found;
+        projects = [.. found.Where(p => !clashing.Contains(p))];
         return true;
-    }
-
-    /// <summary>
-    /// Says what is wrong with a project's paths.
-    /// </summary>
-    /// <param name="project">The project to check.</param>
-    /// <returns>One line per problem, empty when the paths are usable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="project"/> is null.</exception>
-    /// <remarks>
-    /// <para>
-    /// The half of validation <see cref="ProjectSettings.Problems"/> deliberately leaves out.
-    /// Whether a path is absolute is a question about a filesystem, and <c>Parley.Core</c> has no
-    /// I/O — this assembly is on the machine those paths describe and may legitimately ask.
-    /// </para>
-    /// <para>
-    /// One method rather than the same loop at both ends. It was written twice, once where the
-    /// manifest is read and once where <c>project add</c> writes, with wording that had already
-    /// begun to differ — which is how a rule comes to be enforced in one direction only, and the
-    /// direction that lapses is always the one nobody tested.
-    /// </para>
-    /// </remarks>
-    public static IReadOnlyList<string> PathProblems(ProjectSettings project) =>
-        PathProblems(project, null);
-
-    /// <summary>
-    /// Says what is wrong with a project's paths, including naming the manifest itself.
-    /// </summary>
-    /// <param name="project">The project to check.</param>
-    /// <param name="manifestPath">The manifest the project is named in, or null to skip that check.</param>
-    /// <returns>One line per problem, empty when the paths are usable.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="project"/> is null.</exception>
-    /// <remarks>
-    /// A store or catalogue that is the manifest itself was accepted, and found by probing what
-    /// <c>project remove --destroy</c> could be made to delete: the one file whose deletion takes
-    /// every project with it. Refused on the way in, at both ends, rather than caught on the way
-    /// out — the command that deletes also refuses, but a rule enforced only there is a rule the
-    /// next deleting command forgets.
-    /// </remarks>
-    public static IReadOnlyList<string> PathProblems(ProjectSettings project, string? manifestPath)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-
-        var problems = new List<string>();
-
-        foreach (var (field, value) in new[]
-                 {
-                     ("store", project.Store),
-                     ("node_config", project.NodeConfig),
-                 })
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                continue;
-            }
-
-            if (!Path.IsPathRooted(value))
-            {
-                problems.Add(
-                    $"{field} '{value}' is relative. A relative path resolves against whatever " +
-                    "directory the caller happened to be in, which is the mistake a manifest " +
-                    "exists to remove");
-
-                continue;
-            }
-
-            if (manifestPath is not null && IsTheManifest(value, manifestPath))
-            {
-                problems.Add(
-                    $"{field} '{value}' is this manifest. A project cannot keep its data in the " +
-                    "file that names every project");
-            }
-        }
-
-        return problems;
     }
 
     /// <summary>Whether a path names the manifest, however it was spelled.</summary>
@@ -364,108 +255,51 @@ public static class ProjectManifest
     /// <returns>One line per collision.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="projects"/> is null.</exception>
     /// <remarks>
-    /// Applied when reading and when writing, so a hand-edited file meets the same rule
-    /// <c>project add</c> applies. These invariants cannot live in storage the way the
-    /// constitution prefers — the file names the store, so it cannot live inside it — and
-    /// enforcing them at both ends is the strongest placement available.
+    /// <para>
+    /// <b>Only an endpoint can collide.</b> A project's name is its directory entry, so a name cannot
+    /// repeat, and its store is derived from that name, so two projects cannot reach one file.
+    /// </para>
+    /// <para>
+    /// A shared endpoint is possible because nothing about the layout prevents it: two projects on one
+    /// port is a hand edit away, and only one broker can hold a port. Reported naming both projects
+    /// rather than resolved in favour of either — whichever this picked would be somebody's deployment
+    /// silently not starting.
+    /// </para>
+    /// <para>
+    /// Applied when reading and when writing, so a hand-edited file meets the same rule as a write. It
+    /// cannot live in storage: the comparison spans N separate files, and no one store sees them all.
+    /// </para>
+    /// <para>
+    /// The rows are named by project, since there is no array position to count.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<string> Collisions(IReadOnlyList<ProjectSettings> projects)
     {
         ArgumentNullException.ThrowIfNull(projects);
 
         var problems = new List<string>();
-        var names = new Dictionary<string, int>(StringComparer.Ordinal);
-        var stores = new Dictionary<string, int>(PathComparer);
-        var endpoints = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var endpoints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // **A catalogue collision used to be checked here, and the paragraph describing it outlived
-        // the code by a release** (018). It read that two projects sharing a catalogue let `parley
-        // up` for either start what the other consented to, under a name meaning a different
-        // repository in each — true while a catalogue belonged to a project and was keyed by name.
-        // There is one per machine now, keyed by identity, so sharing is the only arrangement and
-        // a name cannot mean two checkouts. Recorded rather than deleted because a comment left
-        // standing over a rule that has gone is how the next reader concludes the check was lost.
-
-        for (var index = 0; index < projects.Count; index++)
+        foreach (var project in projects)
         {
-            var project = projects[index];
-
-            Claim(names, project.Name.Value, index, "a name", "two projects cannot share one");
-
-            if (!string.IsNullOrEmpty(project.Store))
+            if (string.IsNullOrEmpty(project.Endpoint))
             {
-                Claim(
-                    stores,
-                    Canonical(project.Store),
-                    index,
-                    "a store",
-                    "two brokers on one database file breaks the isolation SPEC.md 4.1 relies on");
+                continue;
             }
 
-            if (!string.IsNullOrEmpty(project.Endpoint))
-            {
-                Claim(endpoints, project.Endpoint, index, "an endpoint", "only one broker can hold a port");
-            }
-
-            // **Two projects sharing a catalogue was refused here, and 018 removed the reason.** The
-            // rule read: consent to run unattended is per project because the catalogue is, and one file
-            // cannot be two projects' answer. The catalogue belongs to the machine now and every project
-            // on it reads the same file, so sharing one is the ordinary case rather than a collision.
-        }
-
-        return problems;
-
-        // The article is part of the label rather than composed here: "share a endpoint" is the
-        // kind of wrong that makes a person doubt the rest of the message.
-        void Claim(Dictionary<string, int> seen, string value, int index, string field, string why)
-        {
-            if (seen.TryGetValue(value, out var first))
+            if (endpoints.TryGetValue(project.Endpoint, out var first))
             {
                 problems.Add(
-                    $"projects[{index}] and projects[{first}] share {field} ('{value}'): {why}");
+                    $"'{project.Name}' and '{first}' share an endpoint ('{project.Endpoint}'): "
+                    + "only one broker can hold a port");
             }
             else
             {
-                seen[value] = index;
+                endpoints[project.Endpoint] = project.Name.Value;
             }
         }
-    }
 
-    /// <summary>
-    /// The form of a path that decides whether two entries name the same file.
-    /// </summary>
-    /// <param name="path">The path as written.</param>
-    /// <returns>Its resolved form, or the original if it cannot be resolved.</returns>
-    /// <remarks>
-    /// <para>
-    /// String equality is not the question being asked. <c>C:\srv\orders\..\orders\parley.db</c>
-    /// and <c>C:/srv/orders/parley.db</c> are one file, and comparing the text lets both into one
-    /// manifest — where they become two brokers holding one SQLite database, which is not an
-    /// error either of them reports. WAL mode needs coherent shared memory between every process
-    /// touching a file, so the damage is to the store rather than to either broker, and it is the
-    /// specific outcome this whole check exists to prevent.
-    /// </para>
-    /// <para>
-    /// Syntactic only, and knowingly short of complete: symbolic links, junctions and two mounts
-    /// of one filesystem still get past it. Resolving those means asking the filesystem about
-    /// paths that may be on a machine this is not, and a check that is right about the spellings
-    /// people actually write is worth more than none while the remainder stays out of reach.
-    /// </para>
-    /// </remarks>
-    private static string Canonical(string path)
-    {
-        try
-        {
-            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        }
-        catch (Exception exception) when (exception is ArgumentException or NotSupportedException
-                                              or PathTooLongException or SecurityException)
-        {
-            // Unresolvable, which the path rules on read will have something to say about. Falling
-            // back to the text keeps the duplicate check working rather than dropping the entry
-            // out of it entirely.
-            return path;
-        }
+        return problems;
     }
 
     /// <summary>
@@ -480,9 +314,7 @@ public static class ProjectManifest
     public static StringComparer PathComparer { get; } =
         OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
-    /// <summary>The name of the lock held while a manifest is being changed.</summary>
-    /// <param name="path">The manifest being changed.</param>
-    /// <returns>The path of its lock file.</returns>
+    /// <summary>The name of the lock held while this machine's projects are being changed.</summary>
     /// <remarks>
     /// <para>
     /// A sibling rather than something under the temporary directory, so two writers agree about
@@ -491,43 +323,35 @@ public static class ProjectManifest
     /// run by one person and let two people editing one <c>--config</c> straight through.
     /// </para>
     /// <para>
-    /// <b>Public because a second thing now needs the same gate.</b> Granting a repository an
-    /// unattended start reads every project's catalogue and then writes one of them, and those two
-    /// must be one act — the same machine-wide exclusion this file already needed for its own
-    /// writes. A second lock over the same deployment would be two answers to one question, and the
-    /// pair that disagreed would be the pair nobody thought to test together.
+    /// <b>Public because the grant gate takes the same lock.</b> Granting a repository an unattended
+    /// start reads every project's catalogue and then writes one of them, and those two must be one
+    /// act under the same machine-wide exclusion as this file's own writes.
     /// </para>
     /// </remarks>
-    public static string LockFor(string path) => path + ".lock";
+    /// <param name="root">The machine's root.</param>
+    /// <returns>The lock file's path, which need not exist.</returns>
+    /// <exception cref="ArgumentException"><paramref name="root"/> is blank.</exception>
+    public static string LockFor(string root) => Path.Combine(ProjectFolder.ProjectsIn(root), ".lock");
 
     /// <summary>
-    /// Changes the manifest under a lock, so a read and the write that depends on it are one act.
+    /// Changes the machine's projects under a lock, so a read and the write that depends on it are one act.
     /// </summary>
-    /// <param name="path">The manifest to change.</param>
+    /// <param name="path">The machine's root.</param>
     /// <param name="change">
-    /// Given what the manifest holds, returns what it should hold — or <see langword="null"/> to
+    /// Given what the root holds, returns what it should hold — or <see langword="null"/> to
     /// leave it alone, having reported why itself.
     /// </param>
     /// <param name="problem">Why nothing could be attempted, when this returns false.</param>
     /// <returns>
-    /// <see langword="true"/> when the manifest was written; <see langword="false"/> when it was
+    /// <see langword="true"/> when the projects were written; <see langword="false"/> when they were
     /// not, with <paramref name="problem"/> set unless <paramref name="change"/> declined.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="change"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>Adding a project is a read and then a write, and it was neither locked nor atomic.</b>
-    /// Two <c>project add</c> commands at once each read the manifest, each appended its own
-    /// project to what it had read, and each wrote the result — so the second silently discarded
-    /// the first. Nothing failed and nothing said so; the operator saw two successes and had one
-    /// project. On a machine that enrols repositories from a script, that is the shape of the
-    /// loss: it happens when the machine is busiest and is discovered when something later cannot
-    /// find a deployment nobody remembers removing.
-    /// </para>
-    /// <para>
-    /// The window is not narrow. It spans validation — collisions are checked against what was
-    /// read — so the second writer also validates against a manifest that no longer exists, and
-    /// can write a duplicate endpoint the rules exist to refuse.
+    /// <b>Adding a project is a read and then a write, so both run under one lock.</b> Unlocked, two
+    /// concurrent adds would each write from what they had read and the second would silently discard
+    /// the first, or write a duplicate endpoint that collision checks against a stale read let through.
     /// </para>
     /// <para>
     /// A lock file rather than a mutex, because .NET's named mutexes are not a cross-process
@@ -555,7 +379,12 @@ public static class ProjectManifest
 
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+            // **Inside the projects directory rather than at the root**, because the root holds exactly two
+            // files that are not a project. A file here is invisible to the reader, which lists directories.
+            //
+            // **Through LockFor rather than composed here**: `Catalogues.GateAsync` takes this same lock so that
+            // a bulk enrolment and a rewrite exclude each other, and two implementations of one rule drift.
+            Directory.CreateDirectory(ProjectFolder.ProjectsIn(path));
             held = Hold(LockFor(path), out refused);
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
@@ -580,11 +409,13 @@ public static class ProjectManifest
 
         using (held)
         {
-            // Inside the lock, because the write below is computed from it. This is the whole
-            // point: read and write were already each safe on their own.
-            if (!TryRead(path, out var projects, out var unreadable))
+            // Inside the lock, because the write below is computed from it.
+            // **Refused when anything was left out.** Reading leaves an unreadable project out, and Write removes every
+            // configuration not in what it is handed, so a write would delete the unreadable project's file.
+            // A write needs every project, or none.
+            if (!TryRead(path, out var projects, out var unreadable) || unreadable is { Length: > 0 })
             {
-                problem = unreadable;
+                problem = $"Nothing has been changed, because a project here cannot be read: {unreadable}";
                 return false;
             }
 
@@ -609,10 +440,8 @@ public static class ProjectManifest
     /// <param name="refused">Why the last attempt failed, when the wait ran out.</param>
     /// <returns>The held stream, or <see langword="null"/> if the wait ran out.</returns>
     /// <remarks>
-    /// Returns rather than throws on the deadline. An earlier version let the exception escape
-    /// once the wait was over, which made the timeout unreachable and reported a sharing
-    /// violation as though the file could not be opened at all — the two failures that most need
-    /// telling apart, told apart wrongly.
+    /// Returns rather than throws on the deadline, so a held lock and a lock file that cannot be
+    /// opened at all are told apart.
     /// </remarks>
     private static FileStream? Hold(string lockPath, out string? refused)
     {
@@ -645,54 +474,29 @@ public static class ProjectManifest
     }
 
     /// <summary>
-    /// Writes the manifest, preserving anything a newer tool may have added.
+    /// Writes a machine's projects, one folder each.
     /// </summary>
-    /// <param name="path">Where to write.</param>
-    /// <param name="projects">What to write.</param>
+    /// <param name="root">The machine's root.</param>
+    /// <param name="projects">What the machine now has.</param>
     /// <exception cref="ArgumentNullException">An argument is null.</exception>
-    /// <exception cref="InvalidDataException">
-    /// The projects cannot coexist, or the file that is there could not be parsed.
-    /// </exception>
-    /// <exception cref="IOException">
-    /// The file could not be read, written or replaced. Distinct from the above on purpose: a
-    /// manifest that is merely busy is a condition that passes, and reporting it as one that
-    /// "could not be parsed, so writing over it would discard it" tells somebody their
-    /// configuration is destroyed because a file was open for a moment.
-    /// </exception>
-    /// <exception cref="UnauthorizedAccessException">The file could not be opened.</exception>
+    /// <exception cref="InvalidDataException">The projects cannot coexist.</exception>
     /// <remarks>
     /// <para>
-    /// Validated whole before anything is written, and the existing file's byte-order mark and
-    /// line endings are kept — editing one project should not produce a diff touching every line
-    /// of a file somebody reads by hand.
-    /// </para>
-    /// <para>
-    /// <b>Keys this version does not know about are carried across, at the top level and on each
-    /// project.</b> This said so before it did it: it built a fresh document holding only
-    /// <c>_readme</c> and <c>projects</c>, so a <c>schema_version</c> written by a newer Parley, or
-    /// a field somebody added to one row by hand, was deleted by the next <c>project add</c> — a
-    /// successful-looking run that quietly discarded what it did not recognise. An older tool must
-    /// be able to edit a newer tool's file without eating it, because that is the only version
-    /// pairing nobody can plan for.
-    /// </para>
-    /// <para>
-    /// <c>_readme</c> is the exception and is rewritten every time. It is this tool's own
-    /// explanation of the file, so it should say what this build believes rather than what some
-    /// earlier one did.
+    /// A project is its own small file, so a half-written one costs that project and not the machine,
+    /// and the folder that holds it is created by one atomic act.
     /// </para>
     /// </remarks>
-    public static void Write(string path, IReadOnlyList<ProjectSettings> projects)
+    public static void Write(string root, IReadOnlyList<ProjectSettings> projects)
     {
-        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(projects);
 
-        // Every rule reading applies, not just the ones about pairs. This checked collisions only,
-        // so it would happily write a description containing a newline — valid JSON, refused by the
-        // very next TryRead. A tool that writes a file it cannot read back leaves the machine with
-        // an unreadable manifest, and the rule that protects a manifest the rest of the time is
-        // exactly the rule that then makes it unusable until somebody edits it by hand.
+        // Every rule reading applies, not just the ones about pairs. A writer that checked only
+        // collisions would happily write a description containing a newline — valid JSON, refused by the
+        // very next read — and a tool that writes what it cannot read back leaves a machine needing a
+        // text editor to start.
         var faults = projects
-            .SelectMany(p => p.Problems().Concat(PathProblems(p)).Select(f => $"{p.Name}: {f}"))
+            .SelectMany(p => p.Problems().Select(f => $"{p.Name}: {f}"))
             .Concat(Collisions(projects))
             .ToList();
 
@@ -701,251 +505,38 @@ public static class ProjectManifest
             throw new InvalidDataException(string.Join("; ", faults));
         }
 
-        // Refused rather than replaced, for the same reason reading refuses it. Callers reach here
-        // only after TryRead has succeeded, so this is the belt to that braces — but a Write that
-        // started fresh over a file it could not understand would destroy the only copy, which is
-        // the failure this whole type is arranged against.
-        var document = Existing(path)
-            ?? throw new InvalidDataException(
-                $"{path} exists but could not be parsed, so writing over it would discard it.");
+        var directory = ProjectFolder.ProjectsIn(root);
 
-        // Indexed before `projects` is replaced, so each row can be rebuilt on top of the one it
-        // replaces rather than in place of it.
-        var previous = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        _ = Directory.CreateDirectory(directory);
 
-        if (document["projects"] is JsonArray existingRows)
+        foreach (var project in projects)
         {
-            foreach (var row in existingRows)
-            {
-                if (row is JsonObject entry && Text(entry, "name") is { Length: > 0 } named)
-                {
-                    previous[named] = (JsonObject)entry.DeepClone();
-                }
-            }
+            ProjectFolder.Write(root, project);
         }
 
-        document["_readme"] = new JsonArray([.. Guidance.Select(line => JsonValue.Create(line))]);
-        document["projects"] = new JsonArray([.. projects.Select(p => Describe(p, previous))]);
+        // **A project this write does not name loses its configuration and keeps its store.** That is
+        // what forgetting a project is (it deletes nothing), and a folder with no configuration is
+        // already not a project. Destroying a store is `remove --destroy`, a different act behind a
+        // different door; a writer that deleted folders would make every caller capable of it.
+        var keeping = projects
+            .Select(project => project.Name.Value)
+            .ToHashSet(StringComparer.Ordinal);
 
-        var existed = File.Exists(path);
-        var mark = existed && HasByteOrderMark(path);
-        var crlf = existed && ReadShared(path).Contains("\r\n", StringComparison.Ordinal);
-        var json = document.ToJsonString(SerialisationOptions.Indented) + "\n";
-
-        if (crlf)
+        foreach (var folder in Directory.GetDirectories(directory))
         {
-            json = json.ReplaceLineEndings("\r\n");
-        }
+            var entry = Path.GetFileName(folder);
 
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-
-        // Written beside the manifest and moved over it, rather than written in place. This file
-        // names every store on the machine and there is no second copy of it, so the failure worth
-        // designing against is not a bad value but a half-written file: File.WriteAllText truncates
-        // first, and a process that stops between the truncate and the write leaves nothing. Every
-        // reader then refuses it — correctly, and permanently, because refusing to overwrite an
-        // unreadable manifest is the rule that protects it the rest of the time.
-        //
-        // The temporary file is a sibling so the move stays within one volume, which is what makes
-        // it a rename rather than a copy. A reader arriving mid-write sees the old file or the new
-        // one; it cannot see half of either. That matters beyond crashes: an MCP server resolving
-        // its project starts whenever its client decides to, including while `project add` runs.
-        // Unique per write, and that is not tidiness. A fixed name is shared by every writer, so
-        // two of them do not merely race for the manifest -- one commits the other's half-written
-        // file. Writer A truncates the pending file and begins writing; writer B, whose own write
-        // finished, renames that same path over the manifest and puts A's fragment into place.
-        //
-        // Probed with four writers over 50 rounds each: five reads came back on a manifest that
-        // no longer parsed, and eleven writes then refused to proceed because "it exists but
-        // could not be parsed, so writing over it would discard it". That refusal is correct and
-        // permanent -- the file naming every store on this machine, bricked by two commands run
-        // at once. It is exactly the half-written file this whole temporary-file dance exists to
-        // prevent, arriving by the one route the dance did not cover.
-        var pending = $"{path}.{Environment.ProcessId}.{Guid.NewGuid():N}.writing";
-
-        File.WriteAllText(
-            pending,
-            json,
-            mark ? new UTF8Encoding(encoderShouldEmitUTF8Identifier: true) : new UTF8Encoding(false));
-
-        try
-        {
-            try
+            if (keeping.Contains(entry) || !ProjectName.TryCreate(entry, out var name))
             {
-                // Replace rather than Move, and it has to be both this and ReadShared -- neither
-                // works alone. Measured on Windows, eight readers spinning against 300 writes:
-                //
-                //   Move,    readers FileShare.Read        287 / 300 denied
-                //   Move,    readers ReadWrite | Delete    287 / 300 denied
-                //   Replace, readers FileShare.Read        300 / 300 denied
-                //   Replace, readers ReadWrite | Delete      0 / 300 denied
-                //
-                // MoveFileEx with MOVEFILE_REPLACE_EXISTING refuses a destination anybody has open,
-                // whatever share mode they opened it with, so the rename above was never the
-                // interruption-safe commit its comment claims -- it was a commit that failed whenever
-                // somebody was reading. That went unnoticed while the only reader was an MCP server
-                // resolving a project at startup, and became ordinary the moment the console started
-                // re-reading the manifest per page.
-                File.Replace(pending, path, destinationBackupFileName: null);
-            }
-            catch (FileNotFoundException)
-            {
-                // Nothing to replace: the first manifest this machine has had. No handle can be
-                // open on a file that does not exist, so the plain rename is safe here and only
-                // here.
-                File.Move(pending, path, overwrite: true);
-            }
-        }
-        catch
-        {
-            // Never left behind to be mistaken for a manifest, or to make the next write fail.
-            //
-            // Nested so this is reached from the fallback as well. It was not: a fallback rename
-            // that threw walked straight past the cleanup and orphaned the pending file. Harmless
-            // while the name was fixed and the next write reused it; a growing pile of files that
-            // look like configuration once the name became unique.
-            try
-            {
-                File.Delete(pending);
-            }
-            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
-            {
-                // The move already failed; the caller is about to hear about that.
+                continue;
             }
 
-            throw;
-        }
-    }
+            var configuration = ProjectFolder.ConfigurationFor(root, name);
 
-    /// <summary>Renders one project, keeping whatever its previous row carried.</summary>
-    /// <param name="project">The values this build knows about.</param>
-    /// <param name="previous">The rows being replaced, by name.</param>
-    /// <returns>The row to write.</returns>
-    /// <remarks>
-    /// Built on top of the row it replaces rather than beside it. Assigning to an existing key
-    /// leaves it where it was, so a hand-edited file keeps its own field order and a rewrite stays
-    /// a small diff; an unknown field survives because nothing here removes it. The two optional
-    /// fields <i>are</i> removed when absent, because for those the caller is authoritative —
-    /// otherwise clearing a project's node catalogue would leave the old one behind.
-    /// </remarks>
-    private static JsonObject Describe(
-        ProjectSettings project, IReadOnlyDictionary<string, JsonObject> previous)
-    {
-        var entry = previous.TryGetValue(project.Name.Value, out var kept)
-            ? (JsonObject)kept.DeepClone()
-            : [];
-
-        entry["name"] = project.Name.Value;
-        entry["store"] = project.Store;
-        entry["endpoint"] = project.Endpoint;
-
-        Set(entry, "node_config", project.NodeConfig);
-        Set(entry, "description", project.Description);
-
-        return entry;
-
-        static void Set(JsonObject entry, string key, string? value)
-        {
-            if (value is { Length: > 0 })
+            if (File.Exists(configuration))
             {
-                entry[key] = value;
+                File.Delete(configuration);
             }
-            else
-            {
-                entry.Remove(key);
-            }
-        }
-    }
-
-    /// <summary>Reads a file without standing in the way of whoever replaces it.</summary>
-    /// <param name="path">The file to read.</param>
-    /// <returns>Its contents.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b><see cref="FileShare.Delete"/> is the part that matters, and its absence made the
-    /// atomic write above fail intermittently on Windows.</b> <c>Write</c> puts the new manifest
-    /// beside the old one and renames it over the top, and its remarks promise that a reader
-    /// arriving mid-write sees the old file or the new one. That promise was only kept because
-    /// nothing read often enough to test it: <see cref="File.ReadAllText(string)"/> opens with
-    /// <see cref="FileShare.Read"/>, and a rename onto a file somebody holds without
-    /// <see cref="FileShare.Delete"/> is refused with <see cref="UnauthorizedAccessException"/>.
-    /// </para>
-    /// <para>
-    /// So a reader did not see half a file — it stopped the write from happening at all, and
-    /// <c>parley project add</c> failed with an access error naming a file nothing else was
-    /// writing. Rare while the only reader was an MCP server starting up; ordinary once the
-    /// console began re-reading the manifest on every page it renders.
-    /// </para>
-    /// <para>
-    /// <see cref="FileShare.ReadWrite"/> alongside it for the same reason in the other direction:
-    /// a reader must not make a writer wait, and the atomic rename is what makes that safe rather
-    /// than a race.
-    /// </para>
-    /// </remarks>
-    private static string ReadShared(string path)
-    {
-        using var stream = new FileStream(
-            path, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete);
-
-        using var reader = new StreamReader(stream);
-
-        return reader.ReadToEnd();
-    }
-
-    /// <summary>Reads the document already at a path, for a write that must not lose it.</summary>
-    /// <param name="path">Where to look.</param>
-    /// <returns>The document, an empty one when the file is absent, or null when it cannot be parsed.</returns>
-    private static JsonObject? Existing(string path)
-    {
-        if (!File.Exists(path))
-        {
-            return [];
-        }
-
-        try
-        {
-            return JsonNode.Parse(ReadShared(path)) as JsonObject;
-        }
-        catch (JsonException)
-        {
-            // Null means one thing only: the file is there and is not JSON. The caller turns that
-            // into a refusal to write, on the grounds that overwriting it would discard the only
-            // copy -- which is right for a file nobody can parse, and wrong for one that was
-            // merely busy.
-            //
-            // This used to swallow IOException and UnauthorizedAccessException here too, so a
-            // sharing violation lasting microseconds was reported to the operator as "exists but
-            // could not be parsed, so writing over it would discard it". That is the sentence
-            // that tells somebody their configuration is destroyed, printed because a file was
-            // open. Found under concurrent writers; let them propagate as what they are.
-            return null;
-        }
-    }
-
-    private static string? Text(JsonObject entry, string key) =>
-        entry[key] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
-
-    private static bool HasByteOrderMark(string path)
-    {
-        try
-        {
-            // Shared for the same reason as ReadShared, which this cannot use because it wants
-            // bytes rather than text. It is writer-side, so it stands in front of another writer
-            // rather than of a reader -- one `parley project add` blocking another is rarer than
-            // the case that was actually failing, and it is the same defect.
-            using var stream = new FileStream(
-                path, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-
-            Span<byte> head = stackalloc byte[3];
-
-            return stream.ReadAtLeast(head, 3, throwOnEndOfStream: false) == 3
-                && head is [0xEF, 0xBB, 0xBF];
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            return false;
         }
     }
 }

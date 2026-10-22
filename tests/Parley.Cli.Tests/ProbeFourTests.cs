@@ -7,7 +7,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 1, run 4: what the guards cannot see, and what happens on the second attempt.
+/// What the guards cannot see, and what happens on the second attempt.
 /// </summary>
 /// <remarks>
 /// Runs 1 to 3 attacked writes and races and found six defects. This one asks a different question:
@@ -46,21 +46,17 @@ public sealed class ProbeFourTests : IDisposable
     private string CatalogueFor(string project) => Path.Combine(_root, $"{project}-node.json");
 
     private ProjectSettings Project(string name) =>
-        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"), "127.0.0.1:51707",
-            CatalogueFor(name), null);
+        new(ProjectName.Create(name), Path.Combine(_root, $"{name}.db"), "127.0.0.1:51707", null);
 
     private void Catalogue(string project, string role, string workspace) =>
         File.WriteAllText(
             CatalogueFor(project),
             $$"""{ "agents": { "{{role}}": { "command": "claude", "workspace": "{{workspace}}" } } }""");
 
-    // **Two probes stood here, and 018 removed the rule they probed rather than the probes.** They asked
-    // where `Catalogues.Elsewhere` stopped looking — whether a hand-edited catalogue could hide a workspace
-    // from FR-013's cross-project scan, and what a role no agent name can hold meant to it. The scan is
-    // gone: there is one catalogue per machine keyed by the agent's identity, so a second project grants
-    // no second consent and there is nothing to hide from. The question they were asking is worth keeping
-    // in mind and is asked of the new shape in `EnrollingTwiceTests`, where a copied repository is the one
-    // way left to point one identity at two working directories.
+    // **There is no cross-project scan to hide a workspace from.** There is one catalogue per machine
+    // keyed by the agent's identity, so a second project grants no second consent. The question of
+    // pointing one identity at two working directories is asked in `EnrollingTwiceTests`, where a
+    // copied repository is the one way left to do it.
 
     [Fact]
     public async Task Withdrawing_twice_says_so_and_changes_nothing_the_second_time()
@@ -71,7 +67,6 @@ public sealed class ProbeFourTests : IDisposable
             new EnrollmentEntry(workspace, "orders", "Carts.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "acme",
             CatalogueFor("acme"),
@@ -116,15 +111,14 @@ public sealed class ProbeFourTests : IDisposable
     [Fact]
     public void An_empty_project_variable_is_the_same_as_none()
     {
-        // The difference matters: an entry naming no project is the one case the precedence may
-        // re-point in place, and an empty string is what an editor leaves when somebody clears a
-        // field rather than deleting the line.
+        // An empty string is what an editor leaves when somebody clears a field rather than
+        // deleting the line.
         var servers = (JsonObject)JsonNode.Parse("""
             { "mcpServers": { "parley": { "command": "parley-mcp", "env": {
                 "PARLEY_AGENT": "orders", "PARLEY_PROJECT": "" } } } }
             """)!["mcpServers"]!;
 
-        var (key, landed) = LaunchEntries.Landing(servers, "alpha");
+        var (key, landed) = LaunchEntries.Landing(servers, null);
 
         Assert.Equal("parley", key);
         Assert.NotNull(landed);
@@ -149,7 +143,7 @@ public sealed class ProbeFourTests : IDisposable
     [Fact]
     public async Task One_manifest_naming_one_workspace_twice_does_not_catalogue_it_twice()
     {
-        // FR-013 compares against *other* projects. Two rows for one workspace inside a single run
+        // A cross-project comparison looks at *other* projects. Two rows for one workspace inside a single run
         // are a different shape, and the guard says nothing about them -- so this asks whether
         // anything else does.
         var workspace = Workspace("inventory");
@@ -159,12 +153,10 @@ public sealed class ProbeFourTests : IDisposable
                 new EnrollmentEntry(workspace, "inventory", "Stock.", Unattended: true)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
                 new EnrollmentEntry(workspace, "stock", "Stock again.", Unattended: true)
                 {
                     Enroll = true,
-                    OwnsApproved = true,
                 },
             ],
             Directory.Exists);
@@ -188,7 +180,6 @@ public sealed class ProbeFourTests : IDisposable
             new EnrollmentEntry(workspace, "orders", "Carts.", Unattended: false)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "acme",
             CatalogueFor("acme"),
@@ -207,8 +198,8 @@ public sealed class ProbeFourTests : IDisposable
         {
             // The writer took the file first, which is the ordinary outcome under load and not the
             // scenario this is about. The assertions below hold either way: whichever happened, it
-            // must end within the bound rather than spin. **The first version deleted
-            // unconditionally and failed in a full-suite sweep** — a probe racing its own subject.
+            // must end within the bound rather than spin. **The delete tolerates losing the race**, because
+            // the probe races its own subject in a full-suite sweep.
         }
 
         // Whatever it decides, it must decide within the bound rather than spinning.

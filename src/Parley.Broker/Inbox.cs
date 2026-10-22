@@ -17,6 +17,10 @@ namespace Parley.Broker;
 /// Change notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
 /// the rest; <see langword="null"/> where nothing collected them.
 /// </param>
+/// <param name="RoadmapNoticeBatch">
+/// What became of this agent's own roadmap proposals (SPEC.md §5.7), or <see langword="null"/> where nothing
+/// collected them.
+/// </param>
 /// <remarks>
 /// <para>
 /// The poll travels here rather than as a message because SPEC.md §5 admits three message types
@@ -32,8 +36,18 @@ namespace Parley.Broker;
 public sealed record Inbox(
     IReadOnlyList<DeliveredMessage> Messages,
     IReadOnlyList<ClosurePoll> ClosurePolls,
-    FileNoticeBatch? FileNotices = null)
+    FileNoticeBatch? FileNotices = null,
+    IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null)
 {
+    /// <summary>
+    /// Gets what became of this agent's own roadmap proposals, collected with this inbox.
+    /// </summary>
+    /// <remarks>
+    /// A fourth collection for the reason file notices are a third: it is not a message. It opens nothing, is owed
+    /// nothing and wakes nobody, and carries the agent's own title rather than anybody's words (SPEC.md §5.7).
+    /// </remarks>
+    public IReadOnlyList<RoadmapNotice> RoadmapNotices => RoadmapNoticeBatch ?? [];
+
     /// <summary>
     /// Gets the change notices this collection handed over, and how many are left for a later one.
     /// </summary>
@@ -50,5 +64,5 @@ public sealed record Inbox(
     /// Named for what it means rather than derived from one collection, so a reader of only
     /// <see cref="Messages"/> cannot under-report an outstanding poll or a file that changed.
     /// </remarks>
-    public bool IsEmpty => Messages.Count == 0 && ClosurePolls.Count == 0 && Notices.Notices.Count == 0;
+    public bool IsEmpty => Messages.Count == 0 && ClosurePolls.Count == 0 && Notices.Notices.Count == 0 && RoadmapNotices.Count == 0;
 }

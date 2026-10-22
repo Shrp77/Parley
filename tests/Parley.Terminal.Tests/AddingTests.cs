@@ -62,7 +62,9 @@ public sealed class AddingTests : IAsyncDisposable
 
     private string Workspace => Path.Combine(_root, "orders");
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private string Store => Path.Combine(_root, "acme.db");
 
@@ -185,8 +187,8 @@ public sealed class AddingTests : IAsyncDisposable
 
         // And the manifest is untouched, so nothing restarts.
         Assert.DoesNotContain("broker restarts", shell.Said, StringComparison.Ordinal);
-        Assert.True(ProjectManifest.TryRead(ManifestPath, out var projects, out _));
-        Assert.Null(Assert.Single(projects).NodeConfig);
+        Assert.True(ProjectManifest.TryRead(Root, out var projects, out _));
+        _ = Assert.Single(projects);
     }
 
     [Theory]
@@ -265,13 +267,21 @@ public sealed class AddingTests : IAsyncDisposable
     }
 
     [Fact]
-    public void An_ownership_line_longer_than_the_schema_allows_is_refused_in_the_field()
+    public void An_ownership_line_the_schema_would_refuse_is_refused_in_the_field()
     {
         // Refused here rather than at registration, which happens a long way from this screen and
         // looks like an agent that simply never appeared.
-        Assert.NotNull(Adding.OwnsProblem(new string('a', EnrollmentPlan.OwnsLimit + 1)));
+        //
+        // This asserted a length until 0.33.0 removed the bound. It would then have been a test of
+        // nothing -- and it was worse than that, because the field only ever checked the length:
+        // a statement carrying a line separator passed here and was refused by the database. So
+        // the field asks OwnershipStatement now, and this drives the half that still refuses.
+        Assert.NotNull(Adding.OwnsProblem("Carts and orders." + (char)0x2028 + "No tax."));
+        Assert.NotNull(Adding.OwnsProblem("Carts and orders." + (char)0x202E + "No tax."));
+
         Assert.Null(Adding.OwnsProblem(string.Empty));
         Assert.Null(Adding.OwnsProblem("Carts and order totals. No tax, no stock."));
+        Assert.Null(Adding.OwnsProblem(new string('a', 4_000)));
     }
 
     [Fact]
@@ -398,10 +408,9 @@ public sealed class AddingTests : IAsyncDisposable
             ProjectName.Create("acme"),
             Store,
             _broker.Address,
-            null,
             null);
 
-        ProjectManifest.Write(ManifestPath, [project]);
+        ProjectManifest.Write(Root, [project]);
 
         if (catalogued)
         {
@@ -409,9 +418,9 @@ public sealed class AddingTests : IAsyncDisposable
                 CataloguePath, "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
         }
 
-        var directory = BrokerDirectory.FromManifest(ManifestPath);
+        var directory = BrokerDirectory.FromManifest(Root);
         var shell = TerminalCommand.Build(
-            directory, manifestPath: ManifestPath, cataloguePath: CataloguePath);
+            directory, manifestPath: Root, cataloguePath: CataloguePath);
 
         driving.Show(shell);
 

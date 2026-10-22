@@ -79,81 +79,9 @@ public sealed class WaitingOnScreenTests : IDisposable
         Assert.Contains("1 waiting", driving.Text(), StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task The_count_says_which_key_collects_it()
-    {
-        // A number with no way to act on it is worse than no number: it tells somebody they are behind and
-        // leaves them hunting. The key it names is the one the agents pane offers.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open(width: 160, height: 40);
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await SendAsync(shell, ct);
-
-        await Eventually.UntilAsync(
-            () => shell.Mail is { Certain: true, Waiting: > 0 }, "nothing was ever counted", ct);
-
-        await shell.Settled;
-        driving.App.LayoutAndDraw(true);
-
-        Assert.Contains(Participation.DeliveryTitle, driving.Text(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Taking_delivery_is_offered_where_the_seat_is_rather_than_only_inside_a_transcript()
-    {
-        // It was offered only in the transcript region, so collecting meant opening a conversation first --
-        // and what is waiting is often in one nobody has seen.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open();
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        // Focused where the seat is listed, which is the pane a person sits in rather than a transcript.
-        var pane = Enumerable.Range(0, shell.Panes.Count)
-            .First(at => shell.Panes[at] is AgentsRegion);
-
-        shell.Focus(pane);
-
-        Assert.Contains(
-            shell.Actions(),
-            action => action.Label == Participation.DeliveryTitle);
-    }
-
-    [Fact]
-    public async Task The_count_goes_when_the_seat_does()
-    {
-        // A number left on the line under nobody's name is somebody else's mail. The seat owns it.
-        var ct = TestContext.Current.CancellationToken;
-
-        await using var broker = LoopbackOperator.Start(_connection);
-        using var driving = Driving.Open(width: 160, height: 40);
-        using var directory = Directory(broker);
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var shell = await SeatedAsync(driving, directory, seats);
-
-        await SendAsync(shell, ct);
-
-        await Eventually.UntilAsync(
-            () => shell.Mail is { Certain: true, Waiting: > 0 }, "nothing was ever counted", ct);
-
-        await shell.LeaveSeat();
-        await shell.Settled;
-
-        Assert.Null(shell.Held);
-        Assert.Null(shell.Mail);
-
-        driving.App.LayoutAndDraw(true);
-
-        Assert.DoesNotContain("waiting (", driving.Text(), StringComparison.Ordinal);
-    }
+    // `The_count_goes_when_the_seat_does` was here, and it is turned round. It left the seat and expected the
+    // count to go with it, because mail under nobody's name was somebody else's. Now the seat is never left — the broker
+    // provides it — and the count must survive the person being away, which is exactly when it matters (T041).
 
     [Fact]
     public async Task Nothing_waiting_puts_nothing_on_the_line()
@@ -194,7 +122,12 @@ public sealed class WaitingOnScreenTests : IDisposable
 
     private static BrokerDirectory Directory(LoopbackOperator broker) =>
         new(
-            [new ProjectSettings(ProjectName.Create("acme"), "unused.db", broker.Address, null, null)],
+            // **`Walking.Alpha`, not a name of its own, and that is not cosmetic.** `Walking.GoAsync`
+            // places the shell in `alpha`; a directory holding some other name put the surface in a
+            // project view for a project the directory does not contain, which is a state production
+            // cannot produce -- the only route in is selecting a row that came from the directory. It
+            // went unnoticed while the seat read the list's selection instead of the view's project.
+            [new ProjectSettings(Walking.Alpha, "unused.db", broker.Address, null)],
             _ => GrpcChannel.ForAddress(broker.Address));
 
     private static async Task<Shell> SeatedAsync(
@@ -208,13 +141,8 @@ public sealed class WaitingOnScreenTests : IDisposable
 
         await Walking.GoAsync(shell, Viewing.Project);
 
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         Assert.NotNull(shell.Held);

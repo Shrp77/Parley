@@ -117,7 +117,7 @@ public sealed class ExchangeRepositoryTests : IDisposable
     [Fact]
     public async Task A_reverse_request_is_admitted_and_its_cycle_recorded()
     {
-        // Refused in 0.4 as a deadlock. Nothing waits synchronously, and billing asking orders for
+        // Not a deadlock: nothing waits synchronously, and billing asking orders for
         // something while orders waits on billing is ordinary cross-repository work, so it is admitted —
         // and the loop is written down, where a loop that has stopped moving is visible to the person.
         await Open(Orders, Billing);

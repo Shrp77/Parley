@@ -15,8 +15,8 @@ namespace Parley.Broker.Tests;
 /// weekend. Waking overrides the first; not waking delays the second. So the broker asks what it was told.
 /// </para>
 /// <para>
-/// <b>What changed in 0.5 is what is at stake.</b> The policy used to decide whether interrupted work was
-/// resumed or left to be ghosted. Now nothing is ghosted: the work stays open and flagged whatever the policy
+/// <b>Nothing is ghosted.</b> The policy does not decide whether interrupted work is
+/// resumed or left to be ghosted: the work stays open and flagged whatever the policy
 /// says, and the policy decides only whether an agent is started to do it.
 /// </para>
 /// </remarks>

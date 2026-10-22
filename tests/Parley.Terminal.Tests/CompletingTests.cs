@@ -257,12 +257,6 @@ public sealed class CompletingTests : IAsyncDisposable
         Assert.Equal($"@{Billing.Value} ", shell.Line.Written);
         Assert.Contains(Billing, shell.Drafting!.Recipients);
         Assert.Contains(Orders, shell.Drafting!.Recipients);
-
-        // An agent that is not a participant has no pair state, so it gets a Request -- which is how an agent
-        // joins a conversation at all, membership being derived (§5.0).
-        Assert.Contains(
-            shell.Drafting!.Plan(),
-            addressed => addressed.Peer == Billing && addressed.Act == Act.Ask);
     }
 
     [Fact]
@@ -311,23 +305,26 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task F2_takes_the_other_side_of_the_one_choice_a_draft_offers()
+    public async Task There_is_no_answer_or_ask_back_choice_any_more()
     {
+        // **Removed on the owner's call of 2026-10-02.** F2 took "the other side of the one choice a draft offers" —
+        // answer, or ask back instead — and the owner's reading was that it made no sense: a conversation never really
+        // stops. And what somebody types is a Request whatever they hold (SPEC.md §5.6), so there is
+        // nothing left to flip.
         var ct = TestContext.Current.CancellationToken;
         var (shell, _) = await SeatedAsync(ct);
         using var held = shell;
 
         Focus(shell);
 
-        // The fixture's peer asked this person something, so the default is to answer.
-        Assert.Contains("closes the exchange", shell.Line.Preview, StringComparison.Ordinal);
+        var before = shell.Line.Preview;
 
-        shell.NewKeyDownEvent(Shell.OtherKey);
+        shell.NewKeyDownEvent(Key.F2);
 
         await shell.Settled;
 
-        Assert.Contains("asks them back", shell.Line.Preview, StringComparison.Ordinal);
-        Assert.Contains(Shell.OtherKey.ToString(), shell.Line.Preview, StringComparison.Ordinal);
+        Assert.Equal(before, shell.Line.Preview);
+        Assert.DoesNotContain(shell.Actions(), action => action.Chord is { } chord && chord == Key.F2);
     }
 
     /// <summary>Puts the cursor in the box, which is where every key in this file is pressed.</summary>
@@ -341,7 +338,7 @@ public sealed class CompletingTests : IAsyncDisposable
 
     private BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null, null)],
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
             _ => GrpcChannel.ForAddress(_broker.Address));
 
     private async Task<(Shell Shell, Driving.Session Driving)> SeatedAsync(CancellationToken ct)
@@ -356,13 +353,8 @@ public sealed class CompletingTests : IAsyncDisposable
         await shell.Settled;
 
         await Walking.GoAsync(shell, Viewing.Project);
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
+        // Seated by opening the project: the broker provides the person seat and the shell takes it, so
+        // there is no Join dialog to drive.
         await shell.Settled;
 
         // Seeded from a peer, because membership is derived: a conversation with no traffic has no participants.
@@ -385,24 +377,17 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Both_of_the_line_pane_actions_are_offered_where_a_person_would_look_for_them()
+    public async Task Sending_is_offered_where_a_person_would_look_for_it()
     {
-        // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too.
-        // The flip is a chord because every letter in this pane belongs to the text, and a chord that reached
-        // the menu under no name would be exactly the promise this holds the surface to.
+        // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too. This was
+        // both line-pane actions until the answer-or-ask-back flip went on 2026-10-02.
         var (shell, _) = await SeatedAsync(TestContext.Current.CancellationToken);
 
         using var held = shell;
 
         Focus(shell);
 
-        var offered = shell.Actions();
-
-        Assert.Contains(offered, action => action.Label == Shell.SendTitle);
-
-        var flip = Assert.Single(offered, action => action.Label == Shell.OtherTitle);
-
-        Assert.Equal(Shell.OtherKey.ToString(), flip.Stroke);
+        Assert.Contains(shell.Actions(), action => action.Label == Shell.SendTitle);
     }
 
     [Fact]
@@ -465,22 +450,34 @@ public sealed class CompletingTests : IAsyncDisposable
 
         driving.App.LayoutAndDraw(true);
 
-        var owed = Assert.Single(shell.Room.Written, row => row.Contains(Orders.Value, StringComparison.Ordinal)
-            && row.Contains("answer or ask back", StringComparison.Ordinal));
-
-        Assert.NotEmpty(owed);
+        // **One row for the agent, with how many questions are waiting**: "orders (1)", where it said
+        // "orders@test — waiting for your reply" and repeated the heading above it.
+        Assert.DoesNotContain(shell.Room.Written, row => row.Contains("waiting for your reply", StringComparison.Ordinal));
+        Assert.Single(shell.Room.Written, row => row.Trim() == "orders (1)");
 
         shell.Focus(shell.Panes.ToList().FindIndex(pane => pane is RoomRegion));
-        driving.Row(shell.Room.List, "answer or ask back");
+        driving.Row(shell.Room.List, "orders (1)");
 
         var item = shell.Room.Selected;
 
         Assert.NotNull(item);
+        Assert.Equal(Orders, item!.Peer);
 
-        // The message it points at is the peer's own, in the exchange this person holds.
-        Assert.NotNull(item!.At);
+        // The message the one question points at is the peer's own, in the exchange this person holds.
+        var question = Assert.Single(item.Questions);
 
+        Assert.NotNull(question.At);
+
+        // Enter lists the questions; choosing one is what moves the transcript.
         shell.Room.List.NewKeyDownEvent(Key.Enter);
+
+        var listing = (ChoiceDialog)driving.Find(RoomRegion.ListTitle(Orders.Value));
+        var entry = Assert.Single(listing.Choices.Source!.ToList().Cast<string>());
+
+        Assert.Contains("is the build green?", entry, StringComparison.Ordinal);
+
+        driving.Row(listing.Choices, "is the build green?");
+        driving.Enter();
 
         await shell.Settled;
 
@@ -493,7 +490,7 @@ public sealed class CompletingTests : IAsyncDisposable
 
         Assert.NotNull(at);
         Assert.Equal(
-            shell.Transcript.Rows.ToList().IndexOf(item.At!.Value),
+            shell.Transcript.Rows.ToList().IndexOf(question.At!.Value),
             at);
 
         // And a message within the first few rows is still reachable, rather than being refused for having
@@ -712,7 +709,44 @@ public sealed class CompletingTests : IAsyncDisposable
 
         var offered = Assert.Single(shell.Actions(), a => a.Label == Shell.BreakTitle);
 
-        Assert.Equal(Key.Enter.WithCtrl.ToString(), offered.Stroke);
+        // Shift+Enter since 2026-10-03, the owner's ask; Ctrl+Enter and the backslash are named beside it.
+        Assert.Equal(Key.Enter.WithShift.ToString(), offered.Stroke);
         Assert.Equal(Shell.BreakAlso, offered.Costs);
+        Assert.Contains("Ctrl+Enter", Shell.BreakAlso, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Shift_or_Ctrl_and_Enter_add_a_line_rather_than_sending(bool shift)
+    {
+        // Pressed on the box, where a person presses them: the field is offered a key before anything else, and its own
+        // Enter binding would take either chord as Enter and send.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, _) = await SeatedAsync(ct);
+        using var held = shell;
+
+        Focus(shell);
+
+        foreach (var key in "first")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        shell.NewKeyDownEvent(shift ? Key.Enter.WithShift : Key.Enter.WithCtrl);
+
+        foreach (var key in "second")
+        {
+            shell.NewKeyDownEvent(new Key(key));
+        }
+
+        await shell.Settled;
+
+        Assert.Equal("first\nsecond", shell.Line.Written.ReplaceLineEndings("\n"));
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+
+        // One message, the fixture's own: nothing was sent.
+        Assert.Single(export?.Messages ?? []);
     }
 }

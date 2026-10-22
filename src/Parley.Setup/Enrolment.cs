@@ -14,7 +14,7 @@ namespace Parley.Setup;
 /// its launch configuration and its line in a project's catalogue, and until this existed only
 /// <c>parley enroll apply</c> wrote them — driven by a manifest, in bulk. The terminal adds one
 /// repository at a time and has no manifest, and reimplementing the writes there would have been
-/// the second writer FR-008 forbids. So the writing lives here and both callers use it.
+/// a second writer. So the writing lives here and both callers use it.
 /// </para>
 /// <para>
 /// <b><see cref="WithdrawAsync"/> is written beside <see cref="AddAsync"/> so the two cannot drift.</b>
@@ -30,12 +30,6 @@ namespace Parley.Setup;
 /// by <c>/parley:write-peers</c>, and nothing here can tell a line the project added from a line a
 /// tool did, so a section that exists is left exactly as it is. Withdrawing declines even the
 /// append, and says so rather than leaving somebody to wonder.
-/// </para>
-/// <para>
-/// <b>That paragraph used to say the file was never touched by either half, which was not true of
-/// adding.</b> Recorded rather than quietly corrected, because a comment claiming a program does
-/// not write a file in somebody's repository is the kind of wrong that is believed: it is read by
-/// whoever is deciding whether this surface is safe to point at a checkout.
 /// </para>
 /// </remarks>
 public static class Enrolment
@@ -54,20 +48,13 @@ public static class Enrolment
     /// <returns>The path, whether or not anything is there.</returns>
     public static string LaunchPath(string workspace) => Path.Combine(workspace, LaunchFile);
 
-    // **`StartedElsewhere` was here, and 018 removed it along with the question it answered.** It told a
-    // surface that another project already started this workspace unattended, so that the add screen could
-    // explain why this project was getting a launch entry and no catalogue line. One catalogue keyed by
-    // identity means every project gets the same one entry, so there is nothing to explain.
-
     /// <summary>
     /// Writes what a plan decided, and says which files changed.
     /// </summary>
     /// <param name="decide">
     /// Given the launch configuration and the standing instructions as they stand — each null when
     /// there is none — says what to write. Called while both are held, so that reading one and
-    /// replacing it are one act. **The instructions used to be read by the caller and passed in**,
-    /// which put the read and the write at opposite ends of the call with the launch configuration's
-    /// two-second acquisition between them.
+    /// replacing it are one act.
     /// </param>
     /// <param name="workspace">The repository the plan is for.</param>
     /// <param name="instructionsPath">Where its standing instructions live.</param>
@@ -97,9 +84,7 @@ public static class Enrolment
 
         // The launch configuration is held across the decision and the write, for the reason
         // AddAsync holds it: reading it, deciding, and writing it back without exclusion is a lost
-        // update, and this is the path `enroll apply` takes. **It was missed when AddAsync was
-        // fixed** -- six bulk runs sharing one catalogue told an agent its enrolment had succeeded
-        // and left it out of the file that makes it startable.
+        // update, and this is the path `parley enroll` takes.
         using (var held = await HoldAsync(LaunchPath(workspace), cancellationToken).ConfigureAwait(false))
         {
             // Launch then instructions, the order AddAsync takes them in after the catalogue. Two
@@ -185,6 +170,17 @@ public static class Enrolment
             cause,
             [.. written]);
 
+    /// <summary>Each project on this machine and the endpoint it holds.</summary>
+    /// <param name="root">The machine's root, or null when none is known.</param>
+    /// <returns>The projects by name, or null when there is no root or it cannot be read.</returns>
+    /// <remarks>
+    /// What lets an entry pinned to an address be matched to a project instead of guessed at.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, string>? EndpointsOf(string? root) =>
+        root is not null && ProjectManifest.TryRead(root, out var projects, out _)
+            ? projects.ToDictionary(project => project.Name.Value, project => project.Endpoint, StringComparer.Ordinal)
+            : null;
+
     /// <summary>What a declined instructions file currently holds, for the plan's sake.</summary>
     /// <param name="declined">Why it was declined, or null when it simply is not there.</param>
     /// <param name="path">Where it lives.</param>
@@ -220,10 +216,9 @@ public static class Enrolment
     /// <param name="agent">Which agent, which is what the catalogue is keyed by.</param>
     /// <param name="workspace">Where it would be started.</param>
     /// <remarks>
-    /// <b>Keyed by identity, where this was keyed by the role</b> (018). A role is what one project calls a
-    /// checkout, so a checkout answering in two projects needed two entries in two files — and was startable
-    /// wherever it had one and unstartable wherever it had not. One checkout is one entry now, whatever it
-    /// is called in however many projects, and enrolling into a further project writes nothing here at all.
+    /// <b>Keyed by identity, not by role.</b> A role is what one project calls a checkout. One checkout is
+    /// one entry, whatever it is called in however many projects, and enrolling into a further project
+    /// writes nothing here at all.
     /// </remarks>
     public static void List(JsonObject catalogue, AgentIdentity agent, string workspace)
     {
@@ -236,23 +231,6 @@ public static class Enrolment
         };
     }
 
-    /// <summary>Which agent a launch configuration's parley entry says it starts, or null.</summary>
-    /// <param name="entry">The <c>mcpServers.parley</c> node, whatever shape it is in.</param>
-    /// <returns>The name, or null when the entry names nobody.</returns>
-    /// <remarks>
-    /// Null and "somebody else" are deliberately different answers. An entry that names nobody
-    /// cannot be another agent's, because nothing identifies it as anybody's — every entry this
-    /// program writes carries the variable — so a withdrawal proceeds on one and declines on the
-    /// other. Reading the name back is the only thing here that can tell them apart: SPEC.md §16
-    /// makes the launch environment the whole of who an agent is.
-    /// </remarks>
-    public static string? NamedBy(JsonNode? entry) =>
-        entry?["env"]?[EnrollmentPlan.AgentVariable] is JsonValue value
-        && value.TryGetValue<string>(out var name)
-        && !string.IsNullOrWhiteSpace(name)
-            ? name
-            : null;
-
     /// <summary>What a path is a link to, or null when it is an ordinary file.</summary>
     /// <param name="path">The file.</param>
     /// <returns>Its target, or null.</returns>
@@ -263,12 +241,10 @@ public static class Enrolment
     /// of clones somebody else wrote. Following one turns a clone into a write wherever the link says.
     /// </para>
     /// <para>
-    /// <b>And every file it reads out of one, which is the half that was missed.</b> Three findings
-    /// closed the write in three places and none of them asked about the read: <c>enroll scan</c> opens
-    /// a clone's <c>README.md</c> and its <c>.mcp.json</c> and quotes what it finds into a manifest the
-    /// person reads and frequently commits, so a link pointing out of the checkout copies a line of
-    /// somebody else's file into it. Internal rather than private for that reason — the readers are in
-    /// <c>EnrollCommand</c>, and a second implementation of this is how the two rules come to differ.
+    /// <b>And every file it reads out of one.</b> Enrolment reads a clone's <c>.mcp.json</c> to suggest a
+    /// name and owns line, so a link pointing out of the checkout would copy a line of somebody else's file
+    /// into what the person reads. Internal rather than private because the readers are in
+    /// <c>EnrollCommand</c>, and a second implementation is how two rules come to differ.
     /// </para>
     /// </remarks>
     internal static string? Linked(string path)
@@ -362,12 +338,10 @@ public static class Enrolment
     /// <returns>The handle — null when the file is absent or declined — and why it was declined.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The third file, held the way the other two are.</b> It was read at the top of a call and
-    /// written at the bottom, with the launch configuration's acquisition in between — which retries
-    /// for two seconds. What lands in that window is somebody saving in an editor, and their work was
-    /// overwritten by the copy read before they typed it. The create arm was worse than a lost
-    /// append: with no file the plan is <i>create</i>, so a file that appeared in the window was
-    /// replaced wholesale by the frame rather than having the frame added to it.
+    /// <b>The third file, held the way the other two are.</b> The launch configuration's acquisition
+    /// retries for two seconds, and somebody saving in an editor during that window would otherwise be
+    /// overwritten by the copy read before they typed; with no file the plan is <i>create</i>, so a file
+    /// that appeared meanwhile would be replaced wholesale by the frame.
     /// </para>
     /// <para>
     /// <b>A link is declined rather than thrown, and that is why this exists as a helper.</b>
@@ -508,7 +482,7 @@ public static class Enrolment
     /// <remarks>
     /// Keyed by identity, as <see cref="List"/> is. The identity comes from the repository being withdrawn,
     /// so a withdrawal removes the entry for the checkout it was pointed at and never one that happens to
-    /// answer to the same name — which is the defect 005's review gate found from the other direction.
+    /// answer to the same name.
     /// </remarks>
     public static bool Unlist(JsonObject catalogue, AgentIdentity agent)
     {
@@ -525,14 +499,12 @@ public static class Enrolment
     /// <returns>The workspaces that already claim it, in the order the catalogue holds them.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The warning this restores was free when the catalogue was keyed by the role.</b> A second
-    /// repository taking a name the first held wrote over the first's entry, so the writer could see the
-    /// collision by looking at one key. Keyed by identity the two are separate entries and neither is
-    /// disturbed — which is better, and silent: an agent's name is the one thing this protocol makes
-    /// unforgeable, and two repositories claiming one means either may collect the other's mail.
+    /// <b>Keyed by identity, two repositories claiming one name are separate entries, so the collision
+    /// has to be looked for.</b> An agent's name is the one thing this protocol makes unforgeable, and
+    /// two repositories claiming one means either may collect the other's mail.
     /// </para>
     /// <para>
-    /// <b>Said rather than refused</b>, because the node is what refuses (018 R4): it leaves a contested
+    /// <b>Said rather than refused</b>, because the node is what refuses: it leaves a contested
     /// name out of what it announces, so neither is started under it. Refusing here would refuse the
     /// repair as well as the mistake — renaming one of the two is an enrolment.
     /// </para>
@@ -601,8 +573,8 @@ public static class Enrolment
     /// <b>The bulk command asks this and <see cref="AddAsync"/> applies it, which is one rule and two
     /// callers rather than two rules.</b> They differ only in when: a bulk run refuses the whole manifest
     /// before writing any of it, because a half-enrolled set is worse than none, and the single-repository
-    /// path has nothing to be half of. The answer is the same either way, and a probe found it enforced on
-    /// one writer and not the other — which is this repository's recorded shape for exactly this mistake.
+    /// path has nothing to be half of. The answer is the same either way, and a rule enforced on
+    /// one writer and not the other is the mistake this guards against.
     /// </remarks>
     public static string? CopyRefusal(JsonObject agents, string workspace)
     {
@@ -654,17 +626,11 @@ public static class Enrolment
     /// <param name="entry">The repository, its role, and whether it may run unattended.</param>
     /// <param name="project">The project it becomes an agent of.</param>
     /// <param name="catalogueFile">The project's catalogue.</param>
-    /// <param name="instructionsPath">Its standing instructions, read but never written by this.</param>
+    /// <param name="instructionsPath">Its standing instructions; the peers frame is appended when it has none.</param>
     /// <param name="cancellationToken">Stops the reads and writes.</param>
-    /// <param name="deployment">
-    /// Every project the machine's manifest names, so an address-pinned entry can be resolved and an
-    /// unattended start already granted elsewhere can be found. Null where there is no manifest,
-    /// which refuses the first exactly as it was refused before and says nothing about the second.
-    /// </param>
     /// <param name="manifestPath">
-    /// Where that manifest lives, held for the length of the call so that checking whether another
-    /// project starts this workspace and recording that this one does are one act. Null where there
-    /// is no manifest, which is also where there is nothing to check.
+    /// The machine's root, whose lock is held for the length of the call so that deciding from the
+    /// catalogue and writing to it are one act. Null where there is none.
     /// </param>
     /// <returns>What was decided and what was written.</returns>
     /// <exception cref="InvalidDataException">
@@ -681,25 +647,17 @@ public static class Enrolment
         string catalogueFile,
         string instructionsPath,
         CancellationToken cancellationToken,
-        IReadOnlyList<ProjectSettings>? deployment = null,
         string? manifestPath = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentException.ThrowIfNullOrWhiteSpace(project);
         ArgumentException.ThrowIfNullOrWhiteSpace(catalogueFile);
 
-        // **The rules were the bulk command's and are the code's now.** `EnrollmentPlan.Validate`
-        // holds every one of them — a name an `AgentName` can parse, an owns line inside the cap the
-        // broker's schema enforces and free of anything that could break its own roster row, an
-        // approval a person actually gave — and `EnrollCommand` called it before writing anything
-        // while this, the other public way in, called nothing. A name with a newline, `Orders`,
-        // `9orders`, an empty name and a five-thousand character owns line were all written happily.
-        //
-        // Neither failure is visible where it is caused. The launch configuration is the whole of who
-        // an agent is, so a name no `AgentName` parses produces a repository that announces itself and
-        // appears on no roster; an owns line past the cap is refused by a CHECK constraint at
-        // registration, a long way from the person who typed it. One rule applied to half the callers
-        // is worse than either applied whole.
+        // `EnrollmentPlan.Validate` holds every rule: a name an `AgentName` can parse, and an owns line
+        // inside the cap the broker's schema enforces and free of anything that could break its own
+        // roster row. Both ways in apply it, because neither failure is visible where it is caused: a
+        // bad name announces a repository that appears on no roster, and an over-long owns line is
+        // refused by a CHECK constraint at registration, far from the person who typed it.
         if (EnrollmentPlan.Validate([entry], Directory.Exists, _ => "enrolment") is { Count: > 0 } wrong)
         {
             throw new InvalidDataException(string.Join("; ", wrong));
@@ -711,12 +669,11 @@ public static class Enrolment
         // different files and no hold on either covers the other.
         using var gate = await Catalogues.GateAsync(manifestPath, cancellationToken).ConfigureAwait(false);
 
-        // **The catalogue is held first, and both halves acquire in this order.** It has the same
+        // The catalogue is held first, and both halves acquire in this order. It has the same
         // read-modify-write shape as the launch configuration and a commoner collision: six
-        // repositories joining one project is what setting a deployment up looks like, and six
-        // unguarded writers left agents told their enrolment had succeeded and missing from the file
-        // that makes them startable. Catalogue before launch in AddAsync and in WithdrawAsync, so
-        // two runs cannot each hold the half the other is waiting for.
+        // repositories joining one project is what setting a deployment up looks like. Catalogue before
+        // launch in AddAsync and in WithdrawAsync, so two runs cannot each hold the half the other
+        // is waiting for.
         using var catalogueHeld = await HoldAsync(catalogueFile, cancellationToken).ConfigureAwait(false);
 
         var catalogue = catalogueHeld is null
@@ -730,36 +687,21 @@ public static class Enrolment
         var written = new List<string>();
         var said = new List<string>();
 
-        // **There is no second-project refusal any more, and that is 018.**
-        //
-        // What stood here asked whether another project already catalogued this workspace for unattended
-        // start, and refused if one had: FR-013's rule that a repository may answer in several projects and
-        // be started unattended by only one, because two nodes launching one working directory is two models
-        // editing one checkout. It needed a scan across every other project's catalogue, and 009 recorded
-        // the deviation from Principle V that the scan was.
-        //
-        // The catalogue is one file keyed by the agent's identity now. One checkout has one entry, whatever
-        // it is called in however many projects, so "catalogued twice" cannot be written down and there is
-        // nothing left to refuse. Enrolling into a further project adds a name and touches nothing else.
+        // The catalogue is one file keyed by the agent's identity, so one checkout has one entry whatever
+        // it is called in however many projects; enrolling into a further project adds a name and
+        // touches nothing else.
 
-        // **Read and written under one exclusive handle, because a repository now has more than one
-        // writer.** Before this feature a second enrolment of one repository was refused outright, so
-        // there was never a legitimate reason for two writers to hold this file at once; setting a
-        // machine up for two projects is the ordinary case now. Read-modify-write over the whole file
-        // without exclusion loses the earlier writer's entry *and reports success* -- eight projects
-        // racing left one entry in the file and told two of them it had worked. That is the same
-        // class as the withdrawal that removed another agent's entry and reported success: the damage
-        // is not the failure, it is the report.
+        // Read and written under one exclusive handle, because a repository may have several writers
+        // (one per project it joins). Read-modify-write without exclusion loses the earlier writer's
+        // entry and reports success; the damage is not the failure, it is the report.
         RepositoryPlan plan = null!;
 
         try
         {
             using (var launch = await HoldAsync(launchPath, cancellationToken).ConfigureAwait(false))
             {
-                // **The third file, held from here rather than read at the top of the call.** The frame
-                // replaces this file with its own contents plus the frame, so the read and the write have
-                // to be one act as the other two are — and the acquisition above retries for two seconds,
-                // which is a wide window to lose somebody's editor save in.
+                // The third file, held from here. The frame replaces this file with its own contents plus
+                // the frame, so the read and the write have to be one act as the other two are.
                 var (notes, declined) = await HoldInstructionsAsync(instructionsPath, cancellationToken)
                     .ConfigureAwait(false);
 
@@ -791,9 +733,8 @@ public static class Enrolment
                     // starts, and this is the only moment anybody could be told.** The entry about to be
                     // written here is loaded by the client the node launches — one working directory has
                     // one launch configuration and a client brings up every server in it — so this
-                    // project gets an agent that answers unattended without having asked for one. The
-                    // sentence used to name the project that held the consent, because consent was per
-                    // project; there is one catalogue now, so what it names is the machine.
+                    // project gets an agent that answers unattended without having asked for one. Consent
+                    // is the machine's, because there is one catalogue.
                     if (!entry.Unattended && agents.ContainsKey(key))
                     {
                         said.Add(
@@ -821,10 +762,7 @@ public static class Enrolment
                             : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
                         agents.ContainsKey(key),
                         project,
-                        deployment?.ToDictionary(
-                            settings => settings.Name.Value,
-                            settings => settings.Endpoint,
-                            StringComparer.Ordinal),
+                        EndpointsOf(manifestPath),
                         listed,
                         identity);
 
@@ -898,7 +836,7 @@ public static class Enrolment
     /// course of that is a second, unasked-for change.
     /// </para>
     /// <para>
-    /// <b>A repository may now answer in several projects, so a withdrawal that named none would have
+    /// <b>A repository may answer in several projects, so a withdrawal that named none would have
     /// to pick.</b> It does not: one entry is taken when there is exactly one, and several are refused
     /// with every project named. Guessing here removes a working agent from a roster nobody was
     /// talking about, and the person finds out when a peer stops being answered.
@@ -939,8 +877,8 @@ public static class Enrolment
             }
             else
             {
-                // Held for the whole read-modify-write, for the reason AddAsync is: a repository may now
-                // have more than one writer, and this is the one that deletes.
+                // Held for the whole read-modify-write, for the reason AddAsync is: a repository may
+                // have several writers, and this is the one that deletes.
                 //
                 // **A link is a note here rather than an exception**, unlike the adding half. Everything
                 // this cannot act on it leaves alone and reports — an unreadable file, servers of the
@@ -1015,7 +953,7 @@ public static class Enrolment
 
                         if (candidates.Count > 1)
                         {
-                            // FR-011. Never a guess: taking either would remove a working agent from a
+                            // Never a guess: taking either would remove a working agent from a
                             // roster nobody was talking about, and the person finds out when a peer
                             // stops being answered.
                             notes.Add(
@@ -1040,13 +978,8 @@ public static class Enrolment
                         }
                         else if (candidates[0] is { Ours: false } stranger)
                         {
-                            // **The rule below used to cover this and stopped being able to.** It read:
-                            // an entry that names nobody cannot be another agent's, because nothing
-                            // identifies it as anybody's and every entry this program writes carries the
-                            // variable. That was sound while the key was fixed — an entry at `parley`
-                            // naming nobody was ours by the only convention there was. A key derived
-                            // from a project name is one somebody may reasonably have used first, so
-                            // naming nobody no longer implies being ours.
+                            // A key derived from a project name is one somebody may reasonably have used
+                            // first, so an entry naming nobody is not necessarily ours.
                             notes.Add(
                                 $"{launchPath}: left alone, {Quoting.Quoted(stranger.Key)} is not an entry this wrote");
                         }
@@ -1093,13 +1026,10 @@ public static class Enrolment
                             notes.Add($"{launchPath}: no entry for {Where(project)} to remove");
                         }
 
-                        // **Asked of the file as it now stands, on every path through the block above.**
-                        // Three of those paths leave the repository answering somewhere — the entry was
-                        // removed and others remain, the entry belongs to another agent and was left, the
-                        // file was left alone for one of the reasons it cannot be acted on — and all three
-                        // must keep the catalogue line. Setting this only where the removal succeeded was
-                        // the first version, and it took the checkout's one way of being started away
-                        // from an agent nobody had withdrawn.
+                        // Asked of the file as it stands, on every path through the block above. Three of
+                        // those paths leave the repository answering somewhere — the entry was removed and
+                        // others remain, the entry belongs to another agent and was left, the file was left
+                        // alone for a reason — and all three must keep the catalogue line.
                         stillAnAgent = LaunchEntries.Read(servers).Count > 0;
                     }
                     else
@@ -1130,11 +1060,10 @@ public static class Enrolment
 
                 if (catalogue["agents"] is JsonObject agents)
                 {
-                    // **Left where the repository still answers somewhere**, which is 018's shape rather
-                    // than a kindness. One entry says this machine may start this checkout, and every
-                    // project it answers in is started through that one entry — so removing it because one
-                    // project let it go would take the others' ability to start it with no sign that
-                    // anything had happened but an agent that never comes when it is asked for.
+                    // Left where the repository still answers somewhere. One entry says this machine may
+                    // start this checkout, and every project it answers in is started through that one
+                    // entry — so removing it because one project let it go would take the others' ability
+                    // to start it.
                     if (stillAnAgent)
                     {
                         notes.Add(
@@ -1142,7 +1071,7 @@ public static class Enrolment
                     }
                     else if (!withdrawn.Known)
                     {
-                        // Enrolled before identities existed, or a file this could not read. The entry
+                        // A launch file that declares no identity, or one this could not read. The entry
                         // cannot be found by name, and guessing which one is meant is how a withdrawal
                         // comes to remove somebody else's.
                         notes.Add(

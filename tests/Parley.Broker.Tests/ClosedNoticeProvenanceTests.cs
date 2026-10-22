@@ -9,9 +9,9 @@ namespace Parley.Broker.Tests;
 /// That a Request is carried back only to the agent that wrote it.
 /// </summary>
 /// <remarks>
-/// Found by the review gate, lens 2. Every delivered Result carried its Request back under "This is the Result of a
-/// request you sent. Your request, as you sent it" — including the closed Result a person's close writes to the
-/// <i>receiver</i>, which was then shown the requester's words as its own. The delimiters held; the label did not,
+/// A delivered Result carries its Request back under "This is the Result of a
+/// request you sent. Your request, as you sent it", but the closed Result a person's close writes to the
+/// <i>receiver</i> must not show the receiver the requester's words as its own. The delimiters hold; the label must too,
 /// and a peer's text presented as the agent's own is exactly the provenance §13 exists to keep straight.
 /// </remarks>
 public sealed class ClosedNoticeProvenanceTests : IDisposable
@@ -57,8 +57,8 @@ public sealed class ClosedNoticeProvenanceTests : IDisposable
     [Fact]
     public async Task A_closing_notice_is_the_brokers_and_names_no_peer_as_its_author()
     {
-        // Found by the review gate, lens 2 run 2.7. The notice sits on the exchange, so it carries billing as its
-        // sender, and it was rendered "Message from billing ... another participant in your project" around the
+        // The notice sits on the exchange, so it carries billing as its sender, and it must not be rendered
+        // "Message from billing ... another participant in your project" around the
         // person's own reason for closing. Billing wrote none of it.
         await _broker.RequestAsync(Orders, Billing, Requests.Model, Requests.Request(), T0.AddMinutes(1), "pricing", Ct);
 

@@ -9,12 +9,10 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// **Found by the owner on a live deployment, immediately after 0.22.0 was merged.** Two projects were
-/// being served — the broker log named both, both ports were listening, and the node could start all
-/// three of the second project's agents — and both `autostart status` and `autostart install` printed
-/// output identical to a one-project machine. `status` answered with a file path and `install` with a
-/// rule, *each project whose entry names a catalogue*, so there was no way to tell from either that
-/// the second project had come up. The reasonable reading was that it had not.
+/// **With two projects served, `autostart status` and `autostart install` must not print output
+/// identical to a one-project machine.** Answering `status` with a file path and `install` with a
+/// rule, *each project whose entry names a catalogue*, would leave no way to tell from either that
+/// the second project had come up, and the reasonable reading would be that it had not.
 /// </para>
 /// <para>
 /// <b>Both commands already read that manifest.</b> `install` reads it to decide whether to print a
@@ -45,18 +43,22 @@ public sealed class ServedProjectsTests : IDisposable
         }
     }
 
-    private string ManifestPath => Path.Combine(_root, "projects.json");
+    // **The root rather than the manifest file.** `--config` and PARLEY_CONFIG name the directory
+    // this machine keeps its Parley files in; the projects are the folders under it.
+    private string Root => _root;
 
     private void Write(params (string Name, string? Catalogue)[] projects)
     {
+        // **The store is derived rather than chosen**, so the fixture cannot put one somewhere of its
+        // own. Naming one here is what made this file's assertions compare against a path nothing
+        // writes — the reader answers with what the layout says, whatever a fixture asked for.
         var settings = projects.Select((project, index) => new ProjectSettings(
             ProjectName.Create(project.Name),
-            Path.Combine(_root, $"{project.Name}.db"),
+            ProjectFolder.StoreFor(Root, ProjectName.Create(project.Name)),
             $"http://127.0.0.1:{7100 + index}",
-            project.Catalogue,
             null)).ToArray();
 
-        ProjectManifest.Write(ManifestPath, settings);
+        ProjectManifest.Write(Root, settings);
     }
 
     [Fact]
@@ -65,7 +67,7 @@ public sealed class ServedProjectsTests : IDisposable
         // The whole point: a two-project machine must not print what a one-project machine prints.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")), ("beta", Path.Combine(_root, "beta-node.json")));
 
-        var lines = AutostartCommand.ServedProjects(ManifestPath);
+        var lines = AutostartCommand.ServedProjects(Root);
 
         Assert.Contains(lines, line => line.Contains("alpha", StringComparison.Ordinal));
         Assert.Contains(lines, line => line.Contains("beta", StringComparison.Ordinal));
@@ -74,29 +76,27 @@ public sealed class ServedProjectsTests : IDisposable
     [Fact]
     public void Each_project_names_both_of_its_files()
     {
-        // **Two files per project now, and they are still rarely together.** This asked for three and
-        // the third was the catalogue, which stopped being a property of a project in 018. The store
-        // and the endpoint remain genuinely per project, and on the machine that found this they were
-        // in different directories from each other and from the manifest — which is the whole reason
-        // naming the manifest alone was not enough.
+        // **Two files per project, and they are rarely together.** The catalogue is not a property of a
+        // project. The store and the endpoint are genuinely per project, and can be in different
+        // directories from each other and from the manifest — which is the whole reason naming the
+        // manifest alone is not enough.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
-        var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
+        var text = string.Join("\n", AutostartCommand.ServedProjects(Root));
 
         Assert.Contains("alpha", text, StringComparison.Ordinal);
-        Assert.Contains(Path.Combine(_root, "alpha.db"), text, StringComparison.Ordinal);
+        Assert.Contains(
+            ProjectFolder.StoreFor(Root, ProjectName.Create("alpha")), text, StringComparison.Ordinal);
         Assert.Contains("http://127.0.0.1:7100", text, StringComparison.Ordinal);
     }
 
     [Fact]
     public void No_project_is_given_a_catalogue_of_its_own()
     {
-        // **The defect the owner met on 0.31.0's install**, and it is the interesting direction: the
-        // manifest still carries `node_config` per project, because nothing has deleted the field yet
-        // (T027) — so a command that goes on reading it prints a path that is still in the file and no
-        // longer decides anything. The broker two lines further up the same output said it was hosting
-        // from somewhere else entirely, which is the shape of every defect this repository keeps
-        // recording: two answers to one question, one of them unreachable from the code that matters.
+        // **A manifest may still carry `node_config` per project**, so a command that goes on reading
+        // it would print a path that is still in the file and no longer decides anything, while the
+        // broker two lines further up the same output says it is hosting from somewhere else entirely:
+        // two answers to one question, one of them unreachable from the code that matters.
         //
         // Written against a manifest whose entries *do* name catalogues, since a manifest with none
         // would pass this by having nothing to leak.
@@ -104,7 +104,7 @@ public sealed class ServedProjectsTests : IDisposable
             ("alpha", Path.Combine(_root, "alpha-node.json")),
             ("beta", Path.Combine(_root, "beta-node.json")));
 
-        var text = string.Join("\n", AutostartCommand.ServedProjects(ManifestPath));
+        var text = string.Join("\n", AutostartCommand.ServedProjects(Root));
 
         Assert.DoesNotContain("alpha-node.json", text, StringComparison.Ordinal);
         Assert.DoesNotContain("beta-node.json", text, StringComparison.Ordinal);
@@ -112,13 +112,20 @@ public sealed class ServedProjectsTests : IDisposable
     }
 
     [Fact]
-    public void A_manifest_that_cannot_be_read_says_nothing_here()
+    public void A_project_that_cannot_be_read_says_nothing_here()
     {
-        // Silent on purpose: both callers have their own words for an unreadable manifest, and two
-        // messages about one file is how they come to disagree about it.
-        File.WriteAllText(ManifestPath, "{ this is not json");
+        // Silent on purpose: both callers have their own words for a configuration they cannot read, and
+        // two messages about one file is how they come to disagree about it.
+        //
+        // **Repointed at a project's own file**, which is where an unreadable configuration lives now.
+        // The old spelling wrote over the manifest; writing over the root would be writing a file where
+        // a directory is, which tests the filesystem rather than this.
+        Directory.CreateDirectory(ProjectFolder.For(Root, ProjectName.Create("alpha")));
 
-        Assert.Empty(AutostartCommand.ServedProjects(ManifestPath));
+        File.WriteAllText(
+            ProjectFolder.ConfigurationFor(Root, ProjectName.Create("alpha")), "{ this is not json");
+
+        Assert.Empty(AutostartCommand.ServedProjects(Root));
     }
 
     [Fact]
@@ -127,12 +134,12 @@ public sealed class ServedProjectsTests : IDisposable
         // One per machine, and the entry names none of its own — so the broker it starts resolves the
         // file beside the manifest it serves. Asserted against `ProjectResolution`'s own answer rather
         // than against a path built here: a second spelling of this rule in a test is how the test
-        // comes to pass while the code is wrong, which is what `KeyRuleTests` caught during 018.
+        // comes to pass while the code is wrong, which is what `KeyRuleTests` guards.
         Write(("alpha", Path.Combine(_root, "alpha-node.json")));
 
         Assert.Equal(
             Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
-            AutostartCommand.MachineCatalogue(null, ManifestPath));
+            AutostartCommand.MachineCatalogue(null, Root));
     }
 
     [Fact]
@@ -144,9 +151,8 @@ public sealed class ServedProjectsTests : IDisposable
         // the logon broker will never open — and it would look right to whoever ran the installer,
         // which is the only moment somebody checks.
         //
-        // This is 018's live-file incident read from the other side: there, ambient state was read at
-        // the bottom of a call stack and wrote into a real deployment; here it would be read at the
-        // top and describe one that does not exist.
+        // Ambient state read at the bottom of a call stack could write into a real deployment; here it
+        // would be read at the top and describe one that does not exist.
         Write(("alpha", null));
 
         var previous = Environment.GetEnvironmentVariable(NodeCatalogue.PathVariable);
@@ -158,7 +164,7 @@ public sealed class ServedProjectsTests : IDisposable
 
             Assert.Equal(
                 Path.GetFullPath(Path.Combine(_root, NodeCatalogue.DefaultFileName)),
-                AutostartCommand.MachineCatalogue(null, ManifestPath));
+                AutostartCommand.MachineCatalogue(null, Root));
         }
         finally
         {
@@ -175,6 +181,6 @@ public sealed class ServedProjectsTests : IDisposable
 
         var named = Path.Combine(_root, "chosen.json");
 
-        Assert.Equal(named, AutostartCommand.MachineCatalogue(named, ManifestPath));
+        Assert.Equal(named, AutostartCommand.MachineCatalogue(named, Root));
     }
 }

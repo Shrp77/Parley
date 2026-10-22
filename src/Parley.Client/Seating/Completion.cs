@@ -26,8 +26,7 @@ public enum Sigil
 /// <para>
 /// <b>Derived from the text, never remembered.</b> There is no flag saying somebody was completing something:
 /// what the list shows is a function of what is written, which is the only way deleting back into a match can
-/// bring the list back. A dismissed flag would be 0.29.1's cached waiting count in a new place — a number that
-/// only ever climbed because a notice arrives when something lands and never when it is collected.
+/// bring the list back.
 /// </para>
 /// <para>
 /// <b>Prefix fills the list; an exact identifier decides the send.</b> Those are two different comparisons and
@@ -144,8 +143,8 @@ public sealed record Completion
     /// <param name="by">How far, and which way.</param>
     /// <returns>The list with the highlight moved.</returns>
     /// <remarks>
-    /// Wrapping rather than stopping, because a list of two is faster to cycle than to aim at — and 0.20.3
-    /// records what a list that cannot be left in one direction costs.
+    /// Wrapping rather than stopping, because a list of two is faster to cycle than to aim at, and a list
+    /// that cannot be left in one direction traps the highlight.
     /// </remarks>
     public Completion Move(int by) => Open
         ? this with { Selected = ((Selected + by) % Matches.Count + Matches.Count) % Matches.Count }

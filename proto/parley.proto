@@ -4,7 +4,7 @@ package parley.v1;
 
 option csharp_namespace = "Parley.Transport";
 
-// The Parley wire contract, per SPEC.md section 4.0. Protocol 0.7.
+// The Parley wire contract, per SPEC.md section 4.0. The version is ProtocolVersion.Current.
 //
 // SPEC.md is the authority and this file is not. A message defined here and absent there is a
 // defect here; a rule stated there and unrepresentable here is a defect here too -- the same
@@ -80,6 +80,11 @@ service Agents {
 
   // Removes files the calling agent placed. Every other name is refused, naming its placer.
   rpc RemoveOwnFiles(RemoveFilesRequest) returns (RemoveFilesReply);
+
+  // Puts a roadmap forward for a person to confirm (section 5.7). Stores a proposal and nothing else: it opens no
+  // exchange, writes no message and creates no roadmap. This is the whole of what an agent can do with one -- there
+  // is no read, no change and no marking done, and none may be added (principle 2.12).
+  rpc ProposeRoadmap(ProposeRoadmapRequest) returns (ProposeRoadmapReply);
 }
 
 message AttachRequest {
@@ -91,6 +96,11 @@ message AttachRequest {
   string adapter_config = 6;
   string owns = 7;
   string protocol_version = 8;
+  string launch_token = 9;       // what the node that started this process put in its environment; empty when none did (section 11.7)
+
+  // The repository's identifier (`parleyAgentId`), empty when it has none. A label and never authority (section 4.1.1):
+  // presented under a name the project does not hold, from the workspace and machine that hold it, it renames the agent.
+  string identity = 10;
 }
 
 message Event {
@@ -115,6 +125,7 @@ message Notice {
   int32 messages_waiting = 1;
   int32 closure_polls_waiting = 2;
   int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
+  int32 roadmap_notices_waiting = 4;  // section 5.7: what became of the agent's own proposals; wakes nothing
 }
 
 message OpenRequest {
@@ -164,6 +175,10 @@ message ClarifyRequest {
   int64 exchange_id = 2;
   string responder_model = 3;
   string payload_json = 4;
+
+  // Exchanges the person's Request settled (section 5.6). Only on a reply from the receiver of a Request the person opened
+  // with this agent; anything named that cannot be settled refuses the whole reply. At most 50; a repeated id counts once.
+  repeated int64 settles = 5;
 }
 
 message ResultRequest {
@@ -171,11 +186,13 @@ message ResultRequest {
   int64 exchange_id = 2;
   string responder_model = 3;
 
-  // One outcome for the exchange (section 5.3), recorded against the item "request"; a Request stored under
-  // 0.5 or 0.6 carried items and is answered by them. The exchange's rolled-up outcome is derived by the
-  // broker from this and is deliberately not a field: a sender that could state it separately could state one
-  // its own outcome contradicts.
+  // One outcome for the ask as a whole (section 5.3), recorded against the id "request". The exchange's
+  // rolled-up outcome is derived by the broker from this and is deliberately not a field: a sender that could
+  // state it separately could state one its own outcome contradicts.
   string payload_json = 4;
+
+  // As on ClarifyRequest (section 5.6).
+  repeated int64 settles = 5;
 }
 
 message SayReply {
@@ -184,10 +201,18 @@ message SayReply {
   bool deduplicated = 3;
   int64 message_id = 4;
 
-  // On OUTCOMES_DO_NOT_MATCH_ITEMS, what the Result must answer, so the sender can correct it in one move:
-  // the single id "request" for a Request written under 0.7, and the stored ids of one written earlier --
-  // section 5.1.
-  repeated string expected_items = 5;
+  // On CANNOT_SETTLE, each exchange named that could not be settled and why. Nothing was stored (section 5.6).
+  repeated SettleRefusal cannot_settle = 5;
+
+  // On success, what the reply's settles did: the agent's own questions closed as settled, and the person's own Requests
+  // handed back to the agent.
+  repeated int64 settled = 6;
+  repeated int64 handed_back = 7;
+}
+
+message SettleRefusal {
+  int64 exchange_id = 1;
+  SettleProblem problem = 2;
 }
 
 message ConcludeRequest {
@@ -231,6 +256,11 @@ message InboxReply {
   // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
   repeated FileNotice file_notices = 3;
   int32 file_notices_waiting = 4;
+
+  // Section 5.7. What became of this agent's own roadmap proposals, with its own title. Not messages: nothing is
+  // owed back and nothing is woken.
+  repeated RoadmapNotice roadmap_notices = 5;
+  int32 roadmap_notices_waiting = 6;
 }
 
 // That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
@@ -401,12 +431,11 @@ enum FileRejection {
   FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
   FILE_REJECTION_CONVERSATION_CLOSED = 7;
   FILE_REJECTION_CHANGED = 8;
-  FILE_REJECTION_INCOMPLETE = 9;
-  FILE_REJECTION_NO_SPACE = 10;
-  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 11;
-  FILE_REJECTION_NOT_FETCHED = 12;
-  FILE_REJECTION_TOO_MANY_NAMES = 13;
-  FILE_REJECTION_SAFE_NAME_TAKEN = 14;  // a renamed placement's safe spelling is already another file's name
+  FILE_REJECTION_NO_SPACE = 9;
+  FILE_REJECTION_EXTENSION_NOT_ALLOWED = 10;
+  FILE_REJECTION_NOT_FETCHED = 11;
+  FILE_REJECTION_TOO_MANY_NAMES = 12;
+  FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
 }
 
 enum PlaceOutcome {
@@ -423,6 +452,27 @@ enum PlaceOutcome {
 message DeliveredMessage {
   Message message = 1;
   string envelope = 2;
+
+  // Only beside a Request from the person: the receiving agent's own open questions to the person in that conversation,
+  // oldest first, at most 20, and how many more there are (section 5.6). The agent's own words, cut at 160 characters.
+  repeated SettleableQuestion settleable = 3;
+  int32 settleable_left_out = 4;
+
+  // Only beside a person's Request the receiving agent had asked back about: what the person has said to it in that
+  // conversation since it last spoke on the exchange, oldest first, at most 5, each in its own envelope (section 5.6).
+  repeated AnswerSince since = 5;
+}
+
+message AnswerSince {
+  int64 exchange_id = 1;
+  string sent_utc = 2;
+  string envelope = 3;
+}
+
+message SettleableQuestion {
+  int64 exchange_id = 1;
+  string opened_utc = 2;
+  string asked = 3;
 }
 
 message Message {
@@ -464,27 +514,67 @@ service Nodes {
   // and a turn when it is running.
   rpc Join(JoinRequest) returns (stream NodeCommand);
 
-  // How a node answers a DeliverInstruction. The command stream runs one way.
-  rpc ReportInstruction(InstructionReport) returns (Empty);
-
   // What the node observed about itself. Detected, never configured (section 4.1.1).
   rpc Describe(DescribeNodeRequest) returns (DescribeNodeReply);
+
+  // A turn this node gave an agent began or ended (section 11.6). Ignored unless the agent is on this
+  // node's machine and the node is joined. A failure here never fails the turn.
+  rpc ReportTurn(TurnReport) returns (Empty);
+
+  // This node is about to start an agent, with this token in its environment (section 11.7). The adapter presents
+  // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
+  // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
+  rpc ReportLaunch(LaunchReport) returns (Empty);
+}
+
+message LaunchReport {
+  string machine = 1;
+  string agent = 2;
+  string token = 3;     // chosen by the node for this one launch
 }
 
 message JoinRequest {
   string machine = 1;
   NodeFacts facts = 2;
   repeated string startable_roles = 3;   // what this node's catalogue can launch
+  // This node reports its turns (section 11.6). A node that does not say so leaves its agents' turn standing unknown
+  // rather than stopped: nothing reported must not read as stopped.
+  bool reports_turns = 4;
+
+  // The identifiers (`parleyAgentId`) of the checkouts this node can launch for this project. A node can start an agent
+  // by the identifier alone, so a repository whose role was renamed is still startable under the name the broker holds.
+  repeated string startable_identities = 5;
+}
+
+message TurnReport {
+  string machine = 1;
+  string agent = 2;
+  oneof phase {
+    TurnStarted started = 3;
+    TurnEnded ended = 4;
+  }
+}
+
+message TurnStarted {
+  string started_utc = 1;
+}
+
+message TurnEnded {
+  string started_utc = 1;          // pairs it with its start
+  int64 elapsed_ms = 2;
+  bool clean = 3;                  // completed, and not an error
+  bool timed_out = 4;
+  bool process_died = 5;
+  int32 permission_denials = 6;    // tool calls refused for want of permission
+  double cost_usd = 7;
+  int32 model_turns = 8;
 }
 
 message NodeFacts {
   string os = 1;
   string os_version = 2;
-  string architecture = 3;
-  string ip_address = 4;
-  string domain = 5;
-  string fqdn = 6;
-  string parley_version = 7;
+  string ip_address = 3;
+  string domain = 4;
 }
 
 message NodeCommand {
@@ -494,14 +584,19 @@ message NodeCommand {
     Joined joined = 1;
 
     StartAgent start = 2;
-    StopAgent stop = 3;
-    GiveTurn turn = 4;
+    GiveTurn turn = 3;
 
-    // The person's words, for an agent this node holds. Separate from GiveTurn because a turn says only
-    // that there is mail; this carries text a person wrote and must be given to the agent as what it is
-    // (section 11.5).
-    DeliverInstruction instruct = 5;
+    // Restart an agent this node started, once its current turn is over, so it reads its launch configuration afresh.
+    // Sent once, for an agent's first ownership line accepted automatically (section 11.1), and never for an agent the
+    // node did not start.
+    RefreshAgent refresh = 4;
   }
+}
+
+message RefreshAgent {
+  string agent = 1;
+  string because = 2;            // for the operator's benefit, never the agent's
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 message Joined {
@@ -510,24 +605,16 @@ message Joined {
   // What the broker already knows lives here, so a node can reconcile: an agent registered to this
   // machine that the node cannot launch is a repository that moved or was renamed.
   repeated string agents = 2;
+
+  // The identifier of each of those that presented one, by name, so a node can tell an agent whose repository was renamed
+  // since it registered from one this machine cannot start (section 4.1.1).
+  map<string, string> identities = 3;
 }
 
 message StartAgent {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
-}
-
-message DeliverInstruction {
-  int64 instruction_id = 1;
-  string agent = 2;
-  string text = 3;
-}
-
-message InstructionReport {
-  string machine = 1;
-  int64 instruction_id = 2;
-  InstructionOutcome outcome = 3;
-  string reply = 4;                   // empty when the agent never got the turn
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 // A turn, for an agent this node already holds. Distinct from StartAgent because a second process
@@ -537,10 +624,7 @@ message InstructionReport {
 message GiveTurn {
   string agent = 1;
   string because = 2;            // for the operator's benefit, never the agent's
-}
-
-message StopAgent {
-  string agent = 1;
+  string identity = 3;           // which checkout, when the broker knows; the node finds it by this and not by the name
 }
 
 message DescribeNodeRequest {
@@ -566,6 +650,20 @@ service Operators {
   rpc Reinstate(AgentRequest) returns (DidItReply);
   rpc Purge(AgentRequest) returns (PurgeReply);
 
+  // What a person agreed an agent owns, recorded with how they arrived at it (section 17 question 10).
+  // It does NOT write the registry's `owns`: that is filled from the launch environment when the agent
+  // attaches (section 12.3), so the reply carries what peers read now beside what was accepted.
+  rpc RecordOwnership(RecordOwnershipRequest) returns (RecordOwnershipReply);
+
+  // Parley's questions (section 10.2). Every one is the person's view of what the facilitator did or a
+  // decision about an answer it read back; none lets anybody speak as the facilitator except through
+  // ReplyToAskedBack, whose words are recorded as the person's (`parley:person`), never as Parley's.
+  rpc Facilitation(Empty) returns (FacilitationReply);
+  rpc SetAutoAccept(SetAutoAcceptRequest) returns (SetAutoAcceptReply);
+  rpc AskAgain(AgentRequest) returns (FacilitationActionReply);
+  rpc ReplyToAskedBack(ReplyToAskedBackRequest) returns (FacilitationActionReply);
+  rpc DiscardAnswer(AgentRequest) returns (FacilitationActionReply);
+
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
   rpc DescribeClarifications(Empty) returns (ClarificationsReply);
@@ -574,7 +672,7 @@ service Operators {
   rpc DescribeResults(Empty) returns (ResultsReply);
 
   // The work in front of the person: open exchanges gone quiet or owed by a retired agent, and cycles
-  // (sections 6 and 7.2). What replaced ghosting.
+  // (sections 6 and 7.2).
   rpc DescribeFlags(Empty) returns (FlagsReply);
 
   rpc Export(ExportRequest) returns (ExportReply);
@@ -587,8 +685,6 @@ service Operators {
   rpc Implements(Empty) returns (ImplementsReply);
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsReply);
   rpc DescribeWaiting(Empty) returns (WaitingReply);
-  rpc Instruct(InstructRequest) returns (InstructReply);
-  rpc Instructions(InstructionsRequest) returns (InstructionsReply);
 
   // Filing, not muting: delivery is unchanged and no participant is told.
   rpc Archive(ConversationRequest) returns (DidItReply);
@@ -597,6 +693,15 @@ service Operators {
   // Deletes a conversation for every participant. An open exchange inside it ceases to exist, so
   // whoever was waiting is never told anything at all -- which is why closing first is recommended.
   rpc Destroy(ConversationRequest) returns (DestroyReply);
+
+  // Roadmaps (section 5.7, principle 2.12). The person's: nothing here is reachable from the Agents service.
+  // Roadmap returns facts about each item's conversation and never a state; the surface derives that.
+  rpc Roadmaps(Empty) returns (RoadmapsReply);
+  rpc Roadmap(RoadmapRequest) returns (RoadmapReply);
+  rpc Proposals(ProposalsRequest) returns (ProposalsReply);
+  rpc ConfirmProposal(ConfirmProposalRequest) returns (RoadmapChangeReply);
+  rpc DeclineProposal(ProposalRequest) returns (RoadmapChangeReply);
+  rpc EditRoadmap(EditRoadmapRequest) returns (RoadmapChangeReply);
 
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
@@ -670,6 +775,38 @@ message RegistryRow {
   string session_ref = 7;
   string owns = 8;
   bool connected = 9;
+  // What a person accepted, which is not what peers read until the agent restarts: the registry's
+  // `owns` is filled from the launch environment on attach (section 12.3) and no operation writes it.
+  // Empty when nobody has accepted a line, and equal to `owns` once the agent has come back with it.
+  //
+  // Both halves travel rather than a `pending` flag, so a surface can show the two lines side by side
+  // and say which is which. A flag would carry the comparison and lose the thing being compared.
+  string owns_accepted = 10;
+  // How that accepted line was arrived at, so a surface can show a line accepted automatically apart from one a
+  // person decided (section 10.2). UNSPECIFIED when nobody has accepted a line.
+  //
+  // There is no `facilitator` field beside it on purpose. The facilitator's row is the one whose adapter is
+  // `parley-facilitator`, and storage ties that adapter to the reserved role in both directions -- so a flag would be
+  // a second statement of one fact, free to disagree with the first.
+  OwnershipSource owns_source = 11;
+
+  // The agent's turn standing (section 11.6): what its node said about the turns it gives. Operator-only --
+  // the agent roster (`ListAgentsReply`) carries none of it, because how another agent's turns went is not a peer's to
+  // read (section 10.1).
+  //
+  // `turns_reported` false means nobody reports this agent's turns -- its node does not say so, or it is an agent
+  // attached from somebody's editor -- and a surface must then say neither working nor stopped.
+  bool turns_reported = 12;
+  string turn_running_since_utc = 13;        // empty when no turn is running
+  string last_turn_ended_utc = 14;           // empty before the first reported turn
+  bool last_turn_clean = 15;
+  int32 last_turn_permission_denials = 16;
+  // Running, and only as a process Parley did not start (section 11.7): no node can give it a turn.
+  bool open_outside = 17;
+
+  // The repository's identifier (section 4.1.1), empty when the agent presented none. Never shown: a surface uses it to
+  // tell a catalogued checkout from an agent already registered under another name, and to name the checkout to a node.
+  string identity = 18;
 }
 
 message RefusalsReply {
@@ -767,6 +904,9 @@ message ExportReply {
   // both above empty means there was no such conversation ever: an empty export cannot otherwise be
   // told from a store that lost something (section 14).
   optional DestroyedConversation destroyed = 3;
+
+  // The roadmap item this conversation belongs to, by the broker's reservation and by nothing in any message.
+  optional RoadmapItemRef item = 4;
 }
 
 // Facts and no content (section 9.4). There is no field to put message text in.
@@ -783,10 +923,13 @@ message ExchangeSnapshot {
   string opened_utc = 3;
   string closed_utc = 4;              // empty while it is open
   ExchangeOutcome outcome = 5;        // UNSPECIFIED while it is open
+  int64 settled_by = 6;               // 0 unless the outcome is SETTLED (section 5.6)
 }
 
 message ImplementsReply {
   string protocol_version = 1;
+  string broker_version = 2;          // the build serving this, so a surface can say when it is not from the same release
+  repeated string store_problems = 3; // how this broker's store differs from the shape the build expects; empty when it matches
 }
 
 // Deliberately carries no project. Section 4.1: membership is which endpoint the caller connected to.
@@ -816,6 +959,7 @@ message ConversationSummary {
   string last_activity_utc = 5;
   bool has_open_exchange = 6;
   bool archived = 7;
+  optional RoadmapItemRef item = 8;   // section 5.7: set when it is a reserved item conversation
 }
 
 message WaitingReply {
@@ -828,37 +972,68 @@ message WaitingEdge {
   int64 exchange_id = 3;
 }
 
-message InstructRequest {
+message RecordOwnershipRequest {
   string agent = 1;
-  string text = 2;
+  string statement = 2;
+  OwnershipSource source = 3;
+  // The length of the AGENT'S OWN message, or 0 when there was no proposal. A person's characters are
+  // never counted here: this is the evidence the removed bound on `owns` has to be chosen against.
+  int32 proposed_length = 4;
+  string conversation_id = 5;         // empty only when the line was composed with no ask
 }
 
-message InstructReply {
-  InstructionOutcome outcome = 1;
-  string reply = 2;                   // empty when the agent never got the turn
-  int64 instruction_id = 3;           // where a caller told PENDING comes back to
+message RecordOwnershipReply {
+  bool recorded = 1;
+  string problem = 2;                 // empty when it was recorded
+  // What peers read RIGHT NOW, which is not what was accepted until the agent restarts. A surface says
+  // the line is pending by comparing the two rather than by keeping a flag somebody has to clear.
+  string live_statement = 3;
+  bool pending = 4;
 }
 
-message InstructionsRequest {
-  string agent = 1;                   // empty for every agent
-  int64 instruction_id = 2;           // 0 for all that match; otherwise exactly this one
-  int32 page_size = 3;                // the broker bounds this whatever is asked for
-  string page_token = 4;              // empty for the first page
+message FacilitationReply {
+  bool auto_accept = 1;
+  repeated OwnershipQuestion questions = 2;   // each agent's latest question, if it was ever asked
 }
 
-message InstructionRecord {
-  int64 id = 1;
-  string agent = 2;
-  string text = 3;                    // the person's own words, on a service no agent can reach
-  InstructionOutcome outcome = 4;
-  string reply = 5;                   // empty unless settled
-  string issued_utc = 6;
-  string settled_utc = 7;             // empty while the turn is still running
+message OwnershipQuestion {
+  string agent = 1;
+  string conversation_id = 2;
+  int64 exchange_id = 3;
+  QuestionState state = 4;
+  string answer = 5;                  // the agent's words as written; empty until it answers
+  string flattened = 6;               // the same words on one line; empty until it answers
+  string waiting_because = 7;         // why it waits for a person; empty unless waiting
+  string asked_utc = 8;
+  string settled_utc = 9;             // empty until accepted or discarded
 }
 
-message InstructionsReply {
-  repeated InstructionRecord instructions = 1;
-  string next_page_token = 2;         // empty at the end
+enum QuestionState {
+  QUESTION_STATE_UNSPECIFIED = 0;
+  QUESTION_STATE_ASKED = 1;
+  QUESTION_STATE_ASKED_BACK = 2;
+  QUESTION_STATE_ANSWERED = 3;
+  QUESTION_STATE_WAITING = 4;
+  QUESTION_STATE_ACCEPTED = 5;
+  QUESTION_STATE_DISCARDED = 6;
+}
+
+message SetAutoAcceptRequest {
+  bool on = 1;
+}
+
+message SetAutoAcceptReply {
+  bool on = 1;                        // as now set
+}
+
+message ReplyToAskedBackRequest {
+  string agent = 1;
+  string text = 2;                    // the person's words, held to the message cap
+}
+
+message FacilitationActionReply {
+  bool done = 1;
+  string problem = 2;                 // empty when it was done
 }
 
 message PruneReply {
@@ -866,7 +1041,6 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
-  int32 instructions_removed = 5;
 }
 
 // ===========================================================================================
@@ -896,6 +1070,10 @@ enum AgentPresence {
   AGENT_PRESENCE_STRANDED = 1;
   AGENT_PRESENCE_STARTABLE = 2;
   AGENT_PRESENCE_RUNNING = 3;
+  // The person seat only (section 14): a surface is open and in use, or nobody is at a screen. A person has no
+  // machine and is never started, so stranded and startable would each say something false about them.
+  AGENT_PRESENCE_HERE = 4;
+  AGENT_PRESENCE_AWAY = 5;
 }
 
 // Why a Request was refused. A value rather than a sentence: composing the sentence is the adapter's
@@ -911,6 +1089,7 @@ enum RequestRejection {
   REQUEST_REJECTION_CONVERSATION_CLOSED = 7;
   REQUEST_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 8;
   REQUEST_REJECTION_NO_SUCH_ROLE = 9;
+  REQUEST_REJECTION_RECEIVER_IS_THE_FACILITATOR = 10;  // the facilitator receives nobody's work (section 10.1)
 }
 
 enum TransitionError {
@@ -921,8 +1100,18 @@ enum TransitionError {
   TRANSITION_ERROR_NOT_YOUR_TURN = 4;
   TRANSITION_ERROR_ONLY_RECEIVER_SENDS_RESULT = 5;
   TRANSITION_ERROR_CLARIFY_DEPTH_EXCEEDED = 6;
-  TRANSITION_ERROR_OUTCOMES_DO_NOT_MATCH_ITEMS = 7;
-  TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 8;
+  TRANSITION_ERROR_CLOSED_IS_THE_BROKERS = 7;
+  TRANSITION_ERROR_CANNOT_SETTLE = 8;
+}
+
+// Why an exchange named in settles could not be settled (section 5.6).
+enum SettleProblem {
+  SETTLE_PROBLEM_UNSPECIFIED = 0;
+  SETTLE_PROBLEM_NOT_FROM_THE_PERSON = 1;   // the reply is not on a Request the person opened with this agent
+  SETTLE_PROBLEM_OTHER_CONVERSATION = 2;
+  SETTLE_PROBLEM_NOT_OPEN = 3;              // closed, or no such exchange; not told apart, as elsewhere
+  SETTLE_PROBLEM_NOT_BETWEEN_YOU = 4;
+  SETTLE_PROBLEM_NOT_THEIR_MOVE = 5;
 }
 
 // What became of the attempt to put a message in front of its receiver. None of these is a refusal:
@@ -933,6 +1122,12 @@ enum WakeOutcome {
   WAKE_OUTCOME_ALREADY_RUNNING = 2;
   WAKE_OUTCOME_ALREADY_COMING = 3;
   WAKE_OUTCOME_UNREACHABLE = 4;
+  // The receiver is the person seat (section 12.3): they have it and will answer, whether here or
+  // away. No machine was asked to start anybody, because nothing starts a person.
+  WAKE_OUTCOME_WITH_THE_PERSON = 5;
+  // The receiver is running only as a process Parley did not start (section 11.7): nobody was asked, and it reads
+  // the message when somebody prompts it.
+  WAKE_OUTCOME_OPEN_OUTSIDE = 6;
 }
 
 enum ClosureError {
@@ -948,16 +1143,14 @@ enum MessageType {
   MESSAGE_TYPE_RESULT = 3;
 }
 
-// What became of an instruction the person gave an agent. DECLINED against FAILED is the distinction
-// that matters most: an agent declines only for a blocker it names (section 11.5), and a surface
-// rendering that as a malfunction teaches whoever reads it to work around the agent.
-enum InstructionOutcome {
-  INSTRUCTION_OUTCOME_UNSPECIFIED = 0;
-  INSTRUCTION_OUTCOME_PENDING = 1;
-  INSTRUCTION_OUTCOME_TAKEN = 2;
-  INSTRUCTION_OUTCOME_DECLINED = 3;
-  INSTRUCTION_OUTCOME_UNDELIVERABLE = 4;
-  INSTRUCTION_OUTCOME_FAILED = 5;
+// How a person arrived at the ownership line they accepted. A person's own characters are never
+// attributed to a model, which is why `edited` and `composed` are told apart from `proposed` at all.
+enum OwnershipSource {
+  OWNERSHIP_SOURCE_UNSPECIFIED = 0;
+  OWNERSHIP_SOURCE_PROPOSED = 1;      // the agent's own words, untouched
+  OWNERSHIP_SOURCE_EDITED = 2;        // the agent's proposal, changed by the person
+  OWNERSHIP_SOURCE_COMPOSED = 3;      // written by the person, with no ask at all
+  OWNERSHIP_SOURCE_AUTOMATIC = 4;     // the agent's own words, made its line by Auto Accept; never sent by a client
 }
 
 enum ExchangeState {
@@ -972,9 +1165,10 @@ enum ExchangeOutcome {
   EXCHANGE_OUTCOME_COMPLETE = 1;
   EXCHANGE_OUTCOME_BLOCKED = 2;
   EXCHANGE_OUTCOME_CLOSED = 3;
+  EXCHANGE_OUTCOME_SETTLED = 4;       // an agent's question to the person, settled by the agent (section 5.6)
 }
 
-// What one item of a Request came to (section 5.3).
+// What a Request came to (section 5.3).
 enum Outcome {
   OUTCOME_UNSPECIFIED = 0;
   OUTCOME_DONE = 1;
@@ -1004,6 +1198,9 @@ enum FlagKind {
   FLAG_KIND_NO_PROGRESS = 2;
   FLAG_KIND_RETIRED = 3;
   FLAG_KIND_NOT_VOTED = 4;
+  // The owing agent's last turn ended with tool calls refused for want of permission, and it has said nothing since
+  // (section 6). Raised at once, not after a threshold.
+  FLAG_KIND_PERMISSION_REFUSED = 5;
 }
 
 enum Vote {
@@ -1016,4 +1213,165 @@ enum PurgeVerdict {
   PURGE_VERDICT_UNSPECIFIED = 0;
   PURGE_VERDICT_NOT_REGISTERED = 1;
   PURGE_VERDICT_GONE = 2;
+}
+
+// ===========================================================================================
+// Roadmaps -- SPEC.md section 5.7
+// ===========================================================================================
+
+enum ProposalState {
+  PROPOSAL_STATE_UNSPECIFIED = 0;     // in a request, every state
+  PROPOSAL_STATE_WAITING = 1;
+  PROPOSAL_STATE_CONFIRMED = 2;
+  PROPOSAL_STATE_DECLINED = 3;
+  PROPOSAL_STATE_SUPERSEDED = 4;
+}
+
+enum RoadmapOrigin {
+  ROADMAP_ORIGIN_UNSPECIFIED = 0;
+  ROADMAP_ORIGIN_PROPOSED = 1;
+  ROADMAP_ORIGIN_EDITED = 2;
+}
+
+// One item as it is proposed, confirmed or edited, before it has an identity of its own.
+message RoadmapItemDraft {
+  int32 number = 1;                   // the existing item this carries across an edit; 0 for a new one
+  string text = 2;                    // one line, led by a verb
+  string intended_agent = 3;          // empty when not known; a suggestion and never an assignment
+  repeated int32 needs = 4;           // one-based positions in this list, each earlier than this item
+}
+
+message RoadmapContent {
+  string title = 1;
+  repeated RoadmapItemDraft items = 2;
+}
+
+message ProposeRoadmapRequest {
+  string agent = 1;                   // the caller, as every Agents request names it
+  RoadmapContent content = 2;
+  string conversation_id = 3;         // where it came from; empty when none
+  string revises = 4;                 // the title of a roadmap it would change, a hint; empty when none
+}
+
+message ProposeRoadmapReply {
+  int64 proposal_id = 1;              // 0 when refused
+  string problem = 2;                 // empty when it was stored
+}
+
+message RoadmapNotice {
+  int64 proposal_id = 1;
+  string title = 2;                   // the agent's own
+  ProposalState outcome = 3;
+  string created_utc = 4;
+}
+
+message RoadmapSummary {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  int32 revision = 4;
+  int32 live_items = 5;
+  int32 started_items = 6;
+}
+
+message RoadmapsReply {
+  repeated RoadmapSummary roadmaps = 1;
+}
+
+message RoadmapRequest {
+  int64 id = 1;
+}
+
+// What the broker holds about one live item's conversation. Facts and never a state (section 5.7).
+message ItemFacts {
+  bool conversation_exists = 1;
+  int32 open_exchanges = 2;
+  bool collected = 3;
+  int32 complete_exchanges = 4;
+  int32 blocked_exchanges = 5;
+  int32 closed_exchanges = 6;
+  string blocker = 7;                 // empty when none
+  string closed_by = 8;               // empty while the conversation is not closed
+  bool destroyed = 9;
+  string first_sent_text = 10;        // empty when nothing was sent
+  repeated int64 open_exchange_ids = 11;   // to join with the wait-for graph
+}
+
+message RoadmapItemDetail {
+  int64 id = 1;
+  int32 number = 2;
+  int32 position = 3;
+  string text = 4;
+  string intended_agent = 5;
+  repeated int32 needs = 6;           // item numbers
+  string conversation_name = 7;
+  int32 removed_revision = 8;         // 0 while live
+  optional ItemFacts facts = 9;       // live items only
+}
+
+message RoadmapDetail {
+  int64 id = 1;
+  int32 number = 2;
+  string title = 3;
+  RoadmapOrigin origin = 4;
+  string proposer = 5;                // as text, empty when none
+  int32 revision = 6;
+  repeated RoadmapItemDetail items = 7;
+}
+
+message RoadmapReply {
+  optional RoadmapDetail roadmap = 1; // absent when there is no such roadmap
+}
+
+message ProposalsRequest {
+  ProposalState state = 1;            // UNSPECIFIED for every state
+}
+
+message ProposalDetail {
+  int64 id = 1;
+  string proposer = 2;
+  string source_conversation = 3;
+  string target_title = 4;
+  RoadmapContent content = 5;
+  int64 size = 6;
+  ProposalState state = 7;
+  string created_utc = 8;
+  string decided_utc = 9;             // empty while waiting
+}
+
+message ProposalsReply {
+  repeated ProposalDetail proposals = 1;
+}
+
+message ProposalRequest {
+  int64 id = 1;
+}
+
+message ConfirmProposalRequest {
+  int64 id = 1;
+  RoadmapContent content = 2;         // the person's final content, which may be the proposal's own
+  int64 target_roadmap = 3;           // 0 for a new roadmap
+}
+
+message EditRoadmapRequest {
+  int64 id = 1;
+  int32 revision = 2;                 // the revision the caller read
+  RoadmapContent content = 3;
+}
+
+message RoadmapChangeReply {
+  bool done = 1;
+  string problem = 2;                 // empty when it was done
+  int64 roadmap_id = 3;
+  int32 revision = 4;
+  RoadmapOrigin origin = 5;           // how the broker found the content related to the proposal
+}
+
+// The roadmap item a conversation belongs to, by the broker's reservation (section 5.7).
+message RoadmapItemRef {
+  int64 roadmap_id = 1;
+  int32 roadmap_number = 2;
+  string title = 3;
+  int32 item_number = 4;
+  bool removed = 5;
 }

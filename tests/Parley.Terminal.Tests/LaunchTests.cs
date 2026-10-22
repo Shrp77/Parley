@@ -1,4 +1,5 @@
 using Parley.Client;
+using Parley.Setup;
 using Xunit;
 
 namespace Parley.Terminal.Tests;

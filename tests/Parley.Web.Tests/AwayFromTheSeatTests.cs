@@ -24,23 +24,19 @@ namespace Parley.Web.Tests;
 /// These drive the pages against a broker that answers only <c>Waiting</c>, so what is asserted is what a person
 /// would see rather than what the source says.
 /// </para>
+/// <para>
+/// <b>These once carried a typed name and a Join page; neither exists.</b> There is no typed name, no cookie and no Join:
+/// the broker provides <c>human-user@&lt;project&gt;</c> and every page takes it. What a broker answering only
+/// <c>Waiting</c> now stands for is a console that could not attach as the person — so these assert the count is still
+/// said, by the name §12.3 gives the person, and that nothing marks the person present.
+/// </para>
 /// </remarks>
 public sealed class AwayFromTheSeatTests
 {
-    private const string Person = "arvind";
-
     private static readonly Uri InboxUri = new("/Inbox", UriKind.Relative);
 
-    private static HttpClient Seated(WaitingConsole console)
-    {
-        var client = console.CreateClient();
-
-        // The cookie is a note in a browser saying which name somebody was using. It is deliberately not a seat:
-        // no attachment is opened here, which is the state under test.
-        client.DefaultRequestHeaders.Add("Cookie", $"parley.seat={Person}");
-
-        return client;
-    }
+    /// <summary>A client of the console. There is no name to carry.</summary>
+    private static HttpClient Seated(WaitingConsole console) => console.CreateClient();
 
     [Fact]
     public async Task The_inbox_never_claims_that_nothing_can_be_waiting()
@@ -63,9 +59,9 @@ public sealed class AwayFromTheSeatTests
     }
 
     [Fact]
-    public async Task What_is_waiting_for_an_unseated_name_is_counted_and_named()
+    public async Task What_is_waiting_while_not_connected_is_counted()
     {
-        // The owner's own case: two Results waiting for a name whose seat a broker restart had taken.
+        // The owner's own case: two Results waiting while nothing held the seat.
         using var console = new WaitingConsole();
         console.Broker.Messages = 2;
 
@@ -73,13 +69,8 @@ public sealed class AwayFromTheSeatTests
         var page = await client.GetStringAsync(InboxUri, TestContext.Current.CancellationToken);
 
         Assert.Contains("2", page, StringComparison.Ordinal);
-        Assert.Contains("waiting for", page, StringComparison.Ordinal);
-
-        // Whose mail it is, because a shared machine must not let somebody read a number as their own.
-        Assert.Contains(Person, page, StringComparison.Ordinal);
-
-        // And a way to get it, which is the only thing a count is for.
-        Assert.Contains("/Join", page, StringComparison.Ordinal);
+        Assert.Contains("waiting for you", page, StringComparison.Ordinal);
+        Assert.True(console.Broker.Asked > 0, "the count was never asked for");
     }
 
     [Fact]
@@ -92,6 +83,23 @@ public sealed class AwayFromTheSeatTests
         var page = await client.GetStringAsync(InboxUri, TestContext.Current.CancellationToken);
 
         Assert.Contains("nothing is waiting", page, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task The_home_pages_do_not_wait_for_the_count_and_give_it_when_asked()
+    {
+        // The Projects and Agents pages are drawn before any broker is asked, so the frame leaves the badge empty and the
+        // page asks for it afterwards.
+        using var console = new WaitingConsole();
+        console.Broker.Messages = 3;
+
+        using var client = Seated(console);
+        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var said = await client.GetStringAsync(new Uri("/?handler=Presence", UriKind.Relative), TestContext.Current.CancellationToken);
+
+        Assert.Contains("data-inbox-badge", page, StringComparison.Ordinal);
+        Assert.Contains("\"waiting\":3", said, StringComparison.Ordinal);
+        Assert.Contains("\"certain\":true", said, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -110,7 +118,7 @@ public sealed class AwayFromTheSeatTests
     }
 
     [Fact]
-    public async Task The_frame_shows_the_count_beside_Join_while_no_seat_is_held()
+    public async Task The_frame_shows_the_count_while_not_connected()
     {
         // On every page rather than only the inbox: somebody who has been away lands wherever they left off, and
         // a count they have to go looking for is one that did not tell them anything.
@@ -118,30 +126,29 @@ public sealed class AwayFromTheSeatTests
         console.Broker.Messages = 3;
 
         using var client = Seated(console);
-        var page = await client.GetStringAsync(new Uri("/", UriKind.Relative), TestContext.Current.CancellationToken);
+        var page = await client.GetStringAsync(new Uri("/Projects/Agents?project=alpha", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        var join = page[page.IndexOf("class=\"seat-join\"", StringComparison.Ordinal)..];
+        var chip = page[page.IndexOf("<a class=\"seat-who\"", StringComparison.Ordinal)..];
 
-        Assert.Contains("3", join[..240], StringComparison.Ordinal);
-        Assert.Contains("seat-waiting", join[..240], StringComparison.Ordinal);
+        Assert.Contains("3", chip[..300], StringComparison.Ordinal);
+        Assert.Contains("seat-waiting", chip[..300], StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Counting_opens_no_attachment_and_makes_nobody_present()
+    public async Task A_count_shown_while_not_connected_marks_nobody_present()
     {
-        // The line this must not cross. A count is a reason to come back; rendering it must not seat anybody,
-        // or the console would be deciding somebody is present because their browser remembered a name.
+        // The line this must not cross. A count is a reason to come back; it is never a claim that somebody is here.
+        // A page render does try to take the seat — being at the console is being here — but when it
+        // cannot, the mark that says "here" must not be drawn beside the count.
         using var console = new WaitingConsole();
         console.Broker.Messages = 1;
 
         using var client = Seated(console);
         var page = await client.GetStringAsync(InboxUri, TestContext.Current.CancellationToken);
 
-        // Still offered Join, and never shown the seated chip, which is the element that carries the live mark.
-        // Asserted on the rendered element rather than on the class name: the stylesheet names `seat-dot` on
-        // every page, so searching the whole document finds the rule and proves nothing.
-        Assert.Contains("/Join", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("class=\"seat-who\"", page, StringComparison.Ordinal);
+        // Asserted on the rendered element rather than on the class name: the stylesheet names `seat-dot` on every
+        // page, so searching the whole document finds the rule and proves nothing.
+        Assert.DoesNotContain("<span class=\"seat-dot\"", page, StringComparison.Ordinal);
         Assert.True(console.Broker.Asked > 0, "the console never asked how much was waiting");
     }
 }

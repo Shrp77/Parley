@@ -13,10 +13,8 @@ namespace Parley.Terminal;
 /// the operator's screen is drawn.
 /// </para>
 /// <para>
-/// <b>What it neutralises changed with the toolkit, and the hazard did not.</b> The Spectre
-/// version escaped square brackets, because that library reads them as style tags. This one has no
-/// markup to escape — the toolkit draws strings as characters — so what is left is the older and
-/// more serious version of the same thing: control characters. An escape sequence in a log line
+/// <b>What it neutralises is control characters.</b> The toolkit draws strings as characters, so there
+/// is no markup to escape. An escape sequence in a log line
 /// moves the cursor, repaints rows the surface believes it owns, and can put text on screen that
 /// appears to have come from the surface itself. A carriage return alone is enough to overwrite a
 /// line already drawn.
@@ -28,9 +26,8 @@ namespace Parley.Terminal;
 /// a character this dropped would compare equal on screen and unequal in the check.
 /// </para>
 /// <para>
-/// A type of its own rather than a helper on whichever view needed it first. It was
-/// <c>ProjectList.Escape</c>, called from eleven files that have nothing to do with listing
-/// projects, which is how a security property comes to look like a formatting convenience.
+/// A type of its own rather than a helper on whichever view needed it first, so a security property does
+/// not look like a formatting convenience.
 /// </para>
 /// </remarks>
 internal static class Safe

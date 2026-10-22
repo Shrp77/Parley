@@ -34,12 +34,12 @@ public static class ProjectCommand
     /// Runs one project subcommand.
     /// </summary>
     /// <param name="arguments">The subcommand and its operands.</param>
-    /// <param name="manifestPath">The manifest this invocation resolved.</param>
+    /// <param name="root">Where this machine keeps its Parley files, as this invocation resolved it.</param>
     /// <param name="fields">The values `add` writes, taken before dispatch.</param>
     /// <param name="output">Where to report what happened.</param>
     /// <param name="error">Where to report why it could not.</param>
     /// <param name="destroy">
-    /// For <c>remove</c>: also stop the project's broker and delete its store and catalogue. The
+    /// For <c>remove</c>: also stop the project's broker and delete its store. The
     /// one destructive thing this command can do, and it says so in its name.
     /// </param>
     /// <param name="cancellationToken">Cancels the work.</param>
@@ -47,7 +47,7 @@ public static class ProjectCommand
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
-        string manifestPath,
+        string root,
         ProjectFields fields,
         TextWriter output,
         TextWriter error,
@@ -60,10 +60,10 @@ public static class ProjectCommand
 
         return arguments switch
         {
-            ["list"] => await ListAsync(manifestPath, output, error, cancellationToken).ConfigureAwait(false),
-            ["add", var name] => await AddAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
-            ["set", var name] => await SetAsync(name, manifestPath, fields, output, error).ConfigureAwait(false),
-            ["remove", var name] => await RemoveAsync(name, manifestPath, destroy, output, error, cancellationToken)
+            ["list"] => await ListAsync(root, output, error, cancellationToken).ConfigureAwait(false),
+            ["add", var name] => await AddAsync(name, root, fields, output, error).ConfigureAwait(false),
+            ["set", var name] => await SetAsync(name, root, fields, output, error).ConfigureAwait(false),
+            ["remove", var name] => await RemoveAsync(name, root, destroy, output, error, cancellationToken)
                 .ConfigureAwait(false),
             _ => await UsageAsync(error).ConfigureAwait(false),
         };
@@ -73,15 +73,14 @@ public static class ProjectCommand
     {
         await error.WriteLineAsync(
             "parley project list                        what this machine is configured for\n" +
-            "parley project add <name> --db <path>      add a project\n" +
-            "                          --listen <url>\n" +
-            "                          [--node-config <path>] [--description <text>]\n" +
-            "parley project set <name> [--db <path>]    change what a project says; only the\n" +
-            "                          [--listen <url>]  fields given are changed\n" +
-            "                          [--node-config <path>] [--description <text>]\n" +
-            "parley project remove <name>               forget how to reach a project\n" +
-            "                      [--destroy]          ...and stop its broker and delete\n" +
-            "                                           its store and catalogue")
+            "\n" +
+            "Projects are created in the terminal or the web console, and removed or renamed only in the terminal:\n" +
+            "\n" +
+            "    parley\n" +
+            "\n" +
+            "It is the same code this command runs, on a screen that asks for what it needs -- and\n" +
+            "removing a project there describes what goes with it and takes the project's own name\n" +
+            "typed back, which a command line cannot do.")
             .ConfigureAwait(false);
 
         return Usage;
@@ -89,26 +88,20 @@ public static class ProjectCommand
 
     /// <summary>Changes the fields given on one project and leaves the rest as they were.</summary>
     /// <remarks>
-    /// Because the alternative was remove-and-add, and removing a project prints a paragraph about
-    /// what was not deleted for a change that never meant to delete anything. The case that made
-    /// this necessary is a catalogue: a project named before its machine started agents for it
-    /// has no <c>node_config</c>, and an autostart entry serving the manifest hosts a node only
-    /// where one is named — so without a way to add it, switching entries silently dropped the
-    /// node. Validated as one whole, under the same lock, by the same rules as <c>add</c>.
+    /// Remove-and-add would print a paragraph about what was not deleted for a change that never
+    /// meant to delete anything. Validated as one whole, under the same lock, by the same rules as
+    /// <c>add</c>.
     /// </remarks>
     private static async Task<int> SetAsync(
         string requested,
-        string manifestPath,
+        string root,
         ProjectFields fields,
         TextWriter output,
         TextWriter error)
     {
-        if (fields.Store is null && fields.Endpoint is null && fields.NodeConfig is null
-            && fields.Description is null)
+        if (fields.Description is null)
         {
-            await error.WriteLineAsync(
-                "Nothing to change. Give at least one of --db, --listen, --node-config or " +
-                "--description.").ConfigureAwait(false);
+            await error.WriteLineAsync("Nothing to change. Give --description.").ConfigureAwait(false);
 
             return Usage;
         }
@@ -119,7 +112,7 @@ public static class ProjectCommand
 
         try
         {
-            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            var written = ProjectManifest.TryUpdate(root, projects =>
             {
                 var current = projects.FirstOrDefault(p =>
                     string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
@@ -134,23 +127,18 @@ public static class ProjectCommand
                     return null;
                 }
 
-                // An empty value clears an optional field, so a catalogue can be taken away as
-                // well as given; the required two cannot be emptied, and the manifest's own
-                // rules say so below.
+                // **Neither a store nor an endpoint is among the things that can be changed.** The store
+                // is derived from the project's name and the endpoint was claimed when it was created, so
+                // neither has a value to set — moving a project's data is moving its folder, and moving
+                // its port is a claim, both of which are acts rather than edits.
+                //
+                // An empty value clears the one optional field there is.
                 changed = current with
                 {
-                    Store = fields.Store ?? current.Store,
-                    Endpoint = fields.Endpoint ?? current.Endpoint,
-                    NodeConfig = fields.NodeConfig is null
-                        ? current.NodeConfig
-                        : fields.NodeConfig.Length == 0 ? null : fields.NodeConfig,
-                    Description = fields.Description is null
-                        ? current.Description
-                        : fields.Description.Length == 0 ? null : fields.Description,
+                    Description = fields.Description is { Length: > 0 } about ? about : null,
                 };
 
                 faults.AddRange(changed.Problems());
-                faults.AddRange(ProjectManifest.PathProblems(changed, manifestPath));
 
                 var updated = projects.Select(p => p == current ? changed : p).ToArray();
 
@@ -172,7 +160,7 @@ public static class ProjectCommand
                     missing ??
                     $"Cannot change '{requested}':{Environment.NewLine}  - " +
                     string.Join($"{Environment.NewLine}  - ", faults) +
-                    $"{Environment.NewLine}{manifestPath} is unchanged.")
+                    $"{Environment.NewLine}'{requested}' is unchanged.")
                     .ConfigureAwait(false);
 
                 return Config;
@@ -181,41 +169,57 @@ public static class ProjectCommand
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                               or InvalidDataException)
         {
-            await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
+            await error.WriteLineAsync(
+                $"Could not change '{requested}' under {ProjectFolder.ProjectsIn(root)}: {exception.Message}")
                 .ConfigureAwait(false);
 
             return IoError;
         }
 
-        await output.WriteLineAsync($"Changed '{requested}' in {manifestPath}.").ConfigureAwait(false);
+        await output.WriteLineAsync($"Changed '{requested}'.").ConfigureAwait(false);
 
-        // What it says now, so the person can see the change landed without a second command --
-        // and because a store, endpoint or catalogue changed here restarts the project in the
-        // process serving the manifest, which is worth saying where the change is made.
+        // What it says now, so the person can see the change landed without a second command -- and
+        // because an endpoint changed here restarts the project in the process serving this machine,
+        // which is worth saying where the change is made.
         await output.WriteLineAsync(
             $"  endpoint  {changed!.Endpoint}{Environment.NewLine}" +
             $"  store     {changed.Store}" +
-            (changed.NodeConfig is { Length: > 0 } node ? $"{Environment.NewLine}  node      {node}" : string.Empty) +
             (changed.Description is { Length: > 0 } about ? $"{Environment.NewLine}  {about}" : string.Empty))
             .ConfigureAwait(false);
 
         await output.WriteLineAsync(
-            "The process serving the manifest restarts this project on the new store, endpoint " +
-            "or catalogue within a few seconds; a broker started by hand keeps what it started " +
-            "with until its next start.").ConfigureAwait(false);
+            "The process serving this machine restarts this project on the new endpoint within a " +
+            "few seconds; a broker started by hand keeps what it started with until its next " +
+            "start.").ConfigureAwait(false);
 
         return 0;
     }
 
     private static async Task<int> ListAsync(
-        string manifestPath,
+        string root,
         TextWriter output,
         TextWriter error,
         CancellationToken cancellationToken)
     {
-        if (!ProjectManifest.TryRead(manifestPath, out var projects, out var problem))
+        if (!ProjectManifest.TryRead(root, out var projects, out var problem))
         {
             await error.WriteLineAsync(problem).ConfigureAwait(false);
+            return Config;
+        }
+
+        // What was left out, said before what is listed: a listing that silently lacked a project is how one goes missing.
+        // And the listing then exits as a refusal does, so a script reading it is not told all was well (never
+        // read as the machine having fewer projects than it has).
+        var incomplete = problem is { Length: > 0 };
+
+        if (incomplete)
+        {
+            await error.WriteLineAsync(problem).ConfigureAwait(false);
+        }
+
+        if (projects.Count == 0 && incomplete)
+        {
+            // Never "no projects configured" when one is there and could not be read.
             return Config;
         }
 
@@ -224,8 +228,8 @@ public static class ProjectCommand
             // Not an error. A machine with nothing configured is an ordinary machine, and saying
             // where a manifest would live is more use than saying it is missing.
             await output.WriteLineAsync(
-                $"No projects configured. One would live at {manifestPath}.\n" +
-                "Add one with `parley project add <name> --db <path> --listen <url>`.")
+                $"No projects configured. One would live under {ProjectFolder.ProjectsIn(root)}.\n" +
+                "Name the first one in `parley`.")
                 .ConfigureAwait(false);
 
             return 0;
@@ -233,18 +237,26 @@ public static class ProjectCommand
 
         foreach (var project in projects.OrderBy(p => p.Name.Value, StringComparer.Ordinal))
         {
-            var reachable = await ReachableAsync(project.Endpoint, cancellationToken).ConfigureAwait(false);
+            var answered = await ReachableAsync(project.Endpoint, cancellationToken).ConfigureAwait(false);
 
+            // Two facts, never one word: whether the broker *answered*, which is about right now and
+            // changes minute to minute; and whether anything off this machine could *address* it at all,
+            // which is a property of the endpoint and changes only when somebody edits `project.json`.
+            // They are on separate lines because a reader scanning a column must not read "answering"
+            // as "reachable from the network".
             await output.WriteLineAsync(
-                $"{project.Name.Value,-16} {project.Endpoint,-28} {(reachable ? "reachable" : "not reachable")}")
+                $"{project.Name.Value,-16} {project.Endpoint,-28} {(answered ? "answering" : "not answering")}")
+                .ConfigureAwait(false);
+
+            // The same rule the broker warns on at every start, asked of the same method, so a
+            // listing and a start-up warning cannot come to disagree about one endpoint.
+            await output.WriteLineAsync(
+                BrokerEndpoint.OnlyThisMachine(project.Endpoint)
+                    ? "                 only this machine can address it"
+                    : "                 ANY MACHINE that can reach that address can address it, with no credentials")
                 .ConfigureAwait(false);
 
             await output.WriteLineAsync($"                 store  {project.Store}").ConfigureAwait(false);
-
-            if (project.NodeConfig is { Length: > 0 } node)
-            {
-                await output.WriteLineAsync($"                 node   {node}").ConfigureAwait(false);
-            }
 
             if (project.Description is { Length: > 0 } description)
             {
@@ -252,9 +264,12 @@ public static class ProjectCommand
             }
         }
 
-        await output.WriteLineAsync($"\nmanifest: {manifestPath}").ConfigureAwait(false);
+        // The root, labelled, because both installers read this line. `root:` rather than `manifest:`,
+        // because the deployment is a directory, not a file.
+        await output.WriteLineAsync($"\nroot:     {root}").ConfigureAwait(false);
+        await output.WriteLineAsync($"projects: {ProjectFolder.ProjectsIn(root)}").ConfigureAwait(false);
 
-        return 0;
+        return incomplete ? Config : 0;
     }
 
     /// <summary>
@@ -287,7 +302,7 @@ public static class ProjectCommand
 
     private static async Task<int> AddAsync(
         string requested,
-        string manifestPath,
+        string root,
         ProjectFields fields,
         TextWriter output,
         TextWriter error)
@@ -302,99 +317,133 @@ public static class ProjectCommand
             return Usage;
         }
 
-        var store = fields.Store;
-        var endpoint = fields.Endpoint;
-
-        if (string.IsNullOrWhiteSpace(store) || string.IsNullOrWhiteSpace(endpoint))
+        // A name is the whole of it: the store is derived from the name and the port is claimed, so
+        // there is nothing left to get wrong.
+        if (ProjectFolder.TryRead(root, name, out _, out _))
         {
+            // Names no command, because this text is read on two surfaces: the terminal runs this same
+            // method in process and prints what it said.
             await error.WriteLineAsync(
-                "A project needs a store and an endpoint: --db <path> --listen <url>.")
-                .ConfigureAwait(false);
+                $"'{name}' is already a project on this machine. It can be described differently, "
+                + "or taken out, without being created again.").ConfigureAwait(false);
 
-            return Usage;
+            return Config;
         }
 
-        var node = fields.NodeConfig;
-        var description = fields.Description;
+        // The port is claimed before anything is created, so a claim that fails leaves no folder and no
+        // half-written configuration behind. The claim is also the only thing here that can collide with
+        // another command running at the same moment.
+        //
+        // There is no way to state a port. A project that must be reachable from another machine (SPEC.md
+        // §16) has its endpoint edited in its own `project.json`, the one place every reader looks.
+        //
+        // Nothing is created beside a project that cannot be read. Reading leaves such a project out and
+        // carries on, since serving and listing the rest costs nothing; creating does not, because the
+        // port the unreadable one holds is unknown and a claim could hand it out again.
+        if (!ProjectManifest.TryRead(root, out _, out var unreadable) || unreadable is { Length: > 0 })
+        {
+            await error.WriteLineAsync(
+                $"'{name}' has not been created, because another project here cannot be read: {unreadable}")
+                .ConfigureAwait(false);
 
-        var settings = new ProjectSettings(name, store, endpoint, node, description);
+            return Config;
+        }
+
+        if (!PortLedger.TryClaim(root, name, out var endpoint, out var refused))
+        {
+            await error.WriteLineAsync(refused).ConfigureAwait(false);
+
+            return Config;
+        }
+
+        var settings = new ProjectSettings(name, ProjectFolder.StoreFor(root, name), endpoint!, fields.Description);
         var faults = new List<string>();
 
         try
         {
-            // Read, validated and written as one act, under a lock. Every part of this was here
-            // before; what was missing was that they belonged together. Two `project add`
-            // commands each read the manifest, each appended to what it had read, and each wrote
-            // -- so the second discarded the first, with two successes reported and one project
-            // written. The collision checks made it worse rather than better: they were computed
-            // against a manifest that no longer existed, so the losing writer could also write a
-            // duplicate endpoint the rules exist to refuse.
-            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            // Read, validated and written as one act, under a lock: otherwise two `project add` commands
+            // each append to what they read, and the second discards the first.
+            var written = ProjectManifest.TryUpdate(root, projects =>
             {
-                // The same three checks the manifest applies on read, in the same order and from
-                // the same methods. Written out separately here once, with its own wording, which
-                // is how a rule comes to be enforced in one direction only.
-                //
-                // The cost is that a fault names the manifest field rather than the flag that
-                // wrote it -- "store" where the operator typed --db. Taken deliberately: the value
-                // is about to live in the file under that name, the mapping is one line below, and
-                // one rule with one message is worth more than two messages that agree today.
+                // The same checks reading applies, in the same order and from the same methods. Stated
+                // out separately here once, which is how a rule comes to be enforced in one direction
+                // only.
                 faults.AddRange(settings.Problems());
-                faults.AddRange(ProjectManifest.PathProblems(settings, manifestPath));
 
                 var updated = projects.Append(settings).ToArray();
 
                 faults.AddRange(ProjectManifest.Collisions(updated));
 
-                // Declining rather than throwing, because these are the operator's faults to be
-                // told about and the message below says them all at once.
+                // Declining rather than throwing, because these are the operator's faults to be told
+                // about and the message below says them all at once.
                 return faults.Count > 0 ? null : updated;
             },
             out var problem);
 
-            if (problem is not null)
+            if (problem is not null || !written)
             {
-                // Never start a fresh manifest over one that could not be read, and never write
-                // one this could not lock. Overwriting an unreadable configuration is how a
-                // deployment silently loses everything it described.
-                await error.WriteLineAsync(problem).ConfigureAwait(false);
-                return Config;
-            }
+                // **The port goes back.** It was claimed a moment ago and nothing is going to use it, so
+                // leaving it recorded would strand it against a project that does not exist -- and the
+                // record is what the next claim steps over. Best effort: a release that cannot be taken
+                // leaves bookkeeping to be reconciled, which is what reconciliation is for.
+                _ = PortLedger.TryRelease(root, name, out _);
 
-            if (!written)
-            {
+                if (problem is not null)
+                {
+                    // Never start fresh over configuration that could not be read, and never write one
+                    // this could not lock. Overwriting an unreadable configuration is how a deployment
+                    // silently loses everything it described.
+                    await error.WriteLineAsync(problem).ConfigureAwait(false);
+
+                    return Config;
+                }
+
                 await error.WriteLineAsync(
                     $"Cannot add '{name}':{Environment.NewLine}  - " +
                     string.Join($"{Environment.NewLine}  - ", faults) +
                     $"{Environment.NewLine}{Environment.NewLine}" +
-                    "store comes from --db, endpoint from --listen, node_config from --node-config." +
-                    $"{Environment.NewLine}{manifestPath} is unchanged.")
+                    $"Nothing has been created under {ProjectFolder.ProjectsIn(root)}.")
                     .ConfigureAwait(false);
 
                 return Config;
             }
         }
-        // InvalidDataException included, and it is the backstop rather than the expected path:
-        // every fault the write refuses has already been reported above with all the others.
-        // If the two ever disagree the operator gets a sentence rather than a stack trace,
-        // which is the difference between a bug report and a mystery.
+        // InvalidDataException included, and it is the backstop rather than the expected path: every
+        // fault the write refuses has already been reported above with all the others. If the two ever
+        // disagree the operator gets a sentence rather than a stack trace, which is the difference
+        // between a bug report and a mystery.
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                               or InvalidDataException)
         {
-            await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
+            _ = PortLedger.TryRelease(root, name, out _);
+
+            await error.WriteLineAsync(
+                $"Could not create '{name}' under {ProjectFolder.ProjectsIn(root)}: {exception.Message}")
                 .ConfigureAwait(false);
 
             return IoError;
         }
 
-        await output.WriteLineAsync($"Added '{name}' to {manifestPath}.").ConfigureAwait(false);
+        // Both facts, because the endpoint is what every other command needs to reach it and the store
+        // is what a backup has to include.
+        await output.WriteLineAsync($"Added '{name}'.").ConfigureAwait(false);
+        await output.WriteLineAsync($"  serving on {endpoint}").ConfigureAwait(false);
+        await output.WriteLineAsync($"  files in  {ProjectFolder.For(root, name)}").ConfigureAwait(false);
+
+        // Said here because this is the one moment somebody is thinking about where a project answers.
+        // There is no flag that binds a network address, so the answer for another machine is a tunnel,
+        // done outside this tool; naming it makes the capability look confined rather than absent.
+        await output.WriteLineAsync(
+            "  reachable from this machine only. An agent elsewhere reaches it through a tunnel "
+            + "to that port -- see the README; there is no flag that binds a network address, "
+            + "because the wire carries no credentials.").ConfigureAwait(false);
 
         return 0;
     }
 
     private static async Task<int> RemoveAsync(
         string requested,
-        string manifestPath,
+        string root,
         bool destroy,
         TextWriter output,
         TextWriter error,
@@ -413,7 +462,7 @@ public static class ProjectCommand
         // only when destroying: plain removal leaves the broker running and has no use for it.
         IReadOnlyList<(string Agent, string Workspace)>? agents = null;
 
-        if (destroy && ProjectManifest.TryRead(manifestPath, out var before, out _))
+        if (destroy && ProjectManifest.TryRead(root, out var before, out _))
         {
             var target = before.FirstOrDefault(p => string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
 
@@ -428,7 +477,7 @@ public static class ProjectCommand
             // Under the same lock as adding, and for the same reason: the project this removes is
             // chosen from what was read, so a concurrent add would otherwise be written over by a
             // remove that never saw it.
-            var written = ProjectManifest.TryUpdate(manifestPath, projects =>
+            var written = ProjectManifest.TryUpdate(root, projects =>
             {
                 going = projects.FirstOrDefault(p =>
                     string.Equals(p.Name.Value, requested, StringComparison.Ordinal));
@@ -468,17 +517,23 @@ public static class ProjectCommand
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
                                               or InvalidDataException)
         {
-            await error.WriteLineAsync($"Could not write {manifestPath}: {exception.Message}")
+            await error.WriteLineAsync($"Could not change the projects under {ProjectFolder.ProjectsIn(root)}: {exception.Message}")
                 .ConfigureAwait(false);
 
             return IoError;
         }
 
-        await output.WriteLineAsync($"Removed '{requested}' from {manifestPath}.").ConfigureAwait(false);
+        // The port goes back only once the project is genuinely gone: released before the write, a write
+        // that then failed would hand somebody else a port this project still serves on. The record is
+        // bookkeeping, so a release that cannot take the hold leaves an entry for reconciliation to step
+        // over and must not change the exit code.
+        _ = PortLedger.TryRelease(root, going!.Name, out _);
+
+        await output.WriteLineAsync($"Removed '{requested}'.").ConfigureAwait(false);
 
         if (destroy)
         {
-            return await DestroyAsync(going!, staying, agents, manifestPath, output, error, cancellationToken)
+            return await DestroyAsync(going!, agents, root, output, error, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -486,8 +541,7 @@ public static class ProjectCommand
         // its data too, and the only safe way to offer that is to say what still exists and let
         // them do it deliberately.
         await output.WriteLineAsync(
-            $"Nothing was deleted. The store remains at {going!.Store}" +
-            (going.NodeConfig is { Length: > 0 } node ? $", the node catalogue at {node}" : string.Empty) +
+            $"Nothing was deleted. The store remains at {going.Store}" +
             ", and every repository's launch configuration is untouched. `remove --destroy` " +
             "deletes them.").ConfigureAwait(false);
 
@@ -504,7 +558,6 @@ public static class ProjectCommand
 
     /// <summary>Stops a removed project's broker and deletes what withdrawal leaves behind.</summary>
     /// <param name="going">The project, as it was.</param>
-    /// <param name="staying">Every project still named, for what must not be deleted.</param>
     /// <param name="agents">The registry as read before the entry went, or null if it could not be.</param>
     /// <param name="manifestPath">The manifest, which is never deleted whatever an entry says.</param>
     /// <param name="output">Where to say what was deleted.</param>
@@ -516,20 +569,18 @@ public static class ProjectCommand
     /// <b>This command does not stop anything itself, and cannot.</b> §4 gives the store to one
     /// process, and that process is the one serving the manifest: removing the entry is what
     /// tells it to stop this project's broker, and this waits for that to have happened before
-    /// touching a file the broker still had open. A broker started by hand, or by an entry
-    /// with explicit paths, was not told anything, and is left running rather than killed: it
-    /// is reported, with the store's path, and the deleting is the person's.
+    /// touching a file the broker still had open. A broker started by hand was not told
+    /// anything, and is left running rather than killed: it is reported, with the store's
+    /// path, and the deleting is the person's.
     /// </para>
     /// <para>
-    /// The catalogue goes with the store. The manifest refuses two projects that share one —
-    /// consent to run unattended is per project because the catalogue is — so a project's
-    /// catalogue is nobody else's, and leaving it behind would be leaving a list of repositories
-    /// that a deleted deployment was allowed to start.
+    /// <b>No catalogue goes with it, because there is none per project.</b> The catalogue is one per machine, keyed by
+    /// each repository's identity, and a repository's membership is read out of the repository — so there is nothing of
+    /// the project's left in it to delete.
     /// </para>
     /// </remarks>
     private static async Task<int> DestroyAsync(
         ProjectSettings going,
-        IReadOnlyList<ProjectSettings> staying,
         IReadOnlyList<(string Agent, string Workspace)>? agents,
         string manifestPath,
         TextWriter output,
@@ -644,16 +695,6 @@ public static class ProjectCommand
 
             deleted.Add(path);
         }
-
-        if (going.NodeConfig is { Length: > 0 } catalogue
-            && File.Exists(catalogue)
-            && !ProjectManifest.IsTheManifest(catalogue, manifestPath)
-            && await TryDeleteAsync(catalogue, cancellationToken).ConfigureAwait(false))
-        {
-            deleted.Add(catalogue);
-        }
-
-        _ = staying;
 
         await output.WriteLineAsync(
             deleted.Count == 0
@@ -772,13 +813,17 @@ public static class ProjectCommand
 /// <summary>
 /// The values `project add` writes, taken from the command line before dispatch.
 /// </summary>
-/// <param name="Store">The database file, from <c>--db</c>.</param>
-/// <param name="Endpoint">The transport address, from <c>--listen</c>.</param>
-/// <param name="NodeConfig">The node catalogue, from <c>--node-config</c>, or null.</param>
 /// <param name="Description">One line for the operator, from <c>--description</c>, or null.</param>
 /// <remarks>
+/// <para>
+/// <b>There is neither a store nor an endpoint here.</b> A project's store is derived from its name and
+/// its endpoint is claimed when it is created, so neither has a value a command line could supply. A
+/// description is the one thing that is somebody's to choose.
+/// </para>
+/// <para>
 /// Passed in rather than parsed here, because the entry point consumes every option before any
 /// command sees its arguments — anything left starting with a hyphen is refused as an option the
 /// tool does not have. A command that parsed its own flags would never receive them.
+/// </para>
 /// </remarks>
-public sealed record ProjectFields(string? Store, string? Endpoint, string? NodeConfig, string? Description);
+public sealed record ProjectFields(string? Description);

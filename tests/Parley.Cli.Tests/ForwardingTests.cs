@@ -95,7 +95,7 @@ public sealed class ForwardingTests
     [Fact]
     public void The_old_verb_is_gone_rather_than_kept_beside_the_new_one()
     {
-        // The owner renamed `top` to `terminal` before anything was released, so no alias was kept: two spellings
+        // No alias is kept for `top`, the old spelling of `terminal`: two spellings
         // of one command is a second thing for every document to mention.
         var program = RepositoryFile.Read("src/Parley.Cli/Program.cs");
 

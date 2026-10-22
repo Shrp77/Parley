@@ -48,9 +48,11 @@ public sealed class NodeTests
         await using var broker = await LoopbackBroker.StartAsync(token);
 
         await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", token);
-        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
 
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["infra"], token);
+
+        // Infra is running because its node started it (SPEC.md §11.7), so its node is the one to give it a turn.
+        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token, startedBy: node);
 
         _ = await docs.Client.RequestAsync(Requests.Open(docs.Name, infra.Name, "who owns the retry policy"), cancellationToken: token);
 
@@ -78,9 +80,11 @@ public sealed class NodeTests
         await using var broker = await LoopbackBroker.StartAsync(token);
 
         await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", token);
-        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
 
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["infra"], token);
+
+        // Started by its node (SPEC.md §11.7): an agent opened outside Parley would be asked for nothing at all.
+        await using var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token, startedBy: node);
 
         foreach (var subject in new[] { "the retry policy", "the realm", "the secrets" })
         {

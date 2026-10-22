@@ -132,14 +132,11 @@ public sealed class AdmissionGuardTests : IDisposable
     [Fact]
     public void A_request_with_no_ask_is_refused()
     {
-        // The whole of a Request's shape since 0.7 (§5.1). What stood here before — a done_when floor, an items
-        // array, a kind on every item, distinct ids of 1 to 64 characters, and gates naming only earlier items —
-        // enforced a shape the protocol no longer has. The rows written under them are still stored and still
-        // read, which is what RequestIsTheAskMigrationTests proves.
+        // The whole of a Request's shape (§5.1).
         InsertExchange("q");
 
         Refused(
-            () => InsertMessage("request", "orders@test", "billing@test", "json_object('intent','x')"),
+            () => InsertMessage("request", "orders@test", "billing@test", "json_object('text','x')"),
             "carries an ask");
     }
 
@@ -170,8 +167,8 @@ public sealed class AdmissionGuardTests : IDisposable
     [InlineData(8239)]
     public void An_ask_of_whitespace_that_is_not_the_space_character_is_refused_too(int codePoint)
     {
-        // **Found by the review gate, lens 3 run 3.4.** SQL's one-argument trim() removes the space character and
-        // nothing else, so the first version of this trigger admitted each of these — while both senders in this
+        // SQL's one-argument trim() removes the space character and
+        // nothing else, so a trigger built on it would admit each of these — while both senders in this
         // repository refuse them, because .NET's IsNullOrWhiteSpace does. §9.3 puts the rule in storage precisely
         // so a second implementation cannot route around it, and a guard weaker than the code above it is the
         // wrong way round: this is a Request that says nothing, arriving from an adapter that did not check.
@@ -210,32 +207,17 @@ public sealed class AdmissionGuardTests : IDisposable
     }
 
     [Fact]
-    public void The_old_shape_is_refused_now_even_though_it_was_once_required()
-    {
-        // The malicious case rather than the careless one: an adapter built against 0.6, or a second
-        // implementation reading an old copy of the document, writing exactly what storage used to demand.
-        InsertExchange("q");
-
-        Refused(
-            () => InsertMessage("request", "orders@test", "billing@test",
-                "json_object('intent','deciding where tax is added', "
-                + "'items', json_array(json_object('id','q1','kind','work','text','x')), "
-                + "'done_when','the invoice total is stated as gross or net')"),
-            "carries an ask");
-    }
-
-    [Fact]
-    public void An_ask_beside_the_old_fields_is_admitted_and_kept_whole()
+    public void An_ask_beside_fields_this_version_does_not_define_is_admitted_and_kept_whole()
     {
         // Storage bounds the ask and is otherwise blind to the document (§13): a sender that carries something
         // this version does not define is not refused for it, and what it wrote is what is stored.
         InsertExchange("q");
 
         InsertMessage("request", "orders@test", "billing@test",
-            "json_object('ask','who owns the invoice total?', 'intent','left over from an older adapter')");
+            "json_object('ask','who owns the invoice total?', 'note','carried by some other adapter')");
 
         Assert.Contains(
-            "left over from an older adapter",
+            "carried by some other adapter",
             Scalar("SELECT payload_json FROM messages WHERE type = 'request';"),
             StringComparison.Ordinal);
     }

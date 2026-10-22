@@ -20,14 +20,13 @@ public sealed class LogLocationTests
         ProjectName.Create("alpha"),
         Path.Combine(Path.GetTempPath(), "alpha", "alpha.db"),
         "http://127.0.0.1:1",
-        null,
         null);
 
     [Fact]
     public void An_entry_serving_the_manifest_logs_beside_the_manifest()
     {
-        var manifest = Path.Combine(Path.GetTempPath(), "config", "projects.json");
-        var entry = new InstalledEntry(null, null, null, null, manifest);
+        var manifest = Path.Combine(Path.GetTempPath(), "config");
+        var entry = new InstalledEntry(null, null, manifest);
 
         Assert.Equal(
             Path.Combine(Path.GetTempPath(), "config", LogTail.FileName),
@@ -47,12 +46,11 @@ public sealed class LogLocationTests
         {
             var ct = TestContext.Current.CancellationToken;
 
-            var manifest = Path.Combine(directory, "config", "projects.json");
+            var manifest = Path.Combine(directory, "config");
             var project = new ProjectSettings(
                 ProjectName.Create("alpha"),
                 Path.Combine(directory, "store", "alpha.db"),
                 "http://127.0.0.1:1",
-                null,
                 null);
 
             Parley.Configuration.ProjectManifest.Write(manifest, [project]);
@@ -62,7 +60,7 @@ public sealed class LogLocationTests
             await File.WriteAllTextAsync(
                 Path.Combine(directory, "config", LogTail.FileName), "LIVE LINE FROM THE MANIFEST ENTRY\n", ct);
 
-            var entry = new InstalledEntry(null, null, null, null, manifest);
+            var entry = new InstalledEntry(null, null, manifest);
 
             using var driving = Driving.Open();
             using var broker = Parley.Client.BrokerDirectory.FromManifest(manifest);
@@ -97,14 +95,13 @@ public sealed class LogLocationTests
     }
 
     [Fact]
-    public void An_explicit_entry_and_no_entry_log_beside_the_store()
+    public void An_entry_naming_a_project_and_no_entry_log_beside_the_store()
     {
-        var explicitEntry = new InstalledEntry(Alpha.Store, null, null, null, null);
+        var explicitEntry = new InstalledEntry(null, null, null) { Project = "alpha" };
 
         var beside = Path.Combine(Path.GetTempPath(), "alpha", LogTail.FileName);
 
         Assert.Equal(beside, LogTail.For(Alpha, explicitEntry));
         Assert.Equal(beside, LogTail.For(Alpha, null));
-        Assert.Equal(beside, LogTail.For(Alpha));
     }
 }

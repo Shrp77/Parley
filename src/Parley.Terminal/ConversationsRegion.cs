@@ -34,17 +34,14 @@ internal sealed class ConversationsRegion : FrameView
 
     /// <summary>What is shown when a project has had none, a short row at a time.</summary>
     /// <remarks>
-    /// Rows rather than one sentence, because a list row does not wrap: the sentence was wider than the half-width pane a
-    /// project view gives this region, and the owner's screenshot showed it cut at "when an agent asks an" — which is
-    /// the half that says how to start one, lost while they were looking for exactly that. Each row fits in the
-    /// narrowest pane this surface draws.
+    /// Rows rather than one sentence, because a list row does not wrap: a sentence wider than the half-width pane a
+    /// project view gives this region would be cut, and the cut half is the one that says how to start a
+    /// conversation. Each row fits in the narrowest pane this surface draws.
     /// </remarks>
     internal static readonly IReadOnlyList<string> Nothing =
     [
         "No conversation here yet.",
-        "One starts when an agent sends",
-        "another a request, or when you",
-        "press k to start one yourself.",
+        "To start one, press Alt+k.",
     ];
 
     private readonly GuardedList _list = Lists.Filling(Colours.Conversations);
@@ -60,8 +57,7 @@ internal sealed class ConversationsRegion : FrameView
         Lists.Tint(_list, Tint);
 
         // The list's own accept rather than a key handler on this region. Enter reaches the
-        // focused view first and the list takes it, so a region-level handler never runs — which
-        // is how the first version of this quietly did nothing. A double click raises the same
+        // focused view first and the list takes it, so a region-level handler never runs. A double click raises the same
         // event, which is what makes the mouse route and the key route one code path (FR-003).
         _list.Accepting += (_, args) =>
         {
@@ -87,16 +83,24 @@ internal sealed class ConversationsRegion : FrameView
     /// <summary>The list, so a test can pick a row by its text.</summary>
     internal ListView List => _list;
 
+    /// <summary>The note under a list filtered to one agent's conversations.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <returns>The note, naming the agent and how to see the rest.</returns>
+    internal static string FilteredTo(AgentName agent) =>
+        $"  Only conversations {Safe.Text(agent.Value)} is in. Esc shows them all.";
+
     /// <summary>Draws a project's conversations.</summary>
     /// <param name="conversations">What the broker said, or null when it could not be asked.</param>
     /// <param name="problem">Why the broker could not be asked, or null when it could.</param>
     /// <param name="archivedOmitted">How many archived conversations were left out.</param>
     /// <param name="showingArchived">Whether the archived ones were asked for.</param>
+    /// <param name="only">The agent the list is filtered to, or null when it is not filtered.</param>
     internal void Show(
         IReadOnlyList<ConversationSummary>? conversations,
         string? problem,
         int archivedOmitted = 0,
-        bool showingArchived = false)
+        bool showingArchived = false,
+        AgentName? only = null)
     {
         var keep = Selected?.Id;
 
@@ -120,6 +124,15 @@ internal sealed class ConversationsRegion : FrameView
         {
             lines.Add(string.Empty);
             lines.Add(hidden);
+        }
+
+        // **A filter is said on screen whenever one is on** (FR-020), for the reason the archived line above is: rows left
+        // out with nothing saying so are indistinguishable from rows that do not exist. After the rows, like that line,
+        // so a row's index is still its conversation's.
+        if (only is { } agent && problem is null)
+        {
+            lines.Add(string.Empty);
+            lines.Add(FilteredTo(agent));
         }
 
         var at = keep is null ? -1 : summaries.FindIndex(c => c.Id == keep);

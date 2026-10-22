@@ -151,7 +151,21 @@ public sealed partial class FollowingTests
             .Select(path => Path.GetFileName(path))
             .ToList();
 
-        Assert.Equal(["_Layout.cshtml"], touching);
+        // One file touches a seat, and it is not the frame: `PersonSeats` takes the person's seat and
+        // marks them here, and the frame and the pages that speak call it. The half this test exists for is the follow,
+        // which is a timer rather than a person and must reach none of it.
+        Assert.Equal(["PersonSeats.cs"], touching);
+
+        // Line endings normalised first: a Windows checkout with core.autocrlf makes this file CRLF, and the search for the
+        // handler's closing brace below would then find nothing.
+        var detail = File.ReadAllText(Repository.Path("src/Parley.Web/Pages/Conversations/Detail.cshtml.cs"))
+            .ReplaceLineEndings("\n");
+        var follow = detail[detail.IndexOf("OnGetFollowAsync()", StringComparison.Ordinal)..];
+
+        follow = follow[..follow.IndexOf("\n    }\n", StringComparison.Ordinal)];
+
+        Assert.DoesNotContain("PersonSeats", follow, StringComparison.Ordinal);
+        Assert.DoesNotContain("EnsureAsync", follow, StringComparison.Ordinal);
     }
 
     [Fact]

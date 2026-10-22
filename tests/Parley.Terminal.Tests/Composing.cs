@@ -44,4 +44,39 @@ internal static class Composing
 
         return (FormDialog)driving.Find(title);
     }
+
+    /// <summary>Starts a conversation the way a person does now: choose who, name it, then say it in the box.</summary>
+    /// <param name="driving">The application.</param>
+    /// <param name="shell">The surface.</param>
+    /// <param name="peer">The peer's row, as the roster spells it.</param>
+    /// <param name="name">The conversation's name.</param>
+    /// <param name="words">What is typed into the box and sent.</param>
+    /// <remarks>
+    /// Starting a conversation asks for its name and nothing else (the owner's call of 2026-10-05); what is said is
+    /// written in the one input line every conversation has, so the helper ends by pressing Enter there.
+    /// </remarks>
+    internal static async Task StartAndSayAsync(
+        Driving.Session driving, Shell shell, string peer, string name, string words)
+    {
+        await shell.Start().ConfigureAwait(false);
+
+        var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
+
+        driving.Row(picking.Choices, peer);
+        driving.Enter();
+
+        await shell.Settled.ConfigureAwait(false);
+
+        var naming = (FormDialog)driving.Find(Participation.NameTitle);
+
+        naming.Fill(0, name);
+        naming.Finish(taken: true);
+
+        await shell.Settled.ConfigureAwait(false);
+
+        shell.Line.Written = words;
+        shell.Line.Accept();
+
+        await shell.Settled.ConfigureAwait(false);
+    }
 }

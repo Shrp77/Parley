@@ -7,15 +7,12 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Review gate, lens 3, run 5. The README said <i>"`--with-console`, `--console` and `--no-console`
-/// are the old spellings. They still work and are removed at 0.21.0"</i> — wrong twice over in the
-/// release that removes them: 008 moved the date to 0.22.0 and recorded why, and this is 0.22.0, so
-/// they do not still work.
+/// A README saying <i>"`--with-console`, `--console` and `--no-console` are the old spellings. They
+/// still work"</i> would be wrong once they are removed.
 /// </para>
 /// <para>
 /// <b>It is the README that makes this worth a check rather than a correction.</b> It is the one
-/// document that has to stand alone — somebody reading it has not read SPEC.md, the ledger, or 008's
-/// record — so a sentence in it that describes the previous version is not stale prose, it is an
+/// document that has to stand alone — somebody reading it has not read SPEC.md or the history — so a sentence in it that describes the previous version is not stale prose, it is an
 /// instruction that fails.
 /// </para>
 /// <para>
@@ -26,17 +23,21 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class ReadmeTruthTests
 {
-    private static readonly string Readme = Path.GetFullPath(Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "..", "..", "README.md"));
+    private static readonly string Root = Path.GetFullPath(Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
     private static readonly string[] Removed = ["--with-console", "--console", "--no-console"];
 
     [Fact]
     public void The_readme_does_not_say_a_removed_spelling_still_works()
     {
-        var text = File.ReadAllText(Readme).ReplaceLineEndings("\n");
+        var text = string.Join(
+            "\n\n",
+            Directory.GetFiles(Path.Combine(Root, "docs"), "*.md")
+                .Prepend(Path.Combine(Root, "README.md"))
+                .Select(p => File.ReadAllText(p).ReplaceLineEndings("\n")));
 
-        // The control: without it a moved or renamed README passes this silently.
+        // The control: without it a moved or renamed page passes this silently.
         Assert.Contains("--no-web-ui", text, StringComparison.Ordinal);
 
         foreach (var paragraph in text.Split("\n\n"))
@@ -50,19 +51,5 @@ public sealed class ReadmeTruthTests
                 paragraph.Contains("still work", StringComparison.OrdinalIgnoreCase),
                 "the README says a removed spelling still works:\n" + paragraph);
         }
-    }
-
-    [Fact]
-    public void The_readme_names_the_version_that_removed_them()
-    {
-        // A deprecation note with no version is one nobody can act on: the question somebody has is
-        // always "does mine still work", and only the number answers it.
-        var text = File.ReadAllText(Readme).ReplaceLineEndings("\n");
-
-        var paragraph = text.Split("\n\n")
-            .FirstOrDefault(part => part.Contains("--with-console", StringComparison.Ordinal));
-
-        Assert.NotNull(paragraph);
-        Assert.Contains("0.22.0", paragraph, StringComparison.Ordinal);
     }
 }

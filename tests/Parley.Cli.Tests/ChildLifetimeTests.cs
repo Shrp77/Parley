@@ -1,3 +1,5 @@
+using Parley.Core;
+using Parley.Configuration;
 using System.Net;
 using System.Net.Sockets;
 using Xunit;
@@ -32,7 +34,17 @@ public sealed class ChildLifetimeTests
 
         Directory.CreateDirectory(directory);
 
-        var store = Path.Combine(directory, "parley.db");
+        // **A project rather than a store and a port.** `serve` takes neither; a rig names a root and
+        // writes a project into it, and the endpoint it wants goes in that project's own file.
+        ProjectManifest.Write(
+            directory,
+            [new ProjectSettings(
+                ProjectName.Create("probe"),
+                ProjectFolder.StoreFor(directory, ProjectName.Create("probe")),
+                brokerAt,
+                null)]);
+
+        var store = ProjectFolder.StoreFor(directory, ProjectName.Create("probe"));
 
         // **The web UI put on PATH for this run, and that is what makes the probe real.** Without
         // it the child never starts, the broker takes its could-not-start path, and the port is
@@ -41,7 +53,7 @@ public sealed class ChildLifetimeTests
         // found where it was built rather than beside these tests.
         var broker = ToolProcess.Launch(
             [("PATH", WebUiOnPath())],
-            "serve", "--db", store, "--listen", brokerAt, "--with-web-ui", "--web-ui", webUiAt);
+            "serve", "--config", directory, "--with-web-ui", "--web-ui", webUiAt);
 
         try
         {
@@ -120,9 +132,19 @@ public sealed class ChildLifetimeTests
 
         Directory.CreateDirectory(directory);
 
+        // **A project rather than a store and a port.** `serve` takes neither; a rig names a root and
+        // writes a project into it, and the endpoint it wants goes in that project's own file.
+        ProjectManifest.Write(
+            directory,
+            [new ProjectSettings(
+                ProjectName.Create("probe"),
+                ProjectFolder.StoreFor(directory, ProjectName.Create("probe")),
+                brokerAt,
+                null)]);
+
         var broker = ToolProcess.Launch(
             [("PATH", WebUiOnPath())],
-            "serve", "--db", Path.Combine(directory, "parley.db"), "--listen", brokerAt);
+            "serve", "--config", directory);
 
         try
         {

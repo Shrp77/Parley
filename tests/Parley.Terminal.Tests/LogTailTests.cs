@@ -99,10 +99,9 @@ public sealed class LogTailTests : IDisposable
             ProjectName.Create("alpha"),
             Path.Combine(_directory, "parley.db"),
             "http://127.0.0.1:5301",
-            null,
             null);
 
-        var found = LogTail.For(project);
+        var found = LogTail.For(project, null);
 
         Assert.NotNull(found);
         Assert.Equal(Path.Combine(_directory, LogTail.FileName), found);
@@ -122,26 +121,26 @@ public sealed class LogTailTests : IDisposable
         var unusable = "a" + ((char)0) + "b";
 
         var project = new ProjectSettings(
-            ProjectName.Create("alpha"), unusable, "http://127.0.0.1:5301", null, null);
+            ProjectName.Create("alpha"), unusable, "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 
     [Fact]
     public void A_blank_store_path_reports_no_log()
     {
         var project = new ProjectSettings(
-            ProjectName.Create("alpha"), "   ", "http://127.0.0.1:5301", null, null);
+            ProjectName.Create("alpha"), "   ", "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 
     [Fact]
     public void A_project_with_no_store_has_no_log_to_guess_at()
     {
         var project = new ProjectSettings(
-            ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null, null);
+            ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5301", null);
 
-        Assert.Null(LogTail.For(project));
+        Assert.Null(LogTail.For(project, null));
     }
 }

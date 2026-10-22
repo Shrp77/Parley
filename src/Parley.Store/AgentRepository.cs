@@ -6,26 +6,6 @@ namespace Parley.Store;
 
 
 /// <summary>
-/// One credential an adapter needs, as a reference rather than a value.
-/// </summary>
-/// <param name="Name">
-/// The adapter's name for it — <c>api_key</c>, <c>org_token</c> — matching what its
-/// descriptor declared. Not the secret's name in whatever store holds it.
-/// </param>
-/// <param name="Reference">
-/// Where the secret lives: <c>env:</c>, <c>file:</c>, or <c>keychain:</c>. The scheme is part
-/// of the stored value, so resolution follows what was recorded rather than probing whatever
-/// the machine happens to offer today.
-/// </param>
-/// <remarks>
-/// The grammar accepts <c>keychain:</c>, but nothing resolves it yet — see SPEC.md §12.2.
-/// It is stored so a deployment needing it is not blocked behind a schema change; a broker
-/// asked to resolve one should fail rather than guess. Most agents need no credential at all,
-/// because the CLI behind them authenticates out of band and keeps its own token.
-/// </remarks>
-public sealed record AgentCredential(string Name, string Reference);
-
-/// <summary>
 /// Reads and writes the agent registry.
 /// </summary>
 /// <remarks>
@@ -54,11 +34,6 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// one of them is safe to answer <c>agents()</c> with; <c>SurfaceBoundaryTests</c> fails if a
     /// broker operation ever returns this type, so the distinction is checked rather than
     /// remembered.
-    /// <para>
-    /// It has no production caller yet and is kept deliberately: it is the read side of the
-    /// registry's full record, and a manifest loader needs to see current configuration in order
-    /// to diff against it. Without it those columns would be write-only.
-    /// </para>
     /// </remarks>
     public async Task<IReadOnlyList<AgentRecord>> GetAllAsync(CancellationToken cancellationToken = default)
     {
@@ -74,9 +49,17 @@ public sealed class AgentRepository(SqliteConnection connection)
                        a.owns           AS Owns,
                        a.connected      AS Connected,
                        COALESCE(n.connected, 0) AS NodeConnected,
-                       a.status         AS Status
+                       a.status         AS Status,
+                       o.statement      AS OwnsAccepted,
+                       o.source         AS OwnsSource,
+                       a.identity       AS Identity
                 FROM agents AS a
                 LEFT JOIN nodes AS n ON n.machine = a.machine
+                -- **Left joined, because most agents have no accepted line and that is not a
+                -- deficiency.** What this column adds is the other half of one comparison: `owns` is
+                -- what peers read and this is what a person agreed to, and a surface says the line is
+                -- pending when they differ. Neither is a flag, so there is no third state to clear.
+                LEFT JOIN agent_ownership_accepted AS o ON o.agent = a.name
                 ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
@@ -93,14 +76,12 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <remarks>
     /// <para>
     /// The counterpart to <see cref="MarkLiveAsync"/>, and the only thing that clears
-    /// <c>connected</c> now that the attach sequence of SPEC.md §14 is scoped
-    /// to one agent. The broker-wide "mark everything offline" it replaced could not survive
-    /// that scoping: no process speaks for every agent any more, so no process is entitled to
-    /// say they have all stopped.
+    /// <c>connected</c> for one agent (SPEC.md §14): no process speaks for every agent, so none
+    /// is entitled to say they have all stopped.
     /// </para>
     /// <para>
     /// Best-effort by construction. An adapter calls it on a clean shutdown; a crashed process
-    /// leaves a stale <c>live</c> until that agent next attaches. That is affordable because
+    /// leaves the count raised until the broker sees its connection close. That is affordable because
     /// the mark is cosmetic — <c>offline</c> does not gate routing, deliberately, since it is
     /// the ordinary resting state of a lazily spawned agent between questions and refusing
     /// traffic to one would refuse the very traffic meant to wake it.
@@ -183,6 +164,183 @@ public sealed class AgentRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>
+    /// The agent a machine already holds under an identity, if any.
+    /// </summary>
+    /// <param name="identity">The repository's identifier.</param>
+    /// <param name="machine">The machine half of the name it is attaching under.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The name and recorded workspace of the holder, or <see langword="null"/> when none holds it.</returns>
+    /// <remarks>
+    /// Per machine because a committed launch configuration carries one identifier to every machine that checks the
+    /// repository out, and each of those is its own agent (SPEC.md §4.1.1).
+    /// </remarks>
+    public async Task<IdentityHolder?> HolderOfIdentityAsync(
+        AgentIdentity identity,
+        string machine,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _connection.QuerySingleOrDefaultAsync<HolderRow>(
+            new CommandDefinition(
+                "SELECT name AS Name, workspace AS Workspace FROM agents " +
+                "WHERE identity = @Identity AND machine = @Machine;",
+                new { Identity = identity.ToString(), Machine = machine },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return row is null ? null : new IdentityHolder(AgentName.Create(row.Name), row.Workspace);
+    }
+
+    /// <summary>
+    /// Records the identity an agent presented, when the row has none or a different one.
+    /// </summary>
+    /// <param name="name">The agent.</param>
+    /// <param name="identity">The repository's identifier.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>One if the row changed, zero if it already said so or is not registered.</returns>
+    /// <remarks>
+    /// A repository enrolled again is given a new identifier and the row follows it, so the stored one is whatever
+    /// the launch configuration says now. Called only after <see cref="HolderOfIdentityAsync"/> found nobody else
+    /// holding it, because the key refuses a second holder on one machine.
+    /// </remarks>
+    public async Task<int> RecordIdentityAsync(
+        AgentName name,
+        AgentIdentity identity,
+        CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET identity = @Identity " +
+                "WHERE name = @Name AND (identity IS NULL OR identity <> @Identity);",
+                new { Name = name.Value, Identity = identity.ToString() },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
+    /// Gives an agent a new name, keeping everything that refers to it (SPEC.md §4.1.1).
+    /// </summary>
+    /// <param name="from">The name it has.</param>
+    /// <param name="to">The name it is to have.</param>
+    /// <param name="transaction">A transaction to join, or <see langword="null"/> to own one.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> when it was renamed, <see langword="false"/> when <paramref name="from"/> is not registered.</returns>
+    /// <exception cref="InvalidOperationException"><paramref name="to"/> already belongs to another agent.</exception>
+    /// <remarks>
+    /// <para>
+    /// One transaction, and not a cascade: a row's keys would be rewritten one column at a time, and a check that
+    /// compares two of them (an exchange is owed by its requester or its receiver) fails halfway. So the agent's row is
+    /// copied under the new name, every column the schema says references the old one is moved in a single statement
+    /// per table, and the old row is deleted when nothing points at it. The columns are asked of the schema rather than
+    /// listed, as purge's are, so a table added later is moved too or the transaction fails on its key.
+    /// </para>
+    /// <para>
+    /// Three columns are text by design and are moved by name: who placed a file, how many files an agent has placed,
+    /// and who proposed a roadmap. The pair key of each exchange, which is made of two names, is rebuilt in the statement that moves its
+    /// requester and receiver, because a check holds the three together. What a message
+    /// said is not rewritten, because it records what was written then, and the content hash that stops one
+    /// question being asked twice is not recomputed: the first identical question after a rename is admitted.
+    /// </para>
+    /// <para>
+    /// The machine half of the name is not changed by a rename, which the caller guarantees, so the node row the
+    /// generated machine column points at is the same one.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> RenameAsync(
+        AgentName from,
+        AgentName to,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        if (!await IsRegisteredAsync(from, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            scope.Complete();
+
+            return false;
+        }
+
+        if (await IsRegisteredAsync(to, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"'{to.Value}' already belongs to another agent here, so '{from.Value}' cannot take that name.");
+        }
+
+        var parameters = new { From = from.Value, To = to.Value };
+
+        Task<int> Run(string sql) => _connection.ExecuteAsync(
+            new CommandDefinition(sql, parameters, scope.Transaction, cancellationToken: cancellationToken));
+
+        // The identity key is one per machine, so the old row lets go of it before the new one takes it.
+        var identity = await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT identity FROM agents WHERE name = @From;",
+                parameters,
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        _ = await Run("UPDATE agents SET identity = NULL WHERE name = @From;").ConfigureAwait(false);
+
+        // Every stored column but the key and the two generated from it, which the new name produces itself.
+        var columns = string.Join(
+            ", ",
+            (await _connection.QueryAsync<string>(
+                new CommandDefinition(
+                    "SELECT name FROM pragma_table_xinfo('agents') WHERE hidden = 0 AND name <> 'name' ORDER BY cid;",
+                    transaction: scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false)).Select(column => $"\"{column}\""));
+
+        _ = await Run($"INSERT INTO agents (name, {columns}) SELECT @To, {columns} FROM agents WHERE name = @From;")
+            .ConfigureAwait(false);
+
+        _ = await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE agents SET identity = @Identity WHERE name = @To;",
+                new { To = to.Value, Identity = identity },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        foreach (var table in (await ReferencesToAgentsAsync(scope.Transaction, cancellationToken, includeCascading: true)
+            .ConfigureAwait(false)).GroupBy(reference => reference.TableName))
+        {
+            // Interpolated because a table or column name cannot be a parameter; both come from this connection's own
+            // schema and never from a caller. One statement per table, so a check across its columns sees the row whole.
+            var sets = string.Join(
+                ", ",
+                table.Select(reference =>
+                    $"\"{reference.ColumnName}\" = CASE WHEN \"{reference.ColumnName}\" = @From THEN @To ELSE \"{reference.ColumnName}\" END"));
+
+            // The one table whose key is built from two of its columns, and a check holds the two to agree (SPEC.md §7.1),
+            // so it is moved in the same statement from the same new values.
+            if (string.Equals(table.Key, "exchanges", StringComparison.Ordinal))
+            {
+                const string Requester = "CASE WHEN requester = @From THEN @To ELSE requester END";
+                const string Receiver = "CASE WHEN receiver = @From THEN @To ELSE receiver END";
+
+                sets += $", pair_key = min({Requester}, {Receiver}) || char(31) || max({Requester}, {Receiver})";
+            }
+
+            var wheres = string.Join(" OR ", table.Select(reference => $"\"{reference.ColumnName}\" = @From"));
+
+            _ = await Run($"UPDATE \"{table.Key}\" SET {sets} WHERE {wheres};").ConfigureAwait(false);
+        }
+
+        // Nothing points at the old row now, so it goes; the text columns below are moved after it, because the trigger
+        // that holds a file's placer fixed lets it change only to a name that is registered when the old one is not.
+        _ = await Run("DELETE FROM agents WHERE name = @From;").ConfigureAwait(false);
+
+        foreach (var sql in new[]
+        {
+            "UPDATE shared_files SET placed_by = @To WHERE placed_by = @From;",
+            "UPDATE file_placements SET agent = @To WHERE agent = @From;",
+            "UPDATE roadmaps SET proposer = @To WHERE proposer = @From;"
+        })
+        {
+            _ = await Run(sql).ConfigureAwait(false);
+        }
+
+        scope.Complete();
+
+        return true;
+    }
+
+    /// <summary>
     /// Reports whether an agent is registered at all.
     /// </summary>
     /// <param name="agent">The name to look for.</param>
@@ -190,10 +348,9 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns><see langword="true"/> if the registry holds a row for it, in any status.</returns>
     /// <remarks>
-    /// Distinct from <see cref="IsUnroutableAsync"/>, which folds an unknown name in with the
-    /// status that refuses traffic. Admission asks the two apart because the sender's remedy
-    /// differs: an unknown name is usually a misspelling, and a retired one means the work has to
-    /// go to whoever owns it now.
+    /// Distinct from <see cref="IsRetiredAsync"/>. Admission asks the two apart because the
+    /// sender's remedy differs: an unknown name is usually a misspelling, and a retired one means
+    /// the work has to go to whoever owns it now.
     /// </remarks>
     public async Task<bool> IsRegisteredAsync(
         AgentName agent,
@@ -240,69 +397,25 @@ public sealed class AgentRepository(SqliteConnection connection)
                   FROM agents AS a
                   LEFT JOIN nodes AS n ON n.machine = a.machine
                  WHERE a.status <> 'retired'
+                   -- The facilitator owns nothing and does no work, so an agent that saw it here would be
+                   -- offered a peer to send work to that never answers (SPEC.md §10.1).
+                   AND a.adapter <> 'parley-facilitator'
                  ORDER BY a.name;
                 """,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        return rows.Select(r => new AgentSummary(
-            AgentName.Create(r.Name),
-            r.Adapter,
-            AgentRow.ParseTier(r.Tier),
-            AgentLiveness.Read(r.NodeConnected != 0, r.AgentConnected != 0),
-            r.Owns)).ToList();
-    }
+        return rows.Select(r =>
+        {
+            var name = AgentName.Create(r.Name);
 
-    /// <summary>
-    /// Reports whether an agent carries a status that stops the broker routing to it.
-    /// </summary>
-    /// <param name="agent">The agent.</param>
-    /// <param name="nowUtc">The current time, against which silence is measured.</param>
-    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns><see langword="true"/> if it is retired, or silent past the limit.</returns>
-    /// <remarks>
-    /// <para>
-    /// The pair of statuses admission already refuses a question to (§14). Stated once here so a
-    /// second caller cannot get the set subtly wrong — an omitted <c>retired</c> is what made
-    /// retirement a control that did not hold.
-    /// </para>
-    /// <para>
-    /// A name that is not registered at all counts too, and that was found rather than designed.
-    /// Without it a message addressed to an unknown agent reached the <c>INSERT</c> and came back
-    /// as a foreign-key violation — a raw storage exception for an ordinary mistake like a typo
-    /// or a name remembered from before a re-registration, where §7.3 asks for a refusal the
-    /// asker can act on. It also made the two distinguishable: a retired name refused and an
-    /// unknown one thrown, which hands back exactly the state §14 keeps out of <c>agents()</c>.
-    /// Both now mean the same thing, which is what they are — a name you cannot address, and
-    /// <c>agents()</c> is the answer to both.
-    /// </para>
-    /// </remarks>
-    public async Task<bool> IsUnroutableAsync(
-        AgentName agent,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default) =>
-        await _connection.ExecuteScalarAsync<long>(
-            new CommandDefinition(
-                // Retirement alone, and silence deliberately not. This changed with the move to
-                // derived liveness and the reasoning is worth keeping, because the obvious wiring
-                // is wrong in a way that disables the protocol.
-                //
-                // The old 'unreachable' meant "spawning was tried and failed repeatedly", which
-                // is evidence that starting this agent does not work and therefore a fair reason
-                // to refuse a question. The derived one means only that nobody has the repository
-                // open at the moment -- which is the ordinary resting state of a lazily spawned
-                // agent, and the state most agents are in most of the time. Refusing traffic to
-                // it would refuse the very traffic meant to wake it, exactly as the schema has
-                // always said of Offline, and a supervisor would then never see a debt to act on
-                // because no debt could ever be created.
-                //
-                // So silence is reported and never routed on. Retirement is a judgement that the
-                // agent will not come back, and only it refuses.
-                "SELECT count(*) FROM agents WHERE name = @Name AND status <> 'retired';",
-                new { Name = agent.Value },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false) == 0;
+            return new AgentSummary(
+                name,
+                r.Adapter,
+                AgentRow.ParseTier(r.Tier),
+                AgentLiveness.Read(name, r.NodeConnected != 0, r.AgentConnected != 0),
+                r.Owns);
+        }).ToList();
+    }
 
     /// <summary>
     /// Reports whether an operator has retired an agent.
@@ -312,10 +425,10 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns><see langword="true"/> if it is <c>retired</c>.</returns>
     /// <remarks>
-    /// Narrower than <see cref="IsUnroutableAsync"/> and used where the question is about the
-    /// agent that is <em>acting</em> rather than the one being addressed. <c>unreachable</c>
-    /// describes a peer nobody could spawn, which says nothing about an agent plainly running
-    /// well enough to be sending something.
+    /// Retirement is the only status that refuses a question (§14); silence is reported and never
+    /// routed on, because it is the ordinary resting state of a lazily spawned agent and refusing
+    /// traffic to it would refuse the very traffic meant to wake it. Used where the question is
+    /// about the agent that is <em>acting</em> rather than the one being addressed.
     /// </remarks>
     public async Task<bool> IsRetiredAsync(
         AgentName agent,
@@ -334,7 +447,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The adapter, or <see langword="null"/> if the agent is not registered.</returns>
     /// <remarks>
-    /// Read at admission for one purpose: a person seated through <see cref="Seats.Adapter"/> may always
+    /// Read at admission for one purpose: a person seated through <see cref="PersonSeat.Adapter"/> may always
     /// start a new conversation (SPEC.md principle 2.10), where an agent holding a Request may not.
     /// </remarks>
     public async Task<string?> AdapterOfAsync(
@@ -361,45 +474,15 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// vanished. This is the only evidence the registry holds that one has <em>not</em>.
     /// </para>
     /// <para>
-    /// This was a lease on a timestamp, and the reasoning for it was sound while the registry
-    /// only knew what an agent had last written: a flag cannot be cleared by a process that
-    /// stopped existing, so a crashed session would leave <c>live</c> set for ever and every
-    /// later attach would decline to release debts whose worker was demonstrably gone.
+    /// A connection closes when its process ends, however impolitely, and the broker notices, so
+    /// <c>connected</c> is cleared by the party that survives rather than by the one that died
+    /// (SPEC.md &#167;4.0).
     /// </para>
     /// <para>
-    /// A connection has no such failure. It closes when the process ends, however impolitely,
-    /// and the broker is the one that notices - so <c>connected</c> is cleared by the party that
-    /// survives rather than by the party that died. See SPEC.md &#167;4.0.
-    /// </para>
-    /// <para>
-    /// <b>It counts, and the predicate here did not.</b> The paragraph this replaces described
-    /// counting as the outstanding answer to two windows on one repository - "the answer here is
-    /// for the broker to hold the connections and clear the column when the last one goes". That
-    /// landed: <see cref="MarkLiveAsync"/> increments and <see cref="MarkOfflineAsync"/>
-    /// decrements to a floor of zero. The reader was left behind, testing
-    /// <c>connected = 1</c> - written when the column was a flag - so <em>two</em> sessions read
-    /// as none, and the next attach released work the first was mid-answer on.
-    /// </para>
-    /// <para>
-    /// Which is the same loss the old paragraph warned about, arrived at from the opposite
-    /// direction and worse: not a window between one session detaching and another attaching,
-    /// but any third window at all, deterministically. Probed rather than reasoned - three
-    /// windows on one agent, three runs out of three, the first window's answer refused as
-    /// not-open while the second found nothing in its inbox. Neither side told, which is exactly
-    /// what the attach sequence's own comment says must not happen.
-    /// </para>
-    /// <para>
-    /// <b>No instant, because there is no lease.</b> This took a <c>sinceUtc</c> that the SQL
-    /// never mentioned, so the broker's liveness lease was computed by the caller and discarded.
-    /// A parameter that does nothing is how somebody comes to fix a lease bug that cannot exist,
-    /// and the old name promised an arithmetic this has not done since the column became a
-    /// connection.
-    /// </para>
-    /// <para>
-    /// That option no longer exists. Removing this parameter left it with no consumer, and
-    /// following the chain found it dead the whole way: the broker's option, its five-minute
-    /// default, the fleet constructor argument derived from it, and the field that argument was
-    /// assigned to — which nothing had read since the fleet started asking a connection instead.
+    /// <b>It counts.</b> <see cref="MarkLiveAsync"/> increments and <see cref="MarkOfflineAsync"/>
+    /// decrements to a floor of zero, so two sessions on one repository read as attached and the
+    /// next attach does not release work the first is mid-answer on. There is no instant, because
+    /// there is no lease.
     /// </para>
     /// <para>
     /// Retirement is deliberately not consulted here. It is checked where retirement matters, in
@@ -417,6 +500,13 @@ public sealed class AgentRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
 
+    private sealed class HolderRow
+    {
+        public string Name { get; init; } = "";
+
+        public string? Workspace { get; init; }
+    }
+
     private sealed class SummaryRow
     {
         public string Name { get; init; } = "";
@@ -428,16 +518,17 @@ public sealed class AgentRepository(SqliteConnection connection)
     }
 
     /// <summary>
-    /// Registers an agent, or updates its configuration if already registered.
+    /// Registers an agent row directly, or updates its configuration if already registered. Used by
+    /// fixtures.
     /// </summary>
     /// <param name="agent">The agent to register.</param>
     /// <param name="cancellationToken">Cancels the operation.</param>
     /// <returns>The number of rows affected.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="agent"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// On conflict this updates configuration only — adapter, tier, workspace, and credential
+    /// On conflict this updates configuration only — adapter, tier, workspace and adapter
     /// configuration. Session handle, liveness, and last-seen timestamp are deliberately left
-    /// alone, so reloading a manifest cannot sever a live agent's session or reset the window
+    /// alone, so a second call cannot sever a live agent's session or reset the window
     /// used to compute its change summary. Use <see cref="MarkLiveAsync"/> for those.
     /// </remarks>
     public async Task<int> UpsertAsync(AgentRecord agent, CancellationToken cancellationToken = default)
@@ -448,14 +539,15 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO nodes (machine, connected, first_seen_utc)
-                VALUES (@Machine, 0, @Now)
+                SELECT @Machine, 0, @Now WHERE @Hosted
                 ON CONFLICT(machine) DO NOTHING;
 
-                INSERT INTO agents (name, adapter, tier, workspace, session_ref,
+                INSERT INTO agents (name, identity, adapter, tier, workspace, session_ref,
                                     adapter_config, owns, connected, status)
-                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef,
+                VALUES (@Name, @Identity, @Adapter, @Tier, @Workspace, @SessionRef,
                         @AdapterConfig, @Owns, @Connected, @Status)
                 ON CONFLICT(name) DO UPDATE SET
+                    identity       = COALESCE(excluded.identity, identity),
                     adapter        = excluded.adapter,
                     tier           = excluded.tier,
                     workspace      = excluded.workspace,
@@ -465,7 +557,9 @@ public sealed class AgentRepository(SqliteConnection connection)
                 new
                 {
                     Name = agent.Name.Value,
+                    Identity = agent.Identity.Known ? agent.Identity.ToString() : null,
                     agent.Machine,
+                    Hosted = HostedOnAMachine(agent.Name),
                     agent.Adapter,
                     Tier = FormatTier(agent.Tier),
                     agent.Workspace,
@@ -523,18 +617,19 @@ public sealed class AgentRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO nodes (machine, connected, first_seen_utc)
-                VALUES (@Machine, 0, @Now)
+                SELECT @Machine, 0, @Now WHERE @Hosted
                 ON CONFLICT(machine) DO NOTHING;
 
-                INSERT INTO agents (name, adapter, tier, workspace, session_ref,
+                INSERT INTO agents (name, identity, adapter, tier, workspace, session_ref,
                                     adapter_config, owns, connected, status)
-                VALUES (@Name, @Adapter, @Tier, @Workspace, @SessionRef,
+                VALUES (@Name, @Identity, @Adapter, @Tier, @Workspace, @SessionRef,
                         @AdapterConfig, @Owns, @Connected, @Status)
                 ON CONFLICT(name) DO NOTHING;
                 """,
                 new
                 {
                     Name = agent.Name.Value,
+                    Identity = agent.Identity.Known ? agent.Identity.ToString() : null,
                     agent.Adapter,
                     Tier = FormatTier(agent.Tier),
                     agent.Workspace,
@@ -542,6 +637,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                     agent.AdapterConfig,
                     agent.Owns,
                     agent.Machine,
+                    Hosted = HostedOnAMachine(agent.Name),
                     Connected = agent.Connected ? 1 : 0,
                     Now = ExchangeRow.FormatTimestamp(DateTimeOffset.UtcNow),
                     Status = FormatStatus(agent.Status)
@@ -600,6 +696,260 @@ public sealed class AgentRepository(SqliteConnection connection)
                 """,
                 new { Name = name.Value, Owns = owns },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>
+    /// Records that a person accepted a statement of what an agent owns, and reports what its peers
+    /// read now.
+    /// </summary>
+    /// <param name="name">Whose line it is.</param>
+    /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
+    /// <param name="nowUtc">When it was accepted.</param>
+    /// <param name="transaction">
+    /// A transaction to write within, or <see langword="null"/>. The facilitator records an automatic line in the same
+    /// transaction that settles its question, so the two cannot disagree.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>
+    /// Whether it was recorded, and the line the registry holds — which is what peers read, and is
+    /// not what was just accepted until the agent restarts.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <b>It does not touch <c>agents.owns</c>, and that is the whole design.</b> The registry is
+    /// filled from the launch environment when the agent attaches (SPEC.md §12.3), so a line takes
+    /// effect on the agent's next start. Writing both here would make this operation a second source
+    /// of the field the launch configuration owns, which is the route around Principle III that
+    /// §17 question 10 exists to keep shut.
+    /// </para>
+    /// <para>
+    /// The read and the write are one act, under one transaction, because a surface derives
+    /// <i>pending</i> by comparing them: taking the live line from a second call would let an attach
+    /// land between the two and report a line as already live that nobody had yet read.
+    /// </para>
+    /// <para>
+    /// Refuses an agent the registry does not hold, rather than writing a row whose foreign key
+    /// would fail with a message about a constraint. §14 counts an unregistered name unroutable, so
+    /// accepting a line for one would record a decision about an agent nothing can address.
+    /// </para>
+    /// </remarks>
+    public async Task<(bool Recorded, string? Live)> RecordOwnershipAsync(
+        AgentName name,
+        OwnershipAcceptance acceptance,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acceptance);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var live = await _connection.QuerySingleOrDefaultAsync<LiveOwnership>(
+            new CommandDefinition(
+                "SELECT owns AS Owns, 1 AS Present FROM agents WHERE name = @Name;",
+                new { Name = name.Value },
+                transaction: scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (live is null)
+        {
+            return (false, null);
+        }
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO agent_ownership_accepted
+                       (agent, statement, source, proposed_length, conversation_id, accepted_utc)
+                VALUES (@Name, @Statement, @Source, @ProposedLength, @Conversation, @AcceptedUtc)
+                ON CONFLICT(agent) DO UPDATE SET
+                       statement       = excluded.statement,
+                       source          = excluded.source,
+                       proposed_length = excluded.proposed_length,
+                       conversation_id = excluded.conversation_id,
+                       accepted_utc    = excluded.accepted_utc;
+                """,
+                new
+                {
+                    Name = name.Value,
+                    acceptance.Statement,
+                    Source = Recorded(acceptance.Source),
+                    acceptance.ProposedLength,
+                    Conversation = acceptance.Conversation,
+                    AcceptedUtc = ExchangeRow.FormatTimestamp(nowUtc)
+                },
+                transaction: scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+
+        return (true, live.Owns);
+    }
+
+    /// <summary>
+    /// The facilitator's name in this store, writing its row first if there is none (SPEC.md §12.3).
+    /// </summary>
+    /// <param name="project">The project this store serves, used only when the row does not exist yet.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The facilitator's name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>One of the two rows the broker writes itself, and not a registration of an agent.</b> Every sender is a
+    /// row, because a message's sender names one; the facilitator sends, so it has one. What the row states is that
+    /// the broker's own participant exists — the same kind of fact as a <c>closed</c> result being the broker's. The
+    /// other is the person seat (<see cref="EnsurePersonAsync"/>).
+    /// </para>
+    /// <para>
+    /// <b>Found by its adapter, never by its name.</b> Storage ties the adapter to the reserved role
+    /// in both directions, so there is nothing else a row with that adapter could be.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentName> EnsureFacilitatorAsync(
+        ProjectName project,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        if (await FacilitatorAsync(scope.Transaction, cancellationToken).ConfigureAwait(false) is { } existing)
+        {
+            scope.Complete();
+            return existing;
+        }
+
+        var name = Facilitation.On(project);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "INSERT INTO agents (name, adapter, tier, status) VALUES (@Name, @Adapter, 'pull', 'active');",
+                new { Name = name.Value, Adapter = Facilitation.Adapter },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return name;
+    }
+
+    /// <summary>The facilitator's name in this store, or <see langword="null"/> if it has none yet.</summary>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The name.</returns>
+    public async Task<AgentName?> FacilitatorAsync(
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var name = await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT name FROM agents WHERE adapter = @Adapter ORDER BY name LIMIT 1;",
+                new { Adapter = Facilitation.Adapter },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return name is null ? null : AgentName.Create(name);
+    }
+
+    /// <summary>Whether an agent's name ends in a machine it runs on, and so declares a node.</summary>
+    /// <param name="name">The name.</param>
+    /// <returns>False for the two participants the broker provides, whose second half is their project.</returns>
+    /// <remarks>
+    /// <b>The same rule as <c>tr_agent_declares_its_machine</c>, stated once more here because these writes declare a
+    /// node themselves.</b> Without it a surface attaching as <c>human-user@alpha</c> would record a machine called
+    /// <c>alpha</c> that never connects (SPEC.md §4.1.1).
+    /// </remarks>
+    private static bool HostedOnAMachine(AgentName name) => !PersonSeat.Is(name) && !Facilitation.Is(name);
+
+    /// <summary>
+    /// The person seat's name in this store, writing its row first if there is none (SPEC.md §12.3).
+    /// </summary>
+    /// <param name="project">The project this store serves, used only when the row does not exist yet.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the work.</param>
+    /// <returns>The person seat's name.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Written by the broker because nothing launches a person</b>, and because an agent that needs a person's
+    /// decision must have somebody to ask from the moment the project is served, before anybody has opened a screen
+    /// (principle 2.6). It is never retired, purged or released; storage refuses the first two.
+    /// </para>
+    /// <para>
+    /// <b>Found by its role, never by its adapter.</b> The role is the one fact only the person seat has, and
+    /// <c>ux_one_person</c> holds that there is at most one.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentName> EnsurePersonAsync(
+        ProjectName project,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        if (await PersonAsync(scope.Transaction, cancellationToken).ConfigureAwait(false) is { } existing)
+        {
+            scope.Complete();
+            return existing;
+        }
+
+        var name = PersonSeat.On(project);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "INSERT INTO agents (name, adapter, tier, status) VALUES (@Name, @Adapter, 'pull', 'active');",
+                new { Name = name.Value, Adapter = PersonSeat.Adapter },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return name;
+    }
+
+    /// <summary>The person seat's name in this store, or <see langword="null"/> if it has none yet.</summary>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The name.</returns>
+    public async Task<AgentName?> PersonAsync(
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var name = await _connection.ExecuteScalarAsync<string?>(
+            new CommandDefinition(
+                "SELECT name FROM agents WHERE role = @Role LIMIT 1;",
+                new { Role = PersonSeat.Role },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return name is null ? null : AgentName.Create(name);
+    }
+
+    /// <summary>How a source is spelled in storage.</summary>
+    /// <param name="source">The source.</param>
+    /// <returns>The stored spelling.</returns>
+    /// <remarks>
+    /// Spelled out rather than lower-cased from the member name, so that renaming the enum does not
+    /// silently rewrite what a CHECK constraint accepts.
+    /// </remarks>
+    private static string Recorded(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => "proposed",
+        OwnershipSource.Edited => "edited",
+        OwnershipSource.Composed => "composed",
+        OwnershipSource.Automatic => "automatic",
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
+    };
+
+    /// <summary>What the registry holds for an agent, and that it holds it at all.</summary>
+    /// <remarks>
+    /// <c>Present</c> exists because a null <c>owns</c> and an absent agent are different answers
+    /// and a single nullable string cannot tell them apart — the first is an agent listed with no
+    /// line, which §17 question 10 says is ordinary, and the second is a name nothing can address.
+    /// </remarks>
+    private sealed record LiveOwnership
+    {
+        /// <summary>The line peers read, or null for none.</summary>
+        public string? Owns { get; init; }
+
+        /// <summary>Always 1; its presence is the answer.</summary>
+        public int Present { get; init; }
+    }
 
     /// <summary>
     /// Marks every agent disconnected, for a broker that has just started.
@@ -672,17 +1022,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        // This used to mark the agent's node connected as well, on the grounds that an adapter
-        // talking to us is evidence its machine is reachable. That was a stopgap for there being
-        // no node process, and it said so; the node process exists now and owns the column, so
-        // the stopgap is gone rather than left to fight it.
-        //
-        // It was also wrong in a way worth recording. `nodes.connected` answers "is there
-        // something on that machine that could start an agent", and an attached adapter is not
-        // that -- it is one agent, already started, which cannot launch its neighbours. A
-        // deployment with no supervisor anywhere read as fully startable, and the first message
-        // to an idle agent would sit uncollected, with the registry having said all along that it
-        // could be started.
+        // The node's own column is not touched: `nodes.connected` answers "is there something on
+        // that machine that could start an agent", and an attached adapter is not that -- it is one
+        // agent, already started, which cannot launch its neighbours.
         return await _connection.ExecuteAsync(
             new CommandDefinition(
                 """
@@ -716,7 +1058,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// invalidate at any moment; this is a person saying it will not come back.
     /// </para>
     /// <para>
-    /// It marks rather than deletes, and section 10.2 previously said "remove". The schema does
+    /// It marks rather than deletes. The schema does
     /// not permit removal and should not: <c>exchanges</c> and <c>messages</c> both reference
     /// <c>agents(name)</c>, and section 9.4 keeps exchange rows after pruning their message text
     /// precisely so that telemetry outlives the traffic. Deleting the agent would cascade to
@@ -799,19 +1141,11 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// is the thing you want gone.
     /// </para>
     /// <para>
-    /// This is a reversal. It used to refuse the moment anything referenced the agent, and the
-    /// reasoning was sound as far as it went: deleting an agent takes its counterparties' history
-    /// with it. What that reasoning missed is that refusing left no command which did the job, so
-    /// an operator who genuinely wanted an agent gone had retirement — which frees nothing and
-    /// keeps everything — or nothing at all. A guard whose only effect is that the operator does
-    /// the deletion by hand, with a SQL client and no ordering, is not protecting anybody.
-    /// </para>
-    /// <para>
     /// Everything doomed is identified before anything is deleted, because each delete changes
     /// the answer to the next question: remove the participant rows and the conversations are no
     /// longer discoverable, remove the exchanges and their messages look unrelated. The order of
     /// deletion then follows the foreign keys, deepest first, with the agent row last —
-    /// <c>agent_credentials</c> and <c>size_refusals</c> cascade and are not named. The keys stay
+    /// <c>size_refusals</c> cascades and is not named. The keys stay
     /// the backstop underneath: if this order were ever wrong, the delete fails inside the
     /// transaction rather than half-completing.
     /// </para>
@@ -995,8 +1329,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>What was destroyed, or <see cref="PurgeOutcome.NotRegistered"/>.</returns>
     /// <remarks>
-    /// Kept so that callers with no clock of their own go on calling purge as they did before files existed; the
-    /// only thing the time stamps is a notice.
+    /// For callers with no clock of their own; the only thing the time stamps is a notice.
     /// </remarks>
     public Task<PurgeOutcome> PurgeAsync(
         AgentName name,
@@ -1009,10 +1342,14 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// </summary>
     /// <param name="transaction">The transaction the scan runs in.</param>
     /// <param name="cancellationToken">Cancels the query.</param>
-    /// <returns>Every non-cascading reference, ordered by table then column.</returns>
+    /// <param name="includeCascading">
+    /// Whether to list the references that cascade a delete too. Purge leaves those to the delete; a rename moves them.
+    /// </param>
+    /// <returns>Every reference asked for, ordered by table then column.</returns>
     private async Task<IReadOnlyList<AgentReference>> ReferencesToAgentsAsync(
         SqliteTransaction transaction,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        bool includeCascading = false) =>
         (await _connection.QueryAsync<AgentReference>(
             new CommandDefinition(
                 """
@@ -1021,9 +1358,10 @@ public sealed class AgentRepository(SqliteConnection connection)
                   JOIN pragma_foreign_key_list(m.name) AS f
                  WHERE m.type = 'table'
                    AND f."table" = 'agents'
-                   AND f."on_delete" <> 'CASCADE'
+                   AND (@IncludeCascading = 1 OR f."on_delete" <> 'CASCADE')
                  ORDER BY m.name, f."from";
                 """,
+                new { IncludeCascading = includeCascading ? 1 : 0 },
                 transaction: transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
@@ -1033,106 +1371,6 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// <param name="TableName">The referencing table.</param>
     /// <param name="ColumnName">The referencing column.</param>
     private sealed record AgentReference(string TableName, string ColumnName);
-
-    /// <summary>
-    /// Records where one of an agent's secrets lives, replacing any reference of that name.
-    /// </summary>
-    /// <param name="agent">The agent the credential belongs to.</param>
-    /// <param name="credential">The credential's name and reference.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The number of rows affected.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="credential"/> is <see langword="null"/>.</exception>
-    /// <exception cref="SqliteException">
-    /// The reference is not one of the recognised schemes, or the agent is not registered.
-    /// </exception>
-    /// <remarks>
-    /// <para>
-    /// Takes a reference, never a secret, and there is deliberately no overload that takes
-    /// one. The broker resolves references at invocation and neither persists nor logs what
-    /// it resolved; a method here accepting a value would make SPEC.md §12's claim — that a
-    /// manifest is safe to commit — depend on nobody calling it.
-    /// </para>
-    /// <para>
-    /// Which store a reference points at is decided once, when the agent is registered, and
-    /// recorded in the scheme. It is not re-decided at invocation: a store appearing on the
-    /// machine later does not silently take over, and one disappearing produces a resolution
-    /// failure rather than a quiet fallback to a stale copy somewhere else.
-    /// </para>
-    /// </remarks>
-    public async Task<int> SetCredentialAsync(
-        AgentName agent,
-        AgentCredential credential,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(credential);
-
-        return await _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                INSERT INTO agent_credentials (agent, name, reference)
-                VALUES (@Agent, @Name, @Reference)
-                ON CONFLICT(agent, name) DO UPDATE SET reference = excluded.reference;
-                """,
-                new { Agent = agent.Value, credential.Name, credential.Reference },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Loads every credential reference registered for an agent, ordered by name.
-    /// </summary>
-    /// <param name="agent">The agent to load.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>The references, which the caller resolves. Empty if the agent needs none.</returns>
-    /// <remarks>
-    /// Returns references, so this is safe to log and safe to show. Resolving them is the
-    /// broker's job at invocation, and what comes back from that resolution is not.
-    /// </remarks>
-    public async Task<IReadOnlyList<AgentCredential>> GetCredentialsAsync(
-        AgentName agent,
-        CancellationToken cancellationToken = default)
-    {
-        var rows = await _connection.QueryAsync<AgentCredential>(
-            new CommandDefinition(
-                """
-                SELECT name AS Name, reference AS Reference
-                FROM agent_credentials
-                WHERE agent = @Agent
-                ORDER BY name;
-                """,
-                new { Agent = agent.Value },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return [.. rows];
-    }
-
-    /// <summary>
-    /// Removes one of an agent's credential references.
-    /// </summary>
-    /// <param name="agent">The agent the credential belongs to.</param>
-    /// <param name="name">The adapter's name for the credential.</param>
-    /// <param name="cancellationToken">Cancels the operation.</param>
-    /// <returns>
-    /// <see langword="true"/> if a reference was removed; <see langword="false"/> if there
-    /// was none by that name.
-    /// </returns>
-    /// <remarks>
-    /// Removes the pointer, not the secret. Whatever store holds the value is untouched,
-    /// because the broker did not put it there and deleting from someone's keychain on the
-    /// strength of a registry edit is not a decision this layer gets to make.
-    /// </remarks>
-    public async Task<bool> RemoveCredentialAsync(
-        AgentName agent,
-        string name,
-        CancellationToken cancellationToken = default)
-    {
-        var affected = await _connection.ExecuteAsync(
-            new CommandDefinition(
-                "DELETE FROM agent_credentials WHERE agent = @Agent AND name = @Name;",
-                new { Agent = agent.Value, Name = name },
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return affected == 1;
-    }
 
     private static string FormatTier(AgentTier tier) => tier switch
     {
@@ -1172,6 +1410,15 @@ public sealed class AgentRepository(SqliteConnection connection)
 
         public string Status { get; init; } = "";
 
+        /// <summary>What a person accepted, or null when nobody has.</summary>
+        public string? OwnsAccepted { get; init; }
+
+        /// <summary>How that line was arrived at, as stored, or null when nobody has accepted one.</summary>
+        public string? OwnsSource { get; init; }
+
+        /// <summary>The repository's identifier as stored, or null when the agent presented none.</summary>
+        public string? Identity { get; init; }
+
         /// <summary>Parses a stored tier token.</summary>
         /// <param name="value">The token read from storage.</param>
         /// <returns>The corresponding tier.</returns>
@@ -1180,9 +1427,8 @@ public sealed class AgentRepository(SqliteConnection connection)
         /// externally modified database.
         /// </exception>
         /// <remarks>
-        /// Named rather than inlined into <see cref="ToDomain"/>, because a second reader now
-        /// needs it — the summary projection §10.1 returns — and two copies of a mapping are how
-        /// the two come to disagree.
+        /// Named rather than inlined into <see cref="ToDomain"/>, because the summary projection
+        /// §10.1 returns reads it too, and two copies of a mapping are how the two come to disagree.
         /// </remarks>
         public static AgentTier ParseTier(string value) => value switch
         {
@@ -1204,16 +1450,14 @@ public sealed class AgentRepository(SqliteConnection connection)
             "active" => AgentStatus.Active,
             "retired" => AgentStatus.Retired,
 
-            // No legacy tokens are accepted, and that is a decision rather than an omission.
-            // The store was rebuilt from empty when the broker stopped being a file every
-            // adapter opened (SPEC.md 4), so no database in existence carries the old spellings
-            // -- and quietly mapping 'live' or 'unreachable' onto something would be this
-            // reader inventing a meaning for a row it cannot actually interpret.
+            // An unrecognised token is an error, never mapped onto a meaning this reader invents.
             _ => throw new InvalidOperationException($"Unrecognised status '{value}'.")
         };
 
-        public AgentRecord ToDomain() => new(
-            AgentName.Create(Name),
+        public AgentRecord ToDomain() => Domain(AgentName.Create(Name));
+
+        private AgentRecord Domain(AgentName name) => new(
+            name,
             Adapter,
             ParseTier(Tier),
             Workspace,
@@ -1222,6 +1466,22 @@ public sealed class AgentRepository(SqliteConnection connection)
             Connected != 0,
             ParseStatus(Status),
             Owns,
-            AgentLiveness.Read(NodeConnected != 0, Connected != 0));
+            AgentLiveness.Read(name, NodeConnected != 0, Connected != 0),
+            OwnsAccepted,
+            OwnsSource is null ? null : ParseSource(OwnsSource),
+            Identity: AgentIdentity.TryRead(Identity, out var identity) ? identity : default);
+
+        /// <summary>Parses a stored ownership source.</summary>
+        /// <param name="value">The token read from storage.</param>
+        /// <returns>The source.</returns>
+        /// <exception cref="InvalidOperationException">The token is not one the schema admits.</exception>
+        public static OwnershipSource ParseSource(string value) => value switch
+        {
+            "proposed" => OwnershipSource.Proposed,
+            "edited" => OwnershipSource.Edited,
+            "composed" => OwnershipSource.Composed,
+            "automatic" => OwnershipSource.Automatic,
+            _ => throw new InvalidOperationException($"Unrecognised ownership source '{value}'.")
+        };
     }
 }

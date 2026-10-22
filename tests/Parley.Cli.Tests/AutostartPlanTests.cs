@@ -22,10 +22,12 @@ namespace Parley.Cli.Tests;
 /// </remarks>
 public sealed class AutostartPlanTests
 {
-    private const string Store = "/tmp/parley/parley.db";
+    // **The root, not a store.** An entry serves this machine's projects, or the one it names with
+    // --project; neither a store nor a port appears in it, because both are a project's own.
+    private const string Root = "/tmp/parley";
 
-    private static AutostartPlan Plan(string? listenOn = null) =>
-        AutostartPlan.Describe(Store, listenOn, executable: "/usr/local/bin/parley");
+    private static AutostartPlan Plan(string? project = null) =>
+        AutostartPlan.Describe(Root, project, executable: "/usr/local/bin/parley");
 
     [Fact]
     public void A_path_without_spaces_is_not_quoted()
@@ -36,7 +38,7 @@ public sealed class AutostartPlanTests
         var command = Plan().CommandLine();
 
         Assert.DoesNotContain("\"", command, StringComparison.Ordinal);
-        Assert.Contains("serve --db", command, StringComparison.Ordinal);
+        Assert.Contains("serve --config", command, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -74,7 +76,7 @@ public sealed class AutostartPlanTests
         // registration.
         var plan = AutostartPlan.Describe("parley.db", executable: "parley");
 
-        Assert.DoesNotContain("--db parley.db", plan.Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--db", plan.Arguments, StringComparison.Ordinal);
         Assert.Contains(Path.GetFullPath("parley.db"), plan.Arguments, StringComparison.Ordinal);
     }
 
@@ -82,24 +84,29 @@ public sealed class AutostartPlanTests
     public void The_log_sits_beside_the_store()
     {
         // A supervisor's stdout goes nowhere by default, so a broker that failed to start would
-        // fail silently. Beside the store because that is the directory this deployment already
-        // owns, and the one somebody hunting for the broker will already have open.
+        // fail silently. At the root because that is the directory this machine's Parley files
+        // already live in, and the one somebody hunting for the broker will already have open.
         var plan = Plan();
 
-        Assert.Equal(
-            Path.GetDirectoryName(Path.GetFullPath(Store)),
-            Path.GetDirectoryName(plan.LogPath));
+        Assert.Equal(Path.GetFullPath(Root), Path.GetDirectoryName(plan.LogPath));
     }
 
     [Fact]
-    public void An_endpoint_is_carried_when_one_was_chosen()
+    public void A_project_is_carried_when_one_was_named_and_no_endpoint_ever_is()
     {
+        // **This asserted that `--listen` was carried into the entry.** It cannot be: an endpoint is a
+        // project's own, recorded in its `project.json` and claimed when it was created, so an entry
+        // that repeated one would be a second place the answer lives.
+        //
+        // What narrows an entry is the project. Asserted both ways, because an entry that quietly
+        // served everything when it was asked for one project would be an installer describing a
+        // deployment that is not the one running.
+        Assert.DoesNotContain("--project", Plan().Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--listen", Plan().Arguments, StringComparison.Ordinal);
 
-        Assert.Contains(
-            "--listen http://127.0.0.1:9999",
-            Plan("http://127.0.0.1:9999").Arguments,
-            StringComparison.Ordinal);
+        Assert.Contains("--project orders", Plan("orders").Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--listen", Plan("orders").Arguments, StringComparison.Ordinal);
+        Assert.DoesNotContain("--db", Plan("orders").Arguments, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,7 +124,7 @@ public sealed class AutostartPlanTests
         Assert.Contains("WantedBy=default.target", unit, StringComparison.Ordinal);
         Assert.DoesNotContain("multi-user.target", unit, StringComparison.Ordinal);
 
-        Assert.Contains("/usr/local/bin/parley serve --db", unit, StringComparison.Ordinal);
+        Assert.Contains("/usr/local/bin/parley serve --config", unit, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -134,7 +141,7 @@ public sealed class AutostartPlanTests
 
         Assert.Contains("<string>/usr/local/bin/parley</string>", plist, StringComparison.Ordinal);
         Assert.Contains("<string>serve</string>", plist, StringComparison.Ordinal);
-        Assert.Contains("<string>--db</string>", plist, StringComparison.Ordinal);
+        Assert.Contains("<string>--config</string>", plist, StringComparison.Ordinal);
         Assert.Contains(
             $"<string>{Path.GetFullPath("/Users/someone/Library/Application Support/parley.db")}</string>",
             plist,
@@ -236,9 +243,9 @@ public sealed class AutostartPlanTests
         // node, and installing them as two supervisor entries is two things to install, remove,
         // and find already removed. One process hosts both, so one entry starts both.
         var plan = AutostartPlan.Describe(
-            Store, executable: "/usr/local/bin/parley", nodeConfig: "/tmp/parley/node.json");
+            Root, executable: "/usr/local/bin/parley", nodeConfig: "/tmp/parley/node.json");
 
-        Assert.Contains("serve --db", plan.Arguments, StringComparison.Ordinal);
+        Assert.Contains("serve --config", plan.Arguments, StringComparison.Ordinal);
         Assert.Contains("--with-node", plan.Arguments, StringComparison.Ordinal);
     }
 
@@ -251,7 +258,7 @@ public sealed class AutostartPlanTests
         // an absent catalogue reads as a machine with no agents listed on it and joins happily
         // to say so.
         var plan = AutostartPlan.Describe(
-            Store, executable: "/usr/local/bin/parley", nodeConfig: "node.json");
+            Root, executable: "/usr/local/bin/parley", nodeConfig: "node.json");
 
         Assert.Contains(
             $"--node-config {Path.GetFullPath("node.json")}", plan.Arguments, StringComparison.Ordinal);
@@ -264,7 +271,7 @@ public sealed class AutostartPlanTests
         // "Program Files" and "My Documents" both do, and a catalogue path is chosen by whoever
         // installs. Unquoted it becomes two arguments and --node-config takes the first half.
         var plan = AutostartPlan.Describe(
-            Store,
+            Root,
             executable: "/usr/local/bin/parley",
             nodeConfig: "C:/Some Folder/node.json");
 
@@ -317,7 +324,7 @@ public sealed class AutostartPlanTests
         // relative to somewhere, and writing that into a logon task records a machine as able to
         // start agents it will never find. A broker alone is the honest install, and the command
         // says so rather than leaving it to be discovered.
-        var plan = AutostartPlan.Describe(Store, executable: "/usr/local/bin/parley");
+        var plan = AutostartPlan.Describe(Root, executable: "/usr/local/bin/parley");
 
         Assert.DoesNotContain("--with-node", plan.Arguments, StringComparison.Ordinal);
         Assert.DoesNotContain("--node-config", plan.Arguments, StringComparison.Ordinal);

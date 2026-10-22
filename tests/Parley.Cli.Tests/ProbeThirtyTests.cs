@@ -5,17 +5,16 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// Review gate, lens 2, run 19: every remaining claim about what was written.
+/// Every remaining claim about what was written.
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2.14, 2.16 and 2.17 were each one surface's report disagreeing with the disk, and each was fixed
-/// where its probe happened to look. Run 18's own lesson is that a fix is a claim about every caller,
+/// A surface's report can disagree with the disk, and a fix is a claim about every caller,
 /// so this enumerates the eight places any surface asserts what was or was not written and asks
 /// whether each is reachable and true.
 /// </para>
 /// <para>
-/// Six are sound by construction and are named in the ledger. The two worth a probe are the withdrawal
+/// Six are sound by construction. The two worth a probe are the withdrawal
 /// — which claims outright that the files could not be withdrawn — and the acquisition order that
 /// decides whether that claim can ever be false.
 /// </para>
@@ -53,7 +52,6 @@ public sealed class ProbeThirtyTests : IDisposable
             new EnrollmentEntry(Workspace, "orders", "Carts and totals.", Unattended: true)
             {
                 Enroll = true,
-                OwnsApproved = true,
             },
             "alpha",
             CataloguePath,

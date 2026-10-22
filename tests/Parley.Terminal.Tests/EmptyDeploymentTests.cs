@@ -1,4 +1,6 @@
 ﻿using Grpc.Net.Client;
+using Parley.Configuration;
+using Parley.Core;
 using Parley.Client;
 using Parley.Client.Seating;
 using Xunit;
@@ -108,18 +110,29 @@ public sealed class EmptyDeploymentTests
     [Fact]
     public async Task A_manifest_that_cannot_be_read_says_so_rather_than_looking_empty()
     {
-        // Two different facts. "This machine names no projects" is a machine waiting to be set up;
-        // "the manifest could not be read" is somebody's edit, thirty seconds ago, that they can
-        // undo — and showing the first for the second hides the edit that caused it.
-        var broken = Path.Combine(Path.GetTempPath(), "parley-broken-" + Path.GetRandomFileName() + ".json");
+        // Two different facts. "This machine names no projects" is a machine waiting to be set up; "a
+        // project could not be read" is somebody's edit, thirty seconds ago, that they can undo — and
+        // showing the first for the second hides the edit that caused it.
+        //
+        // **Repointed at a project's own file, which is where a hand edit lands now.** A damaged single
+        // manifest used to be the only shape this could take; a directory of them makes the distinction
+        // sharper rather than weaker, because one unreadable project must not read as a machine with
+        // none.
+        var root = Path.Combine(Path.GetTempPath(), "parley-broken-" + Path.GetRandomFileName());
+        var folder = ProjectFolder.For(root, ProjectName.Create("alpha"));
 
-        await File.WriteAllTextAsync(broken, "{ not json", TestContext.Current.CancellationToken);
+        Directory.CreateDirectory(folder);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(folder, ProjectFolder.ConfigurationFileName),
+            "{ not json",
+            TestContext.Current.CancellationToken);
 
         try
         {
             using var driving = Driving.Open();
-            using var directory = BrokerDirectory.FromManifest(broken);
-            using var shell = TerminalCommand.Build(directory, manifestPath: broken);
+            using var directory = BrokerDirectory.FromManifest(root);
+            using var shell = TerminalCommand.Build(directory, manifestPath: root);
 
             driving.Show(shell);
             await shell.RefreshAsync(TestContext.Current.CancellationToken);
@@ -133,7 +146,7 @@ public sealed class EmptyDeploymentTests
         }
         finally
         {
-            File.Delete(broken);
+            Directory.Delete(root, recursive: true);
         }
     }
 

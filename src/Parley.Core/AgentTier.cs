@@ -44,9 +44,8 @@ public enum AgentTier
 /// <remarks>
 /// <para>
 /// Two values, because there are only two judgements a person makes: the registration stands,
-/// or it is finished. Everything that used to live here — offline, live, not-responding,
-/// unreachable — described how reachable an agent was, and reachability is not a judgement
-/// anybody records. It is observed on a connection, and lives in <see cref="AgentPresence"/>.
+/// or it is finished. How reachable an agent is is not a judgement anybody records; it is
+/// observed on a connection, and lives in <see cref="AgentPresence"/>.
 /// </para>
 /// <para>
 /// The separation is the point. A stored liveness has to be withdrawn by something, and the
@@ -79,8 +78,7 @@ public enum AgentStatus
 /// <para>
 /// Every value here is derived from two facts a process knows for certain: whether the node on
 /// that machine is connected to the broker, and whether the agent's own adapter is. Nothing is
-/// inferred from a timestamp, which is what the two previous designs did and what made a
-/// session killed on Tuesday read as healthy on Friday.
+/// inferred from a timestamp, which would let a session killed on Tuesday read as healthy on Friday.
 /// </para>
 /// <para>
 /// None of these gate routing. See SPEC.md §14: a Request to an agent that is not running is
@@ -105,6 +103,16 @@ public enum AgentPresence
     Startable = 1,
 
     /// <summary>The agent's adapter is connected and can be routed to now.</summary>
-    Running = 2
+    Running = 2,
+
+    /// <summary>The person seat only: a surface is open and in use (SPEC.md §14).</summary>
+    /// <remarks>
+    /// A person has no machine and is never started, so <see cref="Startable"/> would tell a peer an absent person can be
+    /// woken and <see cref="Stranded"/> that one cannot be reached. Neither this nor <see cref="Away"/> gates routing.
+    /// </remarks>
+    Here = 3,
+
+    /// <summary>The person seat only: nobody is at a screen; the seat is still there and still asked (SPEC.md §14).</summary>
+    Away = 4
 }
 

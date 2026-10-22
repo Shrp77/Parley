@@ -8,20 +8,18 @@ agent the supervisor starts -- it is given a turn precisely because something is
 waiting. It is not fine for the case nobody designed for, which is also the
 common one: a repository a person has open.
 
-Such a session sweeps happily, reports ``live``, and never looks. A message can
-sit in it for hours while every indicator says the deployment is healthy -- and
-one did, for four and a half hours, which is what prompted this file. The
-standing instructions already say to call ``parley_inbox`` when work starts;
-that turned out to be a rule nothing enforced and everybody forgot.
+Such a session reports ``live`` and never looks. A message can sit in it for
+hours while every indicator says the deployment is healthy. The standing
+instructions say to call ``parley_inbox`` when work starts, but that is a rule
+nothing enforces.
 
 Where it runs, and why each one
 -------------------------------
 Four events, in two pairs, because an agent can be deaf in two different ways.
 
 ``SessionStart`` and ``UserPromptSubmit`` catch the turn boundary a person
-drives. They were the whole of this file once, and they are not enough on their
-own: they only fire when a human types, so an agent working through a long turn
-learns nothing until that turn is over.
+drives. They are not enough on their own: they only fire when a human types, so
+an agent working through a long turn learns nothing until that turn is over.
 
 ``PostToolBatch`` fires once after every tool call in a batch resolves, *before
 the next model request*. That is genuine mid-turn delivery -- an answer arriving
@@ -93,8 +91,8 @@ failing to start is not something it can see. There the notice recurs for ever, 
 loud, and deliberately so: it is the same trade SPEC.md 11.1 records for the
 supervisor, where one wasted turn per new message is accepted because the
 alternative is losing the message silently. A deployment that cannot collect
-its mail is broken, and being told so on every turn is better than the four
-and a half hours of quiet that prompted this file.
+its mail is broken, and being told so on every turn is better than hours of
+quiet.
 
 File change notices
 -------------------
@@ -105,9 +103,7 @@ wakes nothing -- it waits for the next inbox check -- and holding a turn open
 at ``Stop`` is asking for a turn, so there notices are mentioned only beside
 mail that holds the turn anyway.
 
-The count is asked for with ``--with-files``, and a ``parley`` from before
-files refuses the flag. The hook then asks again without it, so a plugin
-upgraded ahead of its tool keeps reporting mail rather than going quiet.
+The count is asked for with ``--with-files``.
 
 What it costs
 -------------
@@ -194,9 +190,8 @@ def launches(root: Path) -> list[tuple[str, str, str, str]]:
 
     # `parley` is the key a repository enrolled into no named project holds;
     # enrolment into a project writes `parley-<project>`, one for each project the
-    # repository answers in. This read only the first, so in every repository
-    # enrolled into a named project it found no agent and said nothing -- all
-    # twenty-one on the machine where the sweep over project-scoped callers found it.
+    # repository answers in. Both are read, or a repository enrolled into a named
+    # project would find no agent and say nothing.
     for key, server in servers.items():
         if key != "parley" and not key.startswith("parley-"):
             continue
@@ -243,15 +238,13 @@ def waiting(
     budget: float = TIMEOUT,
 ) -> tuple[int, int, int]:
     """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file change notices."""
-    # Asked rather than read, and that is the whole of the change here. This used
-    # to open the database read-only and count rows itself, which worked while the
-    # file was on this machine and every process opened it. One process owns it
-    # now (SPEC.md section 4), it may be on another machine entirely, and SQLite in
-    # WAL mode needs coherent shared memory between everything touching it -- so a
-    # hook reaching for the file is not slow, it is the corrupt case.
+    # Asked rather than read. One process owns the store (SPEC.md section 4), it
+    # may be on another machine entirely, and SQLite in WAL mode needs coherent
+    # shared memory between everything touching it -- so a hook reaching for the
+    # file is not slow, it is the corrupt case.
     #
     # `parley waiting` reports counts and takes nothing: it marks nothing
-    # delivered and starts no working window, which is what makes it safe to call
+    # delivered, which is what makes it safe to call
     # from something that is not going to act on the result.
     tool = shutil.which("parley")
 
@@ -273,10 +266,7 @@ def waiting(
     # safe direction -- a session that does not know it has mail is a great deal
     # better than one that cannot be worked in.
     #
-    # File change notices are a third count, asked for with --with-files, and a
-    # tool from before files existed refuses the flag. Asked again without it
-    # then, so a plugin upgraded ahead of its tool keeps reporting mail rather
-    # than going quiet.
+    # File change notices are a third count, asked for with --with-files.
     child = dict(os.environ)
 
     if machine:
@@ -290,14 +280,9 @@ def waiting(
         """Ask once, or give up on this entry."""
         # **Every way one question can fail is caught here, because there are other
         # entries after it.** A broker that accepts a connection and never answers
-        # raised TimeoutExpired out of this function, out of `main`, and into the
-        # blanket `except` at the bottom of this file -- which ended the run: the
-        # entries after it were never asked, and the counts already gathered from
-        # the ones before it went into the traceback with everything else. One
-        # project slow to answer silenced the mail in all the others, which is the
-        # silence this file exists to end. Found by the review gate; the test that
-        # holds it accepts a connection and says nothing, because a *refused*
-        # connection comes back in a moment and never showed it.
+        # raises TimeoutExpired; left to reach the blanket `except` at the bottom of
+        # this file it would end the run, so one project slow to answer would silence
+        # the mail in all the others.
         try:
             return subprocess.run(
                 words, capture_output=True, text=True, timeout=budget, check=False, env=child, cwd=here
@@ -307,23 +292,15 @@ def waiting(
 
     finished = ask(command + ["--with-files"])
 
-    # A question that timed out is not the flag being refused, and asking again
-    # would spend the budget twice to learn the same thing.
-    if finished is None:
-        return 0, 0, 0
-
-    if finished.returncode != 0:
-        finished = ask(command)
-
     if finished is None or finished.returncode != 0:
         return 0, 0, 0
 
-    # Counts, or nothing at all. A tool answering something this cannot read is
-    # one more way a single entry used to take the whole check down with it.
+    # Counts, or nothing at all: a tool answering something this cannot read must
+    # not take the whole check down with it.
     try:
         counts = [int(count) for count in finished.stdout.split()]
 
-        return counts[0], counts[1], counts[2] if len(counts) > 2 else 0
+        return counts[0], counts[1], counts[2]
     except (IndexError, ValueError):
         return 0, 0, 0
 
@@ -336,7 +313,7 @@ def tally(unread: int, owed: int, notices: int = 0) -> str:
         parts.append(f"{unread} uncollected message{'s' if unread != 1 else ''}")
 
     if owed:
-        parts.append(f"{owed} question{'s' if owed != 1 else ''} you owe an answer")
+        parts.append(f"{owed} closure poll{'s' if owed != 1 else ''} you owe a vote")
 
     # A count and never a name: a file's name was chosen by whoever placed it,
     # and is as much a peer's words as a payload is.
@@ -355,10 +332,8 @@ def tally(unread: int, owed: int, notices: int = 0) -> str:
 # configured enough to make this file speak and not equipped to act on it.
 #
 # Without an explicit way out, an agent in that state does not shrug. It was told
-# to collect, from a channel it trusts, so it goes looking: observed on a session
-# with no Parley tools loaded, it spent four tool batches hunting for the tool,
-# then asked the person to run it from their shell -- and never answered the
-# question they had actually asked. The notice hijacked the turn.
+# to collect, from a channel it trusts, so it goes looking for the tool and never
+# answers the question the person actually asked. The notice would hijack the turn.
 #
 # The escape has to be spelled out for the same reason the instruction works at
 # all. It is deliberately narrow: a session that *can* collect gets no excuse
@@ -436,8 +411,7 @@ def main() -> int:
     if not entries:
         return 0
 
-    # No file to check for any more. Whether the broker is reachable is a question
-    # only asking it can answer, and `waiting` treats every failure as nothing
+    # Whether the broker is reachable is a question only asking it can answer, and `waiting` treats every failure as nothing
     # waiting -- so an unreachable broker costs this hook a moment and says
     # nothing, which is the right outcome for something that runs in front of a
     # person waiting for their turn to start.

@@ -45,6 +45,12 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.DrainInboxAsync),
         nameof(Broker.ListAgentsAsync),
 
+        // The one roadmap operation an agent has (§10.1, principle 2.12): it stores a proposal and nothing else, so
+        // it opens no exchange and creates no roadmap. Everything else about a roadmap is the person's and is below,
+        // on the console. The names differ loudly: no console method is called Propose, and no broker method
+        // reads, changes or confirms.
+        nameof(Broker.ProposeRoadmapAsync),
+
         // Lifecycle. Driven by the host, not exposed to an agent by any adapter.
         nameof(Broker.StartAsync),
         nameof(Broker.DetachAsync),
@@ -92,6 +98,14 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
 
+            // On this side because what it records is a PERSON'S decision about an agent, which is
+            // the one thing §17 question 10 says the field is worth reading for. An agent-facing
+            // version of this would let a model write its own charter, which is the whole of what
+            // that question closes. Note what it deliberately cannot do even here: it does not write
+            // `owns`. The registry is still filled from the launch environment on attach (§12.3), so
+            // no operation on either side sets the line an asker reads.
+            nameof(OperatorConsole.RecordOwnershipAsync),
+
             // On this side because it is a judgement about the registry that no agent may make
             // about itself or any other, which is the same reason retire is here — and the case
             // for keeping it here is now much stronger than when it was written. Purge once
@@ -109,22 +123,6 @@ public sealed class SurfaceBoundaryTests
             // not be able to enumerate what its peers have discussed with anybody else. It sits
             // beside export for the same reason export does.
             nameof(OperatorConsole.ListConversationsAsync),
-
-            // The operator's own words, recorded and then settled. Here rather than on the agent
-            // surface for the reason §11.5 gives: an agent that could write an instruction could
-            // put a person's words into another agent's turn, and the log's whole worth is that
-            // it says who said what. The receiving half of that contract is a different type
-            // entirely and carries no operator operation at all.
-            nameof(OperatorConsole.RecordInstructionAsync),
-            nameof(OperatorConsole.SettleInstructionAsync),
-
-            // Reading an instruction back, and it belongs here for a stronger reason than the two
-            // above. Writing one is obviously the operator's; *reading* one looks harmless until
-            // you ask who else could. An agent able to read an instruction could learn what the
-            // operator had told a peer to do — which is a disclosure §10.1 withholds even for
-            // ordinary traffic between agents, and this is not ordinary traffic. It is the one
-            // channel where a person's own words are on the record.
-            nameof(OperatorConsole.ListInstructionsAsync),
 
             nameof(OperatorConsole.PruneAsync),
             nameof(OperatorConsole.DescribeRefusalsAsync),
@@ -163,7 +161,18 @@ public sealed class SurfaceBoundaryTests
             // it is never told anything at all. An agent able to reach this
             // could erase a peer's evidence of having dealt with it, which is the same leak the
             // purge entry above warns about with a smaller blast radius and the same shape.
-            nameof(OperatorConsole.DestroyConversationAsync)
+            nameof(OperatorConsole.DestroyConversationAsync),
+
+            // Roadmaps (§5.7, principle 2.12). All six are a person's: an agent able to read one would learn a plan
+            // it was never sent and could not be told to follow, and one able to confirm, edit or decline would be
+            // an agent deciding what other agents are asked to do. There is deliberately nothing on the broker's
+            // side but ProposeRoadmapAsync, and this list is where that is written down.
+            nameof(OperatorConsole.ListRoadmapsAsync),
+            nameof(OperatorConsole.GetRoadmapAsync),
+            nameof(OperatorConsole.ListProposalsAsync),
+            nameof(OperatorConsole.ConfirmProposalAsync),
+            nameof(OperatorConsole.DeclineProposalAsync),
+            nameof(OperatorConsole.EditRoadmapAsync)
         ];
 
         var unexpected = PublicMethodsOf(typeof(OperatorConsole)).Where(n => !declared.Contains(n));
@@ -237,5 +246,67 @@ public sealed class SurfaceBoundaryTests
                           or nameof(Broker.DrainInboxAsync));
 
         Assert.Empty(leaked);
+    }
+
+    /// <summary>
+    /// The facilitator's surface, fixed as the other two are (SPEC.md principle 2.11).
+    /// </summary>
+    /// <remarks>
+    /// A third list rather than an addition to either, because the facilitator is neither: it may ask, send a person's
+    /// reply and agree its own conversation is done, and the constitution names those as all it may do. Growing this
+    /// list is therefore a constitutional question before it is a code one, and this test is where that surfaces.
+    /// </remarks>
+    [Fact]
+    public void The_facilitator_exposes_no_operation_it_has_not_declared()
+    {
+        string[] declared =
+        [
+            nameof(Facilitator.AskDueAsync),
+            nameof(Facilitator.AskAsync),
+            nameof(Facilitator.ReadBackAsync),
+            nameof(Facilitator.AcceptAutomaticallyAsync),
+            nameof(Facilitator.HoldAsync),
+            nameof(Facilitator.SettledByPersonAsync),
+            nameof(Facilitator.AutoAcceptAsync),
+            nameof(Facilitator.RefreshDueAsync),
+            nameof(Facilitator.RefreshSentAsync),
+
+            // The person's side (§10.2): what they read, the switch, and the three decisions about a question. Asking
+            // again is asking; the reply is a person's words sent through Parley; a discard settles its own question.
+            nameof(Facilitator.ReportAsync),
+            nameof(Facilitator.SetAutoAcceptAsync),
+            nameof(Facilitator.AskAgainAsync),
+            nameof(Facilitator.ReplyAsync),
+            nameof(Facilitator.DiscardAsync)
+        ];
+
+        var unexpected = PublicMethodsOf(typeof(Facilitator)).Where(n => !declared.Contains(n));
+
+        Assert.Empty(unexpected);
+    }
+
+    [Fact]
+    public void Neither_other_surface_gained_a_facilitator_operation()
+    {
+        // Broker is what an attached agent is handed and OperatorConsole what the operator is; a facilitator operation
+        // on either would hand one of them the facilitator's voice.
+        var facilitator = PublicMethodsOf(typeof(Facilitator)).ToHashSet();
+
+        Assert.DoesNotContain(PublicMethodsOf(typeof(Broker)), facilitator.Contains);
+        Assert.DoesNotContain(PublicMethodsOf(typeof(OperatorConsole)), facilitator.Contains);
+    }
+
+    [Fact]
+    public void The_facilitator_has_none_of_the_operations_it_may_never_have()
+    {
+        // It never sends a Result (so `closed` stays the only outcome the broker writes), never votes on anybody's
+        // conversation but its own through a caller's say-so, and holds no operator operation.
+        var forbidden = PublicMethodsOf(typeof(Facilitator))
+            .Where(n => n is nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync) or nameof(Broker.RequestAsync)
+                          or nameof(OperatorConsole.ForceConcludeAsync) or nameof(OperatorConsole.RetireAsync)
+                          or nameof(OperatorConsole.PurgeAsync)
+                          or nameof(OperatorConsole.DestroyConversationAsync));
+
+        Assert.Empty(forbidden);
     }
 }

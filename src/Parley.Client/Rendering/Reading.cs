@@ -13,17 +13,14 @@ public enum LineKind
     /// <summary>Who said what to whom, when, and what became of it.</summary>
     Header = 1,
 
-    /// <summary>One numbered item of a Request, or its outcome in a Result.</summary>
+    /// <summary>One outcome of a Result.</summary>
     Point = 2,
 
-    /// <summary>What a Request stored before 0.7 said counted as finished.</summary>
-    DoneWhen = 3,
-
     /// <summary>The surface's own note about who was not party to a message.</summary>
-    Annotation = 4,
+    Annotation = 3,
 
     /// <summary>Nothing, separating one message from the next.</summary>
-    Blank = 5,
+    Blank = 4,
 }
 
 /// <summary>One line of a transcript.</summary>
@@ -101,22 +98,15 @@ public static class Reading
     /// <exception cref="ArgumentNullException"><paramref name="messages"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// <b>A header is a time, a sender and a recipient, and nothing else.</b> It carried the message type, the
-    /// state of its exchange and whether it had been collected, and the owner read all three in the room and
-    /// asked for all three to go: <i>"Humans just talk; we do not begin by saying 'Inquiry' and 'Response'."</i>
+    /// <b>A header is a time, a sender and a recipient, and nothing else.</b> Humans just talk; a header does
+    /// not begin by saying "Inquiry" and "Response".
     /// </para>
     /// <para>
-    /// <b>Each was removed for its own reason, and the facts they carried are still somewhere.</b> The type is
-    /// derivable from the conversation and is never what a reader is short of. The exchange's state is what the
-    /// room column says per peer, in the form somebody can act on — "waiting on you", "owes you" — rather than
-    /// as a word beside every line. And <i>collected</i> was actively misleading here: it means the recipient
-    /// drained its inbox, which for a person is a key they press, so an answer somebody was reading on screen
-    /// was labelled "not collected yet" and read as a fault. The export still records all of it (see
-    /// <see cref="Transcript"/>), which is where a fact for somebody else, somewhere else, belongs.
-    /// </para>
-    /// <para>
-    /// The exchange states were a parameter and are one no longer. Leaving it would have been a lying
-    /// signature: callers would go on gathering and passing something nothing read.
+    /// <b>The facts left out are carried elsewhere.</b> The type is derivable from the conversation. The
+    /// exchange's state is what the room column says per peer, in the form somebody can act on — "waiting on
+    /// you", "owes you". <i>Collected</i> would mislead: it means the recipient drained its inbox, which for a
+    /// person is a key they press. The export still records all of it (see <see cref="Transcript"/>), which is
+    /// where a fact for somebody else, somewhere else, belongs.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<TranscriptLine> Lines(
@@ -149,6 +139,100 @@ public static class Reading
         return lines;
     }
 
+    /// <summary>Lays a conversation out for reading, with what each reply settled beneath it (SPEC.md §5.6).</summary>
+    /// <param name="export">The conversation: its messages and the state of its exchanges.</param>
+    /// <param name="zone">The zone to render times in, or <see langword="null"/> for this machine's.</param>
+    /// <returns>The transcript, line by line.</returns>
+    /// <remarks>
+    /// <b>From the record, never from the reply's words.</b> The person must see what an agent decided its words settled,
+    /// and the broker cannot check that a model said so — so the list is drawn from the exchanges the reply closed, the
+    /// way <see cref="Settled"/> finds them, beneath the reply that closed them.
+    /// </remarks>
+    public static IReadOnlyList<TranscriptLine> Lines(ConversationExport export, TimeZoneInfo? zone = null)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
+        var lines = new List<TranscriptLine>();
+
+        foreach (var line in Lines(export.Messages, zone))
+        {
+            lines.Add(line);
+
+            if (line.Kind != LineKind.Header || line.Message is not { } id)
+            {
+                continue;
+            }
+
+            var message = export.Messages.First(m => m.Id == id);
+
+            if (Settled(message, export) is { Count: > 0 } settled)
+            {
+                lines.Add(new TranscriptLine(Pad(SettledLine(settled)), LineKind.Annotation, null, id));
+            }
+        }
+
+        return lines;
+    }
+
+    /// <summary>What a reply settled, as one sentence beneath it.</summary>
+    /// <param name="settled">The start of each question settled.</param>
+    /// <returns>The sentence.</returns>
+    public static string SettledLine(IReadOnlyList<string> settled)
+    {
+        ArgumentNullException.ThrowIfNull(settled);
+
+        return "Settled: " + string.Join(", ", settled.Select(asked => "\u201C" + asked + "\u201D"));
+    }
+
+    /// <summary>The questions a reply settled, each as the start of what was asked (SPEC.md §5.6).</summary>
+    /// <param name="message">The reply.</param>
+    /// <param name="export">The conversation it is in.</param>
+    /// <returns>The start of each question it settled, oldest first; empty for any other message.</returns>
+    /// <remarks>
+    /// A question was settled by this reply when it names the reply's exchange as what settled it, closed at the reply's
+    /// own instant, and was asked by the reply's sender. The broker writes the reply and the settle in one transaction at
+    /// one instant, and storage refuses a settle no reply stands beside, so the match is exact rather than a guess.
+    /// Where retention has pruned a question's own words, the exchange is named instead.
+    /// </remarks>
+    public static IReadOnlyList<string> Settled(Message message, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(export);
+
+        if (message.Type == MessageType.Request)
+        {
+            return [];
+        }
+
+        return [.. export.Exchanges
+            .Where(e => e.Outcome == ExchangeOutcome.Settled
+                && e.SettledBy == message.ExchangeId
+                && e.ClosedUtc == message.CreatedUtc)
+            .Select(e => (Exchange: e, Asked: export.Messages.FirstOrDefault(m => m.ExchangeId == e.ExchangeId)))
+            .Where(q => q.Asked is null || q.Asked.From == message.From)
+            .OrderBy(q => q.Exchange.ExchangeId)
+            .Select(q => q.Asked is { } asked && PayloadShape.Spoken(asked.PayloadJson) is { Length: > 0 } said
+                ? Short(said)
+                : $"exchange {q.Exchange.ExchangeId}")];
+    }
+
+    /// <summary>The start of a question, short enough to list several on one line.</summary>
+    /// <param name="said">The words.</param>
+    /// <returns>The first sixty characters, on one line, with an ellipsis when cut.</returns>
+    private static string Short(string said)
+    {
+        var flat = string.Join(' ', said.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        if (flat.Length <= 60)
+        {
+            return flat;
+        }
+
+        var at = char.IsHighSurrogate(flat[58]) ? 58 : 59;
+
+        return string.Concat(flat.AsSpan(0, at), "\u2026");
+    }
+
     /// <summary>The state of an exchange, as a header says it.</summary>
     /// <param name="snapshot">The exchange.</param>
     /// <returns>A short phrase: open, or how it closed.</returns>
@@ -167,6 +251,7 @@ public static class Reading
                 ExchangeOutcome.Complete => "closed, complete",
                 ExchangeOutcome.Blocked => "closed, blocked",
                 ExchangeOutcome.Closed => "closed before it finished",
+                ExchangeOutcome.Settled => $"settled by the agent that asked, in exchange {snapshot.SettledBy}",
                 _ => "closed"
             };
     }
@@ -176,12 +261,12 @@ public static class Reading
     /// <param name="zone">The zone to render the time in.</param>
     /// <returns>The header line.</returns>
     /// <remarks>
-    /// <b>The recipient stays, where the type and the state went.</b> A conversation is a set of pairwise
+    /// <b>The recipient is in the header, unlike the type and the state.</b> A conversation is a set of pairwise
     /// exchanges (SPEC.md §5.0), so one line said to three agents is three messages — and which of them a
     /// message is addressed to is the one thing a reader cannot work out from the words.
     /// </remarks>
     private static string Header(Message message, TimeZoneInfo? zone) =>
-        $"{LocalTime.Write(message.CreatedUtc, zone)}  {message.From.Value} -> {message.To.Value}";
+        $"{LocalTime.Write(message.CreatedUtc, zone)}  {Speaker.From(message)} -> {Speaker.To(message)}";
 
     /// <summary>The words of a message, broken as its author wrote them.</summary>
     /// <param name="payloadJson">The payload, as the store holds it.</param>
@@ -215,26 +300,18 @@ public static class Reading
                 first = false;
             }
         }
-
-        if (!string.IsNullOrWhiteSpace(payload.DoneWhen))
-        {
-            foreach (var line in Wrap("Done when: " + payload.DoneWhen))
-            {
-                yield return new TranscriptLine(Pad(line), LineKind.DoneWhen, null);
-            }
-        }
     }
 
-    /// <summary>One item or outcome as a line of text.</summary>
-    /// <param name="point">The point.</param>
-    /// <returns>Its id, what kind or outcome it is, and its words.</returns>
+    /// <summary>One outcome as a line of text.</summary>
+    /// <param name="point">The outcome.</param>
+    /// <returns>Its id, how it came out, and its words.</returns>
     public static string Point(PayloadPoint point)
     {
         ArgumentNullException.ThrowIfNull(point);
 
         var tag = point.Outcome switch
         {
-            null => point.Kind,
+            null => null,
             "blocked" when point.Blocker is { } blocker => $"blocked: {blocker.Replace('_', ' ')}",
             var outcome => outcome
         };

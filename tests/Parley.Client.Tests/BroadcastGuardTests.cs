@@ -16,9 +16,9 @@ namespace Parley.Client.Tests;
 /// the plural case.
 /// </para>
 /// <para>
-/// <b>The seat check is the one with history.</b> 0.18.9 records a composer that captured its seat when it
-/// opened and went on speaking under a name the book had released — found on Linux and passing on Windows,
-/// because what decided it was whether a stream had finished tearing down. Twenty sends with the idle sweep
+/// <b>The seat check is the delicate one.</b> A composer that captured its seat when it
+/// opened must not go on speaking under a name the book has released — a race that passes on Windows and
+/// fails on Linux, because what decides it is whether a stream has finished tearing down. Twenty sends with the idle sweep
 /// running throughout leave that window twenty times wider, and every Request that lands under a released
 /// name is work owed to somebody who has left.
 /// </para>
@@ -26,7 +26,7 @@ namespace Parley.Client.Tests;
 public sealed class BroadcastGuardTests
 {
     private static readonly ProjectSettings Alpha =
-        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null, null);
+        new(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:5402", null);
 
     private static AgentName[] Peers =>
     [
@@ -128,7 +128,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         using var book = new SeatBook(_ => new SeatDoubles.Stubborn(StatusCode.PermissionDenied));
-        var taken = await book.TakeAsync(Alpha, Seated("arvind"), [], token);
+        var taken = await book.TakeAsync(Alpha, Person, token);
 
         Assert.True(taken.Seated);
 
@@ -155,7 +155,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(
             Hold(), Peers, new string('x', MessageLimits.MaxPayloadCharacters + 100), "c1", token);
@@ -171,7 +171,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, "   ", "c1", token);
 
@@ -185,7 +185,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), [], Ask, "c1", token);
 
@@ -200,12 +200,12 @@ public sealed class BroadcastGuardTests
     public async Task What_the_single_send_refuses_is_refused_before_anybody_is_sent_anything(string? ask)
     {
         // Checked once, before the loop, in the single send's own words — so a Request the single form refuses
-        // cannot reach nineteen people through the plural one. Since 0.7 there is one thing to refuse: an ask that
+        // cannot reach nineteen people through the plural one. There is one thing to refuse: an ask that
         // says nothing.
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, ask, "c1", token);
 
@@ -221,7 +221,7 @@ public sealed class BroadcastGuardTests
         var token = TestContext.Current.CancellationToken;
 
         var agents = new Refusing();
-        var voice = new SeatVoice(agents, Seated("arvind"));
+        var voice = new SeatVoice(agents, Seated());
 
         var said = await voice.RequestEveryoneAsync(Hold(), Peers, Ask, "c1", token);
 
@@ -236,15 +236,15 @@ public sealed class BroadcastGuardTests
         }
     }
 
-    /// <summary>A seat, read the way the surfaces read one.</summary>
-    /// <param name="person">The person's name.</param>
-    /// <returns>The seat.</returns>
-    private static Seat Seated(string person)
-    {
-        Assert.True(Seat.TryRead(person, out var seat, out _));
+    /// <summary>The project's person seat, as the broker names it.</summary>
+    private static Seat Seated() => new(PersonSeat.On(Alpha.Name));
 
-        return seat;
-    }
+    /// <summary>The project's registry, holding only its person seat.</summary>
+    private static IReadOnlyList<AgentRecord> Person { get; } =
+    [
+        new AgentRecord(
+            PersonSeat.On(Alpha.Name), PersonSeat.Adapter, AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+    ];
 
     /// <summary>A hold nothing has taken away, for the cases that are not about the seat.</summary>
     /// <returns>The hold.</returns>
@@ -254,8 +254,7 @@ public sealed class BroadcastGuardTests
 
         return book.TakeAsync(
             Alpha,
-            Seated("arvind"),
-            [],
+            Person,
             TestContext.Current.CancellationToken).GetAwaiter().GetResult().Hold!;
     }
 }

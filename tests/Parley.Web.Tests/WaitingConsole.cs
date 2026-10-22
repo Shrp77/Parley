@@ -40,7 +40,7 @@ public sealed class WaitingConsole : WebApplicationFactory<Program>
             services.RemoveAll<BrokerDirectory>();
 
             services.AddSingleton(_ => new BrokerDirectory(
-                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5406", null, null)],
+                [new ProjectSettings(ProjectName.Create(Project), "alpha.db", "http://127.0.0.1:5406", null)],
                 address => GrpcChannel.ForAddress(
                     address, new GrpcChannelOptions { HttpHandler = Broker, DisposeHttpClient = false })));
         });

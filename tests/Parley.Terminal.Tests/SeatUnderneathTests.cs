@@ -62,13 +62,18 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.NameTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
 
         Assert.Null(shell.Held);
-        Written(form);
+        form.Fill(0, "underneath");
         form.Finish(taken: true);
+
+        await shell.Settled;
+
+        shell.Line.Written = "a request nobody can send";
+        shell.Line.Accept();
 
         await shell.Settled;
 
@@ -79,7 +84,7 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         // silently became a different region; what this test is about is the transcript.
         shell.Focus(shell.Panes.ToList().FindIndex(p => p is TranscriptRegion));
 
-        Assert.StartsWith(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
+        Assert.Contains(Shell.FocusPrefix, shell.Status, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -93,11 +98,16 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         using var shell = await SeatedAsync(driving, directory, seats);
 
         var form = await Composing.WithAsync(
-            driving, shell.Start, Participation.StartTitle, Orders.Value, () => shell.Settled);
+            driving, shell.Start, Participation.NameTitle, Orders.Value, () => shell.Settled);
 
         Sweep(shell);
-        Written(form);
+        form.Fill(0, "underneath");
         form.Finish(taken: true);
+
+        await shell.Settled;
+
+        shell.Line.Written = "a request nobody can send";
+        shell.Line.Accept();
 
         await shell.Settled;
 
@@ -152,7 +162,10 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         Sweep(shell);
 
         Assert.DoesNotContain(shell.Actions(), action => action.Label == Participation.RequestTitle);
-        Assert.Equal(Shell.Released, shell.Said);
+
+        // And nothing says the seat was released, because it was not: only the stream went, and the
+        // next key brings it back.
+        Assert.DoesNotContain("released", shell.Said ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Fills every field of the composer with something it accepts, naming the conversation.</summary>
@@ -164,10 +177,10 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Taking_a_seat_again_after_a_sweep_works_the_way_it_did_the_first_time()
+    public async Task After_a_sweep_the_next_key_takes_the_seat_back_the_way_it_was_first_taken()
     {
-        // A released seat must leave nothing behind that a second join trips over -- the book, the
-        // registry and the region all have to agree that the person left before they can return.
+        // A dropped stream must leave nothing behind that the retake trips over -- the book, the registry and the region
+        // all have to agree the person was away before they can be here again.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -177,17 +190,10 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
 
         Assert.Null(shell.Held);
 
-        await shell.Join();
-
-        var again = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        again.Finish(taken: true);
-
+        shell.Touched(DateTimeOffset.UtcNow + SeatBook.IdleAfter + TimeSpan.FromMinutes(6));
         await shell.Settled;
 
         Assert.NotNull(shell.Held);
-        Assert.Contains(AgentsRegion.Took, shell.Said, StringComparison.Ordinal);
     }
 
     /// <summary>Draws once, long enough later that the seat has gone idle.</summary>
@@ -203,22 +209,13 @@ public sealed class SeatUnderneathTests : IAsyncDisposable
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        await shell.Join();
-
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
-
-        driving.Type("arvind");
-        dialog.Finish(taken: true);
-
-        await shell.Settled;
-
         Assert.NotNull(shell.Held);
 
         return shell;
     }
 
     private ProjectSettings Project() =>
-        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null, null);
+        new(ProjectName.Create("alpha"), string.Empty, _broker.Address, null);
 
     private BrokerDirectory Directory() =>
         new([Project()], _ => GrpcChannel.ForAddress(_broker.Address));

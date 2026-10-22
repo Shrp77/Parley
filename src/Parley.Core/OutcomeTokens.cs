@@ -84,6 +84,7 @@ public static class OutcomeTokens
         ExchangeOutcome.Complete => "complete",
         ExchangeOutcome.Blocked => "blocked",
         ExchangeOutcome.Closed => "closed",
+        ExchangeOutcome.Settled => "settled",
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
     };
 
@@ -97,6 +98,7 @@ public static class OutcomeTokens
         "complete" => ExchangeOutcome.Complete,
         "blocked" => ExchangeOutcome.Blocked,
         "closed" => ExchangeOutcome.Closed,
+        "settled" => ExchangeOutcome.Settled,
         _ => throw new InvalidOperationException($"Unrecognised exchange outcome '{value}'.")
     };
 

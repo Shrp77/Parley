@@ -8,16 +8,16 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-005. A project file says what a project references directly; a package says what lands on a
+/// A project file says what a project references directly; a package says what lands on a
 /// machine, and those are different questions — a transitive reference acquired through anything
 /// would pass a reading of the csproj and still put the web UI's assemblies on every broker.
 /// </para>
 /// <para>
-/// <b>SC-005 says "carries no part of the web stack", and that is narrowed here rather than
-/// quietly reinterpreted.</b> The broker serves gRPC over Kestrel and always has:
+/// <b>"Carries no part of the web stack" is narrowed here, not quietly
+/// reinterpreted.</b> The broker serves gRPC over Kestrel:
 /// <c>Grpc.AspNetCore.Server</c> is in this package because <c>Parley.Server</c> needs it, which
 /// is the transport rather than a surface, and no packaging change could remove it without
-/// changing how the broker speaks. What this feature removes is the web UI's own half — the pages,
+/// changing how the broker speaks. What the package leaves out is the web UI's own half — the pages,
 /// the Razor runtime, and <c>Parley.Web</c> itself — and that is what is asserted.
 /// </para>
 /// <para>

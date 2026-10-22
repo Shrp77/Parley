@@ -27,8 +27,15 @@ namespace Parley.Client.Tests;
 /// </remarks>
 public sealed class UnnamedMachineTests
 {
+    /// <summary>A root this machine has never created.</summary>
+    /// <remarks>
+    /// **It must not end in `projects.json`.** The variable and the flag name a root, and a value
+    /// whose final segment is the manifest file name is *refused* — so a fixture spelled that way
+    /// describes a misconfigured machine rather than an unconfigured one, and every test
+    /// here would fail for a reason that had nothing to do with fallbacks.
+    /// </remarks>
     private static string NoManifestHere =>
-        Path.Combine(Path.GetTempPath(), $"parley-absent-{Guid.NewGuid():N}", "projects.json");
+        Path.Combine(Path.GetTempPath(), $"parley-absent-{Guid.NewGuid():N}");
 
     [Fact]
     public void A_machine_with_no_manifest_offers_the_broker_its_commands_use()
@@ -67,8 +74,8 @@ public sealed class UnnamedMachineTests
 
         var offered = directory.Projects[0];
 
-        Assert.Contains("Not named in a manifest", offered.Description, StringComparison.Ordinal);
-        Assert.Contains("parley project add", offered.Description, StringComparison.Ordinal);
+        Assert.Contains("A broker reached by address", offered.Description, StringComparison.Ordinal);
+        Assert.Contains("no project of its own", offered.Description, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -102,28 +109,25 @@ public sealed class UnnamedMachineTests
         // The rule that keeps this from being an inventory of guesses. A machine that has named
         // its deployments has said what it wants listed, and quietly adding an unnamed row would
         // be the console showing a project the operator did not configure.
-        var manifest = Path.Combine(
+        var root = Path.Combine(
             Path.GetTempPath(), $"parley-named-{Guid.NewGuid():N}");
 
-        Directory.CreateDirectory(manifest);
+        Directory.CreateDirectory(root);
 
-        var path = Path.Combine(manifest, "projects.json");
-
-        // Written the way `parley project add` writes it rather than by hand. A hand-rolled file
-        // that the reader rejects would make this pass for the wrong reason: no projects and no
-        // fallback row looks exactly like the fallback correctly declining to appear.
+        // Written the way `parley project add` writes it rather than by hand. A hand-rolled file that the
+        // reader rejects would make this pass for the wrong reason: no projects and no fallback row looks
+        // exactly like the fallback correctly declining to appear.
         Parley.Configuration.ProjectManifest.Write(
-            path,
+            root,
             [new ProjectSettings(
                 ProjectName.Create("alpha"),
-                Path.Combine(manifest, "alpha.db"),
+                Parley.Configuration.ProjectFolder.StoreFor(root, ProjectName.Create("alpha")),
                 "http://127.0.0.1:5301",
-                null,
                 null)]);
 
         try
         {
-            using var directory = BrokerDirectory.FromManifest(path, new FallbackBroker("http://127.0.0.1:51707"));
+            using var directory = BrokerDirectory.FromManifest(root, new FallbackBroker("http://127.0.0.1:51707"));
 
             Assert.Null(directory.ManifestProblem);
 
@@ -133,7 +137,7 @@ public sealed class UnnamedMachineTests
         }
         finally
         {
-            Directory.Delete(manifest, recursive: true);
+            Directory.Delete(root, recursive: true);
         }
     }
 }

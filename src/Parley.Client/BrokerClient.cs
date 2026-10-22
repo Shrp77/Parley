@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Parley.Core;
 using Wire = Parley.Transport;
 
@@ -24,10 +24,11 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         ?? throw new ArgumentNullException(nameof(operators));
 
     /// <inheritdoc/>
-    public async Task<string> ImplementsAsync(CancellationToken cancellationToken = default)
+    public async Task<BrokerIdentity> ImplementsAsync(CancellationToken cancellationToken = default)
     {
         var said = await _operators.ImplementsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
-        return said.ProtocolVersion;
+
+        return new BrokerIdentity(said.ProtocolVersion, said.BrokerVersion, [.. said.StoreProblems]);
     }
 
     /// <inheritdoc/>
@@ -45,8 +46,34 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             row.Connected,
             Status(row.Status),
             string.IsNullOrEmpty(row.Owns) ? null : row.Owns,
-            Presence(row.Presence)))];
+            Presence(row.Presence),
+            string.IsNullOrEmpty(row.OwnsAccepted) ? null : row.OwnsAccepted,
+            AcceptedBy(row.OwnsSource),
+            new TurnStanding(
+                row.TurnsReported,
+                Read(row.TurnRunningSinceUtc),
+                Read(row.LastTurnEndedUtc),
+                row.LastTurnClean,
+                row.LastTurnPermissionDenials),
+            row.OpenOutside,
+            AgentIdentity.TryRead(row.Identity, out var identity) ? identity : default))];
     }
+
+    /// <summary>Reads how an accepted line was arrived at, off a registry row.</summary>
+    /// <param name="source">The wire value.</param>
+    /// <returns>The source, or <see langword="null"/> when nobody has accepted a line.</returns>
+    /// <remarks>
+    /// Unset is an answer here rather than a fault, unlike on a call that records one: most agents have no accepted
+    /// line, and a row with none is the ordinary case.
+    /// </remarks>
+    private static OwnershipSource? AcceptedBy(Wire.OwnershipSource source) => source switch
+    {
+        Wire.OwnershipSource.Proposed => OwnershipSource.Proposed,
+        Wire.OwnershipSource.Edited => OwnershipSource.Edited,
+        Wire.OwnershipSource.Composed => OwnershipSource.Composed,
+        Wire.OwnershipSource.Automatic => OwnershipSource.Automatic,
+        _ => null
+    };
 
     /// <inheritdoc/>
     public async Task<ConversationPage> ConversationsAsync(
@@ -75,7 +102,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             Read(row.FirstActivityUtc) ?? DateTimeOffset.MinValue,
             Read(row.LastActivityUtc) ?? DateTimeOffset.MinValue,
             row.HasOpenExchange,
-            row.Archived));
+            row.Archived,
+            ItemOf(row.Item)));
 
         return new ConversationPage(
             [.. conversations],
@@ -158,10 +186,12 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 Wire.ExchangeOutcome.Complete => ExchangeOutcome.Complete,
                 Wire.ExchangeOutcome.Blocked => ExchangeOutcome.Blocked,
                 Wire.ExchangeOutcome.Closed => ExchangeOutcome.Closed,
+                Wire.ExchangeOutcome.Settled => ExchangeOutcome.Settled,
                 _ => null
-            }));
+            },
+            e.SettledBy == 0 ? null : e.SettledBy));
 
-        return new ConversationExport([.. messages], [.. exchanges], destroyed);
+        return new ConversationExport([.. messages], [.. exchanges], destroyed, ItemOf(reply.Item));
     }
 
     /// <inheritdoc/>
@@ -230,6 +260,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                     Wire.FlagKind.NoProgress => FlagKind.NoProgress,
                     Wire.FlagKind.Retired => FlagKind.Retired,
                     Wire.FlagKind.NotVoted => FlagKind.NotVoted,
+                    Wire.FlagKind.PermissionRefused => FlagKind.PermissionRefused,
                     _ => FlagKind.NotCollected
                 },
                 f.ExchangeId,
@@ -245,53 +276,94 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
-    public async Task<InstructionPage> InstructionsAsync(
-        AgentName? agent = null,
-        long? instructionId = null,
-        int pageSize = 0,
-        string? pageToken = null,
-        CancellationToken cancellationToken = default)
-    {
-        var reply = await _operators.InstructionsAsync(
-            new Wire.InstructionsRequest
-            {
-                Agent = agent?.Value ?? string.Empty,
-                InstructionId = instructionId ?? 0,
-                PageSize = pageSize,
-                PageToken = pageToken ?? string.Empty
-            },
-            cancellationToken: cancellationToken);
-
-        return new InstructionPage(
-            [.. reply.Instructions.Select(i => new InstructionRecord(
-                i.Id,
-                AgentName.Create(i.Agent),
-                i.Text,
-                Instruction(i.Outcome),
-                string.IsNullOrEmpty(i.Reply) ? null : i.Reply,
-                DateTimeOffset.Parse(i.IssuedUtc, CultureInfo.InvariantCulture),
-                string.IsNullOrEmpty(i.SettledUtc) ? null : DateTimeOffset.Parse(i.SettledUtc, CultureInfo.InvariantCulture)))],
-            string.IsNullOrEmpty(reply.NextPageToken) ? null : reply.NextPageToken);
-    }
-
-    /// <inheritdoc/>
-    public async Task<InstructionResult> InstructAsync(AgentName agent, string text, CancellationToken cancellationToken = default)
-    {
-        var reply = await _operators.InstructAsync(
-            new Wire.InstructRequest { Agent = agent.Value, Text = text }, cancellationToken: cancellationToken);
-
-        return new InstructionResult(
-            Instruction(reply.Outcome),
-            string.IsNullOrEmpty(reply.Reply) ? null : reply.Reply,
-            reply.InstructionId);
-    }
-
-    /// <inheritdoc/>
     public async Task<bool> RetireAsync(AgentName agent, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.RetireAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken);
         return reply.Changed;
     }
+
+    /// <inheritdoc/>
+    public async Task<OwnershipRecord> RecordOwnershipAsync(
+        AgentName agent, OwnershipAcceptance acceptance, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acceptance);
+
+        var reply = await _operators.RecordOwnershipAsync(
+            new Wire.RecordOwnershipRequest
+            {
+                Agent = agent.Value,
+                Statement = acceptance.Statement,
+                Source = Source(acceptance.Source),
+                ProposedLength = acceptance.ProposedLength ?? 0,
+                ConversationId = acceptance.Conversation ?? string.Empty
+            },
+            cancellationToken: cancellationToken);
+
+        return new OwnershipRecord(
+            reply.Recorded,
+            string.IsNullOrEmpty(reply.Problem) ? null : reply.Problem,
+            string.IsNullOrEmpty(reply.LiveStatement) ? null : reply.LiveStatement)
+        {
+            Pending = reply.Pending
+        };
+    }
+
+    /// <inheritdoc/>
+    public async Task<FacilitationReport> FacilitationAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.FacilitationAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return new FacilitationReport(reply.AutoAccept, [.. reply.Questions.Select(Question)]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> SetAutoAcceptAsync(bool on, CancellationToken cancellationToken = default) =>
+        (await _operators.SetAutoAcceptAsync(new Wire.SetAutoAcceptRequest { On = on }, cancellationToken: cancellationToken)).On;
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> AskAgainAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        Action(await _operators.AskAgainAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken));
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> ReplyToAskedBackAsync(
+        AgentName agent, string text, CancellationToken cancellationToken = default) =>
+        Action(await _operators.ReplyToAskedBackAsync(
+            new Wire.ReplyToAskedBackRequest { Agent = agent.Value, Text = text ?? string.Empty },
+            cancellationToken: cancellationToken));
+
+    /// <inheritdoc/>
+    public async Task<FacilitationAction> DiscardAnswerAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+        Action(await _operators.DiscardAnswerAsync(new Wire.AgentRequest { Agent = agent.Value }, cancellationToken: cancellationToken));
+
+    private static FacilitationAction Action(Wire.FacilitationActionReply reply) =>
+        reply.Done ? FacilitationAction.Did : FacilitationAction.Not(
+            string.IsNullOrEmpty(reply.Problem) ? "the broker did not say why." : reply.Problem);
+
+    /// <summary>Reads one of Parley's questions off the wire.</summary>
+    /// <remarks>
+    /// A state this client does not know is read as asked rather than refused: the review should still list the agent,
+    /// and asked is the one state that promises nothing about an answer.
+    /// </remarks>
+    private static OwnershipQuestion Question(Wire.OwnershipQuestion question) => new(
+        AgentName.Create(question.Agent),
+        question.ConversationId,
+        question.ExchangeId,
+        question.State switch
+        {
+            Wire.QuestionState.AskedBack => QuestionState.AskedBack,
+            Wire.QuestionState.Answered => QuestionState.Answered,
+            Wire.QuestionState.Waiting => QuestionState.Waiting,
+            Wire.QuestionState.Accepted => QuestionState.Accepted,
+            Wire.QuestionState.Discarded => QuestionState.Discarded,
+            _ => QuestionState.Asked
+        },
+        string.IsNullOrEmpty(question.Answer) ? null : question.Answer,
+        string.IsNullOrEmpty(question.Flattened) ? null : question.Flattened,
+        string.IsNullOrEmpty(question.WaitingBecause) ? null : question.WaitingBecause,
+        DateTimeOffset.Parse(question.AskedUtc, System.Globalization.CultureInfo.InvariantCulture),
+        string.IsNullOrEmpty(question.SettledUtc)
+            ? null
+            : DateTimeOffset.Parse(question.SettledUtc, System.Globalization.CultureInfo.InvariantCulture));
 
     /// <inheritdoc/>
     public async Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default)
@@ -326,7 +398,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     {
         var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped, reply.InstructionsRemoved);
+        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped);
     }
 
     /// <inheritdoc/>
@@ -440,7 +512,6 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.ConversationNotAssignable => FileRejection.ConversationNotAssignable,
         Wire.FileRejection.ConversationClosed => FileRejection.ConversationClosed,
         Wire.FileRejection.Changed => FileRejection.Changed,
-        Wire.FileRejection.Incomplete => FileRejection.Incomplete,
         Wire.FileRejection.NoSpace => FileRejection.NoSpace,
         Wire.FileRejection.ExtensionNotAllowed => FileRejection.ExtensionNotAllowed,
         Wire.FileRejection.NotFetched => FileRejection.NotFetched,
@@ -477,6 +548,8 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     {
         Wire.AgentPresence.Running => AgentPresence.Running,
         Wire.AgentPresence.Startable => AgentPresence.Startable,
+        Wire.AgentPresence.Here => AgentPresence.Here,
+        Wire.AgentPresence.Away => AgentPresence.Away,
         _ => AgentPresence.Stranded
     };
 
@@ -497,6 +570,201 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             $"The broker sent a message type this build does not know ({type}). It speaks a different protocol.")
     };
 
+    /// <summary>Puts how a person arrived at an ownership line onto the wire.</summary>
+    /// <param name="source">Which of the three routes produced it.</param>
+    /// <returns>The wire value.</returns>
+    /// <remarks>
+    /// Never <c>Unspecified</c>, which is what an unset field arrives as. Sending it would let the
+    /// broker refuse the call for a value this client chose rather than one a person did.
+    /// </remarks>
+    private static Wire.OwnershipSource Source(OwnershipSource source) => source switch
+    {
+        OwnershipSource.Proposed => Wire.OwnershipSource.Proposed,
+        OwnershipSource.Edited => Wire.OwnershipSource.Edited,
+        OwnershipSource.Composed => Wire.OwnershipSource.Composed,
+        OwnershipSource.Automatic => Wire.OwnershipSource.Automatic,
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, "Not a defined source.")
+    };
+
+    // ---- roadmaps (SPEC.md section 5.7)
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoadmapSummary>> RoadmapsAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RoadmapsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        return [.. reply.Roadmaps.Select(r => new RoadmapSummary(
+            r.Id, r.Number, r.Title, r.Revision, r.LiveItems, r.StartedItems))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<Roadmap?> RoadmapAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.RoadmapAsync(
+            new Wire.RoadmapRequest { Id = id }, cancellationToken: cancellationToken);
+
+        if (reply.Roadmap is not { } roadmap)
+        {
+            return null;
+        }
+
+        return new Roadmap(
+            roadmap.Id,
+            roadmap.Number,
+            roadmap.Title,
+            roadmap.Origin == Wire.RoadmapOrigin.Proposed ? RoadmapOrigin.Proposed : RoadmapOrigin.Edited,
+            string.IsNullOrEmpty(roadmap.Proposer) ? null : roadmap.Proposer,
+            roadmap.Revision,
+            [.. roadmap.Items.Select(i => new RoadmapItem(
+                i.Id,
+                i.Number,
+                i.Position,
+                i.Text,
+                string.IsNullOrEmpty(i.IntendedAgent) ? null : AgentName.Create(i.IntendedAgent),
+                [.. i.Needs],
+                i.ConversationName,
+                i.RemovedRevision == 0 ? null : i.RemovedRevision,
+                i.Facts is { } facts
+                    ? new ItemFacts(
+                        facts.ConversationExists,
+                        facts.OpenExchanges,
+                        facts.Collected,
+                        facts.CompleteExchanges,
+                        facts.BlockedExchanges,
+                        facts.ClosedExchanges,
+                        string.IsNullOrEmpty(facts.Blocker) ? null : facts.Blocker,
+                        string.IsNullOrEmpty(facts.ClosedBy) ? null : facts.ClosedBy,
+                        facts.Destroyed,
+                        string.IsNullOrEmpty(facts.FirstSentText) ? null : facts.FirstSentText,
+                        [.. facts.OpenExchangeIds])
+                    : null))]);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ProposalsAsync(
+            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
+            cancellationToken: cancellationToken);
+
+        return [.. reply.Proposals.Select(p => new RoadmapProposal(
+            p.Id,
+            AgentName.Create(p.Proposer),
+            string.IsNullOrEmpty(p.SourceConversation) ? null : p.SourceConversation,
+            string.IsNullOrEmpty(p.TargetTitle) ? null : p.TargetTitle,
+            ContentIn(p.Content),
+            p.Size,
+            ProposalStateIn(p.State),
+            Read(p.CreatedUtc) ?? DateTimeOffset.MinValue,
+            Read(p.DecidedUtc)))];
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> ConfirmProposalAsync(
+        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = id, Content = ContentOut(content), TargetRoadmap = targetRoadmap ?? 0 },
+            cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> DeclineProposalAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DeclineProposalAsync(
+            new Wire.ProposalRequest { Id = id }, cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    /// <inheritdoc/>
+    public async Task<RoadmapChange> EditRoadmapAsync(
+        long id, int revision, RoadmapContent content, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.EditRoadmapAsync(
+            new Wire.EditRoadmapRequest { Id = id, Revision = revision, Content = ContentOut(content) },
+            cancellationToken: cancellationToken);
+
+        return ChangeIn(reply);
+    }
+
+    private static RoadmapItemRef? ItemOf(Wire.RoadmapItemRef? item) =>
+        item is null
+            ? null
+            : new RoadmapItemRef(item.RoadmapId, item.RoadmapNumber, item.Title, item.ItemNumber, item.Removed);
+
+    private static RoadmapChange ChangeIn(Wire.RoadmapChangeReply reply) => new(
+        reply.Done,
+        string.IsNullOrEmpty(reply.Problem) ? null : reply.Problem,
+        reply.RoadmapId == 0 ? null : reply.RoadmapId,
+        reply.Revision == 0 ? null : reply.Revision,
+        reply.Origin switch
+        {
+            Wire.RoadmapOrigin.Proposed => RoadmapOrigin.Proposed,
+            Wire.RoadmapOrigin.Edited => RoadmapOrigin.Edited,
+            _ => null,
+        });
+
+    private static Wire.RoadmapContent ContentOut(RoadmapContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        var wire = new Wire.RoadmapContent { Title = content.Title };
+
+        foreach (var item in content.Items)
+        {
+            var draft = new Wire.RoadmapItemDraft
+            {
+                Number = item.Number ?? 0,
+                Text = item.Text,
+                IntendedAgent = item.IntendedAgent?.Value ?? string.Empty,
+            };
+
+            draft.Needs.AddRange(item.Needs);
+            wire.Items.Add(draft);
+        }
+
+        return wire;
+    }
+
+    private static RoadmapContent ContentIn(Wire.RoadmapContent content) => new(
+        content.Title,
+        [.. content.Items.Select(i => new RoadmapItemDraft(
+            i.Number == 0 ? null : i.Number,
+            i.Text,
+            string.IsNullOrEmpty(i.IntendedAgent) ? null : AgentName.Create(i.IntendedAgent),
+            [.. i.Needs]))]);
+
+    private static Wire.ProposalState ProposalStateOut(ProposalState state) => state switch
+    {
+        ProposalState.Waiting => Wire.ProposalState.Waiting,
+        ProposalState.Confirmed => Wire.ProposalState.Confirmed,
+        ProposalState.Declined => Wire.ProposalState.Declined,
+        ProposalState.Superseded => Wire.ProposalState.Superseded,
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, "Not a proposal state."),
+    };
+
+    /// <summary>Reads a proposal's state from the wire, refusing one this build does not know.</summary>
+    /// <param name="state">The wire value.</param>
+    /// <returns>The state.</returns>
+    /// <exception cref="InvalidOperationException">The broker sent a state this build does not know.</exception>
+    /// <remarks>
+    /// Refused rather than defaulted, as a message type is: a surface that showed an unknown state as a known one would
+    /// be telling a person a proposal was waiting that had been decided, or the reverse.
+    /// </remarks>
+    private static ProposalState ProposalStateIn(Wire.ProposalState state) => state switch
+    {
+        Wire.ProposalState.Waiting => ProposalState.Waiting,
+        Wire.ProposalState.Confirmed => ProposalState.Confirmed,
+        Wire.ProposalState.Declined => ProposalState.Declined,
+        Wire.ProposalState.Superseded => ProposalState.Superseded,
+        _ => throw new InvalidOperationException(
+            $"The broker sent a proposal state this build does not know ({state}). It speaks a different protocol."),
+    };
+
     private static Outcome Outcome(Wire.Outcome outcome) => outcome switch
     {
         Wire.Outcome.Done => Core.Outcome.Done,
@@ -511,14 +779,5 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.BlockerKind.Conflict => BlockerKind.Conflict,
         Wire.BlockerKind.Permission => BlockerKind.Permission,
         _ => BlockerKind.MissingInformation
-    };
-
-    private static InstructionOutcome Instruction(Wire.InstructionOutcome outcome) => outcome switch
-    {
-        Wire.InstructionOutcome.Taken => InstructionOutcome.Taken,
-        Wire.InstructionOutcome.Declined => InstructionOutcome.Declined,
-        Wire.InstructionOutcome.Undeliverable => InstructionOutcome.Undeliverable,
-        Wire.InstructionOutcome.Failed => InstructionOutcome.Failed,
-        _ => InstructionOutcome.Pending
     };
 }

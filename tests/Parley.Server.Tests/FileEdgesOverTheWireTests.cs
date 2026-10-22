@@ -362,9 +362,8 @@ public sealed class FileEdgesOverTheWireTests
     [InlineData("pricing/refunds")]
     public async Task A_conversation_id_the_store_would_refuse_is_refused_as_a_sentence_and_stores_nothing(string conversation)
     {
-        // Found by the review gate, lens 2 run 2.1. The adapter refuses these ids before sending, so no agent reaching
-        // the broker through it ever sent one; over the wire, the store's CHECK threw and the agent was told only that
-        // the handler had failed.
+        // The adapter refuses these ids before sending, so no agent reaching the broker through it ever sends one;
+        // over the wire, the store's CHECK must not throw and leave the agent told only that the handler had failed.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
@@ -398,8 +397,8 @@ public sealed class FileEdgesOverTheWireTests
     [InlineData("LPT", 0xB2, ".txt")]
     public async Task A_name_some_windows_reserve_with_a_superscript_digit_is_renamed_to_one_nothing_reserves(string stem, int superscript, string extension)
     {
-        // Older Windows reserves COM¹ to LPT³ as devices; Windows 11 and every other platform write them as files. The
-        // probe used to accept either answer. A superscript is outside the set now, so the name becomes COM_.md, which no
+        // Older Windows reserves COM¹ to LPT³ as devices; Windows 11 and every other platform write them as files. A
+        // superscript is outside the set, so the name becomes COM_.md, which no
         // Windows reserves, and it must land as exactly the bytes sent.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -420,7 +419,7 @@ public sealed class FileEdgesOverTheWireTests
     [Fact]
     public async Task A_prune_racing_placements_leaves_the_disk_and_the_list_agreeing()
     {
-        // Review gate, lens 1 run 1.1: thirty rounds of five placements and a prune at once. What must hold afterwards
+        // Thirty rounds of five placements and a prune at once. What must hold afterwards
         // is not who won but that no file is on disk unlisted — which the watcher would then hand to the person — and
         // no row names a file that is not there.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
@@ -442,7 +441,7 @@ public sealed class FileEdgesOverTheWireTests
     [Fact]
     public async Task Destroying_a_conversation_racing_placements_into_it_leaves_the_disk_and_the_list_agreeing()
     {
-        // Review gate, lens 1 run 1.1: twenty conversations, each destroyed while three more files are placed into it.
+        // Twenty conversations, each destroyed while three more files are placed into it.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         var operators = broker.ConnectAsOperator();

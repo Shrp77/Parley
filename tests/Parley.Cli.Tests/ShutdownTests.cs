@@ -26,9 +26,9 @@ namespace Parley.Cli.Tests;
 /// than a fix: the two commands that run until stopped had drifted apart, and only one of them
 /// was tested by anybody pressing the key. Checked against the source because the entry point is
 /// a file of top-level statements and is not reachable as API — the same compromise
-/// <see cref="HelpTextTests"/> makes, and weaker than driving the binary, which no test can do
-/// portably: sending a genuine CTRL_C_EVENT needs a console group, and a test host does not have
-/// one to spare.
+/// <c>HelpTextTests</c> made before the commands it read about left this tool, and weaker than
+/// driving the binary, which no test can do portably: sending a genuine CTRL_C_EVENT needs a
+/// console group, and a test host does not have one to spare.
 /// </para>
 /// </remarks>
 public sealed class ShutdownTests

@@ -19,7 +19,7 @@ namespace Parley.Terminal;
 /// node may start; they are not the same set and the places they differ are the interesting ones.
 /// An agent just added from this surface is in the catalogue and not yet in the registry, and an
 /// agent in the registry but not this catalogue is §17 question 13's misleading <c>startable</c>,
-/// which used to be visible nowhere.
+/// which this list makes visible.
 /// </para>
 /// <para>
 /// The state of a row present in both comes from <see cref="Roster.State"/> rather than from a
@@ -41,10 +41,8 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>An agent this machine could start that has never registered itself.</summary>
     /// <remarks>
-    /// <b>Kept only so the README's own test can still find what it used to say.</b> 006 replaced
-    /// both of these: the owner read them on screen and could not say what either meant, which was
-    /// fair, because they name two files a person did not write rather than the facts those files
-    /// decide. <see cref="Standing"/> holds the wording now.
+    /// The state of a row only the catalogue knows. The heading a person reads comes from
+    /// <see cref="Standing"/>, which holds the wording.
     /// </remarks>
     internal const string CataloguedOnly = "catalogued, not yet registered";
 
@@ -62,35 +60,11 @@ internal sealed class AgentsRegion : FrameView
     /// surface writing one as a literal, and it does not read a comment differently from code —
     /// which is what makes it a check rather than a habit.
     /// </remarks>
-    internal const string Seats = "seats — people, not agents";
-
-    /// <summary>The heading a withdrawn seat is grouped under.</summary>
-    /// <remarks>
-    /// <b>Apart from the live ones, and the owner's own deployment is why.</b> Both seats on it
-    /// were retired, and filing them with the takeable ones made a seat that the broker will refuse
-    /// look exactly like one it will not. Enter still explains it, but a list that has to be acted
-    /// on to be understood is a list that has not said what it knows.
-    /// </remarks>
-    internal const string RetiredSeats = "seats — withdrawn, take one to put it back";
-
-    /// <summary>What the dialog asking for a seat is called.</summary>
-    internal const string JoinTitle = "Take a seat";
-
-    /// <summary>What it says above the field.</summary>
-    internal const string JoinQuestion = "Join as:";
-
-    /// <summary>What is said when a seat has been taken.</summary>
-    internal const string Took = "Seated as ";
-
-    /// <summary>What is said when the person leaves and was not seated anywhere.</summary>
-    private const string NotSeated = "You were not seated anywhere.";
-
-    /// <summary>What is said when a seat is released.</summary>
-    internal const string Left = "Left. ";
+    internal const string Seats = "you — the person, not an agent";
 
     /// <summary>What is shown before anything has been read.</summary>
     internal const string Nothing =
-        "No agent is registered in this project and its catalogue names none. Press a to make a "
+        "No agent is registered in this project and its catalogue names none. Press Alt+a to make a "
         + "repository on this machine one.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Agents);
@@ -103,12 +77,10 @@ internal sealed class AgentsRegion : FrameView
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>A map rather than an offset, and the offset is what grouping broke.</b> This used to be a
-    /// single number — one when a broker's complaint occupied the first line, zero otherwise — and
-    /// <c>Selected</c> subtracted it. Grouping puts a heading above each set of agents, so the
-    /// distance between a line and its agent is no longer constant, and a version that kept
-    /// subtracting would name the agent above the one highlighted. In this region that is the
-    /// difference between retiring the right agent and the wrong one.
+    /// <b>A map rather than an offset.</b> Grouping puts a heading above each set of agents, so the
+    /// distance between a line and its agent is not constant, and an offset would name the agent above
+    /// the one highlighted. In this region that is the difference between retiring the right agent
+    /// and the wrong one.
     /// </para>
     /// <para>
     /// Null for a heading and for a broker's complaint, which is what makes both unselectable
@@ -117,23 +89,24 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private List<AgentRow?> _at = [];
 
-    /// <summary>Whether the first line is a broker's complaint rather than a heading.</summary>
-    /// <remarks>
-    /// Held rather than inferred from the text, because inferring it would mean matching a
-    /// sentence the broker wrote against the headings this surface writes, and a broker whose
-    /// complaint happened to read like a heading would be coloured as one.
-    /// </remarks>
-    private bool _complained;
-
     /// <summary>What colour each drawn line earns when it is a heading, null when it is not.</summary>
     /// <remarks>
-    /// <b>A heading takes the colour of the state it names.</b> It would have been simpler to draw
-    /// every heading alike, and <c>ColourSaysNothingNewTests</c> said why not: two states a person
-    /// has to tell apart must not be the same colour. The heading <i>is</i> the state now, so it is
-    /// the thing that has to carry it — and the rule still holds the way it always did, because the
-    /// state is also written out in words and survives the colour being stripped.
+    /// <b>A heading takes the colour of the state it names.</b> Two states a person has to tell apart
+    /// must not be the same colour (<c>ColourSaysNothingNewTests</c>), and the state is also written
+    /// out in words, so it survives the colour being stripped.
     /// </remarks>
     private List<Color?> _tone = [];
+
+    /// <summary>What is happening to each agent right now, by role, while something is working on it.</summary>
+    /// <remarks>
+    /// <b>On the agent's own row.</b> Enrolling several agents starts and waits for each in turn. The
+    /// row is where somebody is already looking for an agent's state, so progress goes there, and the
+    /// message line is left for what went wrong.
+    /// </remarks>
+    private readonly Dictionary<string, string> _activity = new(StringComparer.Ordinal);
+    private readonly Lock _activityGate = new();
+    private string? _problem;
+    private string? _project;
 
     internal AgentsRegion()
     {
@@ -152,6 +125,20 @@ internal sealed class AgentsRegion : FrameView
     /// <summary>The rows as drawn, in order.</summary>
     internal IReadOnlyList<AgentRow> Rows => _rows;
 
+    /// <summary>The registry behind those rows, as it was last read.</summary>
+    /// <remarks>
+    /// <b>Kept because a row is what a person reads and not what a decision may be made from.</b> A
+    /// row's ownership cell is a sentence — <c>"not stated"</c> where an agent has said nothing — so
+    /// anything acting on the line itself has to ask the record, or it ends up writing the words
+    /// <c>not stated</c> into somebody's launch configuration. Held as one reference and replaced
+    /// wholesale for the reason <c>GuardedList</c> exists: a reader sees the rows as they were or as
+    /// they now are, never a half-swapped pair.
+    /// </remarks>
+    internal IReadOnlyList<AgentRecord> Registry { get; private set; } = [];
+
+    /// <summary>What is said above the rows while an agent is being added, or null when none is.</summary>
+    internal string? Enrolling { get; set; }
+
     /// <summary>Whichever row the person is on, or null when they are on a heading.</summary>
     /// <remarks>
     /// Read through <see cref="_at"/> rather than by arithmetic. Headings and a broker's complaint
@@ -163,6 +150,55 @@ internal sealed class AgentsRegion : FrameView
 
     /// <summary>The list, so a test can pick a row by its text.</summary>
     internal ListView List => _list;
+
+    /// <summary>Shows what is happening to one agent, on its row, and redraws.</summary>
+    /// <param name="role">The agent's role.</param>
+    /// <param name="activity">A few words, or null to take it off the row.</param>
+    /// <param name="catalogue">What this machine can start now, read again because an agent being enrolled was
+    /// not in it when the rows were last drawn.</param>
+    internal void Activity(string role, string? activity, NodeCatalogue catalogue)
+    {
+        ArgumentNullException.ThrowIfNull(role);
+        ArgumentNullException.ThrowIfNull(catalogue);
+
+        lock (_activityGate)
+        {
+            if (activity is null)
+            {
+                _ = _activity.Remove(role);
+            }
+            else
+            {
+                _activity[role] = activity;
+            }
+        }
+
+        Show(Registry, catalogue, _problem, _project);
+    }
+
+    /// <summary>Takes every activity off the rows, once whatever was working has finished.</summary>
+    /// <remarks>
+    /// Not redrawn here: the caller reads the registry again next, and that draw is the one that says where
+    /// each agent now stands.
+    /// </remarks>
+    internal void ClearActivity()
+    {
+        lock (_activityGate)
+        {
+            _activity.Clear();
+        }
+    }
+
+    /// <summary>What is happening to an agent now, or null.</summary>
+    /// <param name="role">The agent's role.</param>
+    /// <returns>The words on its row.</returns>
+    private string? ActivityOf(string role)
+    {
+        lock (_activityGate)
+        {
+            return _activity.TryGetValue(role, out var doing) ? doing : null;
+        }
+    }
 
     /// <summary>
     /// Joins a registry to a catalogue, keyed by agent name.
@@ -185,9 +221,8 @@ internal sealed class AgentsRegion : FrameView
 
         var rows = new List<AgentRow>();
 
-        // **What this machine can start for this project, which the repositories decide** (018 R3). It was
-        // the catalogue's own keys, which were roles; they are identities now, and a role is what one
-        // project calls an agent.
+        // What this machine can start for this project, which the repositories decide. The catalogue is
+        // keyed by identity, and a role is what one project calls an agent.
         var catalogued = new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal);
 
         foreach (var agent in registry ?? [])
@@ -195,8 +230,8 @@ internal sealed class AgentsRegion : FrameView
             var seat = string.Equals(agent.Adapter, Seat.Adapter, StringComparison.Ordinal);
             var state = seat ? Seated : Roster.State(agent);
 
-            // A catalogue is keyed by role; this asked whether a set of roles held `role@machine`,
-            // which it never does, so every registered agent was told it was not in the catalogue.
+            // The catalogued set holds roles for this project, so the role is compared and the machine
+            // checked beside it.
             if (!seat
                 && !(catalogued.Contains(agent.Name.Role)
                      && string.Equals(agent.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal)))
@@ -212,28 +247,35 @@ internal sealed class AgentsRegion : FrameView
                 Safe.Text(agent.Name.Value),
                 state,
                 agent.Tier.ToString().ToLowerInvariant(),
-                Roster.HasStatedWhatItOwns(agent) ? Safe.Text(agent.Owns) : "not stated",
+                (Roster.HasStatedWhatItOwns(agent) ? Safe.Text(agent.Owns) : "not stated")
+                    + Roster.PendingMark(agent),
                 Safe.Text(agent.Workspace ?? "—"),
                 seat));
         }
 
-        // Roles registered *here*, compared as roles. This built a set of `role@machine` and asked
-        // whether it held a bare role, which it never does, so every catalogued role was listed a
-        // second time beside its own registration.
-        var registered = new HashSet<string>(
-            (registry ?? [])
-                .Where(a => string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
-                .Select(a => a.Name.Role),
-            StringComparer.Ordinal);
+        // What is registered *here*, so a catalogued checkout is not listed a second time beside its own
+        // registration. By identity first, because a repository renamed since it registered answers to a new
+        // role while the broker still holds the old one until it attaches; by role for a registration that
+        // presented no identity.
+        var here = (registry ?? [])
+            .Where(a => string.Equals(a.Name.Machine, NodeCatalogue.Machine, StringComparison.Ordinal))
+            .ToList();
+
+        var registered = new HashSet<string>(here.Select(a => a.Name.Role), StringComparer.Ordinal);
+        var registeredIdentities = new HashSet<AgentIdentity>(here.Where(a => a.Identity.Known).Select(a => a.Identity));
 
         foreach (var role in catalogued.Where(role => !registered.Contains(role)))
         {
-            // A catalogue holds roles, so the machine has to be put back before this is a name.
-            // Parsing the role alone never succeeded, which is why every catalogued agent showed no
-            // workspace at all -- the one column saying where it would actually run.
+            // A catalogue holds roles, so the machine has to be put back before this is a name; the
+            // workspace is where the agent would actually run.
             var workspace = catalogue.TryResolve(role, project, out var identity, out _)
                 ? catalogue.WorkspaceFor(identity)
                 : null;
+
+            if (identity.Known && registeredIdentities.Contains(identity))
+            {
+                continue;
+            }
 
             rows.Add(new AgentRow(
                 Safe.Text(role),
@@ -264,7 +306,19 @@ internal sealed class AgentsRegion : FrameView
         // a draw landing between two of them would colour this list from one registry while
         // reading its rows from another -- and `Selected` would name an agent by an offset
         // belonging to the previous read, which in this region is what a purge acts on.
+        // **Parley is not an agent, so it is not on this pane** (SPEC.md principle 2.11, FR-005). Left out here, once,
+        // rather than at each reader: the rows, the standings, the names offered as recipients and every action on a
+        // row are all built from this, and a row for Parley would offer it retire, purge, instruct and "ask what it
+        // owns" — each of which the broker refuses. It is shown where it acts: as the sender of its questions, and in
+        // the ownership review. The filter comes before the rows are joined, so it is absent from them too.
+        registry = registry?.Where(record => !record.Facilitator).ToList();
+
         var rows = Join(registry, catalogue, project);
+
+        Registry = registry ?? [];
+        _problem = problem;
+        _project = project;
+
         var standing = Standing.Join(
             registry,
             new HashSet<string>(catalogue.Announceable(project).Names, StringComparer.Ordinal),
@@ -285,9 +339,18 @@ internal sealed class AgentsRegion : FrameView
             tone.Add(Colours.Bad);
         }
 
+        // **An agent being added is on this pane while it is added.** A line above the rows, not a row: it has no
+        // name the broker knows yet, so nothing can be done to it, and it is gone as soon as the add is over.
+        if (Enrolling is { } enrolling)
+        {
+            lines.Add(Safe.Text(enrolling));
+            map.Add(null);
+            tone.Add(Colours.Warn);
+        }
+
         if (rows.Count == 0)
         {
-            if (problem is null)
+            if (problem is null && Enrolling is null)
             {
                 lines.Add(Nothing);
                 map.Add(null);
@@ -304,7 +367,7 @@ internal sealed class AgentsRegion : FrameView
 
                 foreach (var row in group.Rows)
                 {
-                    lines.Add(Line(row));
+                    lines.Add(Line(row) + Doing(row));
                     map.Add(row);
                     tone.Add(null);
                 }
@@ -331,7 +394,6 @@ internal sealed class AgentsRegion : FrameView
                 _standing = [.. standing];
                 _at = map;
                 _tone = tone;
-                _complained = problem is not null;
             });
     }
 
@@ -346,12 +408,10 @@ internal sealed class AgentsRegion : FrameView
     /// <returns>The groups, in the order they are drawn.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The state moved from the row to the heading because it did not fit.</b> A line was
-    /// <c>name [standing] owns workspace</c>, and in the half-width pane a project view gives this
-    /// region, a 27-character agent name and a 50-character standing are over the width before the
-    /// ownership line begins — so the one fact a person is looking for was the one cut off. Said
-    /// once above a group, it is always readable, and the rows below it are short enough to be
-    /// scanned.
+    /// <b>The state is the heading, not part of the row.</b> In the half-width pane a project view
+    /// gives this region, a long agent name and a long standing together are over the width, so the
+    /// standing would be the fact cut off. Said once above a group, it is always readable, and the
+    /// rows below it are short enough to be scanned.
     /// </para>
     /// <para>
     /// <b>Seats first, and their own group.</b> A seat is a person rather than an agent, so
@@ -394,7 +454,7 @@ internal sealed class AgentsRegion : FrameView
     /// </remarks>
     private static string Heading(AgentRow row, AgentStanding? standing) =>
         row.Seat
-            ? standing is { Retired: true } ? RetiredSeats : Seats
+            ? Seats
             : standing?.Standing ?? row.State;
 
     /// <summary>What colour a group's heading earns from the state it names.</summary>
@@ -430,7 +490,6 @@ internal sealed class AgentsRegion : FrameView
     private static int Rank(string heading) => heading switch
     {
         Seats => 0,
-        RetiredSeats => 1,
         Standing.Running => 2,
         Standing.NeverRun => 3,
         Standing.Idle => 4,
@@ -441,163 +500,14 @@ internal sealed class AgentsRegion : FrameView
         _ => 5,
     };
 
-    /// <summary>
-    /// Opens the dialog that seats a person, and seats them if they name themselves acceptably.
-    /// </summary>
-    /// <param name="seats">The book that holds seats.</param>
-    /// <param name="project">The project to sit in.</param>
-    /// <param name="registry">What the broker's registry holds, or null when it could not be read.</param>
-    /// <param name="typed">The name the person gave.</param>
-    /// <param name="cancellationToken">Cancels the attach.</param>
-    /// <returns>The seat taken, and what to say about it.</returns>
-    /// <remarks>
-    /// <para>
-    /// A seat is the one thing this surface has that no operator operation grants. §10.2 lets an
-    /// operator retire, purge and force-conclude anybody, so a console has never been short of
-    /// power — what it could not do is <i>speak as</i> somebody, and a transcript recording words
-    /// an agent never said is a different kind of wrong from an operator visibly instructing it.
-    /// </para>
-    /// <para>
-    /// So that is the one thing guarded, and the guard is <c>SeatBook</c>'s rather than a copy of
-    /// it: it refuses a name the registry holds for anything whose adapter is not a seat, and
-    /// refuses outright when the registry could not be read. A guard that skipped the check on an
-    /// unreachable broker would pass hardest exactly when the deployment is least well known,
-    /// which is why the registry is passed in rather than shrugged off.
-    /// </para>
-    /// </remarks>
-    internal static async Task<(SeatHold? Hold, string Said)> JoinAsync(
-        SeatBook seats,
-        ProjectSettings project,
-        IReadOnlyList<AgentRecord>? registry,
-        string typed,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-
-        if (!Seat.TryRead(typed, out var seat, out var why))
-        {
-            return (null, why ?? "That is not a name.");
-        }
-
-        var outcome = await seats
-            .TakeAsync(project, seat, registry, cancellationToken)
-            .ConfigureAwait(false);
-
-        return outcome.Seated
-            ? (outcome.Hold, Took + seat.Name.Value + ".")
-            : (null, outcome.Problem ?? "Not seated.");
-    }
-
-    /// <summary>Releases a person's seat in every project at once.</summary>
-    /// <param name="seats">The book holding it.</param>
-    /// <param name="seat">Whose seat.</param>
-    /// <returns>What to say about it.</returns>
-    /// <remarks>
-    /// Every project, not the one on screen. A person leaves a surface rather than a view, and
-    /// releasing only the project they happened to be looking at would leave them present in the
-    /// others with nothing anywhere saying so.
-    /// </remarks>
-    internal static string Leave(SeatBook seats, Seat seat)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-
-        var released = seats.Leave(seat);
-
-        return released == 0 ? NotSeated : $"{Left}{released} seat(s) released.";
-    }
-
-    /// <summary>
-    /// Keeps a seat alive because somebody is looking at the surface, and releases the ones nobody
-    /// is.
-    /// </summary>
-    /// <param name="seats">The book.</param>
-    /// <param name="me">The name last seated, if any.</param>
-    /// <param name="project">The project on screen.</param>
-    /// <param name="now">The current instant.</param>
-    /// <returns>The seat still held here, or null when there is none.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>Touch first, then sweep, and the order is the whole of it.</b> Swept first, a person who
-    /// spent longer than <see cref="SeatBook.IdleAfter"/> on one screen comes back to find their
-    /// seat gone — and the screen they were on is the one where they read a question and write an
-    /// answer, which is the slowest and most valuable thing this surface is for. Being unseated
-    /// for thinking about the question is the exact opposite of what an idle timeout is for.
-    /// </para>
-    /// <para>
-    /// Sweeping at all is what stops a terminal left open overnight holding somebody present in
-    /// the registry, which is the failure <c>IdleAfter</c> exists to prevent — reached by a
-    /// different kind of window than the browser tab it was written for. Both halves are needed
-    /// and only in this order.
-    /// </para>
-    /// <para>
-    /// The seat is then <i>asked for</i> rather than assumed: whether the name still holds one is
-    /// the book's answer, including after the sweep has just taken it. And <paramref name="me"/> is
-    /// never overwritten from the result — who somebody is and whether they are seated <i>here</i>
-    /// are different questions, and forgetting the first on visiting a project they are not seated
-    /// in is a defect this had once already.
-    /// </para>
-    /// </remarks>
-    internal static SeatHold? Refresh(
-        SeatBook seats, Seat? me, ProjectSettings project, DateTimeOffset now) =>
-        Refresh(seats, me, project, now, now);
-
-    /// <summary>
-    /// The same, with the moment somebody last used the surface told apart from the moment now.
-    /// </summary>
-    /// <param name="seats">The book.</param>
-    /// <param name="me">The name last seated, if any.</param>
-    /// <param name="project">The project on screen.</param>
-    /// <param name="touched">When somebody last pressed a key or clicked.</param>
-    /// <param name="now">The current instant.</param>
-    /// <returns>The seat still held here, or null when there is none.</returns>
-    /// <remarks>
-    /// <b>The two are not the same instant, and treating them as one is how the idle rule stops
-    /// applying.</b> A terminal redraws itself whether or not anybody is at it, so a touch taken at
-    /// the moment of drawing means the seat of an abandoned terminal is refreshed for ever — which
-    /// is the failure <see cref="SeatBook.IdleAfter"/> exists to prevent, and which this surface
-    /// had until a probe went looking for it. What the specification asks for is twenty minutes
-    /// <i>without touching it</i>, so the touch is dated from the last key or click.
-    /// </remarks>
-    internal static SeatHold? Refresh(
-        SeatBook seats,
-        Seat? me,
-        ProjectSettings project,
-        DateTimeOffset touched,
-        DateTimeOffset now)
-    {
-        ArgumentNullException.ThrowIfNull(seats);
-        ArgumentNullException.ThrowIfNull(project);
-
-        if (me is not null)
-        {
-            seats.Touch(me, touched);
-        }
-
-        seats.Sweep(now);
-
-        return me is null ? null : seats.Held(project.Name.Value, me);
-    }
-
-    /// <summary>What is wrong with a name somebody has typed, as they type it.</summary>
-    /// <param name="typed">What is in the field.</param>
-    /// <returns>The reason, or null when there is none.</returns>
-    /// <remarks>
-    /// Only the shape is checked here. Whether the registry already holds the name for a real
-    /// agent is a question for the broker and is asked by <c>SeatBook</c> when the seat is taken;
-    /// checking it on every keystroke would be a call per character.
-    /// </remarks>
-    internal static string? NameProblem(string typed) =>
-        Seat.TryRead(typed, out _, out var why) ? null : why ?? "not a name";
-
     /// <summary>How one row reads.</summary>
     /// <param name="row">The row.</param>
     /// <returns>The line: the agent's name, indented under its group.</returns>
     /// <remarks>
     /// <para>
-    /// <b>The name and nothing else, which is the change.</b> It was
-    /// <c>name [standing] owns workspace</c> — four facts on a line in a pane half a screen wide,
-    /// where the standing was routinely cut off. The standing is the group's heading now, and the
-    /// ownership line and workspace are on the agent's own screen rather than crushed into a list.
+    /// <b>The name and nothing else.</b> The standing is the group's heading, and the ownership
+    /// line and workspace are on the agent's own screen rather than crushed into a list in a pane
+    /// half a screen wide.
     /// </para>
     /// <para>
     /// Indented by two, so a heading sits at column zero and an agent does not. That is the same
@@ -606,6 +516,22 @@ internal sealed class AgentsRegion : FrameView
     /// </para>
     /// </remarks>
     private static string Line(AgentRow row) => "  " + row.Name;
+
+    /// <summary>What is happening to a row's agent, as it is appended to the row, or nothing.</summary>
+    /// <param name="row">The row.</param>
+    /// <returns><c>  — registering (7s of 30s)</c>, or empty.</returns>
+    /// <remarks>
+    /// Keyed by role, because an agent being enrolled is a catalogue row named by its role and an agent that
+    /// has registered is a registry row named <c>role@machine</c> -- and it moves from one to the other in the
+    /// middle of being watched.
+    /// </remarks>
+    private string Doing(AgentRow row)
+    {
+        var at = row.Name.IndexOf('@', StringComparison.Ordinal);
+        var role = at < 0 ? row.Name : row.Name[..at];
+
+        return ActivityOf(role) is { } doing ? $"  — {Safe.Text(doing)}" : string.Empty;
+    }
 
     /// <summary>What colour a row earns from where its agent stands.</summary>
     /// <param name="row">Which row.</param>
@@ -632,9 +558,6 @@ internal sealed class AgentsRegion : FrameView
             return null;
         }
 
-        // A heading, or the reason the broker could not be asked. Both are lines with no agent
-        // behind them, and they do not earn the same colour: the complaint is bad news, and a
-        // heading is this surface's own word for a state rather than a fact about any one agent.
         // A heading, or the reason the broker could not be asked. A heading names a state and
         // takes that state's colour; the complaint is bad news and takes the colour of bad news.
         if (_at[row] is not { } here)
@@ -642,10 +565,9 @@ internal sealed class AgentsRegion : FrameView
             return row < _tone.Count ? _tone[row] : null;
         }
 
-        // **An agent under a heading takes no colour of its own, and that is the rule rather than
-        // a saving.** The heading above it already says where it stands, in words and in colour;
-        // painting the same fact onto every row beneath would be a colour that says nothing new,
-        // which is the one thing Colours forbids. It was caught by the test that forbids it.
+        // **An agent under a heading takes no colour of its own.** The heading above it already says
+        // where it stands, in words and in colour; painting the same fact onto every row beneath would
+        // be a colour that says nothing new, which is the one thing Colours forbids.
         return null;
     }
 

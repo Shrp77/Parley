@@ -10,24 +10,18 @@ namespace Parley.Mcp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>This replaced a class that opened the database.</b> That is the whole change, and it is
-/// structural rather than stylistic: an adapter can no longer reach a store, because it no
-/// longer references one. SQLite in WAL mode needs coherent shared memory between every process
-/// touching the file, so the previous arrangement — every adapter opening it — worked only while
-/// every adapter was on one machine, and failed as corruption rather than as an error the moment
-/// one was not.
+/// <b>An adapter cannot reach a store, because it references none.</b> SQLite in WAL mode needs
+/// coherent shared memory between every process touching the file, so only one process, on the
+/// machine that owns the file, may open it.
 /// </para>
 /// <para>
 /// <b>The attach stream is the agent's presence.</b> §4.0: a connection is evidence. Opening it
 /// is what registers this agent and releases whatever its last session abandoned; letting it end
-/// is what says the agent has gone, and there is nothing to renew in between. The previous
-/// arrangement wrote a timestamp and had every reader guess how stale was too stale.
+/// is what says the agent has gone, and there is nothing to renew in between.
 /// </para>
 /// <para>
-/// <b>No gate, and none needed.</b> The old class serialised everything behind a semaphore
-/// because it held a connection that was not thread-safe. It holds a socket now, and gRPC
-/// multiplexes concurrent calls over one of those by design — the serialising is the broker's
-/// problem, on the machine that owns the file.
+/// <b>No gate, and none needed.</b> gRPC multiplexes concurrent calls over one socket by design;
+/// serialising is the broker's job, on the machine that owns the file.
 /// </para>
 /// <para>
 /// <b>It re-attaches when the stream drops.</b> A broker restarts — an upgrade, a reboot, a
@@ -199,7 +193,9 @@ public sealed class BrokerLink : IAsyncDisposable
                 Tier = Wire.AgentTier.Pull,
                 Workspace = options.Workspace ?? string.Empty,
                 Owns = options.Owns ?? string.Empty,
-                ProtocolVersion = ProtocolVersion.Current
+                ProtocolVersion = ProtocolVersion.Current,
+                LaunchToken = options.LaunchToken ?? string.Empty,
+                Identity = options.Identity.Known ? options.Identity.ToString() : string.Empty
             };
 
             var stream = agents.Attach(request, cancellationToken: cancellationToken);

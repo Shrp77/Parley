@@ -32,8 +32,8 @@ namespace Parley.Core;
 /// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a
 /// timeout, a notification channel — as a JSON document, or <see langword="null"/> if it needs
 /// nothing. Opaque to the broker by design: it is stored and handed back at invocation, and
-/// only the adapter interprets it. Credentials do not belong here; see
-/// <c>AgentRepository.SetCredentialAsync</c>.
+/// only the adapter interprets it. Credentials do not belong here: they are references in
+/// the launch environment, and the store holds none (SPEC.md §12).
 /// </param>
 /// <param name="Connected">
 /// When the agent last communicated, or <see langword="null"/> if it never has. Used to
@@ -55,15 +55,36 @@ namespace Parley.Core;
 /// <see cref="OwnershipStatement"/>, and <c>AgentRepository.RefreshOwnershipAsync</c>
 /// for why it is refreshed on every launch while the configuration around it is not.
 /// </param>
+/// <param name="OwnsAccepted">
+/// What a person accepted as this agent's line, which is not what peers read until the agent
+/// restarts. Null when nobody has accepted one. Held beside <paramref name="Owns"/> rather than
+/// replacing it, because the two differing is the whole of what "pending" means here — see
+/// <see cref="OwnsPending"/>. Defaulted for the reason <paramref name="Presence"/> is: a caller
+/// constructing a record in order to save it is stating what the agent said about itself, and
+/// what a person agreed to is somebody else's fact, written by a different operation.
+/// </param>
+/// <param name="OwnsSource">
+/// How the accepted line was arrived at, or null when nobody has accepted one (SPEC.md §10.2 <c>registry()</c>).
+/// Travels so a surface can show a line accepted automatically apart from one a person decided: the review's
+/// whole worth is that a person can tell the two apart at a glance.
+/// </param>
+/// <param name="Turns">
+/// What the agent's node has said about its turns (SPEC.md §11.6), or null where nobody has read it — which a surface
+/// treats exactly as <see cref="TurnStanding.Unreported"/>. On the operator's registry only.
+/// </param>
+/// <param name="OpenOutside">
+/// Running, and only as a process Parley did not start (SPEC.md §11.7), so no node can give it a turn. Observed by the
+/// broker from the attachments it holds; on the operator's registry only.
+/// </param>
+/// <param name="Identity">
+/// The repository's own identifier (SPEC.md §4.1.1), or the default where the agent presented none. A label the adapter
+/// reports and never an authority: it lets an attach under a new name rename the row it already holds, and only
+/// from the same repository on the same machine. It never decides who may attach.
+/// </param>
 /// <remarks>
-/// Credentials are deliberately not a field here, and should not become one. This record is
-/// what <c>AgentRepository.UpsertAsync</c> writes from a manifest reload, and anything
-/// carried on it is overwritten by that reload. Credentials are registered once and must
-/// survive it — folding them in would mean a reload silently dropped every agent's
-/// references and broke invocation on the next start. They are read and written separately,
-/// through <c>AgentRepository.GetCredentialsAsync</c> and
-/// <c>AgentRepository.SetCredentialAsync</c>, so that the two lifecycles cannot be
-/// confused by accident.
+/// Credentials are deliberately not a field here, and should not become one. The broker
+/// persists no credential reference or value for any agent (SPEC.md §12); a field on this
+/// record would put one in the store.
 /// </remarks>
 public sealed record AgentRecord(
     AgentName Name,
@@ -75,8 +96,41 @@ public sealed record AgentRecord(
     bool Connected,
     AgentStatus Status,
     string? Owns = null,
-    AgentPresence Presence = AgentPresence.Stranded)
+    AgentPresence Presence = AgentPresence.Stranded,
+    string? OwnsAccepted = null,
+    OwnershipSource? OwnsSource = null,
+    TurnStanding? Turns = null,
+    bool OpenOutside = false,
+    AgentIdentity Identity = default)
 {
+    /// <summary>Whether this row is the facilitator's (SPEC.md principle 2.11).</summary>
+    /// <remarks>
+    /// Derived from the adapter rather than carried as a field, because storage ties that adapter to the reserved
+    /// role in both directions — so there is one fact, and a flag beside it would be a second one to disagree.
+    /// A surface shows such a row as Parley and offers nothing on it.
+    /// </remarks>
+    public bool Facilitator => string.Equals(Adapter, Facilitation.Adapter, StringComparison.Ordinal);
+
+    /// <summary>Whether a person has accepted a line that peers do not read yet.</summary>
+    /// <value><see langword="true"/> while the accepted line and the live one differ.</value>
+    /// <remarks>
+    /// <para>
+    /// <b>A comparison of two facts rather than a flag anybody maintains.</b> <see cref="Owns"/> is
+    /// filled from the launch environment when the agent attaches (SPEC.md §12.3) and no operation
+    /// writes it; <see cref="OwnsAccepted"/> is what a person agreed to. They differ until the agent
+    /// next starts, at which point they agree and this goes away on its own — so there is no third
+    /// state and nothing to clear, which is the failure mode a flag has.
+    /// </para>
+    /// <para>
+    /// A line accepted for an agent that never restarts is pending for ever, visibly. That is the
+    /// intended behaviour: the alternative is a surface that stops mentioning a line peers have
+    /// still never read.
+    /// </para>
+    /// </remarks>
+    public bool OwnsPending =>
+        OwnershipStatement.Read(OwnsAccepted) is { } accepted
+        && !string.Equals(accepted, OwnershipStatement.Read(Owns), StringComparison.Ordinal);
+
     /// <summary>What this agent is for, from its name.</summary>
     public string Role => Name.Role;
 

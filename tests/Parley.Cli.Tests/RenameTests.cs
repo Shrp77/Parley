@@ -7,10 +7,10 @@ namespace Parley.Cli.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SC-006 and SC-010. "Console" meant three things in this repository and only one of them was a
+/// "Console" can mean three things in this repository and only one of them is a
 /// browser surface: the operator operations of SPEC.md §10.2 (<c>OperatorConsole</c>), whether a
-/// terminal exists to draw on (<c>ConsolePicker</c>), and the web pages. Renaming the third is
-/// what this feature does; renaming either of the others would be a different change entirely and
+/// terminal exists to draw on (<c>ConsolePicker</c>), and the web pages. Naming the third is
+/// what is checked here; renaming either of the others would be a different change entirely and
 /// a much worse one, since one of them is a protocol boundary.
 /// </para>
 /// <para>
@@ -54,12 +54,9 @@ public sealed class RenameTests
     [MemberData(nameof(UserFacing))]
     public void Nothing_a_person_reads_offers_the_old_command(string file)
     {
-        // **The premise of this test expired and its exemptions outlived it.** It was written while
-        // `parley console` still ran, and let a line through if it said `old spelling`, `still works`
-        // or `0.21.0` — the wording of 007's deprecation note. This release deletes both the verb and
-        // that note, so those three stopped being exemptions for a sentence that exists and became
-        // holes shaped exactly like the false statements this version must not make: a line reading
-        // *run `parley console`, it still works* passed here, in the release where it does not.
+        // **There is no exemption for deprecation wording.** `parley console` does not run, so a line
+        // saying `old spelling` or `still works` would be a hole shaped exactly like the false statements
+        // this version must not make: a line reading *run `parley console`, it still works* must fail.
         //
         // One exemption survives and only one. A note saying the command was **removed** is a fact
         // somebody upgrading needs; `still works` is a failure now rather than a pass, which is the
@@ -100,7 +97,7 @@ public sealed class RenameTests
     [MemberData(nameof(UserFacing))]
     public void Everything_naming_the_web_ui_names_the_same_command(string file)
     {
-        // SC-006. One spelling, and it is the one the tool answers to.
+        // One spelling, and it is the one the tool answers to.
         var text = RepositoryFile.Read(file);
 
         Assert.Contains("web-ui", text, StringComparison.Ordinal);
@@ -109,7 +106,7 @@ public sealed class RenameTests
     [Fact]
     public void The_flag_a_logon_entry_registers_is_the_new_one()
     {
-        // SC-009's other half. An entry installed today has to start the web UI at the next logon,
+        // An entry installed today has to start the web UI at the next logon,
         // and it does that by naming a flag — so a rename that missed this would install entries
         // that quietly stopped starting anything.
         var plan = RepositoryFile.Read("src/Parley.Setup/AutostartPlan.cs");
@@ -119,25 +116,10 @@ public sealed class RenameTests
     }
 
     [Fact]
-    public void An_entry_registered_before_the_rename_is_still_read()
-    {
-        // The half that would be silent. Every machine with an entry installed before 0.19.0 has
-        // `--console` in its scheduled task right now, and a reader knowing only the new name would
-        // report those entries as having no web UI — so `autostart status` would say one thing
-        // while the entry did another, and a reinstall carrying the arguments forward would drop it.
-        var reader = RepositoryFile.Read("src/Parley.Setup/InstalledEntry.cs");
-
-        Assert.Contains("case \"--web-ui\":", reader, StringComparison.Ordinal);
-        Assert.Contains("case \"--console\":", reader, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void The_old_flags_are_gone_at_the_version_that_was_promised()
     {
-        // **This test asserted the deprecation until 0.22.0 and now asserts the removal.** A
-        // deprecation with no date is a kindness that becomes permanent; 007 named 0.21.0, 008
-        // moved it here and called it a commitment rather than a second reprieve, and this is what
-        // makes that true of the binary rather than of a document.
+        // **This asserts the removal.** A deprecation with no end is a kindness that becomes
+        // permanent, and this is what makes the removal true of the binary rather than of a document.
         //
         // Driven rather than read off the source. The flags were removed by deleting the code that
         // took them, so a source-text assertion would pass against a build that still accepted them

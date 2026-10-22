@@ -1,14 +1,15 @@
-﻿---
-description: Configure this repository as a Parley agent - check the server is installed, write the launch configuration, and name the peers.
+---
+description: Set this repository up as a Parley agent - check the tools are installed, enroll the repository, and name the peers.
 disable-model-invocation: true
 ---
 
 # Set this repository up as a Parley agent
 
 Parley lets an agent in this repository request work of an agent in another repository, or
-something it knows, and receive the result, without either seeing or editing the other's files. Getting there takes three things:
-the server on PATH, a launch configuration naming this repository's agent, and a note telling
-this agent that a peer exists.
+something it knows, and receive the result, without either seeing or editing the other's files.
+Getting there takes three things: the tools on PATH, this repository enrolled in a project, and a
+note telling this agent that a peer exists. `parley enroll` does the middle one. Nothing here is
+written by hand.
 
 **For one repository.** Several at once is `/parley:setup-many`, and the difference is not
 convenience: `/parley:write-peers` reads the live roster, so every agent that registers makes
@@ -17,351 +18,161 @@ one's block once per repository that follows it.
 
 Work through the steps below with the user. **Ask before running anything that installs
 software or writes a file.** This command deliberately grants no pre-approved tools: it
-installs a global .NET tool and edits configuration the user may already have, and both belong
-in the normal permission flow.
+installs global .NET tools and configures a repository the user may already have configured, and
+both belong in the normal permission flow.
 
-**Do not assume the repository is clean.** Every file below may already exist, and the ways it
-can be wrong are not the same: `.mcp.json` may carry variables from an older shape that nothing
-reads any more, `node.json` may still hold consent to start a repository whose registration was
-deleted, and a `## Peers` section may carry project rules this command did not write and cannot
-recreate. Being told to treat the setup as new says nothing about the files - a purge clears the
-broker's store and touches neither the repository nor the machine. So read each one before
-writing it, and say what was found. A step that quietly overwrites something is a step that
-reports success either way.
-
-## 1. Check the server is installed
+## 1. Check the tools are installed
 
 ```
 dotnet tool list --global
 ```
 
-Look for `parley.mcp`. If it is there, go to step 2.
+Look for `parley.mcp` and `parley.cli`. Enrolling needs both: `parley-mcp` is what a launch
+configuration names, and `parley` is the command that does the enrolling. If both are there, go
+to step 2.
 
-If it is not, Parley is in alpha and **not yet published to NuGet**, so installing it means
-building it from a clone. Tell the user that, show them these commands, and ask before running
-them:
+If either is missing, Parley is in alpha and **not yet published to NuGet**, so installing it
+means building it from a clone. The clone's install script does it all - the tools, the broker
+registered to start at logon, and a check that the broker answers. Tell the user that, show them
+these commands, and ask before running them:
 
 ```
 git clone https://github.com/Shrp77/Parley
 cd Parley
-dotnet pack src/Parley.Mcp -c Release
-dotnet tool install -g --add-source src/Parley.Mcp/bin/Release Parley.Mcp
-```
-
-That puts `parley-mcp` on PATH, which is what lets a launch configuration name it. The
-operator's command-line tool is a separate install and is not needed to finish this setup:
-
-```
-dotnet pack src/Parley.Cli -c Release
-dotnet tool install -g --add-source src/Parley.Cli/bin/Release Parley.Cli
+./install.ps1        # Windows
+./install.sh         # Linux, macOS
 ```
 
 If the user already has a clone, skip the `git clone` and run the rest from it.
 
-## 2. Ask for the three things only the user knows
+## 2. Check there is a project
 
-**The agent name for this repository.** Lowercase letters, digits and hyphens, starting with a
-letter, up to 32 characters. It should name the domain this repository owns - `orders`,
-`billing`, `inventory` - not the directory, the framework, or the model. Peers address it by
-this name, it is recorded in the registry the first time the server starts, and it is fixed by
-the launch configuration rather than chosen at run time.
-
-Two repositories must never be given the same name. Identity is the one thing Parley makes
-unforgeable, and it does that by taking the name from the launch environment and offering no
-tool that mentions it - which is worth nothing if two servers claim the same name, because
-either one may then collect the other's mail.
-
-**What this repository owns.** One line, up to 100 characters, that every other agent sees
-beside this one's name when it lists the roster. It is how a peer decides whether a question
-is this repository's, so say what you own **and** what you do not - the exclusion is the half
-that stops somebody asking the wrong agent:
-
-> `Carts, orders and line totals. No tax, no stock.`
->
-> `Invoicing, tax and payment capture. Does not price orders or reserve stock.`
-
-**Put the repository's own words in front of them first, and do not write the line.** A cold
-prompt gets a vague answer or none, and there is something honest to offer instead: quote what
-the project already says about itself - the description line of its `README`, the `description`
-field of its package manifest, the top-level directories - and name where each came from, so
-the user is reading their own project rather than this agent's reading of it. Then ask.
-
-The distinction is not a nicety. Evidence invites them to write a line; a draft invites them to
-approve one, and an approved draft is model-written text that looks person-written from every
-other repository in the deployment - nobody on the far side can tell. SPEC.md §17 question 10
-closes this deliberately: *"It is not self-declared, and that is the whole of why it is worth
-reading. A field a model could write would be no more trustworthy than the prose it replaces,
-merely centralised."* The field is worth routing by because a person meant it.
-
-**Never propose the exclusion half.** A repository cannot supply it: no tax code in the tree
-does not mean this repository does not own tax, only that it has not been written yet - and
-that half is the one that stops somebody asking the wrong agent. Suggesting it is inventing the
-load-bearing part with confidence. Ask, and take "I don't know yet" for an answer; a name and
-no line still leaves a requester the name to go on, and a receiver that does not own the work
-asks the agent that does - which is what §17 question 10 says it falls back to.
-
-It must be one line and it is refused at start-up if it is not, so do not paste prose with a
-line break in it. It goes into a JSON file, so escape a quotation mark or a backslash if the
-user's wording has one - an unescaped one makes the whole launch configuration unreadable and
-the server simply never starts. Ask the user; do not write it for them from what you can see in the
-repository, because a boundary is a decision somebody made rather than something a directory
-listing implies. If they are unsure, leaving it out is better than guessing - an agent with
-none is listed with none, and askers fall back to its name.
-
-**The broker.** One process owns the store and everything else connects to it, so what this
-repository needs is an address rather than a path. `127.0.0.1:51707` is the default and needs no
-configuration; a broker on another machine goes in `PARLEY_BROKER`.
-
-If the user runs more than one Parley deployment on this machine, `parley project list` names
-them and gives each one's address. A launch configuration may carry `PARLEY_PROJECT` instead of
-`PARLEY_BROKER`, which is worth preferring when there is more than one: an address is a port
-number and ports move, so a committed `.mcp.json` naming a project survives a change that would
-otherwise have to be made in every repository at once. It names *where to connect* and nothing
-else - `PARLEY_AGENT` and `PARLEY_OWNS` are unaffected, and a project cannot supply either.
-Naming a project this machine does not describe stops the server at launch rather than falling
-back, because connecting an agent to the wrong deployment looks entirely normal from both ends.
-
-The user needs one running. If nothing is listening, nothing works - the server exits at launch
-saying so rather than starting and failing every tool. The install script registers a broker that
-serves every project this machine names, so what is usually missing is a project. If
-`parley project list` names none, have the user name one - from the first screen of `parley terminal`,
-or:
+A broker serves projects, and a repository is enrolled into one. If nothing is listening, nothing
+works. The install script registers a broker that serves every project this machine names, so what
+is usually missing is a project:
 
 ```
-parley project add <name> --db <path to the store> --listen <url>
+parley project list
 ```
 
-The broker starts it within seconds. The store is one SQLite file shared by every repository that
-should be able to reach every other, so it lives outside all of them - a path under one repository
-makes that repository's clone a prerequisite for everybody else's agent. Something like
-`~/.parley/<project>.db` works. The file does not need to exist; the broker creates and migrates
-it, and nothing else does.
+If it names none, have the user name one on the first screen of:
 
-If a broker is running, show the user who is already registered before they choose a name:
+```
+parley
+```
+
+That is the only place a project is created - there is no command-line verb for it, so do not
+offer one. The broker starts the project within seconds. If a broker is running, show the user who
+is already registered before they go on:
 
 ```
 parley registry
 ```
 
-## 3. Write the launch configuration
+If this machine names more than one project, every command below takes `--project <name>` to say
+which one is being enrolled into, because the key written into the repository is
+`parley-<project>` and a run against the wrong one leaves it answering in a deployment nobody
+meant. `parley use` says which project a command would act on, and why.
 
-Claude Code reads `.mcp.json` at the repository root. If the file already exists, **merge into
-it** - add one entry to `mcpServers` and leave every other server alone. Never replace the file.
+## 3. Enroll this repository
 
-The key is `parley-<project>`, or the bare `parley` when the deployment names no projects:
+`parley enroll` takes the directory that **holds** the repositories, so for this one it is the
+parent directory. It lists the git repositories directly under it and asks which to enroll, so
+the person ticks only this repository. It needs a real terminal, which a session's shell is not:
+ask the user to run it themselves, for example with the `!` prefix.
 
-```json
-{
-  "mcpServers": {
-    "parley-<project>": {
-      "command": "parley-mcp",
-      "env": {
-        "PARLEY_AGENT": "<the agent name>",
-        "PARLEY_PROJECT": "<project>",
-        "PARLEY_OWNS": "<what this repository owns, and what it does not>",
-        "PARLEY_WORKSPACE": "${PARLEY_WORKSPACE:-<absolute path to this repository>}"
-      }
-    }
-  }
-}
+```
+parley enroll <the parent directory>
 ```
 
-A repository may answer in more than one project by holding one entry for each, with a different
-name and a different `owns` line in each - brokers do not federate, so the project it joins is the
-only set of peers it can reach. An entry already there under the bare `parley` key is left exactly
-as it is: renaming it would change every tool name the agent behind it already sees.
+Preview it first with `--describe`, which says what would change and changes nothing. Do not pass
+`--all` here: it enrolls every repository beside this one.
 
-Substitute the real values. Four notes on the shape:
+Enrolling:
 
-- The `${VAR:-default}` form is environment-variable expansion, which `.mcp.json` supports.
-  `.mcp.json` is usually committed and both paths are machine-specific, so the default is what
-  this machine uses and a teammate overrides it by setting the variable rather than by editing
-  a shared file.
-- The clarify cap is **not** here. It used to be, set per repository, which meant one
-  deployment could admit forty clarifications on one exchange and three on another with nothing
-  to say why. It belongs to the broker now, and it is still the measurement SPEC.md 17 question
-  4 asks for rather than a considered limit - `parley clarifications` is what says where depth
-  actually settles.
-- `PARLEY_AGENT` and `PARLEY_OWNS` are written plainly, with no fallback. Both are the same on
-  every machine, because they name what this repository is rather than where it lives. Omit
-  `PARLEY_OWNS` entirely if the user had no answer; an empty string means the same as absent,
-  but a placeholder left in by accident is a claim they did not make.
-- `PARLEY_WORKSPACE` is optional and only an operator ever sees it; it is how `parley registry`
-  tells two similarly named agents apart. Write the absolute path, not `.` - the server
-  deliberately does not default it, because a plausible and wrong workspace is worse than an
-  honest blank.
+- merges an entry into this repository's `.mcp.json` - key `parley-<project>`, naming
+  `PARLEY_AGENT`, `PARLEY_PROJECT` and `PARLEY_WORKSPACE` - and records the repository's identity
+  there as `parleyAgentId`. Other servers in the file are left alone;
+- adds the repository to this machine's `node.json`, which is the consent to start it. A peer's
+  request may then start this agent with nobody watching, which spends whatever the agent costs
+  to run. The command names the count before it configures anything, and **the user should be
+  told this before they confirm**;
+- writes the peers frame into `CLAUDE.md` (or `AGENTS.md` if that is what the project uses) when
+  the file has no `## Peers` section. An existing section is left exactly as found;
+- starts the agent so that it registers itself.
 
-These are optional and can be left out: `PARLEY_RESPONDER` (what to record as having produced a
-message, `unknown-model` if unset), `PARLEY_BROKER` (where the broker is, the local default if
-unset), `PARLEY_MACHINE` (this machine's name, detected if unset).
+**The agent name** is taken from this repository's existing `PARLEY_AGENT` if its `.mcp.json`
+already has one, and otherwise from the folder name, lower-cased with anything else turned into a
+hyphen. There is no command-line option and no picker field to set it. If the folder-derived name
+is not what the user wants - it should name the domain this repository owns, such as `orders`,
+`billing` or `inventory`, not the directory, the framework or the model - put the intended
+`PARLEY_AGENT` into the repository's `.mcp.json` before enrolling, and enroll will take it. If the
+repository is already enrolled under the wrong name, change `PARLEY_AGENT` in its `.mcp.json`,
+restart, and retire the old name from the terminal. Two repositories must never share a name:
+identity is the one thing Parley makes unforgeable, and it does that by taking the name from the
+launch environment, which is worth nothing if two servers claim the same name.
 
-The sweep cadence and the retention pair are **not** here any more, and that is worth saying to
-a user who has seen an older configuration. They describe the deployment rather than this
-repository, and they now belong to `parley serve` - one process applies them, so there is one
-answer. Setting them per agent used to mean a deployment could enforce different numbers on one
-file with nothing to show which was in force.
+**The `owns` line is not written by enrolling, and not by you.** Once the agent attaches, Parley
+asks it what it owns and what it does not, and the answer is the line. With the project's Auto
+Accept switch on (the default) the answer is recorded at once, marked `automatic`; with it off the
+user accepts it from the ownership review. Either way the user can see and correct it on every
+surface, so tell them to check it once the agent has answered. Do not ask the user to write one
+and do not put a guess of your own in `.mcp.json`: a line invented here would stand where the
+agent's own statement belongs, and the record of who said it would be wrong.
 
 ### The file is per branch, and that is a trap
 
 `.mcp.json` is a tracked file in most repositories, so **which branch is checked out decides
-whether this agent exists**. Written on a feature branch, the entry is on disk while that branch
-is out and gone the moment somebody switches to one that predates it — and the agent is then
+whether this agent exists**. Enrolled on a feature branch, the entry is on disk while that branch
+is out and gone the moment somebody switches to one that predates it - and the agent is then
 simply absent. Nothing errors. The session starts, the tools are not there, and the request a
 peer sent it waits, flagged to the person running the deployment as never collected.
 
 It is worse than it first looks, because a session reads `.mcp.json` **once, at startup**. Fixing
 the file, or switching to the branch that has it, does nothing for a session already running:
-`claude mcp list` will report the server connected — that is a separate process reading the
-current file — while the session beside it still has no Parley tools at all. The two claims look
+`claude mcp list` will report the server connected - that is a separate process reading the
+current file - while the session beside it still has no Parley tools at all. The two claims look
 identical and are not.
 
 So say this to the user when the entry is written on anything but their mainline: get the commit
-onto the branch everything else is cut from, and restart the session afterwards. Until then the
-registration is only as reliable as their next `git switch`.
+onto the branch everything else is cut from, and restart the session afterwards.
 
-## 4. Ask whether this repository may answer unattended
+## 4. Check the broker is reachable
 
-Everything so far needs a person to take a turn: this agent answers when its session does, and
-its session acts when the user sends it something. So an exchange with a peer needs a human at
-both ends unless this machine offers otherwise.
+`parley registry` answers if a broker is running, and says how to start one if not -
+`parley --project <name> registry` when this machine names more than one project. Do this before
+the restart rather than after: a repository configured against a broker that is not there
+produces a server that exits at launch, which the user meets as a plugin that installed and did
+nothing.
 
-**The offer is not in `.mcp.json` any more.** How to start a repository is configuration
-belonging to the machine it is on, so it lives in `node.json` - beside where `parley up` is run,
-or wherever `PARLEY_NODE_CONFIG` points - and never reaches the broker at all. The store holds no
-executable command line, and an agent that has never run still has a record of how to start it.
-
-```json
-{
-  "agents": {
-    "<the agent's role>": {
-      "command": "claude",
-      "workspace": "<absolute path to this repository>"
-    }
-  }
-}
-```
-
-Write only the runner. The node appends the flags that make it speak the turn protocol and the
-agent's own name, so `claude` on its own is the whole value; flags the user does want — a
-permission mode, a model — go after it and are kept.
-
-The workspace is where the node starts it, and it is read from this file rather than from the
-registry on purpose. The registry's workspace is what an agent's adapter reported about itself,
-which describes where it ran last rather than instructing where to run it — and a node taking a
-directory from a registration would be taking a path from the network.
-
-**Ask the user before adding this repository to that file, and take no for an answer.** Listing
-it here is the permission: it says the node may start this repository when a peer asks it
-something,
-which spends their tokens with nobody watching. There is no second flag, and there used to be —
-recording *how* to start a repository had been read as consent to run it unwatched, so the two
-had to be prised apart. When starting is the machine's own configuration the question does not
-arise.
-
-Withdrawing it later means removing that entry. Nothing else, and nowhere else.
-
-**One thing to check while editing it:** `node.json` is keyed by *role*, not by the full agent
-name. An agent is `role@machine` and the machine half is detected, so this file describes this
-machine and an entry here can only ever mean an agent on it.
-
-## 5. Check the broker is reachable
-
-`parley registry` answers if one is running, and says how to start one if not - `parley --project <name> registry`
-when this machine names more than one project, since it will not choose between them. This is worth
-doing before the restart rather than after: a repository configured against a broker that is not
-there produces a server that exits at launch, which the user meets as a plugin that installed
-and did nothing.
-
-If the store sits inside a repository despite step 2's advice, add it to that repository's
-`.gitignore`. It holds the full text of every question and answer.
-
-## 6. Write the peers block, with what is knowable now
-
-**Do not leave this until after the restart.** Everything below needs the tools; this does not,
-and skipping it is how a repository ends up configured, connected, and with standing
-instructions that never mention Parley. Step 8 says why that state is the failure this whole
-command exists to prevent - and it is reached by stopping one step early, behind a restart that
-ends the session that would have reminded the user.
-
-The block has two halves and only one of them needs the roster. The frame - that peers exist,
-that they cannot be seen from here, that guessing is the mistake - is true of every deployment
-and can be written now. Which peers, and what each owns, cannot: that is what
-`/parley:write-peers` reads from the live roster once the tools are bound.
-
-So write the frame, in this repository's standing instructions - `CLAUDE.md` at the repository
-root, or `AGENTS.md` if that is what the project uses. Replace an existing `## Peers` section
-rather than appending a second one, and leave the rest of the file alone.
-
-**A `## Peers` section already in the file may not be one this command wrote.** It holds three
-kinds of line and only two of them are yours: the frame below, the roster of peers, and
-whatever the project has added about how that roster is to be read - which document is
-authoritative when a peer's claim conflicts with it, which entries are still open, what an
-`owns` line does not settle. Rewrite the first two. Carry the third across unchanged.
-
-A line that cannot be sorted into one of the three is a line to show the user, not one to
-decide about. It is in the file because somebody put it there, and rules about how to read the
-roster belong beside the roster - moving them out is not a tidier answer, it is the same
-deletion with an extra step. The command that cannot tell whose line it is, is the command
-about to delete it.
-
-```markdown
-## Peers
-
-Other repositories have their own agents, reachable through Parley. They cannot see this
-repository and this repository cannot see theirs: only the text of a request and its result
-crosses between them. `parley_inbox` is pull rather than push - call it when you start work,
-and again when you are waiting on a result.
-
-To hand over a file, place it with `parley_file_place` and name it and its sha256 in your
-request; fetch a file you are sent with `parley_file_fetch`. Only `.md` and `.txt` files can be
-placed, so code travels as `Name.cs.txt`.
-
-- The roster has not been read yet. Run `/parley:write-peers` to fill this in.
-
-**Do not guess at what these repositories do, and do not edit them.** When you need work done
-in one, or something it knows, send its agent a `parley_request` saying what you want, and what
-it is for when that is not obvious. If a request you receive is unclear, ask with
-`parley_clarify` rather than guessing. Do the work other agents request of this repository.
-```
-
-The placeholder line is deliberate and is not a to-do nobody will action. An agent reading this
-block before the roster is filled in knows the two things that keep it from doing damage - that
-peers exist and that it must not invent them - and knows the one command that completes it.
-An agent reading no block at all knows neither.
-
-## 7. Restart
+## 5. Restart
 
 MCP servers are launched when Claude Code starts, so the tools appear after a restart. Tell the
-user to restart, then check `/mcp` shows `parley` connected. `parley_agents` then lists the
-roster, which is who this agent can address and therefore does not include itself. Its own
-absence is the designed behaviour rather than a registration that failed - the roster is
-refused to a caller with no open stream, so a roster that came back at all is the proof that
-this agent attached, and an agent is registered at the moment it attaches.
+user to restart, then check `/mcp` shows the Parley server connected - under the key
+`parley-<project>`, or `parley` for a repository enrolled without a project name.
+`parley_agents` then lists the roster, which is who this agent can address and therefore does not
+include itself. Its own absence is the designed behaviour rather than a registration that failed -
+the roster is refused to a caller with no open stream, so a roster that came back at all is the
+proof that this agent attached.
 
-This step is seventh rather than last because everything below it needs the tools, and nothing
-above it did. Naming the peers used to come first here, which could not work: it calls
-`parley_agents`, and until the restart there is no such tool to call.
-
-## 8. Name the peers, in the session that comes back
+## 6. Name the peers, in the session that comes back
 
 **This one is the user's to run, and it happens after the restart.** `/parley:write-peers` is
 marked `disable-model-invocation`, so this agent cannot invoke it - and the session reading
 these instructions will not survive the restart to relay it either. So say it before
 restarting, as part of handing over:
 
-> Once you have restarted and `/mcp` shows `parley` connected, run `/parley:write-peers`.
+> Once you have restarted and `/mcp` shows Parley connected, run `/parley:write-peers`.
 
 If no other repository is registered yet - the usual case when this is the first one being set
 up - there is nothing for it to write, and it should be run again once the other side is
-configured. It builds the block from the live roster rather than from memory, which is the
-whole reason it is a command and not a paragraph in this file.
+enrolled. It builds the block from the live roster rather than from memory, which is the whole
+reason it is a command and not a paragraph in this file.
 
 Do not let the user skip it permanently. Binding the tools tells this agent *how* to ask; it
 does not tell it *that there is anyone to ask*. An agent with the tools bound and no idea a peer
 exists will answer from this repository and guess at the rest, which is the failure Parley
-exists to prevent, reached by installing it correctly and stopping one step early.
-
-Step 6 is what makes stopping here survivable rather than silent: the frame is already in the
-file, so an agent that gets this far knows peers exist and knows it must not invent them. What
-this step adds is who they are. The placeholder line it leaves behind is the reminder, sitting
-in the one file that is read on every turn.
+exists to prevent, reached by installing it correctly and stopping one step early. The frame
+that enrolling wrote is what makes stopping here survivable rather than silent: it tells an agent
+that peers exist and that it must not invent them, and its placeholder line names the one command
+that completes it.

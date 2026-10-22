@@ -9,10 +9,9 @@ namespace Parley.Client.Tests.Views;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The wording it replaces was <c>catalogued, not yet registered</c> and <c>not in this
-/// catalogue</c>. The owner read both on screen and could not say what either meant, which is a
-/// fair verdict: they name two files a person did not write, rather than the facts those files
-/// decide.
+/// Wording such as <c>catalogued, not yet registered</c> or <c>not in this
+/// catalogue</c> would not say what it meant: it names two files a person did not write, rather
+/// than the facts those files decide.
 /// </para>
 /// <para>
 /// So the assertions are about the facts, not about particular words: every combination is covered,
@@ -121,20 +120,22 @@ public sealed class AgentStandingTests
         Assert.Equal(Standing.Retired, row.Standing);
     }
 
-    [Fact]
-    public void A_seat_is_marked_as_one_and_never_given_an_agent_state()
+    [Theory]
+    [InlineData(AgentPresence.Here, Standing.Here)]
+    [InlineData(AgentPresence.Away, Standing.Away)]
+    public void The_person_is_marked_as_a_seat_and_reads_here_or_away(AgentPresence presence, string reads)
     {
-        // It decides what may be done to the row: a seat is never offered for retiring or purging,
-        // whoever holds it.
+        // A seat is never offered for retiring or purging, and it says the one thing a peer asking the person
+        // needs (SPEC.md §14): whether anybody is at a screen. Never an agent's state.
         var rows = Standing.Join(
-            [Registered("someone@test", AgentPresence.Running, adapter: SeatAdapter)],
+            [Registered("human-user@test", presence, adapter: SeatAdapter)],
             new HashSet<string>(),
             SeatAdapter, Machine);
 
         var row = Assert.Single(rows);
 
         Assert.True(row.Seat);
-        Assert.Equal(Standing.Seat, row.Standing);
+        Assert.Equal(reads, row.Standing);
     }
 
     [Fact]
@@ -144,7 +145,7 @@ public sealed class AgentStandingTests
         // than against the ones a particular fixture happens to reach.
         string[] phrases =
         [
-            Standing.Seat, Standing.Retired, Standing.Running, Standing.Idle,
+            Standing.Here, Standing.Away, Standing.Retired, Standing.Running, Standing.Idle,
             Standing.OnlyWhenOpened, Standing.NoMachine, Standing.NeverRun, Standing.NeverRunStuck,
         ];
 
@@ -196,8 +197,7 @@ public sealed class AgentStandingTests
 
         // **Two spellings in one list, and this records it rather than hiding it.** A registration
         // is `role@machine` and a catalogue key is a role, so rows from the two sources are spelled
-        // differently — which is what the owner met when the composer refused the bare name this
-        // list had just printed. The composer accepts either now; settling the display on one
+        // differently — so the composer has to accept either the bare name or the full one. Settling the display on one
         // spelling is a separate change, because a catalogue key may not be a role at all and a row
         // has to show it as it stands.
         Assert.Equal(["alpha@test", "billing", "orders@test"], rows.Select(r => r.Name));

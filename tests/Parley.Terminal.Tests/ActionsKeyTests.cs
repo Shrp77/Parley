@@ -39,7 +39,7 @@ public sealed class ActionsKeyTests
         await shell.Settled;
 
         shell.Focus(0);
-        driving.Press(new Key(Shell.ActionsKey));
+        driving.Press(new Key(Shell.ActionsKey).WithAlt);
 
         Assert.NotNull(driving.Find(Shell.ActionsTitle));
     }
@@ -61,7 +61,7 @@ public sealed class ActionsKeyTests
         await shell.Settled;
 
         shell.Focus(0);
-        driving.Press(new Key(Shell.ActionsKey).WithShift);
+        driving.Press(new Key(Shell.ActionsKey).WithShift.WithAlt);
 
         Assert.NotNull(driving.Find(Shell.ActionsTitle));
     }
@@ -83,16 +83,18 @@ public sealed class ActionsKeyTests
 
         var create = shell.Actions().Single(action => action.Label == Naming.CreateTitle);
 
-        driving.Press(new Key(create.Key));
+        driving.Press(new Key(create.Key).WithAlt);
 
         Assert.NotNull(driving.Find(Naming.CreateTitle));
     }
 
     [Fact]
-    public async Task A_control_chord_is_not_the_letter_it_carries()
+    public async Task Neither_the_plain_letter_nor_a_control_chord_takes_the_action()
     {
         // Ctrl+C is how half the world stops a program. An action that answered to it as readily
-        // as to `c` would open a dialog on the chord somebody pressed to leave.
+        // as to Alt+C would open a dialog on the chord somebody pressed to leave. And since 2026-10-01
+        // the plain letter is somebody typing, never an action (`KeysNeedAModifierTests`). Ctrl and
+        // Alt together is AltGr on several layouts, which types an ordinary character.
         using var driving = Driving.Open();
         using var directory = Directory();
         using var seats = new SeatBook(directory.AgentsFor);
@@ -108,13 +110,14 @@ public sealed class ActionsKeyTests
         var create = shell.Actions().Single(action => action.Label == Naming.CreateTitle);
 
         driving.Press(new Key(create.Key).WithCtrl);
-        driving.Press(new Key(create.Key).WithAlt);
+        driving.Press(new Key(create.Key));
+        driving.Press(new Key(create.Key).WithCtrl.WithAlt);
 
         Assert.False(driving.Has(Naming.CreateTitle));
     }
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

@@ -8,6 +8,10 @@
 /// <param name="OpenedUtc">When it opened.</param>
 /// <param name="ClosedUtc">When it closed, or <see langword="null"/> while it is open.</param>
 /// <param name="Outcome">How it closed, or <see langword="null"/> while it is open.</param>
+/// <param name="SettledBy">
+/// For an exchange closed as <see cref="ExchangeOutcome.Settled"/>, the exchange whose Request settled it (SPEC.md §5.6);
+/// otherwise <see langword="null"/>.
+/// </param>
 /// <remarks>
 /// State and outcome are read rather than inferred from the messages present, and the difference is
 /// the whole reason this exists. A person opens a conversation because something went wrong, and a
@@ -19,7 +23,8 @@ public sealed record ExchangeSnapshot(
     ExchangeState State,
     DateTimeOffset OpenedUtc,
     DateTimeOffset? ClosedUtc,
-    ExchangeOutcome? Outcome = null);
+    ExchangeOutcome? Outcome = null,
+    long? SettledBy = null);
 
 /// <summary>
 /// Everything one conversation holds: its messages, and where each exchange stands.
@@ -29,6 +34,10 @@ public sealed record ExchangeSnapshot(
 /// <param name="Destroyed">
 /// What is left of a conversation an operator destroyed, or null when this one was not.
 /// Both lists are empty when it is set.
+/// </param>
+/// <param name="Item">
+/// The roadmap item this conversation belongs to, or null for an ordinary one (SPEC.md §5.7). Carried here so a
+/// surface holding only a conversation can offer its roadmap without asking for every roadmap.
 /// </param>
 /// <remarks>
 /// <para>
@@ -46,7 +55,8 @@ public sealed record ExchangeSnapshot(
 public sealed record ConversationExport(
     IReadOnlyList<Message> Messages,
     IReadOnlyList<ExchangeSnapshot> Exchanges,
-    DestroyedConversation? Destroyed = null);
+    DestroyedConversation? Destroyed = null,
+    RoadmapItemRef? Item = null);
 
 /// <summary>
 /// What is left of a conversation an operator destroyed.

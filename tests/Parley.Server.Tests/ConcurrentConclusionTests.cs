@@ -8,8 +8,8 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Review gate, lens 1.</b> Run 2 asked whether an exchange can be answered twice at once; this asks
-/// the other half of §5's lifecycle — whether a conversation can fail to *end* when everybody has agreed
+/// This asks
+/// about the end of §5's lifecycle — whether a conversation can fail to *end* when everybody has agreed
 /// it should. Closure by consensus is counted across several callers, so the count is read and written by
 /// each of them, and two votes arriving together are the case where a read-then-write loses one.
 /// </para>

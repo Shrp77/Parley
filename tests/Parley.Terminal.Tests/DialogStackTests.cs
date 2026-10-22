@@ -37,24 +37,23 @@ public sealed class DialogStackTests
 
         driving.Show(shell);
 
-        // The projects have to be read before a region has anything selected, and the seat action
-        // is offered for the selected project.
+        // The projects have to be read before a region has anything selected.
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
         driving.Tab();
 
-        _ = shell.Join();
+        _ = shell.Create();
 
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
+        var dialog = (FormDialog)driving.Find(Naming.CreateTitle);
 
         driving.Type("cabreg");
 
-        Assert.Equal("cabreg", dialog.Typed);
+        Assert.Equal("cabreg", dialog.Values[0]);
 
         // And no second dialog was opened by any of those letters. Finding one would throw; the
-        // assertion is that the seat dialog is still the one on top.
-        Assert.Same(dialog, driving.Find(AgentsRegion.JoinTitle));
+        // assertion is that the same dialog is still the one on top.
+        Assert.Same(dialog, driving.Find(Naming.CreateTitle));
     }
 
     [Fact]
@@ -69,27 +68,26 @@ public sealed class DialogStackTests
 
         driving.Show(shell);
 
-        // The projects have to be read before a region has anything selected, and the seat action
-        // is offered for the selected project.
+        // The projects have to be read before a region has anything selected.
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
         driving.Tab();
 
-        _ = shell.Join();
+        _ = shell.Create();
 
-        var dialog = (TextDialog)driving.Find(AgentsRegion.JoinTitle);
+        var dialog = (FormDialog)driving.Find(Naming.CreateTitle);
 
         driving.Type("who?");
 
         // **The `?` reaches the field and the field's own rule drops it, which is the order that
-        // matters.** A seat's name may hold letters, digits and hyphens, so this field corrects
+        // matters.** A project's name may hold letters, digits and hyphens, so this field corrects
         // what is typed into it — and what is being checked here is that the keystroke was the
         // field's to refuse: had the surface taken it first, the actions menu would be on top of
-        // a half-typed name.
-        Assert.Equal("who", dialog.Typed);
+        // a half-typed name. (The seat's Join dialog was the example here until it was removed.)
+        Assert.Equal("who", dialog.Values[0]);
         Assert.False(driving.Has(Shell.ActionsTitle), "the actions menu opened over the dialog");
-        Assert.True(driving.Has(AgentsRegion.JoinTitle), "the dialog is no longer on screen");
+        Assert.True(driving.Has(Naming.CreateTitle), "the dialog is no longer on screen");
     }
 
     [Fact]
@@ -105,8 +103,7 @@ public sealed class DialogStackTests
 
         driving.Show(shell);
 
-        // The projects have to be read before a region has anything selected, and the seat action
-        // is offered for the selected project.
+        // The projects have to be read before a region has anything selected.
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
@@ -114,7 +111,7 @@ public sealed class DialogStackTests
 
         var before = shell.FocusedRegion;
 
-        _ = shell.Join();
+        _ = shell.Create();
 
         driving.Tab();
         driving.Tab();
@@ -132,8 +129,7 @@ public sealed class DialogStackTests
 
         driving.Show(shell);
 
-        // The projects have to be read before a region has anything selected, and the seat action
-        // is offered for the selected project.
+        // The projects have to be read before a region has anything selected.
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
@@ -144,7 +140,7 @@ public sealed class DialogStackTests
 
         var before = shell.FocusedRegion;
 
-        _ = shell.Join();
+        _ = shell.Create();
         driving.Escape();
 
         driving.Tab();
@@ -154,6 +150,6 @@ public sealed class DialogStackTests
 
     private static BrokerDirectory Directory() =>
         new(
-            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null, null)],
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
 }

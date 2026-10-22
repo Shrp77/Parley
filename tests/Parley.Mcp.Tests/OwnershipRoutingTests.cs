@@ -70,9 +70,13 @@ public sealed class OwnershipRoutingTests
 
         var listed = (await orders.AgentsAsync(ct))["agents"]!.AsArray();
 
-        Assert.Single(listed);
+        // Exactly the one agent there really is: billing (the person is listed apart, SPEC.md §10.1). A forged key would
+        // show as a second entry, or as a name nothing registered.
+        Assert.Equal(
+            ["billing@test"],
+            listed.Select(a => (string?)a!["name"]).Order(StringComparer.Ordinal));
 
-        var billing = listed[0]!;
+        var billing = listed.Single(a => (string?)a!["name"] == "billing@test")!;
 
         Assert.Equal("billing@test", (string?)billing["name"]);
         Assert.Equal("pull", (string?)billing["tier"]);
@@ -201,19 +205,36 @@ public sealed class OwnershipRoutingTests
         Assert.DoesNotContain("example.invalid", rendered, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// What the old hundred-character bound bought, kept at the length it was measured against.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This test no longer asserts a guarantee, because no bound is in force.</b> The guarantee
+    /// would be that ten peers, every one of them at the limit, are still smaller than a single message
+    /// is allowed to be — otherwise finding out who to ask costs more than asking. With no bound there
+    /// is no length to put in it, and `new string('x', OwnershipStatement.MaxCharacters)`
+    /// would ask for a two-gigabyte string.
+    /// </para>
+    /// <para>
+    /// So it measures the same shape at a hundred characters, and the number it produces
+    /// is still the right number — the arithmetic Principle IV was written on has not stopped being
+    /// true, it has stopped being enforced. Keeping it is what makes the reduction visible: if this
+    /// ever fails, the roster's structural overhead has grown, which is the other half of the cost
+    /// and one nobody has decided to give up.
+    /// </para>
+    /// </remarks>
+    private const int WhatTheBoundWas = 100;
+
     [Fact]
-    public async Task The_roster_for_a_project_costs_less_than_a_message()
+    public async Task A_roster_of_ten_at_the_old_bound_still_costs_less_than_a_message()
     {
-        // The bound is per agent, so the thing worth measuring is the listing. Ten peers, every
-        // one of them at the limit, must still be smaller than a single message is allowed to be
-        // — otherwise finding out who to ask costs more than asking.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
 
         for (var i = 0; i < 10; i++)
         {
-            await fixture.LaunchAsync(
-                $"peer-{i}", ct, new string('x', OwnershipStatement.MaxCharacters));
+            await fixture.LaunchAsync($"peer-{i}", ct, new string('x', WhatTheBoundWas));
         }
 
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
@@ -223,5 +244,34 @@ public sealed class OwnershipRoutingTests
             listing.Length < MessageLimits.MaxPayloadCharacters,
             $"a ten-agent roster is {listing.Length} characters, and a message is capped at " +
             $"{MessageLimits.MaxPayloadCharacters}");
+    }
+
+    [Fact]
+    public async Task Nothing_stops_a_roster_costing_more_than_a_message_now()
+    {
+        // The cost of the decision, measured rather than asserted away. An agent whose line is
+        // 2,000 characters is not doing anything wrong -- the registry accepts it, because the
+        // constitution lets it -- and ten such peers put more in front of
+        // every asker than one message is allowed to carry.
+        //
+        // This is the evidence in the form a test can hold: it is what the number to reinstate
+        // has to be chosen against, and it fails the day somebody puts a bound back, which is the
+        // day it should be deleted.
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await fixture.LaunchAsync($"peer-{i}", ct, new string('x', 2_000));
+        }
+
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var listing = (await orders.AgentsAsync(ct)).ToJsonString();
+
+        Assert.True(
+            listing.Length > MessageLimits.MaxPayloadCharacters,
+            $"a ten-agent roster of 2,000-character statements is {listing.Length} characters, " +
+            $"against a message cap of {MessageLimits.MaxPayloadCharacters}. If this is no longer " +
+            "true, a bound has been reinstated and this test has done its job and should go.");
     }
 }

@@ -1,4 +1,6 @@
+using System.Globalization;
 using Parley.Client;
+using Parley.Client.Seating;
 using Parley.Core;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Views;
@@ -10,9 +12,9 @@ namespace Parley.Terminal;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The region SC-001 starts from: a person reaches a conversation without typing an identifier,
+/// The region a person starts from: a conversation is reached without typing an identifier,
 /// so the list is chosen from rather than typed into, and the first project is selected on open
-/// so that the other three regions have something to show without a key being pressed.
+/// so that the other regions have something to show without a key being pressed.
 /// </para>
 /// <para>
 /// Every project is asked at once and each is contained. Asked in sequence the cost of the screen
@@ -37,8 +39,7 @@ internal sealed class ProjectsRegion : FrameView
 
     /// <summary>What is shown when the machine names none.</summary>
     internal const string Nothing =
-        "This machine names no projects yet. Press c to create one, or ? for everything this "
-        + "region can do.";
+        "No projects yet. Press Alt+c to create one.";
 
     private readonly GuardedList _list = Lists.Filling(Colours.Projects);
 
@@ -58,8 +59,7 @@ internal sealed class ProjectsRegion : FrameView
         Lists.Tint(_list, Tint);
 
         // Moving the highlight is choosing. There is no second key to press, because the other
-        // three regions are already on screen showing whatever is selected — asking a person to
-        // confirm a selection whose consequences they can already see is the wizard this replaced.
+        // regions are already on screen showing whatever is selected.
         _list.ValueChanged += (_, _) => Announce();
     }
 
@@ -79,31 +79,43 @@ internal sealed class ProjectsRegion : FrameView
     internal ListView List => _list;
 
     /// <summary>Draws the projects and what each broker said.</summary>
-    /// <param name="projects">The manifest's projects, in its order.</param>
+    /// <param name="projects">This machine's projects, in name order.</param>
     /// <param name="health">What each broker said, by project name.</param>
-    /// <param name="manifestProblem">Why the manifest could not be read, or null when it could.</param>
+    /// <param name="manifestProblem">Why the projects could not be read, or null when they could.</param>
     /// <remarks>
-    /// A manifest that could not be read empties the list rather than leaving the last good one on
-    /// screen. Somebody who has just broken their manifest needs to be told; a surface that went
-    /// on showing what it read a minute ago would hide the edit that caused it.
+    /// Projects that could not be read empty the list rather than leaving the last good ones on screen.
+    /// Somebody who has just broken a project's configuration needs to be told; a surface that went on
+    /// showing what it read a minute ago would hide the edit that caused it.
     /// </remarks>
+    /// <param name="figures">What is in each project, by name; a project absent from it is drawn without counts.</param>
     internal void Show(
         IReadOnlyList<ProjectSettings> projects,
         IReadOnlyDictionary<string, ProjectHealth> health,
-        string? manifestProblem)
+        string? manifestProblem,
+        IReadOnlyDictionary<string, ProjectFigures>? figures = null)
     {
         ArgumentNullException.ThrowIfNull(projects);
         ArgumentNullException.ThrowIfNull(health);
 
         var keep = Selected?.Name.Value;
 
-        _projects = manifestProblem is null ? [.. projects] : [];
+        // The projects that read, with what was left out said after them: one bad folder costs that project and no
+        // other. After rather than above, so a row's position is still its project's.
+        _projects = [.. projects];
 
-        var lines = manifestProblem is not null
-            ? [$"The manifest could not be read. {manifestProblem}"]
-            : _projects.Count == 0
-                ? new List<string> { Nothing }
-                : [.. _projects.Select(project => Line(project, health))];
+        // Names and addresses are padded to the widest of each, so the columns line up and the eye can run
+        // down one fact across every project.
+        var names = _projects.Count == 0 ? 0 : _projects.Max(project => project.Name.Value.Length);
+        var addresses = _projects.Count == 0 ? 0 : _projects.Max(project => Address(project).Length);
+
+        var lines = _projects.Count == 0
+            ? manifestProblem is null ? new List<string> { Nothing } : []
+            : [.. _projects.Select(project => Line(project, health, figures, names, addresses))];
+
+        if (manifestProblem is not null)
+        {
+            lines.Add($"Some of this machine's projects could not be read. {manifestProblem}");
+        }
 
         var at = keep is null ? -1 : _projects.FindIndex(p => p.Name.Value == keep);
 
@@ -167,17 +179,102 @@ internal sealed class ProjectsRegion : FrameView
     /// <summary>How one project reads.</summary>
     /// <param name="project">The project.</param>
     /// <param name="health">What each broker said.</param>
-    /// <returns>Its name, whether it answers, and its description when it has one.</returns>
+    /// <param name="figures">What is in each project, or null when nothing was counted.</param>
+    /// <param name="names">The width the name column is padded to.</param>
+    /// <param name="addresses">The width the address column is padded to.</param>
+    /// <returns>Its name, where it answers, whether it does, what is in it, and its description.</returns>
+    /// <remarks>
+    /// <b>The facts a person wants are on the row, not in a message</b>, above all where the project
+    /// answers. The address is the project's own and is always
+    /// shown; the counts need its broker, so a project that did not answer shows none rather than zeros,
+    /// which would be a claim about a deployment nothing could ask.
+    /// </remarks>
     private static string Line(
         ProjectSettings project,
-        IReadOnlyDictionary<string, ProjectHealth> health)
+        IReadOnlyDictionary<string, ProjectHealth> health,
+        IReadOnlyDictionary<string, ProjectFigures>? figures,
+        int names,
+        int addresses)
     {
         var said = health.TryGetValue(project.Name.Value, out var found) ? found : null;
+
+        var counted = figures is not null && figures.TryGetValue(project.Name.Value, out var these)
+            ? $"  {these}"
+            : string.Empty;
 
         var description = string.IsNullOrWhiteSpace(project.Description)
             ? string.Empty
             : $"  {Safe.Text(project.Description)}";
 
-        return $"{Safe.Text(project.Name.Value)}  [{Describe(said)}]{description}";
+        return $"{Safe.Text(project.Name.Value).PadRight(names)}  {Address(project).PadRight(addresses)}"
+               + $"  [{Describe(said)}]{counted}{description}";
+    }
+
+    /// <summary>Where a project answers, as a host and port.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns><c>127.0.0.1:19100</c> for <c>http://127.0.0.1:19100</c>; the endpoint as written when it is not a URL.</returns>
+    /// <remarks>
+    /// The scheme is dropped because it is the same on every row and says nothing. What is left is the
+    /// manifest's own text, which a person may have edited by hand, so it goes through <see cref="Safe"/>.
+    /// </remarks>
+    internal static string Address(ProjectSettings project) =>
+        Safe.Text(
+            Uri.TryCreate(project.Endpoint, UriKind.Absolute, out var uri) && uri.Port > 0
+                ? $"{uri.Host}:{uri.Port.ToString(CultureInfo.InvariantCulture)}"
+                : project.Endpoint);
+}
+
+/// <summary>What is in one project, counted from its broker.</summary>
+/// <param name="Agents">Agents registered and not retired, not counting people holding a seat.</param>
+/// <param name="Running">How many of those are attached now.</param>
+/// <param name="Conversations">Conversations on the first page the broker returned, archived ones left out.</param>
+/// <param name="More">Whether the broker had more conversations than that page.</param>
+/// <param name="Open">How many of those conversations have work still open.</param>
+/// <param name="Proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
+internal sealed record ProjectFigures(int Agents, int Running, int Conversations, bool More, int Open, int? Proposals = null)
+{
+    /// <summary>Counts what a broker said about its project.</summary>
+    /// <param name="registry">Its registry.</param>
+    /// <param name="page">The first page of its conversations.</param>
+    /// <param name="proposals">How many roadmap proposals await the person, or null when that could not be counted.</param>
+    /// <returns>The figures.</returns>
+    /// <remarks>
+    /// A seat is a person rather than an agent, and a retired agent is one somebody has said is finished,
+    /// so neither is counted: a row claiming five agents in a project that routes to three would be the
+    /// row disagreeing with the agents pane one Enter away.
+    /// </remarks>
+    internal static ProjectFigures Of(IReadOnlyList<AgentRecord> registry, ConversationPage page, int? proposals = null)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(page);
+
+        // Parley is left out too: every project has it, so counting it would make a project with no agents say one.
+        var agents = registry
+            .Where(agent => agent.Adapter != Seat.Adapter && agent.Status != AgentStatus.Retired && !agent.Facilitator)
+            .ToList();
+
+        return new ProjectFigures(
+            agents.Count,
+            agents.Count(agent => agent.Connected),
+            page.Items.Count,
+            page.NextPageToken is not null,
+            page.Items.Count(conversation => conversation.HasOpenExchange),
+            proposals);
+    }
+
+    /// <summary>The figures as a row says them.</summary>
+    /// <returns>For example <c>4 agents, 3 running · 12 conversations, 2 open</c>.</returns>
+    public override string ToString()
+    {
+        var conversations = $"{Conversations.ToString(CultureInfo.InvariantCulture)}{(More ? "+" : string.Empty)}";
+
+        var proposed = Parley.Client.Roadmaps.ProposalCount.Says(Proposals);
+
+        var counted = string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Agents} {(Agents == 1 ? "agent" : "agents")}, {Running} running"
+            + $" · {conversations} {(Conversations == 1 && !More ? "conversation" : "conversations")}, {Open} open");
+
+        return proposed.Length > 0 ? counted + " · " + proposed : counted;
     }
 }

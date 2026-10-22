@@ -8,7 +8,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// FR-006, and the reason it is a requirement rather than a nicety: an empty export cannot be told
+/// This is a requirement rather than a nicety: an empty export cannot be told
 /// from a store that lost something. That is the same failure `waiting()` exists to prevent
 /// elsewhere — an absence that could equally be two very different things — and it is the whole
 /// reason §14 keeps a record at all.
@@ -111,7 +111,6 @@ public sealed class DestroyedRecordTests
         var whole = export.ToString();
 
         Assert.DoesNotContain("who owns the totals", whole, StringComparison.Ordinal);
-        Assert.DoesNotContain("done_when", whole, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -1,0 +1,51 @@
+@page
+@model Parley.Web.Pages.Roadmaps.EditModel
+@{
+    ViewData["Title"] = Model.Roadmap is { } shown ? $"Edit: {shown.Title}" : "Edit roadmap";
+}
+
+<h1>@(Model.Roadmap is { } named ? $"Edit #{named.Number} {named.Title}" : "Edit roadmap")</h1>
+
+<p><a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Back to the roadmap</a></p>
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="unreachable" role="alert">@problem</p>
+}
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status"><strong>@outcome</strong></p>
+}
+else if (Model.Roadmap is { } roadmap)
+{
+    <form method="post">
+        <input type="hidden" name="Revision" value="@Model.Revision" />
+
+        <p>
+            <label for="text">The roadmap as text. Take a line out to remove it, change a line to reword it, add a line for a new item.</label><br />
+            <textarea id="text" name="Text" rows="@Math.Clamp(roadmap.Items.Count + 2, 6, 24)" cols="90" required>@Model.Text</textarea>
+        </p>
+
+        <p class="composer-note">
+            Number each item. Add <code>| for: role@machine</code> and <code>| needs: 1, 2</code> where you know them.
+            The first line is the title. Keep <code>| item: n</code> on a line you keep; a line without it is a new item.
+        </p>
+
+        <p class="composer-note">
+            An item already started keeps its conversation when you reword it. A removed item leaves the roadmap and
+            its conversation is kept.
+        </p>
+
+        @if (Model.CurrentText is { Length: > 0 } current)
+        {
+            <p>
+                <label for="current">The roadmap now. Saving replaces it with your text.</label><br />
+                <textarea id="current" rows="@Math.Clamp(roadmap.Items.Count + 2, 6, 24)" cols="90" readonly>@current</textarea>
+            </p>
+        }
+
+        <button type="submit">Save</button>
+        <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
+    </form>
+}

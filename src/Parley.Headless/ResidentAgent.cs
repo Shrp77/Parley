@@ -13,9 +13,9 @@ namespace Parley.Headless;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This replaces a one-shot invoker, and the difference is the whole point. A process started
-/// per message can answer a bounded factual question — the envelope of §5.3 carries the intent
-/// and consequences back, so a cold reader has what it needs — but it cannot hold a position
+/// A process started
+/// per message can answer a bounded factual question — the envelope of §5.3 carries the ask
+/// back, so a cold reader has what it needs — but it cannot hold a position
 /// across turns. It cannot remember why it asked a clarification, cannot get better at its own
 /// domain by answering thirty questions about it, and cannot negotiate a contested boundary,
 /// which is the case the protocol exists for.
@@ -27,11 +27,8 @@ namespace Parley.Headless;
 /// remembers the last one.
 /// </para>
 /// <para>
-/// <b>Standard input is the turn channel, and that inverts the previous rule.</b> The one-shot
-/// invoker had to redirect stdin and close it immediately, or the child inherited the host's
-/// live JSON-RPC pipe and the wait never returned. Here stdin is redirected for the opposite
-/// reason: it is how a turn is delivered, and it stays open for exactly as long as the agent
-/// should live. Closing it is how the agent is told to quit.
+/// <b>Standard input is the turn channel.</b> It is how a turn is delivered, and it stays open
+/// for exactly as long as the agent should live. Closing it is how the agent is told to quit.
 /// </para>
 /// <para>
 /// Standard output is drained continuously by a background pump rather than read per turn. With
@@ -127,6 +124,9 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <param name="command">What to run.</param>
     /// <param name="workspace">The directory to run it in.</param>
     /// <param name="clock">The clock turns are measured against.</param>
+    /// <param name="environment">
+    /// Added to what the process inherits — the launch token a node gives each process it starts (SPEC.md §11.7).
+    /// </param>
     /// <returns>The running agent.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <exception cref="DirectoryNotFoundException">The workspace does not exist.</exception>
@@ -138,7 +138,11 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// difference between a fixable fleet and a mysterious one.
     /// </remarks>
     public static ResidentAgent Start(
-        AgentName name, InvocationCommand command, string workspace, TimeProvider clock)
+        AgentName name,
+        InvocationCommand command,
+        string workspace,
+        TimeProvider clock,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(clock);
@@ -165,6 +169,12 @@ public sealed class ResidentAgent : IAsyncDisposable
         foreach (var argument in command.Arguments)
         {
             startInfo.ArgumentList.Add(argument);
+        }
+
+        // Added to what the process inherits, never in place of it: the agent's own tools need PATH and the rest.
+        foreach (var (key, value) in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[key] = value;
         }
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -200,9 +210,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// whose result was whose, and the agent would be answering two prompts in one context.
     /// </para>
     /// <para>
-    /// <b>A timeout does not kill the agent.</b> That is the important departure from the
-    /// one-shot invoker, which killed and lost nothing because there was nothing to lose. Here
-    /// the process holds the agent's entire accumulated context, and discarding that because one
+    /// <b>A timeout does not kill the agent.</b> The process holds the agent's entire accumulated context, and discarding that because one
     /// turn ran long is a far worse trade than waiting. So a timed-out turn is recorded and left:
     /// the exchange is unharmed — still owed, still open, tried again — and the result that
     /// eventually arrives is discarded before the next turn rather than being read as its answer.
@@ -210,10 +218,29 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// turn's reply.
     /// </para>
     /// </remarks>
+    public Task<TurnOutcome> TakeTurnAsync(
+        string text, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+        TakeTurnAsync(text, timeout, static () => Task.CompletedTask, cancellationToken);
+
+    /// <summary>
+    /// Gives the agent a turn, saying when it actually begins, and waits for it to finish.
+    /// </summary>
+    /// <param name="text">What to say to it.</param>
+    /// <param name="timeout">How long to wait before giving up on this turn.</param>
+    /// <param name="began">Run once the turn holds the agent, before anything is said to it.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns>What the turn cost and how it ended.</returns>
+    /// <remarks>
+    /// <b>A turn begins when it holds the agent, not when it is asked for.</b> A second wake while a turn runs queues
+    /// behind it, and a start reported at the asking put the turn's end — start plus <see cref="TurnOutcome.Elapsed"/>,
+    /// which is measured from here — before the work it picked up, so a turn stopped on a refused permission would never
+    /// be flagged or shown stopped.
+    /// </remarks>
     public async Task<TurnOutcome> TakeTurnAsync(
-        string text, TimeSpan timeout, CancellationToken cancellationToken = default)
+        string text, TimeSpan timeout, Func<Task> began, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        ArgumentNullException.ThrowIfNull(began);
 
         await _turnLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -221,6 +248,8 @@ public sealed class ResidentAgent : IAsyncDisposable
 
         try
         {
+            await began().ConfigureAwait(false);
+
             if (!IsAlive)
             {
                 return Died(started);
@@ -333,9 +362,8 @@ public sealed class ResidentAgent : IAsyncDisposable
             // polite form of stopping, and everything that actually guarantees the process is gone —
             // the bounded wait, then Kill — is below and runs regardless.
             //
-            // Left uncaught it escaped ShutdownAsync into whoever was stopping the fleet, so one agent
-            // being mid-turn could abandon the stop of every agent after it. That is the shape the
-            // review gate's fourth finding already closed once, reached here by a different route.
+            // Left uncaught it would escape ShutdownAsync into whoever is stopping the fleet, so one
+            // agent being mid-turn could abandon the stop of every agent after it.
         }
 
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -359,6 +387,41 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
 
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
+    /// between the two (SPEC.md §11.1's fourth way a resident ends).
+    /// </summary>
+    /// <param name="grace">How long to allow it to exit once told, before killing it.</param>
+    /// <param name="cancellationToken">Cancels the wait for the turn, which leaves the agent running.</param>
+    /// <returns><see langword="true"/> if it exited on its own.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The opposite choice to <see cref="ShutdownAsync"/>, and for the opposite reason.</b> That method refuses to
+    /// wait on a turn, because stopping a fleet must not be held up by one wedged agent. A refresh is not a fleet stopping:
+    /// it is one agent being restarted so it reads its launch configuration afresh, and doing that mid-turn would discard
+    /// the work in flight for the sake of one sentence. So this waits, for as long as the turn takes — an agent that is
+    /// never idle is never refreshed, and its line stays pending, which is the documented cost.
+    /// </para>
+    /// <para>
+    /// <b>The turn is held across the stop.</b> Waiting for the lock and then releasing it before stopping would leave a
+    /// window in which a queued turn starts and is then killed. A turn queued behind this finds the process gone and
+    /// reports it, as any turn given to a departed resident does; the mail it was for waits for the next wake.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> ShutdownWhenIdleAsync(TimeSpan grace, CancellationToken cancellationToken = default)
+    {
+        await _turnLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await ShutdownAsync(grace, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _turnLock.Release();
         }
     }
 

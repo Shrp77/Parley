@@ -80,7 +80,7 @@ public sealed class LaunchPrecedenceTests
     [Fact]
     public void An_entry_naming_no_project_is_re_pointed_where_it_stands()
     {
-        // Every repository enrolled before projects existed. Today's behaviour, kept.
+        // A `parley` entry that pins no project is updated in place when one is named.
         var (key, existing) = LaunchEntries.Landing(
             Servers("""
                 { "mcpServers": { "parley": { "command": "parley-mcp", "env": {
@@ -131,7 +131,7 @@ public sealed class LaunchPrecedenceTests
     [Fact]
     public void A_stranger_at_the_derived_key_is_handed_back_naming_nobody()
     {
-        // FR-009's raw material: the key is ours to write at, the entry there is not ours to replace.
+        // The raw material of refusing to replace a stranger: the key is ours to write at, the entry there is not ours to replace.
         var (key, existing) = LaunchEntries.Landing(
             Servers("""{ "mcpServers": { "parley-alpha": { "command": "something-else" } } }"""),
             "alpha");

@@ -1,34 +1,3 @@
-<!--
-Sync Impact Report — 2026-09-14
-Version change: 1.0.0 → 2.0.0 (MAJOR)
-  Two backward-incompatible redefinitions, one of which had shipped without a bump:
-  - Principle II was redefined by 0.26.0 (protocol 0.5, specs/014) — "an agent may refuse … and may not be overruled"
-    became "declined only for a concrete blocker" — and the version stayed 1.0.0. Recorded here rather than left silent.
-  - "Only question and answer text crosses. Never … files" is redefined for specs/015 (protocol 0.6): files placed in a
-    project's file location cross between agents; their contents never enter a model's context through Parley.
-    Its first clause also described protocol 0.4's question-and-answer channel, stale since 0.5.
-Modified principles:
-  - II. No agent has authority over another — text unchanged here; the 0.26.0 redefinition is now versioned.
-  - IV. Terseness is a security control — expanded: what an operation returns about a file is bounded text, and a
-    file's bytes go to disk, never into a context.
-Modified sections:
-  - Boundaries That Do Not Move — "Only question and answer text crosses" → "What crosses is messages and placed files,
-    never contexts".
-Added sections: none. Removed sections: none.
-Templates and dependent documents:
-  ✅ .specify/templates/plan-template.md — generic "Constitution Check"; no change needed
-  ✅ .specify/templates/spec-template.md — no constitution-mandated sections affected
-  ✅ .specify/templates/tasks-template.md — no principle-driven task types affected
-  ✅ .specify/templates/commands/ — does not exist in this repository
-  ✅ specs/015-file-store/plan.md, research.md, tasks.md — 1.1.0 references updated to 2.0.0; the boundary is no longer
-     a violation; T009 is now a verification
-  ✅ CLAUDE.md — the 015 plan entry records the amendment
-  ✅ SPEC.md §1 and principle 2.2 — rewritten the same day: messages and, from protocol 0.6, placed files cross; a
-     file's contents never enter a context; what crosses about a file is bounded
-  ✅ README.md "What Parley does" — rewritten the same day for protocol 0.5, with file sharing marked as arriving in 0.27.0
-Deferred TODOs: none.
--->
-
 # Parley Constitution
 
 Parley is a cross-repository agent-to-agent messaging protocol. `SPEC.md` is the primary
@@ -59,6 +28,28 @@ operations exist on a separate type, in a separate binary, so an adapter has not
 accident, and a person may close a conversation whatever its participants have voted. Any design
 that introduces authority between agents contradicts the premise.
 
+**The second asymmetry is the facilitator.** It is a participant the broker provides in every
+project, and it is neither an agent nor a person. It exists so that questions nobody would
+otherwise remember to ask, such as what an agent owns, are asked. **It may do exactly three
+things:**
+
+- ask a question;
+- send a reply that a person wrote, recorded as that person's words and never as its own;
+- propose and agree that its own conversation is done.
+
+It holds no operator operation. It is never the person seated. It is never a recipient of anybody's
+work. It may not assign, direct, prioritise, close or override any work, or decide which
+conversation an agent's own work belongs to. What it adds is *who* asks, never what asking can do.
+A facilitator that gained one operation more would be the orchestrator this principle forbids, and
+any such change is argued here first.
+
+**A roadmap is the person's, never an agent's plan.** An agent may *propose* a list of work;
+nothing is a roadmap until a person confirms it, and only a person edits, reorders, removes from or
+declines one. No agent operation reads, changes or marks done a roadmap, and an agent is told only
+the outcome of its own proposal. Work reaches an agent as a request from the person, one item at a
+time, so a roadmap binds no agent: it is the person's map over requests they chose to send. The
+facilitator may not propose or confirm one.
+
 ### III. Identity is fixed by the launch, never by a call
 
 An agent's name comes from the environment its server was started with and from nowhere
@@ -66,6 +57,26 @@ else. No operation takes a sender parameter, so no call can change who the calle
 is what makes "a sender cannot forge the agent it claims to be" a structural guarantee
 rather than a model's good behaviour, and no feature may reintroduce a caller-supplied
 identity by another name.
+
+**The facilitator's identity is one that no launch fixes**, because the facilitator is not an agent
+and nothing launches it. The broker fixes its identity for the broker's own store. It is a reserved
+role that storage refuses to every other adapter, and every attach, seat and enrolment refuses it
+too. So the guarantee holds in both directions: no agent can become the facilitator, and the
+facilitator cannot become an agent.
+
+**The person seat is the second identity no launch fixes.** A person is not launched either. The
+broker provides `human-user@<project>` in every project it serves, never releases it, and every
+surface that reaches the broker speaks as it. Both identities the broker provides are named for
+their project rather than a machine, because neither is hosted on one, and storage records no
+machine for either. The role is reserved as the facilitator's is: enrolment, attaching as an agent
+and storage all refuse it.
+
+**The limit is stated here rather than left to be found.** The person seat exists before anything
+attaches, so an attach under its name writes no new row and no storage rule sees it. What refuses a
+claimant is code that trusts the adapter the caller reports. That is SPEC.md §16's concession,
+that anything able to reach a broker can claim any name, applied to this one; it is not a
+guarantee this principle makes. What storage does guarantee, whoever attaches, is that the person
+seat carries no ownership line.
 
 ### IV. Terseness is a security control
 
@@ -81,6 +92,45 @@ repository and are never returned into a model's context by Parley. What an oper
 *about* files — names, sizes, hashes, lists, change notices — is text that crosses, and is
 bounded like any other: a name has a maximum length, and a list or a batch of notices has a
 maximum count per call.
+
+**The ownership statement is an exception, and it is an exception rather than a
+reinterpretation.** An agent's `owns` line has **no bound by default**. The constraint stays in
+storage and stands down at the top of its range, so a deployment may reinstate one and it is still
+enforced below any code that could route around it (Principle V); the character class that stops a
+roster entry breaking, hiding or reordering its own line is **not** relaxed.
+
+**This is a reduction in this principle's protection and is recorded as one.** A cap censors the
+evidence that would justify it, so none is set. The lengths agents propose and the lengths people
+accept are recorded, so a bound can later be chosen the way the message cap's 8,000 was — from
+`parley refusals` and SPEC.md §17 question 16 — rather than from judgement. **Until that evidence
+exists, a roster may be the largest thing an agent reads.** Move the number on that record, not
+because a statement did not fit.
+
+**Auto Accept is a further reduction in the same control, and is recorded as one.** With a
+project's Auto Accept on, which it is by default, the facilitator asks an agent what it owns and
+the agent's answer becomes its line, with no person in the loop. Two things stand in its place:
+
+- **Provenance that says truthfully who decided each line.** `automatic` is a route of its own,
+  beside the three a person takes.
+- **A review on every surface,** where any line can be checked and corrected at any time.
+
+The answer's words are the agent's own. Only runs of whitespace are collapsed, and anything that
+would change a word is a person's decision. The character class is **not** relaxed: an answer that
+breaks it waits for a person, whatever the switch says.
+
+**Roadmap text is a further reduction in the same control, and is recorded as one.** A proposed
+roadmap, its title and its items have **no bound by default**, as the ownership statement has none.
+Two things stand in the place of a number:
+
+- **Nothing here is read by an agent.** A proposal is read by a person. What crosses to an agent is a
+  single item inside a Request, which keeps the message cap in storage whatever the roadmap holds.
+- **Guidance rather than a limit.** The tool an agent proposes with carries a short template, so
+  that items are factual, point-oriented and brief. It is guidance and not a check.
+
+The character class that stops text breaking, hiding or reordering a surface's lines is **not**
+relaxed. **The residual risk is stated rather than left to be found:** any attached agent can write a
+very large proposal into the store, which the message cap closes for messages. The size of every
+proposal is recorded, so a bound can later be chosen from evidence, as the message cap's was.
 
 ### V. Invariants live in storage
 
@@ -132,15 +182,11 @@ writing the malicious case and watching it be admitted, not by reading a guard a
 it sound. A new invariant is verified by reconstructing the defect it exists for and
 watching the check fail.
 
-**Review is three consecutive clean runs per lens, not a rotation to convergence.** Three
-lenses — correctness and concurrency; security and data integrity; API surface and
-maintainability — run after the last edit rather than alongside it. A finding above low
-severity resets that lens to zero; the lenses are independent and all three must reach three.
-Each run must probe something the previous runs did not, or it is one run repeated.
-
-Convergence-by-rotation was the earlier rule and was measured to be weaker: on
-`004-terminal-surface` five rotation rounds reported convergence, and the counter's first six
-runs then found four more defects. The running count belongs in `REVIEW-LEDGER.md`, which is
+**Review is three consecutive clean runs per lens.** Three lenses — correctness and
+concurrency; security and data integrity; API surface and maintainability — run after the last
+edit rather than alongside it. A finding above low severity resets that lens to zero; the lenses
+are independent and all three must reach three. Each run must probe something the previous runs
+did not, or it is one run repeated. The running count belongs in `REVIEW-LEDGER.md`, which is
 untracked because it is the state of one checkout's review rather than a fact about the
 protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
 distinguish an area that held from one nobody probed.
@@ -163,10 +209,9 @@ record: merges are squash-only, so the pull request title becomes the commit mes
 
 **A principle changes in its own amendment, never inside a feature's implementation.** A
 feature that needs one records the argument in its specification, the constitution is amended
-first with a Sync Impact Report at the top of this file, and the feature's plan then checks
-against the amended text. Versions follow semantic versioning: MAJOR for a principle or boundary
-removed or redefined, MINOR for one added or materially expanded, PATCH for wording. **An
-amendment that changes what a principle permits is MAJOR even when its title is unchanged** —
-0.26.0's redefinition of Principle II shipped without a version change, and 2.0.0 records it.
+first, and the feature's plan then checks against the amended text. Versions follow semantic
+versioning: MAJOR for a principle or boundary removed or redefined, MINOR for one added or
+materially expanded, PATCH for wording. **An amendment that changes what a principle permits is
+MAJOR even when its title is unchanged.**
 
-**Version**: 2.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-09-14
+**Version**: 6.0.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-06

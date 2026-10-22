@@ -22,9 +22,7 @@ namespace Parley.Core;
 /// <para>
 /// <b>It carries no agent operation, and never will.</b> §10.1's surface is a different type for
 /// a different caller; the two are kept apart structurally rather than by naming, because the
-/// naming convention is what §10.2 opens by admitting is thin. The counterpart contract — what an
-/// agent must be able to receive from the operator — is
-/// <see cref="IAcceptsOperatorInstructions"/>, and it holds none of what is below.
+/// naming convention is what §10.2 opens by admitting is thin.
 /// </para>
 /// <para>
 /// Declared here, in the domain project, because it is the one place a client and a server can
@@ -34,10 +32,10 @@ namespace Parley.Core;
 /// </remarks>
 public interface IParleyBrokerClient
 {
-    /// <summary>Which protocol version this broker speaks.</summary>
+    /// <summary>Which protocol this broker speaks, which build it is, and whether its store has the shape that build expects.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The version, as <see cref="ProtocolVersion"/> renders one.</returns>
-    Task<string> ImplementsAsync(CancellationToken cancellationToken = default);
+    /// <returns>What the broker said about itself; the protocol is rendered as <see cref="ProtocolVersion"/> renders one.</returns>
+    Task<BrokerIdentity> ImplementsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>The whole registry, including the workspace each agent works in.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
@@ -111,49 +109,10 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The flags, derived at the moment of reading.</returns>
     /// <remarks>
-    /// What replaced ghosting (§6, §14). Nothing ends a piece of work but its participants or its
-    /// person, so an exchange that stops moving is shown here for the person to act on.
+    /// Nothing ends a piece of work but its participants or its person (§6, §14), so an exchange
+    /// that stops moving is shown here for the person to act on.
     /// </remarks>
     Task<FlagReport> FlagsAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>Read back what became of the instructions an operator gave.</summary>
-    /// <param name="agent">Narrow to one agent, or null for every agent.</param>
-    /// <param name="instructionId">Narrow to exactly one instruction, or null for all that match.</param>
-    /// <param name="pageSize">How many to ask for. The broker bounds this whatever is asked.</param>
-    /// <param name="pageToken">A token from a previous page, or null to start at the newest.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>A bounded page, newest first.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>The operation SPEC.md §10.2 promised and did not have.</b> The section says an agent's
-    /// reply "is kept beside the instruction rather than in the message log" — and it was, with
-    /// nothing able to ask. The only route to an answer was the return value of
-    /// <see cref="InstructAsync"/>, which blocks for the turn, so anything that interrupted that
-    /// call lost the answer for ever while the broker still held it.
-    /// </para>
-    /// <para>
-    /// The token is opaque. A client that parsed it would fix a shape the broker could not change.
-    /// </para>
-    /// </remarks>
-    Task<InstructionPage> InstructionsAsync(
-        AgentName? agent = null,
-        long? instructionId = null,
-        int pageSize = 0,
-        string? pageToken = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>Give an agent an instruction from the operator.</summary>
-    /// <param name="agent">Who to instruct.</param>
-    /// <param name="text">What to tell it.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>What became of it, and whatever the agent said.</returns>
-    /// <remarks>
-    /// The one operation here that puts a person's words into an agent's turn. It is safe because
-    /// the operator is not a peer — principle 2.6 allows exactly one asymmetry and this is it —
-    /// and it stays safe because no agent can reach this interface.
-    /// </remarks>
-    Task<InstructionResult> InstructAsync(
-        AgentName agent, string text, CancellationToken cancellationToken = default);
 
     /// <summary>Withdraw an agent, so nothing routes to it and it is not listed.</summary>
     /// <param name="agent">Who to retire.</param>
@@ -166,6 +125,53 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Whether anything changed.</returns>
     Task<bool> ReinstateAsync(AgentName agent, CancellationToken cancellationToken = default);
+
+    /// <summary>Record that a person accepted a statement of what an agent owns.</summary>
+    /// <param name="agent">Whose line it is.</param>
+    /// <param name="acceptance">What was agreed, and how they arrived at it.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was recorded, and what peers read now beside what was accepted.</returns>
+    /// <remarks>
+    /// <b>It does not write the registry's <c>owns</c>.</b> That is filled from the launch
+    /// environment when the agent attaches (§12.3), so an accepted line takes effect on the agent's
+    /// next start and this returns both halves so a surface can say the two differ. No operation
+    /// accepts an <c>owns</c> line from the agent it describes, and this one records a person's
+    /// decision rather than making one.
+    /// </remarks>
+    Task<OwnershipRecord> RecordOwnershipAsync(
+        AgentName agent, OwnershipAcceptance acceptance, CancellationToken cancellationToken = default);
+
+    /// <summary>The Auto Accept switch, and every agent's latest question from Parley (§10.2 <c>facilitation</c>).</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What a person reviews ownership from.</returns>
+    Task<FacilitationReport> FacilitationAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Turn the project's Auto Accept switch on or off (§10.2 <c>set_auto_accept</c>).</summary>
+    /// <param name="on">Whether answers become lines with no person involved.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The switch as now set.</returns>
+    Task<bool> SetAutoAcceptAsync(bool on, CancellationToken cancellationToken = default);
+
+    /// <summary>Have Parley ask an agent what it owns, as a new question (§10.2 <c>ask_again</c>).</summary>
+    /// <param name="agent">Who to ask.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was asked, and why not.</returns>
+    /// <remarks>Needs no seat: Parley sends it, not the person.</remarks>
+    Task<FacilitationAction> AskAgainAsync(AgentName agent, CancellationToken cancellationToken = default);
+
+    /// <summary>Send a person's reply to an agent that asked Parley something back (§10.2 <c>reply_to_asked_back</c>).</summary>
+    /// <param name="agent">The agent that asked back.</param>
+    /// <param name="text">The person's words, recorded as theirs.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was sent, and why not.</returns>
+    Task<FacilitationAction> ReplyToAskedBackAsync(
+        AgentName agent, string text, CancellationToken cancellationToken = default);
+
+    /// <summary>Discard an answer waiting for a person (§10.2 <c>discard_answer</c>).</summary>
+    /// <param name="agent">Whose answer.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether it was discarded, and why not.</returns>
+    Task<FacilitationAction> DiscardAnswerAsync(AgentName agent, CancellationToken cancellationToken = default);
 
     /// <summary>Delete an agent and every conversation it was party to.</summary>
     /// <param name="agent">Who to purge.</param>
@@ -313,4 +319,60 @@ public interface IParleyBrokerClient
         string? conversationId = null,
         string? name = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>List the project's roadmaps.</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>One summary per roadmap.</returns>
+    /// <remarks>
+    /// The list a person reaches roadmaps from (SPEC.md §5.7). Named apart from nothing on the agent side,
+    /// because no agent operation reads a roadmap and none may be added (principle 2.12).
+    /// </remarks>
+    Task<IReadOnlyList<RoadmapSummary>> RoadmapsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Read one roadmap whole.</summary>
+    /// <param name="id">The roadmap.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The roadmap, or <see langword="null"/> when there is none by that identifier.</returns>
+    /// <remarks>
+    /// <b>Facts and never states.</b> Each live item carries <see cref="ItemFacts"/>, which a surface turns into
+    /// where the item stands, so that a view costs this read, the wait-for edges and the registry however many
+    /// items there are, and so that no state is stored for a second reader to disagree with.
+    /// </remarks>
+    Task<Roadmap?> RoadmapAsync(long id, CancellationToken cancellationToken = default);
+
+    /// <summary>Read the proposals agents have made.</summary>
+    /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposals, newest first.</returns>
+    Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+
+    /// <summary>Turn a proposal into a roadmap, or a revision of one.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="content">The person's final content, which may be the proposal's own.</param>
+    /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What it came to, with a sentence when it was refused.</returns>
+    /// <remarks>
+    /// Validates the whole content (<see cref="RoadmapRules"/>), and records whether it was confirmed as proposed
+    /// or edited by comparing it with the stored proposal — never from a flag the caller passes, which would be
+    /// right only as often as somebody remembered to set it.
+    /// </remarks>
+    Task<RoadmapChange> ConfirmProposalAsync(
+        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default);
+
+    /// <summary>Decline a waiting proposal.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What it came to.</returns>
+    Task<RoadmapChange> DeclineProposalAsync(long id, CancellationToken cancellationToken = default);
+
+    /// <summary>Change a confirmed roadmap: reword, reorder, add or remove items.</summary>
+    /// <param name="id">The roadmap.</param>
+    /// <param name="revision">The revision the caller read, so two surfaces editing cannot overwrite each other.</param>
+    /// <param name="content">The final content.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What it came to, with a sentence when it was refused.</returns>
+    Task<RoadmapChange> EditRoadmapAsync(
+        long id, int revision, RoadmapContent content, CancellationToken cancellationToken = default);
 }

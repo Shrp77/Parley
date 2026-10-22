@@ -107,6 +107,68 @@ public sealed class BrowsingTests : IDisposable
     }
 
     [Fact]
+    public void A_folder_holding_repositories_can_be_chosen_for_enrolment()
+    {
+        // **The folder enrolment is for is the one folder the picker could not choose.** It took only a folder
+        // that was itself a repository, and enrolment is asked of the folder that holds them -- reported by
+        // the owner trying to enrol from the folder all of their checkouts sit in. Must fail against a picker
+        // that offers nothing to press on a folder that is not a repository.
+        _ = Folder("orders", repository: true);
+        _ = Folder("billing", repository: true);
+
+        using var driving = Driving.Open();
+
+        var browsing = Browsing.ForFolderOfRepositories(_root);
+        string? chosen = null;
+
+        browsing.Done += (_, folder) => chosen = folder;
+
+        driving.Show(browsing);
+
+        Assert.Equal(Browsing.FolderName, browsing.Title);
+        Assert.DoesNotContain(Drawn.Rows(browsing.List), row => row == Browsing.Use);
+
+        driving.Row(browsing.List, Browsing.UseFolder);
+        browsing.List.NewKeyDownEvent(Key.Enter);
+
+        Assert.Equal(_root, chosen);
+    }
+
+    [Fact]
+    public void A_folder_with_no_repositories_in_it_is_not_offered_for_enrolment()
+    {
+        // Choosing it would find nothing, so the row is not there to press. Enrolment looks one level down and
+        // no deeper, so a repository two folders down does not count either.
+        var notes = Folder("notes");
+
+        _ = Directory.CreateDirectory(Path.Combine(notes, "deeper", "inner", ".git"));
+
+        using var driving = Driving.Open();
+
+        var browsing = Browsing.ForFolderOfRepositories(notes);
+
+        driving.Show(browsing);
+
+        Assert.DoesNotContain(Drawn.Rows(browsing.List), row => row == Browsing.UseFolder);
+    }
+
+    [Fact]
+    public void Looking_for_one_repository_still_offers_only_a_repository()
+    {
+        // The other mode is unchanged: adding one agent takes the repository, never the folder above it.
+        _ = Folder("orders", repository: true);
+
+        using var driving = Driving.Open();
+
+        var browsing = new Browsing(_root);
+
+        driving.Show(browsing);
+
+        Assert.Equal(Browsing.Name, browsing.Title);
+        Assert.DoesNotContain(Drawn.Rows(browsing.List), row => row == Browsing.UseFolder || row == Browsing.Use);
+    }
+
+    [Fact]
     public void Walking_into_a_folder_shows_what_is_in_it()
     {
         var orders = Folder("orders", repository: true);

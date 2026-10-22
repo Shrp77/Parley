@@ -1,4 +1,5 @@
-﻿using Parley.Setup;
+﻿using Parley.Core;
+using Parley.Setup;
 using System.Text.Json.Nodes;
 using Xunit;
 
@@ -28,35 +29,43 @@ public sealed class EnrollmentPlanTests
         string agent = "orders",
         string? owns = "Carts and order totals. No tax, no stock.",
         bool unattended = false) =>
-        new(Workspace, agent, owns, unattended) { OwnsApproved = true };
+        new(Workspace, agent, owns, unattended);
 
     private static IReadOnlyList<string> Validate(params EnrollmentEntry[] entries) =>
         EnrollmentPlan.Validate(entries, _ => true);
 
     [Fact]
-    public void An_owns_line_nobody_has_approved_is_refused()
+    public void A_well_formed_owns_line_passes()
     {
-        // Condition 2 of the amendment to SPEC.md §17 question 10. Suggesting a line is allowed;
-        // shipping one nobody affirmed is not, because what the registry promises after that
-        // amendment is that a person read it and said yes. Without this the promise is vacuous:
-        // a draft nobody looked at reaches every peer's roster indistinguishable from a written
-        // line.
         var problems = Validate(
             new EnrollmentEntry(Workspace, "orders", "Carts and totals. No tax.", false));
 
-        Assert.Contains(problems, p => p.Contains("not approved", StringComparison.Ordinal));
+        Assert.Empty(problems);
     }
 
     [Fact]
-    public void An_approved_owns_line_passes()
+    public void The_facilitators_role_is_refused_and_parley_is_not()
     {
-        var problems = Validate(
-            new EnrollmentEntry(Workspace, "orders", "Carts and totals. No tax.", false)
-            {
-                OwnsApproved = true,
-            });
+        // Refused here with a sentence, before storage refuses the registration and the agent never appears with
+        // nothing said about why. `parley` is an ordinary role: this repository registers as its own agent under it,
+        // and a folder called Parley enrols as it (SPEC.md §12.3).
+        Assert.Contains(
+            Validate(new EnrollmentEntry(Workspace, Facilitation.Role, "", false)),
+            p => p.Contains(Facilitation.Reserved, StringComparison.Ordinal));
 
-        Assert.Empty(problems);
+        Assert.Empty(Validate(new EnrollmentEntry(Workspace, "parley", "", false)));
+    }
+
+    [Fact]
+    public void The_persons_role_is_refused_and_a_user_is_not()
+    {
+        // SPEC.md §12.3 says enrolment refuses a repository under the person's seat: otherwise the repository's
+        // adapter would attach under the person's name. `user` stays an ordinary role.
+        Assert.Contains(
+            Validate(new EnrollmentEntry(Workspace, PersonSeat.Role, "", false)),
+            p => p.Contains(PersonSeat.Reserved, StringComparison.Ordinal));
+
+        Assert.Empty(Validate(new EnrollmentEntry(Workspace, "user", "", false)));
     }
 
     [Fact]
@@ -217,8 +226,8 @@ public sealed class EnrollmentPlanTests
         // from the launch environment — which is worth nothing if two servers claim one name,
         // because either may then collect the other's mail.
         var problems = Validate(
-            new EnrollmentEntry("/srv/a", "orders", "A.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/b", "orders", "B.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/a", "orders", "A.", false),
+            new EnrollmentEntry("/srv/b", "orders", "B.", false));
 
         Assert.Contains(problems, p => p.Contains("collect the other's mail", StringComparison.Ordinal));
     }
@@ -243,11 +252,12 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void An_owns_line_past_the_limit_is_refused()
+    public void A_long_owns_line_is_accepted_because_no_bound_is_in_force()
     {
-        var problems = Validate(Entry(owns: new string('x', EnrollmentPlan.OwnsLimit + 1)));
-
-        Assert.Contains(problems, p => p.Contains("limit is 100", StringComparison.Ordinal));
+        // There is no bound: an agent asked what it owns answers in two halves and names a peer, which a
+        // hundred characters frequently will not hold. What still refuses is the character rule,
+        // which the theory below drives -- and that is the half the schema has always cared about.
+        Assert.Empty(Validate(Entry(owns: new string('x', 4_000))));
     }
 
     [Theory]
@@ -279,7 +289,7 @@ public sealed class EnrollmentPlanTests
         // Only an operator ever sees this value, and it is how `parley registry` tells two
         // similarly named agents apart. A relative path resolves against whatever directory the
         // reader happens to be in, which makes it worse than blank.
-        var problems = Validate(new EnrollmentEntry("checkouts/orders", "orders", "A.", false) { OwnsApproved = true });
+        var problems = Validate(new EnrollmentEntry("checkouts/orders", "orders", "A.", false));
 
         Assert.Contains(problems, p => p.Contains("absolute path", StringComparison.Ordinal));
     }
@@ -287,13 +297,13 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void One_directory_may_not_be_two_agents()
     {
-        // Found by probing rather than reading, and worse than the duplicate-name case it
+        // Worse than the duplicate-name case it
         // mirrors: both entries write the same .mcp.json, so the second silently overwrites the
         // first while the run reports "Enrolled 2 repositories". One agent exists, two were
         // promised, and nothing afterwards says which.
         var problems = Validate(
-            new EnrollmentEntry("/srv/orders", "first", "One.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/orders", "second", "Two.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/orders", "first", "One.", false),
+            new EnrollmentEntry("/srv/orders", "second", "Two.", false));
 
         Assert.Contains(problems, p => p.Contains("workspace is also claimed", StringComparison.Ordinal));
     }
@@ -306,8 +316,8 @@ public sealed class EnrollmentPlanTests
         // would reject a legitimate manifest. A single hard-coded comparer is a bug on whichever
         // platform it was not written for — and CI runs all three.
         var problems = Validate(
-            new EnrollmentEntry("/srv/Orders", "first", "One.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/orders", "second", "Two.", false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/Orders", "first", "One.", false),
+            new EnrollmentEntry("/srv/orders", "second", "Two.", false));
 
         if (OperatingSystem.IsLinux())
         {
@@ -335,10 +345,12 @@ public sealed class EnrollmentPlanTests
     {
         // Whole-manifest rather than fail-fast, so somebody fixing a manifest of eleven does it
         // in one pass instead of eleven runs.
+        // The third entry carries a character the roster rule refuses, since there is no length
+        // bound to fault -- and keeping three faults is the point, since what is being measured is that all of them are reported at once.
         var problems = Validate(
-            new EnrollmentEntry("/srv/a", "Orders", "A.", false) { OwnsApproved = true },
-            new EnrollmentEntry("relative", "billing", "B.", false) { OwnsApproved = true },
-            new EnrollmentEntry("/srv/c", "stock", new string('x', 200), false) { OwnsApproved = true });
+            new EnrollmentEntry("/srv/a", "Orders", "A.", false),
+            new EnrollmentEntry("relative", "billing", "B.", false),
+            new EnrollmentEntry("/srv/c", "stock", "Stock." + (char)0x2028 + "All of it.", false));
 
         Assert.Equal(3, problems.Count);
     }
@@ -400,9 +412,7 @@ public sealed class EnrollmentPlanTests
     [Fact]
     public void Naming_no_project_writes_exactly_what_it_wrote_before()
     {
-        // The parity case for every repository enrolled before projects existed. Adding an
-        // optional parameter that changed the file for callers who did not pass it would rewrite
-        // the launch configuration of every agent on the next run of `enroll apply`.
+        // An enrolment that names no project writes the `parley` key and no PARLEY_PROJECT.
         var plan = EnrollmentPlan.Describe(Entry(), null, null, false);
         var env = (JsonObject)JsonNode.Parse(plan.LaunchConfiguration!)!["mcpServers"]!["parley"]!["env"]!;
 
@@ -441,26 +451,6 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
-    public void A_repository_already_pinned_to_a_broker_address_is_refused()
-    {
-        // Refused with less certainty than the case above and for the same reason: this cannot
-        // tell whether that address is the project being joined, and guessing wrong in the
-        // permissive direction is the move that loses an agent from a roster.
-        var existing = """
-            {
-              "mcpServers": {
-                "parley": { "command": "parley-mcp", "env": { "PARLEY_BROKER": "http://127.0.0.1:7777" } }
-              }
-            }
-            """;
-
-        var refusal = Assert.Throws<InvalidDataException>(
-            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
-
-        Assert.Contains("127.0.0.1:7777", refusal.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void A_repository_already_in_this_project_is_accepted_rather_than_refused()
     {
         var existing = """
@@ -477,11 +467,29 @@ public sealed class EnrollmentPlanTests
     }
 
     [Fact]
+    public void A_repository_already_pinned_to_a_broker_address_is_refused()
+    {
+        // Refused when nothing says whether that address is the project being joined: guessing wrong
+        // in the permissive direction is the move that loses an agent from a roster.
+        var existing = """
+            {
+              "mcpServers": {
+                "parley": { "command": "parley-mcp", "env": { "PARLEY_BROKER": "http://127.0.0.1:7777" } }
+              }
+            }
+            """;
+
+        var refusal = Assert.Throws<InvalidDataException>(
+            () => EnrollmentPlan.Describe(Entry(), existing, null, false, project: "acme"));
+
+        Assert.Contains("127.0.0.1:7777", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_repository_naming_neither_is_re_pointed_and_said()
     {
-        // The ordinary case for anything enrolled before this existed. It is a change of
-        // allegiance in a file that did not previously record one, so it is said rather than
-        // done quietly.
+        // A change of allegiance in a file that did not record one, so it is said rather than done
+        // quietly.
         var existing = """
             {
               "mcpServers": {

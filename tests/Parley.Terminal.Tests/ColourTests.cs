@@ -77,12 +77,12 @@ public sealed class ColourTests
         Assert.Contains(
             room.Written,
             row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal)
-                && row.Contains(billing.Value, StringComparison.Ordinal));
+                && row.Contains(billing.Role, StringComparison.Ordinal));
 
         Assert.Contains(
             room.Written,
             row => row.StartsWith(RoomRegion.NotAddressed, StringComparison.Ordinal)
-                && row.Contains(orders.Value, StringComparison.Ordinal));
+                && row.Contains(orders.Role, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -143,7 +143,6 @@ public sealed class ColourTests
                     ProjectName.Create("orders"),
                     string.Empty,
                     "http://127.0.0.1:1",
-                    null,
                     "quiet\u001b[31m and red"),
             ],
             new Dictionary<string, ProjectHealth>(StringComparer.Ordinal),
