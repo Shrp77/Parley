@@ -52,12 +52,15 @@ public sealed class ASilentBrokerIsGivenUpOnTests
         using var channel = BrokerDirectory.Connect(endpoint);
         var operators = new Wire.Operators.OperatorsClient(channel.Intercept(new Patience(TimeSpan.FromSeconds(1))));
 
+        // A call with no deadline never returns, so the wait is bounded here: that case fails as a timeout, not a hang.
         var clock = Stopwatch.StartNew();
         var gaveUp = await Assert.ThrowsAsync<RpcException>(async () =>
-            await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: ct));
+            await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: ct).ResponseAsync.WaitAsync(TimeSpan.FromMinutes(1), ct));
 
+        // The bound tells this call's one-second deadline from the thirty-second default, not one second from two. On a
+        // loaded runner the deadline's timer fires late: Windows CI took eleven seconds once, beside the terminal suite.
         Assert.Equal(StatusCode.DeadlineExceeded, gaveUp.StatusCode);
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"gave up only after {clock.Elapsed}");
+        Assert.True(clock.Elapsed < Patience.Ordinary, $"gave up only after {clock.Elapsed}");
 
         await listening.CancelAsync();
         silent.Stop();
