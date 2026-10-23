@@ -29,6 +29,10 @@ public sealed class NodeTests
         var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
         await infra.DisposeAsync();
 
+        // Gone as far as the broker knows, not only as far as this client knows: until its handler unwinds infra still
+        // looks attached, so the Request is a nudge to a closing stream and no start is sent. Lost once on macOS.
+        await broker.WaitUntilDetachedAsync("infra@alpha", Patience);
+
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["infra"], token);
 
         Assert.True(Assert.Single((await docs.Client.RequestAsync(Requests.Open(docs.Name, "infra@alpha", "who owns the retry policy"), cancellationToken: token)).Outcomes).Ok);
@@ -112,6 +116,9 @@ public sealed class NodeTests
 
         var infra = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", token);
         await infra.DisposeAsync();
+
+        // Otherwise infra may still look attached, and no command is sent for that reason rather than this one.
+        await broker.WaitUntilDetachedAsync("infra@alpha", Patience);
 
         await using var node = await JoinedNodeClient.JoinAsync(broker, "alpha", ["billing"], token);
 
