@@ -165,6 +165,7 @@ public sealed class ProposalsOnThePageTests
     {
         using var console = new RoadmapConsole();
         console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 1, LiveItems = 2 });
+        console.Broker.Details[3] = Revisable(open: false);
         console.Broker.Propose(8, "orders@test", "Billing export v2", ["One"], target: "billing EXPORT");
         using var client = console.CreateClient();
 
@@ -178,6 +179,48 @@ public sealed class ProposalsOnThePageTests
             client,
             ProposalUri(8),
             new Dictionary<string, string> { ["Text"] = "title: Billing export v2\n1. One", ["Target"] = "3" });
+
+        Assert.Equal(3, Assert.Single(console.Broker.Confirmed).TargetRoadmap);
+    }
+
+    /// <summary>Roadmap 3, whose first item's conversation has an open request when <paramref name="open"/> is set.</summary>
+    private static Wire.RoadmapDetail Revisable(bool open)
+    {
+        var detail = new Wire.RoadmapDetail { Id = 3, Number = 1, Title = "Billing export", Revision = 1 };
+
+        detail.Items.Add(new Wire.RoadmapItemDetail
+        {
+            Id = 1, Number = 1, Position = 1, Text = "Add CSV export", IntendedAgent = "billing@test", ConversationName = "rm1-1",
+            Facts = new Wire.ItemFacts { ConversationExists = open, OpenExchanges = open ? 1 : 0 },
+        });
+
+        return detail;
+    }
+
+    [Fact]
+    public async Task A_revision_that_removes_open_work_is_described_and_confirmed_only_on_a_second_submit()
+    {
+        // A proposal's items carry no item numbers, so confirming it as a revision replaces every item, and item 1's open
+        // request would lose its place with its agent not told. Must fail against confirming on the first submit, and
+        // against a second submit that comes back as a new roadmap rather than the revision chosen.
+        using var console = new RoadmapConsole();
+        console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 1, LiveItems = 1 });
+        console.Broker.Details[3] = Revisable(open: true);
+        console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
+        using var client = console.CreateClient();
+        const string Text = "title: Billing export\n1. One";
+
+        var first = await (await PostAsync(client, ProposalUri(8), new Dictionary<string, string> { ["Text"] = Text, ["Target"] = "3" }))
+            .Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Confirmed);
+        Assert.Contains("item 1, &quot;Add CSV export&quot;, in rm1-1", first, StringComparison.Ordinal);
+        Assert.Matches(new Regex("name=\"Target\" value=\"3\" checked", RegexOptions.None, TimeSpan.FromSeconds(2)), first);
+
+        await PostAsync(
+            client,
+            ProposalUri(8),
+            new Dictionary<string, string> { ["Text"] = Text, ["Target"] = "3", ["ConfirmRemoval"] = "true", ["Removing"] = "1" });
 
         Assert.Equal(3, Assert.Single(console.Broker.Confirmed).TargetRoadmap);
     }

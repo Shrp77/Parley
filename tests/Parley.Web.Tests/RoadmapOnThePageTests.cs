@@ -186,7 +186,9 @@ public sealed class RoadmapOnThePageTests
             new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
             TestContext.Current.CancellationToken);
 
-        Assert.Contains(">formerly item 1 of #1 Billing export</a>", page, StringComparison.Ordinal);
+        // It belongs to no item, so it leads to no roadmap, as in the terminal. Must fail against a link back.
+        Assert.Contains("<p class=\"item-of\">formerly item 1 of #1 Billing export</p>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("item=1#item-1", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -249,9 +251,10 @@ public sealed class RoadmapOnThePageTests
         using var client = console.CreateClient();
 
         var page = await client.GetStringAsync(
-            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&Says=Add%20CSV%20export", UriKind.Relative),
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=plain-chat&Says=Add%20CSV%20export", UriKind.Relative),
             TestContext.Current.CancellationToken);
 
+        // An ordinary conversation, so nothing but the link could fill the box; an item's own words are a separate case.
         Assert.DoesNotContain(">Add CSV export</textarea>", page, StringComparison.Ordinal);
         Assert.Contains("></textarea>", page, StringComparison.Ordinal);
     }
@@ -355,19 +358,35 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
-    public async Task An_unstarted_items_conversation_shows_the_items_words_as_the_hint_and_the_box_empty()
+    public async Task An_unstarted_items_conversation_opens_with_the_items_words_in_the_box()
     {
-        // Read from the item the reservation names, not from the link. Must fail against a page that takes no words, or
-        // that puts them in the box as if the person had written them.
+        // SPEC.md §5.7, as the terminal does: the words are in the box for the person to change and send, read from the
+        // item the reservation names and not from the link. Must fail against an empty box, or one filled from a link.
         using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&Says=Something%20else", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("Something else", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_removed_items_conversation_opens_with_an_empty_box()
+    {
+        // It belongs to no item any more, so nothing is offered to send on its behalf.
+        var removed = Item(1, "Add CSV export", "billing@test", started: false);
+        removed.RemovedRevision = 2;
+        using var console = Confirmed(removed);
         using var client = console.CreateClient();
 
         var page = await client.GetStringAsync(
             new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
             TestContext.Current.CancellationToken);
 
-        Assert.Contains("placeholder=\"Add CSV export\"", page, StringComparison.Ordinal);
-        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Add CSV export</textarea>", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -385,14 +404,5 @@ public sealed class RoadmapOnThePageTests
 
         Assert.NotEmpty(links);
         Assert.All(links, link => Assert.True(link.Groups[1].Value.Length < 200, link.Groups[1].Value[..Math.Min(200, link.Groups[1].Value.Length)]));
-    }
-
-    [Fact]
-    public void The_first_message_on_an_item_says_which_item_and_roadmap_it_is_about()
-    {
-        var sent = Parley.Web.Pages.Conversations.DetailModel.Lead("Add CSV export", "Billing export", "Start with the header row.");
-
-        Assert.Equal(
-            "This is about \"Add CSV export\" in the roadmap \"Billing export\": Start with the header row.", sent);
     }
 }

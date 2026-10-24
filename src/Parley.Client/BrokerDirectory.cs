@@ -251,10 +251,17 @@ public sealed class BrokerDirectory : IDisposable
     /// a broker that is down is down, waiting longer does not find it, and the default ten seconds
     /// sits in front of a page the operator is waiting on. It also keeps an unreachable
     /// project reported within five seconds reachable by arithmetic rather than by hope.
+    /// <para>
+    /// <b>No limit on what a reply may carry.</b> Roadmap text has no bound, so a few large proposals from one agent made
+    /// the waiting list larger than gRPC's default 4 MB, and the person could then neither read nor decline any proposal.
+    /// What a person reads is what the broker already stored, each piece of it within the broker's own limit on what it
+    /// receives, so the person is never shut out of their own deployment by what an agent wrote.
+    /// </para>
     /// </remarks>
     public static GrpcChannel Connect(string endpoint) =>
         GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
         {
+            MaxReceiveMessageSize = null,
             HttpHandler = new SocketsHttpHandler
             {
                 ConnectTimeout = TimeSpan.FromSeconds(2),

@@ -44,6 +44,17 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     [BindProperty]
     public string? Target { get; set; }
 
+    /// <summary>Set by the second submit, after the page described the open work a revision removes.</summary>
+    [BindProperty]
+    public bool ConfirmRemoval { get; set; }
+
+    /// <summary>The numbers of the items the warning described, which the second submit agrees to remove.</summary>
+    [BindProperty]
+    public string? Removing { get; set; }
+
+    /// <summary>What confirming as a revision would leave in flight, said before it is confirmed; null when nothing is.</summary>
+    public string? Warning { get; private set; }
+
     /// <summary>The proposal being decided, once read.</summary>
     public RoadmapProposal? Proposal { get; private set; }
 
@@ -105,6 +116,33 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         long? target = Match is not null && string.Equals(Target, Match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
             ? Match.Id
             : null;
+
+        // A proposal's items carry no item numbers, so a revision replaces every item the roadmap had. Open work it would
+        // remove is described first and confirmed only on a second, deliberate submit, as an edit's is (SPEC.md §5.7).
+        if (target is { } revising)
+        {
+            var current = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project))
+                    .RoadmapAsync(revising, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (!current.Reachable || current.Value is null)
+            {
+                Problem = current.Problem ?? "The roadmap it would revise could not be read, so nothing was confirmed.";
+
+                return Page();
+            }
+
+            var open = Removal.StillOpen(current.Value, content);
+
+            if (!Removal.Covers(open, ConfirmRemoval ? Removing : null))
+            {
+                Warning = Removal.Describe(open);
+                Removing = Removal.Numbers(open);
+
+                return Page();
+            }
+        }
 
         var outcome = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(project))

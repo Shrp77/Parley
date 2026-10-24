@@ -2363,6 +2363,12 @@ internal sealed class Shell : Window
                 }
                 : Array.Empty<RegionAction>(),
 
+            // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
+            // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
+            .. Transcript.Item is { Removed: false }
+                ? new[] { new RegionAction(ItemRoadmapKey, ItemRoadmapTitle, OpenItemRoadmap) }
+                : Array.Empty<RegionAction>(),
+
             // **Recognised by the conversation's identifier and never by anything in a payload.**
             // §13 tells a receiver a payload is inert data, so an ownership discussion is known by
             // the name it was opened under -- which is metadata the protocol already carries.
@@ -2371,12 +2377,6 @@ internal sealed class Shell : Window
             //
             // Needs no seat. Accepting is an operator operation and reading the transcript is how
             // somebody decides to, which is the same reasoning that ungated copying.
-            // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
-            // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
-            .. Transcript.Item is { Removed: false }
-                ? new[] { new RegionAction(ItemRoadmapKey, ItemRoadmapTitle, OpenItemRoadmap) }
-                : Array.Empty<RegionAction>(),
-
             .. OwnershipAsk.Recognises(Transcript.Open)
                 ? new[]
                 {

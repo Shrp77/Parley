@@ -152,7 +152,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed by the person, and could not be read.
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
 - **FR-014a**: An item whose text was edited after its conversation began MUST say so, comparing the item's text now with the words the person sent.
-- ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so a surface never meets a broker older than itself. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
+- ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so on one machine a surface never meets a broker older than itself. A surface reaching a broker on another machine, through the SSH tunnel SPEC.md §16 describes, can; the project health warning that names a broker of another release says so. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
 - **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting or blocked).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
 - **FR-018**: A state that cannot be read MUST be shown as such and never as not started.
@@ -205,7 +205,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - Item order is the intended order; an item depends on those listed, and by default on nothing. "Next" respects dependencies when given and order otherwise.
 - Items are worked as requests like any other: the latest result decides: `done` makes an item done and `blocked` makes it blocked, and a person's close makes it closed by the person.
 - One roadmap item has one conversation; an item meant for several agents sends one request each within it.
-- Nothing is released, so the protocol and schema change in place with no compatibility or migration; protocol and version numbers move per this repository's rules.
+- Nothing is released, but live stores are kept: schema 1 is frozen and any schema change is a new migration that upgrades a store in place. The protocol and the wire change freely, since every tool on a machine is installed together; protocol and version numbers move per this repository's rules.
 - Roadmaps are per project and never cross projects.
 - The template (FR-006a) is what keeps roadmaps brief, since no cap does. It lives in the proposing tool's description and in the standing instructions every agent receives, so it reaches agents that never read the plugin.
 - Having no cap on a roadmap is a reduction in a control that the constitution's terseness principle names, and is recorded as one, as the ownership statement's was. It is tolerable here because a proposal is read by the person and not by an agent; the text that reaches an agent travels as a request and keeps the message cap. If proposals prove large in practice, a cap should be set from that evidence.

@@ -67,12 +67,23 @@ else if (Model.Proposal is { } proposal)
         {
             <fieldset>
                 <legend>What it becomes</legend>
-                <label><input type="radio" name="Target" value="new" checked /> A new roadmap</label>
-                <label><input type="radio" name="Target" value="@revises.Id" /> A revision of <em>@revises.Title</em></label>
+                @{ var revising = Model.Target == revises.Id.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+                <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
+                <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of <em>@revises.Title</em></label>
             </fieldset>
         }
 
-        <button type="submit">Confirm</button>
+        @if (Model.Warning is { Length: > 0 } warning)
+        {
+            @* Said before anything is confirmed; the second submit is the deliberate act. *@
+            <p class="unreachable" role="alert">@warning</p>
+            <input type="hidden" name="Removing" value="@Model.Removing" />
+            <button type="submit" name="ConfirmRemoval" value="true">Remove them and confirm</button>
+        }
+        else
+        {
+            <button type="submit">Confirm</button>
+        }
         <a href="/Roadmaps/Decline?project=@Model.Project&amp;id=@proposal.Id">Decline it…</a>
         <a href="/Roadmaps?project=@Model.Project">Leave it for now</a>
     </form>

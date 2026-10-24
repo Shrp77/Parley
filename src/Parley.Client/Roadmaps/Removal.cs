@@ -35,6 +35,37 @@ public static class Removal
             .OrderBy(i => i.Position)];
     }
 
+    /// <summary>Whether a person agreed to every item an edit would leave in flight.</summary>
+    /// <param name="open">What <see cref="StillOpen"/> found for the content being saved now.</param>
+    /// <param name="agreed">The item numbers the person was shown and went ahead with, as <see cref="Numbers"/> wrote them.</param>
+    /// <returns><see langword="true"/> when nothing is open or every open item was among those shown.</returns>
+    /// <remarks>
+    /// Going ahead is agreement to what was described, so an open item taken out after the description, or one whose work
+    /// opened since, is described again. Anything in <paramref name="agreed"/> that is not a number agrees to nothing.
+    /// </remarks>
+    public static bool Covers(IReadOnlyList<RoadmapItem> open, string? agreed)
+    {
+        ArgumentNullException.ThrowIfNull(open);
+
+        var shown = (agreed ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(n => int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0)
+            .Where(n => n > 0)
+            .ToHashSet();
+
+        return open.All(i => shown.Contains(i.Number));
+    }
+
+    /// <summary>The numbers of the items described, for a form to carry back with the person's choice.</summary>
+    /// <param name="open">What <see cref="StillOpen"/> found.</param>
+    /// <returns>The numbers, comma-separated.</returns>
+    public static string Numbers(IReadOnlyList<RoadmapItem> open)
+    {
+        ArgumentNullException.ThrowIfNull(open);
+
+        return string.Join(",", open.Select(i => i.Number.ToString(CultureInfo.InvariantCulture)));
+    }
+
     /// <summary>The sentence a surface shows before saving such an edit.</summary>
     /// <param name="items">What <see cref="StillOpen"/> found.</param>
     /// <returns>The description, or <see langword="null"/> when there is nothing to say.</returns>

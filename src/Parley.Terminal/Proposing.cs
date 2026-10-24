@@ -41,6 +41,9 @@ internal static class Proposing
     /// <summary>Confirms it as a roadmap of its own.</summary>
     internal const string NewRoadmap = "Make it a new roadmap";
 
+    /// <summary>Confirms a revision after being told it removes items whose work is still open.</summary>
+    internal const string RemoveAndConfirm = "Remove them and confirm";
+
     /// <summary>Said when a person leaves a proposal alone.</summary>
     internal const string Left = "Left as it is. It is still awaiting your decision.";
 
@@ -312,7 +315,59 @@ internal static class Proposing
         {
             Prompting.Close(app, open);
 
-            queue(t => SendAsync(client, proposal, content, chosen == revise ? match.Id : null, done, t));
+            if (chosen != revise)
+            {
+                queue(t => SendAsync(client, proposal, content, null, done, t));
+
+                return;
+            }
+
+            queue(t => ReviseAsync(app, client, proposal, content, match.Id, queue, done, t));
+        };
+    }
+
+    /// <summary>Confirms the proposal as a revision, first describing any open work the revision removes.</summary>
+    /// <remarks>
+    /// A proposal's items carry no item numbers, so a revision kept as proposed replaces every item of the roadmap. An
+    /// item whose request is still open loses its place and its agent is not told, which is described here as it is when
+    /// the person edits the roadmap (<see cref="Revising"/>), and saved only on a second, deliberate choice.
+    /// </remarks>
+    private static async Task ReviseAsync(
+        IApplication app,
+        BrokerClient client,
+        RoadmapProposal proposal,
+        RoadmapContent content,
+        long roadmapId,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done,
+        CancellationToken cancellationToken)
+    {
+        var read = await BrokerDirectory.ReadAsync(
+            async () => await client.RoadmapAsync(roadmapId, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (read.Value is not { } roadmap || Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
+        {
+            await SendAsync(client, proposal, content, roadmapId, done, cancellationToken).ConfigureAwait(false);
+
+            return;
+        }
+
+        // The items' words were proposed by an agent, so they are made safe to draw like any other text of theirs.
+        var choosing = Prompting.Choose(Title, Safe.Text(warning), [Leave, RemoveAndConfirm]);
+        var asking = Prompting.Open(app, choosing);
+
+        choosing.Done += (_, chosen) =>
+        {
+            Prompting.Close(app, asking);
+
+            if (chosen == RemoveAndConfirm)
+            {
+                queue(t => SendAsync(client, proposal, content, roadmapId, done, t));
+            }
+            else
+            {
+                _ = done(Left);
+            }
         };
     }
 

@@ -889,7 +889,10 @@ an agent cannot make a conversation look like one (§13).
 
 **Removing an item removes nothing it caused.** Items are never deleted. A removed item's conversation
 stays, belongs to no item, and says which item it belonged to. Destroying a conversation
-(§14) leaves its item reading *closed*, never *not started*.
+(§14) leaves its item reading *closed*, never *not started*. An open request in a removed item's
+conversation stays open and the agent holding it is not told, so a surface describes an edit, or a
+confirmation as a revision, that removes such an item before saving it, and saves it only on a second,
+deliberate act.
 
 **An agent is told what became of its proposal and nothing else.** Confirmed, declined or superseded
 reaches the proposer as a notice with its own title, in its inbox beside change notices (§9.5). It
@@ -1227,7 +1230,7 @@ transaction with the version bump, and keeps every row, so installing a new brok
 a deployment its work. A broker refuses a store at a version newer than it knows, because it
 cannot know what changed. The version records which migrations a store was given and not what it
 holds, so a broker also compares the store's tables, indexes and triggers with its own and reports
-any difference. The DDL below is the schema as it stands after every migration.
+any it lacks or holds differently. The DDL below is the schema as it stands after every migration.
 
 The schema requires **SQLite 3.38 or later**. It uses `STRICT` tables (3.37), generated
 columns (3.31), and `unixepoch()` (3.38). An older engine fails at `CREATE TABLE` with an

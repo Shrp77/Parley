@@ -39,7 +39,7 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
     /// <summary>Whether an item's row starts open: the one asked for, or the next one when none was or it is not shown.</summary>
     /// <param name="state">The item.</param>
     /// <returns>Whether it is open when the page loads.</returns>
-    /// <remarks>A removed item's conversation still links here, so the item asked for may not be on the page.</remarks>
+    /// <remarks>A link can name any number, and an item can be removed after a link to it was made.</remarks>
     public bool Opens(ItemState state)
     {
         ArgumentNullException.ThrowIfNull(state);

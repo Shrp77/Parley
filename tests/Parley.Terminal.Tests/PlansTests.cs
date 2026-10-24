@@ -655,4 +655,20 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Equal(2, view.Selected!.Item.Number);
         Assert.Contains("2. Call it from the report", view.DetailText, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task A_cleared_transcript_offers_no_way_to_an_items_roadmap()
+    {
+        // Selecting clears the transcript while the person stays in the conversation view (after a Clarify, say). Must
+        // fail against a clear that keeps the item, which left Alt+o offered with no conversation open.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        shell.Transcript.Clear();
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        Assert.Null(shell.Transcript.Open);
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle);
+    }
 }

@@ -23,7 +23,15 @@
             {
                 <p class="item-title">@itemTitle</p>
             }
-            <p class="item-of"><a href="@Model.RoadmapPath">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</a></p>
+            @if (Model.RoadmapPath is { } back)
+            {
+                <p class="item-of"><a href="@back">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</a></p>
+            }
+            else
+            {
+                @* A removed item's conversation belongs to no item (SPEC.md §5.7): it says which it was and leads nowhere. *@
+                <p class="item-of">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</p>
+            }
         }
         <p class="as-of">
             In the order the broker recorded them. Times come from the agents' machines.
@@ -134,11 +142,9 @@ else
     </p>
 
     <textarea name="Says" rows="3" required
-              placeholder="@(Model.Hint is { Length: > 0 } hint
-                  ? hint
-                  : Model.Seat is null
-                      ? "What do you want them to do, or to know?"
-                      : Framing.AskExample)">@Model.Says</textarea>
+              placeholder="@(Model.Seat is null
+                  ? "What do you want them to do, or to know?"
+                  : Framing.AskExample)">@Model.Says</textarea>
 
     <div class="composer-send">
         <span class="composer-note">Enter sends. Shift+Enter makes a new line.</span>

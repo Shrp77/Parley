@@ -184,8 +184,9 @@ a further request in its conversation.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
-conversation where it is, marked *formerly*. If the item's work is still open, you are told so
-before the edit is saved, because the agent holding it is not told.
+conversation where it is, marked *formerly*. A proposal confirmed as a revision replaces the
+roadmap's items, so it removes them too. If a removed item's work is still open, you are told so
+before anything is saved, because the agent holding it is not told.
 
 ## Files
 

@@ -137,8 +137,9 @@ remove it.
 
 A roadmap is an ordered list of work, and it belongs to you. An agent can **propose** one, as a
 title and a short list of items. Nothing is a roadmap until you confirm it, and you can reword,
-reorder, add or remove items first. No agent can read, change or mark done a roadmap. When you
-start an item, the console sends the agent a normal request from your seat, one item at a time.
+reorder, add or remove items first. No agent can read, change or mark done a roadmap. Starting an
+item opens its conversation with the item's words in the box. Nothing is sent until you press Send,
+and then it is a normal request from your seat, one item at a time.
 
 Where an item stands (not started, in progress, waiting, blocked, done or closed) is worked out
 from its conversation. Nobody sets it by hand.

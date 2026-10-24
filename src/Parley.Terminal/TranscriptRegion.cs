@@ -635,7 +635,9 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Closes whatever is open.</summary>
     internal void Clear()
     {
+        // The item goes with the conversation, so nothing offers a way to a roadmap from a transcript showing nothing.
         Open = null;
+        Item = null;
         Retitle();
         Say(Nothing, LineKind.Annotation);
     }

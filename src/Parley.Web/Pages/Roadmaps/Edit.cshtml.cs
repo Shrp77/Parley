@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Parley.Client;
@@ -55,15 +54,6 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
 
     /// <summary>What the edit would leave in flight, said before it is saved; null when nothing is.</summary>
     public string? Warning { get; private set; }
-
-    /// <summary>The item numbers a second submit agreed to, from <see cref="Removing"/>.</summary>
-    /// <param name="removing">The comma-separated numbers, as the warning wrote them.</param>
-    /// <returns>Those numbers; anything that is not one agrees to nothing.</returns>
-    private static HashSet<int> Agreed(string? removing) =>
-        [.. (removing ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(n => int.TryParse(n, NumberStyles.None, CultureInfo.InvariantCulture, out var number) ? number : 0)
-            .Where(n => n > 0)];
 
     /// <summary>The roadmap, once read.</summary>
     public Roadmap? Roadmap { get; private set; }
@@ -137,12 +127,11 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
         // the request stays open and its agent is not told, which deleting a line does not say (SPEC.md §5.7). Going ahead
         // covers the items that were described and no others, so an open item taken out after the warning is described too.
         var open = Removal.StillOpen(Roadmap, content);
-        var agreed = ConfirmRemoval ? Agreed(Removing) : [];
 
-        if (open.Any(i => !agreed.Contains(i.Number)))
+        if (!Removal.Covers(open, ConfirmRemoval ? Removing : null))
         {
             Warning = Removal.Describe(open);
-            Removing = string.Join(",", open.Select(i => i.Number.ToString(CultureInfo.InvariantCulture)));
+            Removing = Removal.Numbers(open);
 
             return Page();
         }

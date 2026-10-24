@@ -121,8 +121,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
     /// <summary>What the operator wrote.</summary>
     /// <remarks>
-    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is only
-    /// ever what the person typed.
+    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is what the person
+    /// typed, or the words of the roadmap item the broker's reservation names, never anything a link supplied.
     /// </remarks>
     [BindProperty]
     public string? Says { get; set; }
@@ -144,14 +144,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
         && snapshot.State == ExchangeState.Open
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
-
-    /// <summary>Words shown as the box's hint and never put in it: an item's own text, while its conversation is empty.</summary>
-    /// <remarks>
-    /// A roadmap item opens its conversation with its own text as the hint, so the person sees what the item is and
-    /// writes their own words. A hint is not something they have said: the box stays empty until they type. Read from
-    /// the item the reservation names, never from a link, so it is the item's words whatever their length.
-    /// </remarks>
-    public string? Hint => Problem is null && Messages.Count == 0 && Item is { Removed: false } ? ItemTitle : null;
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
@@ -500,11 +492,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
-        // **The first words on a roadmap item say what it is about.** The agent was never in the roadmap and cannot see it,
-        // so a bare "go ahead" on rm1-3 means nothing to it. Only when the conversation is new and was read cleanly: a
-        // conversation that already has messages has given the agent its context, and a failed read must not be taken
-        // for an empty conversation.
-        var said = await OpeningAsync(project, Id, Says).ConfigureAwait(false);
+        // Sent as written. An item's words reach the agent because they were in the box when its conversation opened,
+        // where the person could change them, never as text added here that the person cannot see or shorten.
+        var said = Says;
 
         foreach (var target in Targets)
         {
@@ -545,30 +535,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     private void Tell(string project, string who, string outcome) =>
         notices.Add(project, Id, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
 
-    /// <summary>The person's words, led by the roadmap item they are about when this opens the work on it.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words to send.</returns>
-    private async Task<string> OpeningAsync(ProjectSettings project, string id, string words)
-    {
-        await ReadAsync(project, id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project).ConfigureAwait(false);
-
-        return Problem is null && Messages.Count == 0 && Item is { Removed: false } && ItemTitle is { Length: > 0 } item
-            ? Lead(item, RoadmapTitle, words)
-            : words;
-    }
-
-    /// <summary>The first words of a message that opens the work on a roadmap item.</summary>
-    /// <param name="item">The item's words.</param>
-    /// <param name="roadmap">The roadmap's title.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words led by what they are about.</returns>
-    /// <remarks>Plain text, because a payload is inert data and the agent reads it as the person's own line.</remarks>
-    public static string Lead(string item, string? roadmap, string words) =>
-        $"This is about \"{item}\" in the roadmap \"{roadmap}\": {words}";
-
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>
     /// <param name="problem">What the read reported.</param>
     /// <returns>A refusal carrying the reason.</returns>
@@ -595,6 +561,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         await ReadAsync(project, Id).ConfigureAwait(false);
         await ReadItemTitleAsync(project).ConfigureAwait(false);
 
+        // **An item not yet started opens with its words in the box** (SPEC.md §5.7), as the terminal does, for the person
+        // to change and send. Only while nothing has been said there, the read was clean, and the box holds nothing the
+        // person typed: words a refused send kept are theirs and stay.
+        if (Says is null && Problem is null && Destroyed is null && Messages.Count == 0 && Item is { Removed: false })
+        {
+            Says = ItemTitle;
+        }
+
         return Page();
     }
 
@@ -613,7 +587,8 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public string? RoadmapTitle { get; private set; }
 
     /// <summary>Where the roadmap this conversation's item belongs to is, opened on that item; null for an ordinary one.</summary>
-    public string? RoadmapPath => Item is { } item
+    /// <remarks>Null for a removed item's conversation too, which belongs to no item (SPEC.md §5.7), as in the terminal.</remarks>
+    public string? RoadmapPath => Item is { Removed: false } item
         ? string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"/Roadmaps/Roadmap?project={Uri.EscapeDataString(Project ?? string.Empty)}&id={item.RoadmapId}&item={item.ItemNumber}#item-{item.ItemNumber}")
