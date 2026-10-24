@@ -699,6 +699,8 @@ service Operators {
   rpc Roadmaps(Empty) returns (RoadmapsReply);
   rpc Roadmap(RoadmapRequest) returns (RoadmapReply);
   rpc Proposals(ProposalsRequest) returns (ProposalsReply);
+  rpc ProposalCount(ProposalsRequest) returns (ProposalCountReply);
+  rpc Proposal(ProposalRequest) returns (ProposalsReply);
   rpc ConfirmProposal(ConfirmProposalRequest) returns (RoadmapChangeReply);
   rpc DeclineProposal(ProposalRequest) returns (RoadmapChangeReply);
   rpc EditRoadmap(EditRoadmapRequest) returns (RoadmapChangeReply);
@@ -1325,8 +1327,7 @@ message RoadmapReply {
 
 message ProposalsRequest {
   ProposalState state = 1;            // UNSPECIFIED for every state
-  bool headings = 2;                  // each title cut to a heading's length, item_count set, and no items
-  int64 id = 3;                       // 0 for every proposal; otherwise that one, whole, in whatever state
+  bool headings = 2;                  // the newest 200, each title cut to a heading's length, item_count set, and no items
 }
 
 message ProposalDetail {
@@ -1339,11 +1340,15 @@ message ProposalDetail {
   ProposalState state = 7;
   string created_utc = 8;
   string decided_utc = 9;             // empty while waiting
-  int32 item_count = 10;              // set when read as headings, whose content carries no items
+  int32 item_count = 10;              // always set; the only count a heading carries, since its content has no items
 }
 
 message ProposalsReply {
-  repeated ProposalDetail proposals = 1;
+  repeated ProposalDetail proposals = 1;  // as headings, the newest 200 at most
+}
+
+message ProposalCountReply {
+  int32 count = 1;                    // how many proposals are in the state asked for; headings is ignored
 }
 
 message ProposalRequest {

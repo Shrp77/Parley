@@ -656,9 +656,22 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<int> ProposalCountAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default) =>
+        (await _operators.ProposalCountAsync(
+            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
+            cancellationToken: cancellationToken)).Count;
+
+    /// <inheritdoc/>
     public async Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default)
     {
-        var reply = await _operators.ProposalsAsync(new Wire.ProposalsRequest { Id = id }, cancellationToken: cancellationToken);
+        // No identifier names no proposal: a page reached without one must not read, and then decide, any proposal.
+        if (id <= 0)
+        {
+            return null;
+        }
+
+        var reply = await _operators.ProposalAsync(new Wire.ProposalRequest { Id = id }, cancellationToken: cancellationToken);
 
         return reply.Proposals.Count == 0 ? null : ProposalIn(reply.Proposals[0], headings: false);
     }

@@ -131,6 +131,10 @@ public sealed class RoadmapBroker : HttpMessageHandler
             reply = request.RequestUri!.AbsolutePath switch
             {
                 "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(Wire.ProposalsRequest.Parser.ParseFrom(payload)),
+                "/parley.v1.Operators/Proposal" => Old ? null : OneProposal(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
+                "/parley.v1.Operators/ProposalCount" => Old
+                    ? null
+                    : new Wire.ProposalCountReply { Count = Proposals.Count(p => p.State == Wire.ProposalState.Waiting) },
                 "/parley.v1.Operators/Roadmaps" => ListRoadmaps(),
                 "/parley.v1.Operators/Roadmap" => One(Wire.RoadmapRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/ConfirmProposal" => Confirm(Wire.ConfirmProposalRequest.Parser.ParseFrom(payload)),
@@ -169,14 +173,24 @@ public sealed class RoadmapBroker : HttpMessageHandler
         return response;
     }
 
-    /// <summary>Answers as the broker does: one proposal by its identifier, or a list, as headings when asked.</summary>
+    /// <summary>Answers as the broker does: one proposal by its identifier, or none.</summary>
+    private Wire.ProposalsReply OneProposal(long id)
+    {
+        var reply = new Wire.ProposalsReply();
+
+        reply.Proposals.AddRange(Proposals.Where(p => p.Id == id));
+
+        return reply;
+    }
+
+    /// <summary>Answers as the broker does: a list, as headings when asked.</summary>
     private Wire.ProposalsReply ListProposals(Wire.ProposalsRequest request)
     {
         var reply = new Wire.ProposalsReply();
 
-        foreach (var proposal in Proposals.Where(p => request.Id == 0 || p.Id == request.Id))
+        foreach (var proposal in Proposals)
         {
-            if (request.Headings && request.Id == 0)
+            if (request.Headings)
             {
                 var heading = proposal.Clone();
                 heading.ItemCount = proposal.Content.Items.Count;

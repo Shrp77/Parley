@@ -92,6 +92,13 @@ public sealed record RoadmapProposal(
 
     /// <summary>How many characters of a title or title hint a heading carries.</summary>
     public const int HeadingLength = 200;
+
+    /// <summary>How many headings, newest first, a list carries; a count says how many there are in all.</summary>
+    /// <remarks>
+    /// Nothing bounds how many proposals an agent makes, so a list without a limit is as long as an agent makes it, and a
+    /// list is read on every refresh. Conversations are listed in pages for the same reason.
+    /// </remarks>
+    public const int HeadingLimit = 200;
 }
 
 /// <summary>

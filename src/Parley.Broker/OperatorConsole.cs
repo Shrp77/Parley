@@ -320,7 +320,14 @@ public sealed class OperatorConsole
         ProposalState? state, CancellationToken cancellationToken = default) =>
         _roadmaps.ListProposalHeadingsAsync(state, cancellationToken);
 
-    /// <summary>Reads one proposal whole (§10.2's <c>proposals</c> with an identifier).</summary>
+    /// <summary>Counts the proposals agents have made (§10.2's <c>proposal_count</c>).</summary>
+    /// <param name="state">Which to count, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many there are.</returns>
+    public Task<int> CountProposalsAsync(ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.CountProposalsAsync(state, cancellationToken);
+
+    /// <summary>Reads one proposal whole (§10.2's <c>proposal</c>).</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The proposal, or <see langword="null"/>.</returns>

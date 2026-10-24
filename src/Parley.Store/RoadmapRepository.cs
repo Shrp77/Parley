@@ -173,13 +173,29 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         return proposals;
     }
 
-    /// <summary>Reads the headings of the proposals in a state, or of all of them, and none of their items.</summary>
+    /// <summary>Counts the proposals in a state, or all of them.</summary>
     /// <param name="state">The state, or <see langword="null"/> for every one.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The proposals, newest first, each titled to <see cref="RoadmapProposal.HeadingLength"/> with its item count.</returns>
+    /// <returns>How many there are.</returns>
+    /// <remarks>A count reads no proposal at all, so it costs the same however many an agent made.</remarks>
+    public async Task<int> CountProposalsAsync(ProposalState? state, CancellationToken cancellationToken = default) =>
+        await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                "SELECT COUNT(*) FROM roadmap_proposals WHERE @State IS NULL OR state = @State;",
+                new { State = state is null ? null : ProposalStateText(state.Value) },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+    /// <summary>Reads the headings of the newest proposals in a state, or of all of them, and none of their items.</summary>
+    /// <param name="state">The state, or <see langword="null"/> for every one.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// At most <see cref="RoadmapProposal.HeadingLimit"/> proposals, newest first, each titled to
+    /// <see cref="RoadmapProposal.HeadingLength"/> with its item count.
+    /// </returns>
     /// <remarks>
-    /// The item text is never read, so a list costs the same whatever an agent wrote in it (SPEC.md §10.2
-    /// <c>proposals</c>).
+    /// The item text is never read and the number of rows is bounded, so a list costs the same whatever an agent wrote
+    /// and however often it proposed (SPEC.md §10.2 <c>proposals</c>). <see cref="CountProposalsAsync"/> says how many
+    /// there are in all.
     /// </remarks>
     public async Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
         ProposalState? state, CancellationToken cancellationToken = default)
@@ -193,9 +209,15 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                        (SELECT COUNT(*) FROM roadmap_proposal_items i WHERE i.proposal_id = p.id) AS Items
                   FROM roadmap_proposals p
                  WHERE @State IS NULL OR p.state = @State
-                 ORDER BY p.id DESC;
+                 ORDER BY p.id DESC
+                 LIMIT @Limit;
                 """,
-                new { State = state is null ? null : ProposalStateText(state.Value), Length = RoadmapProposal.HeadingLength },
+                new
+                {
+                    State = state is null ? null : ProposalStateText(state.Value),
+                    Length = RoadmapProposal.HeadingLength,
+                    Limit = RoadmapProposal.HeadingLimit,
+                },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(row => new RoadmapProposal(

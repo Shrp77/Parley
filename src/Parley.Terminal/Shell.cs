@@ -5163,8 +5163,10 @@ internal sealed class Shell : Window
 
             // What agents have put forward for the person to decide, counted with the rest. Null when the broker
             // cannot say, which a row leaves out rather than showing as none.
-            var proposals = await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(client, cancellationToken)
+            var counted = await BrokerDirectory.ReadAsync(async () =>
+                await client.ProposalCountAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false))
                 .ConfigureAwait(false);
+            int? proposals = counted.Reachable ? counted.Value : null;
 
             var figures = registry.Value is { } agents && conversations.Value is { } page
                 ? ProjectFigures.Of(agents, page, proposals)

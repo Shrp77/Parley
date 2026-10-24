@@ -355,6 +355,16 @@ public interface IParleyBrokerClient
     Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
         ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default);
 
+    /// <summary>Count the proposals agents have made.</summary>
+    /// <param name="state">Which to count; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>How many there are.</returns>
+    /// <remarks>
+    /// Reads no proposal, because nothing bounds how many an agent makes and a count is read on every refresh. A list of
+    /// headings carries the newest <see cref="RoadmapProposal.HeadingLimit"/>; this says how many there are in all.
+    /// </remarks>
+    Task<int> ProposalCountAsync(ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+
     /// <summary>Read one proposal whole, in whatever state it is.</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

@@ -244,6 +244,22 @@ public sealed class ProposalsOnThePageTests
     }
 
     [Fact]
+    public async Task A_decline_that_names_no_proposal_declines_nothing()
+    {
+        // On the wire an id of 0 asks for the list, whose first row is the newest proposal. Must fail against a page with
+        // no id that describes, and then declines, whichever proposal happens to be newest.
+        using var console = Proposed();
+        using var client = console.CreateClient();
+        var none = new Uri($"/Roadmaps/Decline?project={RoadmapConsole.Project}", UriKind.Relative);
+
+        var page = await client.GetStringAsync(none, TestContext.Current.CancellationToken);
+        await PostAsync(client, none, [], tokenFrom: DeclineUri(7));
+
+        Assert.Empty(console.Broker.Declined);
+        Assert.Contains("not awaiting your decision", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Declining_is_described_on_a_get_and_only_a_post_declines()
     {
         using var console = Proposed();

@@ -209,7 +209,8 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         // What agents have put forward for the person to decide. Unknown when the broker cannot say, which
         // is not the same as none.
-        var proposals = Parley.Client.Roadmaps.ProposalCount.WaitingAsync(broker, token);
+        var proposals = BrokerDirectory.ReadAsync(async () =>
+            await broker.ProposalCountAsync(ProposalState.Waiting, token).ConfigureAwait(false));
 
         var implemented = BrokerDirectory.ReadAsync(async () =>
             await broker.ImplementsAsync(token).ConfigureAwait(false));
@@ -225,7 +226,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
             counted.Value?.Items.Count,
             counted.Value?.Items.Count(c => c.Archived) ?? 0,
             agents.Problem ?? counted.Problem,
-            await proposals.ConfigureAwait(false));
+            await proposals.ConfigureAwait(false) is { Reachable: true } waiting ? waiting.Value : null);
 
         var health = new ProjectHealth(said.Value?.Protocol, said.Problem, said.Value?.BrokerVersion, said.Value?.StoreProblems);
 

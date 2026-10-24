@@ -119,14 +119,6 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
     }
 
-    private static void Pick(Driving.Session driving, string title, string row)
-    {
-        var dialog = (ChoiceDialog)driving.Find(title);
-
-        driving.Row(dialog.Choices, row);
-        driving.Enter();
-    }
-
     /// <summary>Chooses a row as Enter does, without the draw a key press makes.</summary>
     /// <remarks>
     /// For a choice that starts queued work which opens another view: a press would draw on this thread while that work
@@ -483,7 +475,7 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Empty(heading.Content.Items);
         Assert.Equal(2, heading.ItemCount);
         Assert.Equal(RoadmapProposal.HeadingLength, heading.Content.Title.Length);
-        Assert.Equal(1, await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(Client, Ct));
+        Assert.Equal(1, await Client.ProposalCountAsync(ProposalState.Waiting, Ct));
 
         var whole = await Client.ProposalAsync(id!.Value, Ct);
 
@@ -491,6 +483,29 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Equal(1_000, whole.Content.Title.Length);
         Assert.Equal(100_000, whole.Content.Items[0].Text.Length);
         Assert.Null(whole.ItemCount);
+    }
+
+    [Fact]
+    public async Task However_many_proposals_an_agent_makes_a_list_carries_the_newest_and_a_count_says_how_many()
+    {
+        // Nothing bounds how many proposals one agent makes, and a count and a list are read on every refresh. Must fail
+        // against a list with no limit, or a count taken by downloading the list.
+        var made = RoadmapProposal.HeadingLimit + 5;
+
+        for (var n = 1; n <= made; n++)
+        {
+            var (_, problem) = await Repository.ProposeAsync(
+                Orders, null, null, new RoadmapContent($"Plan {n}", [new RoadmapItemDraft(null, "Do it", null, [])]), T0,
+                cancellationToken: Ct);
+
+            Assert.Null(problem);
+        }
+
+        var headings = await Client.ProposalsAsync(ProposalState.Waiting, headings: true, Ct);
+
+        Assert.Equal(RoadmapProposal.HeadingLimit, headings.Count);
+        Assert.Equal($"Plan {made}", headings[0].Content.Title);
+        Assert.Equal(made, await Client.ProposalCountAsync(ProposalState.Waiting, Ct));
     }
 
     [Fact]
