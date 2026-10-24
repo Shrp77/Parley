@@ -133,6 +133,58 @@ public sealed class ProjectsDoNotMixTests : IAsyncDisposable
             $"box on arriving at beta/c-1 held '{carried}'; sent to beta's broker: {leaked}; said: {shell.Said}");
     }
 
+    /// <summary>Fails every call to one path, as a broker that does not answer it.</summary>
+    private sealed class FailPath(string path) : DelegatingHandler(new SocketsHttpHandler())
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.RequestUri!.AbsolutePath.EndsWith(path, StringComparison.Ordinal)
+                ? throw new HttpRequestException("not answering")
+                : base.SendAsync(request, cancellationToken);
+    }
+
+    [Fact]
+    public async Task Alphas_roadmaps_are_not_listed_in_betas_view_when_betas_cannot_be_read()
+    {
+        // "Unknown leaves what was shown" is for the same project. Must fail against beta's view keeping alpha's roadmaps
+        // after beta's read failed, where choosing one would act on alpha's id through beta's broker.
+        var ct = TestContext.Current.CancellationToken;
+
+        var repository = new RoadmapRepository(_alpha);
+        var (proposal, problem) = await repository.ProposeAsync(
+            Orders, null, null, new RoadmapContent("Alpha only plan", [new RoadmapItemDraft(null, "Ship alpha", Billing, [])]), T0,
+            cancellationToken: ct);
+        Assert.Null(problem);
+        var waiting = await repository.GetProposalAsync(proposal!.Value, ct);
+        await repository.ConfirmAsync(waiting!.Id, waiting.Content, null, T0, cancellationToken: ct);
+
+        using var failing = new FailPath("/Roadmaps");
+        using var directory = new BrokerDirectory(
+            [
+                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
+                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
+            ],
+            address => string.Equals(address, _betaBroker.Address, StringComparison.Ordinal)
+                ? GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = failing })
+                : GrpcChannel.ForAddress(address));
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        await shell.GoAsync(ViewPlace.Into(AlphaName));
+        await shell.Settled;
+        Assert.Contains(shell.Plans.Roadmaps, r => r.Title.Contains("Alpha only plan", StringComparison.Ordinal));
+
+        await shell.GoAsync(ViewPlace.Into(BetaName));
+        await shell.Settled;
+
+        Assert.Equal("beta", shell.Place.Project?.Value);
+        Assert.DoesNotContain(shell.Plans.Roadmaps, r => r.Title.Contains("Alpha only plan", StringComparison.Ordinal));
+        Assert.DoesNotContain("Alpha only plan", driving.Text(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_late_read_of_alpha_does_not_draw_alphas_lists_in_betas_project_view()
     {
@@ -179,7 +231,10 @@ public sealed class ProjectsDoNotMixTests : IAsyncDisposable
         Assert.Contains("only-beta", before, StringComparison.Ordinal);
 
         gate.Release();
-        await Task.Delay(1500, ct);
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+
+        // The read lands after its reply: give the rest of it, the draws that follow, a moment to run.
+        await Task.Delay(500, ct);
         await shell.Settled;
 
         var after = string.Join(" | ", shell.Conversations.List.Source!.ToList().Cast<object>());

@@ -123,11 +123,11 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     }
 
     /// <summary>The name typed in the create form.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? NewProject { get; set; }
 
     /// <summary>The description typed in the create form, or empty.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? NewDescription { get; set; }
 
     /// <summary>What creating a project said, when one was tried.</summary>

@@ -37,19 +37,19 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     public long Id { get; set; }
 
     /// <summary>The proposal as text, which the person edits.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>The roadmap to revise, or <c>new</c> for a roadmap of its own.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Target { get; set; }
 
     /// <summary>Set by the second submit, after the page described the open work a revision removes.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public bool ConfirmRemoval { get; set; }
 
     /// <summary>The numbers of the items the warning described, which the second submit agrees to remove.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Removing { get; set; }
 
     /// <summary>What confirming as a revision would leave in flight, said before it is confirmed; null when nothing is.</summary>

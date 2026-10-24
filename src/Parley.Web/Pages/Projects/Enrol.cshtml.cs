@@ -44,7 +44,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
     public string? Folder { get; set; }
 
     /// <summary>The repositories ticked in a folder's list.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public List<string> Chosen { get; set; } = [];
 
     /// <summary>The project, once found.</summary>

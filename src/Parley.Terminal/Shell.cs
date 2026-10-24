@@ -204,10 +204,16 @@ internal sealed class Shell : Window
         // **A command still in the box at Enter is one that nothing consumed.** Completing an agent takes the
         // command and its parameter out of the text, so the ordinary path never reaches here with one; what does
         // is somebody who typed it out by hand, and they are owed either the act or the reason.
-        // **An item's words are text, never a command.** They were an agent's, put in the box by starting the item; read
-        // as `/add inventory@test` they would choose who the person's line reaches (§13: nothing addressing comes out
-        // of a payload). A command the person types themselves still runs.
+        // **An item's words are text, never a command** (SPEC.md §5.7). They were an agent's, put in the box by starting
+        // the item; read as `/add inventory@test` they would choose who the person's line reaches. A command the person
+        // types themselves still runs.
         var itemsWords = _itemWords is { Length: > 0 } words && Line.Written.StartsWith(words, StringComparison.Ordinal);
+
+        // Once the box no longer starts with the item's words, it holds the person's own.
+        if (!itemsWords)
+        {
+            _itemWords = null;
+        }
 
         if (!itemsWords && Commands.Resolve(Line.Written) is { Command: { } command } written)
         {
@@ -288,7 +294,9 @@ internal sealed class Shell : Window
                 return;
             }
 
-            // Only what was sent leaves the box: what was typed after Enter is the start of the next thought.
+            // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
+            // person's own, so a command in it runs.
+            _itemWords = null;
             Line.Written = Line.Written.StartsWith(pressed, StringComparison.Ordinal)
                 ? Line.Written[pressed.Length..].TrimStart()
                 : Line.Written;
@@ -1586,6 +1594,9 @@ internal sealed class Shell : Window
 
     /// <summary>The item's words the box was filled with in that conversation, or null when it was not.</summary>
     private string? _itemWords;
+
+    /// <summary>The project the roadmap and proposal panes were last drawn for, or null before any.</summary>
+    private string? _panesFor;
 
     /// <summary>Moves to a view and lays it out.</summary>
     /// <param name="place">Where to go.</param>
@@ -4348,38 +4359,60 @@ internal sealed class Shell : Window
                 .ConfigureAwait(false))
             .ConfigureAwait(false);
 
-        // Kept even when the read failed, so the count on screen is not quietly reset to zero by a
-        // broker that stopped answering: a surface saying "no archived conversations" because it
-        // could not ask is saying something it does not know.
-        if (conversations.Value is { } page)
-        {
-            _archivedOmitted = page.ArchivedOmitted;
-        }
-
         // **A read draws only the project still in view.** Enter and Escape start this off the work queue, so on a slow
         // broker it can return after the person has moved to another project, whose view would then list this one's
         // conversations and agents, and act on them under the other project's name.
         bool StillShown() => Current is { } shown && string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal);
 
+        // Unknown leaves what was shown only when it was this project's: arriving from another project with a read that
+        // failed empties the panes, so one project's roadmaps are never listed, and acted on, in another's view.
+        var arriving = !string.Equals(_panesFor, project.Name.Value, StringComparison.Ordinal);
+
         // What agents have proposed, with the rest of the project. Unknown leaves what was shown, rather than
         // emptying the pane because a broker did not answer.
-        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting
-            && StillShown())
+        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
         {
-            ShowProposals(waiting);
+            if (StillShown())
+            {
+                ShowProposals(waiting);
+            }
+        }
+        else if (arriving && StillShown())
+        {
+            ShowProposals([]);
+            Proposals = null;
         }
 
         // The roadmaps already confirmed, listed above the conversations. Unknown leaves what was shown.
         if (await BrokerDirectory.ReadAsync(async () =>
-                await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed }
-            && StillShown())
+                await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed })
         {
-            ShowPlans(confirmed);
+            if (StillShown())
+            {
+                ShowPlans(confirmed);
+            }
+        }
+        else if (arriving && StillShown())
+        {
+            ShowPlans([]);
+        }
+
+        if (StillShown())
+        {
+            _panesFor = project.Name.Value;
         }
 
         if (!StillShown())
         {
             return;
+        }
+
+        // Kept even when the read failed, so the count on screen is not quietly reset to zero by a
+        // broker that stopped answering: a surface saying "no archived conversations" because it
+        // could not ask is saying something it does not know. Set only for the project in view.
+        if (conversations.Value is { } page)
+        {
+            _archivedOmitted = page.ArchivedOmitted;
         }
 
         Agents.Show(registry.Value, Catalogue(), registry.Problem);

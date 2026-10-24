@@ -14,6 +14,9 @@ internal sealed class HoldOne(string path) : DelegatingHandler(new SocketsHttpHa
     /// <summary>Set once the held call has reached the broker's door.</summary>
     internal ManualResetEventSlim Holding { get; } = new(false);
 
+    /// <summary>Set once the held call's reply has come back, so a test knows the late read has landed.</summary>
+    internal ManualResetEventSlim Answered { get; } = new(false);
+
     /// <summary>Holds the next matching call.</summary>
     internal void Arm() => Volatile.Write(ref _armed, 1);
 
@@ -28,6 +31,11 @@ internal sealed class HoldOne(string path) : DelegatingHandler(new SocketsHttpHa
         {
             Holding.Set();
             await _go.WaitAsync(cancellationToken);
+
+            var reply = await base.SendAsync(request, cancellationToken);
+            Answered.Set();
+
+            return reply;
         }
 
         return await base.SendAsync(request, cancellationToken);
@@ -40,6 +48,7 @@ internal sealed class HoldOne(string path) : DelegatingHandler(new SocketsHttpHa
         {
             _go.Dispose();
             Holding.Dispose();
+            Answered.Dispose();
         }
 
         base.Dispose(disposing);

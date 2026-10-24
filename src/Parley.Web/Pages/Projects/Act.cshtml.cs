@@ -45,7 +45,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <remarks>
     /// What makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
@@ -53,7 +53,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
     /// is still a close each of them is told about, and refusing one would leave the work open instead.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Reason { get; set; }
 
     /// <summary>What this action would do, in words, before it is done.</summary>

@@ -881,7 +881,10 @@ when it names none. The person changes the words and the agents as they choose, 
 until they send: then each agent ticked receives an ordinary Request (§5.6, §12.3) from the person's
 seat, in the item's conversation, carrying exactly what the person sent. It is the person's words in
 the transcript, not an operator instruction. An item already started opens its conversation as it
-stands. The message cap of rule 8.4 applies to what is sent, whatever a roadmap holds.
+stands. The message cap of rule 8.4 applies to what is sent, whatever a roadmap holds. **The item's
+words are put in the box as text:** an agent proposed them, so a surface never reads them as a command
+or as addressing, and the agents ticked are the item's own whatever a link to the conversation asks,
+never a default the surface would otherwise apply.
 
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is

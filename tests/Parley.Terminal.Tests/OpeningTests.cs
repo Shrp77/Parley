@@ -207,7 +207,10 @@ public sealed class OpeningTests : IAsyncDisposable
         Assert.Equal("only", shell.Transcript.Open);
 
         gate.Release();
-        await Task.Delay(1000, ct);
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+
+        // The read lands after its reply: give the rest of it, the draws that follow, a moment to run.
+        await Task.Delay(500, ct);
 
         Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("only", shell.Transcript.Open);
@@ -248,7 +251,10 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.Settled;
 
         gate.Release();
-        await Task.Delay(1000, ct);
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+
+        // The read lands after its reply: give the rest of it, the draws that follow, a moment to run.
+        await Task.Delay(500, ct);
 
         Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("only", shell.Transcript.Open);

@@ -61,27 +61,27 @@ public sealed class InboxModel(BrokerDirectory directory, SeatBook seats, Parley
     public string? Outcome { get; private set; }
 
     /// <summary>The project a form was submitted for.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? For { get; set; }
 
     /// <summary>The exchange being reported on or clarified.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public long Exchange { get; set; }
 
     /// <summary>The item identifiers being reported on, in order.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Ids { get; set; } = [];
 
     /// <summary>What is being said about each, in the same order.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Texts { get; set; } = [];
 
     /// <summary>The outcome chosen for each, in the same order.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Verdicts { get; set; } = [];
 
     /// <summary>A clarification, or the reply to one.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Clarification { get; set; }
 
     /// <summary>Text a message must contain (who sent it, its conversation or its words); empty for every message.</summary>

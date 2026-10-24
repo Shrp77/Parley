@@ -106,7 +106,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public DateTimeOffset AsOf { get; private set; }
 
     /// <summary>Who the operator is writing to.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Targets { get; set; } = [];
 
     /// <summary>Whether to write to everybody in this conversation instead of a chosen few.</summary>
@@ -116,7 +116,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// conversations rather than from inside one. The two surfaces are not disagreeing: each offers
     /// everybody in the thing it is looking at.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public bool Everyone { get; set; }
 
     /// <summary>What the operator wrote.</summary>
@@ -124,7 +124,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is what the person
     /// typed, or the words of the roadmap item the broker's reservation names, never anything a link supplied.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Says { get; set; }
 
     /// <summary>The exchange this is an answer to, when the person chose to reply to an agent's question.</summary>
@@ -132,7 +132,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// Chosen by the person, never inferred (SPEC.md 5.6): the button is on the question being answered. Without it the
     /// words are a new Request, as everything else a person writes is.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public long? ReplyTo { get; set; }
 
     /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
@@ -410,6 +410,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return RedirectToPage("/Index");
         }
 
+        // **The page this returns ticks what the person sent to**, never what the link it was opened from named: the form
+        // posts back to that link, and `With=` there would otherwise tick an agent the person had not chosen.
+        With = [.. Targets];
+
         // **Everybody, resolved here rather than by checking boxes in a browser.** The alternative
         // is script that ticks them, which would make the one composer that sends to several
         // agents stop working without script.
@@ -570,9 +574,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         {
             Says = ItemTitle;
 
-            // **Only the item's own agent is ticked**, whatever a link asks. A link an agent wrote in a message is live on
-            // this page, and `With=` naming another agent would hand that agent the item's words on one press of Send.
-            With = ItemAgent is { } agent && With.Contains(agent.Value, StringComparer.Ordinal) ? [agent.Value] : [];
+            // **The item's own agent is ticked, and no other**, whatever a link asks, as in the terminal. A link an agent
+            // wrote in a message is live on this page, and `With=` naming another agent would hand that agent the item's
+            // words on one press of Send. Ticking nobody instead would let the page's own default choose.
+            With = ItemAgent is { } agent ? [agent.Value] : [];
         }
 
         return Page();

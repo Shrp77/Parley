@@ -37,19 +37,19 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
     public long Id { get; set; }
 
     /// <summary>The roadmap as text, which the person edits.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>The revision the form was opened at.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public int Revision { get; set; }
 
     /// <summary>Set by the second submit, after the page described the open work the edit removes.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public bool ConfirmRemoval { get; set; }
 
     /// <summary>The numbers of the items the warning described, which the second submit agrees to remove.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Removing { get; set; }
 
     /// <summary>What the edit would leave in flight, said before it is saved; null when nothing is.</summary>

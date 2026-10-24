@@ -185,6 +185,28 @@ public sealed class RoadmapEditTests
     }
 
     [Fact]
+    public async Task A_link_that_carries_the_go_ahead_does_not_skip_the_description()
+    {
+        // The form posts back to its own address, so a link's `ConfirmRemoval=true&Removing=2` would bind when the form
+        // carries neither. Must fail against binding the go-ahead from the query, which saved the removal of open work
+        // with nothing described.
+        using var console = Confirmed();
+        var started = console.Broker.Details[1].Items[1];
+        started.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        using var client = console.CreateClient();
+
+        var forged = new Uri($"/Roadmaps/Edit?project={RoadmapConsole.Project}&id=1&ConfirmRemoval=true&Removing=2", UriKind.Relative);
+        var response = await PostAsync(
+            client,
+            forged,
+            new Dictionary<string, string> { ["Text"] = "title: Billing export\n1. Add CSV export | for: billing@test | item: 1", ["Revision"] = "1" });
+        var page = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("still open", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Removing_an_item_that_has_not_started_is_saved_at_once()
     {
         // The warning is for work in flight only; a person removing an idea nobody took up is not asked twice.

@@ -93,6 +93,8 @@ It has three views, one at a time:
 3. **A conversation**: the room, the transcript and the box you type into.
 
 Enter goes in and Escape comes back, landing on what you were looking at. `Ctrl+Q` leaves.
+What you type in a conversation's box stays with that conversation: open another, and the box is
+empty; come back, and your words are still there.
 Tab moves between the panes of a view, the arrow keys move within one, and the mouse works too.
 Below eighty columns the panes of a view stack one above another instead of sitting side by side.
 
@@ -177,10 +179,11 @@ Each item gets a conversation of its own, named from the roadmap and the item nu
 `rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first.
 **Starting an item sends nothing.** It opens that conversation with the item's words in the box
 and the agent the item is for ticked. Tick anyone else in the project you want it to reach, and
-press Send. The roadmap shows where each item stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
-on you, blocked (and why), done, or closed. It also says which item is next. Nobody sets a state
-by hand. To change what an item says, edit the roadmap. To resolve a blocked item, send the agent
-a further request in its conversation.
+press Send. The words are sent as words, even ones that look like a command. The roadmap shows
+where each item stands, worked out from its conversation: not started, in progress, waiting on an
+agent, waiting on you, blocked (and why), done, or closed. It also says which item is next. Nobody
+sets a state by hand. To change what an item says, edit the roadmap. To resolve a blocked item,
+send the agent a further request in its conversation.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its

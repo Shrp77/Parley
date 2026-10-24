@@ -441,7 +441,59 @@ public sealed class RoadmapOnThePageTests
             TestContext.Current.CancellationToken);
 
         Assert.DoesNotMatch("name=\"Targets\" value=\"inventory@test\" checked", forged);
+        Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", forged);
         Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", own);
+
+        // Nor does the page's script tick the project's default agent on an item's conversation: who it is for is the item's.
+        Assert.DoesNotContain("data-new=\"true\"", forged, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_links_Targets_never_chooses_who_the_persons_send_reaches()
+    {
+        // The form has no action, so it posts back to the page's address, query included. With no box ticked the form
+        // carries no Targets, and a link's would bind and send the item's words to the agent it named while the page said
+        // nobody was chosen. Must fail against binding posted fields from the query.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var forged = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&Targets=inventory%40test", UriKind.Relative);
+
+        var page = await PostDetailAsync(client, forged, new Dictionary<string, string> { ["Says"] = "Add CSV export" });
+
+        Assert.Contains("Nobody was picked, so nothing was sent.", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_links_Everyone_never_widens_who_the_persons_send_reaches()
+    {
+        // The person ticked billing; a link's `Everyone=true` must not replace that with every participant.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var forged = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&Everyone=true", UriKind.Relative);
+
+        var page = await PostDetailAsync(client, forged, new Dictionary<string, string> { ["Says"] = "Add CSV export", ["Targets"] = "billing@test" });
+
+        Assert.DoesNotContain("Nobody was picked", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_page_a_refused_send_returns_ticks_what_the_person_sent_to_not_what_the_link_named()
+    {
+        // The page after a send is drawn from the same address as the link. Must fail against a returned page that ticks
+        // the agent the link named, with the item's words still in the box, ready for the next Send.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        console.Broker.Registry.AddRange(
+        [
+            new Wire.RegistryRow { Name = "billing@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+            new Wire.RegistryRow { Name = "inventory@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+        ]);
+        using var client = console.CreateClient();
+        var forged = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&With=inventory%40test", UriKind.Relative);
+
+        var page = await PostDetailAsync(client, forged, new Dictionary<string, string> { ["Says"] = "Add CSV export" });
+
+        Assert.Contains(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+        Assert.DoesNotMatch("name=\"Targets\" value=\"inventory@test\" checked", page);
     }
 
     [Fact]

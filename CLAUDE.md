@@ -371,6 +371,9 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   from the pool directly. The harness never pumps a loop and leaves `Marshal` unset, so a driven test must not press a
   key that starts queued work that opens a view and then draw on its own thread in the same breath: call the handler
   and `await shell.Settled`.
+- **A read can land after the person has moved on.** Enter and Escape read a project off the work queue, so
+  `SelectAsync` draws only while its project is still in view, and never clears an open conversation. The terminal's
+  box belongs to one project and conversation (`_lineFor`). Anything new that draws from a read checks the same.
 - **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)
