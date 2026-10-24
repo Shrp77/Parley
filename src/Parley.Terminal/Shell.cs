@@ -1525,6 +1525,8 @@ internal sealed class Shell : Window
 
                 if (chosen == Discard)
                 {
+                    // Thrown away as the question says, so the words cannot follow the person into the next conversation.
+                    Line.Written = string.Empty;
                     Queue(_ => GoAsync(_place.Back()));
                 }
             };
@@ -1800,6 +1802,30 @@ internal sealed class Shell : Window
             view.ItemChosen += (_, item) =>
             {
                 Prompting.Close(app, open);
+
+                // **A line belongs to the conversation it was written in.** Going from one conversation to another item's
+                // with words in the box asks first, as leaving with Escape does, rather than carrying them there.
+                if (_place.Viewing == Viewing.Conversation
+                    && !string.Equals(_place.Conversation, item.ConversationName, StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(Line.Written))
+                {
+                    var asking = Prompting.Choose(DiscardTitle, DiscardDescription, [KeepWriting, Discard]);
+                    var token = Prompting.Open(app, asking);
+
+                    asking.Done += (_, chosen) =>
+                    {
+                        Prompting.Close(app, token);
+
+                        if (chosen == Discard)
+                        {
+                            Line.Written = string.Empty;
+                            Queue(_ => OpenItemAsync(project, item));
+                        }
+                    };
+
+                    return;
+                }
+
                 Queue(_ => OpenItemAsync(project, item));
             };
         });
@@ -1878,11 +1904,19 @@ internal sealed class Shell : Window
             _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
         }
 
+        var arriving = !string.Equals(_place.Conversation, item.ConversationName, StringComparison.Ordinal);
+
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
 
+        // The box is this conversation's: the item's words when it has not begun, and nothing carried from elsewhere when
+        // it has. A line the person is writing in this same conversation stays.
         if (!started)
         {
             Line.Written = item.Text;
+        }
+        else if (arriving)
+        {
+            Line.Written = string.Empty;
         }
 
         Focus(Panes.ToList().IndexOf(Line));

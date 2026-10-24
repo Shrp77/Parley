@@ -66,9 +66,17 @@ public static class Removal
         return string.Join(",", open.Select(i => i.Number.ToString(CultureInfo.InvariantCulture)));
     }
 
+    /// <summary>How many characters of an item's words the description quotes.</summary>
+    public const int QuotedLength = 80;
+
     /// <summary>The sentence a surface shows before saving such an edit or revision.</summary>
     /// <param name="items">What <see cref="StillOpen"/> found.</param>
     /// <returns>The description, or <see langword="null"/> when there is nothing to say.</returns>
+    /// <remarks>
+    /// <b>Each item's words are cut short.</b> They have no bound and may be an agent's, and a dialog that shows a long
+    /// description loses its tail: one long item would push every later item, and what removing them means, off the
+    /// screen the person decides from. The number and the conversation name each item.
+    /// </remarks>
     public static string? Describe(IReadOnlyList<RoadmapItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -80,11 +88,29 @@ public static class Removal
 
         var named = string.Join(
             "; ",
-            items.Select(i => string.Create(CultureInfo.InvariantCulture, $"item {i.Number}, \"{i.Text}\", in {i.ConversationName}")));
+            items.Select(i => string.Create(CultureInfo.InvariantCulture, $"item {i.Number}, \"{Quoted(i.Text)}\", in {i.ConversationName}")));
 
         return (items.Count == 1 ? "This removes an item whose work is still open: " : "This removes items whose work is still open: ")
             + named
             + ". The conversation and its open requests stay, and the agents holding them are not told. "
             + "Close the work in the conversation if it should stop.";
+    }
+
+    /// <summary>An item's words, cut to <see cref="QuotedLength"/> characters with an ellipsis, never inside a pair.</summary>
+    private static string Quoted(string text)
+    {
+        if (text.Length <= QuotedLength)
+        {
+            return text;
+        }
+
+        var cut = QuotedLength - 1;
+
+        if (char.IsHighSurrogate(text[cut - 1]))
+        {
+            cut--;
+        }
+
+        return string.Concat(text.AsSpan(0, cut), "…");
     }
 }

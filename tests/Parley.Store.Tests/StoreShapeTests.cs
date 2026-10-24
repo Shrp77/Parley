@@ -8,7 +8,8 @@ namespace Parley.Store.Tests;
 /// </summary>
 /// <remarks>
 /// <b>A store with a missing table must not read as fine while every number says it is.</b> A store's number records
-/// the migrations it was given, not what it holds, so a store changed by hand reads as current. Each of these fails against comparing the numbers.
+/// the migrations it was given, not what it holds, so a store changed by hand reads as current. Each of these fails
+/// against comparing the numbers.
 /// </remarks>
 public sealed class StoreShapeTests
 {

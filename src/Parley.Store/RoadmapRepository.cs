@@ -828,7 +828,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             await _connection.ExecuteAsync(
                 new CommandDefinition(
                     "INSERT INTO roadmap_item_conversations (item_id, conversation_id) VALUES (@Id, @Name);",
-                    new { Id = ids[at], Name = ItemConversation.Name(roadmapNumber, next) },
+                    new
+                    {
+                        Id = ids[at],
+                        Name = await FreeItemNameAsync(ItemConversation.Name(roadmapNumber, next), transaction, cancellationToken)
+                            .ConfigureAwait(false),
+                    },
                     transaction,
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
         }
@@ -1006,6 +1011,41 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             ParseState(row.State),
             ExchangeRow.ParseTimestamp(row.CreatedUtc),
             row.DecidedUtc is null ? null : ExchangeRow.ParseTimestamp(row.DecidedUtc));
+    }
+
+    /// <summary>The name an item's conversation is reserved under: the derived one, or the first free one after it.</summary>
+    /// <param name="derived">The name derived from the roadmap and item numbers.</param>
+    /// <param name="transaction">The transaction the reservation is written in.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>A name no conversation, destroyed conversation or reservation holds.</returns>
+    /// <remarks>
+    /// <b>A name already in use is never reserved.</b> The derived name is predictable, so an agent can open a conversation
+    /// under it before the item exists; reserving that name would make the agent's conversation the item's, already begun
+    /// with the agent's words in it (SPEC.md §5.7). The item takes the next free name instead, and is recognised by its
+    /// reservation as every item is.
+    /// </remarks>
+    private async Task<string> FreeItemNameAsync(string derived, SqliteTransaction? transaction, CancellationToken cancellationToken)
+    {
+        for (var suffix = 1; ; suffix++)
+        {
+            var name = suffix == 1 ? derived : string.Create(CultureInfo.InvariantCulture, $"{derived}-{suffix}");
+
+            var taken = await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    """
+                    SELECT (SELECT COUNT(*) FROM conversations WHERE id = @Name)
+                         + (SELECT COUNT(*) FROM destroyed_conversations WHERE id = @Name)
+                         + (SELECT COUNT(*) FROM roadmap_item_conversations WHERE conversation_id = @Name);
+                    """,
+                    new { Name = name },
+                    transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+            if (taken == 0)
+            {
+                return name;
+            }
+        }
     }
 
     /// <summary>What the store holds about one reserved conversation, as facts.</summary>

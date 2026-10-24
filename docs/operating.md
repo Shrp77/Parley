@@ -249,6 +249,22 @@ Parley until each editor restarts. That is the cost.
 When the protocol number moves, install on every machine running a broker or an agent, then
 restart the sessions that had Parley configured. See [Configuration](configuration.md#versions).
 
+**Install with `-Force`, never `-Reset`.** A project's store holds its work, and a new build keeps
+it: a build that changes the store's tables upgrades it in place when the broker starts, and
+keeps every row. `-Reset` deletes the stores. Before installing a build that changes the store,
+copy each project's `parley.db` (in `projects/<name>/`, with the broker stopped) somewhere safe.
+
+### A store from another build
+
+The broker compares each store's tables, indexes and triggers with its own, and warns, in the
+terminal, on the console and on its own output, when they differ. The store was made by a build
+other than this one, though it carries the same version. The broker still serves it, but a check
+the store is missing is not being made.
+
+Do not reset it, which loses its work. Stop the broker and copy the store first. Then either
+install the build that made it, or bring the store to this build's shape: create a fresh store
+with this build and copy every row across, and check the warning has gone before going on.
+
 ## Why the operator tools are separate from the agent's
 
 An adapter that exposed an operator command to an agent would let an agent end a discussion over

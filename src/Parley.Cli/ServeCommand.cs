@@ -203,7 +203,7 @@ public static class ServeCommand
                     $"{project.Name}: WARNING -- its store is not the shape this build expects: "
                     + string.Join("; ", runtime.StoreProblems.Take(5))
                     + (runtime.StoreProblems.Count > 5 ? $"; and {runtime.StoreProblems.Count - 5} more" : string.Empty)
-                    + ". It was made by another build. Do not reset it, which would lose its work: bring it to this build's shape first, from a backup taken before the upgrade if need be.")
+                    + ". It was made by another build. Do not reset it, which would lose its work: see `A store from another build` in docs/operating.md.")
                     .ConfigureAwait(false);
             }
 

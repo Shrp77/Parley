@@ -349,8 +349,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
             files.Prepare();
 
             // Looked at after the migration, and only reported. The schema number is a witness only to the
-            // migrations a store was given, not to its shape, so the shape is compared directly; `StoreShape` says why a difference is never
-            // repaired here.
+            // migrations a store was given, not to its shape, so the shape is compared directly; `StoreShape` says why a
+            // difference is never repaired here.
             var shape = StoreShape.Problems(connection);
 
             return new BrokerRuntime(

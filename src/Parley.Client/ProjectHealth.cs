@@ -60,7 +60,7 @@ public sealed record ProjectHealth(
             warnings.Add(
                 $"This project's store is not the shape this broker expects ({string.Join("; ", store.Take(3))}"
                 + (store.Count > 3 ? $"; and {store.Count - 3} more" : string.Empty)
-                + "). It was made by another build. Do not reset it, which would lose its work: bring it to this broker's shape before relying on it.");
+                + "). It was made by another build. Do not reset it, which would lose its work: see `A store from another build` in docs/operating.md.");
         }
 
         return warnings;

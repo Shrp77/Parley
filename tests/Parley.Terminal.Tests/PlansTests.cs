@@ -656,6 +656,90 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Contains("2. Call it from the report", view.DetailText, StringComparison.Ordinal);
     }
 
+    /// <summary>Opens the roadmap from the project view and starts its item at <paramref name="row"/>.</summary>
+    private static async Task OpenRowAsync(Driving.Session driving, Shell shell, int row)
+    {
+        await Walking.GoAsync(shell, Viewing.Project);
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        view.Items.SelectedItem = row;
+        view.OpenSelected();
+        await shell.Settled;
+    }
+
+    [Fact]
+    public async Task Leaving_and_discarding_an_items_words_leaves_nothing_in_the_box()
+    {
+        // "Leaving throws it away" must be true: the item's words were put in the box for the person, and must not follow
+        // them into the next conversation they open. Must fail against a discard that only leaves.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await OpenRowAsync(driving, shell, 0);
+        Assert.Equal("Add CSV export", shell.Line.Written);
+
+        _ = shell.BackAsync();
+        await shell.Settled;
+        var asking = (ChoiceDialog)driving.Find(Shell.DiscardTitle);
+        driving.Row(asking.Choices, Shell.Discard);
+        asking.Choices.InvokeCommand(global::Terminal.Gui.Input.Command.Accept);
+        await shell.Settled;
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "rm1-2");
+        await shell.Settled;
+
+        Assert.Equal(string.Empty, shell.Line.Written);
+    }
+
+    [Fact]
+    public async Task Going_from_one_items_words_to_another_item_asks_first_and_carries_nothing_there()
+    {
+        // From item 1's conversation, with its words unsent, back to the roadmap and on to item 2, which has begun. Must
+        // fail against arriving in rm1-2 with item 1's words in the box, where the next Enter sends them to its agent.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await OpenRowAsync(driving, shell, 0);
+        Assert.Equal("Add CSV export", shell.Line.Written);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+        await Assert.Single(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle).Run();
+        await shell.Settled;
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        view.Items.SelectedItem = 1;
+        view.OpenSelected();
+        await shell.Settled;
+
+        // Asked, as Escape asks; keeping stays where the words are.
+        var asking = (ChoiceDialog)driving.Find(Shell.DiscardTitle);
+        driving.Row(asking.Choices, Shell.KeepWriting);
+        asking.Choices.InvokeCommand(global::Terminal.Gui.Input.Command.Accept);
+        await shell.Settled;
+        Assert.Equal("rm1-1", shell.Place.Title);
+        Assert.Equal("Add CSV export", shell.Line.Written);
+
+        await Assert.Single(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle).Run();
+        await shell.Settled;
+        view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        view.Items.SelectedItem = 1;
+        view.OpenSelected();
+        await shell.Settled;
+        asking = (ChoiceDialog)driving.Find(Shell.DiscardTitle);
+        driving.Row(asking.Choices, Shell.Discard);
+        asking.Choices.InvokeCommand(global::Terminal.Gui.Input.Command.Accept);
+        await shell.Settled;
+
+        Assert.Equal("rm1-2", shell.Place.Title);
+        Assert.Equal(string.Empty, shell.Line.Written);
+    }
+
     [Fact]
     public async Task A_cleared_transcript_offers_no_way_to_an_items_roadmap()
     {

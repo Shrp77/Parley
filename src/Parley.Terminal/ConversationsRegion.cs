@@ -195,7 +195,7 @@ internal sealed class ConversationsRegion : FrameView
     /// actually remembers a conversation by. A roadmap item's conversation says which item, because
     /// <c>rm1-3</c> alone says nothing.
     /// </remarks>
-    internal static string Line(ConversationSummary conversation) =>
+    private static string Line(ConversationSummary conversation) =>
         $"{Safe.Text(conversation.Id)}  "
         + (conversation.Item is { } item ? $"[{Safe.Text(Parley.Client.Roadmaps.ItemWording.Belongs(item))}]  " : string.Empty)
         + $"({string.Join(", ", conversation.Participants.Select(p => Safe.Text(p.Value)))})  "

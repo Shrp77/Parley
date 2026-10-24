@@ -625,6 +625,34 @@ public sealed class RoadmapStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task An_item_whose_name_an_agent_took_first_is_reserved_under_a_free_name_and_has_not_begun()
+    {
+        // The next item's name is predictable, so an agent opens rm1-4 before the person adds item 4. Must fail against
+        // reserving the agent's conversation for the item, which would read as begun with the agent's words in it.
+        var id = await RoadmapAsync();
+        Open("rm1-4", "orders@test", "billing@test");
+
+        var edit = await Repository.EditAsync(
+            id,
+            1,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Item("Ship it", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var added = (await Repository.GetAsync(id, Ct))!.Items.Single(i => i.Text == "Ship it");
+
+        Assert.Equal("rm1-4-2", added.ConversationName);
+        Assert.False(added.Facts!.ConversationExists);
+        Assert.Null(await Repository.ReservationOfAsync("rm1-4", Ct));
+    }
+
+    [Fact]
     public async Task An_item_reworded_after_its_request_was_sent_says_so_and_one_reworded_before_does_not()
     {
         // FR-014a, from the item's own edit record: the words sent may be the person's own and prove nothing. Item 1 is

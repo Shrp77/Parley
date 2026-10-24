@@ -61,6 +61,20 @@ public sealed class RemovalTests
         Assert.Contains("not told", said, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_long_item_is_quoted_short_so_every_item_and_what_removing_means_stay_in_view()
+    {
+        // An agent's item words have no bound, and a dialog showing a long description loses its tail. Must fail against
+        // quoting each item whole, which let one item push the next, and the consequence, off the person's screen.
+        var longOne = Item(1, open: 1) with { Text = new string('w', 5_800) };
+        var said = Removal.Describe([longOne, Item(2, open: 1)])!;
+
+        Assert.True(said.Length < 400, $"the description is {said.Length} characters");
+        Assert.Contains("item 2, \"Item 2\", in rm1-2", said, StringComparison.Ordinal);
+        Assert.Contains("not told", said, StringComparison.Ordinal);
+        Assert.Contains(new string('w', Removal.QuotedLength - 1) + "…", said, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("3,3,1,1", true)]
     [InlineData(" 3 , 1 ", true)]

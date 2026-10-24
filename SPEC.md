@@ -883,8 +883,11 @@ stands. The message cap of rule 8.4 applies to what is sent, whatever a roadmap 
 
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
-a legal conversation identifier by construction and unique. The conversation comes to exist when work on
-the item starts. **Storage refuses the first message into a reserved name unless the person sent it**
+a legal conversation identifier by construction and unique. The name is predictable, so an agent can
+open a conversation under it before the item exists; **a name a conversation, a destroyed conversation
+or another reservation already holds is never reserved**, and the item takes the first free name after
+it, `rm<roadmap number>-<item number>-2` and so on. The conversation comes to exist when work on the item
+starts. **Storage refuses the first message into a reserved name unless the person sent it**
 (§9.3), so no agent can open the conversation first and have the person speak into it.
 A conversation is recognised as an item's by the reservation and never by anything in a payload, so
 an agent cannot make a conversation look like one (§13).
