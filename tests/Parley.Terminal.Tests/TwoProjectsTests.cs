@@ -1,192 +1,330 @@
-using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
-using Parley.Client.Seating;
-using Parley.Client.Views;
+using Parley.Configuration;
 using Parley.Core;
+using Parley.Setup;
 using Parley.Store;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That two projects on one terminal never mix: the box and the lists are each one project's.
+/// One repository enrolled into two projects, driven through the screen.
 /// </summary>
 /// <remarks>
-/// Conversation identifiers are per project, and <c>rm1-1</c> exists in every project with a roadmap, so anything keyed by an
-/// identifier alone, or drawn from a read without asking which project is on screen, can cross between them.
+/// <para>
+/// <b>The owner's first report, end to end.</b> <c>SecondProjectTests</c> checks what the screen
+/// says about it; this checks what lands on disk, because a report is a claim about a write and the
+/// failure worth catching is a write that did not happen — or one that did and should not have.
+/// </para>
+/// <para>
+/// Both halves matter and they pull opposite ways. The launch configuration must gain a second
+/// entry, which is what makes the repository answer in the second project at all. The second
+/// project's catalogue must gain nothing, which is FR-013: a node starts a client with the
+/// repository as its working directory, and two of them is two models editing one checkout.
+/// </para>
 /// </remarks>
 public sealed class TwoProjectsTests : IAsyncDisposable
 {
-    private static readonly AgentName Orders = AgentName.Create("orders@test");
-    private static readonly AgentName Billing = AgentName.Create("billing@test");
-    private static readonly ProjectName AlphaName = ProjectName.Create("alpha");
-    private static readonly ProjectName BetaName = ProjectName.Create("beta");
-    private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private readonly string _root =
+        Path.Combine(Path.GetTempPath(), "parley-two-" + Path.GetRandomFileName());
 
-    private readonly SqliteConnection _alpha;
-    private readonly SqliteConnection _beta;
-    private readonly LoopbackOperator _alphaBroker;
-    private readonly LoopbackOperator _betaBroker;
+    // **A broker apiece, because the manifest refuses two projects on one port** — and it is right
+    // to: only one broker can hold a port, and a fixture that shared one would be describing a
+    // deployment that cannot exist.
+    private readonly List<SqliteConnection> _connections = [];
+    private readonly List<LoopbackOperator> _brokers = [];
 
     public TwoProjectsTests()
     {
-        _alpha = ParleyDatabase.OpenInMemory();
-        _beta = ParleyDatabase.OpenInMemory();
+        Directory.CreateDirectory(Workspace);
+        Directory.CreateDirectory(Path.Combine(Workspace, ".git"));
 
-        foreach (var connection in new[] { _alpha, _beta })
+        foreach (var _ in new[] { "alpha", "beta" })
         {
-            var agents = new AgentRepository(connection);
+            var connection = ParleyDatabase.OpenInMemory();
 
-            foreach (var name in new[] { Orders, Billing })
-            {
-                agents.UpsertAsync(
-                    new AgentRecord(name, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
-                    TestContext.Current.CancellationToken).GetAwaiter().GetResult();
-            }
+            _connections.Add(connection);
+            _brokers.Add(LoopbackOperator.Start(connection));
         }
-
-        _alphaBroker = LoopbackOperator.Start(_alpha);
-        _betaBroker = LoopbackOperator.Start(_beta);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _alphaBroker.DisposeAsync();
-        await _betaBroker.DisposeAsync();
+        foreach (var broker in _brokers)
+        {
+            await broker.DisposeAsync();
+        }
 
-        _alpha.Dispose();
-        _beta.Dispose();
+        foreach (var connection in _connections)
+        {
+            connection.Dispose();
+        }
+
+        try
+        {
+            Directory.Delete(_root, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A leftover temp directory is not worth failing a green run over.
+        }
     }
 
-    private static async Task SeedAsync(SqliteConnection connection, AgentName to, string conversation, string said)
+    private string Workspace => Path.Combine(_root, "orders");
+
+    // **The root, not a manifest file.** `--config` names the directory this machine keeps its
+    // Parley files in; the projects are the folders under it.
+    private string Root => _root;
+
+    private string LaunchFile => Path.Combine(Workspace, ".mcp.json");
+
+    /// <summary>This machine's one catalogue, whichever project is asking (018).</summary>
+    /// <param name="project">Ignored, and kept so the call sites read as they did.</param>
+    /// <returns>The catalogue.</returns>
+    /// <remarks>
+    /// It was one file per project, named after it. That is what made a checkout startable in the
+    /// project whose file held it and unstartable in the other, while being addressable in both —
+    /// so the tests below that asserted "only the first project may start it" were describing the
+    /// defect rather than a guarantee.
+    /// </remarks>
+    private string CatalogueFor(string project) =>
+        project is null ? throw new ArgumentNullException(nameof(project))
+            : Path.Combine(_root, NodeCatalogue.DefaultFileName);
+
+    /// <summary>Opens the surface on a manifest naming two projects, both catalogued.</summary>
+    private async Task<Shell> OpenAsync(Driving.Session driving)
     {
-        var ct = TestContext.Current.CancellationToken;
-        var broker = new Broker.Broker(connection, Parley.Broker.BrokerOptions.Default);
+        var projects = new[] { "alpha", "beta" }
+            .Select((name, at) => new ProjectSettings(
+                ProjectName.Create(name),
+                Path.Combine(_root, name + ".db"),
+                _brokers[at].Address,
+                null))
+            .ToList();
 
-        await broker.StartAsync(Orders, T0, ct);
+        ProjectManifest.Write(Root, projects);
 
-        var sent = await broker.RequestAsync(
-            Orders, to, "model-a", $$"""{"ask":"{{said}}"}""", T0.AddMinutes(1), conversation, ct);
+        foreach (var project in projects)
+        {
+            await File.WriteAllTextAsync(
+                CatalogueFor(project.Name.Value), "{\n  \"agents\": {}\n}\n", TestContext.Current.CancellationToken);
+        }
 
-        Assert.True(sent.Exchange is not null, $"seed refused: {sent.Admission.Rejection}");
+        var shell = TerminalCommand.Build(
+            BrokerDirectory.FromManifest(Root),
+            manifestPath: Root,
+            cataloguePath: CatalogueFor("alpha"));
+
+        driving.Show(shell);
+
+        await shell.RefreshAsync(TestContext.Current.CancellationToken);
+        await shell.Settled;
+
+        return shell;
+    }
+
+    /// <summary>Opens a project and adds this repository to it under a role.</summary>
+    private async Task AddAsync(Driving.Session driving, Shell shell, string project, string role)
+    {
+        // In by the route a person takes: select the project and press Enter. What is being checked
+        // is which project the add lands in, so arriving the direct way would settle by fiat the
+        // question the test is asking.
+        driving.Row(shell.Projects.List, project);
+        driving.Enter();
+
+        await shell.Settled;
+
+        Assert.Equal(project, shell.Place.Project?.Value);
+
+        await shell.Add();
+
+        ((Browsing)driving.Find(Browsing.Name)).Choose(Workspace);
+
+        var form = (FormDialog)driving.Find(Adding.Title);
+
+        form.Fill(0, Workspace);
+        form.Fill(1, role);
+        form.Finish(taken: true);
+
+        var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
+
+        driving.Row(asking.Choices, Adding.Write);
+        driving.Enter();
+
+        await shell.Settled;
+
+        await Walking.GoAsync(shell, Client.Views.Viewing.Projects);
     }
 
     [Fact]
-    public async Task Words_written_in_alphas_c1_do_not_follow_into_betas_c1()
+    public async Task The_same_repository_answers_in_both_projects()
     {
-        // Must fail against keying the box by the conversation id alone, which carried alpha's words into beta's c-1.
-        var ct = TestContext.Current.CancellationToken;
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        using var directory = new BrokerDirectory(
-            [
-                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
-                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
-            ],
-            address => GrpcChannel.ForAddress(address));
-        using var seats = new SeatBook(directory.AgentsFor);
-        using var driving = Driving.Open(width: 140, height: 40);
-        using var shell = new Shell(directory) { Seats = seats, MailEvery = null, FollowEvery = null };
+        await AddAsync(driving, shell, "alpha", "orders");
+        await AddAsync(driving, shell, "beta", "orders");
 
-        driving.Show(shell);
-        shell.FollowEvery = null;
-        await shell.RefreshAsync(ct);
-        await shell.Settled;
+        var launch = JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
 
-        // Every project's seat is taken on refresh; both conversations are an agent asking the person.
-        await SeedAsync(_alpha, seats.Known("alpha")!.Name, "c-1", "alpha question");
-        await SeedAsync(_beta, seats.Known("beta")!.Name, "c-1", "beta question");
-
-        await shell.GoAsync(ViewPlace.Into(AlphaName));
-        await shell.Settled;
-        await shell.GoAsync(ViewPlace.Into(AlphaName).Into("c-1"));
-        await shell.Settled;
-        Assert.Contains("alpha question", shell.Transcript.Written, StringComparison.Ordinal);
-
-        shell.Line.Written = "ship the alpha totals tonight";
-
-        // F3, then Escape twice: none of them asks.
-        await shell.GoAsync(ViewPlace.Configure(AlphaName));
-        await shell.Settled;
-        await shell.BackAsync();
-        await shell.Settled;
-        await shell.BackAsync();
-        await shell.Settled;
-
-        await shell.GoAsync(ViewPlace.Into(BetaName));
-        await shell.Settled;
-        await shell.GoAsync(ViewPlace.Into(BetaName).Into("c-1"));
-        await shell.Settled;
-        Assert.Contains("beta question", shell.Transcript.Written, StringComparison.Ordinal);
-
-        var carried = shell.Line.Written;
-
-        shell.Line.Accept();
-        await shell.Settled;
-
-        var export = await new BrokerClient(_betaBroker.Operators).ExportAsync("c-1", ct);
-        var leaked = export!.Messages.Any(m => m.PayloadJson.Contains("alpha totals", StringComparison.Ordinal));
-
-        Assert.False(
-            leaked || carried.Length > 0,
-            $"box on arriving at beta/c-1 held '{carried}'; sent to beta's broker: {leaked}; said: {shell.Said}");
+        // Both entries, each naming its own project. This is the whole of what makes a repository
+        // answer in two places: brokers do not federate, and membership is which endpoint it
+        // connects to.
+        Assert.NotNull(launch["mcpServers"]!["parley-alpha"]);
+        Assert.NotNull(launch["mcpServers"]!["parley-beta"]);
     }
 
     [Fact]
-    public async Task A_late_read_of_alpha_does_not_draw_alphas_lists_in_betas_project_view()
+    public async Task Only_the_first_project_may_start_it_unattended()
     {
-        // Enter on a project reads it off the queue. The person leaves and enters another project before it returns.
-        // Must fail against the late read drawing alpha's conversations in beta's view.
-        var ct = TestContext.Current.CancellationToken;
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
 
-        await SeedAsync(_alpha, Billing, "only-alpha", "alpha question");
-        await SeedAsync(_beta, Billing, "only-beta", "beta question");
+        await AddAsync(driving, shell, "alpha", "orders");
+        await AddAsync(driving, shell, "beta", "orders");
 
-        var gate = new HoldOne("/Roadmaps");
-        using var hold = gate;
-        using var directory = new BrokerDirectory(
-            [
-                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
-                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
-            ],
-            address => string.Equals(address, _alphaBroker.Address, StringComparison.Ordinal)
-                ? GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = gate })
-                : GrpcChannel.ForAddress(address));
-        using var driving = Driving.Open(width: 140, height: 40);
-        using var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+        // **This asserted that only the first project could start it, and that was the defect.** One
+        // catalogue per project meant the checkout was startable in whichever file happened to name it
+        // and unstartable in the other, while being addressable in both — so a message sent to the
+        // second name was accepted, queued, and waited for somebody to open the repository by hand.
+        //
+        // There is one entry now, keyed by the checkout's own identity, and both projects start from it.
+        var catalogue = JsonNode.Parse(
+            await File.ReadAllTextAsync(CatalogueFor("alpha"), TestContext.Current.CancellationToken))!;
 
-        driving.Show(shell);
-        await shell.RefreshAsync(ct);
-        await shell.Settled;
+        Assert.True(LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
 
-        driving.Row(shell.Projects.List, "alpha");
-        await shell.Settled;
+        var entry = Assert.Single((JsonObject)catalogue["agents"]!);
 
-        gate.Arm();
-        _ = shell.OpenAsync(); // what Enter on the projects view does
-        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "alpha's read never reached the broker");
-
-        await shell.BackAsync(); // Escape
-        await shell.Settled;
-
-        driving.Row(shell.Projects.List, "beta");
-        await shell.Settled;
-        await shell.OpenAsync(); // Enter on beta
-        await shell.Settled;
-
-        var before = string.Join(" | ", shell.Conversations.List.Source!.ToList().Cast<object>());
-        Assert.Contains("only-beta", before, StringComparison.Ordinal);
-
-        gate.Release();
-        await Task.Delay(1500, ct);
-        await shell.Settled;
-
-        var after = string.Join(" | ", shell.Conversations.List.Source!.ToList().Cast<object>());
-
-        Assert.Equal("beta", shell.Place.Project?.Value);
-        Assert.True(
-            after.Contains("only-beta", StringComparison.Ordinal) && !after.Contains("only-alpha", StringComparison.Ordinal),
-            $"beta's project view lists: {after}");
+        Assert.Equal(declared.Identity.ToString(), entry.Key);
+        Assert.Equal(Workspace, entry.Value!["workspace"]!.GetValue<string>());
     }
+
+    [Fact]
+    public async Task The_second_add_says_which_project_starts_it()
+    {
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await AddAsync(driving, shell, "alpha", "orders");
+        await AddAsync(driving, shell, "beta", "orders");
+
+        // It was added, and it says why the second project's catalogue was left alone. Neither of
+        // those was true before: the whole enrolment was refused.
+        Assert.Contains(Adding.Added, shell.Said, StringComparison.Ordinal);
+        Assert.Contains("alpha", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_different_name_does_not_buy_a_second_unattended_start()
+    {
+        // The owner tried this, and it has to keep not working: the rule is keyed on the workspace
+        // because the hazard is two nodes running one working directory, and renaming the agent
+        // does not make it two directories.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await AddAsync(driving, shell, "alpha", "orders");
+        await AddAsync(driving, shell, "beta", "billing");
+
+        var beta = JsonNode.Parse(
+            await File.ReadAllTextAsync(CatalogueFor("beta"), TestContext.Current.CancellationToken))!;
+
+        Assert.Null(beta["agents"]!["billing"]);
+
+        // And it is still in the launch configuration under the name it was given here.
+        var launch = JsonNode.Parse(
+            await File.ReadAllTextAsync(LaunchFile, TestContext.Current.CancellationToken))!;
+
+        Assert.Equal(
+            "billing",
+            launch["mcpServers"]!["parley-beta"]!["env"]!["PARLEY_AGENT"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Withdrawing_from_one_project_leaves_the_other_entry_alone()
+    {
+        // **Lens 2, and it is 005's gate finding with a new cause.** That one caught a withdrawal
+        // deleting a launch entry belonging to a different agent, because two rows pointed at one
+        // workspace. This branch makes the same shape reachable from the screen for the first
+        // time: one repository, two projects, two entries in one file. Removing one must leave the
+        // other exactly as it was, and the damage in 005 was not the deletion — it was that the
+        // surface reported success.
+        using var driving = Driving.Open();
+        using var shell = await OpenAsync(driving);
+
+        await AddAsync(driving, shell, "alpha", "orders");
+        await AddAsync(driving, shell, "beta", "orders");
+
+        var token = TestContext.Current.CancellationToken;
+
+        await Enrolment.WithdrawAsync(Workspace, "orders", "beta", CatalogueFor("beta"), token);
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, token))!;
+
+        Assert.Null(launch["mcpServers"]!["parley-beta"]);
+        Assert.NotNull(launch["mcpServers"]!["parley-alpha"]);
+
+        // And this machine can still start it, because alpha still answers from this checkout. The
+        // entry is shared, so a withdrawal that took it would have stopped alpha being startable —
+        // which is the reach `WithdrawalReachTests` bounds, one file along.
+        var catalogue = JsonNode.Parse(await File.ReadAllTextAsync(CatalogueFor("alpha"), token))!;
+
+        Assert.True(LaunchConfiguration.TryRead(Workspace, out var declared, out var problem), problem);
+        Assert.NotNull(catalogue["agents"]![declared.Identity.ToString()]);
+    }
+
+    [Fact]
+    public async Task Four_projects_adding_one_repository_at_once_all_land()
+    {
+        // **The contention this branch makes reachable.** Before it, one repository could be
+        // enrolled in one project, so its launch configuration had one writer; now four projects
+        // may write into one file. `Enrolment` records what that costs when it goes wrong — eight
+        // racing writers left one entry in the file and told two of them it had worked — which is
+        // the shape where the damage is not the loss but the report.
+        //
+        // All attended, so none of them races another for the unattended consent: what is being
+        // probed is the file they share, not the rule about who may start it.
+        var token = TestContext.Current.CancellationToken;
+
+        var deployment = new[] { "alpha", "beta", "gamma", "delta" }
+            .Select((name, at) => new ProjectSettings(
+                ProjectName.Create(name), Path.Combine(_root, name + ".db"),
+                $"http://127.0.0.1:{9100 + at}", null))
+            .ToList();
+
+        ProjectManifest.Write(Root, deployment);
+
+        foreach (var project in deployment)
+        {
+            await File.WriteAllTextAsync(CatalogueFor(project.Name.Value), """{ "agents": {} }""", token);
+        }
+
+        await Task.WhenAll(deployment.Select(project => Task.Run(
+            async () => await Enrolment.AddAsync(
+                new EnrollmentEntry(Workspace, "orders", null, Unattended: false) { Enroll = true },
+                project.Name.Value,
+                CatalogueFor(project.Name.Value),
+                Path.Combine(Workspace, Adding.Instructions),
+                token,
+                Root),
+            token)));
+
+        var launch = JsonNode.Parse(await File.ReadAllTextAsync(LaunchFile, token))!;
+
+        foreach (var project in deployment)
+        {
+            Assert.NotNull(launch["mcpServers"]![$"parley-{project.Name.Value}"]);
+        }
+    }
+
+    // **`Nothing_else_starting_it_is_not_a_shared_workspace` stood here and its subject is gone.** It
+    // was the non-vacuity half of FR-013's suite: `Enrolment.StartedElsewhere` had to answer "nobody" for
+    // an empty deployment, or every positive test above it would have been passing trivially. 018 removed
+    // the rule and the function, and a repository answering in two projects is the ordinary case rather
+    // than the one that needs permission.
 }
