@@ -1929,7 +1929,7 @@ internal sealed class Shell : Window
     /// <summary>Opens the roadmap the open conversation's item belongs to, with the cursor on that item.</summary>
     /// <returns>When the read has been queued.</returns>
     /// <remarks>By the reservation the export carried, never by the conversation's name (SPEC.md §5.7).</remarks>
-    internal Task OpenItemRoadmap()
+    private Task OpenItemRoadmap()
     {
         if (Transcript.Item is { Removed: false } item)
         {

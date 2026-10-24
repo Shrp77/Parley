@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.8
+**Version:** 0.9
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 

@@ -145,13 +145,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         && snapshot.State == ExchangeState.Open
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
 
-    /// <summary>Words a link suggests, shown as the box's hint and never put in it.</summary>
+    /// <summary>Words shown as the box's hint and never put in it: an item's own text, while its conversation is empty.</summary>
     /// <remarks>
     /// A roadmap item opens its conversation with its own text as the hint, so the person sees what the item is and
-    /// writes their own words. A hint is not something they have said: the box stays empty until they type.
+    /// writes their own words. A hint is not something they have said: the box stays empty until they type. Read from
+    /// the item the reservation names, never from a link, so it is the item's words whatever their length.
     /// </remarks>
-    [BindProperty(SupportsGet = true)]
-    public string? Hint { get; set; }
+    public string? Hint => Problem is null && Messages.Count == 0 && Item is { Removed: false } ? ItemTitle : null;
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>

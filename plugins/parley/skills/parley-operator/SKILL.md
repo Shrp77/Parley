@@ -43,7 +43,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
 | Decide a roadmap an agent proposed | F4, or the project's *Proposed roadmaps* pane, Enter on one. Edit it, confirm it, or decline it. | The project's *Roadmaps* page lists the proposals waiting, each with its own page. |
 | Read a roadmap, see what is next, start an item | The project's *Roadmaps* pane, Enter. Alt+n goes to the next item; Enter on an item opens its conversation with its words in the box, and nothing is sent until the person sends it. Alt+e edits the roadmap. In an item's conversation, Alt+o goes back to its roadmap. | The roadmap's page. Each item opens its conversation in place; an item's conversation page links back to it. |
-| Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | Use the terminal: the web UI cannot name a project. |
+| Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | The projects page: *Create a project*. Removing or renaming one is the terminal's. |
 
 ## The boundary
 

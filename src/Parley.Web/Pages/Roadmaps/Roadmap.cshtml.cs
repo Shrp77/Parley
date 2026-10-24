@@ -36,14 +36,17 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
     [BindProperty(SupportsGet = true)]
     public int? Item { get; set; }
 
-    /// <summary>Whether an item's row starts open: the one asked for, or the next one when none was.</summary>
+    /// <summary>Whether an item's row starts open: the one asked for, or the next one when none was or it is not shown.</summary>
     /// <param name="state">The item.</param>
     /// <returns>Whether it is open when the page loads.</returns>
+    /// <remarks>A removed item's conversation still links here, so the item asked for may not be on the page.</remarks>
     public bool Opens(ItemState state)
     {
         ArgumentNullException.ThrowIfNull(state);
 
-        return Item is { } asked ? state.Item.Number == asked : state.IsNext;
+        return Item is { } asked && Standing?.Items.Any(s => s.Item.Number == asked) == true
+            ? state.Item.Number == asked
+            : state.IsNext;
     }
 
     /// <summary>The roadmap, once read.</summary>
@@ -114,9 +117,10 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
         if (state.Item.Facts is not { ConversationExists: true })
         {
             // Only the item's own agent is ticked, never every agent the roadmap names (SPEC.md §5.7); one naming none
-            // ticks nobody, and the person chooses from the room.
-            path += $"&Hint={Uri.EscapeDataString(state.Item.Text)}"
-                + (state.Item.IntendedAgent is { } agent ? $"&With={Uri.EscapeDataString(agent.Value)}" : string.Empty);
+            // ticks nobody, and the person chooses from the room. The item's words are not in the link: roadmap text has
+            // no bound, and a long item would make a link the server refuses. The conversation page reads them from the
+            // item its reservation names.
+            path += state.Item.IntendedAgent is { } agent ? $"&With={Uri.EscapeDataString(agent.Value)}" : string.Empty;
         }
 
         return embedded ? path + "&embed=1" : path;

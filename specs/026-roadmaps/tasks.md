@@ -165,7 +165,8 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
   - Run with the full suite.
 - [X] T058 Hygiene: case-insensitive `git grep` for the originating project's names; `git status` read by name before any `add`, since the terminal edits and the staged deletions in the tree are not this feature's
   - Run before committing.
-- [ ] T059 Walk `quickstart.md` against packed tools in a scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md` (untracked)
+- [X] T059 Walk `quickstart.md` against packed tools in a scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md` (untracked)
+  - Walked on 2026-10-24 with the 0.43.0 packages, four `parley-mcp` agents over stdio and the web console as the person: 40 checks, all passing. Steps 1.4, 1.5 and 2.5 rest on `RoomRosterTests`, `RoomActivityTests` and the structural tests. Steps 4.1, 4.3 and 4.4 were reworded to the design SPEC.md §5.7 settled on.
 - [X] T060 Update the `CLAUDE.md` plan entry from *planned* to *built*, with what building it found
   - CLAUDE.md's State names 026 as merged and states the store rule that replaced "nuke and rebuild".
 - [ ] T061 **Review gate**, owed and ordered after the combined 019 to 025 gate. Three lenses (correctness and concurrency; security and data integrity; API surface and maintainability), three consecutive clean runs each, run after the last edit. Probes owed by the plan: an agent opening a reserved item conversation; an agent calling anything on a roadmap; a payload shaped like an item reference; a proposal with line-breaking characters; two confirmations racing on one roadmap; the Room's drawn rows after the filter

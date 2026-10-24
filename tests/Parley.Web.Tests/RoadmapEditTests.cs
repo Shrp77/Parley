@@ -139,11 +139,49 @@ public sealed class RoadmapEditTests
         var response = await PostAsync(
             client,
             EditUri(),
-            new Dictionary<string, string> { ["Text"] = Kept, ["Revision"] = "1", ["ConfirmRemoval"] = "true" });
+            new Dictionary<string, string> { ["Text"] = Kept, ["Revision"] = "1", ["ConfirmRemoval"] = "true", ["Removing"] = "2" });
         var second = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Single(console.Broker.Edited);
         Assert.Contains("Saved", second, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Going_ahead_covers_only_the_items_described_and_an_open_item_removed_after_is_described_again()
+    {
+        // The second submit is the person agreeing to what the page said. Text changed after the warning to remove a
+        // different open item was never described, so it must be described before anything is saved. Must fail against
+        // a ConfirmRemoval that saves whatever the box holds.
+        using var console = Confirmed();
+
+        foreach (var item in console.Broker.Details[1].Items)
+        {
+            item.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        }
+
+        using var client = console.CreateClient();
+
+        var first = await SaveAsync(client, "title: Billing export\n1. Add CSV export | for: billing@test | item: 1");
+
+        Assert.Contains("item 2,", first, StringComparison.Ordinal);
+
+        var response = await PostAsync(
+            client,
+            EditUri(),
+            new Dictionary<string, string>
+            {
+                ["Text"] = "title: Billing export\n1. Call it from the report | for: orders@test | item: 2",
+                ["Revision"] = "1",
+                ["ConfirmRemoval"] = "true",
+                ["Removing"] = "2",
+            });
+        var second = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("item 1, &quot;Add CSV export&quot;, in rm1-1", second, StringComparison.Ordinal);
+
+        // What the page described travels with the form, so going ahead is agreement to exactly that.
+        Assert.Contains("name=\"Removing\" value=\"2\"", first, StringComparison.Ordinal);
     }
 
     [Fact]

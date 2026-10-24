@@ -650,7 +650,8 @@ public sealed class PlansTests : IAsyncDisposable
         view.Items.SelectedItem = 0;
         Assert.Equal(1, view.Selected!.Item.Number);
 
-        view.GoToNext();
+        // Pressed rather than called: the key is what a person has, and moving the cursor starts no queued work.
+        driving.Press(new Key(PlanView.NextKey).WithAlt);
         Assert.Equal(2, view.Selected!.Item.Number);
         Assert.Contains("2. Call it from the report", view.DetailText, StringComparison.Ordinal);
     }

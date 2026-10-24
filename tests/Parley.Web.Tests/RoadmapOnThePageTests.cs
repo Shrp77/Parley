@@ -96,8 +96,8 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
-        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export&amp;With=billing%40test&amp;", page, StringComparison.Ordinal);
-        Assert.Contains("id=rm1-2&amp;Hint=Call%20it%20from%20the%20report&amp;With=orders%40test&amp;", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-1&amp;With=billing%40test&amp;", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-2&amp;With=orders%40test&amp;", page, StringComparison.Ordinal);
         Assert.DoesNotContain("With=billing%40test&amp;With=", page, StringComparison.Ordinal);
     }
 
@@ -112,7 +112,7 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
-        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export&amp;embed=1", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-1&amp;embed=1", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -154,6 +154,23 @@ public sealed class RoadmapOnThePageTests
 
         Assert.Contains("id=\"item-2\" open=\"open\"", roadmap, StringComparison.Ordinal);
         Assert.DoesNotContain("id=\"item-1\" open=\"open\"", roadmap, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Asked_for_an_item_it_does_not_show_the_roadmap_opens_on_its_next_item()
+    {
+        // A removed item's conversation still links here, and a link can name any number. The terminal falls back to the
+        // next item; so must this page, rather than opening no row at all. Must fail against opening only the item asked.
+        using var console = Confirmed(
+            Item(1, "Add CSV export", "billing@test", started: false),
+            Item(2, "Call it from the report", "orders@test", started: false));
+        using var client = console.CreateClient();
+
+        var roadmap = await client.GetStringAsync(
+            new Uri($"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&id=1&item=9", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("id=\"item-1\" open=\"open\"", roadmap, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -272,7 +289,7 @@ public sealed class RoadmapOnThePageTests
 
         Assert.Matches("<body class=\"[^\"]* embed", embedded);
         Assert.DoesNotMatch("<body class=\"[^\"]* embed", plain);
-        Assert.Contains("data-src=\"/Conversations/Detail?project=" + RoadmapConsole.Project + "&amp;id=rm1-1&amp;Hint=", roadmap, StringComparison.Ordinal);
+        Assert.Contains("data-src=\"/Conversations/Detail?project=" + RoadmapConsole.Project + "&amp;id=rm1-1&amp;With=billing%40test&amp;embed=1", roadmap, StringComparison.Ordinal);
         Assert.Contains("&amp;embed=1\"", roadmap, StringComparison.Ordinal);
     }
 
@@ -314,9 +331,9 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
-    public async Task The_conversation_page_fills_the_box_and_ticks_the_agents_a_link_names()
+    public async Task The_conversation_page_ticks_the_agents_a_link_names()
     {
-        // Must fail against a conversation page that ignores the link's words and agents.
+        // Must fail against a conversation page that ignores the link's agents.
         using var console = new TranscriptConsole();
 
         console.Broker.Registry.AddRange(
@@ -329,15 +346,45 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(
             new Uri(
-                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=rm1-1&Hint=Add%20CSV%20export&With=billing%40test",
+                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=rm1-1&With=billing%40test",
                 UriKind.Relative),
             TestContext.Current.CancellationToken);
 
-        // A hint, not words: the box itself is empty.
-        Assert.Contains("placeholder=\"Add CSV export\"", page, StringComparison.Ordinal);
-        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
         Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", page);
         Assert.DoesNotMatch("name=\"Targets\" value=\"orders@test\" checked", page);
+    }
+
+    [Fact]
+    public async Task An_unstarted_items_conversation_shows_the_items_words_as_the_hint_and_the_box_empty()
+    {
+        // Read from the item the reservation names, not from the link. Must fail against a page that takes no words, or
+        // that puts them in the box as if the person had written them.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("placeholder=\"Add CSV export\"", page, StringComparison.Ordinal);
+        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_long_items_start_link_does_not_carry_its_words()
+    {
+        // Roadmap text has no bound, and a server refuses a request line past about 8 KB: 3,000 accented characters
+        // escape to 18 KB. Walked against the packed tools, such a link was refused with 414 and the item could not be
+        // started from the web at all. Must fail against a link that carries the item's text.
+        var words = "Exporter " + new string('é', 3000);
+        using var console = Confirmed(Item(1, words, "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
+        var links = System.Text.RegularExpressions.Regex.Matches(page, "(?:href|data-src)=\"(/Conversations/Detail[^\"]*)\"");
+
+        Assert.NotEmpty(links);
+        Assert.All(links, link => Assert.True(link.Groups[1].Value.Length < 200, link.Groups[1].Value[..Math.Min(200, link.Groups[1].Value.Length)]));
     }
 
     [Fact]

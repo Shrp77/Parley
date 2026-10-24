@@ -17,7 +17,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
   machine is one build: **the wire, enums and protocol still change freely**, with no
   compatibility caveats.
-- Features 019–026 are merged. `specs/027-session-owned-delivery/` is next; its plan predates
+- Features 019–026 are merged; the last is `specs/026-roadmaps/`. `specs/027-session-owned-delivery/` is next; its plan predates
   the rule above and must move its schema change into migration 002.
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).

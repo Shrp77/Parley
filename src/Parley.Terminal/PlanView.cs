@@ -41,7 +41,7 @@ internal sealed class PlanView : Dialog
     internal const char EditKey = 'e';
 
     /// <summary>Said on the button that goes to the next item; its key is Alt plus <see cref="NextKey"/>.</summary>
-    internal const string NextLabel = "Next item (Alt+n)";
+    private const string NextLabel = "Next item (Alt+n)";
 
     /// <summary>The letter, with Alt, that puts the cursor on the next item.</summary>
     internal const char NextKey = 'n';
@@ -265,7 +265,7 @@ internal sealed class PlanView : Dialog
     }
 
     /// <summary>Puts the cursor on the next item, as Alt+n does; nothing moves when the roadmap names none.</summary>
-    internal void GoToNext()
+    private void GoToNext()
     {
         if (Row(_standing, state => state.IsNext) is { } at)
         {
