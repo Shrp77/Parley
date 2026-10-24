@@ -777,7 +777,7 @@ internal sealed class Shell : Window
         Conversations.Opened += (_, _) => Touched();
         Roadmaps.Opened += (_, _) => Touched();
         Plans.Opened += (_, _) => Touched();
-        Plans.Opened += (_, summary) => OpenPlan(summary);
+        Plans.Opened += (_, summary) => OpenPlan(summary.Id);
 
         // A proposal chosen in the list opens in its own view, the same one a conversation opens it in.
         Roadmaps.Opened += (_, proposal) => ReviewProposal(proposal);
@@ -1757,8 +1757,9 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Opens a confirmed roadmap in its own view.</summary>
-    /// <param name="summary">What was chosen.</param>
-    private void OpenPlan(RoadmapSummary summary)
+    /// <param name="roadmapId">Which roadmap.</param>
+    /// <param name="itemNumber">The item to put the cursor on, when reached from that item's conversation; otherwise the next.</param>
+    private void OpenPlan(long roadmapId, int? itemNumber = null)
     {
         if (App is not { } app || Current is not { } project)
         {
@@ -1771,7 +1772,7 @@ internal sealed class Shell : Window
         Queue(async token =>
         {
             var read = await BrokerDirectory.ReadAsync(async () =>
-                await client.RoadmapAsync(summary.Id, token).ConfigureAwait(false)).ConfigureAwait(false);
+                await client.RoadmapAsync(roadmapId, token).ConfigureAwait(false)).ConfigureAwait(false);
 
             if (read.Value is not { } roadmap)
             {
@@ -1785,7 +1786,7 @@ internal sealed class Shell : Window
             var waiting = await BrokerDirectory.ReadAsync(async () =>
                 await client.WaitingAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
 
-            var view = new PlanView(roadmap, Parley.Client.Roadmaps.ItemStates.Of(roadmap, waiting.Value, me));
+            var view = new PlanView(roadmap, Parley.Client.Roadmaps.ItemStates.Of(roadmap, waiting.Value, me), itemNumber);
             var open = Prompting.Open(app, view);
 
             view.Closed += (_, _) => Prompting.Close(app, open);
@@ -1799,7 +1800,7 @@ internal sealed class Shell : Window
             view.ItemChosen += (_, item) =>
             {
                 Prompting.Close(app, open);
-                Queue(_ => OpenItemAsync(project, item, roadmap));
+                Queue(_ => OpenItemAsync(project, item));
             };
         });
     }
@@ -1855,22 +1856,26 @@ internal sealed class Shell : Window
     /// <summary>Goes to an item's conversation, ready to start it when it has not been.</summary>
     /// <param name="project">The project.</param>
     /// <param name="item">The item.</param>
-    /// <param name="roadmap">The roadmap it belongs to; every agent it names is in the new conversation.</param>
     /// <returns>When the conversation is open and the box is focused.</returns>
     /// <remarks>
     /// <para>
     /// <b>Starting an item is the person's request and adds no operation</b> (SPEC.md §5.7). A conversation that does not
-    /// exist yet is opened the way a new one is: named, with its agents recorded as the people it is for, and the box
-    /// holding the item's text. Nothing is sent until the person sends it, so it is their words in the transcript.
+    /// exist yet is opened the way a new one is: named, and the box holding the item's text. Nothing is sent until the
+    /// person sends it, so it is their words in the transcript.
+    /// </para>
+    /// <para>
+    /// <b>Only the item's own agent is addressed</b>, never every agent the roadmap names: an item meant for one agent is
+    /// not that agent's neighbours' work. An item naming none addresses nobody, and the person chooses from the room,
+    /// which lists the whole project.
     /// </para>
     /// </remarks>
-    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item, Roadmap roadmap)
+    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item)
     {
         var started = item.Facts is { ConversationExists: true };
 
         if (!started)
         {
-            _pending = (project.Name.Value, item.ConversationName, [.. roadmap.Items.Select(i => i.IntendedAgent).OfType<AgentName>().Distinct()]);
+            _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
         }
 
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
@@ -1911,6 +1916,25 @@ internal sealed class Shell : Window
     private Task OpenSelectedPlan()
     {
         _ = Plans.OpenSelected();
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the key that goes from an item's conversation to its roadmap is called.</summary>
+    internal const string ItemRoadmapTitle = "Open this item's roadmap";
+
+    /// <summary>The letter, with Alt, that goes from an item's conversation to its roadmap.</summary>
+    internal const char ItemRoadmapKey = 'o';
+
+    /// <summary>Opens the roadmap the open conversation's item belongs to, with the cursor on that item.</summary>
+    /// <returns>When the read has been queued.</returns>
+    /// <remarks>By the reservation the export carried, never by the conversation's name (SPEC.md §5.7).</remarks>
+    private Task OpenItemRoadmap()
+    {
+        if (Transcript.Item is { Removed: false } item)
+        {
+            OpenPlan(item.RoadmapId, item.ItemNumber);
+        }
 
         return Task.CompletedTask;
     }
@@ -2337,6 +2361,12 @@ internal sealed class Shell : Window
                         Fold,
                         Category: ActionCategory.View),
                 }
+                : Array.Empty<RegionAction>(),
+
+            // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
+            // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
+            .. Transcript.Item is { Removed: false }
+                ? new[] { new RegionAction(ItemRoadmapKey, ItemRoadmapTitle, OpenItemRoadmap) }
                 : Array.Empty<RegionAction>(),
 
             // **Recognised by the conversation's identifier and never by anything in a payload.**
@@ -5146,7 +5176,7 @@ internal sealed class Shell : Window
         var answers = await Task.WhenAll(asked).ConfigureAwait(false);
 
         // **A deployment whose parts are not from one release is said on the message line, once**: the version
-        // numbers do not move for a store edited in place, so nothing else would tell the person. Said again only
+        // numbers do not say a store's shape, so nothing else would tell the person. Said again only
         // when the words change, because this runs on every refresh.
         var warned = answers
             .SelectMany(a => a.Health.Warnings(BuildIdentity.Version).Select(w => $"{a.Value}: {w}"))

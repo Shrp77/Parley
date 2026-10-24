@@ -86,9 +86,10 @@ public sealed class PlansTests : IAsyncDisposable
         await repository.ConfirmAsync(proposal!.Id, proposal.Content, null, T0, cancellationToken: Ct);
     }
 
-    private async Task<Shell> OpenAsync(Driving.Session driving, BrokerDirectory directory)
+    private async Task<Shell> OpenAsync(Driving.Session driving, BrokerDirectory directory, bool seated = false)
     {
-        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+        // Seated only where a test reads who a line is addressed to: the room ticks nobody for a person not connected.
+        var shell = new Shell(directory) { MailEvery = null, FollowEvery = null, Seats = seated ? new SeatBook(directory.AgentsFor) : null };
 
         driving.Show(shell);
         await shell.RefreshAsync(Ct);
@@ -167,11 +168,11 @@ public sealed class PlansTests : IAsyncDisposable
     public async Task Enter_on_an_item_that_has_not_started_opens_its_conversation_with_its_text_in_the_box()
     {
         // Starting an item is the person's request: the conversation does not exist yet, the item's text is in the box,
-        // and its intended agent is in the room. Nothing is sent. Must fail against sending on Enter, or against opening
+        // and its intended agent is ticked. Nothing is sent. Must fail against sending on Enter, or against opening
         // nowhere.
         using var driving = Driving.Open(width: 140, height: 40);
         using var directory = Directory();
-        using var shell = await OpenAsync(driving, directory);
+        using var shell = await OpenAsync(driving, directory, seated: true);
 
         await ConfirmedAsync();
         await ReselectAsync(shell);
@@ -189,9 +190,15 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("rm1-1", shell.Place.Title);
         Assert.Equal("Add CSV export", shell.Line.Written);
-        var room = string.Join(' ', shell.Room.Written);
-        Assert.Contains("billing", room, StringComparison.Ordinal);
-        Assert.Contains("orders", room, StringComparison.Ordinal);
+        // Ticked is the item's own agent and no other the roadmap names: item 1 is billing's, and orders is in the room
+        // (every project agent is) but not addressed (SPEC.md §5.7). Must fail against ticking the whole roadmap's agents.
+        Assert.Contains(
+            shell.Room.Written,
+            row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal) && row.Contains("billing", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            shell.Room.Written,
+            row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal) && row.Contains("orders", StringComparison.Ordinal));
+        Assert.Contains(shell.Room.Written, row => row.Contains("orders", StringComparison.Ordinal));
         Assert.Empty((await new BrokerClient(_broker.Operators).ConversationsAsync(cancellationToken: Ct)).Items);
     }
 
@@ -312,6 +319,39 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Equal(Revising.Stale, shell.Said);
         Assert.Equal("Changed elsewhere", after.Title);
         Assert.Equal(2, after.Items.Count(i => !i.Removed));
+    }
+
+    [Fact]
+    public async Task Removing_an_item_whose_work_is_open_is_described_and_saved_only_when_chosen()
+    {
+        // T053: the request stays open and its agent is not told, which deleting a line does not say. Must fail against
+        // saving straight from the form, and against a warning that cannot be gone past.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await ReselectAsync(shell);
+
+        var (form, _) = await EditingAsync(driving, shell);
+
+        form.Fill(0, "title: Billing export\n1. Add CSV export | for: billing@test | item: 1");
+        form.Finish(taken: true);
+        await shell.Settled;
+
+        var asking = (ChoiceDialog)driving.Find(Revising.Title);
+        var client = new BrokerClient(_broker.Operators);
+        var id = Assert.Single(await client.RoadmapsAsync(Ct)).Id;
+
+        Assert.Contains("item 2, \"Call it from the report\", in rm1-2", asking.Described, StringComparison.Ordinal);
+        Assert.Equal(2, (await client.RoadmapAsync(id, Ct))!.Items.Count(i => !i.Removed));
+
+        driving.Row(asking.Choices, Revising.RemoveAnyway);
+        driving.Enter();
+        await shell.Settled;
+
+        Assert.Equal(1, (await client.RoadmapAsync(id, Ct))!.Items.Count(i => !i.Removed));
     }
 
     [Fact]
@@ -479,5 +519,156 @@ public sealed class PlansTests : IAsyncDisposable
 
         Assert.DoesNotContain(room, row => row.Contains("never run", StringComparison.Ordinal));
         Assert.Single(room, row => row.Contains("zeta", StringComparison.Ordinal));
+    }
+
+    /// <summary>A seated shell with the roadmap confirmed and the first item's conversation begun by the person.</summary>
+    private async Task<Shell> StartedAsync(Driving.Session driving, BrokerDirectory directory, int row = 0)
+    {
+        var shell = await OpenAsync(driving, directory, seated: true);
+
+        await ConfirmedAsync();
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+
+        view.Items.SelectedItem = row;
+        view.OpenSelected();
+        await shell.Settled;
+
+        shell.Line.Accept();
+        await shell.Settled;
+
+        return shell;
+    }
+
+    [Fact]
+    public async Task An_item_conversation_is_marked_as_the_items_in_the_list_and_in_its_title()
+    {
+        // FR-026: rm1-1 alone tells a reader nothing. Must fail against a row or a title that shows the name bare.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory);
+
+        Assert.Contains("item 1 of #1 Billing export", shell.Transcript.Title, StringComparison.Ordinal);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+
+        driving.App.LayoutAndDraw(true);
+
+        Assert.Contains("rm1-1  [item 1 of #1 Billing export]", driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task From_an_items_conversation_one_key_opens_its_roadmap_on_that_item()
+    {
+        // FR-025 and SC-003: to the item and back. Must fail against no way back, or a way back that lands on the next
+        // item rather than the one the person came from: item 2 is not next while item 1 is in progress.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        Assert.Equal("rm1-2", shell.Place.Title);
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        var back = Assert.Single(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle);
+        Assert.Equal(Shell.ItemRoadmapKey, back.Key);
+
+        // Run directly rather than by Alt+o: the key draws on this thread while the queue opens the view.
+        await back.Run();
+        await shell.Settled;
+
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        Assert.Equal(2, view.Selected!.Item.Number);
+    }
+
+    [Fact]
+    public async Task A_removed_items_conversation_says_formerly_and_offers_no_way_to_a_roadmap()
+    {
+        // FR-023a: the conversation stays, belongs to no item, and says which it was.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        var repository = new RoadmapRepository(_connection);
+        var id = (await repository.ListAsync(Ct)).Single().Id;
+        var edit = await repository.EditAsync(id, 1, new RoadmapContent("Billing export", [new RoadmapItemDraft(1, "Add CSV export", Billing, [])]), T0, cancellationToken: Ct);
+        Assert.Null(edit.Problem);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        driving.App.LayoutAndDraw(true);
+        Assert.Contains("rm1-2  [formerly item 2 of #1 Billing export]", driving.Text(), StringComparison.Ordinal);
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "rm1-2");
+        await shell.Settled;
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        Assert.Contains("formerly item 2 of #1 Billing export", shell.Transcript.Title, StringComparison.Ordinal);
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle);
+    }
+
+    [Fact]
+    public async Task A_roadmap_opens_on_its_next_item_and_a_key_returns_there()
+    {
+        // T039: on a long roadmap the next item can be far down. Item 1 is in progress and item 2 no longer needs it, so
+        // item 2 is next and is not the first row. Must fail against opening on the first row always, and against a key
+        // that does nothing.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory);
+
+        var repository = new RoadmapRepository(_connection);
+        var id = (await repository.ListAsync(Ct)).Single().Id;
+        var edit = await repository.EditAsync(
+            id,
+            1,
+            new RoadmapContent("Billing export",
+            [
+                new RoadmapItemDraft(1, "Add CSV export", Billing, []),
+                new RoadmapItemDraft(2, "Call it from the report", Orders, []),
+            ]),
+            T0,
+            cancellationToken: Ct);
+        Assert.Null(edit.Problem);
+
+        await Walking.GoAsync(shell, Viewing.Project);
+        await shell.Settled;
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        Assert.Equal(2, view.Selected!.Item.Number);
+
+        view.Items.SelectedItem = 0;
+        Assert.Equal(1, view.Selected!.Item.Number);
+
+        // Pressed rather than called: the key is what a person has, and moving the cursor starts no queued work.
+        driving.Press(new Key(PlanView.NextKey).WithAlt);
+        Assert.Equal(2, view.Selected!.Item.Number);
+        Assert.Contains("2. Call it from the report", view.DetailText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_cleared_transcript_offers_no_way_to_an_items_roadmap()
+    {
+        // Selecting clears the transcript while the person stays in the conversation view (after a Clarify, say). Must
+        // fail against a clear that keeps the item, which left Alt+o offered with no conversation open.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        shell.Transcript.Clear();
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+
+        Assert.Null(shell.Transcript.Open);
+        Assert.DoesNotContain(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle);
     }
 }

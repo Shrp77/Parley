@@ -58,8 +58,9 @@ gRPC services, on purpose.
 - **Bump `VersionPrefix`** in `Directory.Build.props` in the same change as any change to `src`.
   While the major version is zero the minor number carries breaking changes and the patch carries
   everything else. Documentation, tests, CI and the plugin's text do not move it.
-- **Nothing has been released**, so there is no compatibility to keep yet. Schema 1 changes in
-  place. From the first release, every schema change is a migration.
+- **A store is kept across upgrades.** Schema 1 is fixed, and every schema change is a new
+  migration (`002_…` onwards) that upgrades a store in place and keeps its rows. The tools are
+  always installed together, so the wire and the protocol still change freely.
 - **Never `git checkout` over uncommitted work.** Copy it first.
 - **Keep documentation to one statement of each rule.** When a rule changes, change it
   everywhere it is stated and remove the old wording. Git keeps the history.

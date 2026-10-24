@@ -1,5 +1,7 @@
 # Implementation Plan: Roadmaps, and every agent in the Room
 
+> The store rule below was replaced on 2026-10-24: live stores are kept. Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2).
+
 **Branch**: `019-layout` | **Date**: 2026-10-06 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `specs/026-roadmaps/spec.md`
 

@@ -113,6 +113,10 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Which conversation is open, or null when none is.</summary>
     internal string? Open { get; private set; }
 
+    /// <summary>The roadmap item the open conversation is the work on, by the broker's reservation; null for an ordinary one.</summary>
+    /// <remarks>Never from the conversation's name or a message (SPEC.md §5.7), so an agent cannot make one look like an item's.</remarks>
+    internal RoadmapItemRef? Item { get; private set; }
+
     /// <summary>The whole transcript as written, whether or not it all fits.</summary>
     internal string Written => _written;
 
@@ -141,6 +145,7 @@ internal sealed class TranscriptRegion : FrameView
         var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
+        Item = problem is null ? export?.Item : null;
         Retitle();
 
         // **Read on screen rather than exported to it.** The export (`Transcript.Write`) is one flattened line
@@ -630,7 +635,9 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Closes whatever is open.</summary>
     internal void Clear()
     {
+        // The item goes with the conversation, so nothing offers a way to a roadmap from a transcript showing nothing.
         Open = null;
+        Item = null;
         Retitle();
         Say(Nothing, LineKind.Annotation);
     }
@@ -642,7 +649,11 @@ internal sealed class TranscriptRegion : FrameView
     /// </remarks>
     private void Retitle()
     {
-        var named = Open is { } open ? $"{RegionTitle} — {Safe.Text(open)}" : RegionTitle;
+        // An item's conversation says which item, because rm1-3 alone tells a reader nothing.
+        var named = Open is { } open
+            ? $"{RegionTitle} — {Safe.Text(open)}"
+                + (Item is { } item ? $" · {Safe.Text(Parley.Client.Roadmaps.ItemWording.Belongs(item))}" : string.Empty)
+            : RegionTitle;
 
         Title = _folded ? FoldedTitle.Replace(RegionTitle, named, StringComparison.Ordinal) : named;
     }

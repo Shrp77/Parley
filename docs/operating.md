@@ -175,11 +175,18 @@ revise an existing roadmap or create a new one. Nothing is a roadmap until you c
 
 Each item gets a conversation of its own, named from the roadmap and the item number, such as
 `rm1-3`. **Starting an item sends nothing.** It opens that conversation with the item's words in
-the box and the agents you want ticked, and you press Send. The roadmap shows where each item
+the box and the agent the item is for ticked. Tick anyone else in the project you want it to reach,
+and press Send. The roadmap shows where each item
 stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
 on you, blocked (and why), done, or closed. It also says which item is next. Nobody sets a state
 by hand. To change what an item says, edit the roadmap. To resolve a blocked item, send the agent
 a further request in its conversation.
+
+An item's conversation is marked with its item in every conversation list, and leads back to its
+roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
+conversation where it is, marked *formerly*. A proposal confirmed as a revision replaces the
+roadmap's items, so it removes them too. If a removed item's work is still open, you are told so
+before anything is saved, because the agent holding it is not told.
 
 ## Files
 

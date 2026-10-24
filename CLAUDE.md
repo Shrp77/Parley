@@ -10,16 +10,15 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.42.86, protocol 0.8 (feature 026 moves it to 0.9),
-  schema 1. Nothing has been released, so there is **no compatibility to keep**: change the wire,
-  enums and schema 1 in place, and nuke and rebuild. From the first release every schema change is
-  a migration.
-- Branch `019-layout` carries features 019–025, built and unmerged. One combined review gate
-  covers them; `REVIEW-LEDGER.md` has the count. Owed: 025's walk and live check, and the rest of
-  the gate.
-- `specs/026-roadmaps/` is in progress (protocol 0.9). Spec, plan and
-  contracts are written; `tasks.md` and the rest of the code are owed, and `ProtocolVersion.Current`
-  moves to 0.9 with it. `.specify/feature.json` points at it.
+- Version 0.43.0, protocol 0.9, schema 1. Nothing has been released, but **live stores hold work
+  in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
+  `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
+  upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
+  -Hidden`, never `-Reset`. `-Force` ends the broker and every `parley-mcp`, so every tool on a
+  machine is one build: **the wire, enums and protocol still change freely**, with no
+  compatibility caveats.
+- Features 019–026 are merged; the last is `specs/026-roadmaps/`. `specs/027-session-owned-delivery/` is next; its plan predates
+  the rule above and must move its schema change into migration 002.
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`

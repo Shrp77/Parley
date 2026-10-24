@@ -64,6 +64,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The roadmaps <c>Roadmap</c> returns, by identifier.</summary>
     public Dictionary<long, Wire.RoadmapDetail> Details { get; } = [];
 
+    /// <summary>The conversations every list returns.</summary>
+    public List<Wire.ConversationSummary> Conversations { get; } = [];
+
     /// <summary>Every confirmation the broker was asked for.</summary>
     public List<Wire.ConfirmProposalRequest> Confirmed { get; } = [];
 
@@ -135,7 +138,8 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply(),
                 "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply(),
-                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply(),
+                "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
+                "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),
                 "/parley.v1.Operators/Implements" => new Wire.ImplementsReply { ProtocolVersion = Parley.Core.ProtocolVersion.Current },
                 _ => null,
             };
@@ -179,6 +183,33 @@ public sealed class RoadmapBroker : HttpMessageHandler
         var reply = new Wire.RoadmapsReply();
 
         reply.Roadmaps.AddRange(Roadmaps);
+
+        return reply;
+    }
+
+    /// <summary>An empty conversation, carrying the reservation when a roadmap's item holds that name.</summary>
+    /// <remarks>
+    /// By the item's record, the way the broker answers, and never by the name's shape: a conversation called
+    /// <c>rm9-9</c> that no item reserved is an ordinary one.
+    /// </remarks>
+    private Wire.ExportReply Export(string conversation)
+    {
+        var reply = new Wire.ExportReply();
+
+        foreach (var detail in Details.Values)
+        {
+            if (detail.Items.FirstOrDefault(i => i.ConversationName == conversation) is { } item)
+            {
+                reply.Item = new Wire.RoadmapItemRef
+                {
+                    RoadmapId = detail.Id,
+                    RoadmapNumber = detail.Number,
+                    Title = detail.Title,
+                    ItemNumber = item.Number,
+                    Removed = item.RemovedRevision != 0,
+                };
+            }
+        }
 
         return reply;
     }

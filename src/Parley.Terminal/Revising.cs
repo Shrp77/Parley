@@ -20,6 +20,10 @@ namespace Parley.Terminal;
 /// item's conversation stays, and nothing in flight is destroyed.
 /// </para>
 /// <para>
+/// <b>Removing an item whose work is still open is described first</b> (<see cref="Removal"/>), and saved only on a
+/// second, deliberate choice: the request stays open and its agent is not told, which deleting a line does not say.
+/// </para>
+/// <para>
 /// <b>A stale revision is said and applied to nothing.</b> The person is offered the roadmap read again; what they typed
 /// is not carried onto it, because it was written against items that may have moved.
 /// </para>
@@ -34,6 +38,9 @@ internal static class Revising
 
     /// <summary>Reads the roadmap again and opens it for editing.</summary>
     private const string Reload = "Read it again and edit that";
+
+    /// <summary>Saves an edit after being told it removes items whose work is still open.</summary>
+    internal const string RemoveAnyway = "Remove them and save";
 
     /// <summary>Said when the person leaves without saving.</summary>
     internal const string Left = "Left as it is. Nothing was changed.";
@@ -98,7 +105,30 @@ internal static class Revising
                 return;
             }
 
-            queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+            if (Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
+            {
+                queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+
+                return;
+            }
+
+            // The item's words were proposed by an agent, so they are made safe to draw like any other text of theirs.
+            var choosing = Prompting.Choose(Title, Safe.Text(warning), [Leave, RemoveAnyway]);
+            var asking = Prompting.Open(app, choosing);
+
+            choosing.Done += (_, chosen) =>
+            {
+                Prompting.Close(app, asking);
+
+                if (chosen == RemoveAnyway)
+                {
+                    queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+                }
+                else
+                {
+                    _ = done(Left);
+                }
+            };
         };
     }
 

@@ -45,7 +45,17 @@ else if (Model.Roadmap is { } roadmap)
             </p>
         }
 
-        <button type="submit">Save</button>
+        @if (Model.Warning is { Length: > 0 } warning)
+        {
+            @* Said before anything is saved; the second submit is the deliberate act. *@
+            <p class="unreachable" role="alert">@warning</p>
+            <input type="hidden" name="Removing" value="@Model.Removing" />
+            <button type="submit" name="ConfirmRemoval" value="true">Remove them and save</button>
+        }
+        else
+        {
+            <button type="submit">Save</button>
+        }
         <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@Model.Id">Leave it as it is</a>
     </form>
 }

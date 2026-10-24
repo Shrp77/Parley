@@ -337,6 +337,74 @@ public sealed class ProposingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_revision_that_removes_open_work_is_described_and_confirmed_only_on_a_second_choice()
+    {
+        // A proposal's items carry no item numbers, so confirming it as a revision replaces every item. Item 1's request
+        // is open, and its agent would not be told. Must fail against confirming as soon as the revision is chosen.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        await Repository.ConfirmAsync(first!.Id, first.Content, null, T0, cancellationToken: Ct);
+
+        var person = (await new AgentRepository(_connection).GetAllAsync(Ct)).Single(a => PersonSeat.Is(a.Name)).Name;
+        var speaking = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+        await speaking.StartAsync(person, T0, Ct);
+        var opened = await speaking.RequestAsync(person, Billing, "model-a", """{"ask":"Add the CSV export."}""", T0, "rm1-1", Ct);
+        Assert.True(opened.Exchange is not null, $"the item could not be started: {opened.Admission.Rejection}");
+
+        await ProposeAsync("Billing export", target: "billing export");
+
+        async Task ChooseReviseAsync()
+        {
+            await OpenProposalsAsync(shell);
+            driving.Enter();
+            await shell.Settled;
+            await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+            Pick(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+            await shell.Settled;
+        }
+
+        await ChooseReviseAsync();
+
+        var warning = (ChoiceDialog)driving.Find(Proposing.Title);
+        Assert.Contains("item 1, \"Add CSV export\", in rm1-1", warning.Described, StringComparison.Ordinal);
+        Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);
+
+        Pick(driving, Proposing.Title, Proposing.Leave);
+        await shell.Settled;
+        Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);
+
+        await ChooseReviseAsync();
+        Pick(driving, Proposing.Title, Proposing.RemoveAndConfirm);
+        await shell.Settled;
+        Assert.Equal(2, (await Client.RoadmapsAsync(Ct)).Single().Revision);
+    }
+
+    [Fact]
+    public async Task Waiting_proposals_larger_than_a_default_reply_can_still_be_read()
+    {
+        // Roadmap text has no bound, so one agent's proposals can outgrow gRPC's default 4 MB reply. Through the channel
+        // every surface uses, the person must still read them. Must fail against a channel with the default limit.
+        foreach (var n in new[] { 1, 2 })
+        {
+            var (id, problem) = await Repository.ProposeAsync(
+                Orders, null, null, new RoadmapContent($"Plan {n}", [new RoadmapItemDraft(null, new string('x', 3_000_000), null, [])]), T0,
+                cancellationToken: Ct);
+
+            Assert.Null(problem);
+            Assert.NotNull(id);
+        }
+
+        using var channel = BrokerDirectory.Connect(_broker.Address);
+        var waiting = await new BrokerClient(new Parley.Transport.Operators.OperatorsClient(channel))
+            .ProposalsAsync(ProposalState.Waiting, Ct);
+
+        Assert.Equal(2, waiting.Count);
+    }
+
+    [Fact]
     public async Task No_seat_is_taken_to_decide_a_proposal()
     {
         using var driving = Driving.Open(width: 140, height: 40);

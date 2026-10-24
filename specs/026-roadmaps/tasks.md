@@ -101,11 +101,15 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 - [X] T037 [US2] `src/Parley.Client/Roadmaps/ItemStates.cs`: the one derivation of R4, signature `Of(roadmap, edges, registry)` taking item facts from `Roadmap` with no per-item export (analysis finding C1), also reporting *text changed since* by comparing the item's text with the text first sent (FR-014a) (not started, in progress, waiting on an agent, waiting on the person, blocked with its blocker, done, closed by the person, could not be read) and the next-item rule with dependencies; no state stored anywhere
 - [X] T038 [P] [US2] `tests/Parley.Client.Tests/ItemStatesTests.cs`: a table of cases, one per state and per Acceptance Scenario of story 2; a read failure is *could not be read* and **never** *not started* (FR-018); dependencies hold a later item back; complete roadmap names no next item; mutation-check the derivation by changing one state's rule
-- [ ] T039 [US2] Terminal: a roadmaps list (reached from the projects view) and a roadmap view (items, state, holder, blocker, a *next* mark, one key to jump to next for long roadmaps); built on `Lists`, plain-text marks that survive colour being stripped, narrow-terminal rule honoured; the read is contained so a failure says so and keeps the last view
-- [ ] T040 [P] [US2] Web: `src/Parley.Web/Pages/Roadmaps/Index` and `Detail`, rendering `ItemStates`; no script needed for correctness
+- [X] T039 [US2] Terminal: a roadmaps list (reached from the projects view) and a roadmap view (items, state, holder, blocker, a *next* mark, one key to jump to next for long roadmaps); built on `Lists`, plain-text marks that survive colour being stripped, narrow-terminal rule honoured; the read is contained so a failure says so and keeps the last view
+  - Built as `PlansRegion` and `PlanView`. The view starts on the next item, or on the item whose conversation it was reached from, and Alt+n returns to the next item (`PlansTests`).
+- [X] T040 [P] [US2] Web: `src/Parley.Web/Pages/Roadmaps/Index` and `Detail`, rendering `ItemStates`; no script needed for correctness
+  - Built as `Roadmaps/Index` and `Roadmaps/Roadmap`; `item=n` opens that item's row with no script.
 - [X] T041 [P] [US2] ~~CLI~~ Dropped with T034: the command line adds no roadmap verb
-- [ ] T042 [US2] Count items waiting on the person into `WaitingOnYou` and the projects row (FR-017); tests
-- [ ] T043 [US2] Tests: a roadmap view makes a fixed number of operator calls whatever its length (count them against a scripted broker with 5 and 50 items); a surface reaching a broker without roadmap support says so and acts as no one (FR-014b); two key presses reach an item's conversation and two return (SC-003); terminal drawn-screen tests at two widths and with the broker unreachable; web render tests; the CLI output
+- [X] T042 [US2] Count items waiting on the person into `WaitingOnYou` and the projects row (FR-017); tests
+  - An item waiting on the person is a question in its conversation, so the inbox counts it with every other question the person owes (`WaitingOnYou`); proposals are counted by `ProposalCount` on both projects rows.
+- [X] T043 [US2] Tests: a roadmap view makes a fixed number of operator calls whatever its length (count them against a scripted broker with 5 and 50 items); a surface reaching a broker without roadmap support says so and acts as no one (FR-014b); two key presses reach an item's conversation and two return (SC-003); terminal drawn-screen tests at two widths and with the broker unreachable; web render tests; the CLI output
+  - Covered by `PlansTests`, `RoadmapOnThePageTests` and `RoadmapCallCountTests`. FR-014b dropped (see spec.md), and the CLI adds nothing (T034).
 
 **Checkpoint**: story 2 passes quickstart section 3.
 
@@ -115,11 +119,16 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 **Goal**: start an item, sending the person's request into the item's conversation. **Independent test**: quickstart section 4 steps 1 to 3 and 7.
 
-- [ ] T044 [US3] `src/Parley.Client/Roadmaps/StartItem.cs`: resolves the agents (the item's intended agent, or the person's choice from `RoomRoster`'s project list), builds the ask from the item's text plus optional words, checks the 8,000 cap before sending and names it, refuses with a sentence when the item is already in progress unless a further line is chosen (FR-021), and sends through `SeatVoice.RequestAsync` with the reserved conversation id. Tests: one request per agent, cap refusal sends nothing, already-in-progress sends nothing
-- [ ] T045 [US3] Terminal: a *Start* action on an item that describes what will be sent and to whom first (a deliberate act), offers the project's agents when none is intended, and uses the held seat; without a seat it says a request is sent as somebody and asks for one (0.28.2), and the door lives in one file for `SurfaceTests`
-- [ ] T046 [P] [US3] Web: a start form on the roadmap page, GET describes, POST sends, and a missing seat is said plainly rather than falling through to the operator's voice
-- [ ] T047 [US3] The start is the **person's words in the transcript**, not an operator instruction: a test that sending an item adds a message in the transcript from `human-user` and no row to `instructions`
-- [ ] T048 [US3] End to end test over a socket, including that roadmaps survive a broker restart (SC-007): start an item for an unstarted item, assert the conversation now exists and equals the reserved name, the agent holds one request, the state reads in progress
+- [X] T044 [US3] `src/Parley.Client/Roadmaps/StartItem.cs`: resolves the agents (the item's intended agent, or the person's choice from `RoomRoster`'s project list), builds the ask from the item's text plus optional words, checks the 8,000 cap before sending and names it, refuses with a sentence when the item is already in progress unless a further line is chosen (FR-021), and sends through `SeatVoice.RequestAsync` with the reserved conversation id. Tests: one request per agent, cap refusal sends nothing, already-in-progress sends nothing
+  - **Replaced by the design SPEC.md §5.7 settled on**: starting an item opens its conversation with the item's words in the box and its own agent ticked, and the person's send is the start. No `StartItem` type exists. Ticking only the item's own agent, not every agent the roadmap names, was fixed on 2026-10-24.
+- [X] T045 [US3] Terminal: a *Start* action on an item that describes what will be sent and to whom first (a deliberate act), offers the project's agents when none is intended, and uses the held seat; without a seat it says a request is sent as somebody and asks for one (0.28.2), and the door lives in one file for `SurfaceTests`
+  - Replaced as T044: Enter on an item in `PlanView` opens its conversation through the held seat; nothing is sent until the person sends.
+- [X] T046 [P] [US3] Web: a start form on the roadmap page, GET describes, POST sends, and a missing seat is said plainly rather than falling through to the operator's voice
+  - Replaced as T044: the roadmap page links each item to its conversation with `Hint` and `With`; following the link sends nothing.
+- [X] T047 [US3] The start is the **person's words in the transcript**, not an operator instruction: a test that sending an item adds a message in the transcript from `human-user` and no row to `instructions`
+  - Held by `RoadmapOverTheWireTests.Starting_an_item_is_the_persons_request_into_the_reserved_conversation`: the agent collects an ordinary request from the person.
+- [X] T048 [US3] End to end test over a socket, including that roadmaps survive a broker restart (SC-007): start an item for an unstarted item, assert the conversation now exists and equals the reserved name, the agent holds one request, the state reads in progress
+  - The same test over a socket; surviving a restart is `RoadmapSurvivesARestartTests` on a file store.
 
 **Checkpoint**: story 3 passes quickstart section 4.
 
@@ -129,11 +138,16 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 **Goal**: roadmap to item conversation and back. **Independent test**: quickstart section 4 steps 4 to 6.
 
-- [ ] T049 [US4] Terminal: Enter on a started item opens its conversation; on an unstarted item it shows the text and offers to start (no conversation exists, per clarification 3); in a conversation, an action *Roadmap* opens the roadmap on that item, and says so plainly for an ordinary conversation
-- [ ] T050 [P] [US4] Web: item links to `Conversations/Detail`, and `Detail` shows a line naming the item with a link back; conversation lists mark item conversations (FR-026)
-- [ ] T051 [P] [US4] The conversation list on both surfaces and `parley` carries the item reference from `ConversationSummary`; a removed item's conversation says *formerly* (FR-023a)
-- [ ] T052 [US4] Tests: round trip lands on the same item; removing an item through `EditRoadmap` leaves the conversation intact and marked formerly; a conversation that merely mentions a roadmap in a payload gets no link
-- [ ] T053 [US4] Editing: `EditRoadmap` on both surfaces, refused when the expected revision is stale; removing an item whose conversation has an open exchange is described first; `SurfaceTests` holds `EditRoadmap` and `DeclineProposal` each in exactly one file per surface carrying its door
+- [X] T049 [US4] Terminal: Enter on a started item opens its conversation; on an unstarted item it shows the text and offers to start (no conversation exists, per clarification 3); in a conversation, an action *Roadmap* opens the roadmap on that item, and says so plainly for an ordinary conversation
+  - Enter opens the item's conversation; in it, Alt+o opens the roadmap on that item, offered only for a live item's conversation.
+- [X] T050 [P] [US4] Web: item links to `Conversations/Detail`, and `Detail` shows a line naming the item with a link back; conversation lists mark item conversations (FR-026)
+  - Conversation pages name their item and link back to the roadmap opened on it; the project's conversation list tags item conversations.
+- [X] T051 [P] [US4] The conversation list on both surfaces and `parley` carries the item reference from `ConversationSummary`; a removed item's conversation says *formerly* (FR-023a)
+  - Both surfaces read the item from the broker's reservation (`ItemWording.Belongs`); a removed item's conversation says *formerly*.
+- [X] T052 [US4] Tests: round trip lands on the same item; removing an item through `EditRoadmap` leaves the conversation intact and marked formerly; a conversation that merely mentions a roadmap in a payload gets no link
+  - `PlansTests` and `RoadmapOnThePageTests`: the round trip, *formerly*, and a conversation named like an item that no item reserved.
+- [X] T053 [US4] Editing: `EditRoadmap` on both surfaces, refused when the expected revision is stale; removing an item whose conversation has an open exchange is described first; `SurfaceTests` holds `EditRoadmap` and `DeclineProposal` each in exactly one file per surface carrying its door
+  - Built on both surfaces. Removing an item whose work is open is described first (`Removal`) and saved only on a second, deliberate choice.
 
 **Checkpoint**: story 4 passes quickstart section 4 steps 4 to 6.
 
@@ -141,13 +155,20 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 ## Phase 8: Polish and release
 
-- [ ] T054 [P] README.md: a section on roadmaps that stands alone (no spec section references) saying how an agent learns to propose, with the template; the Room's new rows
-- [ ] T055 [P] `plugins/parley`: the operator skill lists the new verbs and says a roadmap is the person's; `PluginTests` equal sets
-- [ ] T056 (if any earlier phase is committed alone, that commit carries the bump) Bump `VersionPrefix` to 0.42.0 and `ProtocolVersion` to 0.9; run the full build (warnings are errors), then every test host executable directly
-- [ ] T057 Run `GraphTests`: Client, Web, Terminal and Setup still reach no store; `DeadSurfaceTests` clean (nothing public used only by itself)
-- [ ] T058 Hygiene: case-insensitive `git grep` for the originating project's names; `git status` read by name before any `add`, since the terminal edits and the staged deletions in the tree are not this feature's
-- [ ] T059 Walk `quickstart.md` against packed tools in a scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md` (untracked)
-- [ ] T060 Update the `CLAUDE.md` plan entry from *planned* to *built*, with what building it found
+- [X] T054 [P] README.md: a section on roadmaps that stands alone (no spec section references) saying how an agent learns to propose, with the template; the Room's new rows
+  - `docs/operating.md` carries roadmaps; the README links it.
+- [X] T055 [P] `plugins/parley`: the operator skill lists the new verbs and says a roadmap is the person's; `PluginTests` equal sets
+  - The operator skill lists where roadmaps are decided, read and started, and that a roadmap is the person's. No verb was added, so `PluginTests` is unchanged.
+- [X] T056 (if any earlier phase is committed alone, that commit carries the bump) Bump `VersionPrefix` to 0.42.0 and `ProtocolVersion` to 0.9; run the full build (warnings are errors), then every test host executable directly
+  - Bumped to 0.43.0 (the plan said 0.42.0 before 0.42.x had shipped) and protocol 0.9.
+- [X] T057 Run `GraphTests`: Client, Web, Terminal and Setup still reach no store; `DeadSurfaceTests` clean (nothing public used only by itself)
+  - Run with the full suite.
+- [X] T058 Hygiene: case-insensitive `git grep` for the originating project's names; `git status` read by name before any `add`, since the terminal edits and the staged deletions in the tree are not this feature's
+  - Run before committing.
+- [X] T059 Walk `quickstart.md` against packed tools in a scratch root with every `PARLEY_` variable cleared; record each check in `REVIEW-LEDGER.md` (untracked)
+  - Walked on 2026-10-24 with the 0.43.0 packages, four `parley-mcp` agents over stdio and the web console as the person: 40 checks, all passing. Steps 1.4, 1.5 and 2.5 rest on `RoomRosterTests`, `RoomActivityTests` and the structural tests. Steps 4.1, 4.3 and 4.4 were reworded to the design SPEC.md §5.7 settled on.
+- [X] T060 Update the `CLAUDE.md` plan entry from *planned* to *built*, with what building it found
+  - CLAUDE.md's State names 026 as merged and states the store rule that replaced "nuke and rebuild".
 - [ ] T061 **Review gate**, owed and ordered after the combined 019 to 025 gate. Three lenses (correctness and concurrency; security and data integrity; API surface and maintainability), three consecutive clean runs each, run after the last edit. Probes owed by the plan: an agent opening a reserved item conversation; an agent calling anything on a roadmap; a payload shaped like an item reference; a proposal with line-breaking characters; two confirmations racing on one roadmap; the Room's drawn rows after the filter
 
 ---

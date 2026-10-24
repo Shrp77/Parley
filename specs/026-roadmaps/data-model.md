@@ -1,5 +1,7 @@
 # Data model: Roadmaps
 
+> The store rule below was replaced on 2026-10-24: live stores are kept. Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2).
+
 Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A store built before this edit lacks the tables until it is reset. That is the owner's standing rule (no compatibility before release, see 020 and 023). Tables are `STRICT`. Per-project store, so no project column.
 
 ## Entities
