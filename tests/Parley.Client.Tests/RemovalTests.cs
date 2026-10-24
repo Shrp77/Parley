@@ -60,4 +60,26 @@ public sealed class RemovalTests
         Assert.StartsWith("This removes an item whose work is still open: item 3, \"Item 3\", in rm1-3.", said, StringComparison.Ordinal);
         Assert.Contains("not told", said, StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData("3,3,1,1", true)]
+    [InlineData(" 3 , 1 ", true)]
+    [InlineData("3", false)]
+    [InlineData("-1,-3", false)]
+    [InlineData("1,99999999999,3", true)]
+    [InlineData("99999999999", false)]
+    [InlineData("+1,+3", false)]
+    [InlineData("1,3,", true)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("0,1", false)]
+    public void Going_ahead_covers_only_the_plain_numbers_of_the_items_described(string? agreed, bool covered)
+    {
+        // A form's hidden field is the person's agreement, so anything in it that is not an item number agrees to nothing.
+        var open = Removal.StillOpen(Roadmap(Item(1, open: 1), Item(2, open: 0), Item(3, open: 1)), Keeping(2));
+
+        Assert.Equal(covered, Removal.Covers(open, agreed));
+        Assert.True(Removal.Covers([], "junk,-1,,"));
+        Assert.True(Removal.Covers(open, Removal.Numbers(open)));
+    }
 }
