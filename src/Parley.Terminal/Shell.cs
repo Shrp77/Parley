@@ -1908,15 +1908,11 @@ internal sealed class Shell : Window
 
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
 
-        // The box is this conversation's: the item's words when it has not begun, and nothing carried from elsewhere when
-        // it has. A line the person is writing in this same conversation stays.
-        if (!started)
+        // The box is this conversation's: on arriving, the item's words when it has not begun and nothing carried from
+        // elsewhere when it has. A line the person is writing in this same conversation stays, item's words edited or not.
+        if (arriving || string.IsNullOrWhiteSpace(Line.Written))
         {
-            Line.Written = item.Text;
-        }
-        else if (arriving)
-        {
-            Line.Written = string.Empty;
+            Line.Written = started ? string.Empty : item.Text;
         }
 
         Focus(Panes.ToList().IndexOf(Line));

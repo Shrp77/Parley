@@ -249,21 +249,30 @@ Parley until each editor restarts. That is the cost.
 When the protocol number moves, install on every machine running a broker or an agent, then
 restart the sessions that had Parley configured. See [Configuration](configuration.md#versions).
 
-**Install with `-Force`, never `-Reset`.** A project's store holds its work, and a new build keeps
-it: a build that changes the store's tables upgrades it in place when the broker starts, and
-keeps every row. `-Reset` deletes the stores. Before installing a build that changes the store,
-copy each project's `parley.db` (in `projects/<name>/`, with the broker stopped) somewhere safe.
+**Never use `-Reset` (`--reset`) to upgrade.** It deletes every project's store, and a store holds
+the project's work. Any other install keeps the stores. A new build that changes a store's tables
+upgrades the store in place when the broker starts, and keeps every row.
+
+Copy each project's `parley.db` (in `projects/<name>/`) somewhere safe before every install, with
+the broker stopped, since a copy taken while it writes may be incomplete. To stop the broker the
+autostart entry runs, end the `parley-broker` scheduled task on Windows
+(`Stop-ScheduledTask parley-broker`), or run `systemctl --user stop parley-broker.service` on Linux
+or `launchctl bootout gui/$(id -u)/parley-broker` on macOS. A `parley serve` you started yourself
+stops with Ctrl+C.
 
 ### A store from another build
 
-The broker compares each store's tables, indexes and triggers with its own, and warns, in the
-terminal, on the console and on its own output, when they differ. The store was made by a build
-other than this one, though it carries the same version. The broker still serves it, but a check
-the store is missing is not being made.
+The broker compares each store's tables, indexes and triggers with its own. When they differ it
+warns in the terminal, in the web console and on its own output. The store was made by a build
+other than this one, though it carries the same schema version. The broker still serves it, but a
+check the store lacks is not being made.
 
 Do not reset it, which loses its work. Stop the broker and copy the store first. Then either
 install the build that made it, or bring the store to this build's shape: create a fresh store
-with this build and copy every row across, and check the warning has gone before going on.
+with this build and copy every row across, and check the warning has gone before going on. The
+fresh store applies this build's checks to every row it is given, so some rows may be refused.
+Do not leave a refused row out: stop, keep the copy, and get help, since a row left out is work
+lost.
 
 ## Why the operator tools are separate from the agent's
 

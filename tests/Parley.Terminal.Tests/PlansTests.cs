@@ -741,6 +741,31 @@ public sealed class PlansTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Choosing_the_item_whose_conversation_is_open_keeps_the_words_the_person_changed()
+    {
+        // In item 1's conversation, unsent, the person trims its words, goes to the roadmap and chooses item 1 again.
+        // Nothing is asked, since they stay where they are, so nothing may be replaced. Must fail against filling the box
+        // with the item's words again.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await OpenRowAsync(driving, shell, 0);
+        shell.Line.Written = "Add CSV export, headers only";
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Transcript));
+        await Assert.Single(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle).Run();
+        await shell.Settled;
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+        view.Items.SelectedItem = 0;
+        view.OpenSelected();
+        await shell.Settled;
+
+        Assert.Equal("rm1-1", shell.Place.Title);
+        Assert.Equal("Add CSV export, headers only", shell.Line.Written);
+    }
+
+    [Fact]
     public async Task A_cleared_transcript_offers_no_way_to_an_items_roadmap()
     {
         // Selecting clears the transcript while the person stays in the conversation view (after a Clarify, say). Must

@@ -81,5 +81,5 @@ else if (Model.Roadmap is { } roadmap && Model.Standing is { } standing)
         })();
     </script>
 
-    <p><small>Starting an item sends nothing. It opens the conversation <code>@(standing.Items.Count > 0 ? "rm" + roadmap.Number + "-<item>" : "")</code> with the item's words ready; you press Send.</small></p>
+    <p><small>Starting an item sends nothing. It opens the item's own conversation with the item's words ready; you press Send.</small></p>
 }

@@ -113,6 +113,25 @@ public sealed class RoadmapOverTheWireTests
     }
 
     [Fact]
+    public async Task An_agent_cannot_open_an_items_conversation_by_placing_a_file_in_it()
+    {
+        // A file opens a conversation and writes no message, so the reserved-conversation trigger never sees it. Must fail
+        // against admitting the placement, which left the item reading as begun with only the agent in its conversation.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+
+        var roadmap = await ConfirmedAsync(broker, await ProposeAsync(orders));
+
+        var placed = await FileWire.PlaceAsync(orders.Client, orders.Name, "notes.md", "# notes"u8.ToArray(), "rm1-1", Ct);
+
+        Assert.NotEqual(Wire.PlaceOutcome.Placed, placed.Outcome);
+
+        var detail = await broker.ConnectAsOperator().RoadmapAsync(new Wire.RoadmapRequest { Id = roadmap }, cancellationToken: Ct);
+        Assert.False(detail.Roadmap.Items.Single(i => i.Number == 1).Facts.ConversationExists);
+    }
+
+    [Fact]
     public async Task Declining_persists_nothing_and_tells_the_proposer()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

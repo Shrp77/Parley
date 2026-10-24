@@ -31,7 +31,7 @@ Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A 
 `(item_id, needs_item_id)`; trigger: both items belong to the same roadmap, neither removed, and the needed item's position is earlier.
 
 ### roadmap_item_conversations
-`item_id` PK FK; `conversation_id` text unique, legal conversation id (the same character rule `conversations.id` carries); derived as `rm<roadmaps.number>-<items.number>` at confirmation. **No FK to `conversations`**: the row is a reservation made before the conversation exists. A conversation exists once a message is in it.
+`item_id` PK FK; `conversation_id` text unique, legal conversation id (the same character rule `conversations.id` carries); derived as `rm<roadmaps.number>-<items.number>` at confirmation, or the first free name after it (`-2`, `-3`, ...) when a conversation, a destroyed conversation or another reservation already holds that one. **No FK to `conversations`**: the row is a reservation made before the conversation exists. A conversation exists once a message is in it.
 Trigger on `messages`: if the message's conversation is reserved here and the conversation has no earlier message, the sender must be the person (`human-user@…`). Refused otherwise.
 
 ### roadmap_notices

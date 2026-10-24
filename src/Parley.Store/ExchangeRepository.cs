@@ -285,6 +285,19 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                 return new ConversationAssignment(null, false, OpenOutcome.NotAssignable(held));
             }
 
+            // **A roadmap item's conversation is opened by the person** (SPEC.md §5.7). The message trigger holds that for
+            // a Request; refused here as well, because a conversation is also opened by placing a file in it, which
+            // writes no message, and an item would then read as begun with only an agent in it.
+            if (!senderIsPerson && await _connection.ExecuteScalarAsync<long>(
+                    new CommandDefinition(
+                        "SELECT count(*) FROM roadmap_item_conversations WHERE conversation_id = @Id;",
+                        new { Id = named },
+                        transaction,
+                        cancellationToken: cancellationToken)).ConfigureAwait(false) > 0)
+            {
+                return new ConversationAssignment(null, false, OpenOutcome.NotAssignable(held));
+            }
+
             return new ConversationAssignment(named, Starts: true, Refusal: null);
         }
 
