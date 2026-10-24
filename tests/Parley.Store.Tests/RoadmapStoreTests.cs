@@ -653,6 +653,59 @@ public sealed class RoadmapStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task New_items_whose_names_are_taken_get_unique_names_that_last_through_later_edits()
+    {
+        // Two derived names taken by an agent, three items added in one edit, then a reorder and another item. Must fail
+        // against two items sharing a name, or a later edit moving an item's conversation.
+        var id = await RoadmapAsync();
+        Open("rm1-4", "orders@test", "billing@test");
+        Open("rm1-5", "orders@test", "billing@test");
+
+        var edit = await Repository.EditAsync(
+            id,
+            1,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Item("Ship it", Billing),
+                Item("Tell them", Billing),
+                Item("Close it", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var items = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.Equal(items.Count, items.Select(i => i.ConversationName).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal("rm1-4-2", items.Single(i => i.Text == "Ship it").ConversationName);
+        Assert.Equal("rm1-5-2", items.Single(i => i.Text == "Tell them").ConversationName);
+        Assert.Equal("rm1-6", items.Single(i => i.Text == "Close it").ConversationName);
+
+        var again = await Repository.EditAsync(
+            id,
+            2,
+            Content("Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the column", null, 2),
+                Existing(5, "Tell them", Billing),
+                Existing(4, "Ship it", Billing),
+                Existing(6, "Close it", Billing),
+                Item("Seven", Billing)),
+            Now,
+            cancellationToken: Ct);
+
+        Assert.True(again.Done, again.Problem);
+
+        var after = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.Equal("rm1-4-2", after.Single(i => i.Number == 4).ConversationName);
+        Assert.Equal("rm1-5-2", after.Single(i => i.Number == 5).ConversationName);
+        Assert.Equal("rm1-7", after.Single(i => i.Number == 7).ConversationName);
+        Assert.Equal(4, (await Repository.ReservationOfAsync("rm1-4-2", Ct))!.Value.ItemNumber);
+    }
+
+    [Fact]
     public async Task An_item_reworded_after_its_request_was_sent_says_so_and_one_reworded_before_does_not()
     {
         // FR-014a, from the item's own edit record: the words sent may be the person's own and prove nothing. Item 1 is
