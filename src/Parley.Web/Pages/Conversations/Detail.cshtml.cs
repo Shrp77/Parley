@@ -569,6 +569,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             && Item is { Removed: false })
         {
             Says = ItemTitle;
+
+            // **Only the item's own agent is ticked**, whatever a link asks. A link an agent wrote in a message is live on
+            // this page, and `With=` naming another agent would hand that agent the item's words on one press of Send.
+            With = ItemAgent is { } agent && With.Contains(agent.Value, StringComparer.Ordinal) ? [agent.Value] : [];
         }
 
         return Page();
@@ -614,8 +618,14 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         var found = await BrokerDirectory.ReadAsync(async () =>
             await broker.RoadmapAsync(item.RoadmapId, HttpContext.RequestAborted).ConfigureAwait(false)).ConfigureAwait(false);
 
-        ItemTitle = found.Value?.Items.FirstOrDefault(i => i.Number == item.ItemNumber)?.Text;
+        var reserved = found.Value?.Items.FirstOrDefault(i => i.Number == item.ItemNumber);
+
+        ItemTitle = reserved?.Text;
+        ItemAgent = reserved?.IntendedAgent;
     }
+
+    /// <summary>The agent the roadmap item this conversation is the work on is for, or <see langword="null"/>.</summary>
+    public AgentName? ItemAgent { get; private set; }
 
     /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
     /// <param name="project">The project it belongs to.</param>

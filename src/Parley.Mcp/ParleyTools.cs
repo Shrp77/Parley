@@ -1798,8 +1798,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 Wire.RequestRejection.ConversationNotAssignable => outcome.AssignableConversations.Count > 0
                     ? "Everything you send while you hold requests goes into their conversations. Name which " +
                       "one this belongs to in conversation_id; see may_name."
-                    : "You can only continue a conversation you are part of. Leave conversation_id out to start " +
-                      "a new one.",
+                    : "That conversation is not one you are part of, and not one you can start: it exists without you, " +
+                      "or its name is taken. Leave conversation_id out to start a new one.",
                 Wire.RequestRejection.NoSuchRole =>
                     "Nothing is registered under that role, which is usually a misspelling. Call parley_agents.",
                 _ => "Refused."

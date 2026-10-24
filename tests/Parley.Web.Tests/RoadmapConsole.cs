@@ -67,6 +67,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>The conversations every list returns.</summary>
     public List<Wire.ConversationSummary> Conversations { get; } = [];
 
+    /// <summary>The agents the registry lists, none by default.</summary>
+    public List<Wire.RegistryRow> Registry { get; } = [];
+
     /// <summary>Every confirmation the broker was asked for.</summary>
     public List<Wire.ConfirmProposalRequest> Confirmed { get; } = [];
 
@@ -140,7 +143,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
                 "/parley.v1.Operators/ConfirmProposal" => Confirm(Wire.ConfirmProposalRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/DeclineProposal" => Decline(Wire.ProposalRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/EditRoadmap" => Edit(Wire.EditRoadmapRequest.Parser.ParseFrom(payload)),
-                "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply(),
+                "/parley.v1.Operators/DescribeRegistry" => new Wire.RegistryReply { Rows = { Registry } },
                 "/parley.v1.Operators/DescribeWaiting" => new Wire.WaitingReply(),
                 "/parley.v1.Operators/ListConversations" => new Wire.ListConversationsReply { Conversations = { Conversations } },
                 "/parley.v1.Operators/Export" => Export(Wire.ExportRequest.Parser.ParseFrom(payload).ConversationId),

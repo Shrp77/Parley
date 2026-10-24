@@ -722,6 +722,36 @@ public sealed class PlansTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task An_items_words_shaped_like_a_command_are_sent_as_words_to_the_items_agent_alone()
+    {
+        // An agent proposed an item for billing whose words are `/add orders@test`. Enter in the box must send them, not
+        // run them: run, they chose who the person's next line reached. Must fail against resolving the box as a command.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory, seated: true);
+
+        var repository = new RoadmapRepository(_connection);
+        var (proposal, problem) = await repository.ProposeAsync(
+            Orders, null, null, new RoadmapContent("Billing export", [new RoadmapItemDraft(null, "/add orders@test", Billing, [])]), T0,
+            cancellationToken: Ct);
+        Assert.Null(problem);
+        var waiting = await repository.GetProposalAsync(proposal!.Value, Ct);
+        await repository.ConfirmAsync(waiting!.Id, waiting.Content, null, T0, cancellationToken: Ct);
+
+        await OpenRowAsync(driving, shell, 0);
+        Assert.Equal("/add orders@test", shell.Line.Written);
+
+        shell.Line.Accept();
+        await shell.Settled;
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync("rm1-1", Ct);
+
+        Assert.Equal([Billing], shell.Drafting!.Recipients);
+        Assert.Contains(export!.Messages, m => m.To == Billing && m.PayloadJson.Contains("/add orders@test", StringComparison.Ordinal));
+        Assert.DoesNotContain(export.Messages, m => m.To == Orders);
+    }
+
+    [Fact]
     public async Task Leaving_and_discarding_an_items_words_leaves_nothing_in_the_box()
     {
         // "Leaving throws it away" must be true: the item's words were put in the box for the person, and must not follow

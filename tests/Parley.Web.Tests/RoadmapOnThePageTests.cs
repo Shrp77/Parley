@@ -421,6 +421,30 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
+    public async Task A_link_that_ticks_another_agent_on_an_items_conversation_ticks_nobody_but_the_items_own()
+    {
+        // An agent's message can carry a live link to an item's conversation with `With=` naming a different agent; one
+        // press of Send would hand that agent the item's words. Must fail against ticking whoever a link names.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        console.Broker.Registry.AddRange(
+        [
+            new Wire.RegistryRow { Name = "billing@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+            new Wire.RegistryRow { Name = "inventory@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+        ]);
+        using var client = console.CreateClient();
+
+        var forged = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&With=inventory%40test", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+        var own = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&With=billing%40test", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.DoesNotMatch("name=\"Targets\" value=\"inventory@test\" checked", forged);
+        Assert.Matches("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", own);
+    }
+
+    [Fact]
     public async Task A_removed_items_conversation_opens_with_an_empty_box()
     {
         // It belongs to no item any more, so nothing is offered to send on its behalf.

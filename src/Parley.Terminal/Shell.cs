@@ -204,7 +204,12 @@ internal sealed class Shell : Window
         // **A command still in the box at Enter is one that nothing consumed.** Completing an agent takes the
         // command and its parameter out of the text, so the ordinary path never reaches here with one; what does
         // is somebody who typed it out by hand, and they are owed either the act or the reason.
-        if (Commands.Resolve(Line.Written) is { Command: { } command } written)
+        // **An item's words are text, never a command.** They were an agent's, put in the box by starting the item; read
+        // as `/add inventory@test` they would choose who the person's line reaches (§13: nothing addressing comes out
+        // of a payload). A command the person types themselves still runs.
+        var itemsWords = _itemWords is { Length: > 0 } words && Line.Written.StartsWith(words, StringComparison.Ordinal);
+
+        if (!itemsWords && Commands.Resolve(Line.Written) is { Command: { } command } written)
         {
             Said = Ran(command, written.Rest);
 
@@ -1576,8 +1581,11 @@ internal sealed class Shell : Window
         return Settled;
     }
 
-    /// <summary>The conversation the words in the box were written in, or null before any.</summary>
+    /// <summary>The project and conversation the box was last opened in, or null before any.</summary>
     private string? _lineFor;
+
+    /// <summary>The item's words the box was filled with in that conversation, or null when it was not.</summary>
+    private string? _itemWords;
 
     /// <summary>Moves to a view and lays it out.</summary>
     /// <param name="place">Where to go.</param>
@@ -1617,10 +1625,14 @@ internal sealed class Shell : Window
             // **A line belongs to the conversation it was written in.** Arriving at another, by whatever route the person
             // left the first (Escape asks; F3 and the rest do not), carries nothing, so the next Enter cannot send words
             // meant for one agent to another. Coming back to the same conversation keeps them.
-            if (!string.Equals(_lineFor, conversation, StringComparison.Ordinal))
+            // Keyed by project as well: `rm1-1` is a conversation in every project with a roadmap.
+            var lineFor = project.Name.Value + "/" + conversation;
+
+            if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
                 Line.Written = string.Empty;
-                _lineFor = conversation;
+                _lineFor = lineFor;
+                _itemWords = null;
             }
 
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
@@ -1898,8 +1910,8 @@ internal sealed class Shell : Window
     /// <remarks>
     /// <para>
     /// <b>Starting an item is the person's request and adds no operation</b> (SPEC.md §5.7). A conversation that does not
-    /// exist yet is opened the way a new one is: named, and the box holding the item's text. Nothing is sent until the
-    /// person sends it, so it is their words in the transcript.
+    /// exist yet is opened the way a new one is: named, and the box holding the item's text, unless the person already
+    /// wrote in it there. Nothing is sent until the person sends it, so it is their words in the transcript.
     /// </para>
     /// <para>
     /// <b>Only the item's own agent is addressed</b>, never every agent the roadmap names: an item meant for one agent is
@@ -1923,6 +1935,7 @@ internal sealed class Shell : Window
         if (!started && string.IsNullOrWhiteSpace(Line.Written))
         {
             Line.Written = item.Text;
+            _itemWords = item.Text;
         }
 
         Focus(Panes.ToList().IndexOf(Line));
@@ -4343,18 +4356,30 @@ internal sealed class Shell : Window
             _archivedOmitted = page.ArchivedOmitted;
         }
 
+        // **A read draws only the project still in view.** Enter and Escape start this off the work queue, so on a slow
+        // broker it can return after the person has moved to another project, whose view would then list this one's
+        // conversations and agents, and act on them under the other project's name.
+        bool StillShown() => Current is { } shown && string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal);
+
         // What agents have proposed, with the rest of the project. Unknown leaves what was shown, rather than
         // emptying the pane because a broker did not answer.
-        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
+        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting
+            && StillShown())
         {
             ShowProposals(waiting);
         }
 
         // The roadmaps already confirmed, listed above the conversations. Unknown leaves what was shown.
         if (await BrokerDirectory.ReadAsync(async () =>
-                await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed })
+                await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed }
+            && StillShown())
         {
             ShowPlans(confirmed);
+        }
+
+        if (!StillShown())
+        {
+            return;
         }
 
         Agents.Show(registry.Value, Catalogue(), registry.Problem);

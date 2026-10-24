@@ -174,10 +174,10 @@ can reword, reorder, add or remove items, and then confirm it or decline it. Con
 revise an existing roadmap or create a new one. Nothing is a roadmap until you confirm.
 
 Each item gets a conversation of its own, named from the roadmap and the item number, such as
-`rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first. **Starting an item sends nothing.** It opens that conversation with the item's words in
-the box and the agent the item is for ticked. Tick anyone else in the project you want it to reach,
-and press Send. The roadmap shows where each item
-stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
+`rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first.
+**Starting an item sends nothing.** It opens that conversation with the item's words in the box
+and the agent the item is for ticked. Tick anyone else in the project you want it to reach, and
+press Send. The roadmap shows where each item stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
 on you, blocked (and why), done, or closed. It also says which item is next. Nobody sets a state
 by hand. To change what an item says, edit the roadmap. To resolve a blocked item, send the agent
 a further request in its conversation.

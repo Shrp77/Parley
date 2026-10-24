@@ -254,42 +254,6 @@ public sealed class OpeningTests : IAsyncDisposable
         Assert.Equal("only", shell.Transcript.Open);
     }
 
-    /// <summary>Holds the first call to one path after <see cref="Arm"/> until <see cref="Release"/>.</summary>
-    private sealed class HoldOne(string path) : DelegatingHandler(new SocketsHttpHandler())
-    {
-        private readonly SemaphoreSlim _go = new(0, 1);
-        private int _armed;
-
-        internal ManualResetEventSlim Holding { get; } = new(false);
-
-        internal void Arm() => Volatile.Write(ref _armed, 1);
-
-        internal void Release() => _go.Release();
-
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            if (request.RequestUri!.AbsolutePath.EndsWith(path, StringComparison.Ordinal)
-                && Interlocked.CompareExchange(ref _armed, 0, 1) == 1)
-            {
-                Holding.Set();
-                await _go.WaitAsync(cancellationToken);
-            }
-
-            return await base.SendAsync(request, cancellationToken);
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _go.Dispose();
-                Holding.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
-    }
-
     private async Task SeedAsync(string conversation, string said)
     {
         var ct = TestContext.Current.CancellationToken;
