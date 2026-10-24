@@ -840,7 +840,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 ? "That conversation is closed, so nothing more can be placed in it. Work worth resuming is new work."
                 : refused.Assignable.Count > 0
                     ? "You hold requests in more than one conversation, or in a different one: name one of those listed."
-                    : "You cannot place a file in a conversation you are not part of while you hold requests."
+                    : "You cannot start that conversation: you are not part of it, and its name is not one you can start. "
+                        + "Leave conversation_id out to place the file in a new conversation."
         };
 
         reply.AssignableConversations.AddRange(refused.Assignable);

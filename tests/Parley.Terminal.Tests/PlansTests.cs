@@ -673,6 +673,55 @@ public sealed class PlansTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Leaving_by_configuration_carries_no_items_words_into_another_conversation()
+    {
+        // F3 and then Escape ask nothing, so the box still held item 1's words; Enter in item 2's conversation sent them
+        // to its agent. Must fail against a box that follows the person into a conversation it was not written in.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await OpenRowAsync(driving, shell, 0);
+        Assert.Equal("Add CSV export", shell.Line.Written);
+
+        await shell.GoAsync(Parley.Client.Views.ViewPlace.Configure(Walking.Alpha));
+        await shell.Settled;
+        await shell.BackAsync();
+        await shell.Settled;
+
+        await Walking.GoAsync(shell, Viewing.Conversation, "rm1-2");
+        await shell.Settled;
+        Assert.Equal(string.Empty, shell.Line.Written);
+
+        shell.Line.Accept();
+        await shell.Settled;
+
+        Assert.DoesNotContain("Add CSV export", shell.Transcript.Written, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Leaving_by_configuration_and_coming_back_to_the_item_keeps_the_persons_words()
+    {
+        // The box is the conversation's, so coming back to the same item finds what the person wrote there.
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var directory = Directory();
+        using var shell = await StartedAsync(driving, directory, row: 1);
+
+        await OpenRowAsync(driving, shell, 0);
+        shell.Line.Written = "Add CSV export, gzipped, columns as in the March report";
+
+        await shell.GoAsync(Parley.Client.Views.ViewPlace.Configure(Walking.Alpha));
+        await shell.Settled;
+        await shell.BackAsync();
+        await shell.Settled;
+
+        await OpenRowAsync(driving, shell, 0);
+
+        Assert.Equal("rm1-1", shell.Place.Title);
+        Assert.Equal("Add CSV export, gzipped, columns as in the March report", shell.Line.Written);
+    }
+
+    [Fact]
     public async Task Leaving_and_discarding_an_items_words_leaves_nothing_in_the_box()
     {
         // "Leaving throws it away" must be true: the item's words were put in the box for the person, and must not follow

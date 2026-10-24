@@ -129,10 +129,7 @@ public sealed class OpeningTests : IAsyncDisposable
 
         using var driving = Driving.Open();
         using var directory = Directory();
-
-        // No timers: the mail poll relays the screen every five seconds, and under a loaded run a tick landing between
-        // clearing the transcript and opening the conversation again left it cleared. The routes are what is compared.
-        using var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
+        using var shell = new Shell(directory);
 
         driving.Show(shell);
         await shell.RefreshAsync(ct);
@@ -167,6 +164,130 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal(byKey, shell.Transcript.Written);
+    }
+
+    /// <summary>A shell whose broker holds the next <c>Roadmaps</c> call once armed, as a slow broker would.</summary>
+    private (Shell Shell, BrokerDirectory Directory, HoldOne Gate) SlowShell()
+    {
+        var gate = new HoldOne("/Roadmaps");
+        var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address, new GrpcChannelOptions { HttpHandler = gate }));
+
+        return (new Shell(directory) { MailEvery = null, FollowEvery = null }, directory, gate);
+    }
+
+    [Fact]
+    public async Task A_project_read_that_returns_late_does_not_clear_a_conversation_opened_after_it()
+    {
+        // Enter on a project starts its read off the work queue. On a slow broker the person can open a conversation
+        // before that read returns. Must fail against the read clearing the transcript when it lands, which left the
+        // conversation on screen and empty, and following it stopped. This was the intermittent failure above.
+        var ct = TestContext.Current.CancellationToken;
+
+        await SeedAsync("only", "about the totals");
+
+        var (made, directory, gate) = SlowShell();
+        using var shell = made;
+        using var held = directory;
+        using var hold = gate;
+        using var driving = Driving.Open();
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        gate.Arm();
+        driving.Enter();
+        await shell.Settled;
+        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the project read never reached the broker");
+
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+        Assert.Equal("only", shell.Transcript.Open);
+
+        gate.Release();
+        await Task.Delay(1000, ct);
+
+        Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
+        Assert.Equal("only", shell.Transcript.Open);
+        Assert.Contains("about the totals", shell.Transcript.Written, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_late_read_from_leaving_a_conversation_does_not_clear_the_next_one_opened()
+    {
+        // The same with Escape: leaving reads the project off the queue, and the person goes straight back in.
+        var ct = TestContext.Current.CancellationToken;
+
+        await SeedAsync("only", "about the totals");
+
+        var (made, directory, gate) = SlowShell();
+        using var shell = made;
+        using var held = directory;
+        using var hold = gate;
+        using var driving = Driving.Open();
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        driving.Enter();
+        await shell.Settled;
+        await Task.Delay(500, ct);
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+        Assert.Equal("only", shell.Transcript.Open);
+
+        gate.Arm();
+        driving.Escape();
+        await shell.Settled;
+        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the back read never reached the broker");
+
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+
+        gate.Release();
+        await Task.Delay(1000, ct);
+
+        Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
+        Assert.Equal("only", shell.Transcript.Open);
+    }
+
+    /// <summary>Holds the first call to one path after <see cref="Arm"/> until <see cref="Release"/>.</summary>
+    private sealed class HoldOne(string path) : DelegatingHandler(new SocketsHttpHandler())
+    {
+        private readonly SemaphoreSlim _go = new(0, 1);
+        private int _armed;
+
+        internal ManualResetEventSlim Holding { get; } = new(false);
+
+        internal void Arm() => Volatile.Write(ref _armed, 1);
+
+        internal void Release() => _go.Release();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith(path, StringComparison.Ordinal)
+                && Interlocked.CompareExchange(ref _armed, 0, 1) == 1)
+            {
+                Holding.Set();
+                await _go.WaitAsync(cancellationToken);
+            }
+
+            return await base.SendAsync(request, cancellationToken);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _go.Dispose();
+                Holding.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 
     private async Task SeedAsync(string conversation, string said)

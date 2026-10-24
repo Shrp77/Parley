@@ -1576,6 +1576,9 @@ internal sealed class Shell : Window
         return Settled;
     }
 
+    /// <summary>The conversation the words in the box were written in, or null before any.</summary>
+    private string? _lineFor;
+
     /// <summary>Moves to a view and lays it out.</summary>
     /// <param name="place">Where to go.</param>
     /// <returns>When the view is on screen.</returns>
@@ -1611,6 +1614,15 @@ internal sealed class Shell : Window
         // behind the item that asked for it and `Settled` would not include it.
         if (place.Viewing == Viewing.Conversation && place.Title is { } conversation && Current is { } project)
         {
+            // **A line belongs to the conversation it was written in.** Arriving at another, by whatever route the person
+            // left the first (Escape asks; F3 and the rest do not), carries nothing, so the next Enter cannot send words
+            // meant for one agent to another. Coming back to the same conversation keeps them.
+            if (!string.Equals(_lineFor, conversation, StringComparison.Ordinal))
+            {
+                Line.Written = string.Empty;
+                _lineFor = conversation;
+            }
+
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
 
             // **Opening a conversation takes delivery**: reading a Request counts as having picked it up. Everything
@@ -1904,15 +1916,13 @@ internal sealed class Shell : Window
             _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
         }
 
-        var arriving = !string.Equals(_place.Conversation, item.ConversationName, StringComparison.Ordinal);
-
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
 
-        // The box is this conversation's: on arriving, the item's words when it has not begun and nothing carried from
-        // elsewhere when it has. A line the person is writing in this same conversation stays, item's words edited or not.
-        if (arriving || string.IsNullOrWhiteSpace(Line.Written))
+        // Going there emptied a box written elsewhere and kept one written here. An item not begun fills an empty box
+        // with its words; what the person wrote in this conversation, the item's words edited or not, stays.
+        if (!started && string.IsNullOrWhiteSpace(Line.Written))
         {
-            Line.Written = started ? string.Empty : item.Text;
+            Line.Written = item.Text;
         }
 
         Focus(Panes.ToList().IndexOf(Line));
@@ -4355,7 +4365,14 @@ internal sealed class Shell : Window
             _archivedOmitted,
             _showArchived,
             ConversationsOf);
-        Transcript.Clear();
+
+        // **A project read never clears a conversation that is open.** Enter and Escape start this read off the work
+        // queue, so on a slow broker it can land after the person has opened a conversation; clearing then left the
+        // transcript empty with the conversation on screen, and following stopped, since it follows what is open.
+        if (_place.Viewing != Viewing.Conversation)
+        {
+            Transcript.Clear();
+        }
 
         // The person's seat, from the registry just read. No name is asked for: the broker provides it.
         await EnsureSeatAsync(project, registry.Value, cancellationToken).ConfigureAwait(false);

@@ -240,6 +240,11 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// A destroyed conversation's identifier is never assignable. §14 keeps it taken so a new line of
     /// work cannot appear under the name of one somebody already holds an export of.
     /// </para>
+    /// <para>
+    /// A name reserved for a roadmap item is never assignable to an agent while no conversation holds it (§5.0, §5.7):
+    /// the person opens an item's conversation. Placing a file comes through here too and writes no message, so the
+    /// storage rule that refuses an agent's first message there would never see it.
+    /// </para>
     /// </remarks>
     public async Task<ConversationAssignment> AssignConversationAsync(
         AgentName sender,
@@ -285,9 +290,6 @@ public sealed class ExchangeRepository(SqliteConnection connection)
                 return new ConversationAssignment(null, false, OpenOutcome.NotAssignable(held));
             }
 
-            // **A roadmap item's conversation is opened by the person** (SPEC.md §5.7). The message trigger holds that for
-            // a Request; refused here as well, because a conversation is also opened by placing a file in it, which
-            // writes no message, and an item would then read as begun with only an agent in it.
             if (!senderIsPerson && await _connection.ExecuteScalarAsync<long>(
                     new CommandDefinition(
                         "SELECT count(*) FROM roadmap_item_conversations WHERE conversation_id = @Id;",

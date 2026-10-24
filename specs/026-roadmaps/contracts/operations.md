@@ -47,7 +47,7 @@ Existing reads gain a field, not an operation: `ListConversations` returns the i
 
 ## Starting an item
 
-No operation. The client reads the item's reserved conversation id from `Roadmap` and sends through `SeatVoice.RequestAsync(agent, ask, conversationId)` on the person's seat. The broker's storage guard accepts the first message into a reserved conversation only from the person.
+No operation. The client reads the item's reserved conversation id from `Roadmap` and sends through `SeatVoice.RequestAsync(agent, ask, conversationId)` on the person's seat. The broker refuses an agent a reserved conversation's name at assignment, by request or by file, and its storage guard accepts the first message into a reserved conversation only from the person.
 
 ## Surfaces (every operator operation on both, per FR-028)
 

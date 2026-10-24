@@ -206,19 +206,13 @@ public sealed class RoadmapBrokerTests : IDisposable
     {
         await ConfirmedAsync();
 
-        // Either the assignment refuses a name an agent may not choose, or storage's rule does; what matters is that
-        // the person's conversation was not captured and no message was written.
-        try
-        {
-            var outcome = await _broker.RequestAsync(
-                Orders, Billing, Requests.Model, Requests.Request("take this item"), T0, "rm1-1", Ct);
+        // Assignment refuses a reserved name to an agent, before anything reaches storage, whose trigger backs it up
+        // (held in the store's own tests). What matters is that the person's conversation was not captured.
+        var outcome = await _broker.RequestAsync(
+            Orders, Billing, Requests.Model, Requests.Request("take this item"), T0, "rm1-1", Ct);
 
-            Assert.False(outcome.Succeeded);
-        }
-        catch (SqliteException refused)
-        {
-            Assert.Contains("opened by the person", refused.Message, StringComparison.Ordinal);
-        }
+        Assert.False(outcome.Succeeded);
+        Assert.Equal(RequestRejection.ConversationNotAssignable, outcome.Admission.Rejection);
 
         Assert.Equal(0, await _connection.ExecuteScalarAsync<int>(
             "SELECT count(*) FROM messages WHERE conversation_id = 'rm1-1';"));

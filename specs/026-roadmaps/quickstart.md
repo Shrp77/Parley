@@ -31,7 +31,7 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 2. **Expect** a conversation `rm<n>-<m>` now exists, the agent holds a request with the item's text, the item reads in progress, the transcript shows the person's words.
 3. Start item 3 again. **Expect** the same conversation opens with what was said in it, and nothing is sent.
 4. From that conversation ask for its roadmap. **Expect** the roadmap opens on item 3. Open an ordinary conversation. **Expect** it names no item and offers no way to a roadmap.
-5. As an agent, try to open `rm<n>-<m>` for an unstarted item. **Expect** refusal from storage.
+5. As an agent, try to open `rm<n>-<m>` for an unstarted item, by a request and by placing a file. **Expect** both refused, saying the conversation is not one the agent can start.
 6. Edit the roadmap and remove item 3. **Expect** its conversation remains, marked as formerly belonging to it.
 7. Start an item whose text is over 8,000 characters. **Expect** refusal naming the cap and nothing sent.
 8. Restart the broker. **Expect** roadmaps intact.

@@ -126,6 +126,11 @@ public sealed class RoadmapOverTheWireTests
         var placed = await FileWire.PlaceAsync(orders.Client, orders.Name, "notes.md", "# notes"u8.ToArray(), "rm1-1", Ct);
 
         Assert.NotEqual(Wire.PlaceOutcome.Placed, placed.Outcome);
+        Assert.Equal(Wire.FileRejection.ConversationNotAssignable, placed.Rejection);
+
+        // What the agent reads must be true: it holds no requests, so it is not told it does.
+        Assert.DoesNotContain("hold requests", placed.Detail, StringComparison.Ordinal);
+        Assert.Contains("Leave conversation_id out", placed.Detail, StringComparison.Ordinal);
 
         var detail = await broker.ConnectAsOperator().RoadmapAsync(new Wire.RoadmapRequest { Id = roadmap }, cancellationToken: Ct);
         Assert.False(detail.Roadmap.Items.Single(i => i.Number == 1).Facts.ConversationExists);

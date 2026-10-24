@@ -174,7 +174,7 @@ can reword, reorder, add or remove items, and then confirm it or decline it. Con
 revise an existing roadmap or create a new one. Nothing is a roadmap until you confirm.
 
 Each item gets a conversation of its own, named from the roadmap and the item number, such as
-`rm1-3`. **Starting an item sends nothing.** It opens that conversation with the item's words in
+`rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first. **Starting an item sends nothing.** It opens that conversation with the item's words in
 the box and the agent the item is for ticked. Tick anyone else in the project you want it to reach,
 and press Send. The roadmap shows where each item
 stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
@@ -253,12 +253,15 @@ restart the sessions that had Parley configured. See [Configuration](configurati
 the project's work. Any other install keeps the stores. A new build that changes a store's tables
 upgrades the store in place when the broker starts, and keeps every row.
 
-Copy each project's `parley.db` (in `projects/<name>/`) somewhere safe before every install, with
-the broker stopped, since a copy taken while it writes may be incomplete. To stop the broker the
+Copy each project's folder (`projects/<name>/`, with `parley.db` and any `parley.db-wal` and
+`parley.db-shm` beside it) somewhere safe before every install, with the broker stopped, since a
+copy taken while it writes may be incomplete. To stop the broker the
 autostart entry runs, end the `parley-broker` scheduled task on Windows
 (`Stop-ScheduledTask parley-broker`), or run `systemctl --user stop parley-broker.service` on Linux
 or `launchctl bootout gui/$(id -u)/parley-broker` on macOS. A `parley serve` you started yourself
-stops with Ctrl+C.
+stops with Ctrl+C. The install starts the broker again. Without one, start it with
+`Start-ScheduledTask parley-broker`, `systemctl --user start parley-broker.service`, or
+`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/parley-broker.plist`.
 
 ### A store from another build
 

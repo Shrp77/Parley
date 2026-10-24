@@ -507,6 +507,8 @@ in §9.2 refuses the update that would move it.
 **A placed file takes its conversation by the same rule** (§9.5). An agent names a conversation only
 where it would have to for a Request, a closed conversation is refused, and an agent holding no request
 that names none, or names one that does not yet exist, starts a new conversation holding the file.
+**No agent starts a conversation under a name reserved for a roadmap item** (§5.7), by Request or by
+file: that conversation is opened by the person, and naming it is refused at assignment.
 Placing makes the placer a participant: a conversation started by a file has no exchange for membership
 to be derived from, and the agent that started it must be able to add to it and take part in closing it.
 
@@ -888,7 +890,9 @@ open a conversation under it before the item exists; **a name a conversation, a 
 or another reservation already holds is never reserved**, and the item takes the first free name after
 it, `rm<roadmap number>-<item number>-2` and so on. The conversation comes to exist when work on the item
 starts. **Storage refuses the first message into a reserved name unless the person sent it**
-(§9.3), so no agent can open the conversation first and have the person speak into it.
+(§9.3), so no agent can open the conversation first and have the person speak into it. Assignment
+refuses an agent the name before storage is reached (§5.0), which also covers a placed file, since a
+file writes no message for storage's rule to see.
 A conversation is recognised as an item's by the reservation and never by anything in a payload, so
 an agent cannot make a conversation look like one (§13).
 

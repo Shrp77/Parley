@@ -166,7 +166,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 **Items as conversations**
 
-- **FR-023**: Every item MUST have at most one conversation of its own, whose identity is derived, reserved when the roadmap is confirmed, and unique within the project. The conversation MUST be created the first time the item is started or written into, and not before; an unstarted item has none and shows as not started.
+- **FR-023**: Every item MUST have at most one conversation of its own, whose identity is derived, reserved when the roadmap is confirmed, and unique within the project. No agent may start that conversation, by request or by placing a file. The conversation MUST be created the first time the item is started or written into, and not before; an unstarted item has none and shows as not started.
 - **FR-023a**: Removing an item MUST NOT delete, close or archive its conversation. The conversation stays, belongs to no item, and says it formerly belonged to that item.
 - **FR-023b**: An edit, or a confirmation as a revision, that removes an item whose work is still open MUST be described before it is saved, and saved only on a second, deliberate act, because the agent holding the work is not told. A roadmap that could not be read is never taken to hold no open work.
 - **FR-024**: A conversation MUST be recognised as belonging to an item by the record of that relationship and never by a marker in any message payload.
