@@ -50,7 +50,7 @@ public sealed class IndexModel(BrokerDirectory directory) : PageModel
         var token = HttpContext.RequestAborted;
 
         var read = await BrokerDirectory.ReadAsync(async () =>
-            (await broker.ProposalHeadingsAsync(ProposalState.Waiting, token).ConfigureAwait(false),
+            (await broker.ProposalsAsync(ProposalState.Waiting, headings: true, token).ConfigureAwait(false),
              await broker.RoadmapsAsync(token).ConfigureAwait(false))).ConfigureAwait(false);
 
         if (!read.Reachable)

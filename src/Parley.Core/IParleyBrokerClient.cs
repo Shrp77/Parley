@@ -342,10 +342,24 @@ public interface IParleyBrokerClient
 
     /// <summary>Read the proposals agents have made.</summary>
     /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="headings">
+    /// Whether to read headings only: each title cut to <see cref="RoadmapProposal.HeadingLength"/>, its item count, and
+    /// no items.
+    /// </param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The proposals, newest first.</returns>
+    /// <remarks>
+    /// Headings are what a count, a list or a refresh reads: roadmap text has no bound, so whole proposals are as large as
+    /// an agent makes them, and a heading is small whatever it wrote. <see cref="ProposalAsync"/> reads one whole.
+    /// </remarks>
     Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default);
+        ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Read one proposal whole, in whatever state it is.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal, or <see langword="null"/> when there is none by that identifier.</returns>
+    Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default);
 
     /// <summary>Turn a proposal into a roadmap, or a revision of one.</summary>
     /// <param name="id">The proposal.</param>

@@ -254,7 +254,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Empty(await Client.RoadmapsAsync(Ct));
-        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, Ct));
+        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
     }
 
     [Fact]
@@ -281,13 +281,13 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Equal(Proposing.Leave, asking.Choices.Source!.ToList()[0]?.ToString());
 
         // Still waiting until the second answer.
-        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, Ct));
+        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
 
         driving.Row(asking.Choices, Proposing.Decline);
         driving.Enter();
         await shell.Settled;
 
-        Assert.Empty(await Client.ProposalsAsync(ProposalState.Waiting, Ct));
+        Assert.Empty(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
         Assert.Empty(await Client.RoadmapsAsync(Ct));
 
         var told = await Repository.DrainNoticesAsync(Orders, 10, T0, cancellationToken: Ct);
@@ -314,7 +314,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal(Proposing.Left, shell.Said);
-        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, Ct));
+        Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
         Assert.Empty(await Client.RoadmapsAsync(Ct));
     }
 
@@ -477,7 +477,7 @@ public sealed class ProposingTests : IAsyncDisposable
             cancellationToken: Ct);
         Assert.Null(problem);
 
-        var headings = await Client.ProposalHeadingsAsync(ProposalState.Waiting, Ct);
+        var headings = await Client.ProposalsAsync(ProposalState.Waiting, headings: true, Ct);
         var heading = Assert.Single(headings);
 
         Assert.Empty(heading.Content.Items);
@@ -510,7 +510,7 @@ public sealed class ProposingTests : IAsyncDisposable
 
         using var channel = BrokerDirectory.Connect(_broker.Address);
         var waiting = await new BrokerClient(new Parley.Transport.Operators.OperatorsClient(channel))
-            .ProposalsAsync(ProposalState.Waiting, Ct);
+            .ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct);
 
         Assert.Equal(2, waiting.Count);
     }

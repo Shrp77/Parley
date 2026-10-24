@@ -81,7 +81,7 @@ internal static class Proposing
         queue(async t =>
         {
             var read = await BrokerDirectory.ReadAsync(
-                async () => await client.ProposalHeadingsAsync(ProposalState.Waiting, t).ConfigureAwait(false)).ConfigureAwait(false);
+                async () => await client.ProposalsAsync(ProposalState.Waiting, headings: true, t).ConfigureAwait(false)).ConfigureAwait(false);
 
             if (!read.Reachable)
             {

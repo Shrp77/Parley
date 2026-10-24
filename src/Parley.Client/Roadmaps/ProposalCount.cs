@@ -34,7 +34,7 @@ public static class ProposalCount
 
         try
         {
-            return (await broker.ProposalHeadingsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false)).Count;
+            return (await broker.ProposalsAsync(ProposalState.Waiting, headings: true, cancellationToken).ConfigureAwait(false)).Count;
         }
         catch (RpcException)
         {
@@ -58,7 +58,7 @@ public static class ProposalCount
 
         try
         {
-            return await broker.ProposalHeadingsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false);
+            return await broker.ProposalsAsync(ProposalState.Waiting, headings: true, cancellationToken).ConfigureAwait(false);
         }
         catch (RpcException)
         {

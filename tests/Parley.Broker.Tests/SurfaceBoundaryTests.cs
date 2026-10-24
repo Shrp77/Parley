@@ -170,6 +170,8 @@ public sealed class SurfaceBoundaryTests
             nameof(OperatorConsole.ListRoadmapsAsync),
             nameof(OperatorConsole.GetRoadmapAsync),
             nameof(OperatorConsole.ListProposalsAsync),
+            nameof(OperatorConsole.ListProposalHeadingsAsync),
+            nameof(OperatorConsole.GetProposalAsync),
             nameof(OperatorConsole.ConfirmProposalAsync),
             nameof(OperatorConsole.DeclineProposalAsync),
             nameof(OperatorConsole.EditRoadmapAsync)

@@ -642,41 +642,20 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<RoadmapProposal>> ProposalsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
-    {
-        var reply = await _operators.ProposalsAsync(
-            new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
-            cancellationToken: cancellationToken);
-
-        return [.. reply.Proposals.Select(p => ProposalIn(p, headings: false))];
-    }
-
-    /// <summary>Reads the headings of the proposals agents have made: each title, who and where, and no items.</summary>
-    /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The proposals, newest first, each with <see cref="RoadmapProposal.ItemCount"/> set and no items.</returns>
-    /// <remarks>
-    /// What a count, a list or a refresh reads. Roadmap text has no bound, so whole proposals are as large as an agent
-    /// makes them; a heading is small whatever it wrote, and <see cref="ProposalAsync"/> reads one whole when it is opened.
-    /// </remarks>
-    public async Task<IReadOnlyList<RoadmapProposal>> ProposalHeadingsAsync(
-        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
+        ProposalState? state = ProposalState.Waiting, bool headings = false, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ProposalsAsync(
             new Wire.ProposalsRequest
             {
                 State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified,
-                Headings = true,
+                Headings = headings,
             },
             cancellationToken: cancellationToken);
 
-        return [.. reply.Proposals.Select(p => ProposalIn(p, headings: true))];
+        return [.. reply.Proposals.Select(p => ProposalIn(p, headings))];
     }
 
-    /// <summary>Reads one proposal whole, in whatever state it is.</summary>
-    /// <param name="id">The proposal.</param>
-    /// <param name="cancellationToken">Cancels the call.</param>
-    /// <returns>The proposal, or <see langword="null"/> when there is none by that identifier.</returns>
+    /// <inheritdoc/>
     public async Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ProposalsAsync(new Wire.ProposalsRequest { Id = id }, cancellationToken: cancellationToken);
