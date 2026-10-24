@@ -348,8 +348,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
             var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
             files.Prepare();
 
-            // Looked at after the migration, and only reported. The schema number is not a witness while it is
-            // edited in place, so the shape is compared directly; `StoreShape` says why a difference is never
+            // Looked at after the migration, and only reported. The schema number is a witness only to the
+            // migrations a store was given, not to its shape, so the shape is compared directly; `StoreShape` says why a difference is never
             // repaired here.
             var shape = StoreShape.Problems(connection);
 

@@ -85,9 +85,10 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
-    public async Task An_item_not_started_opens_its_conversation_with_its_words_and_every_roadmap_agent_ready()
+    public async Task An_item_not_started_opens_its_conversation_with_its_words_and_its_own_agent_ready()
     {
-        // The terminal does this on Enter. Must fail against a link that carries neither the words nor the agents.
+        // The terminal does this on Enter. Must fail against a link that carries neither the words nor the agent, and
+        // against one that ticks every agent the roadmap names: item 1 is billing's, not orders' (SPEC.md §5.7).
         using var console = Confirmed(
             Item(1, "Add CSV export", "billing@test", started: false),
             Item(2, "Call it from the report", "orders@test", started: false));
@@ -95,8 +96,23 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
 
-        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export", page, StringComparison.Ordinal);
-        Assert.Contains("&amp;With=billing%40test&amp;With=orders%40test", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export&amp;With=billing%40test&amp;", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-2&amp;Hint=Call%20it%20from%20the%20report&amp;With=orders%40test&amp;", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("With=billing%40test&amp;With=", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_item_naming_no_agent_opens_its_conversation_with_nobody_ticked()
+    {
+        // The person chooses from the room, which lists the whole project. Must fail against borrowing another item's agent.
+        using var console = Confirmed(
+            Item(1, "Add CSV export", string.Empty, started: false),
+            Item(2, "Call it from the report", "orders@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
+
+        Assert.Contains("id=rm1-1&amp;Hint=Add%20CSV%20export&amp;embed=1", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,6 +127,102 @@ public sealed class RoadmapOnThePageTests
 
         Assert.Contains("<p class=\"item-title\">Add CSV export</p>", page, StringComparison.Ordinal);
         Assert.Contains($"class=\"crumb\" href=\"/Projects/Agents?project={RoadmapConsole.Project}\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_items_conversation_links_back_to_its_roadmap_opened_on_that_item()
+    {
+        // FR-025: from the conversation to its roadmap and item, in one click. Must fail against a page that names the
+        // item and offers no way back, or a way back that opens the roadmap on its next item instead.
+        using var console = Confirmed(
+            Item(1, "Add CSV export", "billing@test", started: true),
+            Item(2, "Call it from the report", "orders@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-2", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            $"<a href=\"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&amp;id=1&amp;item=2#item-2\">item 2 of #1 Billing export</a>",
+            page,
+            StringComparison.Ordinal);
+
+        var roadmap = await client.GetStringAsync(
+            new Uri($"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&id=1&item=2", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("id=\"item-2\" open=\"open\"", roadmap, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"item-1\" open=\"open\"", roadmap, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_removed_items_conversation_says_it_formerly_belonged_and_is_not_led_by_it()
+    {
+        // FR-023a: the conversation stays, belongs to no item, and says which it was.
+        var removed = Item(1, "Add CSV export", "billing@test", started: true);
+        removed.RemovedRevision = 2;
+        using var console = Confirmed(removed);
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(">formerly item 1 of #1 Billing export</a>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_projects_conversation_list_marks_item_conversations_and_says_formerly()
+    {
+        // FR-026 and FR-023a, on the list rather than the page. Must fail against a list that shows rm1-1 bare, and
+        // against one that marks a conversation by its name: "rm9-9" carries no reservation and is an ordinary row.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: true));
+        console.Broker.Conversations.Add(Summary("rm1-1", new Wire.RoadmapItemRef { RoadmapId = 1, RoadmapNumber = 1, Title = "Billing export", ItemNumber = 1 }));
+        console.Broker.Conversations.Add(Summary("rm1-2", new Wire.RoadmapItemRef { RoadmapId = 1, RoadmapNumber = 1, Title = "Billing export", ItemNumber = 2, Removed = true }));
+        console.Broker.Conversations.Add(Summary("rm9-9", null));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Projects/Agents?project={RoadmapConsole.Project}", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains("<span class=\"tag\">item 1 of #1 Billing export</span>", page, StringComparison.Ordinal);
+        Assert.Contains("<span class=\"tag\">formerly item 2 of #1 Billing export</span>", page, StringComparison.Ordinal);
+        Assert.Equal(2, page.Split("of #1 Billing export</span>").Length - 1);
+    }
+
+    private static Wire.ConversationSummary Summary(string id, Wire.RoadmapItemRef? item)
+    {
+        var summary = new Wire.ConversationSummary
+        {
+            ConversationId = id, Messages = 1, FirstActivityUtc = "2026-10-06T09:00:00Z", LastActivityUtc = "2026-10-06T09:00:00Z",
+        };
+
+        summary.Participants.Add("billing@test");
+
+        if (item is not null)
+        {
+            summary.Item = item;
+        }
+
+        return summary;
+    }
+
+    [Fact]
+    public async Task A_conversation_named_like_an_item_but_reserved_by_none_is_an_ordinary_one()
+    {
+        // FR-024: recognised by the reservation, never by the name. Must fail against matching rm<n>-<m>.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-7", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("<p class=\"item-title\">", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("<p class=\"item-of\">", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("of #1 Billing export", page, StringComparison.Ordinal);
     }
 
     [Fact]

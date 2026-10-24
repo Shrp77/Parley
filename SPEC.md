@@ -1221,6 +1221,14 @@ the work a project has done across its repositories.
 
 ### 9.2 Schema
 
+**A store is upgraded, never replaced.** The schema version is SQLite's `user_version`. Version 1
+is fixed. Every change after it is a numbered migration that upgrades a store in place, in one
+transaction with the version bump, and keeps every row, so installing a new broker never costs
+a deployment its work. A broker refuses a store at a version newer than it knows, because it
+cannot know what changed. The version records which migrations a store was given and not what it
+holds, so a broker also compares the store's tables, indexes and triggers with its own and reports
+any difference. The DDL below is the schema as it stands after every migration.
+
 The schema requires **SQLite 3.38 or later**. It uses `STRICT` tables (3.37), generated
 columns (3.31), and `unixepoch()` (3.38). An older engine fails at `CREATE TABLE` with an
 error that does not explain itself, so the floor is stated here rather than discovered.
@@ -4272,7 +4280,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.8** and the storage schema version is **1**.
+The protocol version is **0.9** and the storage schema version is **1**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

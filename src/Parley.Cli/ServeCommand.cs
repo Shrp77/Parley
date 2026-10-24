@@ -195,15 +195,15 @@ public static class ServeCommand
                 .ConfigureAwait(false);
 
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
-            // to every surface that asks what this broker speaks. The schema number cannot say it while the schema is
-            // edited in place.
+            // to every surface that asks what this broker speaks. The schema number cannot say it for a store whose
+            // shape was changed by hand or by a build that edited a migration.
             if (runtime.StoreProblems.Count > 0)
             {
                 await output.WriteLineAsync(
                     $"{project.Name}: WARNING -- its store is not the shape this build expects: "
                     + string.Join("; ", runtime.StoreProblems.Take(5))
                     + (runtime.StoreProblems.Count > 5 ? $"; and {runtime.StoreProblems.Count - 5} more" : string.Empty)
-                    + ". It was made by another build. Reset the project's store, or add what is missing.")
+                    + ". It was made by another build. Do not reset it, which would lose its work: bring it to this build's shape first, from a backup taken before the upgrade if need be.")
                     .ConfigureAwait(false);
             }
 

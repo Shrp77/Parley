@@ -54,6 +54,22 @@ public static class ItemWording
         return state.TextChanged ? said + " (reworded since it began)" : said;
     }
 
+    /// <summary>Which roadmap item a conversation is the work on, for a list of conversations (SPEC.md §5.7).</summary>
+    /// <param name="item">The broker's record that the conversation is an item's.</param>
+    /// <returns>For example <c>item 3 of #1 Billing export</c>, or <c>formerly item 3 of #1 Billing export</c>.</returns>
+    /// <remarks>
+    /// Taken from the reservation and never from the conversation's name or messages, so an agent cannot make a
+    /// conversation look like an item's. A removed item's conversation stays, belongs to no item, and says which it was.
+    /// </remarks>
+    public static string Belongs(RoadmapItemRef item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(item.Removed ? "formerly " : string.Empty)}item {item.ItemNumber} of #{item.RoadmapNumber} {item.Title}");
+    }
+
     /// <summary>What comes next in a roadmap.</summary>
     /// <param name="standing">The roadmap's derived standing.</param>
     /// <returns>A sentence: the next item, or why there is none.</returns>

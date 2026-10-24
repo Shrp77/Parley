@@ -17,7 +17,7 @@ namespace Parley.Web.Pages.Roadmaps;
 /// </para>
 /// <para>
 /// <b>Starting an item is a link, not an operation.</b> An item not yet started links to its conversation with the item's
-/// text in the box and every agent the roadmap names ticked. Nothing is sent by following it; sending is the person's act
+/// text in the box and the agent it is for ticked. Nothing is sent by following it; sending is the person's act
 /// on the conversation page, so the request is theirs and no endpoint here speaks for them.
 /// </para>
 /// </remarks>
@@ -31,6 +31,20 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
     /// <summary>Which roadmap.</summary>
     [BindProperty(SupportsGet = true)]
     public long Id { get; set; }
+
+    /// <summary>The item to open, when the page was reached from that item's conversation; otherwise the next one opens.</summary>
+    [BindProperty(SupportsGet = true)]
+    public int? Item { get; set; }
+
+    /// <summary>Whether an item's row starts open: the one asked for, or the next one when none was.</summary>
+    /// <param name="state">The item.</param>
+    /// <returns>Whether it is open when the page loads.</returns>
+    public bool Opens(ItemState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        return Item is { } asked ? state.Item.Number == asked : state.IsNext;
+    }
 
     /// <summary>The roadmap, once read.</summary>
     public Roadmap? Roadmap { get; private set; }
@@ -99,8 +113,10 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
 
         if (state.Item.Facts is not { ConversationExists: true })
         {
+            // Only the item's own agent is ticked, never every agent the roadmap names (SPEC.md §5.7); one naming none
+            // ticks nobody, and the person chooses from the room.
             path += $"&Hint={Uri.EscapeDataString(state.Item.Text)}"
-                + string.Concat(Agents.Select(a => $"&With={Uri.EscapeDataString(a.Value)}"));
+                + (state.Item.IntendedAgent is { } agent ? $"&With={Uri.EscapeDataString(agent.Value)}" : string.Empty);
         }
 
         return embedded ? path + "&embed=1" : path;

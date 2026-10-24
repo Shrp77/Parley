@@ -553,9 +553,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     private async Task<string> OpeningAsync(ProjectSettings project, string id, string words)
     {
         await ReadAsync(project, id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project).ConfigureAwait(false);
 
-        return Problem is null && Messages.Count == 0 && ItemTitle is { Length: > 0 } item
+        return Problem is null && Messages.Count == 0 && Item is { Removed: false } && ItemTitle is { Length: > 0 } item
             ? Lead(item, RoadmapTitle, words)
             : words;
     }
@@ -593,51 +593,51 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Seat = seats.Held(project.Name.Value);
 
         await ReadAsync(project, Id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, Id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project).ConfigureAwait(false);
 
         return Page();
     }
 
-    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <summary>The broker's record that this conversation is a roadmap item's, or <see langword="null"/>.</summary>
     /// <remarks>
-    /// So a person who is inside <c>rm1-3</c> is told what rm1-3 is. Taken from the roadmap by the conversation name the
-    /// item carries, never parsed out of a message.
+    /// From the reservation the export carries, never from the conversation's name or a message (SPEC.md §5.7), so an
+    /// agent cannot make a conversation look like an item's. A removed item's conversation keeps it, marked removed.
     /// </remarks>
+    public RoadmapItemRef? Item { get; private set; }
+
+    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <remarks>So a person who is inside <c>rm1-3</c> is told what rm1-3 is.</remarks>
     public string? ItemTitle { get; private set; }
 
     /// <summary>The title of the roadmap that item is in, or <see langword="null"/>.</summary>
     public string? RoadmapTitle { get; private set; }
 
-    /// <summary>Finds the roadmap item whose conversation this is, when its name is a roadmap item's.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <returns>When it has been looked for. A broker that cannot answer leaves the title out and costs nothing else.</returns>
-    private async Task ReadItemTitleAsync(ProjectSettings project, string id)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(
-            id, @"\Arm(\d+)-\d+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>Where the roadmap this conversation's item belongs to is, opened on that item; null for an ordinary one.</summary>
+    public string? RoadmapPath => Item is { } item
+        ? string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"/Roadmaps/Roadmap?project={Uri.EscapeDataString(Project ?? string.Empty)}&id={item.RoadmapId}&item={item.ItemNumber}#item-{item.ItemNumber}")
+        : null;
 
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out var number))
+    /// <summary>Reads the words of the item this conversation's reservation names.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>When it has been looked for. A broker that cannot answer leaves the words out and costs nothing else.</returns>
+    /// <remarks>Read after <see cref="ReadAsync"/>, whose export says whether the conversation is an item's at all.</remarks>
+    private async Task ReadItemTitleAsync(ProjectSettings project)
+    {
+        if (Item is not { } item)
         {
             return;
         }
 
+        RoadmapTitle = item.Title;
+
         var broker = new BrokerClient(directory.ClientFor(project));
 
         var found = await BrokerDirectory.ReadAsync(async () =>
-        {
-            var list = await broker.RoadmapsAsync(HttpContext.RequestAborted).ConfigureAwait(false);
-            var which = list.FirstOrDefault(r => r.Number == number);
+            await broker.RoadmapAsync(item.RoadmapId, HttpContext.RequestAborted).ConfigureAwait(false)).ConfigureAwait(false);
 
-            return which is null
-                ? null
-                : await broker.RoadmapAsync(which.Id, HttpContext.RequestAborted).ConfigureAwait(false);
-        }).ConfigureAwait(false);
-
-        RoadmapTitle = found.Value?.Title;
-        ItemTitle = found.Value?.Items
-            .FirstOrDefault(i => !i.Removed && string.Equals(i.ConversationName, id, StringComparison.Ordinal))?.Text;
+        ItemTitle = found.Value?.Items.FirstOrDefault(i => i.Number == item.ItemNumber)?.Text;
     }
 
     /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
@@ -653,6 +653,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Messages = read.Value?.Messages ?? [];
         Destroyed = read.Value?.Destroyed;
+        Item = read.Value?.Item;
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;

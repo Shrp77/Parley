@@ -15,10 +15,15 @@
         <summary>
             <h1>@Model.Id</h1>
         </summary>
-        @if (Model.ItemTitle is { Length: > 0 } itemTitle)
+        @if (Model.Item is { } item)
         {
-            @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on. *@
-            <p class="item-title">@itemTitle</p>
+            @* The roadmap item this is the work on, so the name rm1-3 is never all a person has to go on, and the way
+               back to the roadmap, opened on that item. *@
+            @if (Model.ItemTitle is { Length: > 0 } itemTitle)
+            {
+                <p class="item-title">@itemTitle</p>
+            }
+            <p class="item-of"><a href="@Model.RoadmapPath">@(Parley.Client.Roadmaps.ItemWording.Belongs(item))</a></p>
         }
         <p class="as-of">
             In the order the broker recorded them. Times come from the agents' machines.

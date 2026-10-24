@@ -152,7 +152,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed by the person, and could not be read.
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
 - **FR-014a**: An item whose text was edited after its conversation began MUST say so, comparing the item's text now with the words the person sent.
-- **FR-014b**: A surface that reaches a broker without roadmap support MUST say roadmaps are not available there, and act as no one.
+- ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so a surface never meets a broker older than itself. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
 - **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting or blocked).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
 - **FR-018**: A state that cannot be read MUST be shown as such and never as not started.

@@ -118,6 +118,48 @@ public sealed class RoadmapEditTests
     }
 
     [Fact]
+    public async Task Removing_an_item_whose_work_is_open_is_described_and_saved_only_on_a_second_submit()
+    {
+        // T053: the request stays open and its agent is not told, which deleting a line does not say. Must fail against
+        // saving on the first submit, and against a page that warns and then never lets the person go ahead.
+        using var console = Confirmed();
+        var started = console.Broker.Details[1].Items[1];
+        started.Facts = new Wire.ItemFacts { ConversationExists = true, OpenExchanges = 1 };
+        started.Facts.OpenExchangeIds.Add(7);
+        using var client = console.CreateClient();
+        const string Kept = "title: Billing export\n1. Add CSV export | for: billing@test | item: 1";
+
+        var first = await SaveAsync(client, Kept);
+
+        Assert.Empty(console.Broker.Edited);
+        Assert.Contains("This removes an item whose work is still open: item 2, &quot;Call it from the report&quot;, in rm1-2.", first, StringComparison.Ordinal);
+        Assert.Contains("name=\"ConfirmRemoval\" value=\"true\"", first, StringComparison.Ordinal);
+        Assert.Contains("1. Add CSV export | for: billing@test | item: 1", first, StringComparison.Ordinal);
+
+        var response = await PostAsync(
+            client,
+            EditUri(),
+            new Dictionary<string, string> { ["Text"] = Kept, ["Revision"] = "1", ["ConfirmRemoval"] = "true" });
+        var second = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(console.Broker.Edited);
+        Assert.Contains("Saved", second, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Removing_an_item_that_has_not_started_is_saved_at_once()
+    {
+        // The warning is for work in flight only; a person removing an idea nobody took up is not asked twice.
+        using var console = Confirmed();
+        using var client = console.CreateClient();
+
+        var body = await SaveAsync(client, "title: Billing export\n1. Add CSV export | for: billing@test | item: 1");
+
+        Assert.Single(console.Broker.Edited);
+        Assert.DoesNotContain("ConfirmRemoval", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task A_stale_revision_is_reported_and_not_applied_and_the_typed_text_is_kept()
     {
         using var console = Confirmed();

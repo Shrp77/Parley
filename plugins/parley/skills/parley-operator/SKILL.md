@@ -41,6 +41,8 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | Start an agent | Agents list, Enter on its row. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
 | Apply the retention policy now | Projects list, Alt+p. | Health page, "Apply the retention policy now". |
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
+| Decide a roadmap an agent proposed | F4, or the project's *Proposed roadmaps* pane, Enter on one. Edit it, confirm it, or decline it. | The project's *Roadmaps* page lists the proposals waiting, each with its own page. |
+| Read a roadmap, see what is next, start an item | The project's *Roadmaps* pane, Enter. Alt+n goes to the next item; Enter on an item opens its conversation with its words in the box, and nothing is sent until the person sends it. Alt+e edits the roadmap. In an item's conversation, Alt+o goes back to its roadmap. | The roadmap's page. Each item opens its conversation in place; an item's conversation page links back to it. |
 | Create or remove a project | Projects list, Alt+c to create, Alt+r to remove. Destroying takes the project's name typed back. | Use the terminal: the web UI cannot name a project. |
 
 ## The boundary
@@ -48,6 +50,8 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 Point the person to these when they ask for them. Do not suggest them as a way around the
 protocol.
 
+- **A roadmap is the person's.** An agent can only propose one, and work on an item reaches an
+  agent as a request the person sends. Do not offer to confirm, edit or start one on their behalf.
 - **Closing a conversation** ends one the participants have not agreed to end. It is not a way
   past something an agent is waiting on. If a request is blocked on an answer, the answer is to
   give it.

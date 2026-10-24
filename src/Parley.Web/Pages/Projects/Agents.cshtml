@@ -119,6 +119,11 @@
                                 {
                                     <span class="tag">archived</span>
                                 }
+                                @if (conversation.Item is { } item)
+                                {
+                                    @* Which roadmap item this is the work on, from the broker's reservation and never the name. *@
+                                    <span class="tag">@Parley.Client.Roadmaps.ItemWording.Belongs(item)</span>
+                                }
                             </span>
                         </summary>
                         <div class="grid-detail">

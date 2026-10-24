@@ -44,6 +44,13 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
     [BindProperty]
     public int Revision { get; set; }
 
+    /// <summary>Set by the second submit, after the page described the open work the edit removes.</summary>
+    [BindProperty]
+    public bool ConfirmRemoval { get; set; }
+
+    /// <summary>What the edit would leave in flight, said before it is saved; null when nothing is.</summary>
+    public string? Warning { get; private set; }
+
     /// <summary>The roadmap, once read.</summary>
     public Roadmap? Roadmap { get; private set; }
 
@@ -108,6 +115,15 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
             Problem = "The roadmap changed after you opened it. Your text is kept; the roadmap as it is now is below.";
             CurrentText = TextOf(Roadmap);
             Revision = Roadmap.Revision;
+
+            return Page();
+        }
+
+        // Removing an item whose work is still open is described first and saved only on a second, deliberate submit:
+        // the request stays open and its agent is not told, which deleting a line does not say (SPEC.md §5.7).
+        if (!ConfirmRemoval && Removal.Describe(Removal.StillOpen(Roadmap, content)) is { } warning)
+        {
+            Warning = warning;
 
             return Page();
         }
