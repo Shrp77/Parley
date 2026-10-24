@@ -129,7 +129,10 @@ public sealed class OpeningTests : IAsyncDisposable
 
         using var driving = Driving.Open();
         using var directory = Directory();
-        using var shell = new Shell(directory);
+
+        // No timers: the mail poll relays the screen every five seconds, and under a loaded run a tick landing between
+        // clearing the transcript and opening the conversation again left it cleared. The routes are what is compared.
+        using var shell = new Shell(directory) { MailEvery = null, FollowEvery = null };
 
         driving.Show(shell);
         await shell.RefreshAsync(ct);
