@@ -51,7 +51,7 @@ public enum NextKind
 /// <param name="Standing">Where it stands.</param>
 /// <param name="Holders">The agents with something owed on it, when there are any.</param>
 /// <param name="Blocker">The blocker an agent gave, when the item is blocked.</param>
-/// <param name="TextChanged">Whether the item's text differs from the words first sent for it.</param>
+/// <param name="TextChanged">Whether the item's text was edited after its conversation began.</param>
 /// <param name="IsNext">Whether it is the roadmap's next item.</param>
 public sealed record ItemState(
     RoadmapItem Item,
@@ -141,8 +141,8 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.CouldNotBeRead, [], null, false, false);
         }
 
-        var changed = facts.FirstSentText is { Length: > 0 } sent
-            && !sent.Contains(item.Text, StringComparison.Ordinal);
+        // From the item's edit record, never by comparing words: the person may change the words before sending them.
+        var changed = facts.TextEditedSinceStarted;
 
         if (facts.Destroyed)
         {

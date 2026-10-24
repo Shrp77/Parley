@@ -77,7 +77,22 @@ public sealed record RoadmapProposal(
     long Size,
     ProposalState State,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset? DecidedUtc);
+    DateTimeOffset? DecidedUtc)
+{
+    /// <summary>
+    /// How many items it has, when it was read as a heading: its title cut to <see cref="HeadingLength"/>, no items.
+    /// Null when <see cref="Content"/> carries every item.
+    /// </summary>
+    /// <remarks>
+    /// <b>A list is read as headings.</b> Roadmap text has no bound, so a list of whole proposals is as large as an agent
+    /// makes it, and a list is read on every refresh. A heading is small whatever the agent wrote; the whole proposal
+    /// is read when the person opens it.
+    /// </remarks>
+    public int? ItemCount { get; init; }
+
+    /// <summary>How many characters of a title or title hint a heading carries.</summary>
+    public const int HeadingLength = 200;
+}
 
 /// <summary>
 /// One roadmap in a list (SPEC.md §10.2 <c>roadmaps</c>).
@@ -103,7 +118,10 @@ public sealed record RoadmapSummary(
 /// <param name="Blocker">The blocker kind a blocked exchange named, or <see langword="null"/>.</param>
 /// <param name="ClosedBy">Who closed the conversation, or <see langword="null"/> while it is not closed.</param>
 /// <param name="Destroyed">Whether the conversation was destroyed (SPEC.md §14).</param>
-/// <param name="FirstSentText">The words first sent for the item, or <see langword="null"/> if none were.</param>
+/// <param name="TextEditedSinceStarted">
+/// Whether the item's text was edited after the first request was sent into its conversation. Taken from the item's own
+/// edit record and not from comparing words, because the person may change the words before sending them.
+/// </param>
 /// <param name="OpenExchangeIds">
 /// The identifiers of the open exchanges, so a surface can join them to the wait-for graph and learn whose move each is.
 /// </param>
@@ -123,7 +141,7 @@ public sealed record ItemFacts(
     string? Blocker,
     string? ClosedBy,
     bool Destroyed,
-    string? FirstSentText,
+    bool TextEditedSinceStarted,
     IReadOnlyList<long> OpenExchangeIds)
 {
     /// <summary>Gets the open exchanges' identifiers.</summary>

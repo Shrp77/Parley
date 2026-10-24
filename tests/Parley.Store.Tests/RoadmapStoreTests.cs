@@ -616,12 +616,40 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.True(started.ConversationExists);
         Assert.Equal(1, started.OpenExchanges);
         Assert.False(started.Collected);
-        Assert.Equal("Add CSV export", started.FirstSentText);
+        Assert.False(started.TextEditedSinceStarted);
 
         _store.Execute($"UPDATE exchanges SET delivered_utc = '{FacilitatorStore.Stamp}' WHERE conversation_id = 'rm1-1';");
 
         Assert.True((await Repository.GetAsync(id, Ct))!.Items[0].Facts!.Collected);
         Assert.Equal(1, (await Repository.ListAsync(Ct)).Single().StartedItems);
+    }
+
+    [Fact]
+    public async Task An_item_reworded_after_its_request_was_sent_says_so_and_one_reworded_before_does_not()
+    {
+        // FR-014a, from the item's own edit record: the words sent may be the person's own and prove nothing. Item 1 is
+        // started and then reworded; item 2 is reworded and never started. Must fail against a fact that ignores the
+        // edit, and against one that marks an item reworded before anything was sent.
+        var id = await RoadmapAsync();
+        Open("rm1-1", "human-user@test", "billing@test");
+
+        var later = new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var edit = await Repository.EditAsync(
+            id,
+            1,
+            Content(
+                "Billing export",
+                Existing(1, "Add CSV export with headers", Billing),
+                Existing(2, "Call it from the monthly report", Orders, 1),
+                Existing(3, "Document the column", null, 2)),
+            later,
+            cancellationToken: Ct);
+
+        Assert.True(edit.Done, edit.Problem);
+
+        var items = (await Repository.GetAsync(id, Ct))!.Items;
+        Assert.True(items[0].Facts!.TextEditedSinceStarted);
+        Assert.False(items[1].Facts!.TextEditedSinceStarted);
     }
 
     /// <summary>Ends the newest open exchange of a conversation on a Result from its receiver, as an agent's answer does.</summary>

@@ -563,8 +563,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         // **An item not yet started opens with its words in the box** (SPEC.md §5.7), as the terminal does, for the person
         // to change and send. Only while nothing has been said there, the read was clean, and the box holds nothing the
-        // person typed: words a refused send kept are theirs and stay.
-        if (Says is null && Problem is null && Destroyed is null && Messages.Count == 0 && Item is { Removed: false })
+        // person typed: words a refused send kept are theirs and stay. Only when the page is opened, never after a send,
+        // so a box the person emptied is not filled again behind them.
+        if (HttpMethods.IsGet(Request.Method) && Says is null && Problem is null && Destroyed is null && Messages.Count == 0
+            && Item is { Removed: false })
         {
             Says = ItemTitle;
         }

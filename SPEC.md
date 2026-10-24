@@ -870,14 +870,16 @@ roadmap never shows one that no conversation supports; an item finished or made 
 removed or reworded by editing the roadmap. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
 roadmap is complete or what remains is waiting or blocked. An item whose text was edited after its
-conversation began says so, by comparing its text now with the words first sent.
+conversation began says so, from the item's own record of when it was edited and never by comparing
+words, because the person may change the item's words before sending them.
 
-**Starting an item is the person's request, and adds no operation.** The person chooses the agents —
-the item's intended agent, or any in the project — and the surface sends each one an ordinary Request
-(§5.6, §12.3) from the person's seat, carrying the item's text and any words the person adds, into the
-item's conversation. It is the person's words in the transcript, not an operator instruction. An item
-already with an agent is said to be, and nothing is sent unless the person sends a further line. The
-message cap of rule 8.4 applies to what is sent, whatever a roadmap holds.
+**Starting an item is the person's request, and adds no operation.** A surface opens the item's
+conversation with the item's words in the box and only the item's intended agent ticked, or nobody
+when it names none. The person changes the words and the agents as they choose, and nothing is sent
+until they send: then each agent ticked receives an ordinary Request (§5.6, §12.3) from the person's
+seat, in the item's conversation, carrying exactly what the person sent. It is the person's words in
+the transcript, not an operator instruction. An item already started opens its conversation as it
+stands. The message cap of rule 8.4 applies to what is sent, whatever a roadmap holds.
 
 **Every item has at most one conversation, and its name is reserved at confirmation.** The name is
 derived as `rm<roadmap number>-<item number>`, with numbers small, per project and never reused, so it is
@@ -2956,8 +2958,8 @@ other could.
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
-| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked and the blocker it named, who closed the conversation, whether it was destroyed, the text first sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
-| `proposals(state?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Waiting ones are work waiting on the person (§6). |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked and the blocker it named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `proposals(state?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, each comes with its title and title hint cut to 200 characters, its item count and no items, so a count or a list costs the same whatever an agent wrote; asked for one **by identifier**, that proposal comes whole in whatever state it is. Waiting ones are work waiting on the person (§6). |
 | `confirm_proposal(id, content, target)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, supersedes any other waiting proposal whose title hint names the same roadmap, and tells each proposer. |
 | `decline_proposal(id)` | Decline a waiting proposal. Nothing is persisted; the proposer is told it was declined. |
 | `edit_roadmap(id, revision, content)` | Change a confirmed roadmap: reword, reorder, add or remove items. The only way an item changes after confirmation. Refused when `revision` is not current, so two surfaces editing at once cannot overwrite one another, and when the content breaks §5.7's rules. A removed item's conversation is kept. |

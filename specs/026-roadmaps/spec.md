@@ -151,7 +151,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 - **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed by the person, and could not be read.
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
-- **FR-014a**: An item whose text was edited after its conversation began MUST say so, comparing the item's text now with the words the person sent.
+- **FR-014a**: An item whose text was edited after its conversation began MUST say so, from the item's own edit record and never by comparing words, because the person may change the item's words before sending them.
 - ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so on one machine a surface never meets a broker older than itself. A surface reaching a broker on another machine, through the SSH tunnel SPEC.md §16 describes, can; the project health warning that names a broker of another release says so. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
 - **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting or blocked).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
@@ -159,7 +159,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 **Instructing**
 
-- **FR-019**: The person MUST be able to start an item from the roadmap, which sends a request from the person to the chosen agents in the item's conversation, carrying the item's text and optionally the person's own words.
+- **FR-019**: The person MUST be able to start an item from the roadmap, which opens the item's conversation with the item's words in the box and only its intended agent ticked. Nothing is sent until the person sends; what they send goes as a request from the person to the agents ticked.
 - **FR-020**: Starting MUST use the person's seat and the existing rules of a person's line; it MUST NOT be an operator instruction and MUST appear in the transcript as the person's words.
 - **FR-021**: Starting an item already in progress MUST say so and send nothing without a further deliberate choice.
 - **FR-022**: Choosing agents MUST use the whole project's agents, the same list as the Room.
@@ -168,6 +168,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 - **FR-023**: Every item MUST have at most one conversation of its own, whose identity is derived, reserved when the roadmap is confirmed, and unique within the project. The conversation MUST be created the first time the item is started or written into, and not before; an unstarted item has none and shows as not started.
 - **FR-023a**: Removing an item MUST NOT delete, close or archive its conversation. The conversation stays, belongs to no item, and says it formerly belonged to that item.
+- **FR-023b**: An edit, or a confirmation as a revision, that removes an item whose work is still open MUST be described before it is saved, and saved only on a second, deliberate act, because the agent holding the work is not told. A roadmap that could not be read is never taken to hold no open work.
 - **FR-024**: A conversation MUST be recognised as belonging to an item by the record of that relationship and never by a marker in any message payload.
 - **FR-025**: The person MUST be able to go from an item to its conversation and from that conversation to its roadmap and item, on every surface.
 - **FR-026**: Conversation lists MUST show which conversations belong to roadmap items.

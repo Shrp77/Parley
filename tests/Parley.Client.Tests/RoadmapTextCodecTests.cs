@@ -115,6 +115,27 @@ public sealed class RoadmapTextCodecTests
         Assert.Equal(Billing, content.Items[0].IntendedAgent);
     }
 
+    [Theory]
+    [InlineData("Drop the export | item: 1")]
+    [InlineData("Ship it | for: billing@host")]
+    [InlineData("Ship it | needs: 1")]
+    [InlineData("Already escaped \\| item: 2")]
+    public void An_items_own_words_written_out_never_read_back_as_a_field(string words)
+    {
+        // A proposal's words are an agent's. The broker refuses a proposal that claims item numbers, and that must not
+        // be undone by writing the words where the person reads and confirms them: `| item: 1` in an agent's text would
+        // take over item 1's conversation and open work. Must fail against writing the words as they are.
+        var proposed = new RoadmapContent("Plan", [new RoadmapItemDraft(null, words, null, []), new RoadmapItemDraft(null, "Other", null, [])]);
+
+        var (back, problem) = RoadmapTextCodec.Parse(RoadmapTextCodec.Write(proposed));
+
+        Assert.Null(problem);
+        Assert.Equal(words, back!.Items[0].Text);
+        Assert.Null(back.Items[0].Number);
+        Assert.Null(back.Items[0].IntendedAgent);
+        Assert.Empty(back.Items[0].Needs);
+    }
+
     [Fact]
     public void A_title_that_breaks_a_line_or_a_blank_item_is_reported_by_the_rules()
     {

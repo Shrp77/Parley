@@ -4,7 +4,7 @@ using Parley.Core;
 namespace Parley.Client.Roadmaps;
 
 /// <summary>
-/// What an edit that removes items would leave in flight, said before it is saved (SPEC.md §5.7).
+/// What an edit, or a confirmation as a revision, that removes items would leave in flight, said before it is saved (SPEC.md §5.7).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,7 +19,7 @@ namespace Parley.Client.Roadmaps;
 /// </remarks>
 public static class Removal
 {
-    /// <summary>The live items an edit would remove whose conversation still has an open exchange.</summary>
+    /// <summary>The live items an edit or a revision would remove whose conversation still has an open exchange.</summary>
     /// <param name="roadmap">The roadmap as read.</param>
     /// <param name="final">What the person wants it to become.</param>
     /// <returns>Those items, in the roadmap's order; empty when nothing in flight is affected.</returns>
@@ -35,7 +35,7 @@ public static class Removal
             .OrderBy(i => i.Position)];
     }
 
-    /// <summary>Whether a person agreed to every item an edit would leave in flight.</summary>
+    /// <summary>Whether a person agreed to every item an edit or a revision would leave in flight.</summary>
     /// <param name="open">What <see cref="StillOpen"/> found for the content being saved now.</param>
     /// <param name="agreed">The item numbers the person was shown and went ahead with, as <see cref="Numbers"/> wrote them.</param>
     /// <returns><see langword="true"/> when nothing is open or every open item was among those shown.</returns>
@@ -66,7 +66,7 @@ public static class Removal
         return string.Join(",", open.Select(i => i.Number.ToString(CultureInfo.InvariantCulture)));
     }
 
-    /// <summary>The sentence a surface shows before saving such an edit.</summary>
+    /// <summary>The sentence a surface shows before saving such an edit or revision.</summary>
     /// <param name="items">What <see cref="StillOpen"/> found.</param>
     /// <returns>The description, or <see langword="null"/> when there is nothing to say.</returns>
     public static string? Describe(IReadOnlyList<RoadmapItem> items)

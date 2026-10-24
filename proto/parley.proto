@@ -1293,7 +1293,7 @@ message ItemFacts {
   string blocker = 7;                 // empty when none
   string closed_by = 8;               // empty while the conversation is not closed
   bool destroyed = 9;
-  string first_sent_text = 10;        // empty when nothing was sent
+  bool text_edited_since_started = 10; // the item's text was edited after its first request was sent
   repeated int64 open_exchange_ids = 11;   // to join with the wait-for graph
 }
 
@@ -1325,6 +1325,8 @@ message RoadmapReply {
 
 message ProposalsRequest {
   ProposalState state = 1;            // UNSPECIFIED for every state
+  bool headings = 2;                  // each title cut to a heading's length, item_count set, and no items
+  int64 id = 3;                       // 0 for every proposal; otherwise that one, whole, in whatever state
 }
 
 message ProposalDetail {
@@ -1337,6 +1339,7 @@ message ProposalDetail {
   ProposalState state = 7;
   string created_utc = 8;
   string decided_utc = 9;             // empty while waiting
+  int32 item_count = 10;              // set when read as headings, whose content carries no items
 }
 
 message ProposalsReply {

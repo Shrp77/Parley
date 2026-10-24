@@ -183,6 +183,24 @@ public sealed class ProposalsOnThePageTests
         Assert.Equal(3, Assert.Single(console.Broker.Confirmed).TargetRoadmap);
     }
 
+    [Fact]
+    public async Task A_revision_whose_roadmap_no_longer_matches_is_never_confirmed_as_a_new_one()
+    {
+        // The roadmap was renamed between the page and the submit, so the hint no longer matches it. Must fail against
+        // dropping the person's choice and confirming a new roadmap, which spends the proposal and makes a duplicate.
+        using var console = new RoadmapConsole();
+        console.Broker.Roadmaps.Add(new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export, renamed", Revision = 2, LiveItems = 1 });
+        console.Broker.Details[3] = Revisable(open: false);
+        console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
+        using var client = console.CreateClient();
+
+        var page = await (await PostAsync(client, ProposalUri(8), new Dictionary<string, string> { ["Text"] = "title: Billing export\n1. One", ["Target"] = "3" }))
+            .Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(console.Broker.Confirmed);
+        Assert.Contains("nothing was confirmed", page, StringComparison.Ordinal);
+    }
+
     /// <summary>Roadmap 3, whose first item's conversation has an open request when <paramref name="open"/> is set.</summary>
     private static Wire.RoadmapDetail Revisable(bool open)
     {

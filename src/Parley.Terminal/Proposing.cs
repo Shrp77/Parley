@@ -81,7 +81,7 @@ internal static class Proposing
         queue(async t =>
         {
             var read = await BrokerDirectory.ReadAsync(
-                async () => await client.ProposalsAsync(ProposalState.Waiting, t).ConfigureAwait(false)).ConfigureAwait(false);
+                async () => await client.ProposalHeadingsAsync(ProposalState.Waiting, t).ConfigureAwait(false)).ConfigureAwait(false);
 
             if (!read.Reachable)
             {
@@ -107,7 +107,7 @@ internal static class Proposing
 
                 if (here.Count == 1)
                 {
-                    Review(app, client, here[0], queue, done);
+                    await ReadWholeAsync(app, client, here[0], queue, done, t).ConfigureAwait(false);
 
                     return;
                 }
@@ -141,11 +141,59 @@ internal static class Proposing
                     return;
                 }
 
-                Review(app, client, waiting[at], queue, done);
+                Open(app, client, waiting[at], queue, done);
             };
         });
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Reads one proposal whole from its heading, then shows it in its own view.</summary>
+    /// <param name="app">The application the dialogs open in.</param>
+    /// <param name="client">The operator's client for this project.</param>
+    /// <param name="heading">The proposal as a list read it: its heading, with no items.</param>
+    /// <param name="queue">Runs the read and the decision.</param>
+    /// <param name="done">Told what to say when it is over.</param>
+    /// <remarks>A list reads headings, since roadmap text has no bound; the proposal is read whole only when opened.</remarks>
+    internal static void Open(
+        IApplication app,
+        BrokerClient client,
+        RoadmapProposal heading,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done)
+    {
+        ArgumentNullException.ThrowIfNull(heading);
+
+        queue(t => ReadWholeAsync(app, client, heading, queue, done, t));
+    }
+
+    /// <summary>Reads one proposal whole and shows it, from work already queued.</summary>
+    private static async Task ReadWholeAsync(
+        IApplication app,
+        BrokerClient client,
+        RoadmapProposal heading,
+        Action<Func<CancellationToken, Task>> queue,
+        Func<string, Task> done,
+        CancellationToken cancellationToken)
+    {
+        var read = await BrokerDirectory.ReadAsync(
+            async () => await client.ProposalAsync(heading.Id, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (!read.Reachable)
+        {
+            await done($"The proposal could not be read: {Safe.Text(read.Problem!)}").ConfigureAwait(false);
+
+            return;
+        }
+
+        if (read.Value is not { State: ProposalState.Waiting } whole)
+        {
+            await done("That proposal is no longer awaiting your decision.").ConfigureAwait(false);
+
+            return;
+        }
+
+        Review(app, client, whole, queue, done);
     }
 
     /// <summary>Shows one proposal in its own view and does what the person chooses.</summary>
@@ -292,7 +340,15 @@ internal static class Proposing
         var read = await BrokerDirectory.ReadAsync(
             async () => await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
 
-        var match = read.Reachable ? ProposalText.Matching(proposal, read.Value!) : null;
+        // Unread is not unmatched: a person who might have been offered a revision is not handed a new roadmap instead.
+        if (!read.Reachable)
+        {
+            await done($"The roadmaps could not be read, so nothing was confirmed: {Safe.Text(read.Problem!)}").ConfigureAwait(false);
+
+            return;
+        }
+
+        var match = ProposalText.Matching(proposal, read.Value!);
 
         if (match is null)
         {
@@ -305,8 +361,8 @@ internal static class Proposing
         var revise = $"Revise the roadmap '{Safe.Text(match.Title)}'";
         var choosing = Prompting.Choose(
             Title,
-            $"This proposal's title matches the roadmap '{Safe.Text(match.Title)}'. A revision replaces that roadmap's items " +
-            "with these, and keeps the conversation of every item you carry across. A new roadmap leaves it alone.",
+            $"This proposal's title matches the roadmap '{Safe.Text(match.Title)}'. A revision replaces every item that " +
+            "roadmap has with these; the items it had are removed, and their conversations stay. A new roadmap leaves it alone.",
             [NewRoadmap, revise]);
 
         var open = Prompting.Open(app, choosing);
@@ -314,6 +370,14 @@ internal static class Proposing
         choosing.Done += (_, chosen) =>
         {
             Prompting.Close(app, open);
+
+            // Escape is leaving it as it is, as in every other dialog, never a choice of either.
+            if (chosen is null)
+            {
+                _ = done(Left);
+
+                return;
+            }
 
             if (chosen != revise)
             {
@@ -345,7 +409,15 @@ internal static class Proposing
         var read = await BrokerDirectory.ReadAsync(
             async () => await client.RoadmapAsync(roadmapId, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
 
-        if (read.Value is not { } roadmap || Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
+        // A roadmap that could not be read cannot be said to hold no open work, so nothing is confirmed.
+        if (!read.Reachable || read.Value is not { } roadmap)
+        {
+            await done($"The roadmap could not be read, so nothing was confirmed: {Safe.Text(read.Problem ?? "there is no such roadmap.")}").ConfigureAwait(false);
+
+            return;
+        }
+
+        if (Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
         {
             await SendAsync(client, proposal, content, roadmapId, done, cancellationToken).ConfigureAwait(false);
 

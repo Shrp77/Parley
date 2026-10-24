@@ -312,6 +312,21 @@ public sealed class OperatorConsole
         ProposalState? state, CancellationToken cancellationToken = default) =>
         _roadmaps.ListProposalsAsync(state, cancellationToken);
 
+    /// <summary>Reads the headings of the proposals agents have made, and none of their items (§10.2's <c>proposals</c>).</summary>
+    /// <param name="state">Which to read, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposals, newest first, as headings.</returns>
+    public Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.ListProposalHeadingsAsync(state, cancellationToken);
+
+    /// <summary>Reads one proposal whole (§10.2's <c>proposals</c> with an identifier).</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposal, or <see langword="null"/>.</returns>
+    public Task<RoadmapProposal?> GetProposalAsync(long id, CancellationToken cancellationToken = default) =>
+        _roadmaps.GetProposalAsync(id, cancellationToken);
+
     /// <summary>Turns a proposal into a roadmap, or a revision of one (§10.2's <c>confirm_proposal</c>).</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content.</param>

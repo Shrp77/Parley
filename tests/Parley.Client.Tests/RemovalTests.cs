@@ -22,7 +22,7 @@ public sealed class RemovalTests
             $"rm1-{number}",
             removedRevision,
             removedRevision is null
-                ? new ItemFacts(open > 0, open, false, 0, 0, 0, null, null, false, null, [.. Enumerable.Range(1, open).Select(i => (long)i)])
+                ? new ItemFacts(open > 0, open, false, 0, 0, 0, null, null, false, false, [.. Enumerable.Range(1, open).Select(i => (long)i)])
                 : null);
 
     private static Roadmap Roadmap(params RoadmapItem[] items) =>

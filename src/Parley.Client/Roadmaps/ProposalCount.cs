@@ -17,6 +17,10 @@ namespace Parley.Client.Roadmaps;
 /// <para>
 /// <b>One question for every surface</b>, so the projects view and the web project list cannot count differently.
 /// </para>
+/// <para>
+/// <b>Read as headings</b>, because these run on every refresh and roadmap text has no bound: one agent's large
+/// proposals must not make every count as large as everything it wrote. A proposal is read whole when it is opened.
+/// </para>
 /// </remarks>
 public static class ProposalCount
 {
@@ -30,7 +34,7 @@ public static class ProposalCount
 
         try
         {
-            return (await broker.ProposalsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false)).Count;
+            return (await broker.ProposalHeadingsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false)).Count;
         }
         catch (RpcException)
         {
@@ -39,7 +43,7 @@ public static class ProposalCount
         }
     }
 
-    /// <summary>The proposals awaiting a decision, or null when they could not be read.</summary>
+    /// <summary>The headings of the proposals awaiting a decision, or null when they could not be read.</summary>
     /// <param name="broker">The project's operator client.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The proposals, which may be none; null when the broker could not say.</returns>
@@ -54,7 +58,7 @@ public static class ProposalCount
 
         try
         {
-            return await broker.ProposalsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false);
+            return await broker.ProposalHeadingsAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false);
         }
         catch (RpcException)
         {

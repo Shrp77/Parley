@@ -373,6 +373,53 @@ public sealed class RoadmapOnThePageTests
         Assert.DoesNotContain("Something else", page, StringComparison.Ordinal);
     }
 
+    private static async Task<string> PostDetailAsync(HttpClient client, Uri path, Dictionary<string, string> fields)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var html = await client.GetStringAsync(path, token);
+        var value = System.Text.RegularExpressions.Regex.Match(
+            html,
+            """name="__RequestVerificationToken"[^>]*value="([^"]+)""",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(2)).Groups[1].Value;
+
+        Assert.NotEmpty(value);
+        fields["__RequestVerificationToken"] = value;
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = new FormUrlEncodedContent(fields) };
+        using var response = await client.SendAsync(request, token);
+
+        return await response.Content.ReadAsStringAsync(token);
+    }
+
+    [Fact]
+    public async Task A_refused_first_send_keeps_the_persons_words_and_not_the_items()
+    {
+        // The box holds the item's words only when the page opens. After a send, what is in it is what the person sent.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var path = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&embed=1", UriKind.Relative);
+
+        var page = await PostDetailAsync(client, path, new Dictionary<string, string> { ["Says"] = "My own words", ["Targets"] = "billing@test" });
+
+        Assert.Contains(">My own words</textarea>", page, StringComparison.Ordinal);
+        Assert.DoesNotContain(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_box_the_person_emptied_is_not_filled_again_behind_them()
+    {
+        // Must fail against filling the box on the page a send returns.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var path = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative);
+
+        var page = await PostDetailAsync(client, path, new Dictionary<string, string> { ["Says"] = string.Empty, ["Targets"] = "billing@test" });
+
+        Assert.Contains("Nothing was written", page, StringComparison.Ordinal);
+        Assert.Contains("></textarea>", page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_removed_items_conversation_opens_with_an_empty_box()
     {

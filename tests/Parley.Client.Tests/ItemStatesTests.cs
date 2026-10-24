@@ -19,13 +19,13 @@ public sealed class ItemStatesTests
     private static readonly AgentName Orders = AgentName.Create("orders@test");
     private static readonly AgentName Billing = AgentName.Create("billing@test");
 
-    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, null, []);
+    private static ItemFacts Untouched() => new(false, 0, false, 0, 0, 0, null, null, false, false, []);
 
     private static ItemFacts Open(bool collected, params long[] exchanges) =>
-        new(true, exchanges.Length, collected, 0, 0, 0, null, null, false, null, exchanges);
+        new(true, exchanges.Length, collected, 0, 0, 0, null, null, false, false, exchanges);
 
     private static ItemFacts Closed(int complete = 0, int blocked = 0, int closed = 0, string? blocker = null, string? by = null) =>
-        new(true, 0, false, complete, blocked, closed, blocker, by, false, null, []);
+        new(true, 0, false, complete, blocked, closed, blocker, by, false, false, []);
 
     private static RoadmapItem Item(int number, ItemFacts? facts, params int[] needs) =>
         new(number, number, number, $"Item {number}", null, needs, $"rm1-{number}", null, facts);
@@ -122,7 +122,7 @@ public sealed class ItemStatesTests
     [Fact]
     public void A_destroyed_conversation_is_closed_and_not_not_started()
     {
-        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, null, []);
+        var facts = new ItemFacts(false, 0, false, 0, 0, 0, null, null, true, false, []);
 
         Assert.Equal(ItemStanding.Closed, Standing(facts));
     }
@@ -231,28 +231,15 @@ public sealed class ItemStatesTests
     // ---- the words
 
     [Fact]
-    public void An_items_text_changed_since_it_was_sent_is_said_and_unchanged_text_is_not()
+    public void An_item_edited_since_it_began_is_said_to_be_and_one_never_edited_is_not()
     {
-        var sent = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Item 1", []);
+        // The broker's fact, taken from the item's own edit record. The person may have trimmed or reworded the item's
+        // words in the box before sending, which is not the item being reworded.
+        var edited = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, true, []);
+        var untouched = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, false, []);
 
-        var same = ItemStates.Of(Plan(Item(1, sent)), [], Person).Items[0];
-
-        var reworded = ItemStates.Of(
-            Plan(new RoadmapItem(1, 1, 1, "Item 1 with headers", null, [], "rm1-1", null, sent)),
-            [],
-            Person).Items[0];
-
-        Assert.False(same.TextChanged);
-        Assert.True(reworded.TextChanged);
-    }
-
-    [Fact]
-    public void Text_the_agent_received_inside_a_frame_is_still_the_text_sent()
-    {
-        // The Request carries the person's words around the item's, so the comparison is containment.
-        var facts = new ItemFacts(true, 0, false, 1, 0, 0, null, null, false, "Start this: Item 1. Thanks.", []);
-
-        Assert.False(ItemStates.Of(Plan(Item(1, facts)), [], Person).Items[0].TextChanged);
+        Assert.True(ItemStates.Of(Plan(Item(1, edited)), [], Person).Items[0].TextChanged);
+        Assert.False(ItemStates.Of(Plan(Item(1, untouched)), [], Person).Items[0].TextChanged);
     }
 
     [Theory]

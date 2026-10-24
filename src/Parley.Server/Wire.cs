@@ -819,6 +819,7 @@ internal static class Conversions
             State = Out(proposal.State),
             CreatedUtc = Stamp(proposal.CreatedUtc),
             DecidedUtc = Stamp(proposal.DecidedUtc),
+            ItemCount = proposal.ItemCount ?? proposal.Content.Items.Count,
         };
     }
 
@@ -858,7 +859,7 @@ internal static class Conversions
             Blocker = facts.Blocker ?? string.Empty,
             ClosedBy = facts.ClosedBy ?? string.Empty,
             Destroyed = facts.Destroyed,
-            FirstSentText = facts.FirstSentText ?? string.Empty,
+            TextEditedSinceStarted = facts.TextEditedSinceStarted,
         };
 
         wire.OpenExchangeIds.AddRange(facts.OpenIds);

@@ -635,7 +635,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                         string.IsNullOrEmpty(facts.Blocker) ? null : facts.Blocker,
                         string.IsNullOrEmpty(facts.ClosedBy) ? null : facts.ClosedBy,
                         facts.Destroyed,
-                        string.IsNullOrEmpty(facts.FirstSentText) ? null : facts.FirstSentText,
+                        facts.TextEditedSinceStarted,
                         [.. facts.OpenExchangeIds])
                     : null))]);
     }
@@ -648,7 +648,44 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             new Wire.ProposalsRequest { State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified },
             cancellationToken: cancellationToken);
 
-        return [.. reply.Proposals.Select(p => new RoadmapProposal(
+        return [.. reply.Proposals.Select(p => ProposalIn(p, headings: false))];
+    }
+
+    /// <summary>Reads the headings of the proposals agents have made: each title, who and where, and no items.</summary>
+    /// <param name="state">Which to read; waiting ones by default, and <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposals, newest first, each with <see cref="RoadmapProposal.ItemCount"/> set and no items.</returns>
+    /// <remarks>
+    /// What a count, a list or a refresh reads. Roadmap text has no bound, so whole proposals are as large as an agent
+    /// makes them; a heading is small whatever it wrote, and <see cref="ProposalAsync"/> reads one whole when it is opened.
+    /// </remarks>
+    public async Task<IReadOnlyList<RoadmapProposal>> ProposalHeadingsAsync(
+        ProposalState? state = ProposalState.Waiting, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ProposalsAsync(
+            new Wire.ProposalsRequest
+            {
+                State = state is { } s ? ProposalStateOut(s) : Wire.ProposalState.Unspecified,
+                Headings = true,
+            },
+            cancellationToken: cancellationToken);
+
+        return [.. reply.Proposals.Select(p => ProposalIn(p, headings: true))];
+    }
+
+    /// <summary>Reads one proposal whole, in whatever state it is.</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The proposal, or <see langword="null"/> when there is none by that identifier.</returns>
+    public async Task<RoadmapProposal?> ProposalAsync(long id, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ProposalsAsync(new Wire.ProposalsRequest { Id = id }, cancellationToken: cancellationToken);
+
+        return reply.Proposals.Count == 0 ? null : ProposalIn(reply.Proposals[0], headings: false);
+    }
+
+    private static RoadmapProposal ProposalIn(Wire.ProposalDetail p, bool headings) =>
+        new(
             p.Id,
             AgentName.Create(p.Proposer),
             string.IsNullOrEmpty(p.SourceConversation) ? null : p.SourceConversation,
@@ -657,8 +694,10 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             p.Size,
             ProposalStateIn(p.State),
             Read(p.CreatedUtc) ?? DateTimeOffset.MinValue,
-            Read(p.DecidedUtc)))];
-    }
+            Read(p.DecidedUtc))
+        {
+            ItemCount = headings ? p.ItemCount : null,
+        };
 
     /// <inheritdoc/>
     public async Task<RoadmapChange> ConfirmProposalAsync(

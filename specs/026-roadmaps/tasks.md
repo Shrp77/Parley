@@ -124,7 +124,7 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 - [X] T045 [US3] Terminal: a *Start* action on an item that describes what will be sent and to whom first (a deliberate act), offers the project's agents when none is intended, and uses the held seat; without a seat it says a request is sent as somebody and asks for one (0.28.2), and the door lives in one file for `SurfaceTests`
   - Replaced as T044: Enter on an item in `PlanView` opens its conversation through the held seat; nothing is sent until the person sends.
 - [X] T046 [P] [US3] Web: a start form on the roadmap page, GET describes, POST sends, and a missing seat is said plainly rather than falling through to the operator's voice
-  - Replaced as T044: the roadmap page links each item to its conversation with `Hint` and `With`; following the link sends nothing.
+  - Replaced as T044: the roadmap page links each item to its conversation with `With`, and the conversation page fills the box with the item's words from its reservation; following the link sends nothing.
 - [X] T047 [US3] The start is the **person's words in the transcript**, not an operator instruction: a test that sending an item adds a message in the transcript from `human-user` and no row to `instructions`
   - Held by `RoadmapOverTheWireTests.Starting_an_item_is_the_persons_request_into_the_reserved_conversation`: the agent collects an ordinary request from the person.
 - [X] T048 [US3] End to end test over a socket, including that roadmaps survive a broker restart (SC-007): start an item for an unstarted item, assert the conversation now exists and equals the reserved name, the agent holds one request, the state reads in progress

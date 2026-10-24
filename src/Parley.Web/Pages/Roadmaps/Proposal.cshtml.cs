@@ -117,6 +117,17 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             ? Match.Id
             : null;
 
+        // A revision the person chose is never confirmed as something else. When the roadmap it named no longer matches,
+        // renamed meanwhile say, nothing is confirmed and the page is shown again as it now reads.
+        if (target is null && Target is { Length: > 0 } chosen && !string.Equals(chosen, "new", StringComparison.Ordinal))
+        {
+            Problem = "The roadmap you chose to revise is no longer the one this proposal matches, so nothing was confirmed. "
+                + "Choose again.";
+            Target = null;
+
+            return Page();
+        }
+
         // A proposal's items carry no item numbers, so a revision replaces every item the roadmap had. Open work it would
         // remove is described first and confirmed only on a second, deliberate submit, as an edit's is (SPEC.md §5.7).
         if (target is { } revising)
@@ -182,7 +193,7 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         var token = HttpContext.RequestAborted;
 
         var read = await BrokerDirectory.ReadAsync(async () =>
-            (await broker.ProposalsAsync(ProposalState.Waiting, token).ConfigureAwait(false),
+            (await broker.ProposalAsync(Id, token).ConfigureAwait(false),
              await broker.RoadmapsAsync(token).ConfigureAwait(false))).ConfigureAwait(false);
 
         if (!read.Reachable)
@@ -192,9 +203,9 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             return;
         }
 
-        var (waiting, roadmaps) = read.Value;
+        var (proposal, roadmaps) = read.Value;
 
-        Proposal = waiting.FirstOrDefault(p => p.Id == Id);
+        Proposal = proposal is { State: ProposalState.Waiting } ? proposal : null;
 
         if (Proposal is null)
         {

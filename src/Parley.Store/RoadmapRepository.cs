@@ -173,6 +173,46 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         return proposals;
     }
 
+    /// <summary>Reads the headings of the proposals in a state, or of all of them, and none of their items.</summary>
+    /// <param name="state">The state, or <see langword="null"/> for every one.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposals, newest first, each titled to <see cref="RoadmapProposal.HeadingLength"/> with its item count.</returns>
+    /// <remarks>
+    /// The item text is never read, so a list costs the same whatever an agent wrote in it (SPEC.md §10.2
+    /// <c>proposals</c>).
+    /// </remarks>
+    public async Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<ProposalHeadingRow>(
+            new CommandDefinition(
+                """
+                SELECT p.id AS Id, p.proposer AS Proposer, p.source_conversation AS SourceConversation,
+                       substr(p.target_title, 1, @Length) AS TargetTitle, substr(p.title, 1, @Length) AS Title,
+                       p.size AS Size, p.state AS State, p.created_utc AS CreatedUtc, p.decided_utc AS DecidedUtc,
+                       (SELECT COUNT(*) FROM roadmap_proposal_items i WHERE i.proposal_id = p.id) AS Items
+                  FROM roadmap_proposals p
+                 WHERE @State IS NULL OR p.state = @State
+                 ORDER BY p.id DESC;
+                """,
+                new { State = state is null ? null : ProposalStateText(state.Value), Length = RoadmapProposal.HeadingLength },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(row => new RoadmapProposal(
+            row.Id,
+            AgentName.Create(row.Proposer),
+            row.SourceConversation,
+            row.TargetTitle,
+            new RoadmapContent(row.Title, []),
+            row.Size,
+            ParseState(row.State),
+            ExchangeRow.ParseTimestamp(row.CreatedUtc),
+            row.DecidedUtc is null ? null : ExchangeRow.ParseTimestamp(row.DecidedUtc))
+        {
+            ItemCount = (int)row.Items,
+        })];
+    }
+
     /// <summary>Reads one proposal.</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
@@ -489,7 +529,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                 """
                 SELECT i.id AS Id, i.number AS Number, i.position AS Position, i.text AS Text,
                        i.intended_agent AS IntendedAgent, i.removed_rev AS RemovedRev,
-                       c.conversation_id AS Conversation
+                       c.conversation_id AS Conversation, i.edited_utc AS EditedUtc
                   FROM roadmap_items i
                   LEFT JOIN roadmap_item_conversations c ON c.item_id = i.id
                  WHERE i.roadmap_id = @Id
@@ -518,7 +558,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         {
             var name = item.Conversation ?? ItemConversation.Name((int)row.Number, (int)item.Number);
             var facts = item.RemovedRev is null
-                ? await FactsAsync(name, cancellationToken).ConfigureAwait(false)
+                ? await FactsAsync(name, item.EditedUtc, cancellationToken).ConfigureAwait(false)
                 : null;
 
             result.Add(new RoadmapItem(
@@ -947,7 +987,11 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     }
 
     /// <summary>What the store holds about one reserved conversation, as facts.</summary>
-    private async Task<ItemFacts> FactsAsync(string conversation, CancellationToken cancellationToken)
+    /// <remarks>
+    /// Whether the item was reworded since it began is read from the item's own edit time against the first request's,
+    /// never by comparing words: the person may change the item's words before sending them.
+    /// </remarks>
+    private async Task<ItemFacts> FactsAsync(string conversation, string? editedUtc, CancellationToken cancellationToken)
     {
         var row = await _connection.QuerySingleAsync<FactsRow>(
             new CommandDefinition(
@@ -970,10 +1014,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                          WHERE m.conversation_id = @C AND ri.blocker IS NOT NULL
                          ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
-                       (SELECT json_extract(payload_json, '$.ask') FROM messages
-                         WHERE conversation_id = @C AND type = 'request' ORDER BY id LIMIT 1)           AS FirstSent;
+                       -- One when the item's text was edited after a request had been sent into its conversation.
+                       (SELECT COUNT(*) FROM messages WHERE conversation_id = @C AND type = 'request'
+                           AND @Edited IS NOT NULL AND julianday(created_utc) < julianday(@Edited)
+                         LIMIT 1)                                                                       AS EditedSince;
                 """,
-                new { C = conversation },
+                new { C = conversation, Edited = editedUtc },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         var open = (await _connection.QueryAsync<long>(
@@ -992,7 +1038,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             row.Blocker,
             row.ClosedBy,
             row.Destroyed > 0,
-            row.FirstSent,
+            row.EditedSince > 0,
             open);
     }
 
@@ -1026,6 +1072,30 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long Id, string Proposer, string? SourceConversation, string? TargetTitle, string Title, long Size,
         string State, string CreatedUtc, string? DecidedUtc);
 
+    // A class with setters, as FactsRow is, because computed columns carry no declared type for a record to match.
+    private sealed class ProposalHeadingRow
+    {
+        public long Id { get; set; }
+
+        public string Proposer { get; set; } = string.Empty;
+
+        public string? SourceConversation { get; set; }
+
+        public string? TargetTitle { get; set; }
+
+        public string Title { get; set; } = string.Empty;
+
+        public long Size { get; set; }
+
+        public string State { get; set; } = string.Empty;
+
+        public string CreatedUtc { get; set; } = string.Empty;
+
+        public string? DecidedUtc { get; set; }
+
+        public long Items { get; set; }
+    }
+
     // SQLite hands every integer back as 64 bits, and Dapper matches a constructor by exact type, so every
     // integer in a row type is a long and is narrowed where it is used.
     private sealed record ProposalItemRow(long Position, string Text, string? IntendedAgent);
@@ -1033,7 +1103,8 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     private sealed record RoadmapRow(long Id, long Number, string Title, string Origin, string? Proposer, long Revision);
 
     private sealed record ItemRow(
-        long Id, long Number, long Position, string Text, string? IntendedAgent, long? RemovedRev, string? Conversation);
+        long Id, long Number, long Position, string Text, string? IntendedAgent, long? RemovedRev, string? Conversation,
+        string? EditedUtc);
 
     private sealed record NumberAndRevision(long Number, long Revision);
 
@@ -1086,6 +1157,6 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
         public string? ClosedBy { get; set; }
 
-        public string? FirstSent { get; set; }
+        public long EditedSince { get; set; }
     }
 }

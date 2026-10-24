@@ -626,8 +626,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var state = Conversions.In(request.State);
 
-        var listed = await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context)
-            .ConfigureAwait(false);
+        // One proposal whole, by its identifier; otherwise a list, as headings when asked, since a list is read on every
+        // refresh and roadmap text has no bound (SPEC.md §10.2 `proposals`).
+        var listed = request.Id != 0
+            ? await Console(async (console, _, ct) => await console.GetProposalAsync(request.Id, ct).ConfigureAwait(false) is { } one
+                    ? (IReadOnlyList<RoadmapProposal>)[one]
+                    : [], context).ConfigureAwait(false)
+            : request.Headings
+                ? await Console((console, _, ct) => console.ListProposalHeadingsAsync(state, ct), context).ConfigureAwait(false)
+                : await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context).ConfigureAwait(false);
 
         var reply = new Wire.ProposalsReply();
         reply.Proposals.AddRange(listed.Select(Conversions.Out));

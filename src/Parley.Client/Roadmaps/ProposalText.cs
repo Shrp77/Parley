@@ -23,7 +23,7 @@ public static class ProposalText
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
-        var count = proposal.Content.Items.Count;
+        var count = proposal.ItemCount ?? proposal.Content.Items.Count;
 
         return string.Create(
             CultureInfo.InvariantCulture,

@@ -29,6 +29,9 @@ public static partial class RoadmapTextCodec
 {
     private const string Separator = " | ";
 
+    /// <summary>A bar that is part of an item's words, as written out: never the start of a field.</summary>
+    private const string EscapedBar = @"\|";
+
     [GeneratedRegex(@"^\s*(\d+)\s*[.)]\s*(.*)$", RegexOptions.CultureInvariant, 2000)]
     private static partial Regex ItemLine();
 
@@ -44,7 +47,10 @@ public static partial class RoadmapTextCodec
         for (var at = 0; at < content.Items.Count; at++)
         {
             var item = content.Items[at];
-            var line = string.Create(CultureInfo.InvariantCulture, $"{at + 1}. {item.Text}");
+            // **The item's own words can never be read back as a field.** They may be an agent's, and the broker refuses
+            // a proposal that claims item numbers: `| item: 1` in its words, written out bare, would claim item 1's
+            // conversation and its open work when the person confirms the text. Every bar in the words is escaped.
+            var line = string.Create(CultureInfo.InvariantCulture, $"{at + 1}. {item.Text.Replace("|", EscapedBar, StringComparison.Ordinal)}");
 
             if (item.IntendedAgent is { } agent)
             {
@@ -174,7 +180,7 @@ public static partial class RoadmapTextCodec
                 return (null, $"Line {shown}: number {label} is used twice. Each item has a number of its own.");
             }
 
-            drafts.Add((label, itemText.Trim(), agent, needs, number));
+            drafts.Add((label, itemText.Replace(EscapedBar, "|", StringComparison.Ordinal).Trim(), agent, needs, number));
         }
 
         if (title is null)

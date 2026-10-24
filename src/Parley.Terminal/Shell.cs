@@ -1897,7 +1897,7 @@ internal sealed class Shell : Window
             return;
         }
 
-        Proposing.Review(
+        Proposing.Open(
             app,
             new BrokerClient(_directory.ClientFor(project)),
             proposal,

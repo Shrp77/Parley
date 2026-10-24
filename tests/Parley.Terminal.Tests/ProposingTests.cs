@@ -127,6 +127,19 @@ public sealed class ProposingTests : IAsyncDisposable
         driving.Enter();
     }
 
+    /// <summary>Chooses a row as Enter does, without the draw a key press makes.</summary>
+    /// <remarks>
+    /// For a choice that starts queued work which opens another view: a press would draw on this thread while that work
+    /// opens it (CLAUDE.md, dialogs open on the thread that draws). Await <c>shell.Settled</c> after.
+    /// </remarks>
+    private static void Accept(Driving.Session driving, string title, string row)
+    {
+        var dialog = (ChoiceDialog)driving.Find(title);
+
+        driving.Row(dialog.Choices, row);
+        dialog.Choices.InvokeCommand(Command.Accept);
+    }
+
     [Fact]
     public async Task The_proposals_are_offered_wherever_a_project_is_in_view()
     {
@@ -163,8 +176,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
 
         // By the key written on the button, which is the way the view says to choose.
@@ -191,8 +205,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         driving.Press(Key.E.WithAlt);
         await shell.Settled;
@@ -223,8 +238,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         driving.Press(Key.E.WithAlt);
         await shell.Settled;
@@ -251,8 +267,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         driving.Press(Key.D.WithAlt);
         await shell.Settled;
@@ -287,8 +304,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
 
         // Escape leaves it, as it does everywhere on this surface, and changes nothing.
@@ -314,8 +332,9 @@ public sealed class ProposingTests : IAsyncDisposable
 
         await OpenProposalsAsync(shell);
 
-        // The proposals are a pane of the project, and Enter on one opens it.
-        driving.Enter();
+        // The proposals are a pane of the project, and Enter on one opens it. Called as Enter's handler rather than pressed:
+        // opening reads the proposal whole first, and a press would draw here while that work opens the view.
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
@@ -359,10 +378,10 @@ public sealed class ProposingTests : IAsyncDisposable
         async Task ChooseReviseAsync()
         {
             await OpenProposalsAsync(shell);
-            driving.Enter();
+            Assert.True(shell.Roadmaps.OpenSelected());
             await shell.Settled;
             await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
-            Pick(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+            Accept(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
             await shell.Settled;
         }
 
@@ -372,14 +391,106 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Contains("item 1, \"Add CSV export\", in rm1-1", warning.Described, StringComparison.Ordinal);
         Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);
 
-        Pick(driving, Proposing.Title, Proposing.Leave);
+        Accept(driving, Proposing.Title, Proposing.Leave);
         await shell.Settled;
         Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);
 
         await ChooseReviseAsync();
-        Pick(driving, Proposing.Title, Proposing.RemoveAndConfirm);
+        Accept(driving, Proposing.Title, Proposing.RemoveAndConfirm);
         await shell.Settled;
         Assert.Equal(2, (await Client.RoadmapsAsync(Ct)).Single().Revision);
+    }
+
+    [Fact]
+    public async Task Escape_on_a_new_roadmap_or_a_revision_confirms_neither()
+    {
+        // Escape leaves a proposal as it is in every other dialog. Must fail against Escape falling through to a new
+        // roadmap, which spends the proposal on the choice the person did not make.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        await Repository.ConfirmAsync(first!.Id, first.Content, null, T0, cancellationToken: Ct);
+        var second = await ProposeAsync("Billing export", target: "billing export");
+
+        await OpenProposalsAsync(shell);
+        Assert.True(shell.Roadmaps.OpenSelected());
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+        Assert.IsType<ChoiceDialog>(driving.Find(Proposing.Title));
+
+        driving.Escape();
+        await shell.Settled;
+
+        Assert.Single(await Client.RoadmapsAsync(Ct));
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(second, Ct))!.State);
+    }
+
+    /// <summary>A channel that fails the one-roadmap read and passes everything else.</summary>
+    private sealed class FailingRoadmapRead() : DelegatingHandler(new SocketsHttpHandler())
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.RequestUri!.AbsolutePath == "/parley.v1.Operators/Roadmap"
+                ? throw new HttpRequestException("the roadmap read failed")
+                : base.SendAsync(request, cancellationToken);
+    }
+
+    [Fact]
+    public async Task A_revision_whose_roadmap_cannot_be_read_is_not_confirmed()
+    {
+        // Unread is not empty: the open work a revision removes cannot be described, so nothing is confirmed, as on the
+        // web. Must fail against treating a failed read as nothing open.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address, new GrpcChannelOptions { HttpHandler = new FailingRoadmapRead() }));
+        using var shell = await OpenAsync(driving, directory);
+
+        var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        await Repository.ConfirmAsync(first!.Id, first.Content, null, T0, cancellationToken: Ct);
+        await ProposeAsync("Billing export", target: "billing export");
+
+        await OpenProposalsAsync(shell);
+        Assert.True(shell.Roadmaps.OpenSelected());
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+        Accept(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+        await shell.Settled;
+
+        Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);
+        Assert.Contains("nothing was confirmed", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_list_reads_headings_and_one_proposal_is_read_whole_when_opened()
+    {
+        // A count and a list run on every refresh, and roadmap text has no bound, so they read headings: no item text,
+        // the title cut short, the item count kept. Must fail against a list that carries the items, which makes every
+        // refresh as large as everything one agent wrote.
+        var (id, problem) = await Repository.ProposeAsync(
+            Orders,
+            null,
+            null,
+            new RoadmapContent(new string('T', 1_000), [new RoadmapItemDraft(null, new string('x', 100_000), null, []), new RoadmapItemDraft(null, "Two", null, [])]),
+            T0,
+            cancellationToken: Ct);
+        Assert.Null(problem);
+
+        var headings = await Client.ProposalHeadingsAsync(ProposalState.Waiting, Ct);
+        var heading = Assert.Single(headings);
+
+        Assert.Empty(heading.Content.Items);
+        Assert.Equal(2, heading.ItemCount);
+        Assert.Equal(RoadmapProposal.HeadingLength, heading.Content.Title.Length);
+        Assert.Equal(1, await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(Client, Ct));
+
+        var whole = await Client.ProposalAsync(id!.Value, Ct);
+
+        Assert.NotNull(whole);
+        Assert.Equal(1_000, whole.Content.Title.Length);
+        Assert.Equal(100_000, whole.Content.Items[0].Text.Length);
+        Assert.Null(whole.ItemCount);
     }
 
     [Fact]
@@ -659,7 +770,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await ProposeAsync();
         await OpenProposalsAsync(shell);
 
-        driving.Enter();
+        Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 

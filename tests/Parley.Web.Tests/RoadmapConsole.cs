@@ -130,7 +130,7 @@ public sealed class RoadmapBroker : HttpMessageHandler
 
             reply = request.RequestUri!.AbsolutePath switch
             {
-                "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(),
+                "/parley.v1.Operators/Proposals" => Old ? null : ListProposals(Wire.ProposalsRequest.Parser.ParseFrom(payload)),
                 "/parley.v1.Operators/Roadmaps" => ListRoadmaps(),
                 "/parley.v1.Operators/Roadmap" => One(Wire.RoadmapRequest.Parser.ParseFrom(payload).Id),
                 "/parley.v1.Operators/ConfirmProposal" => Confirm(Wire.ConfirmProposalRequest.Parser.ParseFrom(payload)),
@@ -169,11 +169,25 @@ public sealed class RoadmapBroker : HttpMessageHandler
         return response;
     }
 
-    private Wire.ProposalsReply ListProposals()
+    /// <summary>Answers as the broker does: one proposal by its identifier, or a list, as headings when asked.</summary>
+    private Wire.ProposalsReply ListProposals(Wire.ProposalsRequest request)
     {
         var reply = new Wire.ProposalsReply();
 
-        reply.Proposals.AddRange(Proposals);
+        foreach (var proposal in Proposals.Where(p => request.Id == 0 || p.Id == request.Id))
+        {
+            if (request.Headings && request.Id == 0)
+            {
+                var heading = proposal.Clone();
+                heading.ItemCount = proposal.Content.Items.Count;
+                heading.Content = new Wire.RoadmapContent { Title = proposal.Content.Title };
+                reply.Proposals.Add(heading);
+            }
+            else
+            {
+                reply.Proposals.Add(proposal);
+            }
+        }
 
         return reply;
     }
