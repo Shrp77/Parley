@@ -152,7 +152,7 @@ internal static class Revising
 
     /// <summary>Said when work started on an item a change would remove after the person saw what it removes.</summary>
     internal const string OpenedSince =
-        "Work started on another item while you were reading that, so nothing was changed. Do it again to see what it removes.";
+        "Work started on an item this change removes while you were on it, so nothing was changed. Do it again to see what it removes.";
 
     /// <summary>Reads the roadmap again and says whether the open work a change removes is still only what was shown.</summary>
     /// <param name="client">The operator's client.</param>

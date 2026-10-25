@@ -1104,7 +1104,10 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       -- How many agents' latest closed exchange on the person's request here ended blocked. Per agent,
+                       -- How many agents' latest closed exchange on the person's request here ended blocked; latest is
+                       -- the one that closed last, since the agent, not the person, chooses which it answers first, and
+                       -- only one whose result did the work or was blocked: answering the person's question about a
+                       -- block, or acknowledging, is not the work done, and read as done it hid the block. Per agent,
                        -- not for the whole conversation: an item sent to two whose first ended blocked read done once
                        -- the second completed. The person's requests only: the item is what the person asked, and an
                        -- agent's own question to another that ended blocked, worked around, is not the item blocked.
@@ -1114,7 +1117,9 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
                                           AND l.receiver = e.receiver AND l.requester = e.requester
-                                        ORDER BY julianday(l.closed_utc) DESC, l.id DESC LIMIT 1))   AS Blocked,
+                                          AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
+                                                         AND d.outcome IN ('done', 'blocked'))
+                                        ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1))   AS Blocked,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome = 'closed')                                                      AS Closed,
                        -- The blocker of an exchange the count above includes: the newest that is some agent's latest
@@ -1128,7 +1133,9 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
                                           AND l.receiver = e.receiver AND l.requester = e.requester
-                                        ORDER BY julianday(l.closed_utc) DESC, l.id DESC LIMIT 1)
+                                          AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
+                                                         AND d.outcome IN ('done', 'blocked'))
+                                        ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1)
                          ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
                        -- One when the item's text was edited after a request had been sent into its conversation.

@@ -102,6 +102,37 @@ public sealed class BlockedPerAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_question_about_a_block_answered_does_not_make_the_item_read_done()
+    {
+        // Found by review, round 23: the person asks a blocked agent what it needs, and its answer was its latest, so
+        // the item read done though the work never was. Only a done or blocked result decides an agent's part.
+        var roadmap = await RoadmapAsync();
+
+        var work = await AskAsync(_person, Billing, 0);
+        await AnswerAsync(work, Billing, 1, "blocked:permission");
+        await AnswerAsync(await AskAsync(_person, Billing, 2, "What exactly do you need allowed?"), Billing, 3, "answered");
+
+        var facts = await FactsAsync(roadmap);
+        Assert.Equal(1, facts.BlockedExchanges);
+        Assert.Equal("permission", facts.Blocker);
+    }
+
+    [Fact]
+    public async Task Two_closes_under_a_millisecond_apart_still_take_the_later_as_latest()
+    {
+        var roadmap = await RoadmapAsync();
+
+        var work = await AskAsync(_person, Orders, 1);
+        var update = await AskAsync(_person, Orders, 2, "Any update?");
+
+        var answered = T0.AddMinutes(3);
+        Assert.True((await _broker.ResultAsync(update, Orders, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "done")), answered, Ct)).Succeeded);
+        Assert.True((await _broker.ResultAsync(work, Orders, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "blocked:permission")), answered.AddTicks(4_000), Ct)).Succeeded);
+
+        Assert.Equal(1, (await FactsAsync(roadmap)).BlockedExchanges);
+    }
+
+    [Fact]
     public async Task The_blocker_named_is_the_one_still_blocking()
     {
         var roadmap = await RoadmapAsync();

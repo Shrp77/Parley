@@ -271,6 +271,19 @@ public sealed class FileLocationStoreTests : IDisposable
         await using var hold = await reading.WaitAsync(TimeSpan.FromSeconds(10), Ct);
     }
 
+    [Fact]
+    public async Task A_replacement_of_a_file_never_read_does_not_wait_out_a_hold_over_everything()
+    {
+        // A replacement that waited out a destroy waited, with every other agent's, behind any download the destroy
+        // waited on. One of a file never read lands before or after the destroy's transaction, so it need not.
+        await Write("pricing", Notes, "a");
+
+        using var everything = await _location.ChangeEverythingAsync(Ct);
+
+        using var change = await _location.ChangeAsync("pricing", SharedFileName.Create("other.md"), Ct)
+            .WaitAsync(TimeSpan.FromSeconds(5), Ct);
+    }
+
     private async Task Write(string folder, SharedFileName name, string content)
     {
         await using var staged = _location.Stage();

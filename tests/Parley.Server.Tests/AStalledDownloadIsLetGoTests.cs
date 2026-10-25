@@ -63,5 +63,67 @@ public sealed class AStalledDownloadIsLetGoTests
             destroying.IsCompleted && replacing.IsCompleted && firstPlacing.IsCompleted,
             $"after 5s with orders' fetch unread: destroy of an unrelated conversation done={destroying.IsCompleted}, "
             + $"inventory's replacement done={replacing.IsCompleted}, billing's first placement done={firstPlacing.IsCompleted}");
+
+        // Done, not merely finished: a fault is completed too.
+        Assert.Equal(Wire.DestroyVerdict.Gone, (await destroying).Verdict);
+        Assert.Equal(Wire.FileRejection.None, (await replacing).Rejection);
+        Assert.Equal(Wire.FileRejection.None, (await firstPlacing).Rejection);
+
+        // And the unread download was ended, not left running.
+        var ended = await Assert.ThrowsAsync<Grpc.Core.RpcException>(async () =>
+        {
+            while (await slow.ResponseStream.MoveNext(Ct))
+            {
+            }
+        });
+        Assert.Equal(Grpc.Core.StatusCode.DeadlineExceeded, ended.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_fetch_read_one_frame_inside_each_bound_does_not_stall_an_unrelated_destroy()
+    {
+        // Found by review, round 23: a bound on each frame alone let a client taking one frame just inside it keep a
+        // large file held for hours. A hold that has waited on a download for as long ends it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(1);
+
+        var big = new byte[64 * 1024 * 1024];
+        Random.Shared.NextBytes(big);
+        await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
+        await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+
+        using var slow = orders.Client.FetchFile(
+            new Wire.FetchFileRequest { Agent = Orders, Name = "big.md", ConversationId = "bait" }, cancellationToken: Ct);
+
+        // Orders takes one frame every 600 ms: never a whole bound without progress.
+        var trickle = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    while (await slow.ResponseStream.MoveNext(Ct))
+                    {
+                        await Task.Delay(600, Ct);
+                    }
+                }
+                catch (Grpc.Core.RpcException)
+                {
+                }
+            },
+            Ct);
+
+        await Task.Delay(1500, Ct);
+
+        var destroying = broker.ConnectAsOperator()
+            .DestroyAsync(new Wire.ConversationRequest { ConversationId = "pricing" }, cancellationToken: Ct).ResponseAsync;
+
+        var finished = await Task.WhenAny(destroying, Task.Delay(15000, Ct));
+        Assert.True(finished == destroying, "a destroy waited on a download read one frame inside each bound");
+        Assert.Equal(Wire.DestroyVerdict.Gone, (await destroying).Verdict);
+
+        await trickle.WaitAsync(TimeSpan.FromSeconds(10), Ct);
     }
 }

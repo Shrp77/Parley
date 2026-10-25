@@ -864,7 +864,7 @@ revision, and its proposer is told. Confirming a new roadmap supersedes nothing.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are
-open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest closed exchange on the person's request ended blocked, the blocker one of those named, who closed it —
+open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest done-or-blocked result on the person's request was blocked, the blocker one of those named, who closed it —
 and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
 derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
 *blocked* (with the blocker the agent gave), *done*, *closed by the person*, or *could not be read*.
@@ -2799,8 +2799,9 @@ holding the name, so the caller can repeat the call naming one.
 
 **A download holds the file.** While any fetch of a file is streaming, the broker keeps the stored
 file open with no write sharing, and a replacement, removal or prune through Parley waits for every
-fetch in progress to finish; a fetch whose agent has gone stops holding, and so does one whose agent takes no
-part of it for 30 seconds, which is ended. Where the operating system can
+fetch in progress to finish; a fetch whose agent has gone stops holding, and so does one whose agent reads none
+of it for 30 seconds, or that has kept a change of the file or a destroy, purge or prune waiting for as long; it
+is ended. Where the operating system can
 refuse another process's write — Windows — an editor's save is refused for that time. Where it cannot —
 Linux and macOS have no mandatory locks — the save succeeds and the fetch, which hashes what it streams,
 fails saying the file changed and writes nothing. Every platform keeps the guarantee the hold exists
@@ -2976,7 +2977,7 @@ other could.
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
-| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest closed exchange on the person's request ended blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest done-or-blocked result on the person's request was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
 | `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
 | `proposal_count(state?)` | How many proposals are in a state, waiting ones by default, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
 | `proposal(id)` | One proposal whole, in whatever state it is, or nothing when there is none by that identifier. What a surface reads when the person opens a proposal from a list of headings. |

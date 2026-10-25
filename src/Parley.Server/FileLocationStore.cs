@@ -36,6 +36,10 @@ public sealed class FileLocationStore : IDisposable
     // to delete.
     private TaskCompletionSource? _everything;
 
+    // When the hold over everything began waiting, on the monotonic clock, so a download can tell how long it has been
+    // keeping it waiting.
+    private long _everythingSince;
+
     /// <summary>How long a download may go without its client taking a frame before it is ended and its hold let go.</summary>
     /// <remarks>Settable so a test need not wait it out.</remarks>
     internal TimeSpan StallAfter { get; set; } = TimeSpan.FromSeconds(30);
@@ -336,6 +340,35 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
+    /// <summary>Whether a download of a file has kept a change of it, or a hold over everything, waiting too long.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <returns><see langword="true"/> when something has waited on the file's readers for longer than <see cref="StallAfter"/>.</returns>
+    /// <remarks>
+    /// Asked before each frame. A bound on each frame alone let a client that took one frame just inside it keep a large
+    /// file held for hours, and a destroy, purge or prune with every download behind it waiting the whole time.
+    /// </remarks>
+    internal bool IsOverdue(string folder, SharedFileName name)
+    {
+        long? since;
+
+        lock (_gates)
+        {
+            since = _everything is null ? null : _everythingSince;
+        }
+
+        var change = GateFor(FilePath(folder, name)).ChangeWaitingSince;
+        var earliest = (since, change) switch
+        {
+            ({ } a, { } b) => Math.Min(a, b),
+            ({ } a, null) => a,
+            (null, { } b) => b,
+            _ => (long?)null,
+        };
+
+        return earliest is { } began && Environment.TickCount64 - began > (long)StallAfter.TotalMilliseconds;
+    }
+
     /// <summary>Whether any download of a file is in progress.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
@@ -349,8 +382,9 @@ public sealed class FileLocationStore : IDisposable
     /// <returns>The change's turn; disposing it lets reads in again.</returns>
     /// <remarks>
     /// It does not wait out a hold over everything: that hold enters every file's gate there is, so a change to a file is
-    /// in turn with it already, and one to a file never changed or read lands either before the destroy's transaction or
-    /// after it, refused. Waiting would hold every agent's replacement behind one destroy.
+    /// in turn with it already, and one to a file never changed or read lands either before the destroy's, purge's or
+    /// prune's transaction, and goes with it, or after it, refused or placed again as a new file. Waiting would hold every
+    /// agent's replacement behind one hold.
     /// </remarks>
     public Task<IDisposable> ChangeAsync(string folder, SharedFileName name, CancellationToken cancellationToken) =>
         GateFor(FilePath(folder, name)).EnterChangeAsync(cancellationToken);
@@ -365,9 +399,9 @@ public sealed class FileLocationStore : IDisposable
     /// everything waits for, or waits out.
     /// </remarks>
     public Task<IDisposable> FirstPlacementAsync(string conversation, CancellationToken cancellationToken) =>
-        EnterChangeAsync("first placement in " + conversation, cancellationToken);
+        EnterAfterAnyHoldAsync("first placement in " + conversation, cancellationToken);
 
-    private async Task<IDisposable> EnterChangeAsync(string key, CancellationToken cancellationToken)
+    private async Task<IDisposable> EnterAfterAnyHoldAsync(string key, CancellationToken cancellationToken)
     {
         Gate gate;
 
@@ -417,6 +451,7 @@ public sealed class FileLocationStore : IDisposable
                 {
                     mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                     _everything = mine;
+                    _everythingSince = Environment.TickCount64;
                     gates = [.. _gates.Values];
 
                     break;
@@ -704,6 +739,19 @@ public sealed class FileLocationStore : IDisposable
         private bool _changing;
         private TaskCompletionSource _drained = Completed();
         private TaskCompletionSource _changed = Completed();
+        private long? _changeWaitingSince;
+
+        /// <summary>When a change began waiting for this file's readers to finish, or null when none is waiting.</summary>
+        public long? ChangeWaitingSince
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _changeWaitingSince;
+                }
+            }
+        }
 
         public int Readers
         {
@@ -765,6 +813,7 @@ public sealed class FileLocationStore : IDisposable
                         _drained = _readers == 0
                             ? Completed()
                             : new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                        _changeWaitingSince = _readers == 0 ? null : Environment.TickCount64;
                         break;
                     }
 
@@ -789,6 +838,11 @@ public sealed class FileLocationStore : IDisposable
             {
                 ExitChange();
                 throw;
+            }
+
+            lock (_lock)
+            {
+                _changeWaitingSince = null;
             }
 
             return new Release(ExitChange);

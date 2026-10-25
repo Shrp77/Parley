@@ -75,7 +75,7 @@ public sealed class AnItemSentToTwoAgentsTests : IDisposable
             toBilling.Exchange!.Id, Billing, Requests.Model,
             Requests.Result((PayloadShape.WholeRequest, "blocked:missing_information")), T0.AddMinutes(1), Ct)).Succeeded);
         Assert.True((await _broker.ResultAsync(
-            toOrders.Exchange!.Id, Orders, Requests.Model, Requests.Result(), T0.AddMinutes(2), Ct)).Succeeded);
+            toOrders.Exchange!.Id, Orders, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "done")), T0.AddMinutes(2), Ct)).Succeeded);
 
         var facts = (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
 
@@ -90,7 +90,7 @@ public sealed class AnItemSentToTwoAgentsTests : IDisposable
             _person, Billing, Requests.Model, Requests.Request("Add CSV export, with the column named"), T0.AddMinutes(3), "rm1-1", Ct);
         Assert.True(again.Succeeded, again.Rejection.ToString());
         Assert.True((await _broker.ResultAsync(
-            again.Exchange!.Id, Billing, Requests.Model, Requests.Result(), T0.AddMinutes(4), Ct)).Succeeded);
+            again.Exchange!.Id, Billing, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "done")), T0.AddMinutes(4), Ct)).Succeeded);
 
         var cleared = (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
         Assert.Equal(0, cleared.BlockedExchanges);
@@ -121,7 +121,7 @@ public sealed class AnItemSentToTwoAgentsTests : IDisposable
         var again = await _broker.RequestAsync(
             _person, Orders, Requests.Model, Requests.Request("Add CSV export, here is the column"), T0.AddMinutes(3), "rm1-1", Ct);
         Assert.True((await _broker.ResultAsync(
-            again.Exchange!.Id, Orders, Requests.Model, Requests.Result(), T0.AddMinutes(4), Ct)).Succeeded);
+            again.Exchange!.Id, Orders, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "done")), T0.AddMinutes(4), Ct)).Succeeded);
 
         var facts = (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
 
