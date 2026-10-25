@@ -154,13 +154,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
             var sha256 = await staged.FinishAsync(cancellationToken).ConfigureAwait(false);
             var folder = before.Folder;
 
-            // The turn is taken only on a file that exists, and only one of the agent's own. A new name in a folder that
-            // exists has no download to wait for; a turn taken on it anyway waited on a download of a file another agent
-            // placed meanwhile, made that download overdue, and was then refused.
-            var turnOn = before.Existing is null ? null : folder;
+            // The first attempt takes no turn, whatever the first look saw: that look is as old as the upload, and the file
+            // may since be another agent's, or hold the same bytes. A turn taken on it waited on a download, made it
+            // overdue and ended it, and then wrote nothing. The commit asks for a turn only on the agent's own file, with
+            // other bytes, and the next attempt takes it.
+            string? turnOn = null;
 
-            // Twice at most in practice: a file that appeared under this name while the bytes arrived needs its turn
-            // taken before it can be replaced, and the second attempt holds it.
+            // Twice for a replacement: the first attempt finds the agent's own file and asks for its turn, and the second
+            // holds it. A third only if the file moved again in between.
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var turn = folder is null
@@ -739,7 +740,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
         // A file of this name exists now, and this attempt does not hold its turn: a download of it may be streaming,
         // and replacing it under that download is what the hold exists to prevent. Rolled back, and tried again
         // holding the turn.
-        if (look.Existing is not null && !string.Equals(look.Folder, heldFolder, StringComparison.Ordinal))
+        if (look.Existing is { } current && current.File.Sha256 != sha256
+            && !string.Equals(look.Folder, heldFolder, StringComparison.Ordinal))
         {
             return new Committed(null, look.Folder);
         }

@@ -874,7 +874,9 @@ removed or reworded by editing the roadmap. Each agent asked has a part in the i
 decided by its own **latest** result on the person's requests: of its closed exchanges whose result says
 `done` or `blocked`, the one that closed last. An `answered` or `acknowledged` result decides nothing. An
 item is *blocked* while any agent's part is blocked, and shows the blocker that agent gave; asking it
-again and getting `done` clears it. It is *done* when nothing in it is open and no part is blocked. A roadmap names its **next item**: the first item, in
+again and getting `done` clears it. It is *done* when nothing in it is open, no part is blocked, at
+least one exchange ended with a Result, and none was closed without one; one closed without a Result
+makes it *closed by the person*. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
 roadmap is complete or what remains is waiting or blocked. An item whose text was edited after its
 conversation began says so, from the item's own record of when it was edited and never by comparing
@@ -2806,7 +2808,7 @@ file open with no write sharing, and a replacement, removal or prune through Par
 fetch in progress to finish; a fetch whose agent has gone stops holding, and so does one whose agent reads none
 of it for 30 seconds, or that has kept a change of the file or a destroy, purge or prune waiting for as long; it
 is ended. Only a change that will be made waits: a placement or removal of a file another agent placed is refused
-before it waits on anything, and a change given up while it waited leaves later fetches as they were. Where the operating system can
+before it waits on anything, placing a file's own bytes again waits on nothing, and a change given up while it waited leaves later fetches as they were. Where the operating system can
 refuse another process's write — Windows — an editor's save is refused for that time. Where it cannot —
 Linux and macOS have no mandatory locks — the save succeeds and the fetch, which hashes what it streams,
 fails saying the file changed and writes nothing. Every platform keeps the guarantee the hold exists

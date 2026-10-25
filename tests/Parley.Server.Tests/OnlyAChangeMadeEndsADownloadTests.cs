@@ -6,16 +6,18 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a change another agent may not make, or gives up on, never ends somebody else's download (SPEC.md §9.5).
+/// That only a change that is made can end somebody else's download: not one refused, given up, or of the same bytes
+/// (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 24.</b> A removal or a placement took the file's change turn before it asked who placed
 /// the file, and a turn that waits on a download makes that download overdue once it has waited the stall bound. So an
 /// agent with no right to the file ended every slow download of it, as often as it liked, and was refused anyway. A
 /// change given up while it waited left its waiting stamp behind, and every later download of the file failed at its
-/// first frame.
+/// first frame. Found in round 25: placing the same bytes again took the turn too, ended the download, and wrote
+/// nothing.
 /// </remarks>
-public sealed class ARefusedChangeEndsNoDownloadTests
+public sealed class OnlyAChangeMadeEndsADownloadTests
 {
     private const string Orders = "orders@alpha";
     private const string Billing = "billing@alpha";
@@ -115,6 +117,76 @@ public sealed class ARefusedChangeEndsNoDownloadTests
         var (status, detail, bytes) = await reading;
 
         Assert.True(placed.Outcome == Wire.PlaceOutcome.PlacedByAnother, placed.ToString());
+        Assert.True(status == StatusCode.OK, $"status={status} detail={detail} bytes={bytes} of {big.Length}");
+    }
+
+    [Fact]
+    public async Task A_placement_whose_first_look_saw_its_own_file_does_not_end_a_download_of_the_file_another_placed_since()
+    {
+        // Found by review, round 25: the turn was decided by the look made before the bytes arrived. Inventory began
+        // replacing its own file, removed it, and orders placed one of that name; inventory's finished upload took the
+        // turn, ended billing's download of orders' file, and was refused.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
+
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        await orders.Client.RequestAsync(Requests.Open(Orders, Inventory, "what are the stock levels", "bait"), cancellationToken: Ct);
+
+        await FileWire.PlaceAsync(inventory.Client, Inventory, "big.md", "first"u8.ToArray(), "bait", Ct);
+
+        using var placing = inventory.Client.PlaceFile(cancellationToken: Ct);
+        await placing.RequestStream.WriteAsync(
+            new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Agent = Inventory, Name = "big.md", ConversationId = "bait" } },
+            Ct);
+        await placing.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFromUtf8("mine") }, Ct);
+        await Task.Delay(300, Ct);
+
+        var removed = await inventory.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Inventory, Files = { new Wire.FileRef { ConversationId = "bait", Name = "big.md" } } },
+            cancellationToken: Ct);
+        Assert.Single(removed.Removed);
+
+        var big = new byte[12 * 1024 * 1024];
+        Random.Shared.NextBytes(big);
+        await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
+
+        using var call = Fetch(billing);
+        Assert.True(await call.ResponseStream.MoveNext(Ct));
+        var reading = ReadSteadilyAsync(call, 200);
+
+        await placing.RequestStream.CompleteAsync();
+        var placed = await placing.ResponseAsync;
+
+        var (status, detail, bytes) = await reading;
+
+        Assert.True(placed.Outcome == Wire.PlaceOutcome.PlacedByAnother, placed.ToString());
+        Assert.True(status == StatusCode.OK, $"status={status} detail={detail} bytes={bytes} of {big.Length}");
+    }
+
+    [Fact]
+    public async Task Placing_the_same_bytes_again_changes_nothing_and_does_not_end_a_steady_download()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+
+        var big = new byte[12 * 1024 * 1024];
+        Random.Shared.NextBytes(big);
+        await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
+
+        using var call = Fetch(billing);
+        Assert.True(await call.ResponseStream.MoveNext(Ct));
+
+        var reading = ReadSteadilyAsync(call, 200);
+        var again = await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
+
+        var (status, detail, bytes) = await reading;
+
+        Assert.True(again.Outcome == Wire.PlaceOutcome.AlreadyCurrent, again.ToString());
         Assert.True(status == StatusCode.OK, $"status={status} detail={detail} bytes={bytes} of {big.Length}");
     }
 

@@ -184,7 +184,8 @@ send it. The words are sent as words, even ones that look like a command. The ro
 where each item stands, worked out from its conversation: not started, in progress, waiting on an
 agent, waiting on you, blocked (and why), done, or closed. It also says which item is next. Nobody
 sets a state by hand. To change what an item says, edit the roadmap. To resolve a blocked item,
-send the agent a further request in its conversation.
+send the agent a further request in its conversation; the item stops reading blocked when that
+agent's next result says `done`.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
