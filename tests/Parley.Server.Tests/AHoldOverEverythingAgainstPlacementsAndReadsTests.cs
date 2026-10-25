@@ -49,6 +49,7 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         var (header, bytes, refusal) = await fetching.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         Assert.NotNull(refusal);
+        Assert.NotEqual(Wire.FileRejection.None, refusal!.Rejection);
         Assert.Null(header);
         Assert.Empty(bytes);
         Assert.False(broker.Runtime.Files.IsHeld("pricing", name), "a refused fetch kept its hold");
@@ -88,7 +89,7 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
             var (header, bytes, refusal) = await fetching.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
             Assert.True(
-                refusal is not null,
+                refusal is { Rejection: not Wire.FileRejection.None },
                 $"a fetch that waited out the destroy served the destroyed conversation's file: {System.Text.Encoding.UTF8.GetString(bytes)}");
             Assert.Null(header);
         }
@@ -253,27 +254,21 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         Wire.FileRefusal? refusal = null;
         using var bytes = new MemoryStream();
 
-        try
+        // A call that fails is not a refusal: it throws here, so a server fault fails the test rather than passing as one.
+        await foreach (var frame in call.ResponseStream.ReadAllAsync(Ct))
         {
-            await foreach (var frame in call.ResponseStream.ReadAllAsync(Ct))
+            switch (frame.FrameCase)
             {
-                switch (frame.FrameCase)
-                {
-                    case Wire.FetchFileFrame.FrameOneofCase.Header:
-                        header = frame.Header;
-                        break;
-                    case Wire.FetchFileFrame.FrameOneofCase.Chunk:
-                        frame.Chunk.WriteTo(bytes);
-                        break;
-                    case Wire.FetchFileFrame.FrameOneofCase.Refusal:
-                        refusal = frame.Refusal;
-                        break;
-                }
+                case Wire.FetchFileFrame.FrameOneofCase.Header:
+                    header = frame.Header;
+                    break;
+                case Wire.FetchFileFrame.FrameOneofCase.Chunk:
+                    frame.Chunk.WriteTo(bytes);
+                    break;
+                case Wire.FetchFileFrame.FrameOneofCase.Refusal:
+                    refusal = frame.Refusal;
+                    break;
             }
-        }
-        catch (RpcException failed)
-        {
-            refusal = new Wire.FileRefusal { Detail = "call failed: " + failed.Status };
         }
 
         return (header, bytes.ToArray(), refusal);

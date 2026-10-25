@@ -146,6 +146,7 @@ public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
         Assert.True(
             revision == 1,
             $"the revision was confirmed, removing item 2's open work, which the warning never named. Said: {shell.Said}");
+        Assert.Equal(Revising.OpenedSince, shell.Said);
     }
 
     [Fact]
@@ -190,6 +191,7 @@ public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
         var id = Assert.Single(await Client.RoadmapsAsync(Ct)).Id;
         var item1 = (await Client.RoadmapAsync(id, Ct))!.Items.Single(i => i.Number == 1);
         Assert.False(item1.Removed, $"item 1's open work was removed, though the warning never named it. Said: {shell.Said}");
+        Assert.Equal(Revising.OpenedSince, shell.Said);
     }
 
     [Fact]

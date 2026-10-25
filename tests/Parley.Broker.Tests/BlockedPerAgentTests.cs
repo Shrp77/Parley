@@ -66,9 +66,9 @@ public sealed class BlockedPerAgentTests : IDisposable
         return (await _console.ConfirmProposalAsync(proposed.Id!.Value, content, null, T0, Ct)).RoadmapId!.Value;
     }
 
-    private async Task<long> AskAsync(AgentName from, AgentName to, int minute)
+    private async Task<long> AskAsync(AgentName from, AgentName to, int minute, string text = "Add CSV export")
     {
-        var sent = await _broker.RequestAsync(from, to, Requests.Model, Requests.Request("Add CSV export"), T0.AddMinutes(minute), "rm1-1", Ct);
+        var sent = await _broker.RequestAsync(from, to, Requests.Model, Requests.Request(text), T0.AddMinutes(minute), "rm1-1", Ct);
         Assert.True(sent.Succeeded, sent.Rejection.ToString());
         return sent.Exchange!.Id;
     }
@@ -82,6 +82,24 @@ public sealed class BlockedPerAgentTests : IDisposable
 
     private async Task<ItemFacts> FactsAsync(long roadmapId) =>
         (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
+
+    [Fact]
+    public async Task An_agent_answering_the_persons_later_line_first_does_not_hide_its_blocker_on_the_earlier()
+    {
+        // Found by review, round 22: latest was the highest id, so the agent chose the order. Answering "any update?"
+        // first and then ending the work blocked read done. Latest is the one that closed last.
+        var roadmap = await RoadmapAsync();
+
+        var work = await AskAsync(_person, Orders, 0);
+        var update = await AskAsync(_person, Orders, 1, "Any update?");
+
+        await AnswerAsync(update, Orders, 2);
+        await AnswerAsync(work, Orders, 3, "blocked:permission");
+
+        var facts = await FactsAsync(roadmap);
+        Assert.Equal(1, facts.BlockedExchanges);
+        Assert.Equal("permission", facts.Blocker);
+    }
 
     [Fact]
     public async Task The_blocker_named_is_the_one_still_blocking()

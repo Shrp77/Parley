@@ -47,10 +47,6 @@ internal static class Proposing
     /// <summary>Said when a person leaves a proposal alone.</summary>
     internal const string Left = "Left as it is. It is still awaiting your decision.";
 
-    /// <summary>Said when work started on an item a change would remove after the person was told what it removes.</summary>
-    internal const string OpenedSince =
-        "Work started on another item while you were reading that, so nothing was changed. Do it again to see what it removes.";
-
     /// <summary>What the edit field asks.</summary>
     private const string EditAsks =
         "One line per item, in order: a number and a dot, then what is to be done. Add | for: role@machine and | needs: 1, 2 " +
@@ -480,27 +476,11 @@ internal static class Proposing
             {
                 queue(async t =>
                 {
-                    // **Going ahead covers what was described, read again now.** The question waits on a person, and work
-                    // started on another item meanwhile was removed without a word (the web checks the same).
-                    var fresh = await BrokerDirectory.ReadAsync(
-                        async () => await client.RoadmapAsync(roadmapId, t).ConfigureAwait(false)).ConfigureAwait(false);
-
-                    if (!fresh.Reachable || fresh.Value is not { } now)
+                    // Going ahead covers what was described, read again now (Revising.StillCoveredAsync says why).
+                    if (await Revising.StillCoveredAsync(client, roadmapId, content, shown, "confirmed", done, t).ConfigureAwait(false))
                     {
-                        await done($"The roadmap could not be read, so nothing was confirmed: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
-                            .ConfigureAwait(false);
-
-                        return;
+                        await SendAsync(client, proposal, content, roadmapId, done, t).ConfigureAwait(false);
                     }
-
-                    if (!Removal.Covers(Removal.StillOpen(now, content), shown))
-                    {
-                        await done(OpenedSince).ConfigureAwait(false);
-
-                        return;
-                    }
-
-                    await SendAsync(client, proposal, content, roadmapId, done, t).ConfigureAwait(false);
                 });
             }
             else

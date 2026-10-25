@@ -268,6 +268,38 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         RequireAttached(agent);
 
+        FileLocationStore.ReadHold? hold = null;
+
+        // **A download that is not read is let go.** Flow control parks a write to a client that stops reading, and the
+        // hold it keeps made a destroy, purge or prune wait for good, and every placement that waits out one.
+        async Task WriteOrLetGoAsync(Wire.FetchFileFrame frame)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var writing = writer.WriteAsync(frame, cancellationToken);
+            var stalled = Task.Delay(_runtime.Files.StallAfter, limit.Token);
+
+            if (await Task.WhenAny(writing, stalled).ConfigureAwait(false) == writing)
+            {
+                await limit.CancelAsync().ConfigureAwait(false);
+                await writing.ConfigureAwait(false);
+
+                return;
+            }
+
+            _ = writing.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+
+            if (hold is not null)
+            {
+                await hold.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw new RpcException(new Status(
+                StatusCode.DeadlineExceeded,
+                "The download was not read, so it was ended and its file let go. Fetch it again."));
+        }
+
         ContentHash? expected = null;
 
         if (!string.IsNullOrEmpty(request.ExpectSha256))
@@ -296,8 +328,6 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return;
         }
 
-        FileLocationStore.ReadHold hold;
-
         try
         {
             hold = await _runtime.Files.HoldForReadingAsync(file.Folder, file.Name, cancellationToken).ConfigureAwait(false);
@@ -310,7 +340,20 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         // **Resolved again under the hold.** A fetch that waited out a destroy found the row gone, but a file the person
         // held open kept the bytes on disk, and they were served under a header for a file that no longer exists.
-        var again = await ResolveCurrentAsync(reference, cancellationToken).ConfigureAwait(false);
+        FileResolution again;
+
+        try
+        {
+            again = await ResolveCurrentAsync(reference, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A cancelled or failed resolve lets the hold go: held, it kept every change of the file, and every destroy,
+            // purge or prune, waiting for good.
+            await hold.DisposeAsync().ConfigureAwait(false);
+
+            throw;
+        }
 
         if (again.File is not { } still || still.File.Sha256 != file.Sha256
             || !string.Equals(still.File.Folder, file.Folder, StringComparison.Ordinal))
@@ -328,8 +371,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         await using (hold.ConfigureAwait(false))
         {
-            await writer.WriteAsync(new Wire.FetchFileFrame { Header = Conversions.Out(file) }, cancellationToken)
-                .ConfigureAwait(false);
+            await WriteOrLetGoAsync(new Wire.FetchFileFrame { Header = Conversions.Out(file) }).ConfigureAwait(false);
 
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[FileLimits.ChunkBytes];
@@ -339,9 +381,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             {
                 hash.AppendData(buffer, 0, read);
 
-                await writer.WriteAsync(
-                    new Wire.FetchFileFrame { Chunk = ByteString.CopyFrom(buffer, 0, read) },
-                    cancellationToken).ConfigureAwait(false);
+                await WriteOrLetGoAsync(new Wire.FetchFileFrame { Chunk = ByteString.CopyFrom(buffer, 0, read) })
+                    .ConfigureAwait(false);
             }
 
             var streamed = ContentHash.FromDigest(hash.GetHashAndReset());

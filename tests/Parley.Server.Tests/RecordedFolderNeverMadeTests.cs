@@ -44,7 +44,6 @@ public sealed class RecordedFolderNeverMadeTests : IDisposable
         await using var server = await StartAsync(Path.Combine(_base, "alpha.db"));
         using var channel = GrpcChannel.ForAddress(server.Addresses[0]);
         var agents = new Wire.Agents.AgentsClient(channel);
-        var operators = new Wire.Operators.OperatorsClient(channel);
         using var inventory = await AttachAsync(agents, Inventory);
         using var billing = await AttachAsync(agents, Billing);
         var root = server.Runtime.Files.Root;

@@ -109,7 +109,16 @@ internal static class Revising
 
             if (Removal.Describe(opened) is not { } warning)
             {
-                queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+                // Read again first: the roadmap was read when the form opened, and work started while the person typed
+                // would be removed with no warning.
+                queue(async t =>
+                {
+                    if (await StillCoveredAsync(client, roadmap.Id, content, Removal.Numbers(opened), "saved", done, t)
+                        .ConfigureAwait(false))
+                    {
+                        await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
+                    }
+                });
 
                 return;
             }
@@ -127,27 +136,10 @@ internal static class Revising
                 {
                     queue(async t =>
                     {
-                        // **Going ahead covers what was described, read again now.** The question waits on a person, and
-                        // work started on another item meanwhile was removed without a word (the web checks the same).
-                        var fresh = await BrokerDirectory.ReadAsync(
-                            async () => await client.RoadmapAsync(roadmap.Id, t).ConfigureAwait(false)).ConfigureAwait(false);
-
-                        if (!fresh.Reachable || fresh.Value is not { } now)
+                        if (await StillCoveredAsync(client, roadmap.Id, content, shown, "saved", done, t).ConfigureAwait(false))
                         {
-                            await done($"The roadmap could not be read, so nothing was saved: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
-                                .ConfigureAwait(false);
-
-                            return;
+                            await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
                         }
-
-                        if (!Removal.Covers(Removal.StillOpen(now, content), shown))
-                        {
-                            await done(Proposing.OpenedSince).ConfigureAwait(false);
-
-                            return;
-                        }
-
-                        await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
                     });
                 }
                 else
@@ -156,6 +148,56 @@ internal static class Revising
                 }
             };
         };
+    }
+
+    /// <summary>Said when work started on an item a change would remove after the person saw what it removes.</summary>
+    internal const string OpenedSince =
+        "Work started on another item while you were reading that, so nothing was changed. Do it again to see what it removes.";
+
+    /// <summary>Reads the roadmap again and says whether the open work a change removes is still only what was shown.</summary>
+    /// <param name="client">The operator's client.</param>
+    /// <param name="roadmapId">The roadmap.</param>
+    /// <param name="content">What the change makes of it.</param>
+    /// <param name="shown">The items the person was told it removes, as <see cref="Removal.Numbers"/> wrote them.</param>
+    /// <param name="act">What the change is called in the sentence when it is not made: saved, or confirmed.</param>
+    /// <param name="done">Told what to say when it is not made.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether to go ahead.</returns>
+    /// <remarks>
+    /// A person reads a form or a warning for as long as they like, and starting an item moves no revision, so the
+    /// revision check cannot see work that began meanwhile; this read can. The web checks the same on every save.
+    /// </remarks>
+    internal static async Task<bool> StillCoveredAsync(
+        BrokerClient client,
+        long roadmapId,
+        RoadmapContent content,
+        string shown,
+        string act,
+        Func<string, Task> done,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(done);
+
+        var fresh = await BrokerDirectory.ReadAsync(
+            async () => await client.RoadmapAsync(roadmapId, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (!fresh.Reachable || fresh.Value is not { } now)
+        {
+            await done($"The roadmap could not be read, so nothing was {act}: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
+                .ConfigureAwait(false);
+
+            return false;
+        }
+
+        if (!Removal.Covers(Removal.StillOpen(now, content), shown))
+        {
+            await done(OpenedSince).ConfigureAwait(false);
+
+            return false;
+        }
+
+        return true;
     }
 
     private static async Task SaveAsync(

@@ -2799,7 +2799,8 @@ holding the name, so the caller can repeat the call naming one.
 
 **A download holds the file.** While any fetch of a file is streaming, the broker keeps the stored
 file open with no write sharing, and a replacement, removal or prune through Parley waits for every
-fetch in progress to finish; a fetch whose agent has gone stops holding. Where the operating system can
+fetch in progress to finish; a fetch whose agent has gone stops holding, and so does one whose agent takes no
+part of it for 30 seconds, which is ended. Where the operating system can
 refuse another process's write — Windows — an editor's save is refused for that time. Where it cannot —
 Linux and macOS have no mandatory locks — the save succeeds and the fetch, which hashes what it streams,
 fails saying the file changed and writes nothing. Every platform keeps the guarantee the hold exists

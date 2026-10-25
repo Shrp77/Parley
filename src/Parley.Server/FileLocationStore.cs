@@ -35,6 +35,10 @@ public sealed class FileLocationStore : IDisposable
     // no gate for that hold to enter, so its first download waits on this instead of streaming a file the hold is about
     // to delete.
     private TaskCompletionSource? _everything;
+
+    /// <summary>How long a download may go without its client taking a frame before it is ended and its hold let go.</summary>
+    /// <remarks>Settable so a test need not wait it out.</remarks>
+    internal TimeSpan StallAfter { get; set; } = TimeSpan.FromSeconds(30);
     private readonly Func<string, Stream> _createStaging;
     private readonly bool _deleteOnDispose;
 
@@ -343,8 +347,13 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="name">The file's name.</param>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The change's turn; disposing it lets reads in again.</returns>
+    /// <remarks>
+    /// It does not wait out a hold over everything: that hold enters every file's gate there is, so a change to a file is
+    /// in turn with it already, and one to a file never changed or read lands either before the destroy's transaction or
+    /// after it, refused. Waiting would hold every agent's replacement behind one destroy.
+    /// </remarks>
     public Task<IDisposable> ChangeAsync(string folder, SharedFileName name, CancellationToken cancellationToken) =>
-        EnterChangeAsync(FilePath(folder, name), cancellationToken);
+        GateFor(FilePath(folder, name)).EnterChangeAsync(cancellationToken);
 
     /// <summary>The turn of a conversation's first placement, before it has a folder.</summary>
     /// <param name="conversation">The conversation.</param>
@@ -385,8 +394,8 @@ public sealed class FileLocationStore : IDisposable
     }
 
     /// <summary>
-    /// Waits for every download anywhere in the location to finish, and holds new ones back, a file's first included;
-    /// waits first for another hold over everything to end.
+    /// Waits for every download anywhere in the location to finish, and holds new ones back, a file's first included, as
+    /// it does a conversation's first placement; waits first for another hold over everything to end.
     /// </summary>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The prune's turn; disposing it lets reads in again.</returns>

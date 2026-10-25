@@ -1110,10 +1110,11 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                        -- agent's own question to another that ended blocked, worked around, is not the item blocked.
                        (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
                            AND e.outcome = 'blocked'
-                           AND e.requester IN (SELECT name FROM agents WHERE adapter = 'parley-console')
-                           AND e.id = (SELECT MAX(l.id) FROM exchanges l
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
+                           AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
-                                          AND l.receiver = e.receiver AND l.requester = e.requester))   AS Blocked,
+                                          AND l.receiver = e.receiver AND l.requester = e.requester
+                                        ORDER BY julianday(l.closed_utc) DESC, l.id DESC LIMIT 1))   AS Blocked,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome = 'closed')                                                      AS Closed,
                        -- The blocker of an exchange the count above includes: the newest that is some agent's latest
@@ -1123,10 +1124,11 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                           JOIN messages m ON m.id = ri.message_id
                           JOIN exchanges e ON e.id = m.exchange_id
                          WHERE e.conversation_id = @C AND e.outcome = 'blocked' AND ri.blocker IS NOT NULL
-                           AND e.requester IN (SELECT name FROM agents WHERE adapter = 'parley-console')
-                           AND e.id = (SELECT MAX(l.id) FROM exchanges l
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
+                           AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
-                                          AND l.receiver = e.receiver AND l.requester = e.requester)
+                                          AND l.receiver = e.receiver AND l.requester = e.requester
+                                        ORDER BY julianday(l.closed_utc) DESC, l.id DESC LIMIT 1)
                          ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
                        -- One when the item's text was edited after a request had been sent into its conversation.
@@ -1134,7 +1136,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND @Edited IS NOT NULL AND julianday(created_utc) < julianday(@Edited)
                          LIMIT 1)                                                                       AS EditedSince;
                 """,
-                new { C = conversation, Edited = editedUtc },
+                new { C = conversation, Edited = editedUtc, Seat = PersonSeat.Adapter },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         var open = (await _connection.QueryAsync<long>(
