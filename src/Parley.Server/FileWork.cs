@@ -159,17 +159,30 @@ internal sealed class FileWork(BrokerRuntime runtime)
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var turn = folder is null
-                    ? null
+                    ? await _runtime.Files.FirstPlacementAsync(conversation, cancellationToken).ConfigureAwait(false)
                     : await _runtime.Files.ChangeAsync(folder, name, cancellationToken).ConfigureAwait(false);
 
                 using (turn)
                 {
                     var heldFolder = folder;
 
-                    var committed = await _runtime.UseConnectionAsync(
-                        (connection, now, ct) => CommitAsync(
-                            connection, agent, conversation, name, requested, staged, sha256, heldFolder, now, ct),
-                        cancellationToken).ConfigureAwait(false);
+                    Committed committed;
+
+                    try
+                    {
+                        committed = await _runtime.UseConnectionAsync(
+                            (connection, now, ct) => CommitAsync(
+                                connection, agent, conversation, name, requested, staged, sha256, heldFolder, now, ct),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (FileLocationStore.NotItsOwnFolderException)
+                    {
+                        // Rolled back: nothing recorded, nothing written into the folder the name reaches.
+                        throw new RpcException(new Status(
+                            StatusCode.FailedPrecondition,
+                            "This conversation's folder is another folder's short name on the broker's disk, so nothing "
+                            + "was written. Tell the person running the deployment."));
+                    }
 
                     if (committed.Reply is { } reply)
                     {
@@ -292,6 +305,24 @@ internal sealed class FileWork(BrokerRuntime runtime)
         catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
         {
             await Refuse(writer, FileRefusal.Of(reference, FileRejection.NoSuchFile), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // **Resolved again under the hold.** A fetch that waited out a destroy found the row gone, but a file the person
+        // held open kept the bytes on disk, and they were served under a header for a file that no longer exists.
+        var again = await ResolveCurrentAsync(reference, cancellationToken).ConfigureAwait(false);
+
+        if (again.File is not { } still || still.File.Sha256 != file.Sha256
+            || !string.Equals(still.File.Folder, file.Folder, StringComparison.Ordinal))
+        {
+            await hold.DisposeAsync().ConfigureAwait(false);
+            await Refuse(
+                    writer,
+                    again.Refusal ?? FileRefusal.Of(reference, again.File is null ? FileRejection.NoSuchFile : FileRejection.Changed),
+                    cancellationToken,
+                    again.File?.File.Sha256)
+                .ConfigureAwait(false);
+
             return;
         }
 

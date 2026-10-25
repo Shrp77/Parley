@@ -95,4 +95,37 @@ public sealed class AnItemSentToTwoAgentsTests : IDisposable
         var cleared = (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
         Assert.Equal(0, cleared.BlockedExchanges);
     }
+
+    [Fact]
+    public async Task The_blocker_shown_is_one_a_still_blocked_agent_gave()
+    {
+        // Both end blocked, for different reasons; orders is asked again and completes. The blocker was the newest any
+        // agent gave, so the item read blocked by orders' missing information and sent the person to the wrong agent.
+        var proposed = await _broker.ProposeRoadmapAsync(
+            Orders,
+            new RoadmapContent("Billing export", [new RoadmapItemDraft(null, "Add CSV export", Billing, [])]),
+            null, null, T0, Ct);
+        var content = (await _console.ListProposalsAsync(ProposalState.Waiting, Ct)).Single().Content;
+        var roadmapId = (await _console.ConfirmProposalAsync(proposed.Id!.Value, content, null, T0, Ct)).RoadmapId!.Value;
+
+        var toBilling = await _broker.RequestAsync(_person, Billing, Requests.Model, Requests.Request("Add CSV export"), T0, "rm1-1", Ct);
+        var toOrders = await _broker.RequestAsync(_person, Orders, Requests.Model, Requests.Request("Add CSV export"), T0, "rm1-1", Ct);
+
+        Assert.True((await _broker.ResultAsync(
+            toBilling.Exchange!.Id, Billing, Requests.Model,
+            Requests.Result((PayloadShape.WholeRequest, "blocked:permission")), T0.AddMinutes(1), Ct)).Succeeded);
+        Assert.True((await _broker.ResultAsync(
+            toOrders.Exchange!.Id, Orders, Requests.Model,
+            Requests.Result((PayloadShape.WholeRequest, "blocked:missing_information")), T0.AddMinutes(2), Ct)).Succeeded);
+
+        var again = await _broker.RequestAsync(
+            _person, Orders, Requests.Model, Requests.Request("Add CSV export, here is the column"), T0.AddMinutes(3), "rm1-1", Ct);
+        Assert.True((await _broker.ResultAsync(
+            again.Exchange!.Id, Orders, Requests.Model, Requests.Result(), T0.AddMinutes(4), Ct)).Succeeded);
+
+        var facts = (await _console.GetRoadmapAsync(roadmapId, Ct))!.Items.Single(i => i.Number == 1).Facts!;
+
+        Assert.Equal(1, facts.BlockedExchanges);
+        Assert.Equal("permission", facts.Blocker);
+    }
 }

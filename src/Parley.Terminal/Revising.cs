@@ -105,7 +105,9 @@ internal static class Revising
                 return;
             }
 
-            if (Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
+            var opened = Removal.StillOpen(roadmap, content);
+
+            if (Removal.Describe(opened) is not { } warning)
             {
                 queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
 
@@ -115,6 +117,7 @@ internal static class Revising
             // The item's words were proposed by an agent, so they are made safe to draw like any other text of theirs.
             var choosing = Prompting.Choose(Title, Safe.Text(warning), [Leave, RemoveAnyway]);
             var asking = Prompting.Open(app, choosing);
+            var shown = Removal.Numbers(opened);
 
             choosing.Done += (_, chosen) =>
             {
@@ -122,7 +125,30 @@ internal static class Revising
 
                 if (chosen == RemoveAnyway)
                 {
-                    queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+                    queue(async t =>
+                    {
+                        // **Going ahead covers what was described, read again now.** The question waits on a person, and
+                        // work started on another item meanwhile was removed without a word (the web checks the same).
+                        var fresh = await BrokerDirectory.ReadAsync(
+                            async () => await client.RoadmapAsync(roadmap.Id, t).ConfigureAwait(false)).ConfigureAwait(false);
+
+                        if (!fresh.Reachable || fresh.Value is not { } now)
+                        {
+                            await done($"The roadmap could not be read, so nothing was saved: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
+                                .ConfigureAwait(false);
+
+                            return;
+                        }
+
+                        if (!Removal.Covers(Removal.StillOpen(now, content), shown))
+                        {
+                            await done(Proposing.OpenedSince).ConfigureAwait(false);
+
+                            return;
+                        }
+
+                        await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
+                    });
                 }
                 else
                 {

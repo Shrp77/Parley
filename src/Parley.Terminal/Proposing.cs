@@ -47,6 +47,10 @@ internal static class Proposing
     /// <summary>Said when a person leaves a proposal alone.</summary>
     internal const string Left = "Left as it is. It is still awaiting your decision.";
 
+    /// <summary>Said when work started on an item a change would remove after the person was told what it removes.</summary>
+    internal const string OpenedSince =
+        "Work started on another item while you were reading that, so nothing was changed. Do it again to see what it removes.";
+
     /// <summary>What the edit field asks.</summary>
     private const string EditAsks =
         "One line per item, in order: a number and a dot, then what is to be done. Add | for: role@machine and | needs: 1, 2 " +
@@ -379,7 +383,9 @@ internal static class Proposing
         if (shown is not null && match?.Id != shown.Id)
         {
             await done(
-                $"The roadmap '{Safe.Text(shown.Title)}' is no longer called that, so nothing was confirmed. "
+                (match is null
+                    ? $"The roadmap '{Safe.Text(shown.Title)}' is no longer called that, so nothing was confirmed. "
+                    : $"Another roadmap is now called '{Safe.Text(match.Title)}', so nothing was confirmed. ")
                 + "Open the proposal again to choose.").ConfigureAwait(false);
 
             return;
@@ -452,7 +458,9 @@ internal static class Proposing
             return;
         }
 
-        if (Removal.Describe(Removal.StillOpen(roadmap, content)) is not { } warning)
+        var opened = Removal.StillOpen(roadmap, content);
+
+        if (Removal.Describe(opened) is not { } warning)
         {
             await SendAsync(client, proposal, content, roadmapId, done, cancellationToken).ConfigureAwait(false);
 
@@ -462,6 +470,7 @@ internal static class Proposing
         // The items' words were proposed by an agent, so they are made safe to draw like any other text of theirs.
         var choosing = Prompting.Choose(Title, Safe.Text(warning), [Leave, RemoveAndConfirm]);
         var asking = Prompting.Open(app, choosing);
+        var shown = Removal.Numbers(opened);
 
         choosing.Done += (_, chosen) =>
         {
@@ -469,7 +478,30 @@ internal static class Proposing
 
             if (chosen == RemoveAndConfirm)
             {
-                queue(t => SendAsync(client, proposal, content, roadmapId, done, t));
+                queue(async t =>
+                {
+                    // **Going ahead covers what was described, read again now.** The question waits on a person, and work
+                    // started on another item meanwhile was removed without a word (the web checks the same).
+                    var fresh = await BrokerDirectory.ReadAsync(
+                        async () => await client.RoadmapAsync(roadmapId, t).ConfigureAwait(false)).ConfigureAwait(false);
+
+                    if (!fresh.Reachable || fresh.Value is not { } now)
+                    {
+                        await done($"The roadmap could not be read, so nothing was confirmed: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
+                            .ConfigureAwait(false);
+
+                        return;
+                    }
+
+                    if (!Removal.Covers(Removal.StillOpen(now, content), shown))
+                    {
+                        await done(OpenedSince).ConfigureAwait(false);
+
+                        return;
+                    }
+
+                    await SendAsync(client, proposal, content, roadmapId, done, t).ConfigureAwait(false);
+                });
             }
             else
             {

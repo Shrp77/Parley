@@ -220,7 +220,7 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
         }
 
         Assert.Equal(second.Revision, (await Repository.GetAsync(second.Id, Ct))!.Revision);
-        Assert.StartsWith("The roadmap 'Billing export' is no longer called that", shell.Said, StringComparison.Ordinal);
+        Assert.StartsWith("Another roadmap is now called 'Billing export'", shell.Said, StringComparison.Ordinal);
     }
 
     /// <summary>Fails every call to one path once told to, as a broker that stops answering it.</summary>

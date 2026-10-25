@@ -193,9 +193,11 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    /// <summary>Whether a folder name is taken on disk, compared without regard to case.</summary>
+    /// <summary>Whether a folder name is taken on disk.</summary>
     /// <param name="folder">The folder name.</param>
-    /// <returns><see langword="true"/> when a directory by that name, in any case, is already in the location.</returns>
+    /// <returns>
+    /// <see langword="true"/> when a folder has that name in any case, or the name reaches anything in the location.
+    /// </returns>
     /// <remarks>
     /// Case-insensitive on every platform, because a location copied from Linux to Windows must not become two
     /// conversations' folders merged into one. **And taken when the path reaches anything at all**: on a volume that
@@ -283,7 +285,7 @@ public sealed class FileLocationStore : IDisposable
         return new StagedFile(this, path, _createStaging(path));
     }
 
-    /// <summary>Holds a file for reading while a download streams it.</summary>
+    /// <summary>Holds a file for reading while a download streams it, after any hold over everything has ended.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
     /// <param name="cancellationToken">Cancels waiting for a change in progress.</param>
@@ -342,9 +344,50 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The change's turn; disposing it lets reads in again.</returns>
     public Task<IDisposable> ChangeAsync(string folder, SharedFileName name, CancellationToken cancellationToken) =>
-        GateFor(FilePath(folder, name)).EnterChangeAsync(cancellationToken);
+        EnterChangeAsync(FilePath(folder, name), cancellationToken);
 
-    /// <summary>Waits for every download anywhere in the location to finish, and holds new ones back.</summary>
+    /// <summary>The turn of a conversation's first placement, before it has a folder.</summary>
+    /// <param name="conversation">The conversation.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <returns>The turn; disposing it lets the next in.</returns>
+    /// <remarks>
+    /// A first placement had nothing to take a turn on, so one could commit between a destroy reading the conversation's
+    /// folder (none yet) and destroying it, and its folder stayed on disk for good, unmarked. Its turn is one a hold over
+    /// everything waits for, or waits out.
+    /// </remarks>
+    public Task<IDisposable> FirstPlacementAsync(string conversation, CancellationToken cancellationToken) =>
+        EnterChangeAsync("first placement in " + conversation, cancellationToken);
+
+    private async Task<IDisposable> EnterChangeAsync(string key, CancellationToken cancellationToken)
+    {
+        Gate gate;
+
+        while (true)
+        {
+            Task? closed;
+
+            // As a read does: a gate made after a hold over everything took its snapshot waits for that hold to end.
+            lock (_gates)
+            {
+                closed = _everything?.Task;
+                gate = GateFor(key);
+            }
+
+            if (closed is null)
+            {
+                break;
+            }
+
+            await closed.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return await gate.EnterChangeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Waits for every download anywhere in the location to finish, and holds new ones back, a file's first included;
+    /// waits first for another hold over everything to end.
+    /// </summary>
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The prune's turn; disposing it lets reads in again.</returns>
     public async Task<IDisposable> ChangeEverythingAsync(CancellationToken cancellationToken)
@@ -471,6 +514,15 @@ public sealed class FileLocationStore : IDisposable
         var target = FilePath(folder, name);
 
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+
+        // **Into the folder itself, or nowhere.** A folder can be recorded before it is made (a placement refused for its
+        // length still records it), and on a volume that keeps 8.3 names a later folder can take its name as a short
+        // name: writing then put one agent's file in another conversation's folder, listed there as the person's.
+        if (!IsItsOwn(folder))
+        {
+            throw new NotItsOwnFolderException(folder);
+        }
+
         File.Move(stagedPath, target, overwrite: true);
     }
 
@@ -624,6 +676,11 @@ public sealed class FileLocationStore : IDisposable
     {
         public void Dispose() => turns.ForEach(t => t.Dispose());
     }
+
+    /// <summary>A conversation's folder that the disk resolves to another folder, by its short name.</summary>
+    /// <param name="folder">The folder the store recorded.</param>
+    internal sealed class NotItsOwnFolderException(string folder)
+        : IOException($"The folder '{folder}' is another folder's short name on this volume.");
 
     private sealed class Reopening(Action reopen) : IDisposable
     {

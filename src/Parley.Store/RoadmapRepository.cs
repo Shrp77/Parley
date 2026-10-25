@@ -1104,18 +1104,29 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       -- How many agents' latest closed exchange here ended blocked. Per agent, not for the whole
-                       -- conversation: an item sent to two whose first ended blocked read done once the second
-                       -- completed. Asking the blocked agent again and completing clears it.
+                       -- How many agents' latest closed exchange on the person's request here ended blocked. Per agent,
+                       -- not for the whole conversation: an item sent to two whose first ended blocked read done once
+                       -- the second completed. The person's requests only: the item is what the person asked, and an
+                       -- agent's own question to another that ended blocked, worked around, is not the item blocked.
                        (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
                            AND e.outcome = 'blocked'
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = 'parley-console')
                            AND e.id = (SELECT MAX(l.id) FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
-                                          AND l.receiver = e.receiver))                                 AS Blocked,
+                                          AND l.receiver = e.receiver AND l.requester = e.requester))   AS Blocked,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome = 'closed')                                                      AS Closed,
-                       (SELECT ri.blocker FROM result_items ri JOIN messages m ON m.id = ri.message_id
-                         WHERE m.conversation_id = @C AND ri.blocker IS NOT NULL
+                       -- The blocker of an exchange the count above includes: the newest that is some agent's latest
+                       -- closed one and ended blocked. Taken from the conversation's newest blocked result, it named an
+                       -- agent since asked again and done, and the person was sent to the wrong one.
+                       (SELECT ri.blocker FROM result_items ri
+                          JOIN messages m ON m.id = ri.message_id
+                          JOIN exchanges e ON e.id = m.exchange_id
+                         WHERE e.conversation_id = @C AND e.outcome = 'blocked' AND ri.blocker IS NOT NULL
+                           AND e.requester IN (SELECT name FROM agents WHERE adapter = 'parley-console')
+                           AND e.id = (SELECT MAX(l.id) FROM exchanges l
+                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'
+                                          AND l.receiver = e.receiver AND l.requester = e.requester)
                          ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
                        -- One when the item's text was edited after a request had been sent into its conversation.

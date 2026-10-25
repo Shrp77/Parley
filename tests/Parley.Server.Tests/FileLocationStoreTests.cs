@@ -254,12 +254,19 @@ public sealed class FileLocationStoreTests : IDisposable
         await Write("pricing", Notes, "a");
 
         var everything = await _location.ChangeEverythingAsync(Ct);
-        var reading = _location.HoldForReadingAsync("pricing", Notes, Ct);
+        Task<FileLocationStore.ReadHold> reading;
 
-        await Task.Delay(50, Ct);
-        Assert.False(reading.IsCompleted, "a first download was let in under a hold over everything");
+        try
+        {
+            reading = _location.HoldForReadingAsync("pricing", Notes, Ct);
 
-        everything.Dispose();
+            await Task.Delay(50, Ct);
+            Assert.False(reading.IsCompleted, "a first download was let in under a hold over everything");
+        }
+        finally
+        {
+            everything.Dispose();
+        }
 
         await using var hold = await reading.WaitAsync(TimeSpan.FromSeconds(10), Ct);
     }

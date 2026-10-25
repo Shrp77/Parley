@@ -33,7 +33,7 @@ The MCP adapter gains one tool, `parley_propose_roadmap`. Its description says w
 | Operation | Kind | Takes | Returns |
 |---|---|---|---|
 | `Roadmaps` | read | none | summaries: id, title, revision, item count, counts by derived-input facts the broker holds (live items, started items) |
-| `Roadmap` | read | roadmap id | items in order with text, intended agent, needs, reserved conversation id, removed ones marked, and each live item's **facts** (data-model.md): conversation exists, open exchanges, collected, counts of closed exchanges that ended complete or with no Result, whether the latest ended blocked, the blocker, who closed it, destroyed, whether its text was edited after its first request was sent |
+| `Roadmap` | read | roadmap id | items in order with text, intended agent, needs, reserved conversation id, removed ones marked, and each live item's **facts** (data-model.md): conversation exists, open exchanges, collected, counts of closed exchanges that ended complete or with no Result, how many agents' latest closed exchange on the person's request ended blocked, the blocker one of those named, who closed it, destroyed, whether its text was edited after its first request was sent |
 | `Proposals` | read | optional state filter; headings only | proposals with their items, proposer, source conversation, target roadmap, size; as headings, the newest 200, each title and title hint cut to 200 characters with its item count and no items |
 | `ProposalCount` | read | optional state filter | how many proposals are in that state, reading none of them |
 | `Proposal` | read | proposal id | that proposal whole, in whatever state, or nothing |
