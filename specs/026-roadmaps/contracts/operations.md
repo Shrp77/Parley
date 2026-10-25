@@ -41,7 +41,7 @@ The MCP adapter gains one tool, `parley_propose_roadmap`. Its description says w
 | `DeclineProposal` | write | proposal id | writes the notice for the proposer |
 | `EditRoadmap` | write | roadmap id, expected revision, final content | the new revision. Refused if the expected revision is not current (two surfaces editing). Origin becomes `edited`. |
 
-State is not an operation. The broker returns facts; `ItemStates.Of(roadmap, edges, registry)` in `Parley.Client` derives states, so a view costs `Roadmap`, `DescribeWaiting` and `DescribeRegistry` and never an export per item.
+State is not an operation. The broker returns facts; `ItemStates.Of(roadmap, waiting, me)` in `Parley.Client` derives states from the roadmap's facts and the wait-for graph, so a view costs `Roadmap`, `DescribeWaiting` and `DescribeRegistry` and never an export per item.
 
 Existing reads gain a field, not an operation: `ListConversations` returns the item reference on `ConversationSummary`; `Export` names item and roadmap in its header.
 
@@ -53,18 +53,18 @@ No operation. The client reads the item's reserved conversation id from `Roadmap
 
 | Operation | Terminal | Web UI |
 |---|---|---|
-| `Roadmaps`, `Roadmap` | roadmaps list and a roadmap view | project page entry, roadmap page | `parley roadmaps`, `parley roadmap show <id>` |
-| `Proposals`, `ConfirmProposal`, `DeclineProposal` | proposal review dialog (edit, confirm, decline) | review page with edit form | `parley roadmap proposals`, `parley roadmap confirm <id> [--file <edited>]`, `parley roadmap decline <id>` |
-| `EditRoadmap` | edit dialog | edit page | `parley roadmap edit <id> --file <f>` |
+| `Roadmaps`, `Roadmap` | roadmaps list and a roadmap view | project page entry, roadmap page |
+| `Proposals`, `ProposalCount`, `Proposal`, `ConfirmProposal`, `DeclineProposal` | proposal review dialog (edit, confirm, decline) | review page with edit form |
+| `EditRoadmap` | edit dialog | edit page |
 
-`parley roadmap ... --project <p>` follows the existing selection rules.
+The command line adds no verb (FR-028).
 
 ## Guards that must be extended or added
 
 | Guard | Change |
 |---|---|
 | `ContractSeparationTests` | the agent contract still holds one method per its rule; `ProposeRoadmap` is added to the declared list, no operator method leaks, and the two interfaces still share no method names |
-| `SurfaceBoundaryTests` | the declared public surface of `Broker` gains `ProposeRoadmap`; of `OperatorConsole` gains the six operator operations; operations naming a roadmap also name the person |
+| `SurfaceBoundaryTests` | the declared public surface of `Broker` gains `ProposeRoadmap`; of `OperatorConsole` gains the eight operator operations; operations naming a roadmap also name the person |
 | `AgentsCannotChangeARoadmapTests` | new, reflection over the generated `Agents` client, in the pattern of `AgentsCannotSetTheirOwnLineTests` |
 | `DriftTests` | every `BrokerClient` operation bound by both surfaces; `contracts/operations.md` of this feature names them all |
 | `SurfaceTests` | `EditRoadmap` and `DeclineProposal` each in exactly one file per surface, carrying their door |

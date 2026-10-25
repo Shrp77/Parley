@@ -315,10 +315,11 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
-    public async Task The_console_frames_only_its_own_item_conversation_and_no_page_can_be_framed_from_elsewhere()
+    public async Task The_console_frames_its_own_item_conversation_and_neither_a_plain_conversation_nor_the_roadmap_can_be_framed()
     {
         // The clickjacking defence and its one exception. Must fail against the item frame refused by the console's own
-        // headers, against any other page allowing a frame, and against links in the frame that lead to a refused page.
+        // headers, against the same page opened plainly or the roadmap allowing a frame, and against the frame's links
+        // to other pages (the roadmap, Files) opening inside it, where those pages are refused.
         using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
         using var client = console.CreateClient();
         var token = TestContext.Current.CancellationToken;
@@ -345,6 +346,7 @@ public sealed class RoadmapOnThePageTests
         // the whole window.
         Assert.Contains("class=\"item-of\"><a href=\"/Roadmaps/Roadmap?project=" + RoadmapConsole.Project, page, StringComparison.Ordinal);
         Assert.Matches("class=\"item-of\"><a href=\"[^\"]*\" target=\"_top\"", page);
+        Assert.Matches("class=\"file-button\" target=\"_top\" href=\"/Projects/Files", page);
         Assert.Contains("data-embed-links", page, StringComparison.Ordinal);
     }
 

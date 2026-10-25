@@ -16,7 +16,7 @@ The design leans on what is already here rather than adding mechanism (see `rese
 - Starting an item uses `SeatVoice.RequestAsync` unchanged. **No new "start" operation exists**; the broker only has to recognise the reserved conversation.
 - Agents never *read* a roadmap. What reaches an agent is a request carrying one item's text, which already carries the message cap. This keeps Principle II and IV intact.
 
-Version target: **0.42.0, protocol 0.9, schema 1 (edited in place)**. Nothing is released and the owner's rule is no compatibility.
+Version target: **0.43.0, protocol 0.9, schema 1**. The wire changes freely; the store is kept (the note at the top).
 
 ## Technical Context
 

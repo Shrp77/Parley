@@ -1,12 +1,14 @@
 ---
-description: "Tasks for roadmaps, and every agent in the Room (0.42.0, protocol 0.9)"
+description: "Tasks for roadmaps, and every agent in the Room (0.43.0, protocol 0.9)"
 ---
 
 # Tasks: Roadmaps, and every agent in the Room
 
 **Input**: `specs/026-roadmaps/` (spec.md, plan.md, research.md, data-model.md, contracts/operations.md, quickstart.md)
 **Tests**: included. This repository's rules require a case for every storage invariant, watched to fail with the rule removed, and every boundary guard extended. They are part of each task's definition of done.
-**Version**: bump `VersionPrefix` in `Directory.Build.props` from 0.41.5 to **0.42.0** and `ProtocolVersion` (`src/Parley.Core/ProtocolVersion.cs`) to **0.9**, in the change that alters shipped behaviour (CLAUDE.md). Both ship together, as one release.
+**Version**: `VersionPrefix` in `Directory.Build.props` goes to **0.43.0** and `ProtocolVersion` (`src/Parley.Core/ProtocolVersion.cs`) to **0.9**, in the change that alters shipped behaviour (CLAUDE.md). Both ship together, as one release.
+
+> Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2). T011 edited `001_initial.sql` before that rule; no later task may.
 
 **Conventions for every task below**: every public member documented, `<remarks>` carries why; `ConfigureAwait(false)` in library code; parameterised SQL; `TestContext.Current.CancellationToken` on awaited calls in tests; no `--` inside a `.props`/`.csproj` comment; use Edit/Write on C# and never a scripted regex; copy a file before any mutation loop and restore from the copy, never `git checkout` (uncommitted terminal work is in the tree). A mutation must compile to prove anything. Run the test host executables directly if `dotnet test` reports zero tests.
 
@@ -22,10 +24,10 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 - [X] T001 Commit the constitution amendment (`.specify/memory/constitution.md`, and the two standing-constraint paragraphs in `CLAUDE.md`) in its own commit, before anything else
 - [X] T002 Add the terms *roadmap*, *roadmap item*, *proposal* and *item conversation* to SPEC.md §3 Terminology
-- [X] T003 Write SPEC.md §5.7 Roadmaps (including FR-006b single-line text, FR-009a validation of intended agents and dependencies, FR-009b title-as-hint, FR-014a text changed since, FR-014b old broker): what a roadmap is, that only a person confirms, edits and declines, the proposal template (title, verb-led items, `for`, `needs`), item states and their derivation (R4), the *next item* rule, starting an item as a person's request, item conversations and their reserved names, removal keeping the conversation (R7), and that an agent never reads a roadmap
+- [X] T003 Write SPEC.md §5.7 Roadmaps (including FR-006b single-line text, FR-009a validation of intended agents and dependencies, FR-009b title-as-hint, FR-014a text changed since): what a roadmap is, that only a person confirms, edits and declines, the proposal template (title, verb-led items, `for`, `needs`), item states and their derivation (R4), the *next item* rule, starting an item as a person's request, item conversations and their reserved names, removal keeping the conversation (R7), and that an agent never reads a roadmap
 - [X] T004 Add the new tables, indexes and triggers from `data-model.md` to SPEC.md §9.2 (DDL in the order it will execute) and the rules to §9.3 (each as a constraint, trigger or index)
-- [X] T005 Add `ProposeRoadmap` and the roadmap notice to SPEC.md §10.1; the six operator operations (`Roadmaps`, `Roadmap`, `Proposals`, `ConfirmProposal`, `DeclineProposal`, `EditRoadmap`) to §10.2, with the §10.2 note that no operator operation is reachable from the agent side
-- [X] T006 Amend SPEC.md principle 2 text, §16 (the unbounded-proposal risk, stated as `agents.owns` was), §17 (a new open question: whether Parley should ever propose; and a note on proposal size evidence), and add the §18 entry for protocol 0.9 recording the change and that nothing is released so nothing migrates
+- [X] T005 Add `ProposeRoadmap` and the roadmap notice to SPEC.md §10.1; the eight operator operations (`Roadmaps`, `Roadmap`, `Proposals`, `ProposalCount`, `Proposal`, `ConfirmProposal`, `DeclineProposal`, `EditRoadmap`) to §10.2, with the §10.2 note that no operator operation is reachable from the agent side
+- [X] T006 Amend SPEC.md principle 2 text, §16 (the unbounded-proposal risk, stated as `agents.owns` was), §17 (a new open question: whether Parley should ever propose; and a note on proposal size evidence), and set §18's protocol version to 0.9
 - [X] T007 Run `tests/Parley.Spec.Tests` and fix until every section reference resolves, every table is well formed, and the new DDL executes against SQLite in the order written; add one assertion that the DDL contains no `status` column on `roadmaps` or `roadmap_items` (state is derived, never stored)
 
 **Checkpoint**: SPEC.md, constitution and plan agree. If code and spec disagree later, decide which is wrong and record it; do not silently change either.
@@ -37,7 +39,7 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 ### Core
 
 - [X] T008 [P] Add `RoadmapNumber`, `ItemNumber` and `ItemConversation.Name(roadmapNumber, itemNumber)` (derived `rm<n>-<m>`, legal conversation id by construction) in `src/Parley.Core/Roadmaps/`, with the domain records (`RoadmapProposal`, `ProposedItem`, `Roadmap`, `RoadmapItem`, `RoadmapSummary`, `ProposalState`, `RoadmapOrigin`) and tests in `tests/Parley.Core.Tests/RoadmapNamingTests.cs` (every legal pair is a legal `ConversationName`; no two pairs collide)
-- [X] T009 [P] Add the six operator operations to `IParleyBrokerClient` in `src/Parley.Core/IParleyBrokerClient.cs` and the agent-side `ProposeRoadmap` to the agent contract; update `tests/Parley.Core.Tests/ContractSeparationTests.cs` (declared lists, no shared method names, no operator method on the agent contract)
+- [X] T009 [P] Add the eight operator operations to `IParleyBrokerClient` in `src/Parley.Core/IParleyBrokerClient.cs` and the agent-side `ProposeRoadmap` to the agent contract; update `tests/Parley.Core.Tests/ContractSeparationTests.cs` (declared lists, no shared method names, no operator method on the agent contract)
 - [X] T010 [P] Reuse `OwnershipStatement`'s character class for roadmap text: a `RoadmapText` validator in `src/Parley.Core/Roadmaps/RoadmapText.cs` that refuses runs breaking, hiding or reordering a surface's lines, and refuses a blank; **no length bound**; tests including U+2028, NUL and an RLO override
 
 ### Store
@@ -52,9 +54,9 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 ### Transport and broker
 
-- [X] T018 `proto/parley.proto`: `Agents.ProposeRoadmap` (request, reply with proposal id or refusal) and the roadmap notice in the inbox reply; `Operators.Roadmaps`, `Roadmap`, `Proposals`, `ConfirmProposal`, `DeclineProposal`, `EditRoadmap`; item reference on `ConversationSummary`. Map enums so none reads as `UNSPECIFIED` (`TransportEnumTests`), and run the wire-against-document check
+- [X] T018 `proto/parley.proto`: `Agents.ProposeRoadmap` (request, reply with proposal id or refusal) and the roadmap notice in the inbox reply; `Operators.Roadmaps`, `Roadmap`, `Proposals`, `ProposalCount`, `Proposal`, `ConfirmProposal`, `DeclineProposal`, `EditRoadmap`; item reference on `ConversationSummary`. Map enums so none reads as `UNSPECIFIED` (`TransportEnumTests`), and run the wire-against-document check
 - [X] T019 `src/Parley.Broker/Broker.cs`: `ProposeRoadmap` (caller is the proposer; refuse an empty list, the person, the facilitator; record size). Update the declared surface in `tests/Parley.Broker.Tests/SurfaceBoundaryTests.cs`
-- [X] T020 `src/Parley.Broker/OperatorConsole.cs`: the six operations; update the declared list in `SurfaceBoundaryTests` (operations naming a roadmap also name the person)
+- [X] T020 `src/Parley.Broker/OperatorConsole.cs`: the eight operations; update the declared list in `SurfaceBoundaryTests` (operations naming a roadmap also name the person)
 - [X] T021 `src/Parley.Server/AgentsService.cs` and `OperatorsService.cs`: the handlers, each with its deadline and the existing `Console(...)` pattern
 - [X] T022 **`tests/Parley.Server.Tests/AgentsCannotChangeARoadmapTests.cs`**: reflection over the generated `Agents` client and messages; fails on any member naming a roadmap beyond `ProposeRoadmap` and the notice. **Mutation-checked** by putting `EditRoadmap` on `Agents`
 - [X] T023 `src/Parley.Client/BrokerClient.cs`: map every new operation to domain records, proto types staying inside the `Wire` namespace; `tests/Parley.Client.Tests` for the mapping
@@ -99,8 +101,8 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
 
 **Goal**: roadmap views showing derived state and the next item. **Independent test**: quickstart section 3.
 
-- [X] T037 [US2] `src/Parley.Client/Roadmaps/ItemStates.cs`: the one derivation of R4, signature `Of(roadmap, edges, registry)` taking item facts from `Roadmap` with no per-item export (analysis finding C1), also reporting *text changed since* (FR-014a) (not started, in progress, waiting on an agent, waiting on the person, blocked with its blocker, done, closed by the person, could not be read) and the next-item rule with dependencies; no state stored anywhere
-  - *Text changed since* was first derived by comparing the item's text with the words first sent; once the box held words the person could change, that marked untouched items reworded. It is now the broker's fact `text_edited_since_started`, from the item's own edit record.
+- [X] T037 [US2] `src/Parley.Client/Roadmaps/ItemStates.cs`: the one derivation of R4, signature `Of(roadmap, waiting, me)` taking item facts from `Roadmap` with no per-item export (analysis finding C1), also reporting *text changed since* (FR-014a) (not started, in progress, waiting on an agent, waiting on the person, blocked with its blocker, done, closed by the person, could not be read) and the next-item rule with dependencies; no state stored anywhere
+  - *Text changed since* is the broker's fact `text_edited_since_started`, from the item's own edit record, never a comparison of words: the person may change the words in the box before sending.
 - [X] T038 [P] [US2] `tests/Parley.Client.Tests/ItemStatesTests.cs`: a table of cases, one per state and per Acceptance Scenario of story 2; a read failure is *could not be read* and **never** *not started* (FR-018); dependencies hold a later item back; complete roadmap names no next item; mutation-check the derivation by changing one state's rule
 - [X] T039 [US2] Terminal: a roadmaps list (reached from the projects view) and a roadmap view (items, state, holder, blocker, a *next* mark, one key to jump to next for long roadmaps); built on `Lists`, plain-text marks that survive colour being stripped, narrow-terminal rule honoured; the read is contained so a failure says so and keeps the last view
   - Built as `PlansRegion` and `PlanView`. The view starts on the next item, or on the item whose conversation it was reached from, and Alt+n returns to the next item (`PlansTests`).
@@ -160,8 +162,8 @@ The constitution is already at 6.0.0 (amended 2026-10-06, uncommitted at the tim
   - `docs/operating.md` carries roadmaps; the README links it.
 - [X] T055 [P] `plugins/parley`: the operator skill lists the new verbs and says a roadmap is the person's; `PluginTests` equal sets
   - The operator skill lists where roadmaps are decided, read and started, and that a roadmap is the person's. No verb was added, so `PluginTests` is unchanged.
-- [X] T056 (if any earlier phase is committed alone, that commit carries the bump) Bump `VersionPrefix` to 0.42.0 and `ProtocolVersion` to 0.9; run the full build (warnings are errors), then every test host executable directly
-  - Bumped to 0.43.0 (the plan said 0.42.0 before 0.42.x had shipped) and protocol 0.9.
+- [X] T056 (if any earlier phase is committed alone, that commit carries the bump) Bump `VersionPrefix` to 0.43.0 and `ProtocolVersion` to 0.9; run the full build (warnings are errors), then every test host executable directly
+  - 0.43.0 and protocol 0.9.
 - [X] T057 Run `GraphTests`: Client, Web, Terminal and Setup still reach no store; `DeadSurfaceTests` clean (nothing public used only by itself)
   - Run with the full suite.
 - [X] T058 Hygiene: case-insensitive `git grep` for the originating project's names; `git status` read by name before any `add`, since the terminal edits and the staged deletions in the tree are not this feature's

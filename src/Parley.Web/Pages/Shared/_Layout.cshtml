@@ -1619,7 +1619,9 @@
     @if (Parley.Web.ConsoleHost.Embedded(Context))
     {
         @* Inside the roadmap's frame, a link to any other page of the console opens in the whole window: every other page
-           refuses to be framed, so followed in the frame it would draw nothing. Forms still post in the frame. *@
+           refuses to be framed, so followed in the frame it would draw nothing. A link that names its target is left
+           alone, so the page's own in-page links say `_self` (FragmentLinksStayInTheFrameTests). Forms still post in
+           the frame. *@
         <script data-embed-links>
             document.addEventListener("click", function (e) {
                 var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
@@ -1631,7 +1633,7 @@
     <script>
         try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
     </script>
-    <a class="skip" href="#main">Skip to content</a>
+    <a class="skip" href="#main" target="_self">Skip to content</a>
     @{
         var path = Context.Request.Path.Value ?? "/";
         var agentsView = path == "/" && Context.Request.Query["tab"] == "agents";

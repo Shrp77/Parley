@@ -1290,7 +1290,7 @@ message ItemFacts {
   int32 open_exchanges = 2;
   bool collected = 3;
   int32 complete_exchanges = 4;
-  int32 blocked_exchanges = 5;
+  int32 blocked_exchanges = 5;        // 1 when the latest closed exchange ended blocked, else 0; a flag, not a count
   int32 closed_exchanges = 6;
   string blocker = 7;                 // empty when none
   string closed_by = 8;               // empty while the conversation is not closed
@@ -1327,7 +1327,7 @@ message RoadmapReply {
 
 message ProposalsRequest {
   ProposalState state = 1;            // UNSPECIFIED for every state
-  bool headings = 2;                  // the newest 200, each title cut to a heading's length, item_count set, and no items
+  bool headings = 2;                  // the newest 200, title and target_title cut to a heading's length, item_count set, no items
 }
 
 message ProposalDetail {
@@ -1344,7 +1344,7 @@ message ProposalDetail {
 }
 
 message ProposalsReply {
-  repeated ProposalDetail proposals = 1;  // as headings, the newest 200 at most
+  repeated ProposalDetail proposals = 1;  // headings: the newest 200; otherwise every one whole; Proposal: at most one
 }
 
 message ProposalCountReply {

@@ -58,7 +58,7 @@ else
                                 <li>
                                     @if (question.At is { } at)
                                     {
-                                        <a href="@($"#m{at}")">@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
+                                        <a href="@($"#m{at}")" target="_self">@Parley.Web.Pages.Conversations.DetailModel.Start(question)</a>
                                     }
                                     else
                                     {
@@ -215,7 +215,7 @@ else
 
             <a data-agent="@message.From.Value"
                class="tick slot-@Palette.SlotFor(message.From)@(closedByPerson ? " ghosted" : null)"
-               href="@($"#m{message.Id}")"
+               href="@($"#m{message.Id}")" target="_self"
                title="@message.CreatedUtc.ToString("d MMM HH:mm") — @message.From.Value to @string.Join(", ", turn.Select(m => m.To.Value))@(closedByPerson ? " — closed by a person" : null)">
                 <span class="visually-hidden">
                     @message.CreatedUtc.ToString("d MMM HH:mm"),

@@ -422,4 +422,73 @@ public sealed class ProjectsDoNotMixTests : IAsyncDisposable
             !shell.Transcript.Written.Contains("alpha question", StringComparison.Ordinal),
             $"beta/c-1 shows: {shell.Transcript.Written}");
     }
+
+    [Fact]
+    public async Task A_line_in_a_conversation_that_could_not_be_read_never_goes_to_the_last_conversations_recipients()
+    {
+        // Alpha's c-1 is inventory's question; beta's c-1 is orders'. Beta's export fails, so beta's room is
+        // empty and no draft is built for it. Enter in beta's c-1 must not send to whoever alpha's c-1 was addressed to.
+        var ct = TestContext.Current.CancellationToken;
+        var inventory = AgentName.Create("inventory@test");
+
+        foreach (var connection in new[] { _alpha, _beta })
+        {
+            await new AgentRepository(connection).UpsertAsync(
+                new AgentRecord(inventory, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active), ct);
+        }
+
+        using var failing = new FailPath("/Export");
+        using var directory = new BrokerDirectory(
+            [
+                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
+                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
+            ],
+            address => string.Equals(address, _betaBroker.Address, StringComparison.Ordinal)
+                ? GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = failing })
+                : GrpcChannel.ForAddress(address));
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var shell = new Shell(directory) { Seats = seats, MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        var alphaBroker = new Broker.Broker(_alpha, Parley.Broker.BrokerOptions.Default);
+        await alphaBroker.StartAsync(inventory, T0, ct);
+        var asked = await alphaBroker.RequestAsync(
+            inventory, seats.Known("alpha")!.Name, "model-a", """{"ask":"alpha question"}""", T0.AddMinutes(1), "c-1", ct);
+        Assert.True(asked.Exchange is not null, $"seed refused: {asked.Admission.Rejection}");
+        await SeedAsync(_beta, seats.Known("beta")!.Name, "c-1", "beta question");
+
+        await shell.GoAsync(ViewPlace.Into(AlphaName));
+        await shell.Settled;
+        await shell.GoAsync(ViewPlace.Into(AlphaName).Into("c-1"));
+        await shell.Settled;
+        Assert.Contains("alpha question", shell.Transcript.Written, StringComparison.Ordinal);
+        var alphaDraft = string.Join(",", shell.Drafting?.Recipients.Select(r => r.Value) ?? []);
+
+        await shell.BackAsync();
+        await shell.Settled;
+        await shell.GoAsync(ViewPlace.Into(BetaName));
+        await shell.Settled;
+        await shell.GoAsync(ViewPlace.Into(BetaName).Into("c-1"));
+        await shell.Settled;
+        Assert.DoesNotContain("beta question", shell.Transcript.Written, StringComparison.Ordinal);
+
+        var draftInBeta = string.Join(",", shell.Drafting?.Recipients.Select(r => r.Value) ?? []);
+        shell.Line.Written = "beta words";
+        shell.Line.Accept();
+        await shell.Settled;
+
+        var export = await new BrokerClient(_betaBroker.Operators).ExportAsync("c-1", ct);
+        var reached = export!.Messages
+            .Where(m => m.PayloadJson.Contains("beta words", StringComparison.Ordinal))
+            .Select(m => m.To.Value)
+            .ToList();
+
+        Assert.True(
+            reached.Count == 0,
+            $"alpha's draft: {alphaDraft}; draft in beta/c-1: {draftInBeta}; beta's c-1 line reached: {string.Join(",", reached)}; said: {shell.Said}");
+    }
 }

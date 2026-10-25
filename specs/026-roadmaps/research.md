@@ -22,9 +22,9 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 ## R4. Item state is derived in Parley.Client by one function
 
-**Decision**: `ItemStates.Of(roadmap, exports, edges, registry)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces and the CLI call it.
+**Decision**: `ItemStates.Of(roadmap, waiting, me)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces and the CLI call it.
 **Rationale**: `Activities` and `WaitingOnYou` already do this for rooms, from `ConversationExport`, `WaitingEdge` and `AgentRecord`. Two surfaces implementing it separately is how they would disagree about what a person has seen (CLAUDE.md, Parley.Client). Spec clarification 1 (no hand-set state) means there is nothing to store.
-**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, the latest Result outcome and blocker, and who closed the conversation. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, edges, registry)`.
+**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, the latest Result outcome and blocker, and who closed the conversation. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, waiting, me)`.
 **States** and how each is derived (all from the item's conversation, absent conversation meaning not started):
 - not started: no conversation exists;
 - in progress: an open exchange whose request the receiver collected;
@@ -56,7 +56,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 ## R7. Removing an item keeps its conversation
 
 **Decision**: items are never hard-deleted. A removed item carries `removed_rev`; its link row stays, so the conversation renders "formerly item N of <roadmap>". Spec clarification 2.
-**Consequence**: roadmap revisions are a counter on the roadmap and per-item `added_rev` and `removed_rev`. No history table is built; what changed is readable from those and from the conversations. An item's text edit overwrites the text and sets `edited_utc`; the words actually sent are in the message, so "text changed since" is a comparison, not a stored copy.
+**Consequence**: roadmap revisions are a counter on the roadmap and per-item `added_rev` and `removed_rev`. No history table is built; what changed is readable from those and from the conversations. An item's text edit overwrites the text and sets `edited_utc`. "Text changed since" is the broker's fact `text_edited_since_started`: the item's `edited_utc` against its first request's time, never a comparison of words (FR-014a).
 
 ## R8. The Room reads the registry, always
 

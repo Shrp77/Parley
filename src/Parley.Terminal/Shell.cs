@@ -4983,6 +4983,9 @@ internal sealed class Shell : Window
 
         if (export is null)
         {
+            // The draft goes with the room: one left from the conversation before would address this one's line to
+            // that conversation's recipients, in whichever project it was.
+            Drafting = null;
             Room.Show([], [], Held is not null);
 
             return;
@@ -4990,6 +4993,8 @@ internal sealed class Shell : Window
 
         if (Held is not { } hold)
         {
+            Drafting = null;
+
             // No seat, so there is no "you" for anything to be owed by. The participants are still worth
             // showing, and the column says a seat is wanted. **So is everyone else in the project**: what the
             // room lists does not depend on whether a seat is held, only whether anybody can be ticked.

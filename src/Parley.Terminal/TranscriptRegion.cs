@@ -145,7 +145,8 @@ internal sealed class TranscriptRegion : FrameView
         // is tailed. A conversation is read for what has just been said, so the newest message is where somebody
         // arriving belongs. The same conversation read again — after a send, say — keeps a
         // reader who scrolled up where they are, by the rule `Follow` keeps.
-        var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
+        var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal)
+            || !string.Equals(OpenIn, project, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
         OpenIn = problem is null ? project : null;

@@ -271,7 +271,8 @@ stops with Ctrl+C. The install starts the broker again. Without one, start it wi
 The broker compares each store's tables, indexes and triggers with its own. When they differ it
 warns in the terminal, in the web console and on its own output. The store was made by a build
 other than this one, though it carries the same schema version. The broker still serves it, but a
-check the store lacks is not being made.
+check the store lacks is not being made, and an operation that needs a table the store lacks fails.
+A store from before roadmaps, for one, cannot start a named conversation.
 
 Do not reset it, which loses its work. Stop the broker and copy the store first. Then either
 install the build that made it, or bring the store to this build's shape: create a fresh store

@@ -13,7 +13,7 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 ## 2. A list becomes a roadmap (story 1)
 
 1. As an agent, call `parley_propose_roadmap` with three items, one naming an intended agent and one depending on item 1.
-2. **Expect** nothing in any transcript; the project shows one proposal waiting on the person, on both surfaces and `parley roadmap proposals`.
+2. **Expect** nothing in any transcript; the project shows one proposal waiting on the person, on both surfaces.
 3. Reword item 2, remove item 3, confirm. **Expect** a roadmap with two items, origin `edited`, the proposer named, the proposal no longer waiting, a notice in the proposer's inbox saying confirmed.
 4. Propose again and decline. **Expect** no roadmap, a *declined* notice, and no wake of the agent.
 5. As an agent, try anything that changes the roadmap. **Expect** there is nothing to call; the structural test is the proof.
