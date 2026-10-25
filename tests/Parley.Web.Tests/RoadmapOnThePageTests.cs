@@ -279,19 +279,40 @@ public sealed class RoadmapOnThePageTests
     {
         using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
         using var client = console.CreateClient();
+        var token = TestContext.Current.CancellationToken;
+        var asked = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&embed=1", UriKind.Relative);
 
-        var embedded = await client.GetStringAsync(
-            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&embed=1", UriKind.Relative),
-            TestContext.Current.CancellationToken);
+        // Loaded into the roadmap's frame, as a browser says it is.
+        using var framing = new HttpRequestMessage(HttpMethod.Get, asked);
+        framing.Headers.Add("Sec-Fetch-Dest", "iframe");
+        using var framed = await client.SendAsync(framing, token);
+        var embedded = await framed.Content.ReadAsStringAsync(token);
+
+        // The same address opened as a page of its own, as following an agent's link would.
+        using var opened = await client.GetAsync(asked, token);
+        var followed = await opened.Content.ReadAsStringAsync(token);
 
         var plain = await client.GetStringAsync(
-            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
-            TestContext.Current.CancellationToken);
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative), token);
 
-        var roadmap = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
+        var roadmap = await client.GetStringAsync(PageUri(1), token);
 
         Assert.Matches("<body class=\"[^\"]* embed", embedded);
         Assert.DoesNotMatch("<body class=\"[^\"]* embed", plain);
+
+        // Must fail against a link with embed hiding the console's frame, and the project's name with it.
+        Assert.DoesNotMatch("<body class=\"[^\"]* embed", followed);
+
+        // No other page embeds, even asked from a frame: Act, Destroy and the rest would then name no project.
+        using var elsewhere = new HttpRequestMessage(
+            HttpMethod.Get, new Uri($"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&id=1&embed=1", UriKind.Relative));
+        elsewhere.Headers.Add("Sec-Fetch-Dest", "iframe");
+        using var other = await client.SendAsync(elsewhere, token);
+        Assert.DoesNotMatch("<body class=\"[^\"]* embed", await other.Content.ReadAsStringAsync(token));
+
+        // The console may frame its own conversation page, and nothing else may frame any page.
+        Assert.Contains("frame-ancestors 'self'", framed.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        Assert.Contains("frame-ancestors 'none'", opened.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
         Assert.Contains("data-src=\"/Conversations/Detail?project=" + RoadmapConsole.Project + "&amp;id=rm1-1&amp;With=billing%40test&amp;embed=1", roadmap, StringComparison.Ordinal);
         Assert.Contains("&amp;embed=1\"", roadmap, StringComparison.Ordinal);
     }

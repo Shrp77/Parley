@@ -186,6 +186,59 @@ public sealed class ProjectsDoNotMixTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_late_mail_poll_of_alpha_does_not_draw_alphas_roadmaps_in_betas_view()
+    {
+        // The mail poll reads the roadmaps of the project in view. Must fail against it drawing them after the person has
+        // moved to another project, where beta's own read failing left nothing to correct the pane.
+        var ct = TestContext.Current.CancellationToken;
+
+        var repository = new RoadmapRepository(_alpha);
+        var (proposal, problem) = await repository.ProposeAsync(
+            Orders, null, null, new RoadmapContent("Alpha only plan", [new RoadmapItemDraft(null, "Ship alpha", Billing, [])]), T0,
+            cancellationToken: ct);
+        Assert.Null(problem);
+        var waiting = await repository.GetProposalAsync(proposal!.Value, ct);
+        await repository.ConfirmAsync(waiting!.Id, waiting.Content, null, T0, cancellationToken: ct);
+
+        var gate = new HoldOne("/Roadmaps");
+        using var hold = gate;
+        using var failing = new FailPath("/Roadmaps");
+        using var directory = new BrokerDirectory(
+            [
+                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
+                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
+            ],
+            address => string.Equals(address, _alphaBroker.Address, StringComparison.Ordinal)
+                ? GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = gate })
+                : GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = failing }));
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var shell = new Shell(directory) { Seats = seats, MailEvery = TimeSpan.FromMilliseconds(100), FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        await shell.GoAsync(ViewPlace.Into(AlphaName));
+        await shell.Settled;
+        Assert.Contains(shell.Plans.Roadmaps, r => r.Title.Contains("Alpha only plan", StringComparison.Ordinal));
+
+        gate.Arm();
+        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the poll never read alpha's roadmaps");
+
+        await shell.GoAsync(ViewPlace.Into(BetaName));
+        Assert.DoesNotContain(shell.Plans.Roadmaps, r => r.Title.Contains("Alpha only plan", StringComparison.Ordinal));
+
+        gate.Release();
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+        await Task.Delay(500, ct);
+        await shell.Settled;
+
+        Assert.Equal("beta", shell.Place.Project?.Value);
+        Assert.DoesNotContain(shell.Plans.Roadmaps, r => r.Title.Contains("Alpha only plan", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task A_late_read_of_alpha_does_not_draw_alphas_lists_in_betas_project_view()
     {
         // Enter on a project reads it off the queue. The person leaves and enters another project before it returns.

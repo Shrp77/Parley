@@ -3701,12 +3701,21 @@ internal sealed class Shell : Window
                 return;
             }
 
+            // **Drawn only while the project read is still the one in view**, as `SelectAsync` draws: the person can move
+            // to another project while the poll is out, and its reply would list this project's roadmaps there.
+            bool StillOn(ProjectSettings read) =>
+                Current is { } now && string.Equals(now.Name.Value, read.Name.Value, StringComparison.Ordinal);
+
             if (Current is { } where
                 && await Parley.Client.Roadmaps.ProposalCount
                     .ListAsync(new BrokerClient(_directory.ClientFor(where)), cancellationToken)
                     .ConfigureAwait(false) is { } listed)
             {
-                ShowProposals(listed);
+                if (StillOn(where))
+                {
+                    ShowProposals(listed);
+                    _panesFor = where.Name.Value;
+                }
             }
             else
             {
@@ -3718,7 +3727,8 @@ internal sealed class Shell : Window
             if (Current is { } holding
                 && await BrokerDirectory.ReadAsync(async () =>
                     await new BrokerClient(_directory.ClientFor(holding)).RoadmapsAsync(cancellationToken).ConfigureAwait(false))
-                    .ConfigureAwait(false) is { Value: { } plans })
+                    .ConfigureAwait(false) is { Value: { } plans }
+                && StillOn(holding))
             {
                 ShowPlans(plans);
             }

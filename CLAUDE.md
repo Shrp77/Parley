@@ -107,6 +107,9 @@ a project is removed or renamed only in the terminal. The command line keeps `se
 - `EveryActionHasADoorTests` fails when an action is performed and unlinked, linked and not
   performed, or done on a POST and described on no GET.
 - The web UI answers only loopback host names and the host it binds (DNS rebinding defence).
+- Nothing a form posts binds from the address it posts to: a POST-only `[BindProperty]` is `[FromForm]`, and an
+  `OnPost` parameter names its source. Forms post back to their own page, and an agent's message renders as live
+  links, so a field a form left out would otherwise come from the link. `FormBindingTests` holds it.
 - A repository may be enrolled in several projects. Its launch key in `.mcp.json` is `parley`
   (always read) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
   implementation. An agent's identity is `parleyAgentId` in `.mcp.json`, and the per-machine

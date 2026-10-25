@@ -150,10 +150,15 @@ public static class ConsoleHost
         {
             var headers = context.Response.Headers;
 
-            headers["X-Frame-Options"] = "DENY";
+            // The one page the console frames itself, a roadmap item's conversation, may be framed by the console's own
+            // pages and no other; every other page by nothing.
+            var framed = Embedded(context);
+
+            headers["X-Frame-Options"] = framed ? "SAMEORIGIN" : "DENY";
             headers["X-Content-Type-Options"] = "nosniff";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Content-Security-Policy"] = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+            headers["Content-Security-Policy"] =
+                $"frame-ancestors {(framed ? "'self'" : "'none'")}; base-uri 'none'; object-src 'none'; form-action 'self'";
 
             await next(context).ConfigureAwait(false);
         });
@@ -162,6 +167,24 @@ public static class ConsoleHost
         MapBrand(app);
 
         return app;
+    }
+
+    /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>True for the conversation page asked for with <c>embed</c> and loaded into a frame.</returns>
+    /// <remarks>
+    /// <b>Embedded drops the console's frame, and with it the project's name.</b> An agent's message renders as live
+    /// links, so a link with <c>embed</c> opened as a page of its own would hide which project the person's act lands in.
+    /// So only the conversation page embeds, the one a roadmap's item frame loads, and only when the browser says it is
+    /// loading a frame (<c>Sec-Fetch-Dest</c>, which a page cannot set for a link the person follows).
+    /// </remarks>
+    public static bool Embedded(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        return context.Request.Query.ContainsKey("embed")
+            && context.Request.Path.StartsWithSegments("/Conversations/Detail", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(context.Request.Headers["Sec-Fetch-Dest"], "iframe", StringComparison.Ordinal);
     }
 
     /// <summary>The brand images and the icon font, and the names they are reached by.</summary>

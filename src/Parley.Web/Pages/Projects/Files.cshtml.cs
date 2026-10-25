@@ -87,7 +87,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <param name="selected">The files chosen, each as its conversation and name separated by '/'.</param>
     /// <param name="confirmed">"yes" once the description has been shown and the person pressed again.</param>
     /// <returns>The page.</returns>
-    public async Task<IActionResult> OnPostRemoveAsync(string[]? selected, string? confirmed)
+    public async Task<IActionResult> OnPostRemoveAsync([FromForm] string[]? selected, [FromForm] string? confirmed)
     {
         if (directory.Find(Project) is not { } project)
         {
@@ -155,7 +155,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <summary>Describes a prune, or makes it once the project's name has been typed back.</summary>
     /// <param name="typed">What the person typed, or <see langword="null"/> before the description was shown.</param>
     /// <returns>The page.</returns>
-    public async Task<IActionResult> OnPostPruneAsync(string? typed)
+    public async Task<IActionResult> OnPostPruneAsync([FromForm] string? typed)
     {
         if (directory.Find(Project) is not { } project)
         {
@@ -198,7 +198,12 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
     /// <param name="file">The file's name.</param>
     /// <param name="inConversation">Its conversation.</param>
     /// <returns>The page, saying what happened.</returns>
-    public async Task<IActionResult> OnPostOpenAsync(string? file, string? inConversation)
+    /// <remarks>
+    /// From the query by choice: each file's button carries its own file in its action, so one form serves every row.
+    /// Opening changes nothing and opens only a <c>.md</c> or <c>.txt</c> file the broker holds, and a POST still needs
+    /// the page's antiforgery token.
+    /// </remarks>
+    public async Task<IActionResult> OnPostOpenAsync([FromQuery] string? file, [FromQuery] string? inConversation)
     {
         if (directory.Find(Project) is not { } project)
         {

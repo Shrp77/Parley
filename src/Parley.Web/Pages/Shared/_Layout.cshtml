@@ -1615,7 +1615,7 @@
         </script>
     }
 </head>
-<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Context.Request.Query.ContainsKey("embed") ? "embed" : null)">
+<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Parley.Web.ConsoleHost.Embedded(Context) ? "embed" : null)">
     <script>
         try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
     </script>

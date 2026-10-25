@@ -93,8 +93,8 @@ It has three views, one at a time:
 3. **A conversation**: the room, the transcript and the box you type into.
 
 Enter goes in and Escape comes back, landing on what you were looking at. `Ctrl+Q` leaves.
-What you type in a conversation's box stays with that conversation: open another, and the box is
-empty; come back, and your words are still there.
+Words you have not sent stay in the box until you open a different conversation, which starts with
+an empty box. Going to a project view and back keeps them; Escape asks before leaving them.
 Tab moves between the panes of a view, the arrow keys move within one, and the mouse works too.
 Below eighty columns the panes of a view stack one above another instead of sitting side by side.
 
