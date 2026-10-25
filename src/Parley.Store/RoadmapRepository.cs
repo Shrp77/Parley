@@ -970,13 +970,17 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 INSERT INTO roadmap_notices (agent, proposal_id, title, outcome, created_utc)
-                VALUES (@Agent, @Id, @Title, @Outcome, @Now);
+                VALUES (@Agent, @Id, substr(@Title, 1, @Length), @Outcome, @Now);
                 """,
                 new
                 {
                     Agent = proposal.Proposer.Value,
                     proposal.Id,
                     proposal.Content.Title,
+
+                    // Cut as a heading is, by characters: the title has no bound, and fifty whole ones drained at once
+                    // exceeded what a reply may carry, so the collection failed after marking everything in it delivered.
+                    Length = RoadmapProposal.HeadingLength,
                     Outcome = ProposalStateText(state),
                     Now = now,
                 },

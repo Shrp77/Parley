@@ -5,15 +5,16 @@ using Wire = Parley.Transport;
 
 namespace Parley.Server.Tests;
 
-/// <summary>Probe: a purged conversation's folder that could not be deleted at the purge.</summary>
 /// <summary>
 /// That the files of a conversation a purge or destroy removed are off the disk by the next start, even when they were
 /// held open when it ran.
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 18.</b> Both commit before they delete the folders, and a folder held open (an editor with
-/// the file locked) or a broker stopped between the two left the files on disk for good: nothing reaches a folder the
-/// store no longer records. The operator had been told they went.
+/// the file locked) left the files on disk for good: nothing reaches a folder the store no longer records. The operator
+/// had been told they went. Now the folder is marked and the next start deletes it. Only Windows refuses to delete a
+/// file held without sharing, so only there does the purge leave the folder for the start to finish; elsewhere the
+/// purge deletes it at once and the test still holds.
 /// </remarks>
 public sealed class AFolderADeleteCouldNotRemoveGoesAtTheNextStartTests
 {
@@ -25,6 +26,25 @@ public sealed class AFolderADeleteCouldNotRemoveGoesAtTheNextStartTests
     public async Task A_purged_file_held_open_at_the_purge_is_gone_after_a_restart()
     {
         var directory = Directory.CreateTempSubdirectory("parley-purge-left-").FullName;
+
+        try
+        {
+            await PurgeHeldOpenThenRestartAsync(directory);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static async Task PurgeHeldOpenThenRestartAsync(string directory)
+    {
         var store = Path.Combine(directory, "alpha.db");
         string path;
         Wire.PurgeReply purged;
@@ -58,7 +78,6 @@ public sealed class AFolderADeleteCouldNotRemoveGoesAtTheNextStartTests
 
         await using (await StartAsync(store))
         {
-            // A restart does not reclaim it either.
             Assert.False(File.Exists(path), $"purged file still on disk after restart: {path}");
         }
     }

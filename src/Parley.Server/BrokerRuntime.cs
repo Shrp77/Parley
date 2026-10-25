@@ -348,9 +348,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
             files.Prepare();
 
-            // What a destroy or a purge could not delete when it ran, held open or cut short by a stop, goes now: the
-            // store no longer records those folders, and SPEC.md §14 says they are deleted.
-            _ = files.RemoveUnrecorded(new SharedFileRepository(connection).GetFoldersAsync().GetAwaiter().GetResult()
+            // What a destroy or a purge could not delete when it ran, held open, goes now (SPEC.md §14). Only what one
+            // marked: anything else the store does not record is a person's, or a restored backup's newer conversations.
+            files.RemoveLeftBehind(new SharedFileRepository(connection).GetFoldersAsync().GetAwaiter().GetResult()
                 .Select(folder => folder.Folder));
 
             // Looked at after the migration, and only reported. The schema number is a witness only to the

@@ -194,13 +194,24 @@ internal static class Proposing
         }
 
         // What its hint names, so the view says so rather than that there is no such roadmap: a person told that would
-        // decline a revision of one that exists. A read that fails names nothing, which Confirm reads again.
-        var roadmaps = whole.TargetTitle is { Length: > 0 }
-            ? await BrokerDirectory.ReadAsync(
-                async () => await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false)
-            : null;
+        // decline a revision of one that exists. A read that fails opens nothing, as on the web, because the view could
+        // only guess.
+        string? match = null;
 
-        var match = roadmaps is { Reachable: true, Value: { } listed } ? ProposalText.Matching(whole, listed)?.Title : null;
+        if (whole.TargetTitle is { Length: > 0 })
+        {
+            var roadmaps = await BrokerDirectory.ReadAsync(
+                async () => await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+            if (!roadmaps.Reachable)
+            {
+                await done($"The roadmaps could not be read: {Safe.Text(roadmaps.Problem!)}").ConfigureAwait(false);
+
+                return;
+            }
+
+            match = ProposalText.Matching(whole, roadmaps.Value!)?.Title;
+        }
 
         Review(app, client, whole, queue, done, match);
     }
@@ -222,7 +233,7 @@ internal static class Proposing
         RoadmapProposal proposal,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
-        string? sameTitle = null)
+        string? sameTitle)
     {
         var view = new ProposalView(proposal, sameTitle);
         var open = Prompting.Open(app, view);
@@ -234,11 +245,11 @@ internal static class Proposing
             switch (chosen)
             {
                 case ProposalChoice.Confirm:
-                    queue(t => ConfirmAsync(app, client, proposal, proposal.Content, queue, done, t));
+                    queue(t => ConfirmAsync(app, client, proposal, proposal.Content, sameTitle, queue, done, t));
                     break;
 
                 case ProposalChoice.Edit:
-                    Edit(app, client, proposal, queue, done);
+                    Edit(app, client, proposal, sameTitle, queue, done);
                     break;
 
                 case ProposalChoice.Decline:
@@ -257,6 +268,7 @@ internal static class Proposing
         IApplication app,
         BrokerClient client,
         RoadmapProposal proposal,
+        string? sameTitle,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -292,7 +304,7 @@ internal static class Proposing
                 return;
             }
 
-            queue(t => ConfirmAsync(app, client, proposal, content, queue, done, t));
+            queue(t => ConfirmAsync(app, client, proposal, content, sameTitle, queue, done, t));
         };
     }
 
@@ -344,6 +356,7 @@ internal static class Proposing
         BrokerClient client,
         RoadmapProposal proposal,
         RoadmapContent content,
+        string? shown,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         CancellationToken cancellationToken)
@@ -360,6 +373,17 @@ internal static class Proposing
         }
 
         var match = ProposalText.Matching(proposal, read.Value!);
+
+        // **The view said the person would choose.** A roadmap it named and that no longer goes by that name (renamed
+        // elsewhere while it was open) is not answered with a new roadmap nobody asked for.
+        if (match is null && shown is not null)
+        {
+            await done(
+                $"The roadmap '{Safe.Text(shown)}' is no longer called that, so nothing was confirmed. "
+                + "Open the proposal again to choose.").ConfigureAwait(false);
+
+            return;
+        }
 
         if (match is null)
         {

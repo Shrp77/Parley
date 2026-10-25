@@ -2745,7 +2745,8 @@ identifier beginning or ending in a dot, or one that differs only in case from a
 disk, including one a person made by hand. `~` cannot occur in an identifier, so a suffixed folder is
 never another conversation's own name. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty and a file copied into it by hand
-is still traced to its conversation. A folder no row names belongs to no conversation.
+is still traced to its conversation. A folder no row names belongs to no conversation, and is left alone: it may be
+a person's, or a conversation a store restored from a backup no longer records.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). Only the name is
@@ -2843,7 +2844,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
-| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
+| `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
 | `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so change notices follow (§9.5). Never returns the file's contents. |
@@ -3842,7 +3843,7 @@ who did nothing wrong.** It cannot be undone.
 **Their files go with them.** Placing a file makes an agent a participant (§5.0), so purging an agent
 removes the files it placed along with every other file in the conversations it took part in: their
 rows are reported with the rest, their folders are deleted from the file location once any download in
-progress finishes (a folder that cannot be deleted then, held open or cut short by a stop, goes when the broker
+progress finishes (a folder that cannot be deleted then, held open, is marked and goes when the broker
 next starts), and every agent that fetched one is told it is gone (§9.5). A retired agent's files
 stay, still name it as their placer, and can be removed only by the person.
 

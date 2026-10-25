@@ -105,6 +105,80 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_revision_whose_roadmaps_cannot_be_read_is_not_shown_as_naming_none()
+    {
+        // Saying there is no such roadmap because the read failed is the same false sentence, and Decline is offered on
+        // it. The view is not opened; the person is told what could not be read, as on the web.
+        var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        await Repository.ConfirmAsync(first!.Id, first.Content, null, T0, cancellationToken: Ct);
+        await ProposeAsync("Billing export v2", target: "billing export");
+
+        using var failing = new FailWhen("/Roadmaps");
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address, new GrpcChannelOptions { HttpHandler = failing }));
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var shell = await OpenAsync(driving, directory);
+
+        await shell.Global().Single(a => a.Label == Proposing.Title).Run();
+        await shell.Settled;
+
+        failing.Failing = true;
+        Assert.True(shell.Roadmaps.OpenSelected());
+        await shell.Settled;
+
+        Assert.IsNotType<ProposalView>(driving.App.TopRunnableView);
+        Assert.StartsWith("The roadmaps could not be read", shell.Said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_roadmap_renamed_after_the_view_named_it_is_not_confirmed_as_a_new_roadmap_unasked()
+    {
+        // The view says the person will choose whether it revises the roadmap it names. Renamed elsewhere while the view
+        // is open, Confirm found no match and made a second roadmap nobody asked for.
+        var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        await Repository.ConfirmAsync(first!.Id, first.Content, null, T0, cancellationToken: Ct);
+        await ProposeAsync("Billing export v2", target: "billing export");
+
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        await OpenFirstProposalAsync(shell);
+
+        var view = (ProposalView)driving.Find(Proposing.Title);
+        Assert.Contains("It says it would change the roadmap 'Billing export'.", view.Header, StringComparison.Ordinal);
+
+        var roadmap = (await Repository.ListAsync(Ct)).Single();
+        Assert.True((await Repository.EditAsync(
+            roadmap.Id,
+            roadmap.Revision,
+            new RoadmapContent(
+                "Exports",
+                [
+                    new RoadmapItemDraft(1, "Add CSV export", Billing, []),
+                    new RoadmapItemDraft(2, "Call it from the report", Orders, [1]),
+                ]),
+            T0,
+            cancellationToken: Ct)).Done);
+
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+
+        Assert.Single(await Client.RoadmapsAsync(Ct));
+        Assert.StartsWith("The roadmap 'Billing export' is no longer called that", shell.Said, StringComparison.Ordinal);
+    }
+
+    /// <summary>Fails every call to one path once told to, as a broker that stops answering it.</summary>
+    private sealed class FailWhen(string path) : DelegatingHandler(new SocketsHttpHandler())
+    {
+        internal bool Failing { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Failing && request.RequestUri!.AbsolutePath.EndsWith(path, StringComparison.Ordinal)
+                ? throw new HttpRequestException("not answering")
+                : base.SendAsync(request, cancellationToken);
+    }
+
+    [Fact]
     public async Task A_revision_proposal_whose_roadmap_exists_is_not_shown_as_naming_none()
     {
         var first = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);

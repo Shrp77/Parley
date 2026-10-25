@@ -5,14 +5,6 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// A broker killed in the middle of a confirm or a purge: what a file store holds when it is opened again.
-/// </summary>
-/// <remarks>
-/// The write is run inside a transaction the test holds open, with a small page cache so its pages spill into the WAL
-/// uncommitted, and the files are copied byte for byte at that moment: what the disk holds when the process dies there.
-/// The copy is then opened as a broker restart would open it.
-/// </remarks>
-/// <summary>
 /// That a confirm or a purge stopped before its commit leaves the store as it was, and can be done whole after.
 /// </summary>
 /// <remarks>

@@ -127,42 +127,65 @@ public sealed class FileLocationStore : IDisposable
         Directory.CreateDirectory(Incoming);
     }
 
-    /// <summary>Deletes every folder in the location that the store no longer records.</summary>
-    /// <param name="recorded">The folder names the store records.</param>
-    /// <returns>How many folders were deleted.</returns>
+    /// <summary>The file a destroy or a purge leaves in a folder it could not delete, so a later start deletes it.</summary>
+    internal const string LeftBehind = ".parley-destroyed";
+
+    /// <summary>Deletes a destroyed conversation's folder, or marks it to be deleted when the broker next starts.</summary>
+    /// <param name="folder">The folder name, as the store recorded it before its row went.</param>
     /// <remarks>
-    /// <para>
-    /// Called when a broker starts, under the store's lock and before it serves, so no placement can be in flight. A
-    /// destroy or a purge commits before it deletes its folders, so a folder held open when it ran, or a broker that
-    /// stopped between the two, left the files of a conversation that no longer exists on disk for good: nothing reaches
-    /// a folder with no row, and its name could not be given to a conversation again.
-    /// </para>
-    /// <para>
-    /// The location is the store's own (its path and <c>.files</c>), so nothing in it is anybody else's. A folder still
-    /// held open is tried again at the next start.
-    /// </para>
+    /// Marked rather than forgotten: a destroy or a purge commits before it deletes, so a folder held open when it ran
+    /// (an editor with a file locked) kept a conversation's files on disk for good, though the operator was told they
+    /// went. Only a marked folder is deleted at a start, because the location also holds what a person put there by hand
+    /// and what a store restored from a backup no longer records (SPEC.md §9.5); neither is Parley's to delete.
     /// </remarks>
-    public int RemoveUnrecorded(IEnumerable<string> recorded)
+    public void DeleteOrMark(string folder)
+    {
+        if (DeleteFolder(folder))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(Path.Combine(FolderPath(folder), LeftBehind), string.Empty);
+        }
+        catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+        {
+            // Nothing more can be done from here: the folder stays, as it did before there was a mark.
+        }
+    }
+
+    /// <summary>Deletes every folder a destroy or a purge marked and the store no longer records.</summary>
+    /// <param name="recorded">The folder names the store records.</param>
+    /// <remarks>
+    /// Called when a broker starts, under the store's lock and before it serves, so no placement can be in flight. A
+    /// folder still held open keeps its mark and is tried again at the next start; a recorded one is never touched, mark
+    /// or not.
+    /// </remarks>
+    public void RemoveLeftBehind(IEnumerable<string> recorded)
     {
         ArgumentNullException.ThrowIfNull(recorded);
 
         if (!Directory.Exists(Root))
         {
-            return 0;
+            return;
         }
 
         var kept = recorded.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var removed = 0;
 
         foreach (var folder in Directory.EnumerateDirectories(Root))
         {
-            if (!kept.Contains(Path.GetFileName(folder)) && DeleteFolder(Path.GetFileName(folder)))
+            var name = Path.GetFileName(folder);
+
+            // Only a name that comes back as itself: Windows drops a trailing dot or space from a path, so deleting a
+            // stray "stock." by name would delete the live "stock" beside it.
+            if (!kept.Contains(name)
+                && string.Equals(Path.GetFileName(FolderPath(name)), name, StringComparison.Ordinal)
+                && File.Exists(Path.Combine(folder, LeftBehind)))
             {
-                removed++;
+                _ = DeleteFolder(name);
             }
         }
-
-        return removed;
     }
 
     /// <summary>Whether a folder name is taken on disk, compared without regard to case.</summary>

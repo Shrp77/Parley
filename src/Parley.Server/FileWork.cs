@@ -558,13 +558,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
     public Task<IDisposable> HoldEverythingAsync(CancellationToken cancellationToken) =>
         _runtime.Files.ChangeEverythingAsync(cancellationToken);
 
-    /// <summary>Deletes the folders of conversations whose rows are gone.</summary>
+    /// <summary>Deletes the folders of conversations whose rows are gone, or marks them for the next start.</summary>
     /// <param name="folders">The folders, as they were recorded before the rows went.</param>
     public void DeleteFolders(IEnumerable<string> folders)
     {
         foreach (var folder in folders)
         {
-            _ = _runtime.Files.DeleteFolder(folder);
+            _runtime.Files.DeleteOrMark(folder);
         }
     }
 
