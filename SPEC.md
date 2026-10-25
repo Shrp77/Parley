@@ -878,8 +878,8 @@ blocked agent again reads as the new request. With nothing open, it is *blocked*
 is blocked and its conversation is open; asking that agent again and getting `done` clears it. It is
 *done* when nothing in it is open, no part is blocked, at least one exchange ended with an agent's
 Result, and none of the person's requests was closed before its agent answered. Otherwise a closed conversation, closed by the
-person or by its participants, makes it *closed*: nobody can ask in it again. Whatever it reads, an item
-with a blocked part names the blocker that agent gave, beside open work too, so neither a close nor
+person or by its participants, makes it *closed*: nobody can ask in it again. Unless it could not be read
+or was destroyed, an item with a blocked part names the blocker that agent gave, beside open work too, so neither a close nor
 another agent's work hides a block, and it is never done. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
 roadmap is complete or that what remains is waiting, blocked or closed, or needs an item that is. An item whose text was edited after its

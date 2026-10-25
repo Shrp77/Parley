@@ -1143,7 +1143,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                                         ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1)
                          ORDER BY ri.message_id DESC LIMIT 1)                                           AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
-                       -- One when the item's text was edited after a request had been sent into its conversation. Read
+                       -- Non-zero when the item's text was edited after a request had been sent into its conversation. Read
                        -- from the exchanges a request opens, which retention keeps, not from the messages it deletes.
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND @Edited IS NOT NULL AND julianday(opened_utc) < julianday(@Edited)

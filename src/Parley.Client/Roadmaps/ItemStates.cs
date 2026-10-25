@@ -17,7 +17,7 @@ public enum ItemStanding
     /// <summary>An agent has asked the person something in the item's conversation and is waiting for the answer.</summary>
     WaitingOnPerson,
 
-    /// <summary>The work ended blocked, with the blocker the agent gave, in a conversation still open.</summary>
+    /// <summary>The work ended blocked, with the blocker the agent gave, with nothing open in a conversation still open.</summary>
     Blocked,
 
     /// <summary>Work was done or answered, and no agent's latest done-or-blocked result on the person's request was blocked.</summary>
@@ -42,7 +42,7 @@ public enum NextKind
     /// <summary>Every live item is done.</summary>
     Complete,
 
-    /// <summary>Nothing is ready: what remains is waiting, blocked, or needs something that is not done.</summary>
+    /// <summary>Nothing is ready: no item left is both not started and free of needs that are not done.</summary>
     NothingReady,
 
     /// <summary>The roadmap holds no live item.</summary>
@@ -55,6 +55,7 @@ public enum NextKind
 /// <param name="Holders">The agents with something owed on it, when there are any.</param>
 /// <param name="Blocker">
 /// The blocker an agent gave, while any agent's part is blocked: on a blocked item, on a closed one, and beside open work.
+/// Not on an item that could not be read, or was destroyed, since neither says where its work stands.
 /// </param>
 /// <param name="TextChanged">Whether the item's text was edited after its conversation began.</param>
 /// <param name="IsNext">Whether it is the roadmap's next item.</param>
