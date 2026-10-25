@@ -856,11 +856,11 @@ leaves a live item needing a later or removed item is refused, with a sentence. 
 therefore never a dependency of a live one.
 
 **A revision is proposed by title, and resolved by the person.** An agent never reads a roadmap, so it
-can name one it wants revised only by its title, which is a hint, matched ignoring case. The person chooses at confirmation
-whether the proposal revises an existing roadmap or becomes a new one, and a proposal whose title
-matches an existing roadmap is shown with that match. Confirming a revision supersedes any other
-waiting proposal whose hint names the roadmap revised, by its title before the revision, and its
-proposer is told. Confirming a new roadmap supersedes nothing.
+can name one it wants revised only by its title, which is a hint, matched ignoring case. The person
+chooses at confirmation whether the proposal revises an existing roadmap or becomes a new one, and a
+proposal whose title matches an existing roadmap is shown with that match. Confirming a revision
+supersedes any other waiting proposal whose hint names the roadmap revised, by its title before the
+revision, and its proposer is told. Confirming a new roadmap supersedes nothing.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are

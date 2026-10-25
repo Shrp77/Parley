@@ -402,6 +402,29 @@ public sealed class RoadmapStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_revision_supersedes_more_proposals_than_sqlite_takes_parameters()
+    {
+        // One agent can make tens of thousands of proposals. Passed back as one statement with an id each, they were more
+        // than SQLite's 32,766 parameters, and every revision of the roadmap failed for good.
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var reviser = await ProposedAsync("Launch", Orders, target: "Launch");
+
+        _store.Execute($$"""
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 33000)
+            INSERT INTO roadmap_proposals (proposer, target_title, title, size, created_utc)
+            SELECT 'billing@test', 'launch', 'Sooner', 6, '{{FacilitatorStore.Stamp}}'
+              FROM n;
+            """);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals WHERE state = 'waiting';"));
+    }
+
+    [Fact]
     public async Task A_rename_then_a_revision_decide_each_waiting_hint_once_by_the_title_before_the_revision()
     {
         var launch = await ProposedAsync("Launch");

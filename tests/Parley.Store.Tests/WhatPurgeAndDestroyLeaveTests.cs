@@ -87,6 +87,51 @@ public sealed class WhatPurgeAndDestroyLeaveTests : IDisposable
         Assert.Contains(outcome.Destroyed, toll => toll is { Table: "ownership_questions", Rows: 1 });
     }
 
+    [Fact]
+    public async Task Purging_a_peer_in_another_agents_ownership_conversation_names_the_question_it_takes()
+    {
+        // The facilitator asks orders what it owns; orders, holding nothing (the facilitator's question is not held),
+        // continues the conversation it is in with a Request to billing. Billing is now a participant.
+        var asked = _store.Asked("owns-orders-1", FacilitatorStore.Facilitator, "orders@test");
+        _store.Question("orders@test", "owns-orders-1", asked);
+        _store.Execute($$"""
+            INSERT INTO conversation_participants (conversation_id, agent, joined_utc)
+            VALUES ('owns-orders-1', 'billing@test', '{{FacilitatorStore.Stamp}}');
+            INSERT INTO exchanges
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 uncollected_flag_ms, stalled_flag_ms, request_hash)
+            VALUES ('billing@test' || char(31) || 'orders@test', 'orders@test', 'billing@test', 'billing@test', 'OPEN',
+                    'owns-orders-1', '{{FacilitatorStore.Stamp}}', 900000, 14400000, 'hash-probe');
+            """);
+
+        var outcome = await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        // Orders is not purged, and its question went: so the operator is told.
+        Assert.Equal(1L, _store.Count("SELECT count(*) FROM agents WHERE name = 'orders@test';"));
+        Assert.Equal(0L, _store.Count("SELECT count(*) FROM ownership_questions;"));
+        Assert.Contains(outcome.Destroyed, toll => toll is { Table: "ownership_questions", Rows: 1 });
+    }
+
+    [Fact]
+    public async Task A_newcomer_under_a_purged_name_cannot_enter_the_purged_conversations()
+    {
+        Assert.True(_store.Asked("c-shared", "orders@test", "billing@test") > 0);
+
+        await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        // The name is free, and a newcomer registers under it. The record names the old holder by the same name.
+        _store.Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('billing@test', 'claude-code', 'full', 'active');");
+
+        var record = await new ConversationRepository(_store.Connection).GetDestroyedAsync("c-shared", Ct);
+        Assert.NotNull(record);
+        Assert.Contains(record.Participants, participant => participant == Billing);
+
+        var exchanges = new ExchangeRepository(_store.Connection);
+        Assert.Null((await exchanges.AssignConversationAsync(Billing, "c-shared", senderIsPerson: false, cancellationToken: Ct)).ConversationId);
+        Assert.Null((await exchanges.AssignConversationAsync(
+            AgentName.Create("human-user@test"), "c-shared", senderIsPerson: true, cancellationToken: Ct)).ConversationId);
+    }
+
     private async Task<long> RoadmapAsync()
     {
         var (id, problem) = await Repository.ProposeAsync(

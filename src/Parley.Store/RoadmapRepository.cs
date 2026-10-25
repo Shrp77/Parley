@@ -408,21 +408,24 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             .Select(row => row.Id)
             .ToList();
 
-        var rivals = matching.Count == 0 ? [] : (await _connection.QueryAsync<ProposalRow>(
-            new CommandDefinition(
-                """
-                SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
-                       target_title AS TargetTitle, title AS Title, size AS Size, state AS State,
-                       created_utc AS CreatedUtc, decided_utc AS DecidedUtc
-                  FROM roadmap_proposals
-                 WHERE id IN @Ids;
-                """,
-                new { Ids = matching },
-                scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
-
-        foreach (var rival in rivals)
+        // Read one at a time as each is decided, not with every id in one statement: an agent can make more proposals
+        // than SQLite takes parameters, and the revision would then fail for good. One row at a time also holds one
+        // proposal, whatever each one's size.
+        foreach (var match in matching)
         {
+            var rival = await _connection.QuerySingleAsync<ProposalRow>(
+                new CommandDefinition(
+                    """
+                    SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
+                           target_title AS TargetTitle, title AS Title, size AS Size, state AS State,
+                           created_utc AS CreatedUtc, decided_utc AS DecidedUtc
+                      FROM roadmap_proposals
+                     WHERE id = @Id;
+                    """,
+                    new { Id = match },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             var other = await ToProposalAsync(rival, scope.Transaction, cancellationToken).ConfigureAwait(false);
 
             await DecideAsync(other, ProposalState.Superseded, now, scope.Transaction, cancellationToken)

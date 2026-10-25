@@ -1249,6 +1249,12 @@ public sealed class AgentRepository(SqliteConnection connection)
                 OR conversation_id IN (SELECT id FROM doomed_conversations);
             """).ConfigureAwait(false);
 
+        // Named rather than left to the cascade from conversations, as a destroy names them: a doomed conversation can
+        // hold another agent's ownership question, one possibly waiting for the person's review (SPEC.md §14).
+        await RazeAsync("ownership_questions",
+            "DELETE FROM ownership_questions WHERE conversation_id IN (SELECT id FROM doomed_conversations);")
+            .ConfigureAwait(false);
+
         await RazeAsync("exchanges",
             "DELETE FROM exchanges WHERE id IN (SELECT id FROM doomed_exchanges);")
             .ConfigureAwait(false);

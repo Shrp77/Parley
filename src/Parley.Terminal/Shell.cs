@@ -174,6 +174,20 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
+        // **Words written in another conversation are not sent here unasked.** Arriving empties the box on the loop; a
+        // loop too late gave that up, and the box still holds the words of the conversation left. They are kept, and are
+        // this conversation's from now on, so the next Enter sends them here.
+        var here = place.Name.Value + "/" + conversation;
+
+        if (_lineFor is { } owner && !string.Equals(owner, here, StringComparison.Ordinal) && Line.Written.Length != 0)
+        {
+            _lineFor = here;
+            _itemWords = null;
+            Said = WrittenElsewhere;
+
+            return Task.CompletedTask;
+        }
+
         if (Drafting is not { } draft)
         {
             // Who a line goes to is read from the conversation, and until that read lands there is no plan to
@@ -296,8 +310,12 @@ internal sealed class Shell : Window
 
             // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
             // person's own, so a command in it runs.
-            _itemWords = null;
-            Line.Rewrite(now => now.StartsWith(pressed, StringComparison.Ordinal) ? now[pressed.Length..].TrimStart() : now);
+            Line.Rewrite(now =>
+            {
+                _itemWords = null;
+
+                return now.StartsWith(pressed, StringComparison.Ordinal) ? now[pressed.Length..].TrimStart() : now;
+            });
 
             // The view's project, not the list's selection: the two are different accessors for one question, which is
             // this repository's most-repeated defect.
@@ -1640,10 +1658,15 @@ internal sealed class Shell : Window
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
-                Line.Rewrite(_ => string.Empty);
+                // Owned in the same turn of the loop that empties it: a loop too late gives the emptying up, and the box
+                // then still belongs to the conversation left, which Enter says rather than sends (SendLine).
+                Line.Rewrite(_ =>
+                {
+                    _lineFor = lineFor;
+                    _itemWords = null;
 
-                _lineFor = lineFor;
-                _itemWords = null;
+                    return string.Empty;
+                });
             }
 
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
@@ -2835,6 +2858,10 @@ internal sealed class Shell : Window
     /// </remarks>
     private const string NotReadYet =
         "This conversation is still being read, so nothing was sent. Press Enter again in a moment.";
+
+    /// <summary>Said when the box still holds words written in another conversation.</summary>
+    internal const string WrittenElsewhere =
+        "These words were written in another conversation, so nothing was sent. Press Enter again to send them here.";
 
     /// <summary>Said when somebody joined or left since the preview was drawn, so the line would not go where it said.</summary>
     /// <remarks>Most often met on coming back from being away, when the preview was drawn before the person left.</remarks>
