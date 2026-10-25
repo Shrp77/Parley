@@ -167,6 +167,62 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
         Assert.StartsWith("The roadmap 'Billing export' is no longer called that", shell.Said, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task A_roadmap_shown_and_renamed_is_not_replaced_by_another_of_its_old_title()
+    {
+        // Two roadmaps share a title. The view names the first; renamed elsewhere, Confirm matched the second by the same
+        // words and revised it, replacing items the person was never shown. The view's roadmap is carried, not its title.
+        var a = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        Assert.True((await Repository.ConfirmAsync(a!.Id, a.Content, null, T0, cancellationToken: Ct)).Done);
+
+        var (secondId, problem) = await Repository.ProposeAsync(
+            Orders,
+            null,
+            null,
+            new RoadmapContent("Billing export", [new RoadmapItemDraft(null, "Second roadmap's own item", Billing, [])]),
+            T0,
+            cancellationToken: Ct);
+        Assert.Null(problem);
+        var b = await Repository.GetProposalAsync(secondId!.Value, Ct);
+        Assert.True((await Repository.ConfirmAsync(b!.Id, b.Content, null, T0, cancellationToken: Ct)).Done);
+
+        await ProposeAsync("Billing export v2", target: "billing export");
+
+        var listed = await Repository.ListAsync(Ct);
+        var (first, second) = (listed[0], listed[1]);
+
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        await OpenFirstProposalAsync(shell);
+        Assert.IsType<ProposalView>(driving.Find(Proposing.Title));
+
+        var named = (await Repository.GetAsync(first.Id, Ct))!;
+        Assert.True((await Repository.EditAsync(
+            first.Id,
+            named.Revision,
+            new RoadmapContent(
+                "Exports",
+                [
+                    new RoadmapItemDraft(1, "Add CSV export", Billing, []),
+                    new RoadmapItemDraft(2, "Call it from the report", Orders, [1]),
+                ]),
+            T0,
+            cancellationToken: Ct)).Done);
+
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+
+        if (driving.App.TopRunnableView is ChoiceDialog choosing)
+        {
+            driving.Row(choosing.Choices, "Revise the roadmap 'Billing export'");
+            choosing.Choices.InvokeCommand(Command.Accept);
+            await shell.Settled;
+        }
+
+        Assert.Equal(second.Revision, (await Repository.GetAsync(second.Id, Ct))!.Revision);
+        Assert.StartsWith("The roadmap 'Billing export' is no longer called that", shell.Said, StringComparison.Ordinal);
+    }
+
     /// <summary>Fails every call to one path once told to, as a broker that stops answering it.</summary>
     private sealed class FailWhen(string path) : DelegatingHandler(new SocketsHttpHandler())
     {

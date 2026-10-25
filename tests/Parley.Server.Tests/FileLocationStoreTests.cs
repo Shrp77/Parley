@@ -245,6 +245,25 @@ public sealed class FileLocationStoreTests : IDisposable
         Assert.False(Directory.Exists(_location.FolderPath("pricing")));
     }
 
+    [Fact]
+    public async Task A_first_download_waits_out_a_hold_over_everything()
+    {
+        // A destroy, purge or prune holds the whole location, but a file never read before had no gate for that hold to
+        // enter: its first download was let in, streamed a file the hold was about to delete, and kept the folder from
+        // going. Found by review, round 20.
+        await Write("pricing", Notes, "a");
+
+        var everything = await _location.ChangeEverythingAsync(Ct);
+        var reading = _location.HoldForReadingAsync("pricing", Notes, Ct);
+
+        await Task.Delay(50, Ct);
+        Assert.False(reading.IsCompleted, "a first download was let in under a hold over everything");
+
+        everything.Dispose();
+
+        await using var hold = await reading.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+    }
+
     private async Task Write(string folder, SharedFileName name, string content)
     {
         await using var staged = _location.Stage();

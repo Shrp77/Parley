@@ -1104,11 +1104,14 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       -- One when the latest closed exchange is the blocked one, otherwise zero.
+                       -- How many agents' latest closed exchange here ended blocked. Per agent, not for the whole
+                       -- conversation: an item sent to two whose first ended blocked read done once the second
+                       -- completed. Asking the blocked agent again and completing clears it.
                        (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
                            AND e.outcome = 'blocked'
                            AND e.id = (SELECT MAX(l.id) FROM exchanges l
-                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'))           AS Blocked,
+                                        WHERE l.conversation_id = @C AND l.state = 'CLOSED'
+                                          AND l.receiver = e.receiver))                                 AS Blocked,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome = 'closed')                                                      AS Closed,
                        (SELECT ri.blocker FROM result_items ri JOIN messages m ON m.id = ri.message_id

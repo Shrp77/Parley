@@ -196,7 +196,7 @@ internal static class Proposing
         // What its hint names, so the view says so rather than that there is no such roadmap: a person told that would
         // decline a revision of one that exists. A read that fails opens nothing, as on the web, because the view could
         // only guess.
-        string? match = null;
+        RoadmapSummary? shown = null;
 
         if (whole.TargetTitle is { Length: > 0 })
         {
@@ -210,10 +210,10 @@ internal static class Proposing
                 return;
             }
 
-            match = ProposalText.Matching(whole, roadmaps.Value!)?.Title;
+            shown = ProposalText.Matching(whole, roadmaps.Value!);
         }
 
-        Review(app, client, whole, queue, done, match);
+        Review(app, client, whole, queue, done, shown);
     }
 
     /// <summary>Shows one proposal in its own view and does what the person chooses.</summary>
@@ -222,7 +222,7 @@ internal static class Proposing
     /// <param name="proposal">What was proposed.</param>
     /// <param name="queue">Runs the decision.</param>
     /// <param name="done">Told what to say when it is over.</param>
-    /// <param name="sameTitle">The title of the live roadmap its hint names, when there is one.</param>
+    /// <param name="shown">The live roadmap its hint names, when there is one: the one Confirm must still find.</param>
     /// <remarks>
     /// The view is <see cref="ProposalView"/>: the roadmap, who it names and the choices all on screen. Declining
     /// passes through its own confirmation, since it tells the agent and cannot be taken back.
@@ -233,9 +233,9 @@ internal static class Proposing
         RoadmapProposal proposal,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
-        string? sameTitle)
+        RoadmapSummary? shown)
     {
-        var view = new ProposalView(proposal, sameTitle);
+        var view = new ProposalView(proposal, shown?.Title);
         var open = Prompting.Open(app, view);
 
         view.Done += (_, chosen) =>
@@ -245,11 +245,11 @@ internal static class Proposing
             switch (chosen)
             {
                 case ProposalChoice.Confirm:
-                    queue(t => ConfirmAsync(app, client, proposal, proposal.Content, sameTitle, queue, done, t));
+                    queue(t => ConfirmAsync(app, client, proposal, proposal.Content, shown, queue, done, t));
                     break;
 
                 case ProposalChoice.Edit:
-                    Edit(app, client, proposal, sameTitle, queue, done);
+                    Edit(app, client, proposal, shown, queue, done);
                     break;
 
                 case ProposalChoice.Decline:
@@ -268,7 +268,7 @@ internal static class Proposing
         IApplication app,
         BrokerClient client,
         RoadmapProposal proposal,
-        string? sameTitle,
+        RoadmapSummary? shown,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
@@ -304,7 +304,7 @@ internal static class Proposing
                 return;
             }
 
-            queue(t => ConfirmAsync(app, client, proposal, content, sameTitle, queue, done, t));
+            queue(t => ConfirmAsync(app, client, proposal, content, shown, queue, done, t));
         };
     }
 
@@ -356,7 +356,7 @@ internal static class Proposing
         BrokerClient client,
         RoadmapProposal proposal,
         RoadmapContent content,
-        string? shown,
+        RoadmapSummary? shown,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         CancellationToken cancellationToken)
@@ -374,12 +374,12 @@ internal static class Proposing
 
         var match = ProposalText.Matching(proposal, read.Value!);
 
-        // **The view said the person would choose.** A roadmap it named and that no longer goes by that name (renamed
-        // elsewhere while it was open) is not answered with a new roadmap nobody asked for.
-        if (match is null && shown is not null)
+        // **The view said the person would choose, about one roadmap.** Renamed elsewhere while it was open, that roadmap
+        // is not answered with a new one nobody asked for, nor with another that happens to share its old title.
+        if (shown is not null && match?.Id != shown.Id)
         {
             await done(
-                $"The roadmap '{Safe.Text(shown)}' is no longer called that, so nothing was confirmed. "
+                $"The roadmap '{Safe.Text(shown.Title)}' is no longer called that, so nothing was confirmed. "
                 + "Open the proposal again to choose.").ConfigureAwait(false);
 
             return;

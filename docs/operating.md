@@ -203,7 +203,9 @@ its editor, open its folder, remove files, or remove every file. Removing every 
 type the project's name. Opening only happens on the broker's own machine, and only `.md` and
 `.txt` files are ever opened. A file goes when its placer removes it, when you remove it, or when
 its conversation is destroyed or an agent that took part is purged. Nothing removes a file on a
-timer.
+timer. A folder that could not be deleted then, because a file in it was open, is left holding a
+file named `.parley-destroyed` and goes when the broker next starts. A folder of your own in the
+location is never touched.
 
 ## The command line
 

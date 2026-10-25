@@ -30,6 +30,11 @@ namespace Parley.Server;
 public sealed class FileLocationStore : IDisposable
 {
     private readonly Dictionary<string, Gate> _gates = new(StringComparer.OrdinalIgnoreCase);
+
+    // Set, under the gates' lock, while a destroy, purge or prune holds the whole location. A file never read before has
+    // no gate for that hold to enter, so its first download waits on this instead of streaming a file the hold is about
+    // to delete.
+    private TaskCompletionSource? _everything;
     private readonly Func<string, Stream> _createStaging;
     private readonly bool _deleteOnDispose;
 
@@ -193,16 +198,27 @@ public sealed class FileLocationStore : IDisposable
     /// <returns><see langword="true"/> when a directory by that name, in any case, is already in the location.</returns>
     /// <remarks>
     /// Case-insensitive on every platform, because a location copied from Linux to Windows must not become two
-    /// conversations' folders merged into one.
+    /// conversations' folders merged into one. **And taken when the path reaches anything at all**: on a volume that
+    /// keeps 8.3 names a suffixed name such as <c>ABCDEF~2</c> is another folder's short name, so a conversation given it
+    /// would write into, and on a destroy delete, a folder that is somebody else's.
     /// </remarks>
     public bool IsTakenOnDisk(string folder)
     {
         ArgumentException.ThrowIfNullOrEmpty(folder);
 
         return Directory.Exists(Root)
-            && Directory.EnumerateDirectories(Root)
-                .Any(d => string.Equals(Path.GetFileName(d), folder, StringComparison.OrdinalIgnoreCase));
+            && (IsItsOwn(folder) || Directory.Exists(FolderPath(folder)) || File.Exists(FolderPath(folder)));
     }
+
+    /// <summary>Whether a folder by this name, in any case, is in the location under its own long name.</summary>
+    /// <param name="folder">The folder name.</param>
+    /// <returns><see langword="true"/> when it is.</returns>
+    /// <remarks>
+    /// A path can reach a folder by another's 8.3 short name, so whether it exists is not whether it is this folder.
+    /// </remarks>
+    private bool IsItsOwn(string folder) =>
+        Directory.EnumerateDirectories(Root)
+            .Any(d => string.Equals(Path.GetFileName(d), folder, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The absolute path of a conversation's folder.</summary>
     /// <param name="folder">The folder name, as the store recorded it.</param>
@@ -276,7 +292,27 @@ public sealed class FileLocationStore : IDisposable
     public async Task<ReadHold> HoldForReadingAsync(string folder, SharedFileName name, CancellationToken cancellationToken)
     {
         var path = FilePath(folder, name);
-        var gate = GateFor(path);
+        Gate gate;
+
+        while (true)
+        {
+            Task? closed;
+
+            // In one lock with the gate, so a hold over everything either sees this gate and waits for its reader, or
+            // this read sees the hold and waits for it.
+            lock (_gates)
+            {
+                closed = _everything?.Task;
+                gate = GateFor(path);
+            }
+
+            if (closed is null)
+            {
+                break;
+            }
+
+            await closed.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         await gate.EnterReadAsync(cancellationToken).ConfigureAwait(false);
 
@@ -313,11 +349,29 @@ public sealed class FileLocationStore : IDisposable
     /// <returns>The prune's turn; disposing it lets reads in again.</returns>
     public async Task<IDisposable> ChangeEverythingAsync(CancellationToken cancellationToken)
     {
+        TaskCompletionSource mine;
         Gate[] gates;
 
-        lock (_gates)
+        // One hold over everything at a time: a second waits for the first to end.
+        while (true)
         {
-            gates = [.. _gates.Values];
+            Task? other;
+
+            lock (_gates)
+            {
+                other = _everything?.Task;
+
+                if (other is null)
+                {
+                    mine = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _everything = mine;
+                    gates = [.. _gates.Values];
+
+                    break;
+                }
+            }
+
+            await other.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var turns = new List<IDisposable>();
@@ -332,10 +386,26 @@ public sealed class FileLocationStore : IDisposable
         catch
         {
             turns.ForEach(t => t.Dispose());
+            Reopen(mine);
             throw;
         }
 
+        turns.Add(new Reopening(() => Reopen(mine)));
+
         return new Turns(turns);
+    }
+
+    private void Reopen(TaskCompletionSource hold)
+    {
+        lock (_gates)
+        {
+            if (ReferenceEquals(_everything, hold))
+            {
+                _everything = null;
+            }
+        }
+
+        hold.TrySetResult();
     }
 
     /// <summary>Deletes one file from the location.</summary>
@@ -350,6 +420,12 @@ public sealed class FileLocationStore : IDisposable
     public bool DeleteFolder(string folder)
     {
         var path = FolderPath(folder);
+
+        // Only the folder itself, never one its name reaches as a short name: that one is somebody else's.
+        if (!Directory.Exists(Root) || !IsItsOwn(folder))
+        {
+            return true;
+        }
 
         try
         {
@@ -547,6 +623,11 @@ public sealed class FileLocationStore : IDisposable
     private sealed class Turns(List<IDisposable> turns) : IDisposable
     {
         public void Dispose() => turns.ForEach(t => t.Dispose());
+    }
+
+    private sealed class Reopening(Action reopen) : IDisposable
+    {
+        public void Dispose() => reopen();
     }
 
     /// <summary>Readers and one change at a time for one file, with a waiting change holding new readers back.</summary>

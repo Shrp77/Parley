@@ -864,7 +864,7 @@ revision, and its proposer is told. Confirming a new roadmap supersedes nothing.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are
-open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked, the blocker named, who closed it —
+open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest closed exchange ended blocked, the blocker named, who closed it —
 and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
 derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
 *blocked* (with the blocker the agent gave), *done*, *closed by the person*, or *could not be read*.
@@ -908,7 +908,8 @@ confirmation as a revision, that removes such an item before saving it, and save
 deliberate act.
 
 **An agent is told what became of its proposal and nothing else.** Confirmed, declined or superseded
-reaches the proposer as a notice with its own title, in its inbox beside change notices (§9.5). It
+reaches the proposer as a notice with its own title, cut to 200 characters (§10.1), in its inbox beside change
+notices (§9.5). It
 opens nothing, is owed nothing and wakes nobody.
 
 ## 6. Exchange state machine
@@ -2743,10 +2744,14 @@ leaves a new name free and a replaced file exactly as it was.
 otherwise the identifier followed by `~2`, `~3` and so on: for a reserved device name on Windows, an
 identifier beginning or ending in a dot, or one that differs only in case from a folder already on
 disk, including one a person made by hand. `~` cannot occur in an identifier, so a suffixed folder is
-never another conversation's own name. The choice is recorded in `conversation_folders` and kept until
+never another conversation's own name; and a suffixed name whose path already reaches a folder, as `ABCDEF~2` is
+another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is deleted only under
+its own name. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty and a file copied into it by hand
 is still traced to its conversation. A folder no row names belongs to no conversation, and is left alone: it may be
-a person's, or a conversation a store restored from a backup no longer records.
+a person's, or a conversation a store restored from a backup no longer records. The one exception is a folder a
+destroy or a purge could not delete when it ran (§14): it is left holding a file named `.parley-destroyed`, and the
+next start deletes a folder no row names that holds one.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). Only the name is
@@ -2970,7 +2975,7 @@ other could.
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
-| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, whether the latest closed exchange ended blocked and the blocker it named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest closed exchange ended blocked and the blocker named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
 | `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
 | `proposal_count(state?)` | How many proposals are in a state, waiting ones by default, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
 | `proposal(id)` | One proposal whole, in whatever state it is, or nothing when there is none by that identifier. What a surface reads when the person opens a proposal from a list of headings. |
@@ -3911,8 +3916,8 @@ neither.
 As with a purge, what gets deleted is found from the schema rather than enumerated: every row whose
 foreign key names the conversation goes with it, and an operator is told per table rather than as a
 total. Its files go too: their rows are reported, the conversation's folder is deleted from the file
-location once any download in progress finishes, or when the broker next starts if it cannot be then, and
-agents that fetched them are told they are gone
+location once any download in progress finishes (one that cannot be deleted then, held open, is marked and
+goes when the broker next starts, §9.5), and agents that fetched them are told they are gone
 (§9.5).
 
 **The foreign keys are what carry the invariant, and they carry it by not cascading.** Every column
