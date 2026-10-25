@@ -315,6 +315,44 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Contains(told, n => n.ProposalId == two && n.Outcome == ProposalState.Superseded);
     }
 
+    [Fact]
+    public async Task Confirming_a_new_roadmap_under_a_taken_title_leaves_a_revision_of_the_existing_one_waiting()
+    {
+        // A proposer chooses its own title, so matching the confirmed title would let one agent's proposal decide
+        // another's, with no decision by the person on it. A new roadmap revises nothing.
+        var first = await ProposedAsync("Billing export");
+        await Repository.ConfirmAsync(first, (await Repository.GetProposalAsync(first, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var revision = await ProposedAsync("Billing export, more", Billing, target: "Billing export");
+        var rival = await ProposedAsync("Billing export");
+
+        var created = await Repository.ConfirmAsync(
+            rival, (await Repository.GetProposalAsync(rival, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        Assert.True(created.Done, created.Problem);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(revision, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task A_revision_supersedes_the_hints_at_its_roadmaps_title_before_the_change_and_no_other()
+    {
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var billing = await ProposedAsync("Billing export");
+        await Repository.ConfirmAsync(billing, (await Repository.GetProposalAsync(billing, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var atOne = await ProposedAsync("Launch, sooner", Billing, target: "Launch");
+        var atTwo = await ProposedAsync("Billing export, more", Billing, target: "Billing export");
+        var renaming = await ProposedAsync("Billing export", Orders, target: "Launch");
+
+        var revised = await Repository.ConfirmAsync(
+            renaming, Content("Billing export", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atOne, Ct))!.State);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(atTwo, Ct))!.State);
+    }
+
     // ---- editing
 
     private async Task<long> RoadmapAsync()

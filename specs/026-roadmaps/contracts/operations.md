@@ -37,7 +37,7 @@ The MCP adapter gains one tool, `parley_propose_roadmap`. Its description says w
 | `Proposals` | read | optional state filter; headings only | proposals with their items, proposer, source conversation, target roadmap, size; as headings, the newest 200, each title and title hint cut to 200 characters with its item count and no items |
 | `ProposalCount` | read | optional state filter | how many proposals are in that state, reading none of them |
 | `Proposal` | read | proposal id | that proposal whole, in whatever state, or nothing |
-| `ConfirmProposal` | write | proposal id, final content, target (new, or a roadmap) | the roadmap and its revision; provenance (`proposed` or `edited`) is computed by the broker; any other waiting proposal whose title hint matches the roadmap confirmed becomes `superseded`; the content is validated first (FR-009a) |
+| `ConfirmProposal` | write | proposal id, final content, target (new, or a roadmap) | the roadmap and its revision; provenance (`proposed` or `edited`) is computed by the broker; on a revision, any other waiting proposal whose title hint names the revised roadmap (its title before the change) becomes `superseded`; a new roadmap supersedes nothing; the content is validated first (FR-009a) |
 | `DeclineProposal` | write | proposal id | writes the notice for the proposer |
 | `EditRoadmap` | write | roadmap id, expected revision, final content | the new revision. Refused if the expected revision is not current (two surfaces editing). Origin becomes `edited`. |
 

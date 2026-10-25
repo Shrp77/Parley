@@ -297,7 +297,10 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long roadmapId;
         int revision;
         RoadmapOrigin origin;
-        string roadmapTitle;
+
+        // The title a waiting proposal's hint must name to be superseded: the revised roadmap's, as it stood before this
+        // change. A new roadmap revises nothing, so it supersedes nothing (SPEC.md §5.7).
+        string? revisedTitle = null;
 
         if (targetRoadmap is null)
         {
@@ -342,7 +345,6 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             }
 
             revision = 1;
-            roadmapTitle = final.Title;
         }
         else
         {
@@ -361,6 +363,13 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             origin = RoadmapOrigin.Edited;
             roadmapId = targetRoadmap.Value;
 
+            revisedTitle = await _connection.ExecuteScalarAsync<string>(
+                new CommandDefinition(
+                    "SELECT title FROM roadmaps WHERE id = @Id;",
+                    new { Id = roadmapId },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
             var written = await WriteContentAsync(
                 roadmapId, (int)existing.Number, (int)existing.Revision, final, origin, now, scope.Transaction,
                 cancellationToken).ConfigureAwait(false);
@@ -371,15 +380,15 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             }
 
             revision = (int)existing.Revision + 1;
-            roadmapTitle = final.Title;
         }
 
         await DecideAsync(proposal, ProposalState.Confirmed, now, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        // Any other proposal that hints at the roadmap now confirmed is out of date. Matched on the title hint
-        // and nothing else, because nothing else is known: an agent never reads a roadmap (SPEC.md §5.7).
-        var rivals = (await _connection.QueryAsync<ProposalRow>(
+        // Any other proposal that hints at the roadmap just revised is out of date. Matched on the title hint and nothing
+        // else, because nothing else is known: an agent never reads a roadmap (SPEC.md §5.7). Not the confirmed title,
+        // which a proposer chooses: that would let one agent's proposal decide another's aimed at a different roadmap.
+        var rivals = revisedTitle is null ? [] : (await _connection.QueryAsync<ProposalRow>(
             new CommandDefinition(
                 """
                 SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
@@ -389,7 +398,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                  WHERE state = 'waiting' AND id <> @Id AND target_title IS NOT NULL
                    AND lower(target_title) = lower(@Title);
                 """,
-                new { Id = id, Title = roadmapTitle },
+                new { Id = id, Title = revisedTitle },
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 

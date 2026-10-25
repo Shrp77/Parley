@@ -859,7 +859,8 @@ therefore never a dependency of a live one.
 can name one it wants revised only by its title, which is a hint. The person chooses at confirmation
 whether the proposal revises an existing roadmap or becomes a new one, and a proposal whose title
 matches an existing roadmap is shown with that match. Confirming a revision supersedes any other
-waiting proposal whose hint names the same roadmap, and its proposer is told.
+waiting proposal whose hint names the roadmap revised, by its title before the revision, and its
+proposer is told. Confirming a new roadmap supersedes nothing.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are
@@ -2972,7 +2973,7 @@ other could.
 | `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
 | `proposal_count(state?)` | How many proposals are in a state, waiting ones by default, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
 | `proposal(id)` | One proposal whole, in whatever state it is, or nothing when there is none by that identifier. What a surface reads when the person opens a proposal from a list of headings. |
-| `confirm_proposal(id, content, target)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, supersedes any other waiting proposal whose title hint names the same roadmap, and tells each proposer. |
+| `confirm_proposal(id, content, target)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, for a revision supersedes any other waiting proposal whose title hint names the roadmap revised, and tells each proposer. |
 | `decline_proposal(id)` | Decline a waiting proposal. Nothing is persisted; the proposer is told it was declined. |
 | `edit_roadmap(id, revision, content)` | Change a confirmed roadmap: reword, reorder, add or remove items. The only way an item changes after confirmation. Refused when `revision` is not current, so two surfaces editing at once cannot overwrite one another, and when the content breaks §5.7's rules. A removed item's conversation is kept. |
 
