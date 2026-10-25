@@ -113,8 +113,9 @@ The Room of any conversation lists every agent in the project, not only those wh
 - An item's text, plus any words the person adds, would exceed the message cap when started: the start is refused with the cap named and nothing is sent, and the person shortens the item. The cap is not moved for roadmaps.
 - An item is confirmed naming an agent that is not in the project: refused when confirming, not when starting.
 - The item's conversation is force-closed, archived or destroyed by the person: the item says so; it is not shown as done unless a Result said done.
-- Two proposals for one roadmap at once: the person sees both, and confirming one marks the other out of date rather than silently overwriting.
+- Two proposals for one roadmap at once: the person sees both, and confirming one as a revision of it marks the other out of date rather than silently overwriting.
 - An agent that proposed a roadmap is later retired or purged: the roadmap stays; its provenance names the agent as it was.
+- An item's agent is purged: the item stays, meant for nobody, and keeps its conversation name; so does an item in another agent's waiting proposal.
 - A roadmap item's text edited after work started: the conversation keeps the words originally sent, and the item says the text changed since.
 - An item finished or made irrelevant outside Parley: the person edits the roadmap to remove or reword it; there is no mark that sets state by hand, so a roadmap never shows a state no conversation supports.
 - A very long roadmap: the list scrolls and the next item is reachable by one key.

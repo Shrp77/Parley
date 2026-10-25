@@ -232,10 +232,10 @@ internal sealed class LineRegion : FrameView
     /// eventually disagree, and the one that is wrong would be the one that got sent.
     /// </para>
     /// <para>
-    /// <b>Written on the thread that draws.</b> The box is emptied and filled from the work queue, on a pool thread,
-    /// and the toolkit's wrapping throws when the text changes while the loop is drawing it (TheBoxIsWrittenOnTheLoopTests).
-    /// Read where it is called, which is right on the loop's own thread; work off the loop reads with
-    /// <see cref="WrittenOnTheLoop"/> and changes it with <see cref="Rewrite"/>.
+    /// <b>For the loop's own thread</b>, which key handlers and dialogs run on. Work off the loop reads with
+    /// <see cref="WrittenOnTheLoop"/> and changes it with <see cref="Rewrite"/>, because the toolkit's text view throws
+    /// when it is read or changed while the loop draws it or takes a key (TheBoxIsWrittenOnTheLoopTests). The setter
+    /// still goes through the loop, so a write from anywhere else is safe.
     /// </para>
     /// </remarks>
     internal string Written
@@ -246,10 +246,11 @@ internal sealed class LineRegion : FrameView
     }
 
     /// <summary>What is written, read on the thread that draws.</summary>
-    /// <returns>The box's text.</returns>
+    /// <returns>The box's text, or empty if the loop did not reach the read within the wait.</returns>
     /// <remarks>
     /// For work off the loop. Reading the text walks the toolkit's text model, which the loop changes as the person types,
-    /// so a read from the pool threw <c>Collection was modified</c> into the message line.
+    /// so a read from the pool threw <c>Collection was modified</c> into the message line. Empty after the wait gives up,
+    /// so do not decide anything that cannot be undone on an empty answer.
     /// </remarks>
     internal string WrittenOnTheLoop()
     {
@@ -264,8 +265,9 @@ internal sealed class LineRegion : FrameView
     /// <param name="change">The new text from the text as it stands.</param>
     /// <remarks>
     /// For work off the loop. A read on the pool and a write on the loop would lose any key the person typed between the
-    /// two, because the loop takes input before it runs what was handed to it. Writes only when the text changes, so an
-    /// empty box is not written empty.
+    /// two, because the loop takes input before it runs what was handed to it. Writes only when the text changes: a
+    /// driven test has no loop, so the write runs on the pool against the test's own draws (RefillRaceTests), and a box
+    /// already empty is the common case there.
     /// </remarks>
     internal void Rewrite(Func<string, string> change)
     {

@@ -123,8 +123,9 @@ internal static class Prompting
     /// <remarks>
     /// Waits for it, up to five seconds, so what the caller does next sees it done: a box emptied and then filled is
     /// filled. Past that the caller goes on and the work still runs when the loop reaches it. Invoke runs inline when
-    /// this is already the loop's thread, so the waiting only ever waits for the loop to get to it. The
-    /// harness never sets <see cref="Marshal"/>, because it never pumps a loop: work posted to one would not run.
+    /// this is already the loop's thread, so the waiting only ever waits for the loop to get to it. A driven test leaves
+    /// <see cref="Marshal"/> unset, because it never pumps a loop and work posted to one would not run; only a collection
+    /// that runs alone stands a loop in.
     /// </remarks>
     internal static void OnTheLoop(Action act)
     {

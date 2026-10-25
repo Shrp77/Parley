@@ -17,7 +17,7 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 3. Reword item 2, remove item 3, confirm. **Expect** a roadmap with two items, origin `edited`, the proposer named, the proposal no longer waiting, a notice in the proposer's inbox saying confirmed.
 4. Propose again and decline. **Expect** no roadmap, a *declined* notice, and no wake of the agent.
 5. As an agent, try anything that changes the roadmap. **Expect** there is nothing to call; the structural test is the proof.
-6. Two proposals against one roadmap; confirm one. **Expect** the other reads superseded.
+6. Two proposals against one roadmap; confirm one as a revision of it. **Expect** the other reads superseded.
 
 ## 3. State and next (story 2)
 

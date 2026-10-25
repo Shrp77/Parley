@@ -353,6 +353,56 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(atTwo, Ct))!.State);
     }
 
+    [Fact]
+    public async Task A_revision_supersedes_a_hint_the_surfaces_show_as_naming_it_whatever_the_case_of_its_letters()
+    {
+        // The surfaces show a proposal as aimed at a roadmap when its hint equals the title ignoring case
+        // (ProposalText.Matching, OrdinalIgnoreCase). The supersede must agree, or a proposal shown as aimed at the
+        // roadmap the person just revised is left waiting.
+        var cafe = await ProposedAsync("Café menu");
+        var one = await Repository.ConfirmAsync(cafe, (await Repository.GetProposalAsync(cafe, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var shouting = await ProposedAsync("Menu, sooner", Billing, target: "CAFÉ MENU");
+        var reviser = await ProposedAsync("Café menu", Orders, target: "Café menu");
+
+        Assert.Equal("CAFÉ MENU", "Café menu", ignoreCase: true);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Café menu", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+
+        Assert.True(revised.Done, revised.Problem);
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(shouting, Ct))!.State);
+    }
+
+    [Fact]
+    public async Task A_rename_then_a_revision_decide_each_waiting_hint_once_by_the_title_before_the_revision()
+    {
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        var atOld = await ProposedAsync("Launch, sooner", Billing, target: "Launch");
+        var atNew = await ProposedAsync("Ship, sooner", Billing, target: "Ship");
+        var reviser = await ProposedAsync("Ship", Orders, target: "Launch");
+
+        // The person renames it first, then confirms a revision against it: the title before the revision is "Ship".
+        var renamed = await Repository.EditAsync(one.RoadmapId!.Value, 1, Content("Ship", Item("Only item", Billing)), Now, cancellationToken: Ct);
+        Assert.True(renamed.Done, renamed.Problem);
+
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Ship", Item("Only item", Billing), Item("Another", Orders)), one.RoadmapId, Now, cancellationToken: Ct);
+        Assert.True(revised.Done, revised.Problem);
+
+        Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atNew, Ct))!.State);
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(atOld, Ct))!.State);
+
+        // A rename made against the revision before the confirm is refused, not applied over it.
+        var late = await Repository.EditAsync(one.RoadmapId!.Value, 2, Content("Later", Item("Only item", Billing)), Now, cancellationToken: Ct);
+        Assert.False(late.Done);
+
+        var superseded = (await Repository.ListProposalsAsync(ProposalState.Superseded, Ct)).Count;
+        Assert.Equal(1, superseded);
+    }
+
     // ---- editing
 
     private async Task<long> RoadmapAsync()
@@ -546,6 +596,34 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_notices;"));
         Assert.Equal(1L, _store.Count("SELECT count(*) FROM roadmaps;"));
         Assert.Equal("orders@test", (string)_store.Scalar("SELECT proposer FROM roadmaps;")!);
+    }
+
+    [Fact]
+    public async Task Purging_an_items_agent_keeps_the_persons_item_and_its_conversation_name()
+    {
+        // Through the purge itself, not a raw DELETE: the purge swept every reference to the agent, the SET NULL ones
+        // too, and so deleted the person's item, freed its reserved name and dropped the needs on it.
+        var id = await ProposedAsync();
+        var created = await Repository.ConfirmAsync(id, (await Repository.GetProposalAsync(id, Ct))!.Content, null, Now, cancellationToken: Ct);
+
+        await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        var read = (await Repository.GetAsync(created.RoadmapId!.Value, Ct))!;
+        Assert.Equal(3, read.Items.Count);
+        Assert.Null(read.Items[0].IntendedAgent);
+        Assert.Equal(1L, _store.Count("SELECT count(*) FROM roadmap_item_conversations WHERE conversation_id = 'rm1-1';"));
+    }
+
+    [Fact]
+    public async Task Purging_an_items_agent_keeps_another_agents_waiting_proposal_whole()
+    {
+        var id = await ProposedAsync();
+
+        await new AgentRepository(_store.Connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        var read = (await Repository.GetProposalAsync(id, Ct))!;
+        Assert.Equal(["Add CSV export", "Call it from the report", "Document the column"], read.Content.Items.Select(i => i.Text));
+        Assert.Null(read.Content.Items[0].IntendedAgent);
     }
 
     // ---- an item's conversation is opened by the person

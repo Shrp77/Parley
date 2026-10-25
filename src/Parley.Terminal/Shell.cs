@@ -1945,19 +1945,19 @@ internal sealed class Shell : Window
         // with its words; what the person wrote in this conversation, the item's words edited or not, stays.
         if (!started)
         {
-            var filled = false;
-
+            // Marked as the item's words in the same turn of the loop that writes them: marked after, from here, a loop
+            // later than the wait would show the words unmarked, and Enter would run them as a command.
             Line.Rewrite(now =>
             {
-                filled = string.IsNullOrWhiteSpace(now);
+                if (!string.IsNullOrWhiteSpace(now))
+                {
+                    return now;
+                }
 
-                return filled ? item.Text : now;
-            });
-
-            if (filled)
-            {
                 _itemWords = item.Text;
-            }
+
+                return item.Text;
+            });
         }
 
         Focus(Panes.ToList().IndexOf(Line));

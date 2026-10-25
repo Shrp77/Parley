@@ -296,7 +296,7 @@ public sealed class AgentRepository(SqliteConnection connection)
                 scope.Transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        foreach (var table in (await ReferencesToAgentsAsync(scope.Transaction, cancellationToken, includeCascading: true)
+        foreach (var table in (await ReferencesToAgentsAsync(scope.Transaction, cancellationToken, includeActioned: true)
             .ConfigureAwait(false)).GroupBy(reference => reference.TableName))
         {
             // Interpolated because a table or column name cannot be a parameter; both come from this connection's own
@@ -1270,8 +1270,9 @@ public sealed class AgentRepository(SqliteConnection connection)
         // key and surfaces as an unhandled exception where an operator expected an answer. Asking
         // the database which columns point at it cannot drift.
         //
-        // Cascading references are excluded because the schema has already said those rows belong
-        // to the agent; they go when its row does, without being named here.
+        // References with an action of their own are excluded because the schema has already said what becomes of
+        // them: a cascading row belongs to the agent and goes when its row does; a SET NULL row is somebody else's and
+        // keeps itself, naming nobody.
         foreach (var reference in await ReferencesToAgentsAsync(scope.Transaction, cancellationToken)
             .ConfigureAwait(false))
         {
@@ -1338,18 +1339,24 @@ public sealed class AgentRepository(SqliteConnection connection)
         PurgeAsync(name, DateTimeOffset.UtcNow, transaction, cancellationToken);
 
     /// <summary>
-    /// Asks the schema which columns reference <c>agents(name)</c> without cascading.
+    /// Asks the schema which columns reference <c>agents(name)</c> with no action of their own on delete.
     /// </summary>
     /// <param name="transaction">The transaction the scan runs in.</param>
     /// <param name="cancellationToken">Cancels the query.</param>
-    /// <param name="includeCascading">
-    /// Whether to list the references that cascade a delete too. Purge leaves those to the delete; a rename moves them.
+    /// <param name="includeActioned">
+    /// Whether to list the references whose <c>ON DELETE</c> action deals with them too, <c>CASCADE</c> and
+    /// <c>SET NULL</c>. Purge leaves those to the delete; a rename moves them.
     /// </param>
     /// <returns>Every reference asked for, ordered by table then column.</returns>
+    /// <remarks>
+    /// <b>A <c>SET NULL</c> reference keeps its row.</b> A roadmap item, or an item in another agent's proposal, says
+    /// which agent it is meant for and is the person's, not the agent's. Swept with the rest, a purge deleted the
+    /// person's items, freed their reserved conversation names, and confirmed proposals with steps missing.
+    /// </remarks>
     private async Task<IReadOnlyList<AgentReference>> ReferencesToAgentsAsync(
         SqliteTransaction transaction,
         CancellationToken cancellationToken,
-        bool includeCascading = false) =>
+        bool includeActioned = false) =>
         (await _connection.QueryAsync<AgentReference>(
             new CommandDefinition(
                 """
@@ -1358,10 +1365,10 @@ public sealed class AgentRepository(SqliteConnection connection)
                   JOIN pragma_foreign_key_list(m.name) AS f
                  WHERE m.type = 'table'
                    AND f."table" = 'agents'
-                   AND (@IncludeCascading = 1 OR f."on_delete" <> 'CASCADE')
+                   AND (@IncludeActioned = 1 OR f."on_delete" NOT IN ('CASCADE', 'SET NULL'))
                  ORDER BY m.name, f."from";
                 """,
-                new { IncludeCascading = includeCascading ? 1 : 0 },
+                new { IncludeActioned = includeActioned ? 1 : 0 },
                 transaction: transaction,
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
