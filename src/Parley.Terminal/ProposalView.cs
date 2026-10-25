@@ -87,7 +87,7 @@ internal sealed class ProposalView : Dialog
         // proposed it and every item off the dialog while Confirm stayed on it: the person would confirm what they could
         // not see. Who proposed it is the heading's first line, so a long title cannot push that out either. It never has
         // the focus, so the keys that scroll the roadmap cannot scroll that line away; the mouse scrolls the rest.
-        var heading = Entry.Reader(_header, Choose);
+        var heading = Entry.Reader(_header);
         heading.CanFocus = false;
         heading.X = 1;
         heading.Y = 0;

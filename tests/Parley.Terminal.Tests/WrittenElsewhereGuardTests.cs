@@ -55,8 +55,8 @@ public sealed class WrittenElsewhereGuardTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// An item's words carried out of its conversation by a late switch are kept by the guard, which also drops the mark
-    /// that says they are an agent's text; the second Enter then runs them as a command in the conversation arrived at.
+    /// An item's words carried out of its conversation by a late switch are kept by the guard with their mark, so the
+    /// second Enter, which the guard's sentence invites, sends them as words rather than running them as a command.
     /// </summary>
     [Fact]
     public async Task An_items_words_carried_into_another_conversation_by_a_late_switch_are_still_not_a_command()
@@ -120,8 +120,8 @@ public sealed class WrittenElsewhereGuardTests : IAsyncDisposable
     }
 
     /// <summary>
-    /// The guard reads a box with no recorded owner as anyone's: when the first arrival at a conversation is the one
-    /// given up, the owner stays null, and a later late switch lets the first conversation's words through.
+    /// A box whose owner was never recorded, because the first arrival at a conversation was given up, is not anyone's:
+    /// a later late switch does not let the first conversation's words through.
     /// </summary>
     [Fact]
     public async Task Words_written_before_any_arrival_was_recorded_do_not_reach_another_conversation()

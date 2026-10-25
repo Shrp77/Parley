@@ -127,6 +127,44 @@ public sealed class FileLocationStore : IDisposable
         Directory.CreateDirectory(Incoming);
     }
 
+    /// <summary>Deletes every folder in the location that the store no longer records.</summary>
+    /// <param name="recorded">The folder names the store records.</param>
+    /// <returns>How many folders were deleted.</returns>
+    /// <remarks>
+    /// <para>
+    /// Called when a broker starts, under the store's lock and before it serves, so no placement can be in flight. A
+    /// destroy or a purge commits before it deletes its folders, so a folder held open when it ran, or a broker that
+    /// stopped between the two, left the files of a conversation that no longer exists on disk for good: nothing reaches
+    /// a folder with no row, and its name could not be given to a conversation again.
+    /// </para>
+    /// <para>
+    /// The location is the store's own (its path and <c>.files</c>), so nothing in it is anybody else's. A folder still
+    /// held open is tried again at the next start.
+    /// </para>
+    /// </remarks>
+    public int RemoveUnrecorded(IEnumerable<string> recorded)
+    {
+        ArgumentNullException.ThrowIfNull(recorded);
+
+        if (!Directory.Exists(Root))
+        {
+            return 0;
+        }
+
+        var kept = recorded.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removed = 0;
+
+        foreach (var folder in Directory.EnumerateDirectories(Root))
+        {
+            if (!kept.Contains(Path.GetFileName(folder)) && DeleteFolder(Path.GetFileName(folder)))
+            {
+                removed++;
+            }
+        }
+
+        return removed;
+    }
+
     /// <summary>Whether a folder name is taken on disk, compared without regard to case.</summary>
     /// <param name="folder">The folder name.</param>
     /// <returns><see langword="true"/> when a directory by that name, in any case, is already in the location.</returns>

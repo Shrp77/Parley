@@ -37,7 +37,7 @@ public static class ProposalText
     /// <remarks>
     /// Separate from the items and from the agents because a surface that shows them apart — the terminal draws the
     /// items on the left and who is named on the right — needs each block on its own. The title comes last because it is
-    /// the agent's and has no bound: first, a long one hid who proposed it.
+    /// the agent's and has no bound, so a long one cannot push who proposed it out of view.
     /// </remarks>
     public static string Header(RoadmapProposal proposal, string? sameTitle = null)
     {

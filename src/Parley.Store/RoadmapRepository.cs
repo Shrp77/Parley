@@ -85,8 +85,9 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             return (null, unknown);
         }
 
-        // Every character of it, its needs written out as numbers too: a proposal of needs alone wrote a million rows while
-        // its size read as its handful of words, and the size is the evidence a bound is to be chosen from (SPEC.md §16).
+        // Every character of it, each need as its digits and a separator: a proposal of needs alone wrote a million
+        // rows while its size read as its handful of words, and the size is the evidence a bound is chosen from
+        // (SPEC.md §16).
         var size = (long)content.Title.Length + (targetTitle?.Length ?? 0)
             + content.Items.Sum(i => (long)i.Text.Length + i.Needs.Sum(need => (long)Digits(need) + 1));
 

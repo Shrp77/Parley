@@ -193,7 +193,16 @@ internal static class Proposing
             return;
         }
 
-        Review(app, client, whole, queue, done);
+        // What its hint names, so the view says so rather than that there is no such roadmap: a person told that would
+        // decline a revision of one that exists. A read that fails names nothing, which Confirm reads again.
+        var roadmaps = whole.TargetTitle is { Length: > 0 }
+            ? await BrokerDirectory.ReadAsync(
+                async () => await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false)
+            : null;
+
+        var match = roadmaps is { Reachable: true, Value: { } listed } ? ProposalText.Matching(whole, listed)?.Title : null;
+
+        Review(app, client, whole, queue, done, match);
     }
 
     /// <summary>Shows one proposal in its own view and does what the person chooses.</summary>
@@ -202,6 +211,7 @@ internal static class Proposing
     /// <param name="proposal">What was proposed.</param>
     /// <param name="queue">Runs the decision.</param>
     /// <param name="done">Told what to say when it is over.</param>
+    /// <param name="sameTitle">The title of the live roadmap its hint names, when there is one.</param>
     /// <remarks>
     /// The view is <see cref="ProposalView"/>: the roadmap, who it names and the choices all on screen. Declining
     /// passes through its own confirmation, since it tells the agent and cannot be taken back.
@@ -211,9 +221,10 @@ internal static class Proposing
         BrokerClient client,
         RoadmapProposal proposal,
         Action<Func<CancellationToken, Task>> queue,
-        Func<string, Task> done)
+        Func<string, Task> done,
+        string? sameTitle = null)
     {
-        var view = new ProposalView(proposal);
+        var view = new ProposalView(proposal, sameTitle);
         var open = Prompting.Open(app, view);
 
         view.Done += (_, chosen) =>

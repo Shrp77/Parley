@@ -3842,7 +3842,8 @@ who did nothing wrong.** It cannot be undone.
 **Their files go with them.** Placing a file makes an agent a participant (§5.0), so purging an agent
 removes the files it placed along with every other file in the conversations it took part in: their
 rows are reported with the rest, their folders are deleted from the file location once any download in
-progress finishes, and every agent that fetched one is told it is gone (§9.5). A retired agent's files
+progress finishes (a folder that cannot be deleted then, held open or cut short by a stop, goes when the broker
+next starts), and every agent that fetched one is told it is gone (§9.5). A retired agent's files
 stay, still name it as their placer, and can be removed only by the person.
 
 That collateral is the definition rather than a defect being tolerated. A conversation is a record of
@@ -3909,7 +3910,8 @@ neither.
 As with a purge, what gets deleted is found from the schema rather than enumerated: every row whose
 foreign key names the conversation goes with it, and an operator is told per table rather than as a
 total. Its files go too: their rows are reported, the conversation's folder is deleted from the file
-location once any download in progress finishes, and agents that fetched them are told they are gone
+location once any download in progress finishes, or when the broker next starts if it cannot be then, and
+agents that fetched them are told they are gone
 (§9.5).
 
 **The foreign keys are what carry the invariant, and they carry it by not cascading.** Every column
@@ -4009,7 +4011,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   roadmap holds; the character rule that stops text breaking a surface's lines is not relaxed. The risk is
   stated rather than left to be found: any attached agent can write a very large proposal into the store,
   which the message cap closes for messages, or one whose items need each other many times over, each need
-  a stored row. The size of every proposal is recorded, its needs counted as written out, so a bound can be
+  a stored row. The size of every proposal is recorded, each need counted as its digits and a separator, so a bound can be
   chosen from what agents write, as the cap's was (§17 question 16). The template an agent proposes with
   keeps proposals brief by guidance, not by enforcement.
 
