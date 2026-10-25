@@ -94,7 +94,8 @@ It has three views, one at a time:
 
 Enter goes in and Escape comes back, landing on what you were looking at. `Ctrl+Q` leaves.
 Words you have not sent stay in the box until you open a different conversation, which starts with
-an empty box. Going to a project view and back keeps them; Escape asks before leaving them.
+an empty box. Going to a project view and back keeps them; Escape asks before leaving them. If the
+screen was too busy to empty the box, Enter sends nothing and says so; press it again to send the words here.
 Tab moves between the panes of a view, the arrow keys move within one, and the mouse works too.
 Below eighty columns the panes of a view stack one above another instead of sitting side by side.
 

@@ -88,7 +88,10 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(Billing, proposal.Content.Items[0].IntendedAgent);
         Assert.Equal([1], proposal.Content.Items[1].Needs);
         Assert.Equal([2], proposal.Content.Items[2].Needs);
-        Assert.True(proposal.Size > 0);
+
+        // Every character, needs too, each written as a number with a separator: 14 + 14 + 23 + 19, and 2 for each need.
+        // A proposal of needs alone wrote a million rows while its size counted only its words (SPEC.md §16's evidence).
+        Assert.Equal(74, proposal.Size);
     }
 
     [Theory]

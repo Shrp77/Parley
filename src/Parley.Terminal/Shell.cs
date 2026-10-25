@@ -175,14 +175,15 @@ internal sealed class Shell : Window
         }
 
         // **Words written in another conversation are not sent here unasked.** Arriving empties the box on the loop; a
-        // loop too late gave that up, and the box still holds the words of the conversation left. They are kept, and are
-        // this conversation's from now on, so the next Enter sends them here.
+        // loop too late gave that up, and the box may still hold the words of the conversation left. They are kept, and
+        // are this conversation's from now on, so the next Enter sends them here.
         var here = place.Name.Value + "/" + conversation;
 
-        if (_lineFor is { } owner && !string.Equals(owner, here, StringComparison.Ordinal) && Line.Written.Length != 0)
+        // Null too: a first arrival whose emptying was given up recorded no owner. The mark on an item's words is kept, so
+        // they are still sent as words, never run as a command.
+        if (!string.Equals(_lineFor, here, StringComparison.Ordinal) && Line.Written.Length != 0)
         {
             _lineFor = here;
-            _itemWords = null;
             Said = WrittenElsewhere;
 
             return Task.CompletedTask;
@@ -2859,9 +2860,12 @@ internal sealed class Shell : Window
     private const string NotReadYet =
         "This conversation is still being read, so nothing was sent. Press Enter again in a moment.";
 
-    /// <summary>Said when the box still holds words written in another conversation.</summary>
+    /// <summary>Said when the box may still hold words written in another conversation.</summary>
+    /// <remarks>
+    /// "May": the box was not emptied on arrival because the loop was too late, and the person may have typed since.
+    /// </remarks>
     internal const string WrittenElsewhere =
-        "These words were written in another conversation, so nothing was sent. Press Enter again to send them here.";
+        "These words may have been written in another conversation, so nothing was sent. Press Enter again to send them here.";
 
     /// <summary>Said when somebody joined or left since the preview was drawn, so the line would not go where it said.</summary>
     /// <remarks>Most often met on coming back from being away, when the preview was drawn before the person left.</remarks>

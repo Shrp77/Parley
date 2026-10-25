@@ -5,7 +5,6 @@ using Wire = Parley.Transport;
 
 namespace Parley.Server.Tests;
 
-/// <summary>Review probe, round 16: a purge against Requests and placements still arriving.</summary>
 /// <summary>
 /// That a purge leaves nothing for live traffic to revive: a Request racing it, or the purged agent still attached.
 /// </summary>
@@ -22,6 +21,9 @@ public sealed class PurgeAgainstLiveTrafficTests
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/a", Ct);
+
+        // Attached, so a refusal to reach it below is about the conversation and nothing else.
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@alpha", "C:/c", Ct);
 
         var operators = broker.ConnectAsOperator();
 
@@ -40,7 +42,7 @@ public sealed class PurgeAgainstLiveTrafficTests
                 Ct);
 
             var purged = await operators.PurgeAsync(new Wire.AgentRequest { Agent = doomedAgent.Name }, cancellationToken: Ct);
-            var raced = await racing;
+            _ = await racing;
 
             Assert.Equal(Wire.PurgeVerdict.Gone, purged.Verdict);
 
@@ -52,11 +54,10 @@ public sealed class PurgeAgainstLiveTrafficTests
             // After the purge, the name stays refused.
             var after = Assert.Single(
                 (await docs.Client.RequestAsync(
-                    Requests.Open(docs.Name, "billing@alpha", "anything", doomed.ConversationId), cancellationToken: Ct))
+                    Requests.Open(docs.Name, billing.Name, "anything", doomed.ConversationId), cancellationToken: Ct))
                 .Outcomes);
 
             Assert.False(after.Ok, $"round {round}: a request into the purged conversation was admitted");
-            _ = raced;
         }
     }
 

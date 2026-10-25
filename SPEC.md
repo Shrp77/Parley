@@ -3914,7 +3914,10 @@ location once any download in progress finishes, and agents that fetched them ar
 
 **The foreign keys are what carry the invariant, and they carry it by not cascading.** Every column
 declared `REFERENCES conversations(id)` — an exchange, a participant, a message, a file's folder, a fetch record — names the conversation,
-and none of them says `ON DELETE CASCADE`. The deletions are ordered inside one transaction with foreign
+and almost none says `ON DELETE CASCADE`. The one that does is an ownership question, which schema 1 cascades and
+which is frozen; destroy and purge delete those by name before the conversation, so they are reported like every
+other table. Two say `ON DELETE SET NULL`, an accepted ownership line and a roadmap proposal's source, and keep
+their rows with the link cleared. The deletions are ordered inside one transaction with foreign
 keys deferred to commit, exactly as a purge orders them, so a table somebody forgot to include fails the
 whole destroy at commit instead of leaving a message row pointing at a conversation that no longer exists.
 
@@ -4005,7 +4008,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   and an item that is sent travels in a Request, which keeps the cap of rule 8.4 in storage whatever a
   roadmap holds; the character rule that stops text breaking a surface's lines is not relaxed. The risk is
   stated rather than left to be found: any attached agent can write a very large proposal into the store,
-  which the message cap closes for messages. The size of every proposal is recorded, so a bound can be
+  which the message cap closes for messages, or one whose items need each other many times over, each need
+  a stored row. The size of every proposal is recorded, its needs counted as written out, so a bound can be
   chosen from what agents write, as the cap's was (§17 question 16). The template an agent proposes with
   keeps proposals brief by guidance, not by enforcement.
 

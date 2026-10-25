@@ -63,6 +63,9 @@ internal sealed class ProposalView : Dialog
     /// <summary>How wide the column of agents is.</summary>
     private const int AgentsWidth = 30;
 
+    /// <summary>The most rows the heading takes; the rest of it scrolls.</summary>
+    private const int MostHeadingRows = 4;
+
     private readonly string _header;
     private readonly View _items;
     private readonly View _agents;
@@ -80,16 +83,16 @@ internal sealed class ProposalView : Dialog
 
         _header = Safe.Lines(ProposalText.Header(proposal, sameTitle));
 
-        var heading = new Plain
-        {
-            Text = _header,
-            X = 1,
-            Y = 0,
-            Width = Dim.Fill(2),
-            Height = Prompting.Rows(_header) + 1,
-        };
-
-        heading.TextFormatter.WordWrap = true;
+        // **At most a few rows, and it scrolls.** A title has no bound, and a heading as tall as its title pushed who
+        // proposed it and every item off the dialog while Confirm stayed on it: the person would confirm what they could
+        // not see. Who proposed it is the heading's first line, so a long title cannot push that out either. It never has
+        // the focus, so the keys that scroll the roadmap cannot scroll that line away; the mouse scrolls the rest.
+        var heading = Entry.Reader(_header, Choose);
+        heading.CanFocus = false;
+        heading.X = 1;
+        heading.Y = 0;
+        heading.Width = Dim.Fill(2);
+        heading.Height = Math.Min(Prompting.Rows(_header) + 1, MostHeadingRows);
 
         // **Headings above the paragraphs, and no borders on them.** Bordered frames draw through the toolkit's line
         // canvas, which a dialog opened from the queue's thread while the loop draws can corrupt. The dialogs here

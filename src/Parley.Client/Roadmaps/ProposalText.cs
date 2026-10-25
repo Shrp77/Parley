@@ -30,13 +30,14 @@ public static class ProposalText
             $"{proposal.Content.Title} — {proposal.Proposer.Role}, {count} item{(count == 1 ? string.Empty : "s")}");
     }
 
-    /// <summary>What heads a proposal: its title, who put it forward and from where.</summary>
+    /// <summary>What heads a proposal: who put it forward and from where, what it says it would change, and its title.</summary>
     /// <param name="proposal">The proposal.</param>
     /// <param name="sameTitle">The title of a live roadmap that matches the one it says it would change, if there is one.</param>
     /// <returns>The lines, which are an agent's words and are not safe to draw as they are.</returns>
     /// <remarks>
     /// Separate from the items and from the agents because a surface that shows them apart — the terminal draws the
-    /// items on the left and who is named on the right — needs each block on its own.
+    /// items on the left and who is named on the right — needs each block on its own. The title comes last because it is
+    /// the agent's and has no bound: first, a long one hid who proposed it.
     /// </remarks>
     public static string Header(RoadmapProposal proposal, string? sameTitle = null)
     {
@@ -44,7 +45,6 @@ public static class ProposalText
 
         var lines = new List<string>
         {
-            proposal.Content.Title,
             $"Proposed by {proposal.Proposer.Value}" + (proposal.SourceConversation is { Length: > 0 } source
                 ? $", from the conversation {source}."
                 : "."),
@@ -56,6 +56,8 @@ public static class ProposalText
                 ? $"It says it would change a roadmap called '{target}'; there is none by that name."
                 : $"It says it would change the roadmap '{sameTitle}'. You choose whether it does.");
         }
+
+        lines.Add(proposal.Content.Title);
 
         return string.Join('\n', lines);
     }

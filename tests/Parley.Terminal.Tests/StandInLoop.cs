@@ -15,7 +15,9 @@ public sealed class OwnsTheMarshal;
 internal sealed class StandInLoop : IDisposable
 {
     private readonly BlockingCollection<Action> _queue = [];
-    private readonly int _thread = Environment.CurrentManagedThreadId;
+    // The thread itself, not its managed id: an id is handed to a new thread once the old one is collected, and a pool
+    // thread that inherited the made-elsewhere loop's id would count as the loop and run its work in time.
+    private readonly Thread _thread = Thread.CurrentThread;
     private int _ran;
 
     internal StandInLoop() => Prompting.Marshal = Invoke;
@@ -82,7 +84,7 @@ internal sealed class StandInLoop : IDisposable
 
     private void Invoke(Action act)
     {
-        if (Environment.CurrentManagedThreadId == _thread)
+        if (ReferenceEquals(Thread.CurrentThread, _thread))
         {
             act();
 

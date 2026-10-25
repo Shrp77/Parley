@@ -4,10 +4,11 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// What a purge or a destroy leaves of a roadmap item's conversation, and what it tells the operator went.
+/// What a purge or a destroy leaves of a roadmap item's conversation and of a purged name, and what it tells the
+/// operator went.
 /// </summary>
 /// <remarks>
-/// <b>Found by review, round 15.</b> A purge destroyed the conversations its agent took part in without recording them as
+/// <b>Found by review, rounds 15 and 16.</b> A purge destroyed the conversations its agent took part in without recording them as
 /// destroyed, as a destroy does, so a finished item read as never started and was offered as next; and a destroy let the
 /// cascade take a conversation's ownership questions without naming them (SPEC.md §14: the operator is told per table).
 /// </remarks>

@@ -11,10 +11,6 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// Review probe, round 16: a caller of <see cref="Prompting.OnTheLoop"/> whose work was given up must not go on as if it
-/// ran. Slow (the waits run out), and alone, because it stands a loop in (<see cref="OwnsTheMarshal"/>).
-/// </summary>
-/// <summary>
 /// That work the loop gave up leaves no record saying it was done.
 /// </summary>
 /// <remarks>
