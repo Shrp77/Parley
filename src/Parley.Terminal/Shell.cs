@@ -1641,7 +1641,12 @@ internal sealed class Shell : Window
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
-                Line.Written = string.Empty;
+                // Only when there is something to empty: the harness draws on its own thread, so a write here races it.
+                if (Line.Written.Length != 0)
+                {
+                    Line.Written = string.Empty;
+                }
+
                 _lineFor = lineFor;
                 _itemWords = null;
             }

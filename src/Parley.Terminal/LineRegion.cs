@@ -227,14 +227,20 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>What is written but not sent. Named to avoid hiding the toolkit's own Text.</summary>
     /// <remarks>
+    /// <para>
     /// Read from the field rather than held beside it, so there is one copy of what somebody typed. Two would
     /// eventually disagree, and the one that is wrong would be the one that got sent.
+    /// </para>
+    /// <para>
+    /// <b>Written on the thread that draws.</b> The box is emptied and filled from the work queue, on a pool thread,
+    /// and the toolkit's wrapping throws when the text changes while the loop is drawing it (RefillRaceTests).
+    /// </para>
     /// </remarks>
     internal string Written
     {
         get => _field.Text;
 
-        set
+        set => Prompting.OnTheLoop(() =>
         {
             _field.Text = value;
 
@@ -242,7 +248,7 @@ internal sealed class LineRegion : FrameView
             // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
             // name, and the chip would no longer be written the way it was recorded.
             _field.MoveEnd();
-        }
+        });
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>

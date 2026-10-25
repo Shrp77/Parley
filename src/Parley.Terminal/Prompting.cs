@@ -110,33 +110,48 @@ internal static class Prompting
 
         // **On the thread that draws, when there is a loop.** Most dialogs are opened after a read, from the work
         // queue's thread-pool thread, while the loop is drawing; the toolkit's draw is not safe to enter twice at
-        // once (it throws out of its line canvas). Invoke runs inline
-        // when this is already the loop's thread, so the waiting below only ever waits for the loop to get to it. The harness
-        // never sets this, because it never pumps a loop: work posted to one would not run.
-        if (Marshal is { } onTheLoop)
+        // once (it throws out of its line canvas).
+        SessionToken? opened = null;
+
+        OnTheLoop(() => opened = OpenHere(app, dialog));
+
+        return opened;
+    }
+
+    /// <summary>Runs something on the thread that draws when there is a loop, and where it is called when not.</summary>
+    /// <param name="act">What to run.</param>
+    /// <remarks>
+    /// Waits for it, so what the caller does next sees it done: a box emptied and then filled is filled. Invoke runs
+    /// inline when this is already the loop's thread, so the waiting only ever waits for the loop to get to it. The
+    /// harness never sets <see cref="Marshal"/>, because it never pumps a loop: work posted to one would not run.
+    /// </remarks>
+    internal static void OnTheLoop(Action act)
+    {
+        ArgumentNullException.ThrowIfNull(act);
+
+        if (Marshal is not { } onTheLoop)
         {
-            SessionToken? opened = null;
-            using var done = new ManualResetEventSlim();
+            act();
 
-            onTheLoop(() =>
-            {
-                try
-                {
-                    opened = OpenHere(app, dialog);
-                }
-                finally
-                {
-                    done.Set();
-                }
-            });
-
-            // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
-            _ = done.Wait(TimeSpan.FromSeconds(5));
-
-            return opened;
+            return;
         }
 
-        return OpenHere(app, dialog);
+        using var done = new ManualResetEventSlim();
+
+        onTheLoop(() =>
+        {
+            try
+            {
+                act();
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+
+        // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
+        _ = done.Wait(TimeSpan.FromSeconds(5));
     }
 
     /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
