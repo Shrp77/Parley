@@ -1616,6 +1616,18 @@
     }
 </head>
 <body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Parley.Web.ConsoleHost.Embedded(Context) ? "embed" : null)">
+    @if (Parley.Web.ConsoleHost.Embedded(Context))
+    {
+        @* Inside the roadmap's frame, a link to any other page of the console opens in the whole window: every other page
+           refuses to be framed, so followed in the frame it would draw nothing. Forms still post in the frame. *@
+        <script data-embed-links>
+            document.addEventListener("click", function (e) {
+                var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+
+                if (a && !a.target && !a.hasAttribute("download") && a.origin === window.location.origin) { a.target = "_top"; }
+            }, true);
+        </script>
+    }
     <script>
         try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
     </script>

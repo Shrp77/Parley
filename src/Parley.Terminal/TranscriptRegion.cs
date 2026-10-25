@@ -113,6 +113,9 @@ internal sealed class TranscriptRegion : FrameView
     /// <summary>Which conversation is open, or null when none is.</summary>
     internal string? Open { get; private set; }
 
+    /// <summary>The project the open conversation is in; a conversation's id is only unique within one.</summary>
+    internal string? OpenIn { get; private set; }
+
     /// <summary>The roadmap item the open conversation is the work on, by the broker's reservation; null for an ordinary one.</summary>
     /// <remarks>Never from the conversation's name or a message (SPEC.md §5.7), so an agent cannot make one look like an item's.</remarks>
     internal RoadmapItemRef? Item { get; private set; }
@@ -145,6 +148,7 @@ internal sealed class TranscriptRegion : FrameView
         var arriving = !string.Equals(Open, conversationId, StringComparison.Ordinal);
 
         Open = problem is null ? conversationId : null;
+        OpenIn = problem is null ? project : null;
         Item = problem is null ? export?.Item : null;
         Retitle();
 
@@ -234,8 +238,9 @@ internal sealed class TranscriptRegion : FrameView
     {
         ArgumentNullException.ThrowIfNull(export);
 
-        // The reader opened something else, or closed it, since this read was queued.
-        if (!string.Equals(Open, conversationId, StringComparison.Ordinal))
+        // The reader opened something else, or closed it, since this read was queued: another project's conversation of
+        // the same id is something else.
+        if (!string.Equals(Open, conversationId, StringComparison.Ordinal) || !string.Equals(OpenIn, project, StringComparison.Ordinal))
         {
             return false;
         }
@@ -637,6 +642,7 @@ internal sealed class TranscriptRegion : FrameView
     {
         // The item goes with the conversation, so nothing offers a way to a roadmap from a transcript showing nothing.
         Open = null;
+        OpenIn = null;
         Item = null;
         Retitle();
         Say(Nothing, LineKind.Annotation);

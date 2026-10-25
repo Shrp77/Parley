@@ -144,7 +144,7 @@ public sealed class RoadmapOnThePageTests
             TestContext.Current.CancellationToken);
 
         Assert.Contains(
-            $"<a href=\"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&amp;id=1&amp;item=2#item-2\">item 2 of #1 Billing export</a>",
+            $"<a href=\"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&amp;id=1&amp;item=2#item-2\" target=\"_top\">item 2 of #1 Billing export</a>",
             page,
             StringComparison.Ordinal);
 
@@ -310,11 +310,42 @@ public sealed class RoadmapOnThePageTests
         using var other = await client.SendAsync(elsewhere, token);
         Assert.DoesNotMatch("<body class=\"[^\"]* embed", await other.Content.ReadAsStringAsync(token));
 
-        // The console may frame its own conversation page, and nothing else may frame any page.
-        Assert.Contains("frame-ancestors 'self'", framed.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
-        Assert.Contains("frame-ancestors 'none'", opened.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
         Assert.Contains("data-src=\"/Conversations/Detail?project=" + RoadmapConsole.Project + "&amp;id=rm1-1&amp;With=billing%40test&amp;embed=1", roadmap, StringComparison.Ordinal);
         Assert.Contains("&amp;embed=1\"", roadmap, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_console_frames_only_its_own_item_conversation_and_no_page_can_be_framed_from_elsewhere()
+    {
+        // The clickjacking defence and its one exception. Must fail against the item frame refused by the console's own
+        // headers, against any other page allowing a frame, and against links in the frame that lead to a refused page.
+        using var console = Confirmed(Item(1, "Add CSV export", "billing@test", started: false));
+        using var client = console.CreateClient();
+        var token = TestContext.Current.CancellationToken;
+        var asked = new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1&embed=1", UriKind.Relative);
+
+        using var framing = new HttpRequestMessage(HttpMethod.Get, asked);
+        framing.Headers.Add("Sec-Fetch-Dest", "iframe");
+        using var framed = await client.SendAsync(framing, token);
+        var page = await framed.Content.ReadAsStringAsync(token);
+
+        using var opened = await client.GetAsync(asked, token);
+        using var roadmap = await client.GetAsync(PageUri(1), token);
+
+        Assert.Equal("SAMEORIGIN", framed.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Contains("frame-ancestors 'self'", framed.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+
+        foreach (var other in new[] { opened, roadmap })
+        {
+            Assert.Equal("DENY", other.Headers.GetValues("X-Frame-Options").Single());
+            Assert.Contains("frame-ancestors 'none'", other.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
+        }
+
+        // Every other page refuses to be framed, so the frame's way back to the roadmap, and its other links, open in
+        // the whole window.
+        Assert.Contains("class=\"item-of\"><a href=\"/Roadmaps/Roadmap?project=" + RoadmapConsole.Project, page, StringComparison.Ordinal);
+        Assert.Matches("class=\"item-of\"><a href=\"[^\"]*\" target=\"_top\"", page);
+        Assert.Contains("data-embed-links", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -370,7 +401,7 @@ public sealed class RoadmapOnThePageTests
 
         var page = await client.GetStringAsync(
             new Uri(
-                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=rm1-1&With=billing%40test",
+                $"/Conversations/Detail?project={TranscriptConsole.Project}&id=c-1&With=billing%40test",
                 UriKind.Relative),
             TestContext.Current.CancellationToken);
 

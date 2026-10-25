@@ -178,7 +178,7 @@ public static class ConsoleHost
     /// So only the conversation page embeds, the one a roadmap's item frame loads, and only when the browser says it is
     /// loading a frame (<c>Sec-Fetch-Dest</c>, which a page cannot set for a link the person follows).
     /// </remarks>
-    public static bool Embedded(HttpContext context)
+    internal static bool Embedded(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 

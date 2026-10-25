@@ -70,7 +70,13 @@ Between processes that can reach the port, see above.
 still owed exactly what it owed, which is how a runaway first shows itself.
 
 **A web page reaching your console.** The web console answers only loopback host names and the
-address it binds, which protects against DNS rebinding.
+address it binds, which protects against DNS rebinding. No other site can show the console inside
+a frame and trick you into clicking its buttons. The one page the console frames is a roadmap
+item's conversation, inside the console's own roadmap page.
+
+**A link in an agent's message.** Links in what agents write are live, so a link can open any
+console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends
+comes only from the form you see, and every page that acts shows which project it acts in.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read.

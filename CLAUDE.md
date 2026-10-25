@@ -107,9 +107,12 @@ a project is removed or renamed only in the terminal. The command line keeps `se
 - `EveryActionHasADoorTests` fails when an action is performed and unlinked, linked and not
   performed, or done on a POST and described on no GET.
 - The web UI answers only loopback host names and the host it binds (DNS rebinding defence).
-- Nothing a form posts binds from the address it posts to: a POST-only `[BindProperty]` is `[FromForm]`, and an
-  `OnPost` parameter names its source. Forms post back to their own page, and an agent's message renders as live
-  links, so a field a form left out would otherwise come from the link. `FormBindingTests` holds it.
+- No page can be framed, except the conversation page the console's own roadmap page frames (`embed` and
+  `Sec-Fetch-Dest: iframe`, same origin only; `ConsoleHost.Embedded`). Embedding hides the project's name, so no
+  other page embeds.
+- A POST-only `[BindProperty]` is `[FromForm]`, and an `OnPost` parameter names its source (`[FromQuery]` only on
+  purpose, as Files' Open). Forms post back to their own page and an agent's message renders as live links, so a
+  field a form left out would otherwise come from the link. `FormBindingTests` holds it.
 - A repository may be enrolled in several projects. Its launch key in `.mcp.json` is `parley`
   (always read) or `parley-<project>`; `LaunchKey` in Parley.Configuration is the one
   implementation. An agent's identity is `parleyAgentId` in `.mcp.json`, and the per-machine
@@ -375,8 +378,10 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   key that starts queued work that opens a view and then draw on its own thread in the same breath: call the handler
   and `await shell.Settled`.
 - **A read can land after the person has moved on.** Enter and Escape read a project off the work queue, so
-  `SelectAsync` draws only while its project is still in view, and never clears an open conversation. The terminal's
-  box belongs to one project and conversation (`_lineFor`). Anything new that draws from a read checks the same.
+  `SelectAsync` draws only while its project is still in view, and never clears an open conversation. A conversation's
+  id is unique only within a project, so the follow loop compares the project too (`Transcript.OpenIn`). The
+  terminal's box belongs to one project and conversation (`_lineFor`). Anything new that draws from a read checks the
+  same.
 - **Hold screens to what is drawn, not what is held in memory.** Read the laid-out screen or
   `Driver.Contents`, not a field, and press a key rather than calling its seam.
 - **Anything drawing somebody else's text** (a payload, a broker detail, a path, a log line)

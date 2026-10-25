@@ -3515,7 +3515,7 @@ internal sealed class Shell : Window
             {
                 await Task.Delay(every, stop).ConfigureAwait(false);
 
-                if (!StillReading(conversationId))
+                if (!StillReading(project, conversationId))
                 {
                     return;
                 }
@@ -3535,9 +3535,10 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Whether a conversation is still the one on screen.</summary>
+    /// <param name="project">The project the conversation is in.</param>
     /// <param name="conversationId">The conversation.</param>
-    /// <returns>Whether the view is a transcript and that transcript is this conversation.</returns>
-    private bool StillReading(string conversationId)
+    /// <returns>Whether the view is a transcript and that transcript is this conversation in this project.</returns>
+    private bool StillReading(ProjectSettings project, string conversationId)
     {
         Viewing viewing;
 
@@ -3546,8 +3547,11 @@ internal sealed class Shell : Window
             viewing = _place.Viewing;
         }
 
+        // The project as well: `c-1` and `rm1-1` are conversations in every project, and a late follow of one project's
+        // would otherwise draw in another's of the same id.
         return viewing == Viewing.Conversation
-            && string.Equals(Transcript.Open, conversationId, StringComparison.Ordinal);
+            && string.Equals(Transcript.Open, conversationId, StringComparison.Ordinal)
+            && string.Equals(Transcript.OpenIn, project.Name.Value, StringComparison.Ordinal);
     }
 
     /// <summary>Reads the open transcript once, and redraws it if it has changed.</summary>
@@ -3560,7 +3564,7 @@ internal sealed class Shell : Window
     {
         try
         {
-            if (!StillReading(conversationId))
+            if (!StillReading(project, conversationId))
             {
                 return;
             }
@@ -3584,7 +3588,7 @@ internal sealed class Shell : Window
                 // **The room as well, every time, and whether or not the transcript changed.** Somebody picking
                 // a request up changes nothing in the transcript but everything in the room's marks, and "working 3m"
                 // has to count.
-                if (StillReading(conversationId))
+                if (StillReading(project, conversationId))
                 {
                     await FillRoomAsync(project, conversationId, export, cancellationToken).ConfigureAwait(false);
                 }
@@ -3593,7 +3597,7 @@ internal sealed class Shell : Window
             }
 
             // Once per outage rather than once per tick, which would bury anything else said meanwhile.
-            if (_followFailed is null && StillReading(conversationId))
+            if (_followFailed is null && StillReading(project, conversationId))
             {
                 _followFailed = NotFollowing(read.Problem);
                 Said = _followFailed;
