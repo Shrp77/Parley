@@ -17,13 +17,16 @@ public enum ItemStanding
     /// <summary>An agent has asked the person something in the item's conversation and is waiting for the answer.</summary>
     WaitingOnPerson,
 
-    /// <summary>The work ended blocked, with the blocker the agent gave.</summary>
+    /// <summary>The work ended blocked, with the blocker the agent gave, in a conversation still open.</summary>
     Blocked,
 
     /// <summary>Work was done or answered, and no agent's latest done-or-blocked result on the person's request was blocked.</summary>
     Done,
 
-    /// <summary>The conversation ended without a Result, closed by a person or destroyed. Never read as not started.</summary>
+    /// <summary>
+    /// The conversation was closed, or destroyed, without the work done: a request ended before its agent answered, or a
+    /// part was blocked. Never read as not started.
+    /// </summary>
     Closed,
 
     /// <summary>The state could not be read. Never shown as not started.</summary>
@@ -182,7 +185,10 @@ public static class ItemStates
                 item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, null, changed, false);
         }
 
-        if (facts.BlockedExchanges > 0)
+        // Blocked only while the conversation is open, because asking again is what clears it. Closed, by the person or by
+        // its participants, nobody can ask again, and an item read blocked there stayed blocked for good and was never
+        // done for the items that need it.
+        if (facts.BlockedExchanges > 0 && facts.ClosedBy is null)
         {
             return new ItemState(item, ItemStanding.Blocked, [], facts.Blocker, changed, false);
         }

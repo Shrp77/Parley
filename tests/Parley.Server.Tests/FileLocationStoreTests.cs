@@ -339,6 +339,30 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_change_queued_behind_one_given_up_still_makes_the_reader_overdue()
+    {
+        // Kept from review round 25: clearing the given-up change's stamp must not clear the next one's.
+        await Write("pricing", Notes, "a");
+        _location.StallAfter = TimeSpan.FromMilliseconds(200);
+        var reader = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var first = _location.ChangeAsync("pricing", Notes, cancel.Token);
+        var second = _location.ChangeAsync("pricing", Notes, Ct);
+        await Task.Delay(50, Ct);
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        await Task.Delay(500, Ct);
+        Assert.False(second.IsCompleted);
+        Assert.True(_location.IsOverdue("pricing", Notes), "the queued change's waiting did not make the reader overdue");
+
+        await reader.DisposeAsync();
+        (await second.WaitAsync(TimeSpan.FromSeconds(5), Ct)).Dispose();
+        Assert.False(_location.IsOverdue("pricing", Notes));
+    }
+
+    [Fact]
     public async Task A_replacement_of_a_file_never_read_does_not_wait_out_a_hold_over_everything()
     {
         // A replacement that waited out a destroy waited, with every other agent's, behind any download the destroy

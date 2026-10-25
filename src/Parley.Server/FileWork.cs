@@ -161,7 +161,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             string? turnOn = null;
 
             // Twice for a replacement: the first attempt finds the agent's own file and asks for its turn, and the second
-            // holds it. A third only if the file moved again in between.
+            // holds it. The bound is headroom: once the turn is held, the folder it is held on cannot change, because a
+            // conversation's folder is fixed and a destroyed conversation refuses the commit first.
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var turn = folder is null
@@ -737,9 +738,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return new Committed(PlacedByAnother(another.File), null);
         }
 
-        // A file of this name exists now, and this attempt does not hold its turn: a download of it may be streaming,
-        // and replacing it under that download is what the hold exists to prevent. Rolled back, and tried again
-        // holding the turn.
+        // A file of this name exists now, with other bytes, and this attempt does not hold its turn: a download of it may
+        // be streaming, and replacing it under that download is what the hold exists to prevent. Rolled back, and tried
+        // again holding the turn. The same bytes again change nothing and need no turn.
         if (look.Existing is { } current && current.File.Sha256 != sha256
             && !string.Equals(look.Folder, heldFolder, StringComparison.Ordinal))
         {

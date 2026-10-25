@@ -103,6 +103,20 @@ public sealed class ItemStatesTests
         Assert.Equal("permission", state.Blocker);
     }
 
+    [Theory]
+    [InlineData("person", 0)]
+    [InlineData("person", 1)]
+    [InlineData("consensus", 0)]
+    public void A_blocked_item_whose_conversation_was_closed_reads_closed(string closedBy, int closedWithoutAnAnswer)
+    {
+        // Found by review, round 26: blocked was read first, so an item blocked in a conversation nobody can ask in again
+        // read blocked for good, and the items that need it were never next.
+        var state = ItemStates.Of(
+            Plan(Item(1, Closed(blocked: 1, closed: closedWithoutAnAnswer, blocker: "permission", by: closedBy))), [], Person).Items[0];
+
+        Assert.Equal(ItemStanding.Closed, state.Standing);
+    }
+
     [Fact]
     public void Every_exchange_ending_in_a_result_is_done()
     {

@@ -873,10 +873,12 @@ roadmap never shows one that no conversation supports; an item finished or made 
 removed or reworded by editing the roadmap. Each agent asked has a part in the item, and its part is
 decided by its own **latest** result on the person's requests: of its closed exchanges whose result says
 `done` or `blocked`, the one that closed last. An `answered` or `acknowledged` result decides nothing. An
-item is *blocked* while any agent's part is blocked, and shows the blocker that agent gave; asking it
-again and getting `done` clears it. It is *done* when nothing in it is open, no part is blocked, at
-least one exchange ended with a Result, and none was closed without one; one closed without a Result
-makes it *closed by the person*. A roadmap names its **next item**: the first item, in
+item is *blocked* while any agent's part is blocked and its conversation is open, and shows the blocker
+that agent gave; asking it again and getting `done` clears it. It is *done* when nothing in it is
+open, no part is blocked, at least one exchange ended with an agent's Result, and none was closed
+before its agent answered. Otherwise a closed conversation makes it *closed by the person*: closed by
+the person or by its participants, nobody can ask in it again, so a part blocked there is not shown as
+blocked. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
 roadmap is complete or what remains is waiting or blocked. An item whose text was edited after its
 conversation began says so, from the item's own record of when it was edited and never by comparing

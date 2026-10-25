@@ -64,7 +64,9 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
+        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[12 * 1024 * 1024];
         Random.Shared.NextBytes(big);
@@ -91,7 +93,9 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
+        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
         await FileWire.PlaceAsync(orders.Client, Orders, "start.md", "x"u8.ToArray(), "bait", Ct);
         await orders.Client.RequestAsync(Requests.Open(Orders, Inventory, "what are the stock levels", "bait"), cancellationToken: Ct);
 
@@ -131,7 +135,9 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
+        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
         await orders.Client.RequestAsync(Requests.Open(Orders, Inventory, "what are the stock levels", "bait"), cancellationToken: Ct);
 
         await FileWire.PlaceAsync(inventory.Client, Inventory, "big.md", "first"u8.ToArray(), "bait", Ct);
@@ -172,7 +178,9 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
+        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[12 * 1024 * 1024];
         Random.Shared.NextBytes(big);
@@ -229,7 +237,7 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         Assert.True(s1 == StatusCode.OK, $"first status={s1} detail={d1}");
 
         // Nothing waits on the file now. Past the bound, a fresh download from the start.
-        await Task.Delay(4000, Ct);
+        await Task.Delay(broker.Runtime.Files.StallAfter + TimeSpan.FromSeconds(1), Ct);
 
         using var second = Fetch(billing);
         var (s2, d2, b2) = await ReadSteadilyAsync(second, 0);

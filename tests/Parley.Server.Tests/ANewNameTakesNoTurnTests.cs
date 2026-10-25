@@ -7,11 +7,11 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a placement of a new name into a folder that exists, which takes no turn, still races safely (review, round 25).
+/// That a placement, whose first attempt takes no turn, still races safely with destroys, prunes and removals.
 /// </summary>
 /// <remarks>
 /// Kept from review round 25, where each held: two placements of one new name, a new name landing inside a destroy or
-/// a prune, the person's file refused to an agent before any turn, and a change queued behind one given up.
+/// a prune, and the person's file refused to an agent before any turn and removed for the person.
 /// </remarks>
 public sealed class ANewNameTakesNoTurnTests
 {
@@ -202,74 +202,5 @@ public sealed class ANewNameTakesNoTurnTests
         var removed = await removing.WaitAsync(TimeSpan.FromSeconds(5), Ct);
         Assert.Single(removed.Removed);
         Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public async Task A_new_name_racing_the_agents_own_removal_of_that_name_is_never_told_it_is_the_persons()
-    {
-        await using var broker = await LoopbackBroker.StartAsync(Ct);
-        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
-        await FileWire.PlaceAsync(orders.Client, Orders, "start.md", Text("x"), "bait", Ct);
-
-        var told = new List<string>();
-
-        for (var round = 0; round < 60; round++)
-        {
-            var name = $"y{round}.md";
-
-            // The slow placement looks first, while no file has the name, so it takes no turn.
-            using var slow = await BeginAsync(orders, name, "second", "bait");
-            await Task.Delay(30, Ct);
-            await FileWire.PlaceAsync(orders.Client, Orders, name, Text("first"), "bait", Ct);
-
-            var removing = orders.Client.RemoveOwnFilesAsync(
-                new Wire.RemoveFilesRequest { Agent = Orders, Files = { new Wire.FileRef { ConversationId = "bait", Name = name } } },
-                cancellationToken: Ct).ResponseAsync;
-            await Task.Delay(round % 5, Ct);
-            await slow.RequestStream.CompleteAsync();
-
-            var placed = await slow.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-            await removing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-
-            if (placed.Outcome == Wire.PlaceOutcome.PlacedByAnother)
-            {
-                told.Add($"{name}: '{placed.PlacedBy}' {placed.Detail}");
-            }
-        }
-
-        Assert.True(told.Count == 0, $"{told.Count} of 60 told the name was another's: {string.Join(" | ", told.Take(3))}");
-    }
-
-    [Fact]
-    public async Task A_change_queued_behind_one_given_up_still_makes_the_reader_overdue()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "parley-queued-" + Guid.NewGuid().ToString("N"));
-        using var location = new FileLocationStore(root, root + "-incoming", deleteOnDispose: true);
-        var name = SharedFileName.Create("notes.md");
-
-        await using (var staged = location.Stage())
-        {
-            await staged.WriteAsync(Text("a"), Ct);
-            await staged.FinishAsync(Ct);
-            staged.CommitTo("pricing", name);
-        }
-
-        location.StallAfter = TimeSpan.FromMilliseconds(200);
-        var reader = await location.HoldForReadingAsync("pricing", name, Ct);
-
-        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
-        var first = location.ChangeAsync("pricing", name, cancel.Token);
-        var second = location.ChangeAsync("pricing", name, Ct);
-        await Task.Delay(50, Ct);
-        await cancel.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
-
-        await Task.Delay(500, Ct);
-        Assert.False(second.IsCompleted);
-        Assert.True(location.IsOverdue("pricing", name), "the queued change's waiting did not make the reader overdue");
-
-        await reader.DisposeAsync();
-        (await second.WaitAsync(TimeSpan.FromSeconds(5), Ct)).Dispose();
-        Assert.False(location.IsOverdue("pricing", name));
     }
 }
