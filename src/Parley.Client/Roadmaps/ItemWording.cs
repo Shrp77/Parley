@@ -47,7 +47,7 @@ public static class ItemWording
             ItemStanding.WaitingOnPerson => "waiting on you",
             ItemStanding.Blocked => state.Blocker is { Length: > 0 } blocker ? $"blocked: {blocker}" : "blocked",
             ItemStanding.Done => "done",
-            ItemStanding.Closed => "closed",
+            ItemStanding.Closed => state.Blocker is { Length: > 0 } stopped ? $"closed while blocked: {stopped}" : "closed",
             _ => "could not be read",
         };
 
@@ -82,7 +82,7 @@ public static class ItemWording
             NextKind.Item => string.Create(CultureInfo.InvariantCulture, $"Next: item {standing.NextNumber}."),
             NextKind.Complete => "Every item is done.",
             NextKind.Empty => "This roadmap has no items.",
-            _ => "Nothing is ready to start: what is left is waiting on something or blocked.",
+            _ => "Nothing is ready to start: what is left is waiting on something, blocked, or needs an item that was closed.",
         };
     }
 }

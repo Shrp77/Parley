@@ -867,7 +867,7 @@ live item what the broker already holds — whether its conversation exists, how
 open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest done-or-blocked result on the person's request was blocked, the blocker one of those named, who closed it —
 and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
 derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
-*blocked* (with the blocker the agent gave), *done*, *closed by the person*, or *could not be read*.
+*blocked* (with the blocker the agent gave), *done*, *closed*, or *could not be read*.
 **A state that could not be read is never shown as not started.** No operation sets a state, so a
 roadmap never shows one that no conversation supports; an item finished or made irrelevant elsewhere is
 removed or reworded by editing the roadmap. Each agent asked has a part in the item, and its part is
@@ -876,11 +876,12 @@ decided by its own **latest** result on the person's requests: of its closed exc
 item is *blocked* while any agent's part is blocked and its conversation is open, and shows the blocker
 that agent gave; asking it again and getting `done` clears it. It is *done* when nothing in it is
 open, no part is blocked, at least one exchange ended with an agent's Result, and none was closed
-before its agent answered. Otherwise a closed conversation makes it *closed by the person*: closed by
-the person or by its participants, nobody can ask in it again, so a part blocked there is not shown as
-blocked. A roadmap names its **next item**: the first item, in
+before its agent answered. Otherwise a closed conversation, closed by the person or by its participants,
+makes it *closed*: nobody can ask in it again. A closed item with a blocked part still names the blocker
+that agent gave, so a close never hides a block, and it is never done. A conversation still open with
+nothing open in it and an exchange closed before its agent answered also reads *closed*. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
-roadmap is complete or what remains is waiting or blocked. An item whose text was edited after its
+roadmap is complete or what remains is waiting, blocked, or needs an item that was closed. An item whose text was edited after its
 conversation began says so, from the item's own record of when it was edited and never by comparing
 words, because the person may change the item's words before sending them.
 

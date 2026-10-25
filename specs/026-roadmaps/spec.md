@@ -46,7 +46,7 @@ The person opens a roadmap and sees each item with its state: not started, in pr
 **Acceptance Scenarios**:
 
 1. **Given** an item whose conversation has an open request an agent has collected, **When** the person opens the roadmap, **Then** the item reads in progress and names the agent holding it.
-2. **Given** an item whose conversation ended with a blocked result, **When** the roadmap is opened, **Then** it reads blocked and says the blocker the agent gave.
+2. **Given** an item whose conversation is open and whose agent's result was blocked, **When** the roadmap is opened, **Then** it reads blocked and says the blocker the agent gave; once the conversation is closed it reads closed and still says that blocker.
 3. **Given** an item whose agent has asked the person something, **When** the roadmap is opened, **Then** it reads waiting on the person, and the roadmap also counts it as waiting on them at project level.
 4. **Given** items ahead of a not-started item are all done, **When** the roadmap is opened, **Then** that item is named next. **Given** an earlier item is not done and a later item depends on it, **Then** the later item is not named next.
 5. **Given** every item is done, **When** the roadmap is opened, **Then** it reads complete and names no next item.
@@ -150,11 +150,11 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 **State and next**
 
-- **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed by the person, and could not be read.
+- **FR-014**: Each item's state MUST be derived from its conversation's exchanges and the registry, never typed in by anyone, and no operation sets or overrides it, with at least: not started, in progress, waiting on an agent, waiting on the person, blocked, done, closed, and could not be read.
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
 - **FR-014a**: An item whose text was edited after its conversation began MUST say so, from the item's own edit record and never by comparing words, because the person may change the item's words before sending them.
 - ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so on one machine a surface never meets a broker older than itself. A surface reaching a broker on another machine, through the SSH tunnel SPEC.md §16 describes, can; the project health warning that names a broker of another release says so. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
-- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting or blocked).
+- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting, blocked, or needs an item that was closed).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
 - **FR-018**: A state that cannot be read MUST be shown as such and never as not started.
 
@@ -205,7 +205,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - Agents propose; Parley does not. The description said "an agent (or Parley)". Parley proposing would be a fourth act beyond the three the constitution (6.0.0) limits it to, so it is left out. Adding it is a constitution amendment for the owner to decide, not an implementation detail.
 - A proposal reaches the person through the same route as other work waiting on them (the waiting-on-you list), rather than as a message in a transcript.
 - Item order is the intended order; an item depends on those listed, and by default on nothing. "Next" respects dependencies when given and order otherwise.
-- Items are worked as requests like any other: each agent's latest `done` or `blocked` result on the person's request decides its part (an answer or an acknowledgement decides nothing), so an item is blocked while any agent's latest such result is `blocked`, and done when nothing in it is open, none is, and every closed exchange ended with a Result, and a person's close makes it closed by the person.
+- Items are worked as requests like any other: each agent's latest `done` or `blocked` result on the person's request decides its part (an answer or an acknowledgement decides nothing), so an item is blocked while any agent's latest such result is `blocked` and its conversation is open, done when nothing in it is open, none is, and every closed exchange ended with a Result, and closed otherwise once its conversation is closed, by the person or its participants, still naming any blocker.
 - One roadmap item has one conversation; an item meant for several agents sends one request each within it.
 - Nothing is released, but live stores are kept: schema 1 is frozen and any schema change is a new migration that upgrades a store in place. The protocol and the wire change freely, since every tool on a machine is installed together; protocol and version numbers move per this repository's rules.
 - Roadmaps are per project and never cross projects.

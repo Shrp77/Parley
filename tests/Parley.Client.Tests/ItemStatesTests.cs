@@ -104,17 +104,27 @@ public sealed class ItemStatesTests
     }
 
     [Theory]
-    [InlineData("person", 0)]
-    [InlineData("person", 1)]
-    [InlineData("consensus", 0)]
-    public void A_blocked_item_whose_conversation_was_closed_reads_closed(string closedBy, int closedWithoutAnAnswer)
+    [InlineData("person", 0, 0)]
+    [InlineData("person", 0, 1)]
+    [InlineData("consensus", 0, 0)]
+    [InlineData("person", 1, 0)]
+    [InlineData("consensus", 1, 0)]
+    public void A_blocked_item_whose_conversation_was_closed_reads_closed_names_its_blocker_and_is_never_done(
+        string closedBy, int complete, int closedWithoutAnAnswer)
     {
-        // Found by review, round 26: blocked was read first, so an item blocked in a conversation nobody can ask in again
-        // read blocked for good, and the items that need it were never next.
-        var state = ItemStates.Of(
-            Plan(Item(1, Closed(blocked: 1, closed: closedWithoutAnAnswer, blocker: "permission", by: closedBy))), [], Person).Items[0];
+        // Found by review, round 26: an item blocked in a conversation nobody can ask in again read blocked for good. Then
+        // round 27: reading it closed dropped the blocker, though one agent may close a conversation holding nothing open,
+        // and with another part done it read done, and the item that needs it became next.
+        var standing = ItemStates.Of(
+            Plan(
+                Item(1, Closed(complete: complete, blocked: 1, closed: closedWithoutAnAnswer, blocker: "permission", by: closedBy)),
+                Item(2, Untouched(), 1)),
+            [],
+            Person);
 
-        Assert.Equal(ItemStanding.Closed, state.Standing);
+        Assert.Equal(ItemStanding.Closed, standing.Items[0].Standing);
+        Assert.Equal("permission", standing.Items[0].Blocker);
+        Assert.Null(standing.NextNumber);
     }
 
     [Fact]

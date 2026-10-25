@@ -32,9 +32,9 @@ Each decision names the code it rests on. Facts about the code come from a read 
 - waiting on the person: a wait-for edge whose waited-on is the person;
 - blocked: some agent's latest `done` or `blocked` result on the person's request is `blocked`, and the conversation is open; the blocker that agent gave (`missing_information`, `conflict`, `permission`) is shown;
 - done: all exchanges closed, at least one with a Result and none without, and no agent's latest `done` or `blocked` result is `blocked` (an `answered` or `acknowledged` result decides nothing);
-- closed by the person: the conversation is closed, by the person or its participants, and the item is not done (a request ended before its agent answered, or a part was blocked);
+- closed: the conversation is closed, by the person or its participants, and the item is not done (a request ended before its agent answered, or a part was blocked, whose blocker is still shown), or an exchange in it was closed before its agent answered;
 - could not be read: the read failed. **Never** shown as not started (FR-018).
-**Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting or blocked.
+**Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting, blocked, or needs an item that was closed.
 
 ## R4a. Dependencies are validated on final content
 

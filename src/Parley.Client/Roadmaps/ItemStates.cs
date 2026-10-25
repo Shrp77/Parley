@@ -25,7 +25,7 @@ public enum ItemStanding
 
     /// <summary>
     /// The conversation was closed, or destroyed, without the work done: a request ended before its agent answered, or a
-    /// part was blocked. Never read as not started.
+    /// part was blocked, whose blocker is kept. Never read as not started.
     /// </summary>
     Closed,
 
@@ -185,12 +185,14 @@ public static class ItemStates
                 item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, null, changed, false);
         }
 
-        // Blocked only while the conversation is open, because asking again is what clears it. Closed, by the person or by
-        // its participants, nobody can ask again, and an item read blocked there stayed blocked for good and was never
-        // done for the items that need it.
-        if (facts.BlockedExchanges > 0 && facts.ClosedBy is null)
+        // A blocked part decides the item before anything else, so it is never done. Blocked while the conversation is open,
+        // because asking again is what clears it; closed, by the person or by its participants, nobody can ask again, so it
+        // reads closed, still naming the blocker: one agent may close a conversation that holds nothing open, and a close
+        // that dropped the blocker hid it from the person.
+        if (facts.BlockedExchanges > 0)
         {
-            return new ItemState(item, ItemStanding.Blocked, [], facts.Blocker, changed, false);
+            return new ItemState(
+                item, facts.ClosedBy is null ? ItemStanding.Blocked : ItemStanding.Closed, [], facts.Blocker, changed, false);
         }
 
         if (facts.CompleteExchanges > 0 && facts.ClosedExchanges == 0)
@@ -198,7 +200,8 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.Done, [], null, changed, false);
         }
 
-        // Closed with no Result for some of it: ended by a person or by the broker, which is not the work done.
+        // A request ended before its agent answered (closed by a person or by the broker), or a conversation closed or
+        // destroyed with nothing done: not the work done.
         return facts.CompleteExchanges + facts.ClosedExchanges > 0 || facts.ClosedBy is not null
             ? new ItemState(item, ItemStanding.Closed, [], null, changed, false)
             : new ItemState(item, ItemStanding.NotStarted, [], null, false, false);

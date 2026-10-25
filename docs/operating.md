@@ -186,7 +186,7 @@ agent, waiting on you, blocked (and why), done, or closed. It also says which it
 sets a state by hand. To change what an item says, edit the roadmap. To resolve a blocked item,
 send the agent a further request in its conversation; the item stops reading blocked when that
 agent's next result says `done`. An item whose conversation is closed reads closed, not blocked,
-because nobody can ask in it again.
+because nobody can ask in it again; if a part was blocked it says so, with the blocker.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
