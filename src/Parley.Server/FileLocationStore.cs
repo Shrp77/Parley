@@ -852,6 +852,9 @@ public sealed class FileLocationStore : IDisposable
         {
             lock (_lock)
             {
+                // Cleared here too, so a change cancelled while it waited leaves no stamp: one left made every later
+                // download of the file read as overdue and fail at once.
+                _changeWaitingSince = null;
                 _changing = false;
                 _changed.TrySetResult();
             }

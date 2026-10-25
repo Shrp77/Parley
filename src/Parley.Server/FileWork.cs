@@ -154,17 +154,24 @@ internal sealed class FileWork(BrokerRuntime runtime)
             var sha256 = await staged.FinishAsync(cancellationToken).ConfigureAwait(false);
             var folder = before.Folder;
 
+            // The turn is taken only on a file that exists, and only one of the agent's own. A new name in a folder that
+            // exists has no download to wait for; a turn taken on it anyway waited on a download of a file another agent
+            // placed meanwhile, made that download overdue, and was then refused.
+            var turnOn = before.Existing is null ? null : folder;
+
             // Twice at most in practice: a file that appeared under this name while the bytes arrived needs its turn
             // taken before it can be replaced, and the second attempt holds it.
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 var turn = folder is null
                     ? await _runtime.Files.FirstPlacementAsync(conversation, cancellationToken).ConfigureAwait(false)
-                    : await _runtime.Files.ChangeAsync(folder, name, cancellationToken).ConfigureAwait(false);
+                    : turnOn is null
+                        ? null
+                        : await _runtime.Files.ChangeAsync(turnOn, name, cancellationToken).ConfigureAwait(false);
 
                 using (turn)
                 {
-                    var heldFolder = folder;
+                    var heldFolder = turnOn;
 
                     Committed committed;
 
@@ -189,7 +196,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
                         return reply;
                     }
 
-                    folder = committed.NeedsTurnOn;
+                    folder = turnOn = committed.NeedsTurnOn;
                 }
             }
 
@@ -283,7 +290,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
             {
                 throw new RpcException(new Status(
                     StatusCode.DeadlineExceeded,
-                    "The download was ended because the person is changing or removing files and it was still going. Fetch it again."));
+                    "The download was ended because the file is being changed or removed and the download was still going. Fetch it again."));
             }
 
             using var limit = new CancellationTokenSource();
@@ -534,6 +541,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
             var stored = resolution.File!;
             var file = stored.File;
 
+            // Refused before the turn is sought, because the turn waits on the file's downloads and, waiting, makes them
+            // overdue: a removal another agent may not make would otherwise end them. Asked again under the turn.
+            if (caller is not null && file.PlacedBy != caller)
+            {
+                reply.Refused.Add(Refused(new FileRefusal(reference, FileRejection.NamePlacedByAnother, file.PlacedBy?.Value, [], 0)));
+                continue;
+            }
+
             using (await _runtime.Files.ChangeAsync(file.Folder, file.Name, cancellationToken).ConfigureAwait(false))
             {
                 var rejection = await _runtime.UseConnectionAsync(
@@ -712,6 +727,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
         if (look.Existing is null && look.Folder is { } folder && _runtime.Files.OnDisk(folder, name) is { } unrecorded)
         {
             return new Committed(PersonsOnDisk(conversation, name, requested, unrecorded), null);
+        }
+
+        // Another's file is refused here, before any turn is sought: a turn waits on the file's downloads and, waiting,
+        // makes them overdue, so a placement that was never going to land would end them.
+        if (look.Existing is { } another && another.File.PlacedBy != agent)
+        {
+            return new Committed(PlacedByAnother(another.File), null);
         }
 
         // A file of this name exists now, and this attempt does not hold its turn: a download of it may be streaming,

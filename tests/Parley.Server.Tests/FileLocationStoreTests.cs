@@ -272,6 +272,73 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_change_cancelled_while_it_waits_leaves_no_download_overdue()
+    {
+        // Found by review, round 24: the waiting stamp was cleared only when a change got its turn, so one cancelled while
+        // it waited left every later download of the file failing at once as overdue.
+        await Write("pricing", Notes, "a");
+
+        var reading = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+
+        using (var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            var changing = _location.ChangeAsync("pricing", Notes, cancel.Token);
+            await Task.Delay(50, Ct);
+            await cancel.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => changing);
+        }
+
+        await reading.DisposeAsync();
+
+        _location.StallAfter = TimeSpan.FromMilliseconds(200);
+        await Task.Delay(500, Ct);
+
+        await using var fresh = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        Assert.False(_location.IsOverdue("pricing", Notes), "a fresh download reads overdue after a cancelled change");
+    }
+
+    [Fact]
+    public async Task A_hold_over_everything_cancelled_while_it_waits_leaves_no_download_overdue()
+    {
+        // Found by review, round 24, beside the change above: a cancelled destroy, purge or prune left the same stamp.
+        await Write("pricing", Notes, "a");
+        _location.StallAfter = TimeSpan.FromMilliseconds(100);
+
+        var first = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        using var cancel = new CancellationTokenSource();
+        var everything = _location.ChangeEverythingAsync(cancel.Token);
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => everything);
+        await first.DisposeAsync();
+
+        await using var later = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        await Task.Delay(400, Ct);
+
+        Assert.False(_location.IsOverdue("pricing", Notes), "a download begun after the cancelled hold reads overdue");
+    }
+
+    [Fact]
+    public async Task Two_changes_queued_on_one_file_leave_no_stamp_once_both_are_through()
+    {
+        await Write("pricing", Notes, "a");
+        _location.StallAfter = TimeSpan.FromMilliseconds(100);
+
+        var first = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        var a = _location.ChangeAsync("pricing", Notes, Ct);
+        var b = _location.ChangeAsync("pricing", Notes, Ct);
+        await Task.Delay(300, Ct);
+        Assert.True(_location.IsOverdue("pricing", Notes), "a change waiting past the bound did not make the reader overdue");
+
+        await first.DisposeAsync();
+        (await a.WaitAsync(TimeSpan.FromSeconds(5), Ct)).Dispose();
+        (await b.WaitAsync(TimeSpan.FromSeconds(5), Ct)).Dispose();
+
+        await using var later = await _location.HoldForReadingAsync("pricing", Notes, Ct);
+        await Task.Delay(300, Ct);
+        Assert.False(_location.IsOverdue("pricing", Notes));
+    }
+
+    [Fact]
     public async Task A_replacement_of_a_file_never_read_does_not_wait_out_a_hold_over_everything()
     {
         // A replacement that waited out a destroy waited, with every other agent's, behind any download the destroy

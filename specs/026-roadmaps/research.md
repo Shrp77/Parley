@@ -24,14 +24,14 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 **Decision**: `ItemStates.Of(roadmap, waiting, me)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces and the CLI call it.
 **Rationale**: `Activities` and `WaitingOnYou` already do this for rooms, from `ConversationExport`, `WaitingEdge` and `AgentRecord`. Two surfaces implementing it separately is how they would disagree about what a person has seen (CLAUDE.md, Parley.Client). Spec clarification 1 (no hand-set state) means there is nothing to store.
-**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, the latest Result outcome and blocker, and who closed the conversation. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, waiting, me)`.
+**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, how many agents' latest done-or-blocked result on the person's request was blocked and the blocker one of those gave, and who closed the conversation. An agent's latest is the one that closed last. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, waiting, me)`.
 **States** and how each is derived (all from the item's conversation, absent conversation meaning not started):
 - not started: no conversation exists;
 - in progress: an open exchange whose request the receiver collected;
 - waiting on an agent: an open exchange the agent has not yet collected, or the agent has asked another agent;
 - waiting on the person: a wait-for edge whose waited-on is the person;
-- blocked: the latest Result on the exchange is `blocked`; its blocker (`missing_information`, `conflict`, `permission`) is shown;
-- done: all exchanges closed and the last Result is `done` or `answered` or `acknowledged`;
+- blocked: some agent's latest `done` or `blocked` result on the person's request is `blocked`; the blocker that agent gave (`missing_information`, `conflict`, `permission`) is shown;
+- done: all exchanges closed and no agent's latest `done` or `blocked` result is `blocked` (an `answered` or `acknowledged` result decides nothing);
 - closed by the person: conversation closed by a person without a done Result;
 - could not be read: the read failed. **Never** shown as not started (FR-018).
 **Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting or blocked.
