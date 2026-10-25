@@ -374,10 +374,11 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   end. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the key rules.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
   so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one
-  from the pool directly. Work off the loop reads the box with `Line.WrittenOnTheLoop` and changes it with
+  from the pool directly. What the loop has not started within five seconds is given up, never done late (a late
+  dialog could not be closed). Work off the loop reads the box with `Line.WrittenOnTheLoop` and changes it with
   `Line.Rewrite`, read and written in one turn, because the toolkit's text view throws when it is read or changed
   while the loop draws it or takes a key, and a key typed between a read and a write is lost. The harness never pumps
-  a loop and leaves `Marshal` unset (only `TheBoxIsWrittenOnTheLoopTests` sets it, alone), so a driven test must not
+  a loop and leaves `Marshal` unset (only the `OwnsTheMarshal` collection sets it, alone), so a driven test must not
   press a key that starts queued work that opens a view and then draw on its own thread in the same breath: call the
   handler and `await shell.Settled`.
 - **A read can land after the person has moved on.** Enter and Escape read a project off the work queue, so

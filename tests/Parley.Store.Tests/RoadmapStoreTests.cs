@@ -375,6 +375,33 @@ public sealed class RoadmapStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task A_revision_does_not_read_every_waiting_hint_whole_to_find_the_ones_it_supersedes()
+    {
+        // A hint has no bound and an agent may make as many as it likes. Reading every waiting proposal whole inside the
+        // confirm's write held hundreds of megabytes to supersede nothing; only hints as long as the title are read now.
+        var launch = await ProposedAsync("Launch");
+        var one = await Repository.ConfirmAsync(launch, (await Repository.GetProposalAsync(launch, Ct))!.Content, null, Now, cancellationToken: Ct);
+        var reviser = await ProposedAsync("Launch", Orders, target: "Launch");
+
+        _store.Execute($$"""
+            WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6000)
+            INSERT INTO roadmap_proposals (proposer, target_title, title, size, created_utc)
+            SELECT 'billing@test', printf('%.*c', 10000, 'x'), printf('%.*c', 10000, 'y'), 20000, '{{FacilitatorStore.Stamp}}'
+              FROM n;
+            """);
+
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var revised = await Repository.ConfirmAsync(
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+
+        Assert.True(revised.Done, revised.Problem);
+
+        // Whole, those 6,000 proposals are 240 MB of strings; their hints alone, 120 MB.
+        Assert.True(allocated < 40_000_000, $"a revision allocated {allocated:N0} bytes");
+    }
+
+    [Fact]
     public async Task A_rename_then_a_revision_decide_each_waiting_hint_once_by_the_title_before_the_revision()
     {
         var launch = await ProposedAsync("Launch");

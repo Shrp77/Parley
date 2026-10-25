@@ -390,20 +390,36 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         // which a proposer chooses: that would let one agent's proposal decide another's aimed at a different roadmap.
         // Compared here, not in SQL: SQLite's lower() folds ASCII only, and the surfaces show a hint as naming a roadmap
         // with this same comparison (ProposalText.Matching), so the two agree on which proposals a revision decides.
-        var rivals = revisedTitle is null ? [] : (await _connection.QueryAsync<ProposalRow>(
+        // Narrowed in SQL first, to hints as long as the title and to their ids: a hint has no bound, and reading every
+        // waiting proposal whole inside this write held hundreds of megabytes to supersede nothing. A match ignoring case
+        // is always the same length, so the narrowing loses none.
+        var matching = revisedTitle is null ? [] : (await _connection.QueryAsync<IdAndHint>(
+            new CommandDefinition(
+                """
+                SELECT id AS Id, target_title AS Hint
+                  FROM roadmap_proposals
+                 WHERE state = 'waiting' AND id <> @Id AND target_title IS NOT NULL
+                   AND length(target_title) = length(@Title);
+                """,
+                new { Id = id, Title = revisedTitle },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false))
+            .Where(row => string.Equals(row.Hint, revisedTitle, StringComparison.OrdinalIgnoreCase))
+            .Select(row => row.Id)
+            .ToList();
+
+        var rivals = matching.Count == 0 ? [] : (await _connection.QueryAsync<ProposalRow>(
             new CommandDefinition(
                 """
                 SELECT id AS Id, proposer AS Proposer, source_conversation AS SourceConversation,
                        target_title AS TargetTitle, title AS Title, size AS Size, state AS State,
                        created_utc AS CreatedUtc, decided_utc AS DecidedUtc
                   FROM roadmap_proposals
-                 WHERE state = 'waiting' AND id <> @Id AND target_title IS NOT NULL;
+                 WHERE id IN @Ids;
                 """,
-                new { Id = id },
+                new { Ids = matching },
                 scope.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false))
-            .Where(row => string.Equals(row.TargetTitle, revisedTitle, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
         foreach (var rival in rivals)
         {
@@ -1181,6 +1197,8 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         string? EditedUtc);
 
     private sealed record NumberAndRevision(long Number, long Revision);
+
+    private sealed record IdAndHint(long Id, string Hint);
 
     private sealed record LiveItem(long Id, long Number, string Text);
 

@@ -11,14 +11,16 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That an item's words are sent as words even when the loop reaches them late.
+/// That an item's words never reach the box unmarked when the loop reaches them late.
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 14.</b> Starting an item fills the box on the loop and marks the words as the item's, so
 /// Enter sends them rather than running them as a command (PlansTests). The mark was made from the work queue after the
 /// fill returned, and the wait for the loop gives up after five seconds: a loop later than that showed the words
-/// unmarked, and <c>/add orders@test</c> as an item's words added orders to who the line reaches. Slow (the waits run
-/// out), and alone, because it stands a loop in (<see cref="OwnsTheMarshal"/>).
+/// unmarked, and <c>/add orders@test</c> as an item's words added orders to who the line reaches. Now work the loop has
+/// not started by then is given up (<see cref="Prompting.OnTheLoop"/>), so a late fill leaves the box as it was, and
+/// the person starts the item again. Slow (the waits run out), and alone, because it stands a loop in
+/// (<see cref="OwnsTheMarshal"/>).
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
 public sealed class AnItemsWordsStayWordsWhenTheLoopIsLateTests : IAsyncDisposable
@@ -49,13 +51,12 @@ public sealed class AnItemsWordsStayWordsWhenTheLoopIsLateTests : IAsyncDisposab
 
     public async ValueTask DisposeAsync()
     {
-        Prompting.Marshal = null;
         await _broker.DisposeAsync();
         _connection.Dispose();
     }
 
     [Fact]
-    public async Task An_items_words_filled_after_the_loops_wait_ran_out_are_still_sent_as_words()
+    public async Task An_item_the_loop_reaches_after_the_wait_leaves_the_box_empty_rather_than_unmarked()
     {
         using var driving = Driving.Open(width: 160, height: 40);
         using var directory = new BrokerDirectory(
@@ -91,30 +92,14 @@ public sealed class AnItemsWordsStayWordsWhenTheLoopIsLateTests : IAsyncDisposab
         var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
         view.Items.SelectedItem = 0;
 
-        using var loop = new StandInLoop();
+        using var loop = StandInLoop.Elsewhere();
 
         view.OpenSelected();
 
         // The loop is busy: nothing handed over runs until the work queue has gone past every wait.
         await shell.Settled;
         loop.Pump();
-        Assert.Equal("/add orders@test", shell.Line.Written);
 
-        shell.Line.Accept();
-
-        var settled = shell.Settled;
-
-        while (!settled.IsCompleted)
-        {
-            loop.Pump();
-        }
-
-        await settled;
-
-        var export = await new BrokerClient(_broker.Operators).ExportAsync("rm1-1", Ct);
-        Assert.DoesNotContain(Orders, shell.Drafting!.Recipients);
-        Assert.Contains(
-            export!.Messages,
-            message => message.To == Billing && message.PayloadJson.Contains("/add orders@test", StringComparison.Ordinal));
+        Assert.Equal(string.Empty, shell.Line.Written);
     }
 }

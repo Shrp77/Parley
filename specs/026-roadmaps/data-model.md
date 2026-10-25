@@ -19,13 +19,13 @@ Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A 
 | created_utc, decided_utc | decided_utc set iff state is not `waiting` (CHECK with `IS`, not `=`, since 025 found `=` lets NULL through) |
 
 ### roadmap_proposal_items
-`(proposal_id, position)` PK; `text` not blank; `intended_agent` nullable FK `agents(name)`; `needs` is a list of earlier positions, held in `roadmap_proposal_needs(proposal_id, position, needs_position)` with CHECK `needs_position < position` (a dependency may only point backwards, which makes cycles impossible by construction and removes the need for a cycle check).
+`(proposal_id, position)` PK; `text` not blank; `intended_agent` nullable FK `agents(name)` ON DELETE SET NULL (a purge leaves the item, meant for nobody); `needs` is a list of earlier positions, held in `roadmap_proposal_needs(proposal_id, position, needs_position)` with CHECK `needs_position < position` (a dependency may only point backwards, which makes cycles impossible by construction and removes the need for a cycle check).
 
 ### roadmaps
 `id` integer PK; `number` unique small integer per store (the `rm<number>` of item conversation names); `title`; `origin` (`proposed`, `edited`); `origin_proposal` nullable FK; `proposer` kept as text so a purged agent's name survives; `revision` integer, starts at 1; `created_utc`; `updated_utc`.
 
 ### roadmap_items
-`id` integer PK; `roadmap_id` FK; `number` integer, unique within the roadmap and never reused; `position` integer; `text` not blank; `intended_agent` nullable FK; `added_rev`; `removed_rev` nullable (CHECK `removed_rev IS NULL OR removed_rev > added_rev`); `edited_utc` nullable. Unique `(roadmap_id, number)`. Items are never deleted (R7). Unique `(roadmap_id, position)` among live items, as a partial unique index where `removed_rev IS NULL`.
+`id` integer PK; `roadmap_id` FK; `number` integer, unique within the roadmap and never reused; `position` integer; `text` not blank; `intended_agent` nullable FK `agents(name)` ON DELETE SET NULL; `added_rev`; `removed_rev` nullable (CHECK `removed_rev IS NULL OR removed_rev > added_rev`); `edited_utc` nullable. Unique `(roadmap_id, number)`. Items are never deleted (R7). Unique `(roadmap_id, position)` among live items, as a partial unique index where `removed_rev IS NULL`.
 
 ### roadmap_item_needs
 `(item_id, needs_item_id)`; trigger: both items belong to the same roadmap, neither removed, and the needed item's position is earlier.

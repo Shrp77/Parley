@@ -1021,6 +1021,13 @@ public sealed class ConversationRepository(SqliteConnection connection)
         await RazeAsync("messages", "DELETE FROM messages WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 
+        // Named rather than left to the cascade, so the operator is told (SPEC.md §14): one may be an agent's answer
+        // waiting for the person's review.
+        await RazeAsync(
+            "ownership_questions",
+            "DELETE FROM ownership_questions WHERE conversation_id = @Conversation;")
+            .ConfigureAwait(false);
+
         await RazeAsync("exchanges", "DELETE FROM exchanges WHERE conversation_id = @Conversation;")
             .ConfigureAwait(false);
 

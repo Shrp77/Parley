@@ -856,7 +856,7 @@ leaves a live item needing a later or removed item is refused, with a sentence. 
 therefore never a dependency of a live one.
 
 **A revision is proposed by title, and resolved by the person.** An agent never reads a roadmap, so it
-can name one it wants revised only by its title, which is a hint. The person chooses at confirmation
+can name one it wants revised only by its title, which is a hint, matched ignoring case. The person chooses at confirmation
 whether the proposal revises an existing roadmap or becomes a new one, and a proposal whose title
 matches an existing roadmap is shown with that match. Confirming a revision supersedes any other
 waiting proposal whose hint names the roadmap revised, by its title before the revision, and its
@@ -3858,11 +3858,15 @@ operator who genuinely wants an agent gone with a SQL client, no ordering, and n
 history actually gets corrupted.
 
 What gets deleted is found from the schema rather than enumerated here, so it cannot fall behind: any
-column declared `REFERENCES agents(name)` without `ON DELETE CASCADE` names the agent and its rows go,
+column declared `REFERENCES agents(name)` with no action on delete names the agent and its rows go,
 alongside everything belonging to a conversation the agent took part in. The cascading references — an
 agent's size refusals, for one — are the schema already saying those rows belong to the
-agent, and they go without being named. Foreign keys are deferred to commit rather than the deletions
-ordered by hand, so anything missed fails the whole purge instead of half-completing it.
+agent, and they go without being named. A `SET NULL` reference is the schema saying the row is somebody
+else's: a roadmap item meant for the agent, or an item in another agent's proposal, stays and is meant
+for nobody. Each conversation that goes is recorded as destroyed, as a destroy records one, so a roadmap
+item whose conversation went reads *closed*, never *not started*, and its name is not opened again.
+Foreign keys are deferred to commit rather than the deletions ordered by hand, so anything missed fails
+the whole purge instead of half-completing it.
 
 An operator is told what was destroyed, per table rather than as a total, because a total is the one
 number that carries no warning: "forty-one rows" could be a dead registration's leftovers or two months

@@ -1209,6 +1209,25 @@ public sealed class AgentRepository(SqliteConnection connection)
                 OR conversation_id IN (SELECT id FROM doomed_conversations);
             """).ConfigureAwait(false);
 
+        // **Recorded as destroyed, as a destroy records one** (SPEC.md §14: destroy is this argument applied to one
+        // conversation), before anything is deleted so the counts are still there. Without it a roadmap item whose
+        // conversation went read as never started and was offered as next, and the name was free to open again.
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants)
+                SELECT d.id, @When,
+                       (SELECT count(*) FROM messages WHERE conversation_id = d.id),
+                       COALESCE((SELECT group_concat(agent, ', ')
+                                   FROM (SELECT agent FROM conversation_participants
+                                          WHERE conversation_id = d.id ORDER BY agent)), '')
+                  FROM doomed_conversations AS d
+                 WHERE d.id IN (SELECT id FROM conversations);
+                """,
+                new { When = ExchangeRow.FormatTimestamp(nowUtc) },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
         var toll = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // The conversation-shaped part, which no generic scan could work out: these rows do not
