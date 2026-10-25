@@ -4993,8 +4993,6 @@ internal sealed class Shell : Window
 
         if (Held is not { } hold)
         {
-            Drafting = null;
-
             // No seat, so there is no "you" for anything to be owed by. The participants are still worth
             // showing, and the column says a seat is wanted. **So is everyone else in the project**: what the
             // room lists does not depend on whether a seat is held, only whether anybody can be ticked.
