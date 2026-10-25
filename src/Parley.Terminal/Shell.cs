@@ -421,10 +421,11 @@ internal sealed class Shell : Window
     /// <returns>The note.</returns>
     /// <remarks>
     /// An identifier that did not resolve is text and is sent as written, so the only defence
-    /// against a typo is that it is visible before Enter rather than in somebody's inbox afterwards.
+    /// against a typo is that it is visible before Enter rather than in somebody's inbox afterwards. Read on the loop,
+    /// because a read redraws the preview from the work queue.
     /// </remarks>
     private string? Near() =>
-        Commands.Resolve(Line.Written).NearMiss is { } nearly
+        Commands.Resolve(Line.WrittenOnTheLoop()).NearMiss is { } nearly
             ? $"this is text, not a command — did you mean /{nearly}?"
             : null;
 

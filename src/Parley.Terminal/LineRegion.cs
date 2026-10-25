@@ -411,8 +411,15 @@ internal sealed class LineRegion : FrameView
     /// because it is about what is written now and stops being true on the next keystroke, while the message line
     /// holds a record of what happened and is cleared only deliberately.
     /// </para>
+    /// <para>
+    /// <b>On the thread that draws.</b> Shown after a read, from the work queue, and measuring the region reads the
+    /// box's text, which threw while the person typed (TheBoxIsWrittenOnTheLoopTests).
+    /// </para>
     /// </remarks>
-    internal void Show(Draft? draft, bool seated, string? note = null)
+    internal void Show(Draft? draft, bool seated, string? note = null) =>
+        Prompting.OnTheLoop(() => ShowHere(draft, seated, note));
+
+    private void ShowHere(Draft? draft, bool seated, string? note)
     {
         var lines = new List<string>();
 
