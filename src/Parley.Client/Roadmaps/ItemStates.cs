@@ -53,7 +53,9 @@ public enum NextKind
 /// <param name="Item">The item as the broker returned it.</param>
 /// <param name="Standing">Where it stands.</param>
 /// <param name="Holders">The agents with something owed on it, when there are any.</param>
-/// <param name="Blocker">The blocker an agent gave, when the item is blocked.</param>
+/// <param name="Blocker">
+/// The blocker an agent gave, while any agent's part is blocked: on a blocked item, on a closed one, and beside open work.
+/// </param>
 /// <param name="TextChanged">Whether the item's text was edited after its conversation began.</param>
 /// <param name="IsNext">Whether it is the roadmap's next item.</param>
 public sealed record ItemState(
@@ -157,8 +159,14 @@ public static class ItemStates
             return new ItemState(item, ItemStanding.NotStarted, [], null, false, false);
         }
 
+        // Named whatever else the item is doing, so open work beside a blocked part never hides the block.
+        var blocker = facts.BlockedExchanges > 0 ? facts.Blocker : null;
+
         if (facts.OpenExchanges > 0)
         {
+            // Open work outranks a blocked part: asking the blocked agent again reads as that request, not as the block
+            // it may clear, and an item sent to two agents reads as the one still working. The blocker stays named.
+            //
             // The graph is the only thing that says whose move an open exchange is. Without it the item is not known to
             // be anything: working, waiting on somebody, and waiting on the person all look the same from the facts.
             if (waiting is null)
@@ -173,7 +181,7 @@ public static class ItemStates
             {
                 return new ItemState(
                     item, ItemStanding.WaitingOnPerson, [.. edges.Where(e => e.WaitedOn == me).Select(e => e.Waiter).Distinct()],
-                    null, changed, false);
+                    blocker, changed, false);
             }
 
             var owing = edges.Select(e => e.WaitedOn).Distinct().OrderBy(a => a.Value, StringComparer.Ordinal).ToList();
@@ -182,10 +190,10 @@ public static class ItemStates
             var onAgent = edges.Any(e => e.Waiter != me) || !facts.Collected;
 
             return new ItemState(
-                item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, null, changed, false);
+                item, onAgent ? ItemStanding.WaitingOnAgent : ItemStanding.InProgress, owing, blocker, changed, false);
         }
 
-        // A blocked part decides the item before anything else, so it is never done. Blocked while the conversation is open,
+        // With nothing open, a blocked part decides the item, so it is never done. Blocked while the conversation is open,
         // because asking again is what clears it; closed, by the person or by its participants, nobody can ask again, so it
         // reads closed, still naming the blocker: one agent may close a conversation that holds nothing open, and a close
         // that dropped the blocker hid it from the person.

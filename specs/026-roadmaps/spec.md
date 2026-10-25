@@ -154,7 +154,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 - **FR-015**: A blocked item MUST show the blocker the agent gave.
 - **FR-014a**: An item whose text was edited after its conversation began MUST say so, from the item's own edit record and never by comparing words, because the person may change the item's words before sending them.
 - ~~**FR-014b**~~: **Dropped, and recorded as a decision rather than an omission.** `install.ps1 -Force` ends the broker and every adapter and installs one build of every tool, so on one machine a surface never meets a broker older than itself. A surface reaching a broker on another machine, through the SSH tunnel SPEC.md §16 describes, can; the project health warning that names a broker of another release says so. Only the store outlives an install, and it is upgraded by migration. Owner's call, 2026-10-24.
-- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting, blocked, or needs an item that was closed).
+- **FR-016**: A roadmap MUST name its next item: the first not-started item, in order, whose dependencies are all done. When none qualifies it MUST say why (complete, or everything remaining is waiting, blocked or closed, or needs an item that is).
 - **FR-017**: A roadmap waiting on the person MUST be counted with the project's other work waiting on them.
 - **FR-018**: A state that cannot be read MUST be shown as such and never as not started.
 

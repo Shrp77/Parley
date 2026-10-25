@@ -121,7 +121,7 @@ public sealed record RoadmapSummary(
 /// <param name="Collected">Whether every open exchange's request has been collected by its receiver.</param>
 /// <param name="CompleteExchanges">How many closed exchanges ended with a Result that did the work or answered.</param>
 /// <param name="BlockedExchanges">How many agents' latest done-or-blocked result on the person's request was blocked.</param>
-/// <param name="ClosedExchanges">How many closed exchanges ended with no Result, closed by the broker or a person.</param>
+/// <param name="ClosedExchanges">How many of the person's requests were closed with no Result, by the broker or a person.</param>
 /// <param name="Blocker">The blocker kind one of the exchanges counted in <c>BlockedExchanges</c> named, or <see langword="null"/>.</param>
 /// <param name="ClosedBy">Who closed the conversation, or <see langword="null"/> while it is not closed.</param>
 /// <param name="Destroyed">Whether the conversation was destroyed (SPEC.md §14).</param>

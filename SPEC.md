@@ -864,7 +864,7 @@ revision, and its proposer is told. Confirming a new roadmap supersedes nothing.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are
-open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest done-or-blocked result on the person's request was blocked, the blocker one of those named, who closed it —
+open, whether every open request was collected, how many closed exchanges ended complete and how many of the person's requests were closed with no Result, how many agents' latest done-or-blocked result on the person's request was blocked, the blocker one of those named, who closed it —
 and combines that with who is waiting on whom (§10.2 `waiting()`) and the registry. From those it
 derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on the person*,
 *blocked* (with the blocker the agent gave), *done*, *closed*, or *could not be read*.
@@ -872,16 +872,17 @@ derives one of: *not started*, *in progress*, *waiting on an agent*, *waiting on
 roadmap never shows one that no conversation supports; an item finished or made irrelevant elsewhere is
 removed or reworded by editing the roadmap. Each agent asked has a part in the item, and its part is
 decided by its own **latest** result on the person's requests: of its closed exchanges whose result says
-`done` or `blocked`, the one that closed last. An `answered` or `acknowledged` result decides nothing. An
-item is *blocked* while any agent's part is blocked and its conversation is open, and shows the blocker
-that agent gave; asking it again and getting `done` clears it. It is *done* when nothing in it is
-open, no part is blocked, at least one exchange ended with an agent's Result, and none was closed
-before its agent answered. Otherwise a closed conversation, closed by the person or by its participants,
-makes it *closed*: nobody can ask in it again. A closed item with a blocked part still names the blocker
-that agent gave, so a close never hides a block, and it is never done. A conversation still open with
-nothing open in it and an exchange closed before its agent answered also reads *closed*. A roadmap names its **next item**: the first item, in
+`done` or `blocked`, the one that closed last. An `answered` or `acknowledged` result decides nothing. While
+anything in the item is open it reads *in progress* or *waiting*, as that work stands, so asking a
+blocked agent again reads as the new request. With nothing open, it is *blocked* while any agent's part
+is blocked and its conversation is open; asking that agent again and getting `done` clears it. It is
+*done* when nothing in it is open, no part is blocked, at least one exchange ended with an agent's
+Result, and none of the person's requests was closed before its agent answered. Otherwise a closed conversation, closed by the
+person or by its participants, makes it *closed*: nobody can ask in it again. Whatever it reads, an item
+with a blocked part names the blocker that agent gave, beside open work too, so neither a close nor
+another agent's work hides a block, and it is never done. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
-roadmap is complete or what remains is waiting, blocked, or needs an item that was closed. An item whose text was edited after its
+roadmap is complete or that what remains is waiting, blocked or closed, or needs an item that is. An item whose text was edited after its
 conversation began says so, from the item's own record of when it was edited and never by comparing
 words, because the person may change the item's words before sending them.
 
@@ -2987,7 +2988,7 @@ other could.
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
-| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete or with no Result, how many agents' latest done-or-blocked result on the person's request was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
+| `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete and how many of the person's requests were closed with no Result, how many agents' latest done-or-blocked result on the person's request was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
 | `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
 | `proposal_count(state?)` | How many proposals are in a state, waiting ones by default, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
 | `proposal(id)` | One proposal whole, in whatever state it is, or nothing when there is none by that identifier. What a surface reads when the person opens a proposal from a list of headings. |

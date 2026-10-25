@@ -128,6 +128,18 @@ public sealed class ItemStatesTests
     }
 
     [Fact]
+    public void Open_work_beside_a_blocked_part_reads_as_that_work_and_still_names_the_blocker()
+    {
+        // Found by review, round 28: an item sent to two agents read "in progress" with the other's block not shown.
+        var facts = new ItemFacts(true, 1, true, 0, 1, 0, "permission", null, false, false, [8]);
+
+        var state = ItemStates.Of(Plan(Item(1, facts)), [new WaitingEdge(Person, Billing, 8)], Person).Items[0];
+
+        Assert.Equal(ItemStanding.InProgress, state.Standing);
+        Assert.Equal("permission", state.Blocker);
+    }
+
+    [Fact]
     public void Every_exchange_ending_in_a_result_is_done()
     {
         Assert.Equal(ItemStanding.Done, Standing(Closed(complete: 2)));

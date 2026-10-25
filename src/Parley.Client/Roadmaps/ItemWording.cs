@@ -39,15 +39,19 @@ public static class ItemWording
 
         var holders = string.Join(", ", state.Holders.Select(h => h.Role));
 
+        // Worded as the transcript words it: missing_information is "missing information".
+        var blocker = state.Blocker is { Length: > 0 } named ? named.Replace('_', ' ') : null;
+        var alsoBlocked = blocker is null ? string.Empty : $"; blocked: {blocker}";
+
         var said = state.Standing switch
         {
             ItemStanding.NotStarted => "not started",
-            ItemStanding.InProgress => holders.Length > 0 ? $"in progress with {holders}" : "in progress",
-            ItemStanding.WaitingOnAgent => holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent",
-            ItemStanding.WaitingOnPerson => "waiting on you",
-            ItemStanding.Blocked => state.Blocker is { Length: > 0 } blocker ? $"blocked: {blocker}" : "blocked",
+            ItemStanding.InProgress => (holders.Length > 0 ? $"in progress with {holders}" : "in progress") + alsoBlocked,
+            ItemStanding.WaitingOnAgent => (holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent") + alsoBlocked,
+            ItemStanding.WaitingOnPerson => "waiting on you" + alsoBlocked,
+            ItemStanding.Blocked => blocker is null ? "blocked" : $"blocked: {blocker}",
             ItemStanding.Done => "done",
-            ItemStanding.Closed => state.Blocker is { Length: > 0 } stopped ? $"closed while blocked: {stopped}" : "closed",
+            ItemStanding.Closed => blocker is null ? "closed" : $"closed while blocked: {blocker}",
             _ => "could not be read",
         };
 
@@ -82,7 +86,7 @@ public static class ItemWording
             NextKind.Item => string.Create(CultureInfo.InvariantCulture, $"Next: item {standing.NextNumber}."),
             NextKind.Complete => "Every item is done.",
             NextKind.Empty => "This roadmap has no items.",
-            _ => "Nothing is ready to start: what is left is waiting on something, blocked, or needs an item that was closed.",
+            _ => "Nothing is ready to start: what is left is waiting, blocked or closed, or needs an item that is.",
         };
     }
 }

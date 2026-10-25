@@ -1120,15 +1120,19 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                                           AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
                                                          AND d.outcome IN ('done', 'blocked'))
                                         ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1))   AS Blocked,
-                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
-                           AND outcome = 'closed')                                                      AS Closed,
+                       -- The person's requests closed before their agent answered. Like Blocked, only the person's: the
+                       -- item is what the person asked, and an agent's own notice to a peer, open when the conversation
+                       -- closed, made a done item closed for good.
+                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C AND outcome = 'closed'
+                           AND requester IN (SELECT name FROM agents WHERE adapter = @Seat))            AS Closed,
                        -- The blocker of an exchange the count above counts: the newest one that is some agent's latest
                        -- done-or-blocked one on the person's request and ended blocked. Taken from the conversation's
                        -- newest blocked result, it named an agent since asked again and done, and the person was sent to
-                       -- the wrong one.
+                       -- the wrong one. Joined through the result items' exchange, never their message: retention deletes
+                       -- messages and keeps exchanges and result items, and a join through the message lost the blocker
+                       -- while the count above still counted it.
                        (SELECT ri.blocker FROM result_items ri
-                          JOIN messages m ON m.id = ri.message_id
-                          JOIN exchanges e ON e.id = m.exchange_id
+                          JOIN exchanges e ON e.id = ri.exchange_id
                          WHERE e.conversation_id = @C AND e.outcome = 'blocked' AND ri.blocker IS NOT NULL
                            AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
                            AND e.id = (SELECT l.id FROM exchanges l
@@ -1137,11 +1141,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                                           AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
                                                          AND d.outcome IN ('done', 'blocked'))
                                         ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1)
-                         ORDER BY m.id DESC LIMIT 1)                                                    AS Blocker,
+                         ORDER BY ri.message_id DESC LIMIT 1)                                           AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,
-                       -- One when the item's text was edited after a request had been sent into its conversation.
-                       (SELECT COUNT(*) FROM messages WHERE conversation_id = @C AND type = 'request'
-                           AND @Edited IS NOT NULL AND julianday(created_utc) < julianday(@Edited)
+                       -- One when the item's text was edited after a request had been sent into its conversation. Read
+                       -- from the exchanges a request opens, which retention keeps, not from the messages it deletes.
+                       (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
+                           AND @Edited IS NOT NULL AND julianday(opened_utc) < julianday(@Edited)
                          LIMIT 1)                                                                       AS EditedSince;
                 """,
                 new { C = conversation, Edited = editedUtc, Seat = PersonSeat.Adapter },
