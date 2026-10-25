@@ -197,7 +197,9 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(1);
+        // Wide enough that the first download, left unread while the removal is asked and given up, is not taken for a
+        // stall on a slow machine (Windows CI read one second as one).
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(3);
 
         var big = new byte[4 * 1024 * 1024];
         Random.Shared.NextBytes(big);
@@ -227,7 +229,7 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         Assert.True(s1 == StatusCode.OK, $"first status={s1} detail={d1}");
 
         // Nothing waits on the file now. Past the bound, a fresh download from the start.
-        await Task.Delay(1500, Ct);
+        await Task.Delay(4000, Ct);
 
         using var second = Fetch(billing);
         var (s2, d2, b2) = await ReadSteadilyAsync(second, 0);
