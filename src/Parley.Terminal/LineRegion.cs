@@ -233,22 +233,64 @@ internal sealed class LineRegion : FrameView
     /// </para>
     /// <para>
     /// <b>Written on the thread that draws.</b> The box is emptied and filled from the work queue, on a pool thread,
-    /// and the toolkit's wrapping throws when the text changes while the loop is drawing it (RefillRaceTests).
+    /// and the toolkit's wrapping throws when the text changes while the loop is drawing it (TheBoxIsWrittenOnTheLoopTests).
+    /// Read where it is called, which is right on the loop's own thread; work off the loop reads with
+    /// <see cref="WrittenOnTheLoop"/> and changes it with <see cref="Rewrite"/>.
     /// </para>
     /// </remarks>
     internal string Written
     {
         get => _field.Text;
 
-        set => Prompting.OnTheLoop(() =>
-        {
-            _field.Text = value;
+        set => Prompting.OnTheLoop(() => Write(value));
+    }
 
-            // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
-            // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
-            // name, and the chip would no longer be written the way it was recorded.
-            _field.MoveEnd();
+    /// <summary>What is written, read on the thread that draws.</summary>
+    /// <returns>The box's text.</returns>
+    /// <remarks>
+    /// For work off the loop. Reading the text walks the toolkit's text model, which the loop changes as the person types,
+    /// so a read from the pool threw <c>Collection was modified</c> into the message line.
+    /// </remarks>
+    internal string WrittenOnTheLoop()
+    {
+        var written = string.Empty;
+
+        Prompting.OnTheLoop(() => written = _field.Text);
+
+        return written;
+    }
+
+    /// <summary>Changes what is written, reading and writing it in one turn of the loop.</summary>
+    /// <param name="change">The new text from the text as it stands.</param>
+    /// <remarks>
+    /// For work off the loop. A read on the pool and a write on the loop would lose any key the person typed between the
+    /// two, because the loop takes input before it runs what was handed to it. Writes only when the text changes, so an
+    /// empty box is not written empty.
+    /// </remarks>
+    internal void Rewrite(Func<string, string> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        Prompting.OnTheLoop(() =>
+        {
+            var now = _field.Text;
+            var next = change(now);
+
+            if (!string.Equals(now, next, StringComparison.Ordinal))
+            {
+                Write(next);
+            }
         });
+    }
+
+    private void Write(string value)
+    {
+        _field.Text = value;
+
+        // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
+        // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
+        // name, and the chip would no longer be written the way it was recorded.
+        _field.MoveEnd();
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>

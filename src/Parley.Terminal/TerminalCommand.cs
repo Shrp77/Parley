@@ -138,8 +138,8 @@ public static class TerminalCommand
 
         using var shell = Build(directory, seats, manifestPath, installed, cataloguePath, addressingPath);
 
-        // Dialogs opened from the work queue go to the thread that draws (`Prompting.Marshal` says why). Only here: a driven
-        // test never pumps the loop, so it keeps the inline default.
+        // Dialogs opened, and the box read or written, from the work queue go to the thread that draws
+        // (`Prompting.Marshal` says why). Only here: a driven test never pumps the loop, so it keeps the inline default.
         Prompting.Marshal = app.Invoke;
 
         // **Started, not awaited, so the screen is on before the brokers have answered.** Waiting would draw

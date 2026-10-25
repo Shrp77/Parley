@@ -151,7 +151,7 @@ public sealed class PlansTests : IAsyncDisposable
         await ReselectAsync(shell);
 
         // Chosen directly rather than by Enter: a key press draws on this thread while the queue opens the view, and the
-        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Shell.OnTheLoop`).
+        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Prompting.Open`).
         shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
         Assert.True(shell.Plans.OpenSelected());
         await shell.Settled;
@@ -178,7 +178,7 @@ public sealed class PlansTests : IAsyncDisposable
         await ReselectAsync(shell);
 
         // Chosen directly rather than by Enter: a key press draws on this thread while the queue opens the view, and the
-        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Shell.OnTheLoop`).
+        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Prompting.Open`).
         shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
         Assert.True(shell.Plans.OpenSelected());
         await shell.Settled;
@@ -365,7 +365,7 @@ public sealed class PlansTests : IAsyncDisposable
         await ReselectAsync(shell);
 
         // Chosen directly rather than by Enter: a key press draws on this thread while the queue opens the view, and the
-        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Shell.OnTheLoop`).
+        // toolkit's draw is not safe to run twice at once. The program opens it on the loop's thread (`Prompting.Open`).
         shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
         Assert.True(shell.Plans.OpenSelected());
         await shell.Settled;

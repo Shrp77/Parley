@@ -121,8 +121,9 @@ internal static class Prompting
     /// <summary>Runs something on the thread that draws when there is a loop, and where it is called when not.</summary>
     /// <param name="act">What to run.</param>
     /// <remarks>
-    /// Waits for it, so what the caller does next sees it done: a box emptied and then filled is filled. Invoke runs
-    /// inline when this is already the loop's thread, so the waiting only ever waits for the loop to get to it. The
+    /// Waits for it, up to five seconds, so what the caller does next sees it done: a box emptied and then filled is
+    /// filled. Past that the caller goes on and the work still runs when the loop reaches it. Invoke runs inline when
+    /// this is already the loop's thread, so the waiting only ever waits for the loop to get to it. The
     /// harness never sets <see cref="Marshal"/>, because it never pumps a loop: work posted to one would not run.
     /// </remarks>
     internal static void OnTheLoop(Action act)
@@ -156,8 +157,9 @@ internal static class Prompting
 
     /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
     /// <remarks>
-    /// Set once, by the program, to the loop's own <c>Invoke</c>; never by a test. Static because every dialog goes through
-    /// <see cref="Open"/> and a seam threaded through all of them would be a parameter on each.
+    /// Set once, by the program, to the loop's own <c>Invoke</c>; by a test only in a collection that runs alone
+    /// (TheBoxIsWrittenOnTheLoopTests). Static because every dialog goes through <see cref="Open"/> and every write to the
+    /// box through <see cref="OnTheLoop"/>, and a seam threaded through all of them would be a parameter on each.
     /// </remarks>
     internal static Action<Action>? Marshal { get; set; }
 

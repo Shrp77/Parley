@@ -297,9 +297,7 @@ internal sealed class Shell : Window
             // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
             // person's own, so a command in it runs.
             _itemWords = null;
-            Line.Written = Line.Written.StartsWith(pressed, StringComparison.Ordinal)
-                ? Line.Written[pressed.Length..].TrimStart()
-                : Line.Written;
+            Line.Rewrite(now => now.StartsWith(pressed, StringComparison.Ordinal) ? now[pressed.Length..].TrimStart() : now);
 
             // The view's project, not the list's selection: the two are different accessors for one question, which is
             // this repository's most-repeated defect.
@@ -1641,11 +1639,7 @@ internal sealed class Shell : Window
 
             if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
             {
-                // Only when there is something to empty: the harness draws on its own thread, so a write here races it.
-                if (Line.Written.Length != 0)
-                {
-                    Line.Written = string.Empty;
-                }
+                Line.Rewrite(_ => string.Empty);
 
                 _lineFor = lineFor;
                 _itemWords = null;
@@ -1948,10 +1942,21 @@ internal sealed class Shell : Window
 
         // Going there emptied a box written elsewhere and kept one written here. An item not begun fills an empty box
         // with its words; what the person wrote in this conversation, the item's words edited or not, stays.
-        if (!started && string.IsNullOrWhiteSpace(Line.Written))
+        if (!started)
         {
-            Line.Written = item.Text;
-            _itemWords = item.Text;
+            var filled = false;
+
+            Line.Rewrite(now =>
+            {
+                filled = string.IsNullOrWhiteSpace(now);
+
+                return filled ? item.Text : now;
+            });
+
+            if (filled)
+            {
+                _itemWords = item.Text;
+            }
         }
 
         Focus(Panes.ToList().IndexOf(Line));
@@ -5062,7 +5067,7 @@ internal sealed class Shell : Window
 
         // Parley is never a recipient: it receives nobody's work, and a line addressed to it would be refused by the
         // broker (SPEC.md §10.1). It stays in the room column, named, because it is in the conversation.
-        Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.Written };
+        Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.WrittenOnTheLoop() };
         _drafted = here;
         _draftedWith = hold;
 
