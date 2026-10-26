@@ -216,6 +216,19 @@ public sealed class SharedFileNameTests
     }
 
     [Fact]
+    public void The_not_listed_sentence_names_every_reason_a_file_is_counted()
+    {
+        // Round 34: the count took in case twins, and the sentence still named only the character rules, so a person
+        // with a.md and A.md was told a name broke rules none of them broke.
+        var said = SharedFileListing.NotListedSentenceFor(1)!;
+
+        Assert.Contains("in other case", said, StringComparison.Ordinal);
+        Assert.Contains("reserves", said, StringComparison.Ordinal);
+        Assert.Contains("too long", said, StringComparison.Ordinal);
+        Assert.Null(SharedFileListing.NotListedSentenceFor(0));
+    }
+
+    [Fact]
     public void Every_problem_is_described_in_words()
     {
         foreach (var problem in Enum.GetValues<SharedFileNameProblem>())

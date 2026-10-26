@@ -43,11 +43,15 @@ internal sealed class FolderWatcher : IAsyncDisposable
 {
     private readonly BrokerRuntime _runtime;
     private readonly TimeSpan _settle;
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _pending = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, string> _renamedFrom = new(StringComparer.OrdinalIgnoreCase);
-    // Keyed without case, as every look is; each report keeps the exact spelling it moved from, which a twin is told by.
-    private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.OrdinalIgnoreCase);
-    private readonly CancellationTokenSource _stopping = new();
+    // **Looks and rename reports are keyed by exact spelling.** Keyed without case, a case twin's events merged with the
+    // recorded file's: one look took the twin's rename as the agent's, or a twin's report overwrote the agent's own, and
+    // a placer was carried onto the person's file or a row lost with its file on disk (review rounds 33 and 34). A
+    // folder that does not tell case apart reports one spelling for a file, and a look at another spelling of a recorded
+    // name is made at the recorded one.
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _pending = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _renamedFrom = new(StringComparer.Ordinal);
+    // Each report keeps the spelling it moved from, which a twin's rename is told apart by.
+    private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.Ordinal);    private readonly CancellationTokenSource _stopping = new();
     private FileSystemWatcher? _watcher;
     private int _disposed;
 
@@ -360,7 +364,6 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _renamedFrom.TryRemove(path, out var renamedFrom);
         _renamedTo.TryRemove(path, out var report);
         string? renamedTo = report.To;
-
         // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
         // handled, so whatever was written into it before then raised no event at all. Each file in it, and each the
         // store records there, is looked at as an event would have asked: the same looks, by the same rules, so a
@@ -413,7 +416,19 @@ internal sealed class FolderWatcher : IAsyncDisposable
         // afterwards on its own, as the scan would.
         if (row is not null && name is not null && !string.Equals(row.File.Name.Value, name.Value, StringComparison.Ordinal))
         {
-            path = _runtime.Files.FilePath(row.File.Folder, row.File.Name);
+            var recordedPath = _runtime.Files.FilePath(row.File.Folder, row.File.Name);
+
+            // **The recorded file gone where case is told apart is for the look at its own spelling.** This spelling's
+            // rename report is not the recorded file's: that look, with its own report, carries the placer on a rename
+            // (a case-only one included) or lets the row go, and then looks at any twin left behind. (Where this spelling
+            // is there and the recorded one is not, case is told apart by definition.)
+            if (!File.Exists(recordedPath) && (File.Exists(path) || TellsCaseApart(_runtime.Files.FolderPath(row.File.Folder))))
+            {
+                Schedule(recordedPath);
+                return;
+            }
+
+            path = recordedPath;
             name = row.File.Name;
         }
 
@@ -428,7 +443,11 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 if (renamedTo is not null && File.Exists(renamedTo) && Within(renamedTo, folder, out var movedTo)
                     && MovedTheRecordedFile(report.From, row))
                 {
-                    var ticks = File.GetLastWriteTimeUtc(renamedTo).Ticks;
+                    // **The row moves with the time it was last reconciled at, not the file's time now.** A same-size edit
+                    // saved after the rename and before this look stamped the old hash with the new time, so no look or
+                    // scan ever hashed the file again and every fetch was refused as changed. The look at the new name,
+                    // asked for below, finds the time moved and hashes it.
+                    var ticks = row.ModifiedTicks;
 
                     // A name in another case beside a recorded file still there is that file's twin, not in the location:
                     // moving onto it is moving away to a name that breaks a rule, and the recorded file is not displaced.
@@ -449,6 +468,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
                         },
                         cancellationToken).ConfigureAwait(false);
 
+                    Schedule(renamedTo);
                     LookAtTwins(path);
 
                     return;

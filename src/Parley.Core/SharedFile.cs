@@ -85,8 +85,9 @@ public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePl
     public static string? NotListedSentenceFor(int notListed) => notListed <= 0
         ? null
         : $"{notListed} file(s) in these folders are not listed, because their names break the rules: a name uses only " +
-          $"{SharedFileName.AllowedCharactersInWords}, ends in .md or .txt, and does not begin with a dot. Rename them " +
-          "on disk to list them.";
+          $"{SharedFileName.AllowedCharactersInWords}, ends in .md or .txt, does not begin with a dot, is not too long " +
+          "or a name Windows reserves such as CON, and is not another file's name in other case (of a.md and A.md " +
+          "beside it, one is listed). Rename them on disk to list them.";
 }
 
 /// <summary>
