@@ -26,8 +26,8 @@ public sealed class ASteadyDownloadIsNotEndedTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
-        // Fifteen frames' worth of margin, so a busy machine slowing the reader does not look like a stall.
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(3);
+        // Twenty-five frames' worth of margin, so a busy machine slowing the reader does not look like a stall.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[12 * 1024 * 1024];
         Random.Shared.NextBytes(big);

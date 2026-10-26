@@ -89,8 +89,9 @@ public sealed class AStalledDownloadIsLetGoTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
-        // A frame every 150 ms against a three-second bound: a slow machine does not read the gap as a stall.
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(3);
+        // A frame every 150 ms against a five-second bound: a loaded machine does not read the gap as a stall (three
+        // seconds was, on a Windows machine running every suite at once).
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         // 128 frames, about twenty seconds: more than flow control lets the broker write ahead of the reader, so the
         // broker is still writing, and still holding, when the bound has passed.

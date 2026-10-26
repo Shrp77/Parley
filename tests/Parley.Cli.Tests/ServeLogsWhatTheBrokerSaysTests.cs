@@ -30,7 +30,17 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
         }
     }
 
-    private async Task<string> ServeAsync(bool heartbeat, TimeSpan forAbout)
+    private static string ReadShared(string log)
+    {
+        using var stream = new FileStream(log, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+
+        return reader.ReadToEnd();
+    }
+
+    // Serves for about forAbout, and past it until the log holds every one of until, for at most thirty seconds: a
+    // loaded runner can starve the heartbeat's first beat past any fixed wait (Windows CI did, past 2.5 s).
+    private async Task<string> ServeAsync(bool heartbeat, TimeSpan forAbout, params string[] until)
     {
         var ct = TestContext.Current.CancellationToken;
         var name = ProjectName.Create("orders");
@@ -49,6 +59,14 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
         {
             Assert.True(await AnswersAsync(orders.Endpoint, ct), "never came up");
             await Task.Delay(forAbout, ct);
+
+            var giveUp = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(30);
+
+            while (until.Length > 0 && DateTimeOffset.UtcNow < giveUp
+                && !until.All(line => ReadShared(log).Contains(line, StringComparison.Ordinal)))
+            {
+                await Task.Delay(100, ct);
+            }
         }
         finally
         {
@@ -71,10 +89,12 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
 
         File.Delete(Path.Combine(_root, "broker.log"));
 
-        var beating = await ServeAsync(heartbeat: true, TimeSpan.FromMilliseconds(2500));
+        const string beat = "orders Parley.Server.Heartbeat: heartbeat 1: up ";
+        const string connection = "orders Parley.Server.Connections: connection ";
+        var beating = await ServeAsync(heartbeat: true, TimeSpan.FromMilliseconds(1500), beat, connection);
 
-        Assert.Contains("orders Parley.Server.Heartbeat: heartbeat 1: up ", beating, StringComparison.Ordinal);
-        Assert.Contains("orders Parley.Server.Connections: connection ", beating, StringComparison.Ordinal);
+        Assert.Contains(beat, beating, StringComparison.Ordinal);
+        Assert.Contains(connection, beating, StringComparison.Ordinal);
     }
 
     [Theory]

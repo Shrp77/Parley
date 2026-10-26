@@ -62,9 +62,11 @@ public sealed class AChangeWaitsForADownloadStillMovingTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
-        // A frame every 150 ms against a two-second bound, for 128 frames: about twenty seconds, ten times the bound,
-        // and more than flow control lets the broker write ahead of the reader.
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+        // A frame every 150 ms against a five-second bound, for 128 frames: about twenty seconds, four times the bound,
+        // and more than flow control lets the broker write ahead of the reader. Two seconds was read as a stall on a
+        // loaded macOS runner, and three on a loaded Windows machine; idle, the broker's write trails the reader by a
+        // frame.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[32 * 1024 * 1024];
         Random.Shared.NextBytes(big);
