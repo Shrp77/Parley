@@ -132,7 +132,7 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         var left = Directory.Exists(folder) ? Directory.GetFileSystemEntries(folder).Select(Path.GetFileName).ToArray() : [];
 
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-destroyed"),
+            left.Length == 0 || left.Contains(".parley-pending-removal"),
             $"placement {placed.Outcome}, destroy {destroyed.Verdict} ({string.Join(", ", destroyed.Destroyed.Select(t => $"{t.Table}={t.Rows}"))}); "
             + $"left on disk, unmarked: {string.Join(", ", left)}");
     }

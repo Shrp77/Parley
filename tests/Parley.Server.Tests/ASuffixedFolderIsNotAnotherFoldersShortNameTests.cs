@@ -130,16 +130,16 @@ public sealed class ASuffixedFolderIsNotAnotherFoldersShortNameTests : IDisposab
     }
 
     [Theory]
-    [InlineData(".parley-destroyed")]
+    [InlineData(".parley-pending-removal")]
     [InlineData(".PARLEY-DESTROYED")]
-    [InlineData(".parley-destroyed.")]
-    [InlineData(".parley-destroyed ")]
-    [InlineData(".parley-destroyed::$DATA")]
-    [InlineData(".parley-destroyed:x.md")]
-    [InlineData(".parley-destroyed/x.md")]
-    [InlineData("..\\.parley-destroyed")]
-    [InlineData(".parley-destroyed.md")]
-    [InlineData(".parley-destroyed .md")]
+    [InlineData(".parley-pending-removal.")]
+    [InlineData(".parley-pending-removal ")]
+    [InlineData(".parley-pending-removal::$DATA")]
+    [InlineData(".parley-pending-removal:x.md")]
+    [InlineData(".parley-pending-removal/x.md")]
+    [InlineData("..\\.parley-pending-removal")]
+    [InlineData(".parley-pending-removal.md")]
+    [InlineData(".parley-pending-removal .md")]
     public async Task No_placed_name_becomes_the_mark(string name)
     {
         var store = Path.Combine(_base, "alpha.db");

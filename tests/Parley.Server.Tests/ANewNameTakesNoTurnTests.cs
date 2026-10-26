@@ -107,7 +107,7 @@ public sealed class ANewNameTakesNoTurnTests
         Assert.Equal(Wire.PlaceOutcome.Placed, placed.Outcome);
         Assert.Contains(destroyed.Destroyed, t => t.Table == "shared_files" && t.Rows == 2);
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-destroyed"),
+            left.Length == 0 || left.Contains(".parley-pending-removal"),
             $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk, unmarked: {string.Join(", ", left)}");
 
         var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(
@@ -136,7 +136,7 @@ public sealed class ANewNameTakesNoTurnTests
         var left = OnDisk(broker, "pricing");
 
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-destroyed"),
+            left.Length == 0 || left.Contains(".parley-pending-removal"),
             $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk, unmarked: {string.Join(", ", left)}");
         Assert.Contains(destroyed.Destroyed, t => t.Table == "shared_files" && t.Rows == 2);
     }
@@ -181,18 +181,17 @@ public sealed class ANewNameTakesNoTurnTests
         await File.WriteAllTextAsync(path, "the person's", Ct);
         await FileWire.WaitForAsync(operators, l => l.Any(f => f.Name == "mine.md"), TimeSpan.FromSeconds(10), Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromMilliseconds(300);
         var reading = await broker.Runtime.Files.HoldForReadingAsync("pricing", SharedFileName.Create("mine.md"), Ct);
         var mine = new Wire.FileRef { ConversationId = "pricing", Name = "mine.md" };
 
         var refused = await billing.Client.RemoveOwnFilesAsync(new Wire.RemoveFilesRequest { Agent = Billing, Files = { mine } }, cancellationToken: Ct)
             .ResponseAsync.WaitAsync(TimeSpan.FromSeconds(5), Ct);
-        await Task.Delay(600, Ct);
 
         Assert.Empty(refused.Removed);
         Assert.Equal(Wire.FileRejection.NamePlacedByAnother, Assert.Single(refused.Refused).Rejection);
         Assert.Equal(string.Empty, refused.Refused[0].PlacedBy);
-        Assert.False(broker.Runtime.Files.IsOverdue("pricing", SharedFileName.Create("mine.md")), "the refused removal made the person's download overdue");
+        await (await broker.Runtime.Files.HoldForReadingAsync("pricing", SharedFileName.Create("mine.md"), Ct)
+            .WaitAsync(TimeSpan.FromSeconds(5), Ct)).DisposeAsync();
 
         var removing = operators.RemoveFilesAsync(new Wire.RemoveFilesRequest { Files = { mine } }, cancellationToken: Ct).ResponseAsync;
         await Task.Delay(200, Ct);

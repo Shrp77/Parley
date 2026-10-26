@@ -155,9 +155,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
             var folder = before.Folder;
 
             // The first attempt takes no turn, whatever the first look saw: that look is as old as the upload, and the file
-            // may since be another agent's, or hold the same bytes. A turn taken on it waited on a download, made it
-            // overdue and ended it, and then wrote nothing. The commit asks for a turn only on the agent's own file, with
-            // other bytes, and the next attempt takes it.
+            // may since be another agent's, or hold the same bytes. A turn taken on it waited for every download to finish
+            // and held new ones back meanwhile, and then wrote nothing. The commit asks for a turn only on the agent's own
+            // file, with other bytes, and the next attempt takes it.
             string? turnOn = null;
 
             // Twice for a replacement: the first attempt finds the agent's own file and asks for its turn, and the second
@@ -279,21 +279,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         FileLocationStore.ReadHold hold;
 
-        // **A download that holds things up is let go.** Flow control parks a write to a client that stops reading, and
-        // the hold it keeps made a destroy, purge or prune wait for good, and every placement that waits out one; a client
-        // taking each frame just inside a bound on the frame kept a large file held for hours. So a write that takes no
-        // frame for StallAfter ends it, and so does a change of the file or a hold over everything that has waited on it
-        // for as long. Called inside the hold's using, so the throw lets the file go.
-        async Task WriteOrLetGoAsync(Wire.FetchFileFrame frame, string folder, SharedFileName name)
+        // **A download that has stopped is let go.** Flow control parks a write to a client that stops reading, and the
+        // hold it keeps made a destroy, purge or prune wait for good, and every placement that waits out one. So a write
+        // that takes no frame for StallAfter ends it. A download still taking frames is never ended, however slowly it
+        // goes and whatever waits on it: what waits, waits for it to finish. Called inside the hold's using, so the throw
+        // lets the file go.
+        async Task WriteOrLetGoAsync(Wire.FetchFileFrame frame)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (_runtime.Files.IsOverdue(folder, name))
-            {
-                throw new RpcException(new Status(
-                    StatusCode.DeadlineExceeded,
-                    "The download was ended because the file is being changed or removed and the download was still going. Fetch it again."));
-            }
 
             using var limit = new CancellationTokenSource();
             var writing = writer.WriteAsync(frame, cancellationToken);
@@ -386,7 +379,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         await using (hold.ConfigureAwait(false))
         {
-            await WriteOrLetGoAsync(new Wire.FetchFileFrame { Header = Conversions.Out(file) }, file.Folder, file.Name).ConfigureAwait(false);
+            await WriteOrLetGoAsync(new Wire.FetchFileFrame { Header = Conversions.Out(file) }).ConfigureAwait(false);
 
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[FileLimits.ChunkBytes];
@@ -396,7 +389,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
             {
                 hash.AppendData(buffer, 0, read);
 
-                await WriteOrLetGoAsync(new Wire.FetchFileFrame { Chunk = ByteString.CopyFrom(buffer, 0, read) }, file.Folder, file.Name)
+                await WriteOrLetGoAsync(new Wire.FetchFileFrame { Chunk = ByteString.CopyFrom(buffer, 0, read) })
                     .ConfigureAwait(false);
             }
 
@@ -543,8 +536,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
             var stored = resolution.File!;
             var file = stored.File;
 
-            // Refused before the turn is sought, because the turn waits on the file's downloads and, waiting, makes them
-            // overdue: a removal another agent may not make would otherwise end them. Asked again under the turn.
+            // Refused before the turn is sought, because the turn waits for the file's downloads and holds new ones back
+            // while it waits: a removal another agent may not make would otherwise stop the file being fetched. Asked
+            // again under the turn.
             if (caller is not null && file.PlacedBy != caller)
             {
                 reply.Refused.Add(Refused(new FileRefusal(reference, FileRejection.NamePlacedByAnother, file.PlacedBy?.Value, [], 0)));
@@ -731,8 +725,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return new Committed(PersonsOnDisk(conversation, name, requested, unrecorded), null);
         }
 
-        // Another's file is refused here, before any turn is sought: a turn waits on the file's downloads and, waiting,
-        // makes them overdue, so a placement that was never going to land would end them.
+        // Another's file is refused here, before any turn is sought: a turn waits for the file's downloads and holds new
+        // ones back while it waits, so a placement that was never going to land would stop the file being fetched.
         if (look.Existing is { } another && another.File.PlacedBy != agent)
         {
             return new Committed(PlacedByAnother(another.File), null);

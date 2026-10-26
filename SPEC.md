@@ -2760,7 +2760,7 @@ its own name. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty and a file copied into it by hand
 is still traced to its conversation. A folder no row names belongs to no conversation, and is left alone: it may be
 a person's, or a conversation a store restored from a backup no longer records. The one exception is a folder a
-destroy or a purge could not delete when it ran (§14): it is left holding a file named `.parley-destroyed`, and the
+destroy or a purge could not delete when it ran (§14): it is left holding a file named `.parley-pending-removal`, and the
 next start deletes a folder no row names that holds one.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
@@ -2810,8 +2810,8 @@ holding the name, so the caller can repeat the call naming one.
 **A download holds the file.** While any fetch of a file is streaming, the broker keeps the stored
 file open with no write sharing, and a replacement, removal or prune through Parley waits for every
 fetch in progress to finish; a fetch whose agent has gone stops holding, and so does one whose agent reads none
-of it for 30 seconds, or that has kept a change of the file or a destroy, purge or prune waiting for as long; it
-is ended. Only a change that will be made waits: a placement or removal of a file another agent placed is refused
+of it for 30 seconds: it is ended. A fetch still being read is never ended, however slowly it goes and whatever
+waits on it, because nothing still moving times out (principle 2.8); what waits, waits for it to finish. Only a change that will be made waits: a placement or removal of a file another agent placed is refused
 before it waits on anything, placing a file's own bytes again waits on nothing, and a change given up while it waited leaves later fetches as they were. Where the operating system can
 refuse another process's write — Windows — an editor's save is refused for that time. Where it cannot —
 Linux and macOS have no mandatory locks — the save succeeds and the fetch, which hashes what it streams,

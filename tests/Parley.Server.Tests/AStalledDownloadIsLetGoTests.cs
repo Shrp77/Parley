@@ -10,7 +10,7 @@ namespace Parley.Server.Tests;
 /// <b>Found by review, round 22.</b> Flow control parks a write to a client that stops reading, and the hold that
 /// download kept made a destroy, purge or prune wait for good, and with it every placement that waits one out. A
 /// download that makes no progress for <see cref="FileLocationStore.StallAfter"/> is now ended; a replacement no
-/// longer waits out a hold over everything at all.
+/// longer waits out a hold over everything at all. One still taking frames is never ended.
 /// </remarks>
 public sealed class AStalledDownloadIsLetGoTests
 {
@@ -80,17 +80,21 @@ public sealed class AStalledDownloadIsLetGoTests
     }
 
     [Fact]
-    public async Task A_fetch_read_one_frame_inside_each_bound_does_not_stall_an_unrelated_destroy()
+    public async Task A_fetch_still_taking_frames_is_never_ended_and_a_destroy_waits_for_it_to_finish()
     {
-        // Found by review, round 23: a bound on each frame alone let a client taking one frame just inside it keep a
-        // large file held for hours. A hold that has waited on a download for as long ends it.
+        // The owner's decision after review round 29: a download that has stopped is let go, but one still moving is
+        // never ended, whatever waits on it, because nothing still moving times out. Round 23 ended it once a destroy,
+        // purge or prune had waited on it for the bound.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
-        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(1);
+        // A frame every 150 ms against a three-second bound: a slow machine does not read the gap as a stall.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(3);
 
-        var big = new byte[64 * 1024 * 1024];
+        // 128 frames, about twenty seconds: more than flow control lets the broker write ahead of the reader, so the
+        // broker is still writing, and still holding, when the bound has passed.
+        var big = new byte[32 * 1024 * 1024];
         Random.Shared.NextBytes(big);
         await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
         await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
@@ -98,32 +102,39 @@ public sealed class AStalledDownloadIsLetGoTests
         using var slow = orders.Client.FetchFile(
             new Wire.FetchFileRequest { Agent = Orders, Name = "big.md", ConversationId = "bait" }, cancellationToken: Ct);
 
-        // Orders takes one frame every 600 ms: never a whole bound without progress.
         var trickle = Task.Run(
             async () =>
             {
-                try
+                using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+                    System.Security.Cryptography.HashAlgorithmName.SHA256);
+
+                while (await slow.ResponseStream.MoveNext(Ct))
                 {
-                    while (await slow.ResponseStream.MoveNext(Ct))
+                    if (slow.ResponseStream.Current.FrameCase == Wire.FetchFileFrame.FrameOneofCase.Chunk)
                     {
-                        await Task.Delay(600, Ct);
+                        hash.AppendData(slow.ResponseStream.Current.Chunk.Span);
                     }
+
+                    await Task.Delay(150, Ct);
                 }
-                catch (Grpc.Core.RpcException)
-                {
-                }
+
+                return Convert.ToHexStringLower(hash.GetHashAndReset());
             },
             Ct);
 
-        await Task.Delay(1500, Ct);
+        await Task.Delay(600, Ct);
 
         var destroying = broker.ConnectAsOperator()
             .DestroyAsync(new Wire.ConversationRequest { ConversationId = "pricing" }, cancellationToken: Ct).ResponseAsync;
 
-        var finished = await Task.WhenAny(destroying, Task.Delay(15000, Ct));
-        Assert.True(finished == destroying, "a destroy waited on a download read one frame inside each bound");
-        Assert.Equal(Wire.DestroyVerdict.Gone, (await destroying).Verdict);
+        // Past the bound, the destroy is still waiting and the download still going.
+        await Task.Delay(broker.Runtime.Files.StallAfter + TimeSpan.FromSeconds(1), Ct);
+        Assert.False(destroying.IsCompleted, "the destroy did not wait for a download still taking frames");
+        Assert.False(trickle.IsCompleted, "the download still taking frames was ended");
 
-        await trickle.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var got = await trickle.WaitAsync(TimeSpan.FromSeconds(60), Ct);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(big)), got);
+
+        Assert.Equal(Wire.DestroyVerdict.Gone, (await destroying.WaitAsync(TimeSpan.FromSeconds(10), Ct)).Verdict);
     }
 }

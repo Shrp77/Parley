@@ -6,18 +6,17 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That only a change that is made can end somebody else's download: not one refused, given up, or of the same bytes
-/// (SPEC.md §9.5).
+/// That a change of a file waits for a download still taking frames and never ends it, and that a change refused, given
+/// up, or of the same bytes leaves downloads as they were (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
-/// <b>Found by review, round 24.</b> A removal or a placement took the file's change turn before it asked who placed
-/// the file, and a turn that waits on a download makes that download overdue once it has waited the stall bound. So an
-/// agent with no right to the file ended every slow download of it, as often as it liked, and was refused anyway. A
-/// change given up while it waited left its waiting stamp behind, and every later download of the file failed at its
-/// first frame. Found in round 25: placing the same bytes again took the turn too, ended the download, and wrote
-/// nothing.
+/// <b>The owner's decision after review round 29:</b> a download is ended only when it has stopped. Until then a change
+/// that waited on a download for the stall bound ended it. <b>Found by review, rounds 24 and 25,</b> under that rule: a
+/// removal or placement another agent could not make, a change given up while it waited, and placing the same bytes
+/// again each took the file's turn and ended downloads. They are kept, because a turn still holds new downloads back
+/// while it waits.
 /// </remarks>
-public sealed class OnlyAChangeMadeEndsADownloadTests
+public sealed class AChangeWaitsForADownloadStillMovingTests
 {
     private const string Orders = "orders@alpha";
     private const string Billing = "billing@alpha";
@@ -57,6 +56,39 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
     };
 
     [Fact]
+    public async Task A_replacement_waits_for_a_download_still_taking_frames_past_the_bound_and_then_lands()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        // A frame every 150 ms against a two-second bound, for 128 frames: about twenty seconds, ten times the bound,
+        // and more than flow control lets the broker write ahead of the reader.
+        broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(2);
+
+        var big = new byte[32 * 1024 * 1024];
+        Random.Shared.NextBytes(big);
+        await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
+
+        using var call = Fetch(billing);
+        Assert.True(await call.ResponseStream.MoveNext(Ct));
+        var reading = ReadSteadilyAsync(call, 150);
+
+        var replacing = FileWire.PlaceAsync(orders.Client, Orders, "big.md", "smaller"u8.ToArray(), "bait", Ct);
+
+        await Task.Delay(broker.Runtime.Files.StallAfter * 2, Ct);
+        Assert.False(replacing.IsCompleted, "the replacement did not wait for a download still taking frames");
+        Assert.False(reading.IsCompleted, "a download still taking frames was ended");
+
+        var (status, detail, bytes) = await reading.WaitAsync(TimeSpan.FromSeconds(90), Ct);
+        Assert.True(status == StatusCode.OK, $"status={status} detail={detail} bytes={bytes} of {big.Length}");
+        Assert.Equal(big.Length, bytes);
+
+        var placed = await replacing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal(Wire.FileRejection.None, placed.Rejection);
+    }
+
+    [Fact]
     public async Task A_removal_by_an_agent_that_did_not_place_the_file_does_not_end_a_steady_download()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
@@ -64,8 +96,8 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
-        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five seconds is a bound that
+        // reader never reaches, with room for a slow runner (Linux CI read two as a stall).
         broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[12 * 1024 * 1024];
@@ -93,8 +125,8 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
-        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five seconds is a bound that
+        // reader never reaches, with room for a slow runner (Linux CI read two as a stall).
         broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
         await FileWire.PlaceAsync(orders.Client, Orders, "start.md", "x"u8.ToArray(), "bait", Ct);
         await orders.Client.RequestAsync(Requests.Open(Orders, Inventory, "what are the stock levels", "bait"), cancellationToken: Ct);
@@ -135,8 +167,8 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, Inventory, cancellationToken: Ct);
 
-        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
-        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five seconds is a bound that
+        // reader never reaches, with room for a slow runner (Linux CI read two as a stall).
         broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
         await orders.Client.RequestAsync(Requests.Open(Orders, Inventory, "what are the stock levels", "bait"), cancellationToken: Ct);
 
@@ -178,8 +210,8 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
-        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five leaves a slow runner room
-        // (Linux CI read two as a stall) and still ends the download if a turn waits on it.
+        // A reader taking a frame every 200 ms reads a 12 MiB file in about ten seconds; five seconds is a bound that
+        // reader never reaches, with room for a slow runner (Linux CI read two as a stall).
         broker.Runtime.Files.StallAfter = TimeSpan.FromSeconds(5);
 
         var big = new byte[12 * 1024 * 1024];
@@ -236,9 +268,7 @@ public sealed class OnlyAChangeMadeEndsADownloadTests
         first.Dispose();
         Assert.True(s1 == StatusCode.OK, $"first status={s1} detail={d1}");
 
-        // Nothing waits on the file now. Past the bound, a fresh download from the start.
-        await Task.Delay(broker.Runtime.Files.StallAfter + TimeSpan.FromSeconds(1), Ct);
-
+        // Nothing waits on the file now: a fresh download from the start.
         using var second = Fetch(billing);
         var (s2, d2, b2) = await ReadSteadilyAsync(second, 0);
 
