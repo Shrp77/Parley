@@ -349,6 +349,7 @@ internal static class Conversions
     {
         Parley.Broker.ClosureError.None => Wire.ClosureError.None,
         Parley.Broker.ClosureError.NotAParticipant => Wire.ClosureError.NotAParticipant,
+        Parley.Broker.ClosureError.PersonCloses => Wire.ClosureError.PersonCloses,
         _ => throw new ArgumentOutOfRangeException(nameof(error), error, "Not a defined error.")
     };
 

@@ -1303,6 +1303,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         Say finished=false while you still have work or a live concern in it: that blocks closure, and no
         majority overrules it. Nothing closes a conversation because you were quiet — you are asked again
         until you answer — and you can change your answer by calling again.
+
+        A conversation that is the work on an item of the person's roadmap is closed only by the person,
+        so saying finished=true there is refused.
         """)]
     public async Task<JsonNode> ConcludeAsync(
         [Description("The conversation id.")] string conversationId,
@@ -1319,6 +1322,18 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     Vote = finished ? Wire.Vote.Done : Wire.Vote.NotDone
                 },
                 cancellationToken: cancellationToken);
+
+            if (outcome.Refusal == Wire.ClosureError.PersonCloses)
+            {
+                return new JsonObject
+                {
+                    ["ok"] = false,
+                    ["refused"] = "personcloses",
+                    ["why"] = "This conversation is the work on an item of the person's roadmap, and only the person " +
+                              "closes it. Nothing more is needed from you: if you are blocked, your Result already says " +
+                              "so, and the person will either answer what blocks you with a new request here or close it."
+                };
+            }
 
             if (!outcome.Ok)
             {

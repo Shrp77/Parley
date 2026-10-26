@@ -47,7 +47,7 @@ Proposal: `waiting` to `confirmed | declined | superseded`, once, never back. A 
 
 ## Item facts returned by `Roadmap`
 
-Per live item: conversation exists; count of open exchanges; whether every open request was collected; how many closed exchanges ended complete and how many of the person's requests were closed with no Result; how many agents' latest answer on the person's requests was blocked, and the blocker one of those named; who closed the conversation (consensus or person); whether the conversation was destroyed; whether the item's text was edited after its first request was sent, from `edited_utc` (FR-014a). These are facts, not states.
+Per live item: conversation exists; count of open exchanges; whether every open request was collected; how many closed exchanges ended complete and how many of the person's requests were closed with no Result; how many agents' latest answer on the person's requests was blocked, and the blocker one of those named; who closed the conversation; whether the conversation was destroyed; whether the item's text was edited after its first request was sent, from `edited_utc` (FR-014a). These are facts, not states.
 
 ## Retention and destruction
 

@@ -195,9 +195,8 @@ public static class ItemStates
         }
 
         // With nothing open, a blocked part decides the item, so it is never done. Blocked while the conversation is open,
-        // because asking again is what clears it; closed, by the person or by its participants, nobody can ask again, so it
-        // reads closed, still naming the blocker: one agent may close a conversation that holds nothing open, and a close
-        // that dropped the blocker hid it from the person.
+        // because asking again is what clears it; once the person has closed it nobody can ask again, so it reads closed,
+        // still naming the blocker, because a close that dropped the blocker would hide it from the person.
         if (facts.BlockedExchanges > 0)
         {
             return new ItemState(

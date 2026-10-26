@@ -99,7 +99,7 @@ An agent has eleven tools. There is no tool for saying who it is.
 | `parley_result` | Report what each item came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
-| `parley_conclude` | Say whether you are finished with a conversation |
+| `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
 | `parley_file_place` | Put a `.md` or `.txt` file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |

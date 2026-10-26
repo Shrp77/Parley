@@ -60,9 +60,13 @@ public sealed class ItemWordingTests
     {
         Assert.Equal("waiting on billing", ItemWording.Standing(State(ItemStanding.WaitingOnAgent, [Billing])));
         Assert.Equal("in progress with billing", ItemWording.Standing(State(ItemStanding.InProgress, [Billing])));
-        Assert.Equal("blocked: permission", ItemWording.Standing(State(ItemStanding.Blocked, blocker: "permission")));
+        Assert.Equal(
+            "blocked: permission — answer it with a new request, or close it",
+            ItemWording.Standing(State(ItemStanding.Blocked, blocker: "permission")));
         Assert.Equal("closed while blocked: permission", ItemWording.Standing(State(ItemStanding.Closed, blocker: "permission")));
-        Assert.Equal("blocked: missing information", ItemWording.Standing(State(ItemStanding.Blocked, blocker: "missing_information")));
+        Assert.Equal(
+            "blocked: missing information — answer it with a new request, or close it",
+            ItemWording.Standing(State(ItemStanding.Blocked, blocker: "missing_information")));
         Assert.Equal(
             "in progress with billing; blocked: permission",
             ItemWording.Standing(State(ItemStanding.InProgress, [Billing], blocker: "permission")));

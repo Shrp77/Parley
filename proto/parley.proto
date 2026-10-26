@@ -1136,6 +1136,8 @@ enum ClosureError {
   CLOSURE_ERROR_UNSPECIFIED = 0;
   CLOSURE_ERROR_NONE = 1;
   CLOSURE_ERROR_NOT_A_PARTICIPANT = 2;
+  // The conversation is the work on a live roadmap item, which only the person closes (section 5.7).
+  CLOSURE_ERROR_PERSON_CLOSES = 3;
 }
 
 enum MessageType {

@@ -86,10 +86,10 @@ public sealed class BlockerOutlivesRetentionTests : IDisposable
     {
         var roadmap = await RoadmapAsync();
 
-        // One part done, one blocked, and one agent's conclude closes the conversation (nothing is open in it).
+        // One part done, one blocked, and the person closes the conversation, the only way an item's closes.
         await AnswerAsync(await AskAsync(_person, Orders, 0), Orders, 1);
         await AnswerAsync(await AskAsync(_person, Billing, 0), Billing, 2, "blocked:permission");
-        Assert.True((await _broker.ConcludeAsync("rm1-1", Orders, finished: true, T0.AddMinutes(3), Ct)).Concluded);
+        Assert.True(await _console.ForceConcludeAsync("rm1-1", null, T0.AddMinutes(3), Ct));
 
         var before = await FactsAsync(roadmap);
         Assert.Equal("permission", before.Blocker);
@@ -117,9 +117,9 @@ public sealed class BlockerOutlivesRetentionTests : IDisposable
         await AnswerAsync(toOrders, Orders, 2);
         await AnswerAsync(toBilling, Billing, 3, "blocked:permission");
 
-        // The person reads both results, as any surface does on opening the conversation; then orders concludes.
+        // The person reads both results, as any surface does on opening the conversation, and then closes it.
         _ = await _broker.DrainInboxAsync(_person, T0.AddMinutes(4), cancellationToken: Ct);
-        Assert.True((await _broker.ConcludeAsync("rm1-1", Orders, finished: true, T0.AddMinutes(5), Ct)).Concluded);
+        Assert.True(await _console.ForceConcludeAsync("rm1-1", null, T0.AddMinutes(5), Ct));
         Assert.Equal("permission", (await FactsAsync(roadmap)).Blocker);
 
         // The default policy, the broker's own tick, two minutes later: a closed conversation is released at once.

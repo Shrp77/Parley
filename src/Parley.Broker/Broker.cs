@@ -718,6 +718,12 @@ public sealed class Broker
     /// Declining when nothing is being decided starts nothing: a conversation that is open already means
     /// somebody is not finished. And nothing closes a conversation for a participant's silence.
     /// </para>
+    /// <para>
+    /// <b>A live roadmap item's conversation is the person's to close</b> (§5.7), so agreeing to close one is refused
+    /// and starts no poll. A closed conversation never reopens and an item has only the one, so participants closing
+    /// it while a part was blocked would leave the item nowhere to carry on; the person instead answers the blocker
+    /// with a new request in it, or closes it.
+    /// </para>
     /// </remarks>
     public async Task<ClosureOutcome> ConcludeAsync(
         string conversationId,
@@ -755,6 +761,12 @@ public sealed class Broker
         if (conversation.State == ConversationState.Open && !finished)
         {
             return ClosureOutcome.Recorded(concluded: false);
+        }
+
+        if (finished && await _conversations.BelongsToALiveItemAsync(conversationId, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return ClosureOutcome.PersonCloses();
         }
 
         await _conversations.BeginPollAsync(conversationId, nowUtc, scope.Transaction, cancellationToken)

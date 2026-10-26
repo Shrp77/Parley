@@ -356,6 +356,11 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// Work still open when the participants agree ends <c>closed</c>, with the broker's Result to each
     /// participant holding it, exactly as a person's close does (§14).
     /// </para>
+    /// <para>
+    /// <b>Agreement never closes a live roadmap item's conversation</b> (§5.7). Only the person closes one, because a
+    /// closed conversation never reopens and an item has only the one: agents agreeing to close it while a part was
+    /// blocked would leave the item with nowhere to carry on.
+    /// </para>
     /// </remarks>
     public async Task<bool> TryConcludeAsync(
         string conversationId,
@@ -394,12 +399,51 @@ public sealed class ConversationRepository(SqliteConnection connection)
             return false;
         }
 
+        // A poll on a live item's conversation can only be one begun before agreement stopped closing them, and it is
+        // discarded rather than left to ask its participants a question whose answer can never close anything.
+        if (await BelongsToALiveItemAsync(conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            _ = await VoidPollAsync(conversationId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+            scope.Complete();
+            return false;
+        }
+
         var closed = await CloseAsync(
             conversationId, ConversationCloser.Consensus, reason: null, nowUtc, scope.Transaction,
             cancellationToken).ConfigureAwait(false);
 
         scope.Complete();
         return closed;
+    }
+
+    /// <summary>Says whether a conversation is the one reserved for a roadmap item that has not been removed.</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns><see langword="true"/> if a live item reserves it.</returns>
+    /// <remarks>
+    /// Read from the reservation and never from the name, so an agent cannot make a conversation an item's (§5.7). A
+    /// removed item's conversation belongs to no item, and its participants may close it as any other.
+    /// </remarks>
+    public async Task<bool> BelongsToALiveItemAsync(
+        string conversationId,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+
+        return await _connection.ExecuteScalarAsync<long>(
+            new CommandDefinition(
+                """
+                SELECT count(*)
+                  FROM roadmap_item_conversations c
+                  JOIN roadmap_items i ON i.id = c.item_id
+                 WHERE c.conversation_id = @Conversation
+                   AND i.removed_rev IS NULL;
+                """,
+                new { Conversation = conversationId },
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false) > 0;
     }
 
     /// <summary>Closes a conversation on the person's word, regardless of its participants' votes.</summary>

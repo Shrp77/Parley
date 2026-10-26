@@ -95,7 +95,7 @@ public sealed class AnAbandonedSubRequestTests : IDisposable
     }
 
     [Fact]
-    public async Task Two_agents_concluding_over_an_open_sub_request_leave_a_done_item_done()
+    public async Task Two_agents_finished_over_an_open_sub_request_cannot_close_the_item_and_it_stays_done()
     {
         var roadmap = await RoadmapAsync();
 
@@ -104,11 +104,12 @@ public sealed class AnAbandonedSubRequestTests : IDisposable
             work, Billing, Requests.Model, Requests.Result((PayloadShape.WholeRequest, "done")), T0.AddMinutes(1), Ct)).Succeeded);
 
         _ = await AskAsync(Billing, Orders, 2, "The CSV export is in; your report can call it");
-        _ = await _broker.ConcludeAsync("rm1-1", Billing, finished: true, T0.AddMinutes(3), Ct);
-        var closed = await _broker.ConcludeAsync("rm1-1", Orders, finished: true, T0.AddMinutes(4), Ct);
-        Assert.True(closed.Concluded, $"the two agents did not close it: {closed}");
+        // Only the person closes an item's conversation (SPEC.md section 5.7), so neither agent's word closes it.
+        Assert.Equal(ClosureError.PersonCloses, (await _broker.ConcludeAsync("rm1-1", Billing, finished: true, T0.AddMinutes(3), Ct)).Error);
+        Assert.Equal(ClosureError.PersonCloses, (await _broker.ConcludeAsync("rm1-1", Orders, finished: true, T0.AddMinutes(4), Ct)).Error);
 
         var facts = await FactsAsync(roadmap);
+        Assert.Null(facts.ClosedBy);
         Assert.True(facts.ClosedExchanges == 0, $"two agents made a done item closed for good: {facts}");
     }
 }

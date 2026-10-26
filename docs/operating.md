@@ -187,8 +187,10 @@ sets a state by hand. To change what an item says, edit the roadmap. To resolve 
 send the agent a further request in its conversation. While that request is open the item reads
 as in progress and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
 `done`, `answered` or `acknowledged`.
-An item whose conversation is closed reads closed, not blocked, because nobody can ask in it again;
-if a part was blocked it says so, with the blocker.
+**Only you close an item's conversation.** The agents in it cannot agree to close it, so a blocked
+item waits for you: answer the blocker with a new request, or close the conversation. An item whose
+conversation is closed reads closed, not blocked, because nobody can ask in it again; if a part was
+blocked it says so, with the blocker.
 
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its

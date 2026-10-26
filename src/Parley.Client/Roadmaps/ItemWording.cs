@@ -18,6 +18,13 @@ namespace Parley.Client.Roadmaps;
 /// </remarks>
 public static class ItemWording
 {
+    /// <summary>What a blocked item says the person can do about it.</summary>
+    /// <remarks>
+    /// Said on the item because nobody else can do either (SPEC.md §5.7): its agents cannot close an item's conversation,
+    /// and only a new request from the person reaches the blocked agent again.
+    /// </remarks>
+    public const string YoursToClear = " — answer it with a new request, or close it";
+
     /// <summary>One roadmap as a row in a list.</summary>
     /// <param name="roadmap">The roadmap's summary.</param>
     /// <returns>For example <c>#2 Billing export — 5 items, 1 started</c>.</returns>
@@ -49,7 +56,7 @@ public static class ItemWording
             ItemStanding.InProgress => (holders.Length > 0 ? $"in progress with {holders}" : "in progress") + alsoBlocked,
             ItemStanding.WaitingOnAgent => (holders.Length > 0 ? $"waiting on {holders}" : "waiting on an agent") + alsoBlocked,
             ItemStanding.WaitingOnPerson => "waiting on you" + alsoBlocked,
-            ItemStanding.Blocked => blocker is null ? "blocked" : $"blocked: {blocker}",
+            ItemStanding.Blocked => (blocker is null ? "blocked" : $"blocked: {blocker}") + YoursToClear,
             ItemStanding.Done => "done",
             ItemStanding.Closed => blocker is null ? "closed" : $"closed while blocked: {blocker}",
             _ => "could not be read",

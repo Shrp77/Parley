@@ -559,6 +559,8 @@ others.
   the agent that made it can act on it.
 - **The poll leaks nothing.** A participant learns whether the conversation is open or closed.
   It never learns who else was asked, how many there are, or how anyone answered.
+- **A roadmap item's conversation is not closed by consensus** (§5.7). Saying finished in one is
+  refused, with the reason, and starts no poll: only the person closes it.
 
 *By the person.* The person running the deployment may close any conversation at any time
 (§10.2). Every exchange still open in it ends with a `closed` result (§5.3), and every
@@ -876,10 +878,10 @@ that closed last. `done`, `answered` and `acknowledged` all clear a part and `bl
 outcome treats them (§5.3); a request the person closed before it was answered is no answer. While
 anything in the item is open it reads *in progress* or *waiting*, as that work stands, so asking a
 blocked agent again reads as the new request. With nothing open, it is *blocked* while any agent's part
-is blocked and its conversation is open; asking that agent again and getting any answer but `blocked` clears it. It is
+is blocked and its conversation is open, and a surface says the person can answer the blocker with a new request or close
+the item; asking that agent again and getting any answer but `blocked` clears it. It is
 *done* when nothing in it is open, no part is blocked, at least one exchange ended with an agent's
-Result, and none of the person's requests was closed before its agent answered. Otherwise a closed conversation, closed by the
-person or by its participants, makes it *closed*: nobody can ask in it again. Unless it could not be read
+Result, and none of the person's requests was closed before its agent answered. Otherwise a closed conversation makes it *closed*: nobody can ask in it again. Unless it could not be read
 or was destroyed, an item with a blocked part names the blocker that agent gave, beside open work too, so neither a close nor
 another agent's work hides a block, and it is never done. A roadmap names its **next item**: the first item, in
 order, that is not started and whose needs are all done; when none qualifies it says whether the
@@ -910,6 +912,13 @@ refuses an agent the name before storage is reached (§5.0), which also covers a
 file writes no message for storage's rule to see.
 A conversation is recognised as an item's by the reservation and never by anything in a payload, so
 an agent cannot make a conversation look like one (§13).
+
+**Only the person closes an item's conversation.** Its participants cannot close it by consensus
+(§5.0): `conclude` saying finished in it is refused with the reason, and starts no poll. A closed
+conversation never reopens and an item has only the one, so agents agreeing to close it while a part
+was blocked would leave the item with nowhere to carry on. A blocked item therefore waits for the person, who either
+answers the blocker with a new request in the conversation or closes it. A removed item's conversation
+belongs to no item, and closes as any other.
 
 **Removing an item removes nothing it caused.** Items are never deleted. A removed item's conversation
 stays, belongs to no item, and says which item it belonged to. Destroying a conversation
@@ -2864,7 +2873,7 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
 | `inbox()` | Drain pending messages, debts first (§7.3). Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces any closure poll outstanding for the caller (§5.0), and change notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
-| `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. |
+| `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. Saying finished in a roadmap item's conversation is refused, saying only the person closes it (§5.7). |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed, replaced, or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. |
 | `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so change notices follow (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |

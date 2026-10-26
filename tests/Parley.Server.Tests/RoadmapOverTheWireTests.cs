@@ -339,4 +339,37 @@ public sealed class RoadmapOverTheWireTests
         Assert.False(second.Done);
         Assert.Contains("revision 2", second.Problem, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task An_agent_saying_it_is_finished_with_an_items_conversation_is_told_only_the_person_closes_it()
+    {
+        // SPEC.md section 5.7: a closed conversation never reopens and an item has only the one.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+        await using var seat = await AttachedClient.AttachAsync(
+            broker, Person, cancellationToken: Ct, adapter: Parley.Core.PersonSeat.Adapter);
+
+        _ = await ConfirmedAsync(broker, await ProposeAsync(orders));
+
+        var started = Assert.Single((await seat.Client.RequestAsync(
+            new Wire.OpenRequest
+            {
+                From = Person,
+                To = billing.Name,
+                ResponderModel = "claude-opus-5",
+                PayloadJson = """{"ask":"Add CSV export"}""",
+                ConversationId = "rm1-1",
+            },
+            cancellationToken: Ct)).Outcomes);
+        Assert.True(started.Ok, started.Rejection.ToString());
+
+        var said = await billing.Client.ConcludeAsync(
+            new Wire.ConcludeRequest { From = billing.Name, ConversationId = "rm1-1", Vote = Wire.Vote.Done },
+            cancellationToken: Ct);
+
+        Assert.False(said.Ok);
+        Assert.Equal(Wire.ClosureError.PersonCloses, said.Refusal);
+        Assert.False(said.Concluded);
+    }
 }
