@@ -45,7 +45,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
     private readonly TimeSpan _settle;
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pending = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _renamedFrom = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, string> _renamedTo = new(StringComparer.OrdinalIgnoreCase);
+    // Keyed without case, as every look is; each report keeps the exact spelling it moved from, which a twin is told by.
+    private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _stopping = new();
     private FileSystemWatcher? _watcher;
     private int _disposed;
@@ -79,8 +80,21 @@ internal sealed class FolderWatcher : IAsyncDisposable
         watcher.Deleted += (_, e) => Schedule(e.FullPath);
         watcher.Renamed += (_, e) =>
         {
-            _renamedFrom[e.FullPath] = e.OldFullPath;
-            _renamedTo[e.OldFullPath] = e.FullPath;
+            // **A rename of a rename not yet looked at continues it.** a.md to b.md and on to c.md within the quiet
+            // period left a's look a report naming b.md, gone by then, so the row went and c.md was found as new. The
+            // first name's report is moved on to the last, only while its look has not taken it.
+            var from = e.OldFullPath;
+
+            if (_renamedFrom.TryGetValue(e.OldFullPath, out var origin) && _renamedTo.TryUpdate(origin, (origin, e.FullPath), (origin, e.OldFullPath)))
+            {
+                // The middle name's report goes with it, or that name's look, run before the first, would take the first
+                // name as renamed away and remove its row.
+                _ = ((ICollection<KeyValuePair<string, string>>)_renamedFrom).Remove(new KeyValuePair<string, string>(e.OldFullPath, origin));
+                from = origin;
+            }
+
+            _renamedFrom[e.FullPath] = from;
+            _renamedTo[e.OldFullPath] = (e.OldFullPath, e.FullPath);
 
             Schedule(e.OldFullPath);
             Schedule(e.FullPath);
@@ -344,7 +358,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
         // Taken when the look runs rather than when the event arrived: a look superseded before it ran leaves the report
         // for the look that replaced it.
         _renamedFrom.TryRemove(path, out var renamedFrom);
-        _renamedTo.TryRemove(path, out var renamedTo);
+        _renamedTo.TryRemove(path, out var report);
+        string? renamedTo = report.To;
 
         // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
         // handled, so whatever was written into it before then raised no event at all. Each file in it, and each the
@@ -410,12 +425,28 @@ internal sealed class FolderWatcher : IAsyncDisposable
             {
                 // Moved to a name the location holds: the placer goes with it, whether or not the look at that name
                 // has run.
-                if (renamedTo is not null && File.Exists(renamedTo) && Within(renamedTo, folder, out var movedTo))
+                if (renamedTo is not null && File.Exists(renamedTo) && Within(renamedTo, folder, out var movedTo)
+                    && MovedTheRecordedFile(report.From, row))
                 {
                     var ticks = File.GetLastWriteTimeUtc(renamedTo).Ticks;
 
+                    // A name in another case beside a recorded file still there is that file's twin, not in the location:
+                    // moving onto it is moving away to a name that breaks a rule, and the recorded file is not displaced.
                     await _runtime.UseConnectionAsync(
-                        (connection, now, ct) => new SharedFileRepository(connection).RenameAsync(row, movedTo, ticks, now, cancellationToken: ct),
+                        async (connection, now, ct) =>
+                        {
+                            var files = new SharedFileRepository(connection);
+
+                            if (await files.GetAsync(conversation, movedTo, cancellationToken: ct).ConfigureAwait(false) is { } there
+                                && BothOnDisk(renamedTo, there.File.Name.Value))
+                            {
+                                _ = await files.RemoveAsync(row, null, now, cancellationToken: ct).ConfigureAwait(false);
+                                return true;
+                            }
+
+                            _ = await files.RenameAsync(row, movedTo, ticks, now, cancellationToken: ct).ConfigureAwait(false);
+                            return true;
+                        },
                         cancellationToken).ConfigureAwait(false);
 
                     LookAtTwins(path);
@@ -429,6 +460,12 @@ internal sealed class FolderWatcher : IAsyncDisposable
 
                 LookAtTwins(path);
             }
+            else if (row is null && name is not null)
+            {
+                // Gone with no row: an agent removed its own file, and the row went with it before this look. A twin left
+                // beside it is a file of its own now, and nothing else would look at it.
+                LookAtTwins(path);
+            }
 
             // Renamed away to a name the location does not accept, and not put back: the name it had is gone.
             if (renamedFrom is not null && !File.Exists(renamedFrom) && Within(renamedFrom, folder, out var awayFrom))
@@ -440,10 +477,13 @@ internal sealed class FolderWatcher : IAsyncDisposable
 
                         return await files.GetAsync(conversation, awayFrom, cancellationToken: ct).ConfigureAwait(false) is { } left
                                && Gone(left)
+                               && MovedTheRecordedFile(renamedFrom, left)
                             ? await files.RemoveAsync(left, null, now, cancellationToken: ct).ConfigureAwait(false)
                             : FileRejection.NoSuchFile;
                     },
                     cancellationToken).ConfigureAwait(false);
+
+                LookAtTwins(renamedFrom);
             }
 
             return;
@@ -471,7 +511,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
                     && !File.Exists(renamedFrom)
                     && Within(renamedFrom, folder, out var oldName)
                     && await files.GetAsync(conversation, oldName, cancellationToken: ct).ConfigureAwait(false) is { } renamed
-                    && Gone(renamed))
+                    && Gone(renamed)
+                    && MovedTheRecordedFile(renamedFrom, renamed))
                 {
                     var kept = await files.RenameAsync(renamed, name, measured.ModifiedTicks, now, cancellationToken: ct)
                         .ConfigureAwait(false);
@@ -493,6 +534,12 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
+
+        // A placer carried here from a recorded file may leave a twin of its old name, a file of its own from now on.
+        if (renamedFrom is not null)
+        {
+            LookAtTwins(renamedFrom);
+        }
     }
 
     private async Task ReconcileAsync(StoredFile row, CancellationToken cancellationToken)
@@ -541,6 +588,66 @@ internal sealed class FolderWatcher : IAsyncDisposable
     /// the twin that moved is not the recorded file, which is still there and keeps its row and placer (SPEC.md §9.5).
     /// </remarks>
     private bool Gone(StoredFile row) => !File.Exists(_runtime.Files.FilePath(row.File.Folder, row.File.Name));
+
+    /// <summary>Whether a rename report, moved from a path, moved a recorded file rather than a case twin of it.</summary>
+    /// <remarks>
+    /// Looks and their reports are keyed without case, so where a folder tells case apart a twin's rename can arrive at
+    /// the recorded file's look: taken as the recorded file's move, it carried the agent's placer onto the person's file,
+    /// which the agent could then remove. A report from the recorded spelling is the recorded file's; one from another
+    /// spelling is only where case is not told apart, and there it is the same file.
+    /// </remarks>
+    private bool MovedTheRecordedFile(string? from, StoredFile row)
+    {
+        if (from is null)
+        {
+            return false;
+        }
+
+        return string.Equals(Path.GetFileName(from), row.File.Name.Value, StringComparison.Ordinal)
+               || !TellsCaseApart(_runtime.Files.FolderPath(row.File.Folder));
+    }
+
+    /// <summary>Whether a folder holds names that differ only in case as different files.</summary>
+    /// <remarks>
+    /// Asked of a file in it with its name's case flipped, which every accepted name changes, as each ends in an
+    /// extension of letters. With no file there to ask of, it is taken to tell case apart: the stricter reading, under
+    /// which a placer is never carried onto a file it might not be.
+    /// </remarks>
+    private static bool TellsCaseApart(string directory)
+    {
+        var names = Directory.Exists(directory) ? Directory.EnumerateFiles(directory).Select(Path.GetFileName).ToList() : [];
+
+        foreach (var name in names)
+        {
+            var flipped = new string([.. name!.Select(c => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c))]);
+
+            if (!string.Equals(flipped, name, StringComparison.Ordinal))
+            {
+                return !File.Exists(Path.Combine(directory, flipped)) || names.Contains(flipped, StringComparer.Ordinal);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Whether a path's file and another spelling of its name are two files in its folder.</summary>
+    /// <remarks>
+    /// Only a folder that tells case apart holds both. Where case is not told apart, a move onto another spelling of a
+    /// recorded name replaced that file, and the recorded row is displaced as by any replacement.
+    /// </remarks>
+    private static bool BothOnDisk(string path, string otherName)
+    {
+        var fileName = Path.GetFileName(path);
+
+        if (string.Equals(fileName, otherName, StringComparison.Ordinal) || Path.GetDirectoryName(path) is not { } directory)
+        {
+            return false;
+        }
+
+        var names = Directory.EnumerateFiles(directory).Select(Path.GetFileName).ToList();
+
+        return names.Contains(fileName, StringComparer.Ordinal) && names.Contains(otherName, StringComparer.Ordinal);
+    }
 
     /// <summary>Looks at each file left beside a recorded file that has gone, under its name in another case.</summary>
     /// <remarks>

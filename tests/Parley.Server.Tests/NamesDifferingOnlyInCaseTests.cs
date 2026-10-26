@@ -61,13 +61,20 @@ public sealed class NamesDifferingOnlyInCaseTests : IDisposable
 
         var second = await ParleyServer.StartAsync(Open(store), "http://127.0.0.1:0", Ct);
         IReadOnlyList<Wire.SharedFileView> listed;
+        int notListed;
 
         using (var channel = GrpcChannel.ForAddress(second.Addresses[0]))
         {
-            listed = await FileWire.WaitForAsync(
-                new Wire.Operators.OperatorsClient(channel), l => l.Any(f => f.Name == "offline.md"), TimeSpan.FromSeconds(10), Ct);
+            var operators = new Wire.Operators.OperatorsClient(channel);
+            listed = await FileWire.WaitForAsync(operators, l => l.Any(f => f.Name == "offline.md"), TimeSpan.FromSeconds(10), Ct);
+            notListed = (await operators.ListSharedFilesAsync(
+                new Wire.ListFilesRequest { PageSize = FileLimits.MaximumPageSize }, cancellationToken: Ct)).FilesNotListed;
             await channel.ShutdownAsync();
         }
+
+        // The twin is not in the location, and is counted as a name breaking a rule is, so the person's file is not
+        // simply absent with nothing to say why (round 33).
+        Assert.Equal(1, notListed);
 
         Assert.True(second.Runtime.Watcher.Scanned.IsCompletedSuccessfully, $"the scan ended {second.Runtime.Watcher.Scanned.Status}");
 

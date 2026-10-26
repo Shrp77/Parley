@@ -207,7 +207,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
     }
 
-    /// <summary>How many files in the folders listed have names §9.5 does not accept, and so are not listed.</summary>
+    /// <summary>How many files in the folders listed have names §9.5 does not accept, case twins included, and so are not listed.</summary>
     /// <param name="folders">Every recorded folder.</param>
     /// <param name="scope">The conversation listed, or <see langword="null"/> for all of them.</param>
     /// <returns>The count.</returns>
@@ -239,8 +239,12 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
                 if (Directory.Exists(directory))
                 {
-                    count += Directory.EnumerateFiles(directory)
-                        .Count(path => SharedFileName.Check(Path.GetFileName(path)) != SharedFileNameProblem.None);
+                    var names = Directory.EnumerateFiles(directory).Select(Path.GetFileName).ToList();
+                    var accepted = names.Where(name => SharedFileName.Check(name) == SharedFileNameProblem.None).ToList();
+
+                    // Of two names differing only in case one is in the location and the other breaks a rule (§9.5).
+                    count += names.Count - accepted.Count
+                        + accepted.GroupBy(name => SharedFileName.Create(name!).Key, StringComparer.Ordinal).Sum(same => same.Count() - 1);
                 }
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)

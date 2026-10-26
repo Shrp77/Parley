@@ -376,7 +376,7 @@ message FilesReply {
   repeated FilePlacementCount placements = 4;     // Operators only
   string next_page_token = 5;                     // empty at the end
   int32 total_files = 6;                          // the files total_bytes counts
-  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules, case twins included
 }
 
 message ConversationFilesTotal {
