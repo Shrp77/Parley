@@ -36,12 +36,14 @@ const string Help = """
 
       parley serve [--log <path>] [--with-node]        run the broker: the one process that
                    [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
-                                                       else connects to. It serves every project
+                   [--heartbeat]                       else connects to. It serves every project
                                                        on this machine, each on the port that
                                                        project was given. --with-node also runs
                                                        this machine's node in it, and
                                                        --with-web-ui starts the web UI beside it.
-                                                       --project serves one alone, for testing
+                                                       --project serves one alone, for testing.
+                                                       --heartbeat logs a line a second from
+                                                       each broker, and every connection
 
       parley                                           a deployment from this terminal: the
                                                        projects, who is in each, and their
@@ -243,6 +245,10 @@ var logPath = TakeOption("--log", null);
 // **Let go of the console window a logon entry would otherwise put on somebody's desktop.** Read by
 // `serve`, which detaches, and by `autostart install`, which writes it into the entry it registers.
 var hidden = TakeFlag("--hidden");
+
+// **A line a second from each broker `serve` hosts, and one for every connection**, for finding out why one stopped
+// answering. Off unless asked for.
+var heartbeat = TakeFlag("--heartbeat");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
 var withFiles = TakeFlag("--with-files");
@@ -948,6 +954,8 @@ if (verb == "serve" && rest.Length == 0)
             hostWebUi ? HostingWebUi : null,
             watching ? rereadManifest : null,
             checkInstall: true,
+            heartbeat: heartbeat,
+            watchProcess: true,
             cancellationToken: token);
         }).ConfigureAwait(false);
     }

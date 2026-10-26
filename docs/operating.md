@@ -241,6 +241,27 @@ is no option that names a database file, so a client cannot be aimed at the wron
 `parley serve` and `parley up` run things instead. `prune` applies the policy the broker started
 with, which is the only policy in the deployment.
 
+### The broker's log
+
+`parley serve --log <path>` writes everything the broker says to that file, and the autostart
+entry always passes one (`parley autostart install` prints where). Each line starts with the time, in
+UTC. Besides the broker's own messages, the log says:
+
+- when each project's broker starts listening, when it begins stopping and when it has stopped;
+- when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
+  logoff or shutdown, or a signal on Linux and macOS;
+- an exception that ends the process, and one a background task raised that nothing handled;
+- that the process is exiting, with its exit code.
+
+A broker that is killed outright (Task Manager, `taskkill /F`, `kill -9`) cannot say anything, so
+a log that ends without "stopped" or "exiting" means it was killed or the machine lost power.
+
+**`--heartbeat`** adds a line a second from each broker and a line for every connection that opens
+and closes, with the web server's own account of resets. Use it when a broker stops answering and
+nothing says why. Each heartbeat gives the gap since the last one: a gap well over a second means
+the process was starved or paused. The heartbeat makes the log grow by about a line a second per
+project, so turn it off again when you are done.
+
 ## Upgrading
 
 Run the install script again. It uninstalls first and then installs, because `dotnet tool update`

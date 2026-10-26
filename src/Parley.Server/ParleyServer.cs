@@ -26,14 +26,16 @@ namespace Parley.Server;
 /// deployment that had both.
 /// </para>
 /// </remarks>
-public sealed class ParleyServer : IAsyncDisposable
+public sealed partial class ParleyServer : IAsyncDisposable
 {
     private readonly WebApplication _application;
+    private readonly Heartbeat? _heartbeat;
 
-    private ParleyServer(WebApplication application, BrokerRuntime runtime)
+    private ParleyServer(WebApplication application, BrokerRuntime runtime, Heartbeat? heartbeat)
     {
         _application = application;
         Runtime = runtime;
+        _heartbeat = heartbeat;
     }
 
     /// <summary>Gets the broker state this server is serving.</summary>
@@ -57,12 +59,16 @@ public sealed class ParleyServer : IAsyncDisposable
     /// <see cref="Addresses"/> afterwards.
     /// </param>
     /// <param name="cancellationToken">Cancels startup.</param>
+    /// <param name="diagnostics">
+    /// Where to log and whether to beat, or <see langword="null"/> to log warnings to the console as a broker always has.
+    /// </param>
     /// <returns>The running server.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     public static async Task<ParleyServer> StartAsync(
         BrokerRuntime runtime,
         string listenOn,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ServerDiagnostics? diagnostics = null)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentException.ThrowIfNullOrEmpty(listenOn);
@@ -74,6 +80,24 @@ public sealed class ParleyServer : IAsyncDisposable
         // above still surface, because a refused bind or a failed migration is news.
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
+        // **Given a log, everything goes to it and nothing to the console**, which a broker started hidden does not
+        // have. The broker's own lines are information: starting, stopping, and with a heartbeat each connection.
+        if (diagnostics is not null)
+        {
+            builder.Logging.ClearProviders();
+            builder.Logging.AddProvider(new WriterLoggerProvider(diagnostics.Log, diagnostics.Label));
+            builder.Logging.AddFilter(Category, LogLevel.Information);
+
+            // The web server's own account of a connection: a reset, an abort, a GOAWAY, a stream it refused. Debug,
+            // which says every one, and only with the heartbeat, which is when somebody is looking for one.
+            if (diagnostics.Heartbeat)
+            {
+                builder.Logging.AddFilter("Microsoft.AspNetCore.Server.Kestrel", LogLevel.Debug);
+            }
+        }
+
+        ConnectionWatch? connections = null;
+
         builder.WebHost.ConfigureKestrel(options =>
         {
             // HTTP/2 only, without TLS. gRPC needs HTTP/2, and Kestrel will not negotiate up to
@@ -81,13 +105,28 @@ public sealed class ParleyServer : IAsyncDisposable
             // back to HTTP/1.1 and fail every call with a protocol error that names neither
             // cause nor remedy.
             options.ConfigureEndpointDefaults(endpoint =>
-                endpoint.Protocols = HttpProtocols.Http2);
+            {
+                endpoint.Protocols = HttpProtocols.Http2;
+
+                if (connections is not null)
+                {
+                    endpoint.Use(connections.Around);
+                }
+            });
         });
 
         builder.Services.AddGrpc();
         builder.Services.AddSingleton(runtime);
 
         var application = builder.Build();
+        var logs = application.Services.GetRequiredService<ILoggerFactory>();
+        var lifetime = logs.CreateLogger(Category);
+
+        if (diagnostics is { Heartbeat: true })
+        {
+            // Read by the endpoint defaults above, which Kestrel applies when it binds, after this.
+            connections = new ConnectionWatch(logs.CreateLogger(Category + ".Connections"));
+        }
 
         application.Urls.Clear();
         application.Urls.Add(listenOn);
@@ -104,11 +143,35 @@ public sealed class ParleyServer : IAsyncDisposable
         // process that missed its stop deadline and has to be killed. Closing the channels here
         // ends each handler in the ordinary way, so the wait is over as soon as they return.
         application.Lifetime.ApplicationStopping.Register(runtime.CloseStreams);
+        application.Lifetime.ApplicationStopping.Register(() => LogStopping(lifetime, runtime.Attached.Count));
+        application.Lifetime.ApplicationStopped.Register(() => LogStopped(lifetime));
 
         await application.StartAsync(cancellationToken).ConfigureAwait(false);
 
-        return new ParleyServer(application, runtime);
+        LogStarted(lifetime, string.Join(", ", application.Urls), diagnostics is { Heartbeat: true } ? "on" : "off");
+
+        Heartbeat? heartbeat = null;
+
+        if (connections is not null)
+        {
+            heartbeat = new Heartbeat(logs.CreateLogger(Category + ".Heartbeat"), connections, () => runtime.Attached.Count);
+            heartbeat.Start();
+        }
+
+        return new ParleyServer(application, runtime, heartbeat);
     }
+
+    /// <summary>The category the broker's own lines are logged under.</summary>
+    private const string Category = "Parley.Server";
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "listening on {Addresses}, heartbeat {Heartbeat}")]
+    private static partial void LogStarted(ILogger logger, string addresses, string heartbeat);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "stopping, with {Attached} agents attached")]
+    private static partial void LogStopping(ILogger logger, int attached);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "stopped")]
+    private static partial void LogStopped(ILogger logger);
 
     /// <summary>Stops listening and closes the database.</summary>
     /// <returns>A task that completes when both are done.</returns>
@@ -119,6 +182,12 @@ public sealed class ParleyServer : IAsyncDisposable
     /// </remarks>
     public async ValueTask DisposeAsync()
     {
+        // Last beat before the stop, so a log that ends with "stopped" was not a broker that died.
+        if (_heartbeat is not null)
+        {
+            await _heartbeat.DisposeAsync().ConfigureAwait(false);
+        }
+
         await _application.StopAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
         await Runtime.DisposeAsync().ConfigureAwait(false);

@@ -56,6 +56,11 @@ public static class ServeCommand
     /// Whether to ask the other Parley programs on this machine what release they are, and warn about any that is
     /// not the broker's. Off by default so a test's broker starts no processes.
     /// </param>
+    /// <param name="heartbeat">Whether each broker logs a line a second and every connection (<c>--heartbeat</c>).</param>
+    /// <param name="watchProcess">
+    /// Whether to log a crash, an unobserved exception, a signal to stop and the exit. Process-wide, so only the
+    /// process <c>parley serve</c> is turns it on.
+    /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -89,6 +94,8 @@ public static class ServeCommand
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         Func<IReadOnlyList<ProjectSettings>?>? reread = null,
         bool checkInstall = false,
+        bool heartbeat = false,
+        bool watchProcess = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
@@ -108,6 +115,9 @@ public static class ServeCommand
         // would be interleaved is the output an operator reads to find out which broker is unwell.
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
+
+        // Process-wide, so only for the process `parley serve` is: a test calling this in its own host leaves it off.
+        using var watch = watchProcess ? ProcessWatch.Start(output) : null;
 
         // Said once for the process rather than once per project: one build serves all of them,
         // and a line repeated per project would read as though it could differ. Before the first
@@ -161,7 +171,13 @@ public static class ServeCommand
 
             try
             {
-                server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
+                // **Its log is this process's**, so what the broker logs reaches --log; a broker started hidden has no
+                // console for it to go to otherwise.
+                server = await ParleyServer.StartAsync(
+                        runtime,
+                        project.Endpoint,
+                        cancellationToken,
+                        new ServerDiagnostics(output, heartbeat, project.Name.Value))
                     .ConfigureAwait(false);
             }
             catch (Exception exception)

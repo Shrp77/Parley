@@ -40,7 +40,12 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      # PARLEY_HEARTBEAT makes every broker a server test starts log a line a second and every connection. A test
+      # project's console output is printed here only when the project fails, so a failure seen only on a runner says
+      # what its broker was doing: starved, stopped, or which side closed a connection.
       - name: Test
+        env:
+          PARLEY_HEARTBEAT: '1'
         run: dotnet test --no-build --configuration Release --verbosity normal
 
   dependencies:
