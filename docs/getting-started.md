@@ -52,6 +52,10 @@ Four tools are installed:
 Use `-Surfaces terminal|web-ui|both|none` on Windows, or `--surfaces` elsewhere, to choose which
 of the last two you get.
 
+On Windows, add `-Shortcut` to put a **Parley web console** shortcut, with Parley's icon, in the
+Start menu and on your desktop. It opens the web console, or says in a message box why it could not.
+To pin it to the taskbar, right-click it in the Start menu and choose **Pin to taskbar**.
+
 Nothing needs administrator rights. The broker runs as you, and it is started again each time
 you sign in. When you want to remove everything, run `./install.ps1 -Uninstall` or
 `./install.sh --uninstall`. That leaves your stores and your `.mcp.json` files alone, because
