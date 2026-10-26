@@ -21,8 +21,9 @@ namespace Parley.Server;
 /// for one save come to at most one change and one set of notices, and a placement's own move comes to none.
 /// </para>
 /// <para>
-/// <b>Events are a way to be prompt, not the guarantee.</b> A missed event is caught by the reconcile before every
-/// list and fetch, and a change made while the broker was stopped by the scan of the whole location at start.
+/// <b>Events are a way to be prompt, not the guarantee.</b> A missed change to a recorded file is caught by the reconcile
+/// before every list and fetch, a look that could not read the file is made again, and a change made while the broker
+/// was stopped is caught by the scan of the whole location at start.
 /// </para>
 /// <para>
 /// <b>A disappearance is judged when the half second is up, not when it is reported.</b> An editor saving by rename moves
@@ -140,7 +141,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
             {
                 var path = _runtime.Files.FilePath(folder, name);
 
-                if (await FileLocationStore.HashAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
+                if (await MeasureAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
                 {
                     continue;
                 }
@@ -217,12 +218,25 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _stopping.Dispose();
     }
 
-    private void Schedule(string path)
+    private void Schedule(string path) => Schedule(path, attempt: 0);
+
+    /// <summary>Looks at a path once it has been quiet, and again later if the look could not be made.</summary>
+    /// <remarks>
+    /// <b>A look that fails is made again.</b> A file just written is often held for a moment by whatever else watches
+    /// the disk, a virus scanner on Windows most of all, and a list reconciles only the files already recorded. So a
+    /// new file whose one look met it held was not listed until something else changed or the broker restarted. Each
+    /// later look waits twice as long, up to <see cref="LongestRetry"/>, and an event at the path replaces it.
+    /// </remarks>
+    private void Schedule(string path, int attempt)
     {
         if (_stopping.IsCancellationRequested)
         {
             return;
         }
+
+        var wait = attempt == 0
+            ? _settle
+            : TimeSpan.FromTicks(Math.Min(_settle.Ticks << Math.Min(attempt, 16), LongestRetry.Ticks));
 
         var quiet = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
 
@@ -239,7 +253,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
         {
             try
             {
-                await Task.Delay(_settle, quiet.Token).ConfigureAwait(false);
+                await Task.Delay(wait, quiet.Token).ConfigureAwait(false);
 
                 // Only the latest look at a path goes ahead; an earlier one was cancelled above.
                 _ = ((ICollection<KeyValuePair<string, CancellationTokenSource>>)_pending)
@@ -254,8 +268,12 @@ internal sealed class FolderWatcher : IAsyncDisposable
             catch (Exception unexpected) when (unexpected is IOException or UnauthorizedAccessException
                                                    or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
             {
-                // A file held by an editor, or a row that moved under the look. The next event, the next list or fetch,
-                // or the next start looks again: a missed change is a delay, never a loss.
+                // A file held by an editor or a scanner, or a row that moved under the look: looked at again, unless an
+                // event at the path has already asked for a look of its own.
+                if (!_pending.ContainsKey(path))
+                {
+                    Schedule(path, attempt + 1);
+                }
             }
             finally
             {
@@ -364,7 +382,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
             return;
         }
 
-        if (await FileLocationStore.HashAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
+        if (await MeasureAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
         {
             return;
         }
@@ -413,7 +431,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
             return;
         }
 
-        if (await FileLocationStore.HashAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
+        if (await MeasureAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
         {
             return;
         }
@@ -422,6 +440,25 @@ internal sealed class FolderWatcher : IAsyncDisposable
             (connection, now, ct) => new SharedFileRepository(connection).ReconcileAsync(
                 row, measured.Sha256, measured.SizeBytes, measured.ModifiedTicks, now, cancellationToken: ct),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Hashes a file, or says it is gone; a file that is there and cannot be read is an error.</summary>
+    /// <param name="path">The file.</param>
+    /// <param name="cancellationToken">Cancels the hash.</param>
+    /// <returns>What it holds, or <see langword="null"/> when there is no file.</returns>
+    /// <exception cref="IOException">The file is there and could not be read.</exception>
+    /// <remarks>
+    /// <see cref="FileLocationStore.HashAsync"/> answers null for both, and a look that took a held file for a gone one
+    /// returned as though there were nothing to do. Thrown, it is looked at again (<c>Schedule</c>, <c>Guarded</c>).
+    /// </remarks>
+    private static async Task<(ContentHash Sha256, long SizeBytes, long ModifiedTicks)?> MeasureAsync(
+        string path, CancellationToken cancellationToken)
+    {
+        var measured = await FileLocationStore.HashAsync(path, cancellationToken).ConfigureAwait(false);
+
+        return measured is null && File.Exists(path)
+            ? throw new IOException($"'{path}' is there and could not be read, held by another program.")
+            : measured;
     }
 
     /// <summary>Whether a path is a file in a given conversation folder under a name the location accepts.</summary>
@@ -457,18 +494,44 @@ internal sealed class FolderWatcher : IAsyncDisposable
         return true;
     }
 
+    /// <summary>Runs a scan of the whole location, and runs it again later if a file or the store was busy.</summary>
+    /// <remarks>
+    /// One held file ended the scan at the first folder it met, and what the scan was for (a change made while the
+    /// broker was stopped, a file put there by hand) waited for the next start. Each later attempt waits twice as long,
+    /// up to <see cref="LongestRetry"/>.
+    /// </remarks>
     private Task Guarded(Func<CancellationToken, Task> work) =>
         Task.Run(async () =>
         {
-            try
+            for (var wait = _settle; ; wait = TimeSpan.FromTicks(Math.Min(wait.Ticks * 2, LongestRetry.Ticks)))
             {
-                await work(_stopping.Token).ConfigureAwait(false);
-            }
-            catch (Exception ended) when (ended is OperationCanceledException or ObjectDisposedException
-                                              or IOException or UnauthorizedAccessException
-                                              or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
-            {
-                // Stopping, or a file held by somebody else: the next event or the next start looks again.
+                try
+                {
+                    await work(_stopping.Token).ConfigureAwait(false);
+                    return;
+                }
+                catch (Exception ended) when (ended is OperationCanceledException or ObjectDisposedException)
+                {
+                    // Stopping.
+                    return;
+                }
+                catch (Exception busy) when (busy is IOException or UnauthorizedAccessException
+                                                 or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException)
+                {
+                    // A file held by somebody else, or the store busy: tried again.
+                }
+
+                try
+                {
+                    await Task.Delay(wait, _stopping.Token).ConfigureAwait(false);
+                }
+                catch (Exception ended) when (ended is OperationCanceledException or ObjectDisposedException)
+                {
+                    return;
+                }
             }
         });
+
+    /// <summary>The longest a failed look or scan waits before it is tried again.</summary>
+    private static readonly TimeSpan LongestRetry = TimeSpan.FromSeconds(30);
 }

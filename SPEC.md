@@ -2832,7 +2832,8 @@ implementation will meet it.
 **A change made outside Parley is the file's new content.** The broker watches the location while it
 holds files, and before every list and fetch confirms each file's size and modification time still
 match what it recorded, hashing again when they do not — so a missed event delays a change and never
-serves a stale hash. An edit keeps the file's placer. A rename keeps it too, and updates the row in
+serves a stale hash. A file it cannot read when it looks, held by another program, is looked at again until it
+can be, so a file put in the folder is listed even when something else held it first. An edit keeps the file's placer. A rename keeps it too, and updates the row in
 place. A file that appears without being placed is the person's, unless, when the broker starts, its
 hash matches exactly one file gone from the same folder, in which case it is that file renamed.
 
