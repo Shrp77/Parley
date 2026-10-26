@@ -88,9 +88,11 @@ internal sealed class ProcessWatch : IDisposable
             _log.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{DateTimeOffset.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ} process: {what}"));
             _log.Flush();
         }
-        catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+#pragma warning disable CA1031 // Called from a signal or the exit: nothing may escape it.
+        catch (Exception)
         {
             // A log that cannot be written cannot be told so.
         }
+#pragma warning restore CA1031
     }
 }

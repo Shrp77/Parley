@@ -2802,6 +2802,11 @@ A file whose name breaks a rule, copied in by hand or renamed there, is not in t
 never listed, fetched or opened, and a rename to such a name is the old name gone. The broker renames
 nothing a person put on disk. The person's listing counts such files, without naming them (§10.2).
 
+Names in the location are compared without regard to case. A folder that tells case apart, as every
+folder on Linux does, can hold two files whose names differ only in case; they are one name, and only
+one of them is in the location: the one the broker records, or with none recorded the first in ordinal
+order. The other is treated as a name that breaks a rule.
+
 **The content hash is the broker's.** SHA-256 of the stored bytes, in lowercase hex, computed as they
 arrive and again whenever they change by any route. A placing adapter's own hash is never taken. The
 same hash is the same content; it attests nothing about who wrote it.

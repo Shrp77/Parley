@@ -131,15 +131,35 @@ internal sealed class FolderWatcher : IAsyncDisposable
             var heldHere = false;
 
             var directory = _runtime.Files.FolderPath(folder);
-            var onDisk = Directory.Exists(directory)
-                ? Directory.EnumerateFiles(directory)
-                    .Select(Path.GetFileName)
-                    .Where(name => SharedFileName.Check(name) == SharedFileNameProblem.None)
-                    .Select(name => SharedFileName.Create(name))
-                    .ToDictionary(name => name.Key, StringComparer.Ordinal)
-                : [];
-
             var recorded = rows.Where(r => r.File.ConversationId == conversation).ToList();
+            List<SharedFileName> names;
+
+            try
+            {
+                names = Directory.Exists(directory)
+                    ? [.. Directory.EnumerateFiles(directory)
+                        .Select(Path.GetFileName)
+                        .Where(name => SharedFileName.Check(name) == SharedFileNameProblem.None)
+                        .Select(name => SharedFileName.Create(name))]
+                    : [];
+            }
+            catch (Exception busy) when (busy is IOException or UnauthorizedAccessException)
+            {
+                // A folder that cannot be listed is passed over whole, its rows judged on the next pass.
+                held = true;
+                continue;
+            }
+
+            // **One file to a name, as the location has.** Names are compared without case, and a folder that tells
+            // case apart (every folder on Linux) can hold two that differ only in it. The recorded one is the file; with
+            // none recorded, the first in ordinal order. The other is not in the location, as a name breaking a rule is.
+            var onDisk = names
+                .GroupBy(name => name.Key, StringComparer.Ordinal)
+                .ToDictionary(
+                    same => same.Key,
+                    same => same.FirstOrDefault(n => recorded.Exists(r => r.File.Name.Value == n.Value))
+                        ?? same.OrderBy(n => n.Value, StringComparer.Ordinal).First(),
+                    StringComparer.Ordinal);
             var missing = recorded.Where(r => !onDisk.ContainsKey(r.NameKey)).ToList();
 
             foreach (var row in recorded.Where(r => onDisk.ContainsKey(r.NameKey)))
@@ -245,10 +265,12 @@ internal sealed class FolderWatcher : IAsyncDisposable
         {
             await Scanned.ConfigureAwait(false);
         }
-        catch (Exception finished) when (finished is OperationCanceledException or ObjectDisposedException)
+#pragma warning disable CA1031 // A scan that failed must not stop the broker from stopping and releasing its store.
+        catch (Exception)
         {
-            // Stopping is how it ends.
+            // Stopping is how it ends; any other failure ended it already, and the store must still be released.
         }
+#pragma warning restore CA1031
 
         _stopping.Dispose();
     }

@@ -281,8 +281,27 @@ public static class ServeCommand
                 // The sweep ending the way a cancelled sweep ends.
             }
 
-            await hosted.Server.DisposeAsync().ConfigureAwait(false);
-            hosted.Stopping.Dispose();
+            await ReleaseAsync(hosted).ConfigureAwait(false);
+        }
+
+        // **One broker failing to stop never keeps another running.** Each is stopped on its own, and a failure is said
+        // where the log is read; a broker left serving after its project was removed, or after the process was told to
+        // stop, would hold its port and its store's lock.
+        async Task ReleaseAsync(Hosted hosted)
+        {
+            try
+            {
+                await hosted.Server.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await error.WriteLineAsync(
+                    $"{hosted.Project.Name}: its broker did not stop cleanly: {exception.Message}").ConfigureAwait(false);
+            }
+            finally
+            {
+                hosted.Stopping.Dispose();
+            }
         }
 
         try
@@ -469,8 +488,7 @@ public static class ServeCommand
 
             foreach (var hosted in remaining)
             {
-                await hosted.Server.DisposeAsync().ConfigureAwait(false);
-                hosted.Stopping.Dispose();
+                await ReleaseAsync(hosted).ConfigureAwait(false);
             }
         }
 

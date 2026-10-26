@@ -465,3 +465,4 @@ REVIEW-LEDGER.md
 # deployment fact -- absolute paths and the names of the repositories on one disk -- and this
 # repository is public. The real one lives in %APPDATA%\Parley.
 node.json
+.claude/screenshots/
