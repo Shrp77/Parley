@@ -101,16 +101,34 @@ public sealed class BlockedPerAgentTests : IDisposable
         Assert.Equal("permission", facts.Blocker);
     }
 
-    [Fact]
-    public async Task A_question_about_a_block_answered_does_not_make_the_item_read_done()
+    [Theory]
+    [InlineData("answered")]
+    [InlineData("acknowledged")]
+    [InlineData("done")]
+    public async Task Any_answer_after_a_block_clears_the_agents_part(string outcome)
     {
-        // Found by review, round 23: the person asks a blocked agent what it needs, and its answer was its latest, so
-        // the item read done though the work never was. Only a done or blocked result decides an agent's part.
+        // The owner's decision after review round 29: done, answered and acknowledged all roll up to complete, and the
+        // roadmap reads them alike. An item that is a question, blocked until the person supplied what was missing and
+        // then answered, read blocked for good when only done cleared a block.
         var roadmap = await RoadmapAsync();
 
-        var work = await AskAsync(_person, Billing, 0);
-        await AnswerAsync(work, Billing, 1, "blocked:permission");
-        await AnswerAsync(await AskAsync(_person, Billing, 2, "What exactly do you need allowed?"), Billing, 3, "answered");
+        await AnswerAsync(await AskAsync(_person, Billing, 0), Billing, 1, "blocked:missing_information");
+        await AnswerAsync(await AskAsync(_person, Billing, 2, "The price is the one on the order."), Billing, 3, outcome);
+
+        var facts = await FactsAsync(roadmap);
+        Assert.True(facts.BlockedExchanges == 0, $"billing answered '{outcome}' after its block and the item still reads blocked: {facts}");
+        Assert.Null(facts.Blocker);
+    }
+
+    [Fact]
+    public async Task A_request_the_person_closed_before_it_was_answered_does_not_clear_a_block()
+    {
+        // A request closed by the person's close is no answer from the agent, so the block before it still decides.
+        var roadmap = await RoadmapAsync();
+
+        await AnswerAsync(await AskAsync(_person, Billing, 0), Billing, 1, "blocked:permission");
+        _ = await AskAsync(_person, Billing, 2, "Any way round it?");
+        Assert.True(await _console.ForceConcludeAsync("rm1-1", null, T0.AddMinutes(3), Ct));
 
         var facts = await FactsAsync(roadmap);
         Assert.Equal(1, facts.BlockedExchanges);

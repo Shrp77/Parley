@@ -1290,7 +1290,7 @@ message ItemFacts {
   int32 open_exchanges = 2;
   bool collected = 3;
   int32 complete_exchanges = 4;
-  int32 blocked_exchanges = 5;        // how many agents' latest done-or-blocked result on the person's request was blocked
+  int32 blocked_exchanges = 5;        // how many agents' latest answer on the person's requests was blocked
   int32 closed_exchanges = 6;         // how many of the person's requests were closed with no Result
   string blocker = 7;                 // empty when none
   string closed_by = 8;               // empty while the conversation is not closed

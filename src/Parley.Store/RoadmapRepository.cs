@@ -1104,21 +1104,21 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND delivered_utc IS NULL)                                                   AS Uncollected,
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C
                            AND outcome IN ('complete', 'settled'))                                      AS Complete,
-                       -- How many agents' latest done-or-blocked exchange on the person's request here ended blocked;
-                       -- latest is the one that closed last, since the agent, not the person, chooses which it answers first, and
-                       -- only one whose result did the work or was blocked: answering the person's question about a
-                       -- block, or acknowledging, is not the work done, and read as done it hid the block. Per agent,
-                       -- not for the whole conversation: an item sent to two whose first ended blocked read done once
-                       -- the second completed. The person's requests only: the item is what the person asked, and an
-                       -- agent's own question to another that ended blocked, worked around, is not the item blocked.
+                       -- How many agents' latest answered exchange on the person's request here ended blocked. Latest is
+                       -- the one that closed last, since the agent, not the person, chooses which it answers first.
+                       -- Answered is any Result: done, answered and acknowledged all roll up to complete (SPEC.md §5.3),
+                       -- so an agent that was blocked and then answered the person is no longer blocked; a request the
+                       -- person closed first is no answer and decides nothing. Per agent, not for the whole conversation:
+                       -- an item sent to two whose first ended blocked read done once the second completed. The person's
+                       -- requests only: the item is what the person asked, and an agent's own question to another that
+                       -- ended blocked, worked around, is not the item blocked.
                        (SELECT COUNT(*) FROM exchanges e WHERE e.conversation_id = @C
                            AND e.outcome = 'blocked'
                            AND e.requester IN (SELECT name FROM agents WHERE adapter = @Seat)
                            AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
                                           AND l.receiver = e.receiver AND l.requester = e.requester
-                                          AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
-                                                         AND d.outcome IN ('done', 'blocked'))
+                                          AND l.outcome IN ('complete', 'blocked')
                                         ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1))   AS Blocked,
                        -- The person's requests closed before their agent answered. Like Blocked, only the person's: the
                        -- item is what the person asked, and an agent's own notice to a peer, open when the conversation
@@ -1126,7 +1126,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                        (SELECT COUNT(*) FROM exchanges WHERE conversation_id = @C AND outcome = 'closed'
                            AND requester IN (SELECT name FROM agents WHERE adapter = @Seat))            AS Closed,
                        -- The blocker of an exchange the count above counts: the newest one that is some agent's latest
-                       -- done-or-blocked one on the person's request and ended blocked. Taken from the conversation's
+                       -- answered one on the person's request and ended blocked. Taken from the conversation's
                        -- newest blocked result, it named an agent since asked again and done, and the person was sent to
                        -- the wrong one. Joined through the result items' exchange, never their message: retention deletes
                        -- messages and keeps exchanges and result items, and a join through the message lost the blocker
@@ -1138,8 +1138,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                            AND e.id = (SELECT l.id FROM exchanges l
                                         WHERE l.conversation_id = @C AND l.state = 'CLOSED'
                                           AND l.receiver = e.receiver AND l.requester = e.requester
-                                          AND EXISTS (SELECT 1 FROM result_items d WHERE d.exchange_id = l.id
-                                                         AND d.outcome IN ('done', 'blocked'))
+                                          AND l.outcome IN ('complete', 'blocked')
                                         ORDER BY l.closed_utc DESC, l.id DESC LIMIT 1)
                          ORDER BY ri.message_id DESC LIMIT 1)                                           AS Blocker,
                        (SELECT closed_by FROM conversations WHERE id = @C)                              AS ClosedBy,

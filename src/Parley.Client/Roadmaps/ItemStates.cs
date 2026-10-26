@@ -20,7 +20,7 @@ public enum ItemStanding
     /// <summary>The work ended blocked, with the blocker the agent gave, with nothing open in a conversation still open.</summary>
     Blocked,
 
-    /// <summary>Work was done or answered, and no agent's latest done-or-blocked result on the person's request was blocked.</summary>
+    /// <summary>Work was done or answered, and no agent's latest answer on the person's requests was blocked.</summary>
     Done,
 
     /// <summary>
