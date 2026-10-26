@@ -90,6 +90,14 @@
     but changing what an existing machine does at logon is not this script's decision to make
     quietly.
 
+.PARAMETER Shortcut
+    Windows only. Puts a "Parley web console" shortcut in the Start menu and on the desktop, with Parley's icon, that
+    opens the web console the broker serves (`parley web-ui --open`). When the web UI is not running it says why in a
+    message box rather than doing nothing. Pin it to the taskbar from the Start menu.
+
+    Opt-in, because putting things on somebody's desktop is not this script's decision to make quietly. Running the
+    script again without it leaves a shortcut already made alone, and -Uninstall removes it.
+
 .PARAMETER Reset
     Wipes this machine's Parley first, by running reset.ps1 -Everything -Force, and then installs.
     Every project, store, conversation, port and node.json goes, and nothing asks before it does:
@@ -118,6 +126,9 @@
     .\install.ps1 -Hidden
 
 .EXAMPLE
+    .\install.ps1 -Hidden -Shortcut
+
+.EXAMPLE
     .\install.ps1 -Uninstall
 #>
 
@@ -126,6 +137,7 @@ param(
     [switch] $Uninstall,
     [switch] $Force,
     [switch] $Hidden,
+    [switch] $Shortcut,
     [string] $Surfaces,
     [string[]] $Only,
     [switch] $Reset,
@@ -326,6 +338,112 @@ function Stop-Broker {
 function Write-Step($text) { Write-Host "==> $text" -ForegroundColor Cyan }
 function Write-Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
 
+# What -Shortcut makes, named once so -Uninstall removes exactly what an install made and nothing a person put there.
+$shortcutName = 'Parley web console.lnk'
+$shortcutHome = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Parley' } else { $null }
+$opener = if ($shortcutHome) { Join-Path $shortcutHome 'open-web-console.ps1' } else { $null }
+$icon = if ($shortcutHome) { Join-Path $shortcutHome 'parley.ico' } else { $null }
+
+<#
+.SYNOPSIS
+    Where the shortcuts go: the Start menu, so it can be searched for and pinned, and the desktop.
+#>
+function Shortcut-Paths {
+    return @(
+        (Join-Path ([Environment]::GetFolderPath('Programs')) $shortcutName),
+        (Join-Path ([Environment]::GetFolderPath('Desktop')) $shortcutName)
+    )
+}
+
+<#
+.SYNOPSIS
+    Makes the Start menu and desktop shortcuts that open the web console.
+.DESCRIPTION
+    **The shortcut runs a script, not `parley` itself.** `parley` is a console program, so a shortcut to it flashes a
+    console window every time, and when the web UI is not running the reason is printed into that window as it closes.
+    The script runs hidden and calls `parley web-ui --open`, and when that fails it shows what parley said in a message
+    box, so a click never does nothing without saying why.
+
+    The icon is the web console's own, wrapped as an .ico: a shortcut cannot use a .png, and an .ico may hold one whole.
+#>
+function New-WebConsoleShortcut([string] $address) {
+    Write-Step 'Making the web console shortcut'
+
+    $parleyExe = Join-Path $shims 'parley.exe'
+
+    New-Item -ItemType Directory -Force -Path $shortcutHome | Out-Null
+
+    # Single-quoted in the script, so a quote in a path is doubled rather than ending the string.
+    $quotedExe = "'" + $parleyExe.Replace("'", "''") + "'"
+    $at = if ($address) { " '" + $address.Replace("'", "''") + "'" } else { '' }
+
+    $lines = @(
+        '# Written by install.ps1 -Shortcut, and removed by install.ps1 -Uninstall.',
+        # Each line as its own text: Windows PowerShell wraps a native program's error output in an error record, and
+        # printing the record would put its "At line 2" noise in the box around what parley said.
+        ('$said = (& ' + $quotedExe + ' web-ui --open' + $at + ' 2>&1 | ForEach-Object { "$_" }) -join "`n"'),
+        'if ($LASTEXITCODE -ne 0) {',
+        '    Add-Type -AssemblyName PresentationFramework',
+        "    [void][System.Windows.MessageBox]::Show(`$said.Trim(), 'Parley web console')",
+        '}'
+    )
+    Set-Content -LiteralPath $opener -Value $lines -Encoding utf8
+
+    # One image, stored whole as a PNG: a 6-byte header, one 16-byte entry, then the image.
+    $png = [System.IO.File]::ReadAllBytes((Join-Path $root 'src\Parley.Web\Brand\icon.png'))
+    # A PNG's width and height are big-endian at bytes 16 and 20. Only the low byte goes in the entry, where 0 means 256.
+    $width = $png[19]
+    $height = $png[23]
+    $ico = New-Object System.IO.MemoryStream
+    $writer = New-Object System.IO.BinaryWriter($ico)
+    $writer.Write([uint16] 0); $writer.Write([uint16] 1); $writer.Write([uint16] 1)
+    $writer.Write([byte] $width); $writer.Write([byte] $height); $writer.Write([byte] 0); $writer.Write([byte] 0)
+    $writer.Write([uint16] 1); $writer.Write([uint16] 32); $writer.Write([uint32] $png.Length); $writer.Write([uint32] 22)
+    $writer.Write($png)
+    $writer.Flush()
+    [System.IO.File]::WriteAllBytes($icon, $ico.ToArray())
+    $writer.Dispose()
+
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $shell = New-Object -ComObject WScript.Shell
+
+    foreach ($path in Shortcut-Paths) {
+        $link = $shell.CreateShortcut($path)
+        $link.TargetPath = $powershell
+        $link.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$opener`""
+        $link.IconLocation = "$icon,0"
+        $link.Description = 'Open the Parley web console'
+        # Minimised, so the moment before -WindowStyle Hidden takes effect shows no window either.
+        $link.WindowStyle = 7
+        $link.Save()
+
+        Write-Note $path
+    }
+
+    Write-Note 'to pin it to the taskbar, right-click it in the Start menu and choose Pin to taskbar'
+}
+
+<#
+.SYNOPSIS
+    Removes what New-WebConsoleShortcut made, whether or not this run asked for it.
+#>
+function Remove-WebConsoleShortcut {
+    if (-not $shortcutHome) { return }
+
+    $made = @(Shortcut-Paths) + @($opener, $icon) | Where-Object { Test-Path -LiteralPath $_ }
+
+    if ($made.Count -eq 0) { return }
+
+    Write-Step 'Removing the web console shortcut'
+
+    $made | ForEach-Object { Remove-Item -LiteralPath $_ -Force }
+
+    # Only when nothing else is in it: the folder may hold something a person or another tool put there.
+    if ((Test-Path -LiteralPath $shortcutHome) -and -not (Get-ChildItem -LiteralPath $shortcutHome -Force)) {
+        Remove-Item -LiteralPath $shortcutHome -Force
+    }
+}
+
 <#
 .SYNOPSIS
     Ends the processes holding Parley's files, and reports which of them survived.
@@ -385,6 +503,14 @@ if ($Repositories -and -not $Reset) {
     Write-Error '-Repositories is only used with -Reset.'
 }
 
+if ($Shortcut -and [Environment]::OSVersion.Platform -ne 'Win32NT') {
+    Write-Error '-Shortcut makes a Windows shortcut, and this is not Windows. `parley web-ui --open` opens the web console.'
+}
+
+if ($Shortcut -and $Uninstall) {
+    Write-Error '-Shortcut and -Uninstall together make no sense: -Uninstall removes the shortcut along with everything else.'
+}
+
 # ---------------------------------------------------------------- uninstall --
 
 if ($Uninstall) {
@@ -418,6 +544,8 @@ if ($Uninstall) {
     # Then the entry, still before the tools, because it names an executable about to be deleted.
     # The other order leaves a scheduled task pointing at a path that is no longer there, which
     # fails at logon, silently, somewhere nobody looks.
+    Remove-WebConsoleShortcut
+
     Write-Step 'Removing the autostart entry'
 
     if (Get-Command parley -ErrorAction SilentlyContinue) {
@@ -455,7 +583,7 @@ if ($Uninstall) {
     }
 
     Write-Host ''
-    Write-Host 'Every Parley tool is gone, and so is the autostart entry. The store and any .mcp.json'
+    Write-Host 'Every Parley tool is gone, and so are the autostart entry and any web console shortcut. The store and any .mcp.json'
     Write-Host 'are left alone: those are the deployment rather than the installation.'
     exit 0
 }
@@ -900,6 +1028,8 @@ foreach ($says in $reported) {
 # Nothing here is needed for a surface: a terminal is not registered with a supervisor, does not
 # listen on a port, and has no store. There is nothing to configure and nothing to prove.
 if (-not $replacingBroker) {
+    if ($Shortcut) { New-WebConsoleShortcut $null }
+
     Write-Host ''
     Write-Host 'The broker was not touched, and is still serving whatever it was serving.' -ForegroundColor Green
     Write-Host 'Your agents kept running, so nothing they were working on was lost.'
@@ -1023,6 +1153,11 @@ if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
 else {
     Write-Warning 'Projects and agents are set up in the terminal, and this machine has not installed it.'
     Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+}
+
+if ($Shortcut) {
+    Write-Host ''
+    New-WebConsoleShortcut $webUi
 }
 
 if ($webUi) {

@@ -653,4 +653,33 @@ public sealed class InstallScriptTests
 
         Assert.True(declared, $"{script} names --hidden somewhere but does not take it as an argument");
     }
+
+    [Fact]
+    public void The_shortcut_is_asked_for_and_removed_with_everything_else()
+    {
+        // Opt-in, because a desktop is the person's; and an uninstall that left the shortcut behind would leave an icon
+        // that runs a tool no longer there.
+        var code = Code(Windows);
+
+        Assert.Contains("[switch] $Shortcut", code, StringComparison.Ordinal);
+        Assert.Contains("if ($Shortcut) { New-WebConsoleShortcut", code, StringComparison.Ordinal);
+
+        // The call, not the definition, which comes earlier in the file whatever the uninstall does.
+        var removes = code.IndexOf("\n    Remove-WebConsoleShortcut\n", StringComparison.Ordinal);
+        var deletes = code.IndexOf("tool uninstall", StringComparison.Ordinal);
+
+        Assert.True(removes >= 0 && removes < deletes, "install.ps1 -Uninstall does not remove the web console shortcut before the tools");
+    }
+
+    [Fact]
+    public void The_shortcut_opens_the_web_console_and_its_icon_is_in_the_repository()
+    {
+        // The icon is read from the checkout when the shortcut is made, so moving the web console's icon would fail the
+        // install of the one person who asked for a shortcut.
+        var code = Code(Windows);
+
+        Assert.Contains("web-ui --open", code, StringComparison.Ordinal);
+        Assert.Contains(@"src\Parley.Web\Brand\icon.png", code, StringComparison.Ordinal);
+        Assert.NotEmpty(RepositoryFile.Read(Path.Combine("src", "Parley.Web", "Brand", "icon.png")));
+    }
 }
