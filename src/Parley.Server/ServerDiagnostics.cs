@@ -55,18 +55,18 @@ internal sealed class WriterLoggerProvider(TextWriter writer, string? label) : I
                 CultureInfo.InvariantCulture,
                 $"{DateTimeOffset.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ} {Level(logLevel)} {label}{(label is null ? string.Empty : " ")}{category}: {formatter(state, exception)}");
 
+            // **A line that cannot be written is dropped, whatever the reason.** A full disk, a closed pipe, a log disposed
+            // first or a test's output written after its test ended: a broker that failed a call, or could not stop,
+            // because its log could not be written would be failing at what it exists for to protect the record of it.
+#pragma warning disable CA1031 // Logging never throws into what it logs.
             try
             {
                 writer.WriteLine(exception is null ? line : line + Environment.NewLine + exception);
             }
-            catch (ObjectDisposedException)
+            catch (Exception)
             {
-                // The log went before the broker did, which is a teardown and not something to fail a call over.
             }
-            catch (InvalidOperationException)
-            {
-                // A test's output, written to after its test ended.
-            }
+#pragma warning restore CA1031
         }
 
         private static string Level(LogLevel level) => level switch
@@ -151,14 +151,16 @@ internal sealed partial class Heartbeat(ILogger logger, ConnectionWatch connecti
     {
         await _stopping.CancelAsync().ConfigureAwait(false);
 
+#pragma warning disable CA1031 // Whatever ended the beat, stopping goes on: the broker it reports on must still stop.
         try
         {
             await _running.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            // Asked for.
+            // Asked for, or the beat failed; either way it has ended.
         }
+#pragma warning restore CA1031
 
         _stopping.Dispose();
     }

@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using System.Text;
 using Grpc.Net.Client;
 using Parley.Broker;
 using Xunit;
@@ -82,5 +84,61 @@ public sealed class BrokerDiagnosticsTests
         Assert.DoesNotContain(lines, l => l.Contains("connection ", StringComparison.Ordinal));
         Assert.Contains(lines, l => l.Contains("Parley.Server: listening on", StringComparison.Ordinal));
         Assert.Contains(lines, l => l.Contains("Parley.Server: stopping, with 0 agents attached", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_log_that_fails_to_write_a_heartbeat_does_not_stop_the_broker_from_stopping()
+    {
+        // Found by review, round 30: a full disk under --log killed the beat, and its dispose then threw before the
+        // server stopped, leaving it listening with its store held.
+        var log = new FailingAfterHeartbeat();
+        var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, TimeProvider.System);
+        var server = await ParleyServer.StartAsync(runtime, "http://127.0.0.1:0", Ct, new ServerDiagnostics(log, Heartbeat: true));
+        var address = new Uri(server.Addresses[0]);
+
+        await Task.Delay(1800, Ct);
+
+        Exception? thrown = null;
+
+        try
+        {
+            await server.DisposeAsync();
+        }
+        catch (Exception e)
+        {
+            thrown = e;
+        }
+
+        var stillListening = false;
+
+        try
+        {
+            using var tcp = new TcpClient();
+            await tcp.ConnectAsync(address.Host, address.Port, Ct);
+            stillListening = true;
+        }
+        catch (SocketException)
+        {
+            // Stopped.
+        }
+
+        Assert.True(thrown is null && !stillListening, $"dispose threw: {thrown?.GetType().Name}: {thrown?.Message}; still listening: {stillListening}");
+    }
+
+    private sealed class FailingAfterHeartbeat : TextWriter
+    {
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void Write(char value)
+        {
+        }
+
+        public override void WriteLine(string? value)
+        {
+            if (value is not null && value.Contains("heartbeat 1:", StringComparison.Ordinal))
+            {
+                throw new IOException("There is not enough space on the disk.");
+            }
+        }
     }
 }

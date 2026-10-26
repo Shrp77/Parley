@@ -183,11 +183,21 @@ public sealed partial class ParleyServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         // Last beat before the stop, so a log that ends with "stopped" was not a broker that died.
-        if (_heartbeat is not null)
+        try
         {
-            await _heartbeat.DisposeAsync().ConfigureAwait(false);
+            if (_heartbeat is not null)
+            {
+                await _heartbeat.DisposeAsync().ConfigureAwait(false);
+            }
         }
+        finally
+        {
+            await StopAsync().ConfigureAwait(false);
+        }
+    }
 
+    private async ValueTask StopAsync()
+    {
         await _application.StopAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
         await Runtime.DisposeAsync().ConfigureAwait(false);

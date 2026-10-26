@@ -98,6 +98,10 @@ internal sealed class FolderWatcher : IAsyncDisposable
     /// <summary>Brings the store into line with the whole location on disk.</summary>
     /// <param name="cancellationToken">Cancels the scan.</param>
     /// <returns>A task that completes when every recorded folder has been looked at.</returns>
+    /// <exception cref="IOException">
+    /// A file was held by another program and passed over; every other file was looked at, and the scan should run
+    /// again.
+    /// </exception>
     /// <remarks>
     /// A file with no row whose hash matches exactly one row whose file went missing from the same folder is that file
     /// renamed, and keeps its placer. Any other file with no row is the person's, and any row whose
@@ -116,9 +120,15 @@ internal sealed class FolderWatcher : IAsyncDisposable
             },
             cancellationToken).ConfigureAwait(false);
 
+        // **A held file is passed over, never the scan.** Thrown at the first, it left every folder after it unscanned
+        // for as long as the file stayed held. Each is skipped and the pass finishes; the scan then runs again for them.
+        var held = false;
+
         foreach (var (conversation, folder) in folders)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var heldHere = false;
 
             var directory = _runtime.Files.FolderPath(folder);
             var onDisk = Directory.Exists(directory)
@@ -134,14 +144,32 @@ internal sealed class FolderWatcher : IAsyncDisposable
 
             foreach (var row in recorded.Where(r => onDisk.ContainsKey(r.NameKey)))
             {
-                await ReconcileAsync(row, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await ReconcileAsync(row, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception busy) when (busy is IOException or UnauthorizedAccessException)
+                {
+                    held = true;
+                }
             }
 
             foreach (var name in onDisk.Values.Where(n => recorded.All(r => r.NameKey != n.Key)))
             {
                 var path = _runtime.Files.FilePath(folder, name);
+                (ContentHash Sha256, long SizeBytes, long ModifiedTicks)? read;
 
-                if (await MeasureAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
+                try
+                {
+                    read = await MeasureAsync(path, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception busy) when (busy is IOException or UnauthorizedAccessException)
+                {
+                    held = heldHere = true;
+                    continue;
+                }
+
+                if (read is not { } measured)
                 {
                     continue;
                 }
@@ -175,12 +203,19 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 }
             }
 
-            foreach (var gone in missing)
+            // Not while a new file here could not be read: it may be one of these renamed, and judged gone now its placer
+            // would be lost. They are judged when the scan runs again.
+            foreach (var gone in missing.Where(_ => !heldHere))
             {
                 await _runtime.UseConnectionAsync(
                     (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(gone, null, now, cancellationToken: ct),
                     cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        if (held)
+        {
+            throw new IOException("A file in the location was held by another program; the scan runs again for it.");
         }
     }
 
