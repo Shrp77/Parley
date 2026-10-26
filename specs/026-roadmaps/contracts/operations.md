@@ -6,7 +6,7 @@ Which operation lives on which service, which surfaces bind it, and the guard th
 
 | Operation | Takes | Returns | Notes |
 |---|---|---|---|
-| `ProposeRoadmap` | title, ordered items (text, optional intended agent, optional earlier items it needs), optional conversation it comes from, optional title of a roadmap it proposes to revise (a hint; the person resolves it) | proposal id, or a refusal with the reason | The proposer is the attached caller; no operation takes a sender. Refused for the person and the facilitator. An empty list is refused. No length bound. |
+| `ProposeRoadmap` | title, ordered items (text, optional intended agent, optional earlier items it needs), optional conversation it comes from (one the caller took part in), optional title of a roadmap it proposes to revise (a hint; the person resolves it) | proposal id, or a refusal with the reason | The proposer is the attached caller; no operation takes a sender. Refused for the person and the facilitator. An empty list is refused, and so is a conversation the caller took no part in, with one sentence whether or not it exists. No length bound. |
 | (inbox) | | roadmap notices alongside file notices | Drained, counted in `Waiting`, wakes nothing. |
 
 **The template the tool carries** (its description and the standing instructions; guidance, not a check):

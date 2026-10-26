@@ -32,7 +32,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 - waiting on the person: a wait-for edge whose waited-on is the person;
 - blocked: nothing is open, some agent's latest answer on the person's requests is `blocked`, and the conversation is open; beside open work, or once closed, the blocker is still named; the blocker that agent gave (`missing_information`, `conflict`, `permission`) is shown;
 - done: nothing open, at least one exchange ended with an agent's Result, none of the person's requests closed before its agent answered, and no agent's latest answer is `blocked` (`done`, `answered` and `acknowledged` all clear a part; a request the person closed first is no answer);
-- closed: the conversation is closed, by the person or its participants, and the item is not done (a request ended before its agent answered, or a part was blocked, whose blocker is still shown);
+- closed: the person closed the conversation (its participants cannot, §5.7), and the item is not done (a request ended before its agent answered, or a part was blocked, whose blocker is still shown);
 - could not be read: the read failed. **Never** shown as not started (FR-018).
 **Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting, blocked or closed, or needs an item that is.
 

@@ -85,6 +85,17 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             return (null, unknown);
         }
 
+        // **A proposal comes only from a conversation its proposer took part in.** The person is shown where it came
+        // from, and a surface opens it from that conversation as the discussion it came out of, so a source the
+        // proposer was never in would put its plan in another conversation under a false provenance. One sentence for
+        // a conversation it is not in and one that does not exist, so a refusal never says which exist (SPEC.md §10.1).
+        if (sourceConversation is not null
+            && !await new ConversationRepository(_connection)
+                .IsParticipantAsync(sourceConversation, proposer, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            return (null, "A proposal can only name a conversation you took part in. Leave the conversation out, or name one of yours.");
+        }
+
         // Every character of it, each need as its digits and a separator: a proposal of needs alone wrote a million
         // rows while its size read as its handful of words, and the size is the evidence a bound is chosen from
         // (SPEC.md §16).

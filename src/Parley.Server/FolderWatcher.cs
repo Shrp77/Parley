@@ -391,6 +391,17 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 (connection, _, ct) => new SharedFileRepository(connection).GetAsync(conversation, name, cancellationToken: ct),
                 cancellationToken).ConfigureAwait(false);
 
+        // **An event at a case twin is a look at the recorded file.** Rows are found without case, and a folder that tells
+        // case apart can hold the recorded file and another differing only in case, which is not in the location (SPEC.md
+        // §9.5). So the look is made at the recorded spelling, with the event's rename report: where case is not told
+        // apart they are one file and nothing changes. A twin left behind once the recorded file has gone is looked at
+        // afterwards on its own, as the scan would.
+        if (row is not null && name is not null && !string.Equals(row.File.Name.Value, name.Value, StringComparison.Ordinal))
+        {
+            path = _runtime.Files.FilePath(row.File.Folder, row.File.Name);
+            name = row.File.Name;
+        }
+
         if (name is null || !File.Exists(path))
         {
             // Gone, or renamed to a name that is not in the location. Judged now, after the quiet period: an editor that
@@ -407,12 +418,16 @@ internal sealed class FolderWatcher : IAsyncDisposable
                         (connection, now, ct) => new SharedFileRepository(connection).RenameAsync(row, movedTo, ticks, now, cancellationToken: ct),
                         cancellationToken).ConfigureAwait(false);
 
+                    LookAtTwins(path);
+
                     return;
                 }
 
                 await _runtime.UseConnectionAsync(
                     (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(row, null, now, cancellationToken: ct),
                     cancellationToken).ConfigureAwait(false);
+
+                LookAtTwins(path);
             }
 
             // Renamed away to a name the location does not accept, and not put back: the name it had is gone.
@@ -424,6 +439,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
                         var files = new SharedFileRepository(connection);
 
                         return await files.GetAsync(conversation, awayFrom, cancellationToken: ct).ConfigureAwait(false) is { } left
+                               && Gone(left)
                             ? await files.RemoveAsync(left, null, now, cancellationToken: ct).ConfigureAwait(false)
                             : FileRejection.NoSuchFile;
                     },
@@ -454,7 +470,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 if (renamedFrom is not null
                     && !File.Exists(renamedFrom)
                     && Within(renamedFrom, folder, out var oldName)
-                    && await files.GetAsync(conversation, oldName, cancellationToken: ct).ConfigureAwait(false) is { } renamed)
+                    && await files.GetAsync(conversation, oldName, cancellationToken: ct).ConfigureAwait(false) is { } renamed
+                    && Gone(renamed))
                 {
                     var kept = await files.RenameAsync(renamed, name, measured.ModifiedTicks, now, cancellationToken: ct)
                         .ConfigureAwait(false);
@@ -516,6 +533,36 @@ internal sealed class FolderWatcher : IAsyncDisposable
         return measured is null && File.Exists(path)
             ? throw new IOException($"'{path}' is there and could not be read, held by another program.")
             : measured;
+    }
+
+    /// <summary>Whether a recorded file is no longer on disk under its recorded spelling.</summary>
+    /// <remarks>
+    /// A rename report names the spelling that moved, and a row is found without case. Where a folder tells case apart
+    /// the twin that moved is not the recorded file, which is still there and keeps its row and placer (SPEC.md §9.5).
+    /// </remarks>
+    private bool Gone(StoredFile row) => !File.Exists(_runtime.Files.FilePath(row.File.Folder, row.File.Name));
+
+    /// <summary>Looks at each file left beside a recorded file that has gone, under its name in another case.</summary>
+    /// <remarks>
+    /// While the recorded file was there such a twin was not in the location; once it is gone the twin is a file of its
+    /// own, as the scan at start would find it, and no event at its path need ever come.
+    /// </remarks>
+    private void LookAtTwins(string path)
+    {
+        var directory = Path.GetDirectoryName(path);
+        var fileName = Path.GetFileName(path);
+
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        foreach (var twin in Directory.EnumerateFiles(directory)
+                     .Where(p => string.Equals(Path.GetFileName(p), fileName, StringComparison.OrdinalIgnoreCase)
+                                 && !string.Equals(Path.GetFileName(p), fileName, StringComparison.Ordinal)))
+        {
+            Schedule(twin);
+        }
     }
 
     /// <summary>Whether a path is a file in a given conversation folder under a name the location accepts.</summary>

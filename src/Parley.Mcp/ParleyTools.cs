@@ -606,7 +606,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     public async Task<JsonNode> ProposeRoadmapAsync(
         [Description("A few words naming the roadmap.")] string title,
         [Description("The items, in order. Each is one line with optional 'for' and 'needs'.")] RoadmapItemInput[] items,
-        [Description("Optional. The conversation the list was arrived at.")] string? conversationId = null,
+        [Description("Optional. The conversation the list was arrived at; one you took part in.")] string? conversationId = null,
         [Description("Optional. The title of an existing roadmap this would change, if you know one.")] string? revises = null,
         CancellationToken cancellationToken = default)
     {

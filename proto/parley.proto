@@ -1253,7 +1253,7 @@ message RoadmapContent {
 message ProposeRoadmapRequest {
   string agent = 1;                   // the caller, as every Agents request names it
   RoadmapContent content = 2;
-  string conversation_id = 3;         // where it came from; empty when none
+  string conversation_id = 3;         // where it came from, one the caller took part in; empty when none
   string revises = 4;                 // the title of a roadmap it would change, a hint; empty when none
 }
 
