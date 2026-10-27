@@ -57,6 +57,35 @@ public sealed class AFloodHoldsNobodyElseBackTests
     }
 
     [Fact]
+    public async Task A_collection_limited_to_fewer_than_the_debts_still_carries_the_result()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+        await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@test", cancellationToken: Ct);
+
+        var asked = Assert.Single((await orders.Client.RequestAsync(
+            Requests.Open(orders.Name, inventory.Name, "what is the export column called?"), cancellationToken: Ct)).Outcomes);
+        Assert.True(asked.Ok, asked.Rejection.ToString());
+        _ = await inventory.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = inventory.Name }, cancellationToken: Ct);
+        _ = await inventory.Client.ResultAsync(Requests.Result(inventory.Name, asked.ExchangeId), cancellationToken: Ct);
+
+        for (var n = 0; n < 3; n++)
+        {
+            var sent = Assert.Single((await billing.Client.RequestAsync(
+                Requests.Open(billing.Name, orders.Name, "q" + n.ToString(CultureInfo.InvariantCulture)), cancellationToken: Ct)).Outcomes);
+            Assert.True(sent.Ok, sent.Rejection.ToString());
+        }
+
+        // A limit cuts the list before the debts end; the Result rides along beside the two asked for.
+        var reply = await orders.Client.DrainInboxAsync(
+            new Wire.DrainInboxRequest { Agent = orders.Name, Limit = 2 }, cancellationToken: Ct);
+
+        Assert.Equal(3, reply.Messages.Count);
+        Assert.Contains(reply.Messages, m => m.Message.ExchangeId == asked.ExchangeId);
+    }
+
+    [Fact]
     public async Task Another_senders_request_is_taken_in_turn_with_a_flood()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
@@ -118,7 +147,7 @@ public sealed class AFloodHoldsNobodyElseBackTests
         reply = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);
 
         Assert.Equal(200, reply.ClosurePolls.Count);
-        Assert.Equal(Conversations - 200, reply.ClosurePollsWaiting);
+        Assert.Equal(Conversations - 200, reply.ClosurePollsNotListed);
 
         // Listed, not taken: a poll stays until it is answered, so the next collection lists the same oldest ones.
         var again = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);

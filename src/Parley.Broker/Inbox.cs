@@ -11,7 +11,7 @@ namespace Parley.Broker;
 /// envelope §13 requires it to be delivered inside.
 /// </param>
 /// <param name="ClosurePolls">
-/// Conversations this agent has been asked to conclude and has not yet answered.
+/// Conversations this agent has been asked to conclude and has not yet answered, the oldest 200.
 /// </param>
 /// <param name="FileNotices">
 /// Change notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
@@ -25,7 +25,7 @@ namespace Parley.Broker;
 /// Messages still waiting after this collection, because a limit or the size one collection carries left them for
 /// the next (SPEC.md §10.1).
 /// </param>
-/// <param name="ClosurePollsWaiting">
+/// <param name="ClosurePollsNotListed">
 /// Closure polls outstanding beyond those this collection lists, which later ones list (SPEC.md §10.1).
 /// </param>
 /// <remarks>
@@ -46,7 +46,7 @@ public sealed record Inbox(
     FileNoticeBatch? FileNotices = null,
     IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null,
     int MessagesWaiting = 0,
-    int ClosurePollsWaiting = 0)
+    int ClosurePollsNotListed = 0)
 {
     /// <summary>
     /// Gets what became of this agent's own roadmap proposals, collected with this inbox.

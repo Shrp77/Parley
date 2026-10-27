@@ -266,9 +266,10 @@ message InboxReply {
   // than one, or fewer when `limit` says so, and the rest wait for the next collection, counted here.
   int32 messages_waiting = 7;
 
-  // Section 10.1. Closure polls beyond the 200 listed, oldest first. A poll stays until it is answered, so later
+  // Section 10.1. Closure polls beyond the 200 listed, oldest first; not the count of every poll outstanding, which
+  // `Notice.closure_polls_waiting` carries. A poll stays until it is answered, so later
   // collections list these.
-  int32 closure_polls_waiting = 8;
+  int32 closure_polls_not_listed = 8;
 }
 
 // That a file the agent fetched has changed or gone since. A name and two hashes, never the content.

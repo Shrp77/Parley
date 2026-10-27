@@ -1010,13 +1010,22 @@ public sealed class Broker
 
         var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken).ConfigureAwait(false);
         var owed = await _messages.GetOwedExchangeIdsAsync(agent, cancellationToken).ConfigureAwait(false);
-        var delivered = new List<DeliveredMessage>(pending.Count);
         var handed = 0;
 
         // **The oldest message that is not a debt rides along** (SPEC.md §7.3). Debts come first and a collection is
         // bounded, so a steady stream of Requests held every Result, and every message on an exchange the caller does not
         // owe, behind it for good. Room is kept for that one message, so a flood delays it by one collection at most.
+        // A caller's limit counts the others: one that cut the list before its debts ended still carries it.
         var riding = pending.FirstOrDefault(m => !owed.Contains(m.ExchangeId));
+
+        if (riding is null && limit is not null
+            && await _messages.GetOldestNotOwedAsync(agent, cancellationToken).ConfigureAwait(false) is { } oldest)
+        {
+            riding = oldest;
+            pending = [.. pending, oldest];
+        }
+
+        var delivered = new List<DeliveredMessage>(pending.Count);
         (DeliveredMessage One, int Size)? kept = riding is null ? null : await BuildAsync(riding, agent, cancellationToken).ConfigureAwait(false);
         var full = false;
 

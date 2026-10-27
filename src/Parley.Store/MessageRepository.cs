@@ -179,6 +179,32 @@ public sealed class MessageRepository(SqliteConnection connection)
             id, exchangeId, type, from, to, responderModel, payloadJson, conversation, nowUtc, null));
     }
 
+    /// <summary>The oldest message waiting for a participant that is not on an exchange it owes a move on.</summary>
+    /// <param name="agent">The recipient.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The message, or <see langword="null"/> when every waiting message is a debt.</returns>
+    /// <remarks>
+    /// Every collection carries it (SPEC.md §7.3), a limited one included, and a limit cuts <see cref="GetPendingAsync"/>
+    /// before its debts end; read here so a caller collecting a few at a time is not held behind a flood for good.
+    /// </remarks>
+    public async Task<Message?> GetOldestNotOwedAsync(
+        AgentName agent,
+        CancellationToken cancellationToken = default) =>
+        (await _connection.QueryAsync<MessageRow>(
+            new CommandDefinition(
+                $"""
+                {SelectColumns}
+                {PendingPredicate}
+                  AND NOT EXISTS (SELECT 1 FROM exchanges e
+                                   WHERE e.id = messages.exchange_id
+                                     AND e.state = 'OPEN'
+                                     AND e.owed_by = @Agent)
+                ORDER BY id
+                LIMIT 1;
+                """,
+                new { Agent = agent.Value },
+                cancellationToken: cancellationToken)).ConfigureAwait(false)).FirstOrDefault()?.ToDomain();
+
     /// <summary>The open exchanges a participant owes a move on.</summary>
     /// <param name="agent">The participant.</param>
     /// <param name="cancellationToken">Cancels the read.</param>

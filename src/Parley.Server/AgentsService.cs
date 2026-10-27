@@ -312,7 +312,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         var reply = new Wire.InboxReply
         {
             MessagesWaiting = inbox.MessagesWaiting,
-            ClosurePollsWaiting = inbox.ClosurePollsWaiting,
+            ClosurePollsNotListed = inbox.ClosurePollsNotListed,
         };
         reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
         reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));

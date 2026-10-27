@@ -444,7 +444,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
                 // **A file that went while this look ran is looked at again, not judged.** The look took its rename report
                 // before the rename arrived, so it would remove the row as gone and the look at the new name would find
                 // nothing to carry the placer from. The event for the going can land after this check, so the look asks
-                // for another itself; the rename's report is there by the time that one runs.
+                // for another itself; the rename's report is there by the time that one runs. A look moved to a case twin's
+                // recorded spelling is judged as before: what it saw at the start was the twin, not this file.
                 if (thereAtStart && string.Equals(path, startedAt, StringComparison.Ordinal))
                 {
                     Schedule(path);

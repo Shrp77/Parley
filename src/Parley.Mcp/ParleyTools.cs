@@ -490,9 +490,13 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
             var result = new JsonObject { ["messages"] = messages, ["closure_polls"] = polls };
 
-            if (inbox.ClosurePollsWaiting > 0)
+            // Listed, never taken: a poll stays until it is answered, so collecting again lists the same ones (SPEC.md §10.1).
+            if (inbox.ClosurePollsNotListed > 0)
             {
-                result["closure_polls_waiting"] = inbox.ClosurePollsWaiting;
+                result["closure_polls_not_listed"] = inbox.ClosurePollsNotListed;
+                result["closure_polls_note"] =
+                    $"{inbox.ClosurePollsNotListed} more conversations are waiting for your answer beyond those listed. " +
+                    "Answer the listed ones with parley_conclude, and the next collection lists more.";
             }
 
             // One collection carries a bounded amount (SPEC.md §10.1); what it left waits, and is said so the agent asks.
