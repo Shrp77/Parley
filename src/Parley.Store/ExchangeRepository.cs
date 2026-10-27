@@ -243,7 +243,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
     /// <para>
     /// A name reserved for a roadmap item is never assignable to an agent while no conversation holds it (§5.0, §5.7):
     /// the person opens an item's conversation. Placing a file comes through here too and writes no message, so the
-    /// storage rule that refuses an agent's first message there would never see it.
+    /// storage rule that refuses an agent's message there until the person has opened an exchange would never see it.
     /// </para>
     /// </remarks>
     public async Task<ConversationAssignment> AssignConversationAsync(

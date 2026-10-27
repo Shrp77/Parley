@@ -566,10 +566,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         await ReadItemTitleAsync(project).ConfigureAwait(false);
 
         // **An item not yet started opens with its words in the box** (SPEC.md §5.7), as the terminal does, for the person
-        // to change and send. Only while nothing has been said there, the read was clean, and the box holds nothing the
-        // person typed: words a refused send kept are theirs and stay. Only when the page is opened, never after a send,
-        // so a box the person emptied is not filled again behind them.
-        if (HttpMethods.IsGet(Request.Method) && Says is null && Problem is null && Destroyed is null && Messages.Count == 0
+        // to change and send. Only while the broker says the item has not started, the read was clean, and the box holds
+        // nothing the person typed: words a refused send kept are theirs and stay. Only when the page is opened, never
+        // after a send, so a box the person emptied is not filled again behind them.
+        if (HttpMethods.IsGet(Request.Method) && Says is null && Problem is null && Destroyed is null && _itemNotStarted
             && Item is { Removed: false })
         {
             Says = ItemTitle;
@@ -627,7 +627,13 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         ItemTitle = reserved?.Text;
         ItemAgent = reserved?.IntendedAgent;
+        _itemNotStarted = reserved is { Facts: { ConversationExists: false } };
     }
+
+    // **Started is the broker's fact about the item, never this page's messages**, as in the terminal: retention removes
+    // a finished conversation's messages and keeps its exchanges, so counting messages would offer done work as a new
+    // start, one press of Send from being asked again. A roadmap read that failed says nothing, so nothing is filled.
+    private bool _itemNotStarted;
 
     /// <summary>The agent the roadmap item this conversation is the work on is for, or <see langword="null"/>.</summary>
     public AgentName? ItemAgent { get; private set; }

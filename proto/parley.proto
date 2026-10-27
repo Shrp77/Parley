@@ -261,6 +261,10 @@ message InboxReply {
   // owed back and nothing is woken.
   repeated RoadmapNotice roadmap_notices = 5;
   int32 roadmap_notices_waiting = 6;
+
+  // Section 10.1. Messages still waiting: a collection carries about 64,000 characters of messages and never fewer
+  // than one, or fewer when `limit` says so, and the rest wait for the next collection, counted here.
+  int32 messages_waiting = 7;
 }
 
 // That a file the agent fetched has changed or gone since. A name and two hashes, never the content.

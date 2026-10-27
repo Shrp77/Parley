@@ -300,23 +300,16 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             context,
             collecting: true).ConfigureAwait(false);
 
-        // A collection its caller limited frees the bound for everything, and may have left messages behind that
-        // nothing will now ask a turn for. Asked again here, once: the claim holds until the next collection, so a
-        // caller draining one at a time costs a turn per collection and never a turn per message left.
-        if (request.Limit > 0 && inbox.Messages.Count >= request.Limit)
+        // A collection that left messages behind, by its caller's limit or by the size one collection carries, frees the
+        // bound for everything, and nothing will now ask a turn for what it left. Asked again here, once: the claim holds
+        // until the next collection, so a caller draining a little at a time costs a turn per collection and never a
+        // turn per message left.
+        if (inbox.MessagesWaiting > 0)
         {
-            var left = await _runtime.UseConnectionAsync(
-                async (connection, _, ct) => await new MessageRepository(connection).CountPendingAsync(agent, ct)
-                    .ConfigureAwait(false),
-                context.CancellationToken).ConfigureAwait(false);
-
-            if (left > 0)
-            {
-                _ = await WakeAsync(agent, "a collection it limited left messages waiting", context).ConfigureAwait(false);
-            }
+            _ = await WakeAsync(agent, "a collection left messages waiting", context).ConfigureAwait(false);
         }
 
-        var reply = new Wire.InboxReply();
+        var reply = new Wire.InboxReply { MessagesWaiting = inbox.MessagesWaiting };
         reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
         reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));
 

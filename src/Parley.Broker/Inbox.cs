@@ -21,6 +21,10 @@ namespace Parley.Broker;
 /// What became of this agent's own roadmap proposals (SPEC.md §5.7), or <see langword="null"/> where nothing
 /// collected them.
 /// </param>
+/// <param name="MessagesWaiting">
+/// Messages still waiting after this collection, because a limit or the size one collection carries left them for
+/// the next (SPEC.md §10.1).
+/// </param>
 /// <remarks>
 /// <para>
 /// The poll travels here rather than as a message because SPEC.md §5 admits three message types
@@ -37,7 +41,8 @@ public sealed record Inbox(
     IReadOnlyList<DeliveredMessage> Messages,
     IReadOnlyList<ClosurePoll> ClosurePolls,
     FileNoticeBatch? FileNotices = null,
-    IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null)
+    IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null,
+    int MessagesWaiting = 0)
 {
     /// <summary>
     /// Gets what became of this agent's own roadmap proposals, collected with this inbox.

@@ -63,8 +63,9 @@ public static class StoreFiles
     /// Begins the name of a copy of the store taken before it was migrated, followed by the schema reached and the time.
     /// </summary>
     /// <remarks>
-    /// A prefix, because there is one copy per upgrade. Destroying a project deletes every one: each holds the text of
-    /// every conversation up to its upgrade, and a destroy that left them would not be what it says it is.
+    /// A prefix, because each start that upgrades takes its own copy, and one that fails leaves its copy for the next.
+    /// Serving the upgraded store deletes every one, and so does destroying the project: each holds the text of every
+    /// conversation up to its upgrade, and a destroy that left them would not be what it says it is.
     /// </remarks>
     public const string BeforeSchema = ".before-schema-";
 }

@@ -79,6 +79,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// <summary>Every edit it was asked for.</summary>
     public List<Wire.EditRoadmapRequest> Edited { get; } = [];
 
+    /// <summary>Exchanges every export carries, as when retention has removed a conversation's messages and kept them.</summary>
+    public List<Wire.ExchangeSnapshot> ExportExchanges { get; } = [];
+
     /// <summary>When set, the proposals read is not implemented, as a broker older than roadmaps would answer.</summary>
     public bool Old { get; set; }
 
@@ -226,6 +229,8 @@ public sealed class RoadmapBroker : HttpMessageHandler
     private Wire.ExportReply Export(string conversation)
     {
         var reply = new Wire.ExportReply();
+
+        reply.Exchanges.AddRange(ExportExchanges);
 
         foreach (var detail in Details.Values)
         {

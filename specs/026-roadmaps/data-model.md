@@ -1,6 +1,6 @@
 # Data model: Roadmaps
 
-> The store rule below was replaced on 2026-10-24: live stores are kept. Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2).
+> The store rule below was replaced on 2026-10-24: live stores are kept. Schema 1 is frozen as this feature left it, and every later schema change is a migration (CLAUDE.md, SPEC.md §9.2). Migration 002 (0.44.0, in this feature's PR) rebuilt `roadmap_proposals` with `AUTOINCREMENT`, so a proposal id is never given again, and made the reserved-conversation trigger ask of exchanges rather than messages, because retention removes messages.
 
 Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A store built before this edit lacks the tables until it is reset. That is the owner's standing rule (no compatibility before release, see 020 and 023). Tables are `STRICT`. Per-project store, so no project column.
 
@@ -9,7 +9,7 @@ Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A 
 ### roadmap_proposals
 | Column | Notes |
 |---|---|
-| id | integer PK |
+| id | integer PK, `AUTOINCREMENT` (migration 002): never given again |
 | proposer | FK `agents(name)`. Trigger: must not be the person or facilitator role. |
 | source_conversation | nullable FK `conversations(id)`: where the agent was when it proposed |
 | target_title | nullable text: the title of the roadmap it proposes to revise. A hint only; the person resolves it at confirmation. |
@@ -32,7 +32,7 @@ Schema 1, edited in place in `001_initial.sql` and mirrored in SPEC.md §9.2. A 
 
 ### roadmap_item_conversations
 `item_id` PK FK; `conversation_id` text unique, legal conversation id (the same character rule `conversations.id` carries); derived as `rm<roadmaps.number>-<items.number>` at confirmation, or the first free name after it (`-2`, `-3`, ...) when a conversation, a destroyed conversation or another reservation already holds that one. **No FK to `conversations`**: the row is a reservation made before the conversation exists. A conversation exists once a message is in it.
-Trigger on `messages`: if the message's conversation is reserved here and the conversation has no earlier message, the sender must be the person (`human-user@…`). Refused otherwise.
+Trigger on `messages`: if the message's conversation is reserved here and the person has not yet opened an exchange in it, the sender must be the person (`human-user@…`). Refused otherwise. It asks of exchanges since migration 002, because retention removes messages.
 
 ### roadmap_notices
 `id` PK; `agent` FK; `proposal_id` FK; `outcome` (`confirmed`, `declined`, `superseded`); `created_utc`; `delivered_utc` nullable (same pairing rule the other notices carry). Drained with the inbox; wakes nothing.

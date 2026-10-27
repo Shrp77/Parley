@@ -4,6 +4,8 @@ description: "Tasks for roadmaps, and every agent in the Room (0.43.0, protocol 
 
 # Tasks: Roadmaps, and every agent in the Room
 
+> Built beyond these tasks in the same PR, at 0.44.x: migration 002 (proposal ids never given again; the reserved-conversation trigger asks of exchanges, because retention removes messages; a copy of the store before it is upgraded), recorded in plan.md and data-model.md.
+
 **Input**: `specs/026-roadmaps/` (spec.md, plan.md, research.md, data-model.md, contracts/operations.md, quickstart.md)
 **Tests**: included. This repository's rules require a case for every storage invariant, watched to fail with the rule removed, and every boundary guard extended. They are part of each task's definition of done.
 **Version**: `VersionPrefix` in `Directory.Build.props` goes to **0.43.0** and `ProtocolVersion` (`src/Parley.Core/ProtocolVersion.cs`) to **0.9**, in the change that alters shipped behaviour (CLAUDE.md). Both ship together, as one release.

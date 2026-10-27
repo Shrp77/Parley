@@ -523,11 +523,22 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
         CancellationToken cancellationToken = default)
     {
-        var reply = await _agents.DrainInboxAsync(
-            new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
-            cancellationToken: cancellationToken);
+        var taken = new List<Delivered>();
+        Wire.InboxReply reply;
 
-        return ([.. reply.Messages.Select(one => new Delivered(Read(one.Message)))], reply.ClosurePolls.Count);
+        // One collection carries a bounded amount (SPEC.md §10.1), so a person is handed everything by asking again until
+        // nothing is left. Each pass stamps what it hands over, so the loop ends.
+        do
+        {
+            reply = await _agents.DrainInboxAsync(
+                new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
+                cancellationToken: cancellationToken);
+
+            taken.AddRange(reply.Messages.Select(one => new Delivered(Read(one.Message))));
+        }
+        while (reply.MessagesWaiting > 0 && reply.Messages.Count > 0);
+
+        return (taken, reply.ClosurePolls.Count);
     }
 
     /// <summary>Collects and records what came back against the seat, as one act.</summary>

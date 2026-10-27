@@ -307,10 +307,10 @@ The copy is there for the minutes between the old build stopping and the new one
 still there means the upgraded store has not been served since it was taken. A start that fails
 after taking one names it, and says which of these happened:
 
-- **"The store was not upgraded."** The upgrade failed and was undone, so the store is as it was and
+- **"The store was not upgraded and is as it was."** The upgrade failed and was undone, so the store is as it was and
   nothing needs restoring. Fix what the message names, or go back to the earlier build, and start
   again. The next start takes a new copy; once one serves, all of them go.
-- **"The store was upgraded."** Something after the upgrade failed, such as the broker not being able
+- **"The store was upgraded to schema N before this failed."** Something after the upgrade failed, such as the broker not being able
   to listen (usually a port another program holds) or to prepare its files folder. The store is
   upgraded and fine, and the earlier build will refuse it. Fix the cause and start again; the copy
   goes once the store serves.

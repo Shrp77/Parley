@@ -489,6 +489,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
             var result = new JsonObject { ["messages"] = messages, ["closure_polls"] = polls };
 
+            // One collection carries a bounded amount (SPEC.md §10.1); what it left waits, and is said so the agent asks.
+            if (inbox.MessagesWaiting > 0)
+            {
+                result["messages_waiting"] = inbox.MessagesWaiting;
+                result["messages_waiting_note"] =
+                    $"{inbox.MessagesWaiting} more messages are waiting; call parley_inbox again for them.";
+            }
+
             // Files an agent fetched that changed or went (SPEC.md §9.5). Names and hashes only; the file itself is
             // on disk where the agent put it, and whether the change matters is the agent's judgement.
             if (inbox.FileNotices.Count > 0 || inbox.FileNoticesWaiting > 0)

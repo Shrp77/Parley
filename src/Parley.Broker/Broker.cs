@@ -81,6 +81,17 @@ public sealed class Broker
     /// <summary>The most roadmap notices one collection hands over; the rest wait for the next.</summary>
     private const int RoadmapNoticesPerCollection = 50;
 
+    /// <summary>
+    /// About how many characters of messages one collection hands over; what would pass it waits for the next.
+    /// </summary>
+    /// <remarks>
+    /// Messages are stamped delivered as they are handed over, so a collection too large to arrive loses every one of
+    /// them: the reply is refused at the adapter's message size and nothing hands them over again. One agent sending
+    /// another a few hundred long Requests made that happen to everybody else's messages. Kept well under what an
+    /// adapter's own output carries to a model, and never fewer than one message, so a collection always moves.
+    /// </remarks>
+    private const int MessageCharactersPerCollection = 64_000;
+
     /// <summary>The longest responder identity storage accepts, per §11.3.</summary>
     private const int MaxResponderLength = 64;
 
@@ -962,9 +973,11 @@ public sealed class Broker
     /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3).</summary>
     /// <param name="agent">The participant collecting.</param>
     /// <param name="nowUtc">The instant.</param>
-    /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
+    /// <param name="limit">The most messages to return, or <see langword="null"/> for as many as one collection carries.</param>
     /// <param name="cancellationToken">Cancels the drain.</param>
-    /// <returns>The messages, each already wrapped in its envelope, and any closure poll outstanding.</returns>
+    /// <returns>
+    /// The messages, each already wrapped in its envelope, how many are still waiting, and any closure poll outstanding.
+    /// </returns>
     /// <remarks>
     /// <para>
     /// <b>Wrapped here and nowhere else</b> (§13), with a fresh token per message so a sender that saw one
@@ -990,21 +1003,11 @@ public sealed class Broker
 
         var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken).ConfigureAwait(false);
         var delivered = new List<DeliveredMessage>(pending.Count);
+        var handed = 0;
 
         foreach (var message in pending)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (message.Type == MessageType.Request)
-            {
-                await RecordCollectionAsync(message.ExchangeId, nowUtc, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (!await _messages.MarkDeliveredAsync(message.Id, nowUtc, cancellationToken).ConfigureAwait(false))
-            {
-                // Delivered by a drain that raced this one; skipped rather than handed over twice.
-                continue;
-            }
 
             // Only to the agent that sent the Request. A person closing a conversation writes a closed Result to the
             // receiver as well, and attaching the Request there would frame a peer's text as the agent's own (§13).
@@ -1040,7 +1043,7 @@ public sealed class Broker
                 since = await SinceAsync(agent, message, talk, cancellationToken).ConfigureAwait(false);
             }
 
-            delivered.Add(new DeliveredMessage(
+            var one = new DeliveredMessage(
                 message,
                 TrustEnvelope.Wrap(
                     message.From,
@@ -1051,9 +1054,35 @@ public sealed class Broker
                     request),
                 settleable,
                 leftOut,
-                since));
+                since);
+
+            // **Built and measured before it is stamped**, so a message that would make the collection too large to
+            // arrive is left waiting for the next one rather than marked delivered and lost with the rest.
+            var size = one.Envelope.Length
+                       + (one.Settleable?.Sum(q => q.Asked.Length) ?? 0)
+                       + (one.Since?.Sum(a => a.Envelope.Length) ?? 0);
+
+            if (delivered.Count > 0 && handed + size > MessageCharactersPerCollection)
+            {
+                break;
+            }
+
+            if (message.Type == MessageType.Request)
+            {
+                await RecordCollectionAsync(message.ExchangeId, nowUtc, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!await _messages.MarkDeliveredAsync(message.Id, nowUtc, cancellationToken).ConfigureAwait(false))
+            {
+                // Delivered by a drain that raced this one; skipped rather than handed over twice.
+                continue;
+            }
+
+            handed += size;
+            delivered.Add(one);
         }
 
+        var waiting = await _messages.CountPendingAsync(agent, cancellationToken).ConfigureAwait(false);
         var polls = await _conversations.GetOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false);
 
         // Whatever the limit said about messages (SPEC.md §9.5): a limit meant for messages must not hold back the
@@ -1067,7 +1096,7 @@ public sealed class Broker
             .DrainNoticesAsync(agent, RoadmapNoticesPerCollection, nowUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        return new Inbox(delivered, polls, notices, proposals);
+        return new Inbox(delivered, polls, notices, proposals, waiting);
     }
 
     /// <summary>What the person said to an agent after it last spoke on the exchange a Request opened.</summary>
