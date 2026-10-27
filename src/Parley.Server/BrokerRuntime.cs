@@ -309,6 +309,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>The runtime, holding the store until it is disposed.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     /// <exception cref="StoreHeldException">Another broker is serving this store.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The start failed after a copy of the store was taken before upgrading it. The message names the copy and says
+    /// whether the store was upgraded; the original failure is the inner exception.
+    /// </exception>
     /// <remarks>
     /// <para>
     /// Migration happens here, once, rather than in every client, so a deployment's schema version
@@ -344,6 +348,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         var held = StoreLock.Acquire(databasePath);
         SqliteConnection? connection = null;
         string? backup = null;
+        var migrated = false;
 
         try
         {
@@ -354,6 +359,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // Copied first, under the lock, so the copy is the store exactly as the previous build left it (SPEC.md §9.2).
             backup = ParleyDatabase.BackUpBeforeMigrating(connection, databasePath, clock.GetUtcNow());
             SchemaMigrator.Migrate(connection);
+            migrated = true;
 
             // After the lock, like everything else that touches what belongs to the store: emptying the staging
             // directory while another broker was mid-placement would destroy an upload it was about to commit.
@@ -385,13 +391,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
             connection?.Dispose();
             held.Dispose();
 
-            // **A start that fails after taking a copy names it**, whether the migration failed (the store was left as it
-            // was) or something after it did (the store was upgraded): the next start takes no copy, so nothing else ever
-            // would. It goes once a start serves the upgraded store.
+            // **A start that fails after taking a copy names it, and says whether the store was upgraded**: what a person
+            // does next differs (docs/operating.md), and the failure's own message rarely says which step failed. It goes
+            // once a start serves the upgraded store.
             if (backup is not null && failed is not OperationCanceledException)
             {
                 throw new InvalidOperationException(
-                    $"{failed.Message} A copy of the store as it was before this start is at {backup}.", failed);
+                    migrated
+                        ? string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{failed.Message} The store was upgraded to schema {SchemaMigrator.LatestVersion} before this failed; a copy of it as it was before this start is at {backup}.")
+                        : $"{failed.Message} The store was not upgraded and is as it was; a copy of it as it was before this start is at {backup}.",
+                    failed);
             }
 
             throw;

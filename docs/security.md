@@ -115,6 +115,10 @@ Retention removes old messages on a schedule, with a floor that can never delete
 has collected, anything on an open exchange, or the rows deduplication still reads. See
 [Configuration](configuration.md#retention). Export is how you keep a conversation.
 
+Before a new build upgrades a store, the broker copies it beside itself. The copy holds every
+conversation's text as it was, so it is removed as soon as the upgraded store is served, and
+destroying a project removes any left.
+
 ## Next
 
 - [FAQ](faq.md)

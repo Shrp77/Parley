@@ -1266,7 +1266,7 @@ copies the store beside itself, under its lock, named for the schema it is about
 (`parley.db.before-schema-2-20261027T093000Z`). Once a broker serves the upgraded store, every such
 copy of it is removed, because each holds every conversation's text, which destroy, purge and retention
 exist to remove. A copy still there means the upgraded store has not been served since it was taken; a
-migration that fails leaves the store as it was and its refusal names the copy. Destroying a project
+start that fails after taking a copy names it and says whether the store was upgraded: a migration that fails leaves the store as it was. Destroying a project
 deletes any left. A broker refuses a store at a version newer than it knows, because it
 cannot know what changed. The version records which migrations a store was given and not what it
 holds, so a broker also compares the store's tables, indexes and triggers with its own and reports

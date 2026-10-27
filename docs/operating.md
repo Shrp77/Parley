@@ -286,10 +286,10 @@ restart the sessions that had Parley configured. See [Configuration](configurati
 the project's work. Any other install keeps the stores. A new build that changes a store's tables
 upgrades the store in place when the broker starts, and keeps every row.
 
-Copy each project's folder (`projects/<name>/`, with `parley.db` and any `parley.db-wal` and
-`parley.db-shm` beside it) somewhere safe before every install, with the broker stopped, since a
-copy taken while it writes may be incomplete. To stop the broker the
-autostart entry runs, end the `parley-broker` scheduled task on Windows
+An install needs no copy of your own: the broker copies a store itself before it upgrades it, and
+removes the copy once the upgraded store is served (below). A store copied by hand, as the section
+after that asks, is copied with the broker stopped, since a copy taken while it writes may be
+incomplete. To stop the broker the autostart entry runs, end the `parley-broker` scheduled task on Windows
 (`Stop-ScheduledTask parley-broker`), or run `systemctl --user stop parley-broker.service` on Linux
 or `launchctl bootout gui/$(id -u)/parley-broker` on macOS. A `parley serve` you started yourself
 stops with Ctrl+C. The install starts the broker again. Without one, start it with
@@ -303,17 +303,20 @@ starts it, keeping every row. Before it does, it copies the store beside itself,
 is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`. Once the upgraded
 store is served, every such copy of it is removed and the output says the store was upgraded.
 
-A copy still there means the upgraded store has not been served since it was taken. Read the output:
+The copy is there for the minutes between the old build stopping and the new one serving. A copy
+still there means the upgraded store has not been served since it was taken. A start that fails
+after taking one names it, and says which of these happened:
 
-- **The migration failed.** The output says so and names the copy. The store was left exactly as it
-  was, so nothing needs restoring: fix what the message names, or stay on the earlier build, and start
+- **"The store was not upgraded."** The upgrade failed and was undone, so the store is as it was and
+  nothing needs restoring. Fix what the message names, or go back to the earlier build, and start
   again. The next start takes a new copy; once one serves, all of them go.
-- **The broker could not listen, or was stopped before it did.** The store was upgraded and is fine.
-  Fix the cause (usually a port another program holds) and start again; the copy goes once it serves.
+- **"The store was upgraded."** Something after the upgrade failed, such as the broker not being able
+  to listen (usually a port another program holds) or to prepare its files folder. The store is
+  upgraded and fine, and the earlier build will refuse it. Fix the cause and start again; the copy
+  goes once the store serves.
 
-Going back to the earlier build after an upgrade succeeded is not supported: it refuses every store
-this build upgraded, and their copies are gone once they served. If a store is damaged, keep it, stop
-the broker, and use the copy only as a record to recover from, with help.
+Going back to the earlier build after an upgraded store has served is not supported: the earlier
+build refuses the store, and the copy is gone.
 
 ### A store from another build
 

@@ -134,7 +134,7 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
         var said = await ServeAsync(heartbeat: false, TimeSpan.FromMilliseconds(500), upgraded, "removed, now that it serves");
 
         Assert.Contains(upgraded, said, StringComparison.Ordinal);
-        Assert.Contains("orders: 2 copy(ies) of its store taken before an upgrade removed", said, StringComparison.Ordinal);
+        Assert.Contains("orders: 2 copies of its store taken before an upgrade removed", said, StringComparison.Ordinal);
         Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(store)!, "*" + StoreFiles.BeforeSchema + "*"));
     }
 
@@ -173,7 +173,10 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
         _ = await serving.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
         var copy = Assert.Single(Directory.GetFiles(Path.GetDirectoryName(store)!, "*" + StoreFiles.BeforeSchema + "*"));
-        Assert.Contains($"A copy of the store as it was before this start is at {copy}", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            $"The store was not upgraded and is as it was; a copy of it as it was before this start is at {copy}",
+            error.ToString(),
+            StringComparison.Ordinal);
 
         using var kept = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store};Mode=ReadOnly;Pooling=False");
         kept.Open();

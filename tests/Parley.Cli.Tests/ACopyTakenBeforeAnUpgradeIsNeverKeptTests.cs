@@ -129,6 +129,9 @@ public sealed class ACopyTakenBeforeAnUpgradeIsNeverKeptTests : IDisposable
         Assert.True(
             (output.ToString() + error).Contains(kept[0], StringComparison.Ordinal),
             $"A copy was kept at {kept[0]} and nothing said so.\nout: {output}\nerr: {error}");
+
+        // The person's next step differs by whether the store was upgraded, so the words say which (docs/operating.md).
+        Assert.Contains("The store was upgraded to schema ", error.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

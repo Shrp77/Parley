@@ -554,8 +554,8 @@ public sealed class FileLocationStore : IDisposable
                 {
                     throw new Grpc.Core.RpcException(new Grpc.Core.Status(
                         Grpc.Core.StatusCode.Aborted,
-                        "The file changed on disk while this placement waited for it, so it was not replaced and nothing was "
-                        + "written. Look at the file again before placing it."));
+                        "The file on disk is not the one Parley recorded under this name, so it was not replaced and "
+                        + "nothing was written. Look at the file again before placing it."));
                 }
 
                 File.Move(stagedPath, target, overwrite: true);
@@ -674,11 +674,14 @@ public sealed class FileLocationStore : IDisposable
             return ContentHash.FromDigest(_hash.GetHashAndReset());
         }
 
-        /// <summary>Moves the finished file into its folder, replacing what is there.</summary>
+        /// <summary>Moves the finished file into its folder, over the file the store recorded under that name if any.</summary>
         /// <param name="folder">The conversation's folder name.</param>
         /// <param name="name">The file's name.</param>
-        /// <returns>The last-write time the committed file carries.</returns>
         /// <param name="expected">The size and write time recorded for the file it replaces, or <see langword="null"/> when none is recorded.</param>
+        /// <returns>The last-write time the committed file carries.</returns>
+        /// <exception cref="Grpc.Core.RpcException">
+        /// <c>Aborted</c>: what is on disk under the name is not the recorded file, or it stayed in use; nothing was written.
+        /// </exception>
         /// <remarks>Call inside <see cref="FileLocationStore.ChangeAsync"/> when a file of that name may exist.</remarks>
         public long CommitTo(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks)? expected)
         {

@@ -118,16 +118,15 @@ public static class ParleyDatabase
     /// <exception cref="InvalidOperationException">The copy could not be made; the store is then not migrated.</exception>
     /// <remarks>
     /// <para>
-    /// <b>A live store holds work in flight and is upgraded in place</b> (SPEC.md §9.2), so a migration that went wrong
-    /// in a way its transaction could not undo, or a build that is withdrawn, would otherwise cost that work. The copy is
-    /// SQLite's online backup, taken under the store's lock before the first migration's transaction, so it is the store
-    /// exactly as the previous build left it. A store with no schema yet is new and has nothing to keep.
+    /// <b>A live store holds work in flight and is upgraded in place</b> (SPEC.md §9.2), so the store as the previous
+    /// build left it is kept for the span between that build stopping and the new one serving, when an upgrade or the
+    /// start after it could still go wrong. The copy is SQLite's online backup, taken under the store's lock before the
+    /// first migration's transaction. A store with no schema yet is new and has nothing to keep.
     /// </para>
     /// <para>
     /// <b>Kept only until the upgraded store is served</b>, when <c>serve</c> deletes every copy of the store: it holds
-    /// every conversation's text, which destroy, purge and retention exist to remove. One still there means no broker has
-    /// served the upgraded store since, which is when it is wanted. Restricted to the owner on Unix as the store is, and a copy that fails part
-    /// way is deleted rather than left looking like one that could be restored.
+    /// every conversation's text, which destroy, purge and retention exist to remove. Restricted to the owner on Unix as
+    /// the store is, and a copy that fails part way is deleted rather than left looking like one that could be restored.
     /// </para>
     /// </remarks>
     public static string? BackUpBeforeMigrating(SqliteConnection connection, string path, DateTimeOffset nowUtc)

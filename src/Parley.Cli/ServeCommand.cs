@@ -195,7 +195,7 @@ public static class ServeCommand
                 await error.WriteLineAsync(
                     $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}"
                     + (runtime.MigrationBackup is { } kept
-                        ? $" Its store was upgraded first; the store as it was before is kept at {kept}."
+                        ? $" The store was upgraded to schema {SchemaMigrator.LatestVersion} before this failed; a copy of it as it was before this start is at {kept}."
                         : string.Empty))
                     .ConfigureAwait(false);
 
@@ -229,7 +229,7 @@ public static class ServeCommand
             if (removed > 0)
             {
                 await output.WriteLineAsync(
-                    $"{project.Name}: {removed} copy(ies) of its store taken before an upgrade removed, now that it serves.")
+                    $"{project.Name}: {(removed == 1 ? "1 copy" : $"{removed} copies")} of its store taken before an upgrade removed, now that it serves.")
                     .ConfigureAwait(false);
             }
 
