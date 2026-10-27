@@ -764,7 +764,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
         {
             // The stored name, not the one asked with: a replacement spelled in a different case is the same file, and
             // on a disk that tells case apart the other spelling would be a second file beside it.
-            var ticks = staged.CommitTo(placed.File!.Folder, placed.File.Name);
+            var ticks = staged.CommitTo(
+                placed.File!.Folder,
+                placed.File.Name,
+                look.Existing is { } recorded ? (recorded.File.SizeBytes, recorded.ModifiedTicks) : null);
             var stored = await files.GetAsync(conversation, placed.File.Name, transaction, cancellationToken).ConfigureAwait(false);
 
             await files.ReconcileAsync(stored!, sha256, staged.SizeBytes, ticks, nowUtc, transaction, cancellationToken)

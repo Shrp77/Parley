@@ -256,7 +256,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets where the store was copied before this runtime upgraded it.</summary>
     /// <value><see langword="null"/> when no migration was applied, and for a new or in-memory store.</value>
-    /// <remarks>Kept so the start-up log can say where it is: a copy nobody is told about is one nobody restores.</remarks>
+    /// <remarks>
+    /// Kept so <c>serve</c> can say the store was upgraded once it serves, when every copy of the store is removed, and
+    /// name this one when the broker then cannot listen.
+    /// </remarks>
     public string? MigrationBackup { get; init; }
 
     /// <summary>
@@ -340,6 +343,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         var held = StoreLock.Acquire(databasePath);
         SqliteConnection? connection = null;
+        string? backup = null;
 
         try
         {
@@ -348,7 +352,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             RefuseAForeignDatabase(connection, databasePath);
 
             // Copied first, under the lock, so the copy is the store exactly as the previous build left it (SPEC.md §9.2).
-            var backup = ParleyDatabase.BackUpBeforeMigrating(connection, databasePath, clock.GetUtcNow());
+            backup = ParleyDatabase.BackUpBeforeMigrating(connection, databasePath, clock.GetUtcNow());
             SchemaMigrator.Migrate(connection);
 
             // After the lock, like everything else that touches what belongs to the store: emptying the staging
@@ -376,10 +380,20 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 MigrationBackup = backup,
             };
         }
-        catch
+        catch (Exception failed)
         {
             connection?.Dispose();
             held.Dispose();
+
+            // **A start that fails after taking a copy names it**, whether the migration failed (the store was left as it
+            // was) or something after it did (the store was upgraded): the next start takes no copy, so nothing else ever
+            // would. It goes once a start serves the upgraded store.
+            if (backup is not null && failed is not OperationCanceledException)
+            {
+                throw new InvalidOperationException(
+                    $"{failed.Message} A copy of the store as it was before this start is at {backup}.", failed);
+            }
+
             throw;
         }
     }

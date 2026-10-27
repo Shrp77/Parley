@@ -124,9 +124,9 @@ public static class ParleyDatabase
     /// exactly as the previous build left it. A store with no schema yet is new and has nothing to keep.
     /// </para>
     /// <para>
-    /// <b>Kept only until the upgraded broker serves</b>, when its caller deletes it: it holds every conversation's text,
-    /// which destroy, purge and retention exist to remove. One still there means the upgrade or the start after it
-    /// failed, which is when it is wanted. Restricted to the owner on Unix as the store is, and a copy that fails part
+    /// <b>Kept only until the upgraded store is served</b>, when <c>serve</c> deletes every copy of the store: it holds
+    /// every conversation's text, which destroy, purge and retention exist to remove. One still there means no broker has
+    /// served the upgraded store since, which is when it is wanted. Restricted to the owner on Unix as the store is, and a copy that fails part
     /// way is deleted rather than left looking like one that could be restored.
     /// </para>
     /// </remarks>

@@ -301,17 +301,19 @@ stops with Ctrl+C. The install starts the broker again. Without one, start it wi
 A new build may change the store's schema. The broker upgrades each store in place the first time it
 starts it, keeping every row. Before it does, it copies the store beside itself, named for the schema it
 is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`. Once the upgraded
-broker is serving, it removes the copy and says the store was upgraded.
+store is served, every such copy of it is removed and the output says the store was upgraded.
 
-A copy still there means the upgrade, or the start after it, failed; the broker's output says why and
-where the copy is. To go back to the build you had before:
+A copy still there means the upgraded store has not been served since it was taken. Read the output:
 
-1. Stop the broker, as for an install (above).
-2. Delete `parley.db-wal` and `parley.db-shm` beside the store if they are there.
-3. Put the copy back as `parley.db`.
-4. Install the build you had before, which starts the broker again.
+- **The migration failed.** The output says so and names the copy. The store was left exactly as it
+  was, so nothing needs restoring: fix what the message names, or stay on the earlier build, and start
+  again. The next start takes a new copy; once one serves, all of them go.
+- **The broker could not listen, or was stopped before it did.** The store was upgraded and is fine.
+  Fix the cause (usually a port another program holds) and start again; the copy goes once it serves.
 
-Nothing is lost: the copy is the store as the earlier build left it, and the failed upgrade served nothing.
+Going back to the earlier build after an upgrade succeeded is not supported: it refuses every store
+this build upgraded, and their copies are gone once they served. If a store is damaged, keep it, stop
+the broker, and use the copy only as a record to recover from, with help.
 
 ### A store from another build
 

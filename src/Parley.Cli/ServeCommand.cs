@@ -213,25 +213,31 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
-            // **The copy taken before an upgrade is kept only until the upgraded broker serves** (SPEC.md §9.2). It holds
-            // every conversation's text, which destroy, purge and retention exist to remove, so kept any longer it would be
-            // a corner of the store none of them reach.
-            if (runtime.MigrationBackup is { } backup)
+            // **Every copy taken before an upgrade goes once the upgraded store is served** (SPEC.md §9.2): this start's,
+            // and any an earlier start left when its migration, its listen or the process failed. Each holds every
+            // conversation's text, which destroy, purge and retention exist to remove, so kept any longer it would be a
+            // corner of the store none of them reach.
+            var (removed, stayed) = RemoveCopies(project.Store);
+
+            if (runtime.MigrationBackup is not null)
             {
-                try
-                {
-                    File.Delete(backup);
-                    await output.WriteLineAsync(
-                        $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving; "
-                        + "the copy taken before the upgrade was removed.").ConfigureAwait(false);
-                }
-                catch (Exception held) when (held is IOException or UnauthorizedAccessException)
-                {
-                    await error.WriteLineAsync(
-                        $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving, but "
-                        + $"the copy taken before the upgrade could not be removed ({held.Message}). Delete {backup}: it holds "
-                        + "the text of every conversation as it was.").ConfigureAwait(false);
-                }
+                await output.WriteLineAsync(
+                    $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving.")
+                    .ConfigureAwait(false);
+            }
+
+            if (removed > 0)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: {removed} copy(ies) of its store taken before an upgrade removed, now that it serves.")
+                    .ConfigureAwait(false);
+            }
+
+            foreach (var (path, why) in stayed)
+            {
+                await error.WriteLineAsync(
+                    $"{project.Name}: a copy of its store taken before an upgrade could not be removed ({why}). Delete "
+                    + $"{path}: it holds the text of every conversation as it was.").ConfigureAwait(false);
             }
 
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
@@ -785,6 +791,44 @@ public static class ServeCommand
     /// </remarks>
     internal static bool OnlyThisMachine(string endpoint) =>
         BrokerEndpoint.OnlyThisMachine(endpoint);
+
+    /// <summary>Removes every copy of a store taken before an upgrade.</summary>
+    /// <param name="store">The store's file.</param>
+    /// <returns>How many went, and each that could not with why.</returns>
+    /// <remarks>
+    /// By name beside the store rather than by the one this start took: a start whose migration, listen or process
+    /// failed left its copy, and nothing else would ever name it. Only this store's: the name must begin with the
+    /// store's own file name and <see cref="StoreFiles.BeforeSchema"/>.
+    /// </remarks>
+    internal static (int Removed, List<(string Path, string Why)> Kept) RemoveCopies(string store)
+    {
+        var kept = new List<(string, string)>();
+        var removed = 0;
+        var directory = Path.GetDirectoryName(Path.GetFullPath(store));
+
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return (0, kept);
+        }
+
+        var prefix = Path.GetFileName(store) + StoreFiles.BeforeSchema;
+
+        foreach (var path in Directory.EnumerateFiles(directory)
+                     .Where(path => Path.GetFileName(path).StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            try
+            {
+                File.Delete(path);
+                removed++;
+            }
+            catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+            {
+                kept.Add((path, held.Message));
+            }
+        }
+
+        return (removed, kept);
+    }
 
     /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
     /// <param name="sweep">The sweep.</param>

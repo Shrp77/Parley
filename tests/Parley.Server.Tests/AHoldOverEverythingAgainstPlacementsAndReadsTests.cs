@@ -240,7 +240,7 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         await using var staged = location.Stage();
         await staged.WriteAsync(Text(content), Ct);
         await staged.FinishAsync(Ct);
-        staged.CommitTo(folder, SharedFileName.Create(name));
+        staged.CommitTo(folder, SharedFileName.Create(name), FileLocationStoreTests.Recorded(location.FilePath(folder, SharedFileName.Create(name))));
     }
 
     private static async Task<(Wire.SharedFileView? Header, byte[] Bytes, Wire.FileRefusal? Refusal)> FetchAsync(

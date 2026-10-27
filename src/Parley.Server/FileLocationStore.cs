@@ -523,7 +523,7 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    internal void Commit(string stagedPath, string folder, SharedFileName name)
+    internal void Commit(string stagedPath, string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks)? expected)
     {
         var target = FilePath(folder, name);
 
@@ -537,14 +537,27 @@ public sealed class FileLocationStore : IDisposable
             throw new NotItsOwnFolderException(folder);
         }
 
-        // **A replacement waits a moment for a look that is reading the file.** A look a change asked for always hashes,
-        // and on Windows a move over a file open for that read is refused: an agent replacing its own file just after
-        // placing it met the watcher's look of the first placement and was refused with an internal error. A look holds
-        // the file for as long as one hash, so a short wait outlasts it; one held longer is refused in words.
+        // **A replacement waits a moment for a read of the file to finish.** On Windows a move over a file open for reading
+        // is refused, and the broker's own watcher reads a file to hash it after every change it sees, so an agent
+        // replacing its own file just after placing it meets that read. One hash is short, so a wait of a second outlasts
+        // it; a file held longer, by anything, is refused in words.
+        //
+        // **Only over the file the store recorded.** The placement decided it may replace the file recorded under the name,
+        // or that there is none; a person can move that file aside and save their own under the name before the move or
+        // while the wait runs, and the move would write the agent's bytes over the person's. So each try first compares
+        // what is on disk with the record, and anything else there is refused, with nothing written.
         for (var attempt = 1; ; attempt++)
         {
             try
             {
+                if (!IsTheRecordedFile(target, expected))
+                {
+                    throw new Grpc.Core.RpcException(new Grpc.Core.Status(
+                        Grpc.Core.StatusCode.Aborted,
+                        "The file changed on disk while this placement waited for it, so it was not replaced and nothing was "
+                        + "written. Look at the file again before placing it."));
+                }
+
                 File.Move(stagedPath, target, overwrite: true);
                 return;
             }
@@ -556,10 +569,26 @@ public sealed class FileLocationStore : IDisposable
             {
                 throw new Grpc.Core.RpcException(new Grpc.Core.Status(
                     Grpc.Core.StatusCode.Aborted,
-                    "The file is being read by another program, so it was not replaced and nothing was written. Place it again."),
+                    "The file was being read, so it was not replaced and nothing was written. Place it again."),
                     held.Message);
             }
         }
+    }
+
+    // Whether what is under the name is the file the store recorded: none, for a name nothing holds, or one of the
+    // recorded size and write time. A row whose time was never recorded is compared by size alone.
+    private static bool IsTheRecordedFile(string path, (long SizeBytes, long ModifiedTicks)? expected)
+    {
+        var info = new FileInfo(path);
+
+        if (expected is not { } recorded)
+        {
+            return !info.Exists;
+        }
+
+        return info.Exists
+               && info.Length == recorded.SizeBytes
+               && (recorded.ModifiedTicks == 0 || info.LastWriteTimeUtc.Ticks == recorded.ModifiedTicks);
     }
 
     private static void TryDelete(string path)
@@ -649,15 +678,16 @@ public sealed class FileLocationStore : IDisposable
         /// <param name="folder">The conversation's folder name.</param>
         /// <param name="name">The file's name.</param>
         /// <returns>The last-write time the committed file carries.</returns>
+        /// <param name="expected">The size and write time recorded for the file it replaces, or <see langword="null"/> when none is recorded.</param>
         /// <remarks>Call inside <see cref="FileLocationStore.ChangeAsync"/> when a file of that name may exist.</remarks>
-        public long CommitTo(string folder, SharedFileName name)
+        public long CommitTo(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks)? expected)
         {
             if (!_closed)
             {
                 throw new InvalidOperationException("A staged file is committed only once it is finished.");
             }
 
-            _location.Commit(Path, folder, name);
+            _location.Commit(Path, folder, name, expected);
             _committed = true;
 
             return File.GetLastWriteTimeUtc(_location.FilePath(folder, name)).Ticks;

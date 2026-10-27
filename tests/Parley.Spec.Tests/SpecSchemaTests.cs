@@ -183,6 +183,33 @@ public sealed class SpecSchemaTests : IDisposable
         }
     }
 
+    [Fact]
+    public void The_schema_version_the_document_states_is_the_highest_migration_shipped()
+    {
+        // Round 37: §18 still said 1 after migration 002 landed. Read from the migrations' file names rather than the
+        // store, which this project may not reference.
+        var stated = System.Text.RegularExpressions.Regex.Match(
+            SpecDocument.Text, @"storage schema version is \*\*(\d+)\*\*", System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(stated.Success, "SPEC.md no longer states the storage schema version in the expected words");
+
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src", "Parley.Store", "Migrations")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+
+        var highest = Directory.GetFiles(Path.Combine(directory.FullName, "src", "Parley.Store", "Migrations"), "*.sql")
+            .Select(path => int.Parse(Path.GetFileName(path).AsSpan(0, 3), System.Globalization.CultureInfo.InvariantCulture))
+            .Max();
+
+        Assert.Equal(highest, int.Parse(stated.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     private void ApplyWholeSchema()
     {
         foreach (var (_, _, sql) in SpecDocument.SchemaObjects)

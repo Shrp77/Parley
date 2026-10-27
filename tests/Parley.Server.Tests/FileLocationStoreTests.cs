@@ -56,7 +56,7 @@ public sealed class FileLocationStoreTests : IDisposable
             Assert.Equal(ContentHash.FromDigest(expected.GetHashAndReset()), hash);
             Assert.Equal((long)Pieces * FileLimits.ChunkBytes, staged.SizeBytes);
 
-            staged.CommitTo("pricing", Notes);
+            staged.CommitTo("pricing", Notes, null);
         }
 
         var read = await FileLocationStore.HashAsync(_location.FilePath("pricing", Notes), Ct);
@@ -319,11 +319,38 @@ public sealed class FileLocationStoreTests : IDisposable
             .WaitAsync(TimeSpan.FromSeconds(5), Ct);
     }
 
+    [Fact]
+    public async Task A_commit_moves_only_over_the_file_the_store_recorded()
+    {
+        // Round 37: a replacement waiting for a read to finish could move over a file a person put under the name in
+        // the meantime. A commit now compares what is on disk with the record first, before every try.
+        await Write("pricing", Notes, "the agent's own");
+        var recorded = Recorded(_location.FilePath("pricing", Notes));
+
+        await File.WriteAllTextAsync(_location.FilePath("pricing", Notes), "the person's own notes, longer", Ct);
+
+        foreach (var expected in new[] { recorded, null })
+        {
+            await using var staged = _location.Stage();
+            await staged.WriteAsync("the agent's replacement"u8.ToArray(), Ct);
+            await staged.FinishAsync(Ct);
+
+            var refused = Assert.Throws<Grpc.Core.RpcException>(() => staged.CommitTo("pricing", Notes, expected));
+            Assert.Equal(Grpc.Core.StatusCode.Aborted, refused.StatusCode);
+        }
+
+        Assert.Equal("the person's own notes, longer", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
+    }
+
+    // These write straight to the location, so the file a commit may replace is whatever is on disk now.
+    internal static (long SizeBytes, long ModifiedTicks)? Recorded(string path) =>
+        File.Exists(path) ? (new FileInfo(path).Length, File.GetLastWriteTimeUtc(path).Ticks) : null;
+
     private async Task Write(string folder, SharedFileName name, string content)
     {
         await using var staged = _location.Stage();
         await staged.WriteAsync(System.Text.Encoding.UTF8.GetBytes(content), Ct);
         await staged.FinishAsync(Ct);
-        staged.CommitTo(folder, name);
+        staged.CommitTo(folder, name, Recorded(_location.FilePath(folder, name)));
     }
 }

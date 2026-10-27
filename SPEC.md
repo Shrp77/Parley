@@ -1263,10 +1263,11 @@ is fixed. Every change after it is a numbered migration that upgrades a store in
 transaction with the version bump, and keeps every row, so installing a new broker never costs
 a deployment its work. Before it applies a migration to a store that already has a schema, the broker
 copies the store beside itself, under its lock, named for the schema it is about to reach and the time
-(`parley.db.before-schema-2-20261027T093000Z`). The copy is kept only until the upgraded broker is
-serving again, and then removed, because it holds every conversation's text, which destroy, purge and
-retention exist to remove. A copy still there means the upgrade or the start after it failed, and the
-broker's log names it. Destroying a project deletes any it left. A broker refuses a store at a version newer than it knows, because it
+(`parley.db.before-schema-2-20261027T093000Z`). Once a broker serves the upgraded store, every such
+copy of it is removed, because each holds every conversation's text, which destroy, purge and retention
+exist to remove. A copy still there means the upgraded store has not been served since it was taken; a
+migration that fails leaves the store as it was and its refusal names the copy. Destroying a project
+deletes any left. A broker refuses a store at a version newer than it knows, because it
 cannot know what changed. The version records which migrations a store was given and not what it
 holds, so a broker also compares the store's tables, indexes and triggers with its own and reports
 any it lacks or holds differently. The DDL below is the schema as it stands after every migration.
@@ -2851,7 +2852,8 @@ match what it recorded, hashing again when they do not, and it hashes whenever a
 the size and time say. A fetch that finds the bytes differ from the recorded hash is refused and has the file
 hashed again, so a change that kept both (a coarse file-system clock, a tool restoring the time) made while
 the broker was stopped is recorded at the first fetch. A missed event delays a change and never serves a
-stale hash. A file it cannot read when it looks, held by another program, is looked at again until it
+stale hash. Where a file being read cannot be replaced (Windows), a replacement waits up to a second for the
+read to finish, the broker's own hashing included, and is otherwise refused with the bytes not written. A file it cannot read when it looks, held by another program, is looked at again until it
 can be, so a file put in the folder is listed even when something else held it first. An edit keeps the file's placer. A rename keeps it too, and updates the row in
 place. A file that appears without being placed is the person's, unless, when the broker starts, its
 hash matches exactly one file gone from the same folder, in which case it is that file renamed.
@@ -4357,7 +4359,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.9** and the storage schema version is **1**.
+The protocol version is **0.9** and the storage schema version is **2**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor
