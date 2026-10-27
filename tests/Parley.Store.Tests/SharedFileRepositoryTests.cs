@@ -348,6 +348,22 @@ public sealed class SharedFileRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_reconcile_of_a_row_that_moved_on_since_it_was_read_writes_nothing()
+    {
+        // A look read the row and hashed the old bytes while a placement replaced them and recorded its own hash. Written,
+        // the look's hash listed the old content over the new until the next look (macOS CI at f19f792).
+        await Place("pricing", "a.md", "x", Billing);
+        var known = (await Get("pricing", "a.md"))!;
+
+        Assert.True(await _files.ReconcileAsync(known, ContentHash.Of("replaced"u8), 8, 500, Now.AddHours(1), cancellationToken: Ct));
+        Assert.False(await _files.ReconcileAsync(known, ContentHash.Of("x"u8), 1, 400, Now.AddHours(2), cancellationToken: Ct));
+
+        var after = (await Get("pricing", "a.md"))!;
+        Assert.Equal(ContentHash.Of("replaced"u8), after.File.Sha256);
+        Assert.Equal(500, after.ModifiedTicks);
+    }
+
+    [Fact]
     public async Task A_rename_keeps_the_placer_and_when_it_was_placed()
     {
         await Place("pricing", "a.md", "x", Billing);

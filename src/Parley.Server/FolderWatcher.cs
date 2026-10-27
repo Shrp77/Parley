@@ -52,6 +52,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
     private readonly ConcurrentDictionary<string, string> _renamedFrom = new(StringComparer.Ordinal);
     // Each report keeps the spelling it moved from, which a twin's rename is told apart by.
     private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.Ordinal);
+    // Paths a look found gone with no report of where they went, judged by the next look at them.
+    private readonly ConcurrentDictionary<string, byte> _goneOnce = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _stopping = new();
     private FileSystemWatcher? _watcher;
     private int _disposed;
@@ -365,8 +367,9 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _renamedFrom.TryRemove(path, out var renamedFrom);
         _renamedTo.TryRemove(path, out var report);
         string? renamedTo = report.To;
-        var startedAt = path;
-        var thereAtStart = File.Exists(path);
+
+        // Consumed by whichever look comes next at this path, so a mark never outlives one look.
+        var confirming = _goneOnce.TryRemove(path, out _);
         // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
         // handled, so whatever was written into it before then raised no event at all. Each file in it, and each the
         // store records there, is looked at as an event would have asked: the same looks, by the same rules, so a
@@ -437,21 +440,11 @@ internal sealed class FolderWatcher : IAsyncDisposable
 
         if (name is null || !File.Exists(path))
         {
-            // Gone, or renamed to a name that is not in the location. Judged now, after the quiet period: an editor that
-            // moved the file away to save it has put it back by now, and the look at its path finds it changed.
+            // Gone, or renamed to a name that is not in the location. Judged after the quiet period, and gone only on a
+            // second look: an editor that moved the file away to save it has put it back by now, and the look at its path
+            // finds it changed.
             if (row is not null && !File.Exists(path))
             {
-                // **A file that went while this look ran is looked at again, not judged.** The look took its rename report
-                // before the rename arrived, so it would remove the row as gone and the look at the new name would find
-                // nothing to carry the placer from. The event for the going can land after this check, so the look asks
-                // for another itself; the rename's report is there by the time that one runs. A look moved to a case twin's
-                // recorded spelling is judged as before: what it saw at the start was the twin, not this file.
-                if (thereAtStart && string.Equals(path, startedAt, StringComparison.Ordinal))
-                {
-                    Schedule(path);
-                    return;
-                }
-
                 // Moved to a name the location holds: the placer goes with it, whether or not the look at that name
                 // has run.
                 if (renamedTo is not null && File.Exists(renamedTo) && Within(renamedTo, folder, out var movedTo)
@@ -485,6 +478,17 @@ internal sealed class FolderWatcher : IAsyncDisposable
                     Schedule(renamedTo);
                     LookAtTwins(path);
 
+                    return;
+                }
+
+                // **Gone is judged on a second look, a quiet period later.** A look that ran before the rename's event
+                // arrived, or that took its report before the rename happened, held no report naming where the file went,
+                // so it removed the row and the new name was found as the person's. By the second look any rename has
+                // reported itself, and the look carrying that report moves the row instead.
+                if (!confirming)
+                {
+                    _goneOnce[path] = 0;
+                    Schedule(path);
                     return;
                 }
 

@@ -541,7 +541,10 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         var current = await GetAsync(known.File.ConversationId, known.File.Name, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        if (current is null)
+        // **A measurement of a row that has moved on since it was read is dropped.** A look that hashed a file while a
+        // placement replaced it would otherwise write the old content's hash over the placement's, and list and serve it
+        // until the next look. Whatever moved the row on recorded what it wrote, or raised an event of its own.
+        if (current is null || current.File.Sha256 != known.File.Sha256 || current.ModifiedTicks != known.ModifiedTicks)
         {
             scope.Complete();
             return false;
