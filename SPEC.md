@@ -2860,7 +2860,7 @@ hashed again, so a change that kept both (a coarse file-system clock, a tool res
 the broker was stopped is recorded at the first fetch. A missed event delays a change and never serves a
 stale hash. Where a file being read cannot be replaced (Windows), a replacement waits up to a second for the
 read to finish, the broker's own hashing included, and is otherwise refused with the bytes not written. A file it cannot read when it looks, held by another program, is looked at again until it
-can be, so a file put in the folder is listed even when something else held it first. An edit keeps the file's placer. A rename keeps it too, and updates the row in
+can be, so a file put in the folder is listed even when something else held it first. An edit keeps the file's placer, and **a file deleted and put back under its name within the half second the broker waits before it looks is an edit**, with no rename reported: editors save by moving the old file away and a new one into its place. Put back later, it is a new file, the person's. A rename keeps it too, and updates the row in
 place. A file that appears without being placed is the person's, unless, when the broker starts, its
 hash matches exactly one file gone from the same folder, in which case it is that file renamed.
 

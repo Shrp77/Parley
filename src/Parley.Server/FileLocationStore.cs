@@ -577,6 +577,22 @@ public sealed class FileLocationStore : IDisposable
 
     // Whether what is under the name is the file the store recorded: none, for a name nothing holds, or one of the
     // recorded size and write time. A row whose time was never recorded is compared by size alone.
+    /// <summary>Whether a file on disk, if there is one, is the one the store recorded under its name.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="recorded">The size and write time recorded.</param>
+    /// <returns><see langword="true"/> when no file is there, or the one there has the recorded size and time.</returns>
+    /// <remarks>
+    /// For a removal by the agent that placed it: a file there that is not the recorded one may be the person's, put under
+    /// the name since the agent's went, and the watcher has not yet said so. Removing it would delete the person's bytes.
+    /// </remarks>
+    internal bool HoldsTheRecordedFileOrNone(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks) recorded)
+    {
+        var path = FilePath(folder, name);
+
+        return !File.Exists(path) || IsTheRecordedFile(path, recorded);
+    }
+
     private static bool IsTheRecordedFile(string path, (long SizeBytes, long ModifiedTicks)? expected)
     {
         var info = new FileInfo(path);

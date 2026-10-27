@@ -529,10 +529,11 @@ internal sealed class FolderWatcher : IAsyncDisposable
             return;
         }
 
-        // **A file back where a look found it gone, with no report of a rename, is a new file, the person's.** The second
-        // look waits a quiet period, so without this a file the person put under the name in that time read as an edit of
-        // the agent's, which the agent could then remove. An editor saving by rename has its file back long before the
-        // first look, which never marks it.
+        // **A file back where a look found it gone is a new file, the person's** (SPEC.md §9.5: an edit is a file put back
+        // within the half second before the first look). The second look waits a quiet period, so without this a file
+        // the person put under the name in that time read as an edit of the agent's, which the agent could then remove.
+        // An editor saving by rename has its file back long before the first look, which never marks it. A rename
+        // reported in the meantime still carries the placer to the new name below.
         if (row is not null && confirming)
         {
             await _runtime.UseConnectionAsync(
@@ -600,9 +601,29 @@ internal sealed class FolderWatcher : IAsyncDisposable
     /// <param name="name">The file's name.</param>
     /// <remarks>
     /// For a fetch that streamed bytes other than the recorded hash: without a look, a change that kept the file's size
-    /// and time (a coarse file-system clock, <c>rsync -t</c>) was refused as changed on every fetch, for good.
+    /// and time (a coarse file-system clock, <c>rsync -t</c>) was refused as changed on every fetch, for good. And for a
+    /// list or fetch whose measurement was dropped because the row moved on meanwhile, perhaps from older bytes.
     /// </remarks>
     internal void LookAgain(string folder, SharedFileName name) => Schedule(_runtime.Files.FilePath(folder, name));
+
+    /// <summary>Forgets that a look found a file gone, because a placement through Parley has just written it.</summary>
+    /// <param name="folder">The file's folder.</param>
+    /// <param name="name">The file's name.</param>
+    /// <remarks>
+    /// Without it, the second look found a file back where one went and recorded the agent's own placement as the
+    /// person's.
+    /// </remarks>
+    internal void Placed(string folder, SharedFileName name) => _goneOnce.TryRemove(_runtime.Files.FilePath(folder, name), out _);
+
+    /// <summary>Whether a look found a recorded file gone and the next look has yet to judge it.</summary>
+    /// <param name="folder">The file's folder.</param>
+    /// <param name="name">The file's name.</param>
+    /// <returns><see langword="true"/> while what is under the name now is undecided: an edit, or the person's file.</returns>
+    /// <remarks>
+    /// A list or fetch that recorded what it found there in that time made the person's new file an edit of the agent's,
+    /// which the agent could then remove; only the look that judges it may say which it is.
+    /// </remarks>
+    internal bool Judging(string folder, SharedFileName name) => _goneOnce.ContainsKey(_runtime.Files.FilePath(folder, name));
 
     /// <summary>Brings a row into line with its file.</summary>
     /// <param name="row">The row.</param>

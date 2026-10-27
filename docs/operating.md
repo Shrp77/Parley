@@ -202,7 +202,9 @@ before anything is saved, because the agent holding it is not told.
 
 Placed files live in a folder beside the broker's store, with one folder per conversation. You can
 read and change them there. An edit is the file's new content, and every agent that fetched it is
-told. A rename keeps who placed it. A deletion is the file gone.
+told. A rename keeps who placed it. A deletion is the file gone, except that a file put back under the same
+name within half a second is taken as an edit, because that is how many editors save. To replace an agent's
+file with your own, delete it and wait a moment before putting yours there.
 
 The terminal and the console both list the files, with who placed how much. You can open a file in
 its editor, open its folder, remove files, or remove every file. Removing every file asks you to

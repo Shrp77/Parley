@@ -554,6 +554,21 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
             using (await _runtime.Files.ChangeAsync(file.Folder, file.Name, cancellationToken).ConfigureAwait(false))
             {
+                // **An agent removes only the file the store recorded.** A file there with another size or time may be the
+                // person's, put under the name after the agent's went and before the watcher's second look said so (SPEC.md
+                // §9.5); placing over it is refused the same way. The watcher looks again, and once it has judged, a removal
+                // of the agent's edited file goes ahead and the person's own is refused as theirs.
+                if (caller is not null && !_runtime.Files.HoldsTheRecordedFileOrNone(file.Folder, file.Name, (file.SizeBytes, stored.ModifiedTicks)))
+                {
+                    _runtime.Watcher.LookAgain(file.Folder, file.Name);
+                    reply.Refused.Add(Conversions.Out(
+                        FileRefusal.Of(reference, FileRejection.Changed),
+                        "The file on disk is not the one Parley recorded under this name, so nothing was removed: it may be "
+                        + "a file the person put there since. List the files again to see whose it is.",
+                        null));
+                    continue;
+                }
+
                 var rejection = await _runtime.UseConnectionAsync(
                     (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(stored, caller, now, cancellationToken: ct),
                     cancellationToken).ConfigureAwait(false);
@@ -760,14 +775,24 @@ internal sealed class FileWork(BrokerRuntime runtime)
             conversation, name, sha256, staged.SizeBytes, agent, modifiedTicks: 0, nowUtc, _runtime.Files.IsTakenOnDisk,
             transaction, cancellationToken).ConfigureAwait(false);
 
-        if (placed.Outcome is PlaceOutcome.Placed or PlaceOutcome.Replaced)
+        // **A recorded file gone from disk is placed again, whatever the hash says.** The row outlives its file until the
+        // watcher judges it gone, and the same bytes placed in that time were answered as already current with nothing
+        // written, then the row went: the agent was told its file was there and it never was.
+        var goneFromDisk = placed.File is { } wanted && !File.Exists(_runtime.Files.FilePath(wanted.Folder, wanted.Name));
+
+        if (placed.Outcome is PlaceOutcome.Placed or PlaceOutcome.Replaced
+            || (placed.Outcome is PlaceOutcome.AlreadyCurrent && goneFromDisk))
         {
             // The stored name, not the one asked with: a replacement spelled in a different case is the same file, and
-            // on a disk that tells case apart the other spelling would be a second file beside it.
+            // on a disk that tells case apart the other spelling would be a second file beside it. Nothing to move over
+            // when the recorded file has gone from disk.
             var ticks = staged.CommitTo(
                 placed.File!.Folder,
                 placed.File.Name,
-                look.Existing is { } recorded ? (recorded.File.SizeBytes, recorded.ModifiedTicks) : null);
+                look.Existing is { } recorded && !goneFromDisk ? (recorded.File.SizeBytes, recorded.ModifiedTicks) : null);
+
+            // The watcher may have found the old file gone and be waiting to judge it; what is there now is this placement.
+            _runtime.Watcher.Placed(placed.File.Folder, placed.File.Name);
             var stored = await files.GetAsync(conversation, placed.File.Name, transaction, cancellationToken).ConfigureAwait(false);
 
             await files.ReconcileAsync(stored!, sha256, staged.SizeBytes, ticks, nowUtc, transaction, cancellationToken)
@@ -842,6 +867,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
 
         if (info.Length == stored.File.SizeBytes && info.LastWriteTimeUtc.Ticks == stored.ModifiedTicks)
+        {
+            return stored;
+        }
+
+        // The recorded file went, and what is there now is the watcher's to judge (SPEC.md §9.5): recorded here, the
+        // person's new file would become an edit of the agent's. Left as it stands, a fetch of it is refused as changed.
+        if (_runtime.Watcher.Judging(stored.File.Folder, stored.File.Name))
         {
             return stored;
         }
