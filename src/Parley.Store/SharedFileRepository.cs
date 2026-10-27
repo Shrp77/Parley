@@ -511,21 +511,25 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         return found;
     }
 
-    /// <summary>Brings a file's row into line with what is on disk.</summary>
-    /// <param name="known">The file as the store last knew it.</param>
+    /// <summary>Brings a file's row into line with a measurement of it, unless the row moved on since it was read.</summary>
+    /// <param name="known">The file as the store knew it when the measurement began.</param>
     /// <param name="sha256">The hash of what is on disk now.</param>
     /// <param name="sizeBytes">Its size now.</param>
     /// <param name="modifiedTicks">Its last-write time now.</param>
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns><see langword="true"/> when the content had changed, and notices were raised.</returns>
+    /// <returns>
+    /// What it did; <see cref="ReconcileOutcome.MovedOn"/> when the row's hash or time moved on since
+    /// <paramref name="known"/> was read and nothing was written, and the file should be measured again.
+    /// </returns>
     /// <remarks>
     /// Change is decided by hash, not by the time or the event that prompted the look: an editor writes several
     /// times per save and a placement moves its own bytes into place, and every one of those must come to at most
-    /// one change and one set of notices.
+    /// one change and one set of notices. Whether the measurement still applies is decided by hash and time together,
+    /// since either moving means something else wrote the row after it was read.
     /// </remarks>
-    public async Task<bool> ReconcileAsync(
+    public async Task<ReconcileOutcome> ReconcileAsync(
         StoredFile known,
         ContentHash sha256,
         long sizeBytes,
@@ -543,11 +547,18 @@ public sealed class SharedFileRepository(SqliteConnection connection)
 
         // **A measurement of a row that has moved on since it was read is dropped.** A look that hashed a file while a
         // placement replaced it would otherwise write the old content's hash over the placement's, and list and serve it
-        // until the next look. Whatever moved the row on recorded what it wrote, or raised an event of its own.
-        if (current is null || current.File.Sha256 != known.File.Sha256 || current.ModifiedTicks != known.ModifiedTicks)
+        // until the next look. What moved the row on may itself have been an older measurement, so the caller measures
+        // again rather than trusting it.
+        if (current is null)
         {
             scope.Complete();
-            return false;
+            return ReconcileOutcome.Gone;
+        }
+
+        if (current.File.Sha256 != known.File.Sha256 || current.ModifiedTicks != known.ModifiedTicks)
+        {
+            scope.Complete();
+            return ReconcileOutcome.MovedOn;
         }
 
         if (current.File.Sha256 == sha256)
@@ -563,14 +574,14 @@ public sealed class SharedFileRepository(SqliteConnection connection)
                     cancellationToken: cancellationToken)).ConfigureAwait(false);
 
             scope.Complete();
-            return false;
+            return ReconcileOutcome.Unchanged;
         }
 
         await WriteContentAsync(current, sha256, sizeBytes, modifiedTicks, nowUtc, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
         scope.Complete();
-        return true;
+        return ReconcileOutcome.Changed;
     }
 
     /// <summary>Records a file renamed in its folder, keeping who placed it and when.</summary>

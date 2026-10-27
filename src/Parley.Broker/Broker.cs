@@ -980,7 +980,10 @@ public sealed class Broker
     /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3).</summary>
     /// <param name="agent">The participant collecting.</param>
     /// <param name="nowUtc">The instant.</param>
-    /// <param name="limit">The most messages to return, or <see langword="null"/> for as many as one collection carries.</param>
+    /// <param name="limit">
+    /// The most messages to return besides the oldest that is not a debt, which comes as well (SPEC.md §7.3), or
+    /// <see langword="null"/> for as many as one collection carries.
+    /// </param>
     /// <param name="cancellationToken">Cancels the drain.</param>
     /// <returns>
     /// The messages, each already wrapped in its envelope, how many are still waiting, and any closure poll outstanding.

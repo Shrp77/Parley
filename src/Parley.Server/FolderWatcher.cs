@@ -26,9 +26,11 @@ namespace Parley.Server;
 /// was stopped is caught by the scan of the whole location at start.
 /// </para>
 /// <para>
-/// <b>A disappearance is judged when the half second is up, not when it is reported.</b> An editor saving by rename moves
+/// <b>A disappearance is judged after the half second, and only on a second look.</b> An editor saving by rename moves
 /// the original away and a new file into its place; judged at the first event, that would be the file gone and a new
-/// one appearing as the person's, and the placer would be lost. Judged after, the file is there, and it has changed.
+/// one appearing as the person's, and the placer would be lost. Judged after, the file is there, and it has changed. A
+/// file still gone with no report of where it went is looked at once more a half second later, by when any rename has
+/// reported itself, and only then is it gone.
 /// </para>
 /// <para>
 /// <b>A rename is recognised from the operating system's report of one, and the report outlives the events after
@@ -527,6 +529,19 @@ internal sealed class FolderWatcher : IAsyncDisposable
             return;
         }
 
+        // **A file back where a look found it gone, with no report of a rename, is a new file, the person's.** The second
+        // look waits a quiet period, so without this a file the person put under the name in that time read as an edit of
+        // the agent's, which the agent could then remove. An editor saving by rename has its file back long before the
+        // first look, which never marks it.
+        if (row is not null && confirming)
+        {
+            await _runtime.UseConnectionAsync(
+                (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(row, null, now, cancellationToken: ct),
+                cancellationToken).ConfigureAwait(false);
+
+            row = null;
+        }
+
         if (row is not null)
         {
             await ReconcileAsync(row, cancellationToken, always: true).ConfigureAwait(false);
@@ -613,10 +628,18 @@ internal sealed class FolderWatcher : IAsyncDisposable
             return;
         }
 
-        await _runtime.UseConnectionAsync(
+        var outcome = await _runtime.UseConnectionAsync(
             (connection, now, ct) => new SharedFileRepository(connection).ReconcileAsync(
                 row, measured.Sha256, measured.SizeBytes, measured.ModifiedTicks, now, cancellationToken: ct),
             cancellationToken).ConfigureAwait(false);
+
+        // **A measurement dropped because the row moved on is measured again.** Two looks at a large file can overlap and
+        // the older finish first; its write moved the row on, and this newer measurement, dropped, was the only one of the
+        // file as it now is. Looked at again, it is measured against the row as it now stands.
+        if (outcome == ReconcileOutcome.MovedOn)
+        {
+            Schedule(path);
+        }
     }
 
     /// <summary>Hashes a file, or says it is gone; a file that is there and cannot be read is an error.</summary>

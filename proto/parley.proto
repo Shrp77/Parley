@@ -123,7 +123,7 @@ message Attached {
 // notice carrying the words would be a second path for the same text with no envelope on it.
 message Notice {
   int32 messages_waiting = 1;
-  int32 closure_polls_waiting = 2;
+  int32 closure_polls_waiting = 2;  // every poll outstanding, listed or not
   int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
   int32 roadmap_notices_waiting = 4;  // section 5.7: what became of the agent's own proposals; wakes nothing
 }

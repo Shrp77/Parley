@@ -851,19 +851,27 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return stored;
         }
 
-        return await _runtime.UseConnectionAsync(
+        var (outcome, current) = await _runtime.UseConnectionAsync(
             async (connection, now, ct) =>
             {
                 var files = new SharedFileRepository(connection);
 
-                _ = await files.ReconcileAsync(
+                var outcome = await files.ReconcileAsync(
                     stored, measured.Sha256, measured.SizeBytes, measured.ModifiedTicks, now, cancellationToken: ct)
                     .ConfigureAwait(false);
 
-                return await files.GetAsync(stored.File.ConversationId, stored.File.Name, cancellationToken: ct)
-                    .ConfigureAwait(false);
+                return (outcome, await files.GetAsync(stored.File.ConversationId, stored.File.Name, cancellationToken: ct)
+                    .ConfigureAwait(false));
             },
             cancellationToken).ConfigureAwait(false);
+
+        // Dropped because something else wrote the row meanwhile, perhaps from older bytes: the watcher measures it again.
+        if (outcome == ReconcileOutcome.MovedOn)
+        {
+            _runtime.Watcher.LookAgain(stored.File.Folder, stored.File.Name);
+        }
+
+        return current;
     }
 
     private static Wire.PlaceFileReply Reply(PlaceResult placed, string conversation, SharedFileName asked, string? requested) => placed.Outcome switch

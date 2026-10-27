@@ -325,7 +325,7 @@ public sealed class SharedFileRepositoryTests : IDisposable
         await Place("pricing", "a.md", "x", Billing);
         var known = (await Get("pricing", "a.md"))!;
 
-        Assert.False(await _files.ReconcileAsync(known, known.File.Sha256, 1, 999, Now.AddHours(1), cancellationToken: Ct));
+        Assert.Equal(ReconcileOutcome.Unchanged, await _files.ReconcileAsync(known, known.File.Sha256, 1, 999, Now.AddHours(1), cancellationToken: Ct));
 
         var after = (await Get("pricing", "a.md"))!;
         Assert.Equal(999, after.ModifiedTicks);
@@ -338,7 +338,7 @@ public sealed class SharedFileRepositoryTests : IDisposable
         await Place("pricing", "a.md", "x", Billing);
         var known = (await Get("pricing", "a.md"))!;
 
-        Assert.True(await _files.ReconcileAsync(known, ContentHash.Of("edited"u8), 6, 999, Now.AddHours(1), cancellationToken: Ct));
+        Assert.Equal(ReconcileOutcome.Changed, await _files.ReconcileAsync(known, ContentHash.Of("edited"u8), 6, 999, Now.AddHours(1), cancellationToken: Ct));
 
         var after = (await Get("pricing", "a.md"))!;
         Assert.Equal(ContentHash.Of("edited"u8), after.File.Sha256);
@@ -355,8 +355,8 @@ public sealed class SharedFileRepositoryTests : IDisposable
         await Place("pricing", "a.md", "x", Billing);
         var known = (await Get("pricing", "a.md"))!;
 
-        Assert.True(await _files.ReconcileAsync(known, ContentHash.Of("replaced"u8), 8, 500, Now.AddHours(1), cancellationToken: Ct));
-        Assert.False(await _files.ReconcileAsync(known, ContentHash.Of("x"u8), 1, 400, Now.AddHours(2), cancellationToken: Ct));
+        Assert.Equal(ReconcileOutcome.Changed, await _files.ReconcileAsync(known, ContentHash.Of("replaced"u8), 8, 500, Now.AddHours(1), cancellationToken: Ct));
+        Assert.Equal(ReconcileOutcome.MovedOn, await _files.ReconcileAsync(known, ContentHash.Of("x"u8), 1, 400, Now.AddHours(2), cancellationToken: Ct));
 
         var after = (await Get("pricing", "a.md"))!;
         Assert.Equal(ContentHash.Of("replaced"u8), after.File.Sha256);
