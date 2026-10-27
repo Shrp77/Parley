@@ -43,7 +43,10 @@ public sealed class ASilentBrokerIsGivenUpOnTests
                     }
                 }
             }
-            catch (Exception ended) when (ended is OperationCanceledException or SocketException or ObjectDisposedException)
+            // Stopped as well as cancelled at the end, and the loop can come round to accept on a stopped listener, which
+            // says it is not listening (macOS CI, 2026-10-27).
+            catch (Exception ended) when (ended is OperationCanceledException or SocketException or ObjectDisposedException
+                                              or InvalidOperationException)
             {
             }
         }, ct);
