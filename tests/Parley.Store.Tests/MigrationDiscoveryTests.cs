@@ -28,12 +28,13 @@ public sealed class MigrationDiscoveryTests
     /// and a migration that appears without anybody deciding it should is what this catches.
     /// </para>
     /// <para>
-    /// <b>There is one migration.</b> <c>001_initial.sql</c> holds the whole of schema 1, which live
-    /// stores hold and which is never edited (<c>SchemaOneIsFrozenTests</c>). **The next change to the
-    /// schema is a migration**, and this number moving to 2 is how that is noticed.
+    /// <b>There are two migrations.</b> <c>001_initial.sql</c> holds the whole of schema 1, which live
+    /// stores hold and which is never edited (<c>SchemaOneIsFrozenTests</c>); <c>002</c> rebuilds the
+    /// proposals table so an id is never used twice, and judges an item's opening by its exchanges.
+    /// **The next change to the schema is migration 003**, and this number moving to 3 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 1;
+    private const int Expected = 2;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

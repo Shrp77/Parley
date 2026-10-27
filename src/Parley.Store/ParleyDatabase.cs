@@ -108,6 +108,66 @@ public static class ParleyDatabase
     }
 
     /// <summary>
+    /// Copies a store that is about to be migrated to a file beside it, and says where.
+    /// </summary>
+    /// <param name="connection">An open connection to the store, not yet migrated.</param>
+    /// <param name="path">The store's file.</param>
+    /// <param name="nowUtc">The instant, which names the copy so an earlier one is never overwritten.</param>
+    /// <returns>The copy's path, or <see langword="null"/> when nothing is to be migrated or the store is new.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="connection"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The copy could not be made; the store is then not migrated.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A live store holds work in flight and is upgraded in place</b> (SPEC.md §9.2), so a migration that went wrong
+    /// in a way its transaction could not undo, or a build that is withdrawn, would otherwise cost that work. The copy is
+    /// SQLite's online backup, taken under the store's lock before the first migration's transaction, so it is the store
+    /// exactly as the previous build left it. A store with no schema yet is new and has nothing to keep.
+    /// </para>
+    /// <para>
+    /// Restricted to the owner on Unix as the store is, because it holds the same text.
+    /// </para>
+    /// </remarks>
+    public static string? BackUpBeforeMigrating(SqliteConnection connection, string path, DateTimeOffset nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrEmpty(path);
+
+        var version = SchemaMigrator.GetUserVersion(connection);
+
+        if (version == 0 || version >= SchemaMigrator.LatestVersion)
+        {
+            return null;
+        }
+
+        var copy = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{path}.before-schema-{SchemaMigrator.LatestVersion}-{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+
+        try
+        {
+            using var target = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = copy,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Pooling = false,
+            }.ToString());
+
+            target.Open();
+            RestrictPermissions(copy);
+            connection.BackupDatabase(target);
+        }
+        catch (Exception failed) when (failed is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException(
+                $"The store at '{path}' is at schema {version} and was not upgraded to {SchemaMigrator.LatestVersion}, because "
+                + $"it could not first be copied to '{copy}': {failed.Message}",
+                failed);
+        }
+
+        return copy;
+    }
+
+    /// <summary>
     /// Opens a configured, migrated, private in-memory database.
     /// </summary>
     /// <returns>An open connection. The caller owns its disposal.</returns>

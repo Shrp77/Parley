@@ -210,6 +210,13 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            if (runtime.MigrationBackup is { } backup)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion}; the store as it was "
+                    + $"before is kept at {backup}.").ConfigureAwait(false);
+            }
+
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
             // to every surface that asks what this broker speaks. The schema number cannot say it for a store whose
             // shape was changed by hand or by a build that edited a migration.

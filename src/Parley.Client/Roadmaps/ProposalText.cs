@@ -8,8 +8,8 @@ namespace Parley.Client.Roadmaps;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One description for the terminal's dialog, the command line's listing and the web page's summary, so that a person who
-/// reads a proposal in one place has read what they would in another. The words of the proposal are the agent's, so a
+/// One description of a proposal: the terminal's dialog draws all of it, and the web page's list takes its row and its
+/// match against a roadmap from here, so the two never word a proposal differently. The words of the proposal are the agent's, so a
 /// surface draws them as an agent's words are drawn everywhere: escaped, on a line of their own, never as something the
 /// surface itself said.
 /// </para>

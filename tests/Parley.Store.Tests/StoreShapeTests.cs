@@ -24,12 +24,12 @@ public sealed class StoreShapeTests
     [Fact]
     public void A_missing_table_is_named()
     {
-        // Must fail against checking the schema number: the number is still 1.
+        // Must fail against checking the schema number: the number is still current.
         using var connection = ParleyDatabase.OpenInMemory();
 
         connection.Execute("DROP TABLE roadmap_notices;");
 
-        Assert.Equal(1, SchemaMigrator.GetUserVersion(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(connection));
         Assert.Contains("missing table roadmap_notices", StoreShape.Problems(connection));
     }
 

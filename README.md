@@ -154,8 +154,8 @@ Parley is early. The specification is settling down, and the code is still movin
 - Authentication on the wire. [Security](docs/security.md) explains why that matters and what to do
   about it today.
 
-There will be a marketing site with more background, hosted on the HKGRP home site. It will say
-the same things with better photography.
+There will be a marketing site with more background. It will say the same things with better
+photography.
 
 Issues and discussion are welcome, especially on the open questions at the end of
 [SPEC.md](SPEC.md).

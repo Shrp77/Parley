@@ -2361,7 +2361,7 @@ internal sealed class Shell : Window
                 : Array.Empty<RegionAction>(),
         ],
 
-        // Enter on a proposal opens it. Named, since a key the surface takes and does not name is one nobody finds.
+        // Enter on a roadmap opens it. Named, since a key the surface takes and does not name is one nobody finds.
         PlansRegion =>
         [
             .. Plans.Selected is not null

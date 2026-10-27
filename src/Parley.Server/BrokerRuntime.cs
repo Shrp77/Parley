@@ -254,6 +254,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <value>Empty when it matches, and for an in-memory store, which is made by this build.</value>
     public IReadOnlyList<string> StoreProblems { get; init; } = [];
 
+    /// <summary>Gets where the store was copied before this runtime upgraded it.</summary>
+    /// <value><see langword="null"/> when no migration was applied, and for a new or in-memory store.</value>
+    /// <remarks>Kept so the start-up log can say where it is: a copy nobody is told about is one nobody restores.</remarks>
+    public string? MigrationBackup { get; init; }
+
     /// <summary>
     /// Gets the retention policy this deployment prunes to.
     /// </summary>
@@ -341,6 +346,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
             connection = ParleyDatabase.Open(databasePath);
 
             RefuseAForeignDatabase(connection, databasePath);
+
+            // Copied first, under the lock, so the copy is the store exactly as the previous build left it (SPEC.md §9.2).
+            var backup = ParleyDatabase.BackUpBeforeMigrating(connection, databasePath, clock.GetUtcNow());
             SchemaMigrator.Migrate(connection);
 
             // After the lock, like everything else that touches what belongs to the store: emptying the staging
@@ -365,6 +373,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 storeLock: held)
             {
                 StoreProblems = shape,
+                MigrationBackup = backup,
             };
         }
         catch

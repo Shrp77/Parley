@@ -9,8 +9,8 @@ namespace Parley.Client.Roadmaps;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One format for every surface that edits a list.</b> The terminal's edit field, the web console's text area and the
-/// command line's <c>--file</c> all hold a roadmap as these lines, so a list copied from one is accepted by the others and
+/// <b>One format for every surface that edits a list.</b> The terminal's edit field and the web console's text area both
+/// hold a roadmap as these lines, so a list copied from one is accepted by the other and
 /// there is one place that says what a line means. It is deliberately the same shape an agent proposes in: a title, then
 /// one line per item with <c>for:</c> and <c>needs:</c> only where they are known.
 /// </para>

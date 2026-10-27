@@ -296,6 +296,14 @@ stops with Ctrl+C. The install starts the broker again. Without one, start it wi
 `Start-ScheduledTask parley-broker`, `systemctl --user start parley-broker.service`, or
 `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/parley-broker.plist`.
 
+### When a store is upgraded
+
+A new build may change the store's schema. The broker upgrades each store in place the first time it
+starts it, keeping every row. Before it does, it copies the store beside itself, named for the schema it
+is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`, and says where on
+its output. To undo an upgrade, stop the broker, install the build you had before, delete
+`parley.db-wal` and `parley.db-shm` if they are there, and put the copy back as `parley.db`. The broker keeps every copy; remove old ones yourself once you no longer need them.
+
 ### A store from another build
 
 The broker compares each store's tables, indexes and triggers with its own. When they differ it

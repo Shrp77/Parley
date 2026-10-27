@@ -403,6 +403,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
             // bytes sent are not the content the header named, and the adapter is told to write nothing.
             if (streamed != file.Sha256)
             {
+                // The record is behind the disk; the watcher hashes it again, so the next fetch is served.
+                _runtime.Watcher.LookAgain(file.Folder, file.Name);
+
                 await Refuse(writer, FileRefusal.Of(reference, FileRejection.Changed), cancellationToken, streamed)
                     .ConfigureAwait(false);
                 return;

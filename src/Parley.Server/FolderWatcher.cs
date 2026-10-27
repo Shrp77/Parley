@@ -45,13 +45,14 @@ internal sealed class FolderWatcher : IAsyncDisposable
     private readonly TimeSpan _settle;
     // **Looks and rename reports are keyed by exact spelling.** Keyed without case, a case twin's events merged with the
     // recorded file's: one look took the twin's rename as the agent's, or a twin's report overwrote the agent's own, and
-    // a placer was carried onto the person's file or a row lost with its file on disk (review rounds 33 and 34). A
-    // folder that does not tell case apart reports one spelling for a file, and a look at another spelling of a recorded
-    // name is made at the recorded one.
+    // a placer was carried onto the person's file or a row lost with its file on disk. A folder that does not tell case
+    // apart reports one spelling for a file, and a look at another spelling of a recorded name is made at the recorded
+    // one.
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _renamedFrom = new(StringComparer.Ordinal);
     // Each report keeps the spelling it moved from, which a twin's rename is told apart by.
-    private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.Ordinal);    private readonly CancellationTokenSource _stopping = new();
+    private readonly ConcurrentDictionary<string, (string From, string To)> _renamedTo = new(StringComparer.Ordinal);
+    private readonly CancellationTokenSource _stopping = new();
     private FileSystemWatcher? _watcher;
     private int _disposed;
 
@@ -511,7 +512,7 @@ internal sealed class FolderWatcher : IAsyncDisposable
 
         if (row is not null)
         {
-            await ReconcileAsync(row, cancellationToken).ConfigureAwait(false);
+            await ReconcileAsync(row, cancellationToken, always: true).ConfigureAwait(false);
             return;
         }
 
@@ -562,12 +563,30 @@ internal sealed class FolderWatcher : IAsyncDisposable
         }
     }
 
-    private async Task ReconcileAsync(StoredFile row, CancellationToken cancellationToken)
+    /// <summary>Looks at a recorded file again, hashing it whatever its size and time say.</summary>
+    /// <param name="folder">The file's folder.</param>
+    /// <param name="name">The file's name.</param>
+    /// <remarks>
+    /// For a fetch that streamed bytes other than the recorded hash: without a look, a change that kept the file's size
+    /// and time (a coarse file-system clock, <c>rsync -t</c>) was refused as changed on every fetch, for good.
+    /// </remarks>
+    internal void LookAgain(string folder, SharedFileName name) => Schedule(_runtime.Files.FilePath(folder, name));
+
+    /// <summary>Brings a row into line with its file.</summary>
+    /// <param name="row">The row.</param>
+    /// <param name="cancellationToken">Cancels the hash.</param>
+    /// <param name="always">Whether to hash even when the size and time match the row.</param>
+    /// <remarks>
+    /// <b>A look that a change asked for always hashes.</b> Size and time are a shortcut for a scan, which has no event
+    /// to go on; a change that keeps both (a coarse clock, a tool restoring the time) was otherwise recorded as no
+    /// change, and the old hash listed and every fetch refused.
+    /// </remarks>
+    private async Task ReconcileAsync(StoredFile row, CancellationToken cancellationToken, bool always = false)
     {
         var path = _runtime.Files.FilePath(row.File.Folder, row.File.Name);
         var info = new FileInfo(path);
 
-        if (!info.Exists || (info.Length == row.File.SizeBytes && info.LastWriteTimeUtc.Ticks == row.ModifiedTicks))
+        if (!info.Exists || (!always && info.Length == row.File.SizeBytes && info.LastWriteTimeUtc.Ticks == row.ModifiedTicks))
         {
             return;
         }

@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.43.4, protocol 0.9, schema 1. Nothing has been released, but **live stores hold work
+- Version 0.44.0, protocol 0.9, schema 2. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -19,7 +19,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
   compatibility caveats.
 - Features 019–026 are merged; the last is `specs/026-roadmaps/`. Feature 027, session-owned delivery, is
   next and not committed yet; its plan predates the rule above and must move its schema change into
-  migration 002.
+  migration 003.
 - A person speaks to an agent only with a Request. An agent's row menu in the terminal has one
   ownership entry, *What this agent is responsible for* (`Alt+n`).
 - Design work runs through Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`

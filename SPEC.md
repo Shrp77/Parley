@@ -1261,7 +1261,10 @@ the work a project has done across its repositories.
 **A store is upgraded, never replaced.** The schema version is SQLite's `user_version`. Version 1
 is fixed. Every change after it is a numbered migration that upgrades a store in place, in one
 transaction with the version bump, and keeps every row, so installing a new broker never costs
-a deployment its work. A broker refuses a store at a version newer than it knows, because it
+a deployment its work. Before it applies a migration to a store that already has a schema, the broker
+copies the store beside itself, under its lock, named for the schema it is about to reach and the time
+(`parley.db.before-schema-2-20261027T093000Z`), and says where in its log. It keeps every such copy; a
+person removes them. A broker refuses a store at a version newer than it knows, because it
 cannot know what changed. The version records which migrations a store was given and not what it
 holds, so a broker also compares the store's tables, indexes and triggers with its own and reports
 any it lacks or holds differently. The DDL below is the schema as it stands after every migration.
@@ -2389,7 +2392,8 @@ and messages. A roadmap has no status column: where an item stands is derived wh
 -- is an agent that attached, never the person seat or Parley. A purged proposer takes its proposals
 -- with it; a roadmap that came of one keeps the proposer's name as text.
 CREATE TABLE roadmap_proposals (
-  id                  INTEGER PRIMARY KEY,
+  -- AUTOINCREMENT, so an id once used is never given again, even after its proposal was purged (§5.7).
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   proposer            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   source_conversation TEXT    REFERENCES conversations(id) ON DELETE SET NULL,
   -- A hint naming the roadmap this would revise. The person resolves it (§5.7); nothing joins on it.
@@ -2521,11 +2525,14 @@ CREATE TABLE roadmap_item_conversations (
 ) STRICT;
 
 -- Without this an agent could open a reserved name first, and the person pressing start would then speak
--- into a conversation the agent made. Only the first message is held: replies come after.
+-- into a conversation the agent made. Judged by exchanges, which retention keeps: until the person has opened
+-- an exchange in the conversation, nobody else may write in it.
 CREATE TRIGGER tr_a_reserved_conversation_opens_with_the_person
 BEFORE INSERT ON messages
 WHEN EXISTS (SELECT 1 FROM roadmap_item_conversations c WHERE c.conversation_id = NEW.conversation_id)
- AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = NEW.conversation_id)
+ AND NOT EXISTS (SELECT 1 FROM exchanges x
+                   JOIN agents p ON p.name = x.requester AND p.adapter = 'parley-console'
+                  WHERE x.conversation_id = NEW.conversation_id)
  AND NOT EXISTS (SELECT 1 FROM agents a
                   WHERE a.name = NEW.from_agent AND a.adapter = 'parley-console')
 BEGIN
@@ -2672,8 +2679,9 @@ timestamps as plain strings and still be correct.
 - **No stored status.** A roadmap and its items carry none; a document check asserts the schema has no
   such column, so state cannot be written by one route and derived by another.
 - **An item's conversation is opened by the person.** `tr_a_reserved_conversation_opens_with_the_person`
-  refuses the first message into a reserved name from anybody but the person seat. A conversation that is
-  not reserved is untouched by it.
+  refuses any message into a reserved name from anybody but the person seat until the person has opened an
+  exchange in it. It asks of exchanges, not messages, because retention removes messages. A conversation
+  that is not reserved is untouched by it.
 - **Titles and items are single-line.** A line break is refused in storage as well as by the broker. The
   rule against characters that break, hide or reorder a surface's lines is the broker's, and is not
   relaxed (§13).
@@ -2836,8 +2844,11 @@ implementation will meet it.
 
 **A change made outside Parley is the file's new content.** The broker watches the location while it
 holds files, and before every list and fetch confirms each file's size and modification time still
-match what it recorded, hashing again when they do not — so a missed event delays a change and never
-serves a stale hash. A file it cannot read when it looks, held by another program, is looked at again until it
+match what it recorded, hashing again when they do not, and it hashes whenever a change is reported, whatever
+the size and time say. A fetch that finds the bytes differ from the recorded hash is refused and has the file
+hashed again, so a change that kept both (a coarse file-system clock, a tool restoring the time) made while
+the broker was stopped is recorded at the first fetch. A missed event delays a change and never serves a
+stale hash. A file it cannot read when it looks, held by another program, is looked at again until it
 can be, so a file put in the folder is listed even when something else held it first. An edit keeps the file's placer. A rename keeps it too, and updates the row in
 place. A file that appears without being placed is the person's, unless, when the broker starts, its
 hash matches exactly one file gone from the same folder, in which case it is that file renamed.

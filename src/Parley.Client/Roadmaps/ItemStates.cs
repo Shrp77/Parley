@@ -84,8 +84,8 @@ public sealed record RoadmapStanding(
 /// <remarks>
 /// <para>
 /// <b>Derived here and stored nowhere, and read by every surface.</b> The broker returns facts about each live item's
-/// conversation (<see cref="ItemFacts"/>) and this turns them into a state, so the terminal, the web console and the
-/// command line cannot disagree about it, and no column exists that could disagree with it. Two surfaces implementing
+/// conversation (<see cref="ItemFacts"/>) and this turns them into a state, so the terminal and the web console
+/// cannot disagree about it, and no column exists that could disagree with it. Two surfaces implementing
 /// this separately is how they would come to differ about what a person has seen.
 /// </para>
 /// <para>
