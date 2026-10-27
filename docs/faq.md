@@ -96,8 +96,8 @@ a conversation to keep it. See [Configuration](configuration.md#retention).
 
 In a folder per project under your Parley configuration directory. `parley project list` shows
 the path. Each project has a `parley.db` and a `project.json`, and, once agents share files, a
-`parley.db.files` folder holding them. For the minutes a new build takes to upgrade a store, a copy
-of it sits beside it too.
+`parley.db.files` folder holding them. While a new build upgrades a store, a copy of it sits beside it
+too, until the upgraded store is served.
 
 ## How do I remove it?
 

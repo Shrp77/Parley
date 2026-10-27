@@ -684,6 +684,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
 
     /// <summary>Lists the closure polls outstanding against one participant.</summary>
     /// <param name="agent">The participant collecting its inbox.</param>
+    /// <param name="most">The most to return, oldest first, or <see langword="null"/> for all.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The polls it has been asked and not yet answered.</returns>
     /// <remarks>
@@ -693,6 +694,7 @@ public sealed class ConversationRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<IReadOnlyList<ClosurePoll>> GetOutstandingPollsAsync(
         AgentName agent,
+        int? most = null,
         CancellationToken cancellationToken = default)
     {
         var rows = await _connection.QueryAsync<PollRow>(
@@ -700,9 +702,10 @@ public sealed class ConversationRepository(SqliteConnection connection)
                 $"""
                 SELECT p.conversation_id AS ConversationId, p.polled_utc AS PolledUtc
                 {OutstandingPolls}
-                 ORDER BY p.polled_utc, p.conversation_id;
+                 ORDER BY p.polled_utc, p.conversation_id
+                 LIMIT @Most;
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Most = most ?? -1 },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => new ClosurePoll(r.ConversationId, ExchangeRow.ParseTimestamp(r.PolledUtc)))];

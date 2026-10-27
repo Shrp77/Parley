@@ -106,14 +106,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <para>
     /// <b>The bound that makes waking every message's recipient affordable.</b> A wake
     /// might be thought unbounded, and the answer is
-    /// in SPEC.md §17 question 1's own evidence: <c>inbox</c> with no limit collects everything pending, so one
-    /// turn drains sixty messages and asking a second time buys nothing.
+    /// in SPEC.md §17 question 1's own evidence: one turn collects until nothing is waiting, so it drains sixty
+    /// messages and asking a second time buys nothing.
     /// </para>
     /// <para>
     /// <b>When it clears</b> (SPEC.md §5.4). It is removed as a collection begins rather than after it
     /// returns (<see cref="CollectAsync{T}"/>), so a message stored during one asks for its own turn. A
-    /// collection its caller limited to fewer than are waiting is followed by a wake for the rest
-    /// (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
+    /// collection that left messages waiting, by its caller's limit or by what one collection carries (SPEC.md §10.1),
+    /// is followed by a wake for the rest (<c>AgentsService.DrainInbox</c>), because the messages left behind are owed one.
     /// </para>
     /// <para>
     /// <b>Keyed on the drain, not on the attach, and that distinction is the whole of it.</b>

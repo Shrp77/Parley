@@ -365,6 +365,8 @@ internal sealed class FolderWatcher : IAsyncDisposable
         _renamedFrom.TryRemove(path, out var renamedFrom);
         _renamedTo.TryRemove(path, out var report);
         string? renamedTo = report.To;
+        var startedAt = path;
+        var thereAtStart = File.Exists(path);
         // A folder that has just appeared. On Linux a new folder is watched only once its own creation has been
         // handled, so whatever was written into it before then raised no event at all. Each file in it, and each the
         // store records there, is looked at as an event would have asked: the same looks, by the same rules, so a
@@ -439,6 +441,16 @@ internal sealed class FolderWatcher : IAsyncDisposable
             // moved the file away to save it has put it back by now, and the look at its path finds it changed.
             if (row is not null && !File.Exists(path))
             {
+                // **A file that went while this look ran is looked at again, not judged.** The look took its rename report
+                // before the rename arrived, so it would remove the row as gone and the look at the new name would find
+                // nothing to carry the placer from. The event for the going can land after this check, so the look asks
+                // for another itself; the rename's report is there by the time that one runs.
+                if (thereAtStart && string.Equals(path, startedAt, StringComparison.Ordinal))
+                {
+                    Schedule(path);
+                    return;
+                }
+
                 // Moved to a name the location holds: the placer goes with it, whether or not the look at that name
                 // has run.
                 if (renamedTo is not null && File.Exists(renamedTo) && Within(renamedTo, folder, out var movedTo)

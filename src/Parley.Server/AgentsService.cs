@@ -309,7 +309,11 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             _ = await WakeAsync(agent, "a collection left messages waiting", context).ConfigureAwait(false);
         }
 
-        var reply = new Wire.InboxReply { MessagesWaiting = inbox.MessagesWaiting };
+        var reply = new Wire.InboxReply
+        {
+            MessagesWaiting = inbox.MessagesWaiting,
+            ClosurePollsWaiting = inbox.ClosurePollsWaiting,
+        };
         reply.Messages.AddRange(inbox.Messages.Select(Conversions.Out));
         reply.ClosurePolls.AddRange(inbox.ClosurePolls.Select(Conversions.Out));
 

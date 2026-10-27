@@ -520,21 +520,28 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// collects work and does nothing with it is flagged as stalled rather than as never having picked it up.
     /// It is offered as something a person does on purpose, never as part of rendering a page.
     /// </remarks>
-    public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
-        CancellationToken cancellationToken = default)
+    public Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
+        CancellationToken cancellationToken = default) =>
+        DrainAsync(null, cancellationToken);
+
+    // One collection carries a bounded amount (SPEC.md §10.1), so a person is handed everything by asking again until
+    // nothing is left. Each pass stamps what it hands over, so the loop ends. **Each pass is handed on as it arrives**:
+    // a later pass that fails would otherwise drop what the broker had already stamped delivered.
+    private async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
+        Action<IReadOnlyList<Delivered>>? eachPass, CancellationToken cancellationToken)
     {
         var taken = new List<Delivered>();
         Wire.InboxReply reply;
 
-        // One collection carries a bounded amount (SPEC.md §10.1), so a person is handed everything by asking again until
-        // nothing is left. Each pass stamps what it hands over, so the loop ends.
         do
         {
             reply = await _agents.DrainInboxAsync(
                 new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
                 cancellationToken: cancellationToken);
 
-            taken.AddRange(reply.Messages.Select(one => new Delivered(Read(one.Message))));
+            List<Delivered> pass = [.. reply.Messages.Select(one => new Delivered(Read(one.Message)))];
+            eachPass?.Invoke(pass);
+            taken.AddRange(pass);
         }
         while (reply.MessagesWaiting > 0 && reply.Messages.Count > 0);
 
@@ -548,17 +555,15 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
     /// <exception cref="ArgumentNullException"><paramref name="hold"/> is null.</exception>
     /// <remarks>
     /// Here rather than in each surface, so two surfaces cannot disagree about what a person has taken
-    /// delivery of.
+    /// delivery of. Recorded a collection at a time, so a later collection that fails leaves what the earlier ones
+    /// handed over recorded against the seat.
     /// </remarks>
     public async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> TakeDeliveryAsync(
         SeatHold hold, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(hold);
 
-        var (messages, polls) = await DrainAsync(cancellationToken).ConfigureAwait(false);
-        hold.Record(messages);
-
-        return (messages, polls);
+        return await DrainAsync(hold.Record, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Sends the Result of a Request this person was asked, and settles it against the seat when it closed.</summary>

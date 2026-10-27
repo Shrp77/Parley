@@ -88,6 +88,11 @@ public sealed class FolderWatcherTests
         await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text("net"), "pricing", Ct);
         await FileWire.FetchAndReportAsync(orders.Client, Orders, "notes.md", "pricing", Ct);
 
+        // About when the look the folder's own change asked for runs. A rename landing while a look runs used to have that
+        // look, holding no report yet, remove the row as gone, and the new name was then found as the person's: Linux CI
+        // met it once, and with this wait Windows met it in most runs of the class.
+        await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+
         File.Move(PathOf(broker, "pricing", "notes.md"), PathOf(broker, "pricing", "renamed.md"));
 
         var listed = await FileWire.WaitForAsync(

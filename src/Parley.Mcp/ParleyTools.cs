@@ -391,6 +391,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         """
         Collect what is waiting for you: requests to work on, clarifications, and Results of requests you
         sent. Work you owe comes first. Also lists any conversation you are asked to agree is finished.
+        One call carries a bounded amount; when messages_waiting is present, call again for the rest.
 
         Work what you collect. For each request, do the work in your repository or resolve what stops it,
         and send parley_result. A Result arrives with the request you sent attached, so you can see what
@@ -488,6 +489,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             }
 
             var result = new JsonObject { ["messages"] = messages, ["closure_polls"] = polls };
+
+            if (inbox.ClosurePollsWaiting > 0)
+            {
+                result["closure_polls_waiting"] = inbox.ClosurePollsWaiting;
+            }
 
             // One collection carries a bounded amount (SPEC.md §10.1); what it left waits, and is said so the agent asks.
             if (inbox.MessagesWaiting > 0)
