@@ -88,8 +88,8 @@ public static class ParleyDatabase
     /// <exception cref="ArgumentException"><paramref name="path"/> is null or empty.</exception>
     /// <exception cref="SqliteException">The database could not be opened or migrated.</exception>
     /// <remarks>
-    /// Intended to be called once during broker start-up. Migration is idempotent, so calling
-    /// it on an already-current database costs one pragma read.
+    /// For tests and new stores. It takes no copy first, so the broker does not use it: it opens with <see cref="Open"/>,
+    /// copies with <see cref="BackUpBeforeMigrating"/> under the store's lock, then migrates (SPEC.md §9.2).
     /// </remarks>
     public static SqliteConnection OpenAndMigrate(string path)
     {
@@ -124,7 +124,10 @@ public static class ParleyDatabase
     /// exactly as the previous build left it. A store with no schema yet is new and has nothing to keep.
     /// </para>
     /// <para>
-    /// Restricted to the owner on Unix as the store is, because it holds the same text.
+    /// <b>Kept only until the upgraded broker serves</b>, when its caller deletes it: it holds every conversation's text,
+    /// which destroy, purge and retention exist to remove. One still there means the upgrade or the start after it
+    /// failed, which is when it is wanted. Restricted to the owner on Unix as the store is, and a copy that fails part
+    /// way is deleted rather than left looking like one that could be restored.
     /// </para>
     /// </remarks>
     public static string? BackUpBeforeMigrating(SqliteConnection connection, string path, DateTimeOffset nowUtc)
@@ -139,9 +142,16 @@ public static class ParleyDatabase
             return null;
         }
 
-        var copy = string.Create(
+        var named = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{path}.before-schema-{SchemaMigrator.LatestVersion}-{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+            $"{path}{Parley.Core.StoreFiles.BeforeSchema}{SchemaMigrator.LatestVersion}-{nowUtc.UtcDateTime:yyyyMMdd'T'HHmmss'Z'}");
+        var copy = named;
+
+        // Two starts in one second (a failed migration retried) would otherwise write over the first copy.
+        for (var again = 2; File.Exists(copy); again++)
+        {
+            copy = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{named}-{again}");
+        }
 
         try
         {
@@ -158,6 +168,15 @@ public static class ParleyDatabase
         }
         catch (Exception failed) when (failed is SqliteException or IOException or UnauthorizedAccessException)
         {
+            try
+            {
+                File.Delete(copy);
+            }
+            catch (Exception left) when (left is IOException or UnauthorizedAccessException)
+            {
+                // Named in the message below; a person can remove it.
+            }
+
             throw new InvalidOperationException(
                 $"The store at '{path}' is at schema {version} and was not upgraded to {SchemaMigrator.LatestVersion}, because "
                 + $"it could not first be copied to '{copy}': {failed.Message}",

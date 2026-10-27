@@ -97,6 +97,37 @@ public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
         Assert.Contains(connection, beating, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task An_upgraded_store_is_served_and_the_copy_taken_before_is_removed()
+    {
+        // Round 36, the owner's rule: the copy is kept only until the upgraded broker serves, because it holds every
+        // conversation's text, which destroy, purge and retention exist to remove.
+        var store = ProjectFolder.StoreFor(_root, ProjectName.Create("orders"));
+        Directory.CreateDirectory(Path.GetDirectoryName(store)!);
+
+        using (var connection = Parley.Store.ParleyDatabase.Open(store))
+        {
+            var assembly = typeof(Parley.Store.SchemaMigrator).Assembly;
+            var name = assembly.GetManifestResourceNames().Single(n => n.EndsWith(".001_initial.sql", StringComparison.Ordinal));
+
+            using var stream = assembly.GetManifestResourceStream(name)!;
+            using var reader = new StreamReader(stream);
+            using var command = connection.CreateCommand();
+
+            command.CommandText = reader.ReadToEnd() + "\nPRAGMA user_version = 1;";
+            command.ExecuteNonQuery();
+        }
+
+        Microsoft.Data.Sqlite.SqliteConnection.ClearPool(new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={store}"));
+
+        const string upgraded = "orders: its store was upgraded to schema ";
+        var said = await ServeAsync(heartbeat: false, TimeSpan.FromMilliseconds(500), upgraded);
+
+        Assert.Contains(upgraded, said, StringComparison.Ordinal);
+        Assert.Contains("the copy taken before the upgrade was removed", said, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(store)!, "*" + StoreFiles.BeforeSchema + "*"));
+    }
+
     [Theory]
     [InlineData(PosixSignal.SIGINT, "Ctrl+C")]
     [InlineData(PosixSignal.SIGHUP, "its console window being closed")]

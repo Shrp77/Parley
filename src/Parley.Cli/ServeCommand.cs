@@ -193,7 +193,10 @@ public static class ServeCommand
                 }
 
                 await error.WriteLineAsync(
-                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
+                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}"
+                    + (runtime.MigrationBackup is { } kept
+                        ? $" Its store was upgraded first; the store as it was before is kept at {kept}."
+                        : string.Empty))
                     .ConfigureAwait(false);
 
                 return Start.Failed;
@@ -210,11 +213,25 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            // **The copy taken before an upgrade is kept only until the upgraded broker serves** (SPEC.md §9.2). It holds
+            // every conversation's text, which destroy, purge and retention exist to remove, so kept any longer it would be
+            // a corner of the store none of them reach.
             if (runtime.MigrationBackup is { } backup)
             {
-                await output.WriteLineAsync(
-                    $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion}; the store as it was "
-                    + $"before is kept at {backup}.").ConfigureAwait(false);
+                try
+                {
+                    File.Delete(backup);
+                    await output.WriteLineAsync(
+                        $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving; "
+                        + "the copy taken before the upgrade was removed.").ConfigureAwait(false);
+                }
+                catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+                {
+                    await error.WriteLineAsync(
+                        $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving, but "
+                        + $"the copy taken before the upgrade could not be removed ({held.Message}). Delete {backup}: it holds "
+                        + "the text of every conversation as it was.").ConfigureAwait(false);
+                }
             }
 
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again

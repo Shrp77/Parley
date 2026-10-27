@@ -13,7 +13,8 @@
 --    after retention was refused with storage's own text. Exchanges are not removed by retention.
 
 CREATE TABLE roadmap_proposals_002 (
-  -- AUTOINCREMENT, so an id once used is never given again, even after its proposal was purged (§5.7).
+  -- AUTOINCREMENT, so an id once used is never given again, even after its proposal was purged: a person
+  -- holding a purged proposal open would otherwise decide whichever proposal took its id.
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   proposer            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   source_conversation TEXT    REFERENCES conversations(id) ON DELETE SET NULL,

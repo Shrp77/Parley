@@ -1263,8 +1263,10 @@ is fixed. Every change after it is a numbered migration that upgrades a store in
 transaction with the version bump, and keeps every row, so installing a new broker never costs
 a deployment its work. Before it applies a migration to a store that already has a schema, the broker
 copies the store beside itself, under its lock, named for the schema it is about to reach and the time
-(`parley.db.before-schema-2-20261027T093000Z`), and says where in its log. It keeps every such copy; a
-person removes them. A broker refuses a store at a version newer than it knows, because it
+(`parley.db.before-schema-2-20261027T093000Z`). The copy is kept only until the upgraded broker is
+serving again, and then removed, because it holds every conversation's text, which destroy, purge and
+retention exist to remove. A copy still there means the upgrade or the start after it failed, and the
+broker's log names it. Destroying a project deletes any it left. A broker refuses a store at a version newer than it knows, because it
 cannot know what changed. The version records which migrations a store was given and not what it
 holds, so a broker also compares the store's tables, indexes and triggers with its own and reports
 any it lacks or holds differently. The DDL below is the schema as it stands after every migration.
@@ -2392,7 +2394,8 @@ and messages. A roadmap has no status column: where an item stands is derived wh
 -- is an agent that attached, never the person seat or Parley. A purged proposer takes its proposals
 -- with it; a roadmap that came of one keeps the proposer's name as text.
 CREATE TABLE roadmap_proposals (
-  -- AUTOINCREMENT, so an id once used is never given again, even after its proposal was purged (§5.7).
+  -- AUTOINCREMENT, so an id once used is never given again, even after its proposal was purged: a person
+  -- holding a purged proposal open would otherwise decide whichever proposal took its id.
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   proposer            TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
   source_conversation TEXT    REFERENCES conversations(id) ON DELETE SET NULL,

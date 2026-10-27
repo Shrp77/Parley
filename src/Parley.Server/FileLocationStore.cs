@@ -537,7 +537,29 @@ public sealed class FileLocationStore : IDisposable
             throw new NotItsOwnFolderException(folder);
         }
 
-        File.Move(stagedPath, target, overwrite: true);
+        // **A replacement waits a moment for a look that is reading the file.** A look a change asked for always hashes,
+        // and on Windows a move over a file open for that read is refused: an agent replacing its own file just after
+        // placing it met the watcher's look of the first placement and was refused with an internal error. A look holds
+        // the file for as long as one hash, so a short wait outlasts it; one held longer is refused in words.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(stagedPath, target, overwrite: true);
+                return;
+            }
+            catch (Exception held) when (held is UnauthorizedAccessException or IOException && attempt < 40 && File.Exists(stagedPath))
+            {
+                Thread.Sleep(25);
+            }
+            catch (Exception held) when (held is UnauthorizedAccessException or IOException && File.Exists(stagedPath))
+            {
+                throw new Grpc.Core.RpcException(new Grpc.Core.Status(
+                    Grpc.Core.StatusCode.Aborted,
+                    "The file is being read by another program, so it was not replaced and nothing was written. Place it again."),
+                    held.Message);
+            }
+        }
     }
 
     private static void TryDelete(string path)

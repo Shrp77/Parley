@@ -300,9 +300,18 @@ stops with Ctrl+C. The install starts the broker again. Without one, start it wi
 
 A new build may change the store's schema. The broker upgrades each store in place the first time it
 starts it, keeping every row. Before it does, it copies the store beside itself, named for the schema it
-is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`, and says where on
-its output. To undo an upgrade, stop the broker, install the build you had before, delete
-`parley.db-wal` and `parley.db-shm` if they are there, and put the copy back as `parley.db`. The broker keeps every copy; remove old ones yourself once you no longer need them.
+is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`. Once the upgraded
+broker is serving, it removes the copy and says the store was upgraded.
+
+A copy still there means the upgrade, or the start after it, failed; the broker's output says why and
+where the copy is. To go back to the build you had before:
+
+1. Stop the broker, as for an install (above).
+2. Delete `parley.db-wal` and `parley.db-shm` beside the store if they are there.
+3. Put the copy back as `parley.db`.
+4. Install the build you had before, which starts the broker again.
+
+Nothing is lost: the copy is the store as the earlier build left it, and the failed upgrade served nothing.
 
 ### A store from another build
 

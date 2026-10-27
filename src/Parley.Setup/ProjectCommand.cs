@@ -670,6 +670,32 @@ public static class ProjectCommand
             deleted.Add(path);
         }
 
+        // Every copy taken before an upgrade (SPEC.md §9.2). Each holds the text of every conversation up to its upgrade,
+        // and the destroy says the conversations go with the store. After the lock, like the store itself.
+        if (Path.GetDirectoryName(Path.GetFullPath(going.Store)) is { } beside && Directory.Exists(beside))
+        {
+            foreach (var path in Directory.EnumerateFiles(beside, Path.GetFileName(going.Store) + Parley.Core.StoreFiles.BeforeSchema + "*"))
+            {
+                if (ProjectManifest.IsTheManifest(path, manifestPath))
+                {
+                    continue;
+                }
+
+                if (!await TryDeleteAsync(path, cancellationToken).ConfigureAwait(false))
+                {
+                    await error.WriteLineAsync(
+                        $"Could not delete {path}: something still has it open. The entry is gone " +
+                        $"and {string.Join(", ", deleted)} {(deleted.Count == 1 ? "was" : "were")} " +
+                        "deleted; delete the rest yourself once nothing holds it.")
+                        .ConfigureAwait(false);
+
+                    return IoError;
+                }
+
+                deleted.Add(path);
+            }
+        }
+
         // The file location and its staging directory (SPEC.md §9.5), and only after the lock went: a
         // broker still serving would have kept the lock, and deleting files it may be streaming to an
         // agent would be the partial destruction the ordering above exists to prevent.

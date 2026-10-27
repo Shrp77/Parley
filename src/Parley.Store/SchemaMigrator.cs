@@ -79,8 +79,8 @@ public static class SchemaMigrator
             throw new InvalidOperationException(
                 $"This store is at schema {current} and this Parley only knows {LatestVersion}. " +
                 "It was written by a newer version and will not be opened, because this build " +
-                "cannot know what changed. Upgrade Parley, or restore the backup taken before " +
-                "the upgrade.");
+                "cannot know what changed. Install the newer Parley; an older one still starting " +
+                "after an install is the usual cause. See `When a store is upgraded` in docs/operating.md.");
         }
 
         var applied = 0;
