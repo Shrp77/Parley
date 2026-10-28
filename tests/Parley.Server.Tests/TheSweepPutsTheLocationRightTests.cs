@@ -342,17 +342,37 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
     }
 
     [Fact]
-    public void A_name_changed_only_in_case_is_kept_where_the_disk_does_not_tell_case_apart()
+    public void A_name_changed_only_in_case_is_taken_for_the_recorded_one_when_its_spelling_is_not_beside_it()
     {
+        // On every disk: where case is not told apart the variant is the recorded entry, and where it is, the recorded
+        // spelling is absent, so the variant is still taken for it. What the sweep then records gone is decided by its
+        // own look at the recorded path, not here.
         var (location, _) = Prepare();
         var folder = Directory.CreateDirectory(Path.Combine(location.Root, "STOCK")).FullName;
         File.WriteAllText(Path.Combine(folder, "STOCK.MD"), "live stock levels");
-        var tellsCaseApart = !File.Exists(Path.Combine(location.Root, "stock", "stock.md"));
 
         Assert.Empty(location.DeleteUnrecorded(Kept(("stock", ["stock.md"]))));
 
-        // Where the disk tells case apart the recorded spelling is not there, so these are entries somebody else made.
-        Assert.Equal(!tellsCaseApart, File.Exists(Path.Combine(folder, "STOCK.MD")));
+        Assert.True(File.Exists(Path.Combine(folder, "STOCK.MD")));
+    }
+
+    [Fact]
+    public void A_name_differing_only_in_case_beside_the_recorded_spelling_is_another_entry_and_goes()
+    {
+        var (location, _) = Prepare();
+        var folder = Directory.CreateDirectory(Path.Combine(location.Root, "stock")).FullName;
+        File.WriteAllText(Path.Combine(folder, "stock.md"), "live stock levels");
+        var tellsCaseApart = !File.Exists(Path.Combine(folder, "STOCK.MD"));
+
+        if (tellsCaseApart)
+        {
+            File.WriteAllText(Path.Combine(folder, "STOCK.MD"), "somebody else's");
+        }
+
+        Assert.Empty(location.DeleteUnrecorded(Kept(("stock", ["stock.md"]))));
+
+        Assert.Equal("live stock levels", File.ReadAllText(Path.Combine(folder, "stock.md")));
+        Assert.Equal(["stock.md"], Directory.EnumerateFiles(folder).Select(Path.GetFileName));
     }
 
     [Fact]
