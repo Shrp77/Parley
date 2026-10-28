@@ -67,7 +67,7 @@ The command line adds no verb (FR-028).
 | `SurfaceBoundaryTests` | the declared public surface of `Broker` gains `ProposeRoadmap`; of `OperatorConsole` gains the eight operator operations; operations naming a roadmap also name the person |
 | `AgentsCannotChangeARoadmapTests` | new, reflection over the generated `Agents` client, in the pattern of `AgentsCannotSetTheirOwnLineTests` |
 | `DriftTests` | every `BrokerClient` operation bound by both surfaces; `contracts/operations.md` of this feature names them all |
-| `SurfaceTests` | `EditRoadmap` and `DeclineProposal` each in exactly one file per surface, carrying their door |
+| `SurfaceTests` | `EditRoadmap` and `DeclineProposal` each in exactly one terminal file, carrying their door; on the web each is its own page, held by `EveryActionHasADoorTests` |
 | `EveryActionHasADoorTests` (web) | each new page action is linked and described on a GET before it is performed on a POST |
 | `PluginTests` | unchanged: the command line adds no verb, so the skill and the tool's source stay equal |
 | `GraphTests` | unchanged and must stay green: nothing here may give Client, Web, Terminal or Setup a route to a store |

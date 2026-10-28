@@ -55,4 +55,4 @@ Roadmaps follow the conversations they own: destroying a conversation (the exist
 
 ## Export
 
-`Export` of a conversation names the item and roadmap it belongs to (a line in the header, in the export's own words, never from the payload). A project export includes roadmaps, their items, revisions and unresolved proposals (FR-029). `ConversationSummary` gains the item reference so lists can mark item conversations (FR-026).
+`Export` of a conversation names the item and roadmap it belongs to (a line in the header, in the export's own words, never from the payload). There is no project export (FR-029). `ConversationSummary` gains the item reference so lists can mark item conversations (FR-026).

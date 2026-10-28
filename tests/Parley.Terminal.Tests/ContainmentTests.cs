@@ -1,6 +1,7 @@
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Core;
+using Terminal.Gui.Views;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -132,5 +133,43 @@ public sealed class ContainmentTests
         driving.App.LayoutAndDraw();
 
         Assert.Contains("probe-line-one", driving.Text(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_line_appended_while_the_list_draws_is_drawn_by_a_later_draw()
+    {
+        // Found by review, round 53: a line that arrived during a draw, after the drain, lost its mark when that draw
+        // ended, and waited for some other reason to draw.
+        using var driving = Driving.Open(width: 100, height: 30);
+        var view = new LogView("following a probe");
+
+        driving.Show(view);
+        driving.App.LayoutAndDraw(true);
+
+        view.Append("probe-line-one");
+
+        var list = view.SubViews.OfType<ListView>().Single();
+        var once = false;
+
+        // Stands for the follower's thread landing an Append after the dialog drained and before the draw ended.
+        list.DrawComplete += (_, _) =>
+        {
+            if (!once)
+            {
+                once = true;
+                view.Append("probe-line-late");
+            }
+        };
+
+        driving.App.LayoutAndDraw();
+        Assert.True(once, "the list never drew");
+
+        // What the loop does on its next iterations with nothing else happening.
+        for (var i = 0; i < 5; i++)
+        {
+            driving.App.LayoutAndDraw();
+        }
+
+        Assert.Contains("probe-line-late", driving.Text(), StringComparison.Ordinal);
     }
 }

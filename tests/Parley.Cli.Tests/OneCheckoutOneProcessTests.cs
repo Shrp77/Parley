@@ -204,6 +204,11 @@ public sealed class OneCheckoutOneProcessTests : IDisposable
 
         await resident.DisposeAsync();
 
-        return said.ToString();
+        // Read under the synchronized writer's own lock: a launched process's output pump can still be writing, and a
+        // StringBuilder read while it grows threw on macOS CI.
+        lock (report)
+        {
+            return said.ToString();
+        }
     }
 }

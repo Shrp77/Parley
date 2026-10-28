@@ -878,20 +878,37 @@ public sealed class RoadmapStoreTests : IDisposable
     public async Task An_item_reworded_after_its_request_was_sent_says_so_and_one_reworded_before_does_not()
     {
         // FR-014a, from the item's own edit record: the words sent may be the person's own and prove nothing. Item 1 is
-        // started and then reworded; item 2 is reworded and never started. Must fail against a fact that ignores the
-        // edit, and against one that marks an item reworded before anything was sent.
+        // started and then reworded; item 2 is reworded and never started; item 3 is reworded, then started, and not
+        // reworded again. Must fail against a fact that ignores the edit, one that marks an item reworded before
+        // anything was sent, and one that counts any edit of an item with work as made since it started.
         var id = await RoadmapAsync();
-        Open("rm1-1", "human-user@test", "billing@test");
 
-        var later = new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var edit = await Repository.EditAsync(
+        var earlier = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var before = await Repository.EditAsync(
             id,
             1,
             Content(
                 "Billing export",
+                Existing(1, "Add CSV export", Billing),
+                Existing(2, "Call it from the report", Orders, 1),
+                Existing(3, "Document the columns", null, 2)),
+            earlier,
+            cancellationToken: Ct);
+
+        Assert.True(before.Done, before.Problem);
+
+        Open("rm1-1", "human-user@test", "billing@test");
+        Open("rm1-3", "human-user@test", "orders@test");
+
+        var later = new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var edit = await Repository.EditAsync(
+            id,
+            2,
+            Content(
+                "Billing export",
                 Existing(1, "Add CSV export with headers", Billing),
                 Existing(2, "Call it from the monthly report", Orders, 1),
-                Existing(3, "Document the column", null, 2)),
+                Existing(3, "Document the columns", null, 2)),
             later,
             cancellationToken: Ct);
 
@@ -900,6 +917,7 @@ public sealed class RoadmapStoreTests : IDisposable
         var items = (await Repository.GetAsync(id, Ct))!.Items;
         Assert.True(items[0].Facts!.TextEditedSinceStarted);
         Assert.False(items[1].Facts!.TextEditedSinceStarted);
+        Assert.False(items[2].Facts!.TextEditedSinceStarted);
     }
 
     /// <summary>Ends the newest open exchange of a conversation on a Result from its receiver, as an agent's answer does.</summary>

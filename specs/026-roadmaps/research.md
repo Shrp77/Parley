@@ -22,7 +22,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 ## R4. Item state is derived in Parley.Client by one function
 
-**Decision**: `ItemStates.Of(roadmap, waiting, me)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces and the CLI call it.
+**Decision**: `ItemStates.Of(roadmap, waiting, me)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces call it.
 **Rationale**: `Activities` and `WaitingOnYou` already do this for rooms, from `ConversationExport`, `WaitingEdge` and `AgentRecord`. Two surfaces implementing it separately is how they would disagree about what a person has seen (CLAUDE.md, Parley.Client). Spec clarification 1 (no hand-set state) means there is nothing to store.
 **Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, how many agents' latest answer on the person's requests was blocked and the blocker one of those gave, and who closed the conversation. An agent's latest is the one that closed last. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, waiting, me)`.
 **States** and how each is derived (all from the item's conversation, absent conversation meaning not started):

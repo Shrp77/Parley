@@ -178,7 +178,7 @@ The Room of any conversation lists every agent in the project, not only those wh
 
 - **FR-027**: Roadmaps, items, proposals and their provenance MUST be persisted by the broker's store, and the rules that matter (an item belongs to one roadmap, one conversation per item, no change without a person's confirmation) MUST be enforced in storage as well as in code.
 - **FR-028**: Every operator operation added MUST be available on the terminal and the web console, and every agent operation added MUST be on the agents' service only. The command line adds none: SPEC.md §10.2 keeps it to what a script or an installer reads, and the owner's rule since 019 is that what a person does to a deployment is the terminal's. A decision recorded after the plan assumed otherwise.
-- **FR-029**: Roadmaps MUST survive restart of the broker and of every agent, and MUST be included in a project's export, destruction and retention rules.
+- **FR-029**: Roadmaps MUST survive restart of the broker and of every agent, and MUST be included in destruction and retention rules; a conversation's export names its item and roadmap (§10.2), and there is no project export.
 - **FR-030**: The protocol document MUST be written first and the code MUST match it before review; any place they disagree is recorded as a decision, not an assumption.
 
 ### Key Entities

@@ -98,7 +98,7 @@ tests/Parley.Broker.Tests            # SurfaceBoundaryTests declared list; confi
 tests/Parley.Core.Tests              # ContractSeparationTests; naming
 tests/Parley.Server.Tests            # AgentsCannotChangeARoadmapTests; end to end over a socket
 tests/Parley.Client.Tests            # ItemStates table of cases; RoomRoster
-tests/Parley.Terminal.Tests          # driven views; DriftTests bindings; SurfaceTests door for edit/decline
+tests/Parley.Terminal.Tests          # driven views; DriftTests bindings; SurfaceTests door for edit/decline (web: EveryActionHasADoorTests)
 tests/Parley.Web.Tests               # pages, no store on the graph
 ```
 
