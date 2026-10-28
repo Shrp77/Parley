@@ -116,7 +116,7 @@ public sealed class FilesProblemsCommandTests : IAsyncDisposable
 
         Assert.DoesNotContain((char)0x1B, output);
         Assert.DoesNotContain(Lines(output), l => l.StartsWith("#99", StringComparison.Ordinal));
-        Assert.Contains("Held by another program: pricing/notes?[2J?#99  forged.md", output, StringComparison.Ordinal);
+        Assert.Contains("Could not be moved or deleted: pricing/notes?[2J?#99  forged.md", output, StringComparison.Ordinal);
     }
 
     private static List<string> Lines(string output) => [.. output.ReplaceLineEndings("\n").Split('\n')];

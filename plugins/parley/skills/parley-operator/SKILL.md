@@ -213,8 +213,8 @@ useful. Start it when the person asks.
 
 ## Retention
 
-Pruning brings the next sweep forward. It does not set the policy. The broker applies it on every
-sweep, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
+Pruning brings the next retention pass forward. It does not set the policy. The broker applies it on every
+retention pass, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
 environment the broker was started with: three days idle and thirty days maximum age if unset.
 
 **It removes text permanently.** If a discussion is worth keeping, the person should save it first

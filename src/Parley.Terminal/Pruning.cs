@@ -12,7 +12,7 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>It removes text permanently</b> (§9.4), so it takes the door removing a project takes: described, the
 /// safe answer first, the name typed back. The policy is the broker's and nothing here chooses it — this
-/// brings the next sweep forward, and says what it removed and what the floor kept.
+/// brings the next retention pass forward, and says what it removed and what the floor kept.
 /// </para>
 /// <para>
 /// Every surface offers it: a terminal that could not would be the one surface where somebody who can see a
@@ -60,7 +60,7 @@ internal static class Pruning
             $"""
              {Safe.Text(name)}
 
-             Its broker applies its retention policy now rather than at its next sweep. Message text past the
+             Its broker applies its retention policy now rather than at its next retention pass. Message text past the
              policy is deleted permanently: export a conversation first if it is worth keeping. Nothing on an
              open exchange, and nothing not yet collected, is removed.
              """;

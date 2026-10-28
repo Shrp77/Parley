@@ -278,7 +278,7 @@ public sealed class FileSweeper : IAsyncDisposable
     {
         var problems = new FileProblemRepository(connection);
         var movedTo = FileLocationStore.QuarantineName(stored.File.Folder, stored.File.Name, now);
-        Exception error;
+        Exception? error = null;
 
         // **The records and the move are one act.** The row, the notices and the problem are written in a transaction
         // that commits only once the file has moved, so a move that fails leaves everything as it was, and nothing is
@@ -301,8 +301,6 @@ public sealed class FileSweeper : IAsyncDisposable
             try
             {
                 _runtime.Files.MoveToQuarantine(stored.File.Folder, stored.File.Name, movedTo);
-                scope.Complete();
-                return;
             }
             catch (Exception held) when (held is IOException or UnauthorizedAccessException)
             {
@@ -310,18 +308,41 @@ public sealed class FileSweeper : IAsyncDisposable
                 // never served.
                 error = held;
             }
+
+            if (error is null)
+            {
+                try
+                {
+                    scope.Complete();
+                    return;
+                }
+                catch
+                {
+                    // Moved, but the records could not be kept: put back where the next sweep finds it and does it all
+                    // again, rather than quarantined with nobody told.
+                    _runtime.Files.PutBackFromQuarantine(stored.File.Folder, stored.File.Name, movedTo);
+                    throw;
+                }
+            }
         }
 
         _ = await problems.RaiseAsync(
             FileProblemKind.Locked, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, null,
             "Its bytes no longer match what was placed, but it could not be moved to quarantine, so it stays where it "
-            + "is and is never served: " + error.Message,
+            + "is and is never served: " + error!.Message,
             now, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     // What a recorded file is on disk now.
     private static async Task<Seen> LookAsync(FileLocationStore files, StoredFile stored, CancellationToken cancellationToken)
     {
+        // A recorded folder replaced by a link holds none of its files: they are gone, and the link goes with everything
+        // else no row names. Nothing is read through it.
+        if (files.IsLinkedFolder(stored.File.Folder))
+        {
+            return new Seen(SeenKind.Missing, null, 0, null);
+        }
+
         var path = files.FilePath(stored.File.Folder, stored.File.Name);
         FileAttributes attributes;
 

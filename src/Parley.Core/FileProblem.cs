@@ -6,7 +6,10 @@ public enum FileProblemKind
     /// <summary>A placed file whose bytes no longer hash to what was placed, moved to quarantine.</summary>
     Quarantined,
 
-    /// <summary>An entry the sweep could not read, move or delete because another program held it.</summary>
+    /// <summary>
+    /// An entry the sweep could not read, move or delete: another program held it, the broker may not, or the quarantine
+    /// folder it would go to is a link. The detail says which.
+    /// </summary>
     Locked,
 }
 

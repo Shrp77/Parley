@@ -216,7 +216,8 @@ things:
 - A placed file whose bytes changed on disk is moved to the quarantine folder, and every agent that
   fetched it, and the agent that placed it, is told it was changed. A fetch of a changed file is
   refused, so no agent ever receives the changed bytes.
-- A placed file that is gone from disk is recorded as gone, and every agent that fetched it is told.
+- A placed file that is gone from disk is recorded as gone, and every agent that fetched it, and the
+  agent that placed it, is told.
 - Everything else in the location is deleted: a file copied in by hand, a folder you made there, a
   link, and a folder whose conversation no longer exists. A link is deleted as a link; what it
   points to is not touched.
@@ -233,7 +234,7 @@ first sweep, the files of every conversation newer than the backup, because the 
 names them.
 
 **File problems.** Each file moved to quarantine, and each entry the sweep could not read, move or
-delete because another program held it open, is a file problem. The terminal shows how many are
+delete (usually because another program held it open), is a file problem. The terminal shows how many are
 waiting on the status line and on the project's row, and F5 lists them. The web console shows a
 banner at the top of its pages, and the count on each project's row. Each problem says what happened, its
 conversation and path, and, for a quarantined file, the hash placed, the hash found and where in the

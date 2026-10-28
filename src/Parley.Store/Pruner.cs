@@ -103,7 +103,7 @@ public sealed class Pruner(SqliteConnection connection)
     /// A bound on a first drain rather than on ordinary work: removing two hundred thousand messages in
     /// one pass made a concurrent writer wait 2.3 seconds against a five-second busy timeout. At ten
     /// thousand the worst wait measured 200 milliseconds, and the remainder is not lost — retention is
-    /// not a deadline, and the next sweep continues where this one stopped.
+    /// not a deadline, and the next retention pass continues where this one stopped.
     /// </remarks>
     private const int MaxRemovalsPerPass = 10_000;
 
@@ -239,7 +239,7 @@ public sealed class Pruner(SqliteConnection connection)
             var batch = prunable.GetRange(offset, Math.Min(DeleteBatch, prunable.Count - offset));
 
             // One transaction per batch, so the lock is held for a few primary-key deletes at a time.
-            // Pruning is idempotent, so a pass interrupted halfway leaves what the next sweep would find.
+            // Pruning is idempotent, so a pass interrupted halfway leaves what the next pass would find.
             using var scope = WriteScope.Begin(_connection, ambient: null);
 
             var went = await _connection.ExecuteAsync(
@@ -286,7 +286,7 @@ public sealed class Pruner(SqliteConnection connection)
     };
 
     /// <summary>The instants and durations the statements are evaluated against.</summary>
-    /// <param name="NowSeconds">The instant of the sweep, as a Unix timestamp.</param>
+    /// <param name="NowSeconds">The instant of the pass, as a Unix timestamp.</param>
     /// <param name="DeduplicationSeconds">The window of §13.1.</param>
     /// <param name="IdleSeconds">The idle period of §9.4.</param>
     /// <param name="MaximumAgeSeconds">The age cap of §9.4.</param>

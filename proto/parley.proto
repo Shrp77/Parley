@@ -448,7 +448,7 @@ message FileProblemsReply {
 enum FileProblemKind {
   FILE_PROBLEM_KIND_UNSPECIFIED = 0;
   FILE_PROBLEM_KIND_QUARANTINED = 1;      // bytes no longer matched what was placed; moved to quarantine
-  FILE_PROBLEM_KIND_LOCKED = 2;           // another program held it, so the sweep could not read, move or delete it
+  FILE_PROBLEM_KIND_LOCKED = 2;           // the sweep could not read, move or delete it: held, refused, or in the way
 }
 
 // The path is text nothing checked when the entry was put there by something other than Parley: shown as somebody

@@ -1,5 +1,5 @@
 ---
-description: List what Parley's checks of the file location found - files changed on disk and moved to quarantine, and entries another program held - and dismiss one when the person asks.
+description: List what Parley's checks of the file location found - files changed on disk and moved to quarantine, and entries it could not move or delete - and dismiss one when the person asks.
 disable-model-invocation: true
 ---
 
@@ -7,8 +7,8 @@ disable-model-invocation: true
 
 Nothing but Parley may change the file location. The broker checks it when it starts, and whenever a list, fetch,
 removal or placement finds something wrong. A placed file whose bytes changed on disk is moved to the quarantine
-folder, beside the file location on the broker's machine. Anything Parley did not place is deleted. What another
-program held open could not be moved or deleted. Each of these is a file problem, and it waits for the person until
+folder, beside the file location on the broker's machine. Anything Parley did not place is deleted. What it could
+not move or delete, usually because another program held it open, is left where it is. Each of these is a file problem, and it waits for the person until
 they dismiss it.
 
 ## 1. List them

@@ -210,7 +210,7 @@ public sealed class FileNoticeRepositoryTests : IDisposable
     public async Task A_file_found_missing_tells_its_fetchers_and_its_placer_and_a_removal_tells_only_the_fetchers()
     {
         // Something other than Parley took the file, so its placer, who can place it again, is told; a removal Parley
-        // made was asked for by its placer or the person, who know.
+        // made, by its placer or the person, asks nothing of the placer.
         await Place("v1");
         await Fetch(Orders, "v1");
 

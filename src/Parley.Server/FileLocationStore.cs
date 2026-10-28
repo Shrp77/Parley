@@ -171,6 +171,11 @@ public sealed class FileLocationStore : IDisposable
     /// </remarks>
     internal void MoveToQuarantine(string folder, SharedFileName name, string movedTo)
     {
+        if (IsLinkedFolder(folder))
+        {
+            throw new IOException($"The folder '{folder}' is a link, so nothing is moved out of it.");
+        }
+
         var into = Path.Combine(Quarantine, folder);
 
         // Never through a link put in the quarantine directory: the file would land wherever it reaches.
@@ -437,6 +442,12 @@ public sealed class FileLocationStore : IDisposable
     /// <exception cref="UnauthorizedAccessException">The broker may not read the file.</exception>
     public async Task<ReadHold> HoldForReadingAsync(string folder, SharedFileName name, CancellationToken cancellationToken)
     {
+        // Never through a recorded folder replaced by a link: what it reaches is not the file placed.
+        if (IsLinkedFolder(folder))
+        {
+            throw new FileNotFoundException("The conversation's folder is a link, so the file placed is not there.", name.Value);
+        }
+
         var path = FilePath(folder, name);
         Gate gate;
 
@@ -605,7 +616,43 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
     /// <remarks>Call inside <see cref="ChangeAsync"/>. A file already gone is not an error.</remarks>
-    public void Delete(string folder, SharedFileName name) => TryDelete(FilePath(folder, name));
+    public void Delete(string folder, SharedFileName name)
+    {
+        // A recorded folder replaced by a link holds none of its files: what the link reaches is somebody else's, and the
+        // sweep deletes the link itself.
+        if (!IsLinkedFolder(folder))
+        {
+            TryDelete(FilePath(folder, name));
+        }
+    }
+
+    /// <summary>Puts back a file <see cref="MoveToQuarantine"/> moved, when what it moved for could not be recorded.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="movedTo">Where it was moved.</param>
+    /// <remarks>So a sweep whose records failed to commit leaves the file where the next sweep finds it, and does it again.</remarks>
+    internal void PutBackFromQuarantine(string folder, SharedFileName name, string movedTo) =>
+        File.Move(
+            AsWritten(Path.Combine(Quarantine, folder, Path.GetFileName(movedTo))),
+            AsWritten(FilePath(folder, name)),
+            overwrite: false);
+
+    /// <summary>Whether a recorded folder has been replaced by a link (SPEC.md §9.5).</summary>
+    /// <param name="folder">The folder name.</param>
+    /// <returns><see langword="true"/> when it is a link; never through one is anything read, moved or deleted.</returns>
+    internal bool IsLinkedFolder(string folder)
+    {
+        try
+        {
+            var path = FolderPath(folder);
+
+            return Directory.Exists(path) && IsLink(path);
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>Deletes a conversation's folder and everything in it.</summary>
     /// <param name="folder">The folder name.</param>
@@ -777,7 +824,7 @@ public sealed class FileLocationStore : IDisposable
     /// hand, and may be the person's. Removing it would delete bytes the agent never placed (SPEC.md §9.5).
     /// </remarks>
     internal bool HoldsTheRecordedFileOrNone(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks) recorded)
-        => HoldsTheRecordedFileOrNoneAt(FilePath(folder, name), recorded);
+        => IsLinkedFolder(folder) || HoldsTheRecordedFileOrNoneAt(FilePath(folder, name), recorded);
 
     /// <summary>Whether a file is on disk, is not, or cannot be told.</summary>
     /// <param name="folder">The conversation's folder name.</param>
@@ -793,6 +840,12 @@ public sealed class FileLocationStore : IDisposable
     /// </remarks>
     internal bool? IsOnDisk(string folder, SharedFileName name)
     {
+        // A recorded folder replaced by a link: the file placed is not there, whatever the link reaches.
+        if (IsLinkedFolder(folder))
+        {
+            return false;
+        }
+
         try
         {
             _ = File.GetAttributes(FilePath(folder, name));

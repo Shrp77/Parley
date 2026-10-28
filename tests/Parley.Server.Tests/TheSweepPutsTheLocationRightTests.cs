@@ -156,7 +156,26 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
 
         var notice = Assert.Single((await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct)).FileNotices);
         Assert.Equal(string.Empty, notice.Sha256Found);
+
+        // Its placer too: something other than Parley took it, and the placer can place it again.
+        Assert.Equal("terms.md", Assert.Single(
+            (await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct)).FileNotices).Name);
         Assert.Empty((await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
+    }
+
+    [Fact]
+    public async Task A_list_that_finds_a_file_missing_tells_its_placer()
+    {
+        // The list's own look, before any sweep it starts: the notice is raised by the list.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+        File.Delete(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "terms.md"));
+
+        Assert.Empty((await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
+
+        Assert.Equal("terms.md", Assert.Single(
+            (await billing.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Billing }, cancellationToken: Ct)).FileNotices).Name);
     }
 
     [Fact]

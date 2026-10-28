@@ -881,7 +881,7 @@ public static class ServeCommand
         }
     }
 
-    /// <summary>Runs the sweep of SPEC.md §6 until the broker stops.</summary>
+    /// <summary>Runs the broker's tick, its flags and retention pass (SPEC.md §6, §9.4), until the broker stops.</summary>
     /// <param name="runtime">The broker state.</param>
     /// <param name="output">Where to report a failure worth seeing.</param>
     /// <param name="cancellationToken">Stops the sweep.</param>
@@ -915,7 +915,7 @@ public static class ServeCommand
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    await output.WriteLineAsync($"Sweep failed: {exception.Message}")
+                    await output.WriteLineAsync($"The tick failed: {exception.Message}")
                         .ConfigureAwait(false);
                 }
             }
@@ -1134,7 +1134,7 @@ public static class ServeCommand
             .ConfigureAwait(false);
     }
 
-    /// <summary>How often to sweep.</summary>
+    /// <summary>How often the broker ticks.</summary>
     /// <returns>The interval.</returns>
     /// <remarks>
     /// Bounded rather than trusted. A pass costs a handful of indexed queries, and a mistyped

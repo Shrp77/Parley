@@ -12,7 +12,7 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// <b>Found by review, round 18.</b> Both commit before they delete the folders, and a folder held open (an editor with
 /// the file locked) left the files on disk for good: nothing reaches a folder the store no longer records. The operator
-/// had been told they went. Now the folder is marked and the next start deletes it. Only Windows refuses to delete a
+/// had been told they went. Now no row names it, so the next sweep deletes it. Only Windows refuses to delete a
 /// file held without sharing, so only there does the purge leave the folder for the start to finish; elsewhere the
 /// purge deletes it at once and the test still holds.
 /// </remarks>

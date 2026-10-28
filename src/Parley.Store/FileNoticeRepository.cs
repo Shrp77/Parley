@@ -99,7 +99,8 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <param name="placer">
     /// For a file found missing, its placer, told too: something other than Parley took it, and the placer is the one
-    /// that can place it again. <see langword="null"/> for a removal Parley made, which its placer or the person asked for.
+    /// that can place it again. <see langword="null"/> for a removal Parley made, by its placer, the person or a destroy,
+    /// purge or prune, which ask nothing of the placer.
     /// </param>
     /// <param name="placed">The hash placed, with <paramref name="placer"/>.</param>
     public async Task RaiseGoneAsync(

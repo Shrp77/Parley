@@ -373,7 +373,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         // **Every recorded folder, before and after**, rather than the ones the purge would delete, read before it: a
         // Request joining the agent to a conversation that has files can land between the read and the purge, and that
-        // conversation's folder was then left on disk with no row naming it, neither deleted nor marked nor counted.
+        // conversation's folder was then left on disk with no row naming it, until whatever next swept the location.
         var before = await RecordedFoldersAsync(context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);

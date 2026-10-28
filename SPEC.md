@@ -2826,7 +2826,9 @@ disk, including one a person made by hand. `~` cannot occur in an identifier, so
 never another conversation's own name; and a suffixed name whose path already reaches a folder, as `ABCDEF~2` is
 another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is written to and deleted only under
 its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
-takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. The choice is recorded in `conversation_folders` and kept until
+takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. A recorded
+folder replaced by a link holds none of its files: they are recorded gone, and no fetch, removal or move reaches
+through it. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation,
 and the next sweep deletes it, as it deletes everything else no row names (below): a folder a destroy or a purge could
 not delete when it ran (§14) among them. A destroy's or a purge's delete finishes once its rows have gone, whether or
@@ -2928,8 +2930,8 @@ what it found, and:
   case apart, a recorded name renamed in case is therefore not the recorded file, which is recorded gone
   and its placer told: nothing but Parley names a placed file.
 
-What the sweep cannot read, move or delete because another program holds it is left as it is and raised
-as a problem; a file it found tampered with and could not move is still never served, because a fetch
+What the sweep cannot read, move or delete is left as it is and raised as a problem: another program holds
+it, the broker may not, or the quarantine folder it would go to is a link, which is never moved through; a file it found tampered with and could not move is still never served, because a fetch
 hashes what it streams. One consequence is deliberate and so stated: a store restored from a backup
 older than its location has the files of every conversation newer than the backup deleted by its first
 sweep, because nothing names them.
@@ -2937,7 +2939,7 @@ sweep, because nothing names them.
 **A problem waits for the person.** Each file moved to quarantine, and each entry a sweep could not read,
 move or delete, is a problem the person is shown on every operator surface until they dismiss it
 (§10.2): what happened, the conversation and the path, and for a quarantined file the hash placed, the
-hash found and where it went. An entry another program holds is raised once while its problem waits,
+hash found and where it went. An entry the sweep cannot read, move or delete is raised once while its problem waits,
 however many sweeps find it. Dismissing deletes nothing. The quarantine directory is the person's:
 Parley moves files into it and never reads, serves, sweeps or deletes anything there, and it goes only
 with the store.
@@ -3105,7 +3107,7 @@ other could.
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
-| `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries another program held, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
+| `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries it could not read, move or delete, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
 | `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
 | `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete and how many of the person's requests were closed with no Result, how many agents' latest answer on the person's requests was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |

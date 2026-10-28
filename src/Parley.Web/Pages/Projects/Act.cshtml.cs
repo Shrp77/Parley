@@ -168,7 +168,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                           + "line it started with until it next starts.", false),
 
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
-                      + "sweep. Message text past the policy is deleted permanently: export a conversation "
+                      + "retention pass. Message text past the policy is deleted permanently: export a conversation "
                       + "first if it is worth keeping. Nothing on an open exchange, and nothing not yet "
                       + "collected, is removed.", true),
 
