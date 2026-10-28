@@ -287,6 +287,69 @@ public sealed class NothingIsReachedThroughALinkedFolderTests : IDisposable
     }
 
     [Fact]
+    public async Task A_destroy_deletes_nothing_through_a_location_that_is_a_junction()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "mklink");
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+        var (precious, other) = LinkTheLocation(broker);
+
+        var reply = await broker.ConnectAsOperator().DestroyAsync(
+            new Wire.ConversationRequest { ConversationId = "pricing" }, cancellationToken: Ct);
+        await broker.Runtime.Sweeper.IdleAsync();
+
+        var observed = $"verdict={reply.Verdict} preciousExists={File.Exists(precious)} otherExists={File.Exists(other)}";
+        TestContext.Current.SendDiagnosticMessage(observed);
+
+        Assert.True(File.Exists(precious) && File.Exists(other), "a destroy deleted through the location's link: " + observed);
+    }
+
+    [Fact]
+    public async Task A_purge_deletes_nothing_through_a_location_that_is_a_junction()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "mklink");
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+
+        await using (var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct))
+        {
+            await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+        }
+
+        var (precious, other) = LinkTheLocation(broker);
+        var operators = broker.ConnectAsOperator();
+        _ = await operators.RetireAsync(new Wire.AgentRequest { Agent = Billing }, cancellationToken: Ct);
+        var reply = await operators.PurgeAsync(new Wire.AgentRequest { Agent = Billing }, cancellationToken: Ct);
+        await broker.Runtime.Sweeper.IdleAsync();
+
+        var observed = $"verdict={reply.Verdict} preciousExists={File.Exists(precious)} otherExists={File.Exists(other)}";
+        TestContext.Current.SendDiagnosticMessage(observed);
+
+        Assert.True(File.Exists(precious) && File.Exists(other), "a purge deleted through the location's link: " + observed);
+    }
+
+    // The location replaced by a junction to a folder holding one of the recorded folder's name, as moving it to another
+    // drive and leaving a link behind would.
+    private (string Precious, string Other) LinkTheLocation(LoopbackBroker broker)
+    {
+        var outside = Directory.CreateDirectory(Path.Combine(_base, "outside")).FullName;
+        var pricing = Directory.CreateDirectory(Path.Combine(outside, "pricing")).FullName;
+        var precious = Path.Combine(pricing, "terms.md");
+        File.WriteAllText(precious, "the person's own terms, not Parley's");
+        var other = Path.Combine(pricing, "diary.md");
+        File.WriteAllText(other, "the person's diary");
+
+        var root = broker.Runtime.Files.Root;
+        Directory.Delete(root, recursive: true);
+        Run("mklink", $"/J \"{root}\" \"{outside}\"");
+        Assert.NotNull(new DirectoryInfo(root).LinkTarget);
+
+        return (precious, other);
+    }
+
+    [Fact]
     public async Task A_quarantine_directory_swapped_for_a_junction_is_not_moved_through()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "mklink");

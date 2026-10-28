@@ -711,8 +711,9 @@ public sealed class FileLocationStore : IDisposable
     {
         var path = FolderPath(folder);
 
-        // Only the folder itself, never one its name reaches as a short name: that one is somebody else's.
-        if (!Directory.Exists(Root) || !IsItsOwn(folder))
+        // Only the folder itself, never one its name reaches as a short name: that one is somebody else's. Nor anything in
+        // a location that is a link, which holds none of Parley's folders; the next sweep removes the link.
+        if (IsLinkedRoot(Root) || !Directory.Exists(Root) || !IsItsOwn(folder))
         {
             return true;
         }

@@ -250,6 +250,18 @@ public sealed class FilesOverTheWireTests
         Assert.True(found is null or "the person's", "the placement wrote over it");
 
         await broker.Runtime.Sweeper.IdleAsync();
+
+        // The read above can hold the file just as the sweep deletes it: then it is left, raised as locked, and the next
+        // sweep takes it.
+        if (File.Exists(path))
+        {
+            var problems = (await broker.ConnectAsOperator()
+                .ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems;
+            Assert.Contains(problems, p => p.Kind == Wire.FileProblemKind.Locked && p.Path.EndsWith(Path.GetFileName(path), StringComparison.Ordinal));
+
+            await broker.Runtime.Sweeper.SweepAsync(Ct);
+        }
+
         Assert.False(File.Exists(path), "the sweep left a file nothing placed");
     }
 
