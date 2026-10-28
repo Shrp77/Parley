@@ -45,6 +45,15 @@ public sealed class FilesCommandUsageTests : IAsyncDisposable
             ["files", "place", "a.md", "b.md", "--conversation", "pricing"],
             ["files", "place", "notes.md", "--conversation", "pricing", "--yes"],
             ["files", "list", "--name", "notes.md"],
+            ["files", "list", "--all"],
+            ["files", "problems", "notes.md"],
+            ["files", "problems", "--yes"],
+            ["files", "problems", "--conversation", "pricing"],
+            ["files", "dismiss"],
+            ["files", "dismiss", "1", "2"],
+            ["files", "dismiss", "1", "--all"],
+            ["files", "dismiss", "one"],
+            ["files", "prune", "--all"],
         ];
 
         var accepted = new List<string>();

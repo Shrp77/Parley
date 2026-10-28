@@ -96,8 +96,8 @@ quiet.
 
 File gone notices
 -----------------
-A notice that a file this agent fetched has gone is counted with
-the mail, and like the mail it is only a count: never the file's name, which
+A notice that a file this agent fetched or placed has gone, or was changed on
+disk by something other than Parley, is counted with the mail, and like the mail it is only a count: never the file's name, which
 its placer chose and which is as much a peer's words as a payload is. A notice
 wakes nothing -- it waits for the next inbox check -- and holding a turn open
 at ``Stop`` is asking for a turn, so there notices are mentioned only beside
@@ -319,7 +319,7 @@ def tally(unread: int, owed: int, notices: int = 0) -> str:
     # and is as much a peer's words as a payload is.
     if notices:
         parts.append(
-            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched has gone"
+            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched or placed has gone or was changed"
         )
 
     return " and ".join(parts)

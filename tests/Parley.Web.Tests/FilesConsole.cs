@@ -16,8 +16,8 @@ using Wire = Parley.Transport;
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// A console with one project whose broker answers the four file operations from a script, and a launcher that
-/// records instead of launching.
+/// A console with one project whose broker answers the file operations, and the file problems, from a script, and a
+/// launcher that records instead of launching.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -110,6 +110,15 @@ public sealed class ScriptedOperators : HttpMessageHandler
     /// <summary>Every location asked for.</summary>
     public List<Wire.FileLocationRequest> Described { get; } = [];
 
+    /// <summary>The problems every list of file problems returns, waiting or dismissed.</summary>
+    public List<Wire.FileProblemView> Problems { get; } = [];
+
+    /// <summary>Every list of file problems asked for.</summary>
+    public List<Wire.ListFileProblemsRequest> ProblemsListed { get; } = [];
+
+    /// <summary>Every problem dismissed, by its identifier.</summary>
+    public List<long> Dismissed { get; } = [];
+
     /// <summary>The conversations every conversation list returns.</summary>
     public List<string> Conversations { get; } = ["pricing"];
 
@@ -148,6 +157,8 @@ public sealed class ScriptedOperators : HttpMessageHandler
                 "/parley.v1.Operators/DescribeFileLocation" => Describe(Wire.FileLocationRequest.Parser.ParseFrom(message)),
                 "/parley.v1.Operators/ListConversations" => ListConversations(),
                 "/parley.v1.Operators/PlacePersonsFile" => Place(body),
+                "/parley.v1.Operators/ListFileProblems" => ListProblems(Wire.ListFileProblemsRequest.Parser.ParseFrom(message)),
+                "/parley.v1.Operators/DismissFileProblem" => Dismiss(Wire.DismissFileProblemRequest.Parser.ParseFrom(message)),
                 _ => null
             };
         }
@@ -262,6 +273,31 @@ public sealed class ScriptedOperators : HttpMessageHandler
         Placed.Add((header!, content));
 
         return Placing(header!, content);
+    }
+
+    private Wire.FileProblemsReply ListProblems(Wire.ListFileProblemsRequest asked)
+    {
+        ProblemsListed.Add(asked);
+
+        var reply = new Wire.FileProblemsReply { Machine = MachineName.Current, QuarantinePath = "/srv/parley/alpha.db.files-quarantine" };
+
+        reply.Problems.AddRange(Problems.Where(p => asked.IncludeDismissed || p.DismissedUtc.Length == 0));
+
+        return reply;
+    }
+
+    private Wire.DidItReply Dismiss(Wire.DismissFileProblemRequest asked)
+    {
+        Dismissed.Add(asked.Id);
+
+        var problem = Problems.FirstOrDefault(p => p.Id == asked.Id && p.DismissedUtc.Length == 0);
+
+        if (problem is not null)
+        {
+            problem.DismissedUtc = "2026-09-14T10:00:00Z";
+        }
+
+        return new Wire.DidItReply { Changed = problem is not null };
     }
 
     private Wire.FileLocationReply Describe(Wire.FileLocationRequest asked)

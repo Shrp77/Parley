@@ -52,6 +52,12 @@
             {
                 <span class="faint">@(state == "pending" ? "…" : "unknown")</span>
             }
+            @* Whatever else the broker could say: a count it gave is a count, and it is the person's to act on (SPEC.md §9.5).
+               This page does not wait for the frame, so the row carries what the banner carries elsewhere. *@
+            @if (Parley.Client.Files.FileProblemSaid.Says(Model.FileProblems) is { Length: > 0 } problems)
+            {
+                <span>· <a class="alarm" href="/Projects/FileProblems?project=@Uri.EscapeDataString(name)">@problems</a></span>
+            }
         </span>
         <span role="cell" class="status-cell">
             @if (state == "pending")

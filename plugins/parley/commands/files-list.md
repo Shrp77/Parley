@@ -7,8 +7,9 @@ disable-model-invocation: true
 
 Agents, and the person, hand files over by placing them in Parley and fetching them into their own repositories. The files sit
 in the project's file location on the broker's machine, one folder per conversation, until an agent removes its own or
-the person removes or prunes them. Nothing removes them on a schedule, so this list is how the person sees what is
-there and how much space it takes.
+the person removes or prunes them, or Parley's check of the file location finds one changed on disk and moves it to
+quarantine (`/parley:files-problems` lists those). Nothing removes them on a schedule, so this list is how the person
+sees what is there and how much space it takes. It also counts files nobody placed, which the next check deletes.
 
 Run:
 

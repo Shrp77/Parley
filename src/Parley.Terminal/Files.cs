@@ -14,8 +14,9 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>A list the person chooses from, built on the one choice dialog every door here already uses</b>, so it scrolls,
 /// sizes its description and puts the safe answer first like every other. Choosing a file offers opening it to read
-/// and removing it; the list also offers placing a file (<see cref="FilesPlacing"/>), the folder and removing every
-/// file. A file copied into the folder by hand is not in Parley and has no row. The two that delete go through their own
+/// and removing it; the list also offers placing a file (<see cref="FilesPlacing"/>), the folder, the problems sweeps
+/// found (<see cref="FilesProblems"/>) and removing every file. A file copied into the folder by hand is not in Parley,
+/// has no row, and goes at the next sweep. The two that delete go through their own
 /// files, <see cref="FilesRemoving"/> and <see cref="FilesPruning"/>, which are the only places the terminal calls
 /// them — the rule <c>SurfaceTests</c> holds every operator operation here to.
 /// </para>
@@ -181,7 +182,7 @@ internal static class Files
         int notListed)
     {
         var rows = files.Select(Row).ToList();
-        var choices = new List<string> { Close, FilesPlacing.Choice, OpenFolder };
+        var choices = new List<string> { Close, FilesPlacing.Choice, OpenFolder, FilesProblems.Choice };
 
         if (files.Count > 0)
         {
@@ -209,6 +210,12 @@ internal static class Files
             if (chosen == FilesPlacing.Choice)
             {
                 _ = FilesPlacing.OpenAsync(app, client, conversation, queue, done);
+                return;
+            }
+
+            if (chosen == FilesProblems.Choice)
+            {
+                _ = FilesProblems.OpenAsync(app, client, includeDismissed: false, queue, done);
                 return;
             }
 

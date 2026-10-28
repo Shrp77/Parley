@@ -1,0 +1,107 @@
+@page
+@model Parley.Web.Pages.Projects.FileProblemsModel
+@using Parley.Client.Files
+@{
+    ViewData["Title"] = $"File problems in {Model.Project}";
+}
+
+<h1>File problems in @Model.Project</h1>
+
+<nav class="page-links" aria-label="This project">
+    <a href="/Projects/Agents?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Back to @Model.Project</a>
+    <a href="/Projects/Files?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Files</a>
+    @if (Model.All)
+    {
+        <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">Only the waiting ones</a>
+    }
+    else
+    {
+        <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)&amp;all=true">Show the dismissed ones too</a>
+    }
+</nav>
+
+@if (Model.Outcome is { Length: > 0 } outcome)
+{
+    <p role="status" class="outcome">@outcome</p>
+}
+
+@if (Model.Problem is { Length: > 0 } problem)
+{
+    <p class="problem">@problem</p>
+}
+
+@if (Model.Report is { } report)
+{
+    @* What a sweep does, said once, so the list below is read for what it is: things nothing else would tell the person. *@
+    <p>
+        Parley checks the file location when the broker starts, and whenever an agent's fetch, removal or placement finds
+        something changed. A placed file whose bytes changed on disk is moved to quarantine, and anything Parley did not
+        place is deleted. What another program held could not be moved or deleted, and is listed here instead.
+    </p>
+
+    <p>@FileProblemSaid.Quarantine(report.Quarantine)</p>
+
+    @if (report.Problems.Count == 0)
+    {
+        <p>No file problems are waiting.</p>
+    }
+    else
+    {
+        <p>@report.Waiting waiting. @FileProblemSaid.DismissingDeletesNothing</p>
+
+        <table class="files">
+            <thead>
+                <tr>
+                    <th scope="col">Number</th>
+                    <th scope="col">What happened</th>
+                    <th scope="col">Conversation</th>
+                    <th scope="col">Path</th>
+                    <th scope="col">sha256 placed and found</th>
+                    <th scope="col">Moved to</th>
+                    <th scope="col">Raised</th>
+                    <th scope="col"><span class="visually-hidden">Dismiss</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in report.Problems)
+                {
+                    <tr>
+                        <td>#@item.Id</td>
+                        <td>@FileProblemSaid.Kind(item.Kind)<br /><small>@item.Detail</small></td>
+                        <td>@FileProblemSaid.Conversation(item)</td>
+                        <td><code>@item.Path</code></td>
+                        <td>
+                            @if (item.PlacedSha256 is { } placed)
+                            {
+                                <div>placed <code>@placed.Value</code></div>
+                            }
+                            @if (item.FoundSha256 is { } found)
+                            {
+                                <div>found <code>@found.Value</code></div>
+                            }
+                        </td>
+                        <td>@if (item.MovedTo is { } moved) { <code>@moved</code> }</td>
+                        <td>@Parley.Client.Rendering.LocalTime.Write(item.RaisedUtc)</td>
+                        <td>
+                            @if (item.DismissedUtc is null)
+                            {
+                                <form method="post" asp-page-handler="Dismiss">
+                                    <input type="hidden" name="project" value="@Model.Project" />
+                                    <input type="hidden" name="all" value="@(Model.All ? "true" : "false")" />
+                                    <input type="hidden" name="id" value="@item.Id" />
+                                    <button type="submit" class="quiet">Dismiss</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <span>Dismissed</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p>@Parley.Client.Rendering.LocalTime.Note()</p>
+    }
+}

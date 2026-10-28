@@ -32,6 +32,13 @@ public sealed class FileSweeper : IAsyncDisposable
     private readonly SemaphoreSlim _one = new(1, 1);
     private readonly CancellationTokenSource _stopping = new();
     private readonly object _gate = new();
+
+    /// <summary>Set once disposal has begun.</summary>
+    /// <remarks>
+    /// A runtime is disposed twice when a test stops its broker early and its fixture stops it again, and a second
+    /// <see cref="CancellationTokenSource.Cancel()"/> on a disposed source throws.
+    /// </remarks>
+    private int _disposed;
     private Task _running = Task.CompletedTask;
     private bool _again;
 
@@ -106,6 +113,11 @@ public sealed class FileSweeper : IAsyncDisposable
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         Task running;
 
         lock (_gate)

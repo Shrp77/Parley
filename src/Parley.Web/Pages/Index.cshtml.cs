@@ -14,7 +14,8 @@ namespace Parley.Web.Pages;
 /// <param name="Project">What the manifest says about it.</param>
 /// <param name="Health">What it speaks, or why it did not answer; null while it has not been asked.</param>
 /// <param name="Summary">What is in it; null while it has not been asked.</param>
-public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Health, ProjectSummary? Summary);
+/// <param name="FileProblems">How many file problems wait for the person; null when not asked or not known.</param>
+public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Health, ProjectSummary? Summary, int? FileProblems = null);
 
 /// <summary>One agent as the grid draws it.</summary>
 /// <param name="Project">The project it is registered in.</param>
@@ -215,7 +216,11 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         var implemented = BrokerDirectory.ReadAsync(async () =>
             await broker.ImplementsAsync(token).ConfigureAwait(false));
 
-        await Task.WhenAll(registry, conversations, proposals, implemented).ConfigureAwait(false);
+        // What sweeps of the file location found, in the row because this page does not wait for the frame's banner
+        // (SPEC.md §9.5). Unknown by the same rule.
+        var problems = Parley.Client.Files.FileProblemSaid.WaitingAsync(broker, token);
+
+        await Task.WhenAll(registry, conversations, proposals, implemented, problems).ConfigureAwait(false);
 
         var agents = await registry.ConfigureAwait(false);
         var counted = await conversations.ConfigureAwait(false);
@@ -230,7 +235,7 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         var health = new ProjectHealth(said.Value?.Protocol, said.Problem, said.Value?.BrokerVersion, said.Value?.StoreProblems);
 
-        return Partial("_ProjectRow", new ProjectRowState(project, health, summary));
+        return Partial("_ProjectRow", new ProjectRowState(project, health, summary, await problems.ConfigureAwait(false)));
     }
 
     /// <summary>Takes the person's seats and counts what is waiting for them, for the page to show once it has loaded.</summary>

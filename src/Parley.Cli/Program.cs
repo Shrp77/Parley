@@ -107,6 +107,11 @@ const string Help = """
                                                        machine, or say which machine holds them
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
+      parley files problems [--all]                    what sweeps of the location found: files
+                                                       changed on disk and moved to quarantine,
+                                                       and entries another program held
+      parley files dismiss <id>                        take a problem off the list; deletes
+                                                       nothing on disk
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
@@ -232,7 +237,8 @@ if (!forwarding && arguments.Exists(a => a is "--version" or "-v"))
     return 0;
 }
 
-var selectAllRepositories = TakeFlag("--all");
+// `files problems --all` is that command's own, so it is left for `parley files` to read, as its other options are.
+var selectAllRepositories = !(arguments.Count > 0 && arguments[0] == "files") && TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 
 // **`enroll --describe` reports what would be configured and changes nothing.** Taken centrally with

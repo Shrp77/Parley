@@ -29,10 +29,11 @@ internal sealed class LoopbackOperator : IAsyncDisposable
     private readonly ParleyServer _server;
     private readonly GrpcChannel _channel;
 
-    private LoopbackOperator(ParleyServer server, GrpcChannel channel)
+    private LoopbackOperator(ParleyServer server, GrpcChannel channel, BrokerRuntime runtime)
     {
         _server = server;
         _channel = channel;
+        Runtime = runtime;
 
         Operators = new Wire.Operators.OperatorsClient(channel);
         Agents = new Wire.Agents.AgentsClient(channel);
@@ -51,6 +52,9 @@ internal sealed class LoopbackOperator : IAsyncDisposable
 
     /// <summary>The agent surface, for tests that need to put something there first.</summary>
     public Wire.Agents.AgentsClient Agents { get; }
+
+    /// <summary>The broker itself, for tests that change its file location as another program would and then sweep.</summary>
+    public BrokerRuntime Runtime { get; }
 
     /// <summary>Starts a broker over a connection the caller owns.</summary>
     /// <param name="connection">The open, migrated, already-seeded connection.</param>
@@ -73,7 +77,7 @@ internal sealed class LoopbackOperator : IAsyncDisposable
         var server = ParleyServer.StartAsync(runtime, "http://127.0.0.1:0")
             .GetAwaiter().GetResult();
 
-        return new LoopbackOperator(server, GrpcChannel.ForAddress(server.Addresses[0]));
+        return new LoopbackOperator(server, GrpcChannel.ForAddress(server.Addresses[0]), runtime);
     }
 
     /// <summary>How long a teardown waits for the channel before it stops waiting and says so.</summary>

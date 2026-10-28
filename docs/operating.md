@@ -206,20 +206,47 @@ Files are hand-offs. An agent fetches one into its own repository, and whoever p
 once nobody needs it.
 
 You place a file of your own from the terminal or the console, into a conversation, the way an agent
-does; `parley files place` does the same from the command line. A file copied into a folder by hand
-is not in Parley: it is never listed or fetched, and the list counts such files so you can see they
-are there. If you change a placed file's bytes on disk, agents can no longer fetch it, and the agent
-that placed it can no longer remove it; you can. A file you delete by hand is gone, and every agent
-that fetched it is told.
+does; `parley files place` does the same from the command line. Placing is the only way a file gets
+in. Nothing else may change the folder, and Parley puts it right when something does.
+
+**The sweep.** The broker checks the whole file location when it starts, and again whenever an
+agent's fetch, removal or placement finds something wrong. This check is the sweep. It does three
+things:
+
+- A placed file whose bytes changed on disk is moved to the quarantine folder, and every agent that
+  fetched it, and the agent that placed it, is told it was changed. A fetch of a changed file is
+  refused, so no agent ever receives the changed bytes.
+- A placed file that is gone from disk is recorded as gone, and every agent that fetched it is told.
+- Everything else in the location is deleted: a file copied in by hand, a folder you made there, a
+  link, and a folder whose conversation no longer exists. A link is deleted as a link; what it
+  points to is not touched.
+
+So do not keep anything of your own in the file location. The list counts files that nothing
+placed, so you can see they are there before the next sweep deletes them. A folder that a destroy or
+a purge could not delete, because a file in it was open, goes at the next sweep too.
+
+**The quarantine folder** is `<store>.files-quarantine`, beside the file location on the broker's
+machine. It is yours. Parley moves changed files into it and never reads, serves or deletes
+anything there; look at what is there, and delete it when you are done. It goes only when the
+project's store does. A store restored from a backup older than its file location loses, at its
+first sweep, the files of every conversation newer than the backup, because the store no longer
+names them.
+
+**File problems.** Each file moved to quarantine, and each entry the sweep could not read, move or
+delete because another program held it open, is a file problem. The terminal shows how many are
+waiting on the status line and on the project's row, and F5 lists them. The web console shows a
+banner at the top of its pages, and the count on each project's row. Each problem says what happened, its
+conversation and path, and, for a quarantined file, the hash placed, the hash found and where in the
+quarantine folder it went. Dismiss a problem once you have dealt with it. Dismissing deletes nothing
+on disk. `parley files problems` lists them, `--all` includes the dismissed ones, and
+`parley files dismiss <id>` dismisses one.
 
 The terminal and the console both list the files, with who placed how much. You can place a file,
 open a file to read it, open its folder, remove files, or remove every file. Removing every file asks you to
 type the project's name. Opening only happens on the broker's own machine, and only `.md` and
-`.txt` files are ever opened. A file goes when its placer removes it, when you remove it, or when
-its conversation is destroyed or an agent that took part is purged. Nothing removes a file on a
-timer. A folder that could not be deleted then, because a file in it was open, is left holding a
-file named `.parley-pending-removal` and goes when the broker next starts. A folder of your own in the
-location is never touched.
+`.txt` files are ever opened. A file goes when its placer removes it, when you remove it, when
+its conversation is destroyed or an agent that took part is purged, or when a sweep finds it changed
+or gone. Nothing removes a file on a timer.
 
 ## The command line
 
@@ -237,7 +264,7 @@ parley enroll <folder>              find repositories, choose some, configure an
 parley registry                     every agent, what it owns, and its workspace
 parley open                         every conversation with an exchange still open
 parley waiting <agent|role>         how many messages and polls await an agent
-parley files place|list|remove|prune|open|folder
+parley files place|list|remove|prune|open|folder|problems|dismiss
 parley web-ui [<url>]               the web console
 parley terminal                     the terminal (the same as `parley` with no arguments)
 parley --help                       the same list

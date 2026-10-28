@@ -9,6 +9,7 @@
 
 <nav class="page-links" aria-label="This project">
     <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
+    <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">File problems</a>
     @if (!string.IsNullOrWhiteSpace(Model.Conversation))
     {
         <a href="/Projects/Files?project=@Model.Project">Every conversation's files</a>
@@ -83,8 +84,8 @@ else if (Model.Listing is { } listing)
         <button type="submit" class="quiet">Show</button>
     </form>
 
-    @* The only way the person's file gets in: one copied into a folder by hand is never listed. A placed file is never
-       changed, so a new version goes under a new name. *@
+    @* The only way the person's file gets in: one copied into a folder by hand is never listed, and the next sweep
+       deletes it. A placed file is never changed, so a new version goes under a new name. *@
     <h2>Place a file</h2>
     @if (Model.Placeable.Count == 0)
     {

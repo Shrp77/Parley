@@ -1393,6 +1393,13 @@ internal sealed class Shell : Window
             mail += $"  {proposed} roadmap{(proposed == 1 ? string.Empty : "s")} proposed ({ProposalsKey})";
         }
 
+        // **File problems waiting, with the key that opens them**, for the same reason: a sweep found something only the
+        // person decides about (SPEC.md §9.5), and nothing else on the screen would say so.
+        if (FileProblems is > 0)
+        {
+            mail += $"  {Parley.Client.Files.FileProblemSaid.Says(FileProblems)} ({FileProblemsKey})";
+        }
+
         // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
         // wider than two hundred columns.
         _status.Text = Fits(
@@ -1731,6 +1738,68 @@ internal sealed class Shell : Window
 
     /// <summary>The key that opens the roadmaps agents have proposed.</summary>
     internal static Key ProposalsKey => Key.F4;
+
+    /// <summary>The key that opens the file problems sweeps found.</summary>
+    /// <remarks>
+    /// F5 rather than F6, which the toolkit already takes for moving between groups of views.
+    /// </remarks>
+    internal static Key FileProblemsKey => Key.F5;
+
+    /// <summary>Opens the file problems of the project in view, or of the one selected in the list.</summary>
+    /// <returns>When the list has been queued.</returns>
+    /// <remarks>
+    /// Global rather than a pane's, for the reason the proposals are: a problem with the file location belongs to the
+    /// project, not to the agent or conversation under the cursor, and the person should reach it from wherever the
+    /// count on the status line is. What is said afterwards counts again, so a dismissal is reflected at once rather than
+    /// at the next poll.
+    /// </remarks>
+    private Task OpenFileProblems()
+    {
+        if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        _ = FilesProblems.OpenAsync(app, client, includeDismissed: false, Queue, async said =>
+        {
+            Said = said;
+
+            await CountFileProblemsAsync(project, CancellationToken.None).ConfigureAwait(false);
+        });
+
+        return Settled;
+    }
+
+    /// <summary>Reads how many file problems are waiting in a project, and shows it while that project is in view.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="arriving">Whether the person has just come to this project, when an unknown count shows nothing.</param>
+    /// <returns>When the count has been read and the line redrawn.</returns>
+    /// <remarks>
+    /// Unknown leaves what was shown, as the proposals do: a broker that did not answer has not said there are none. Not
+    /// when arriving from another project, whose count would otherwise be shown under this one's name.
+    /// </remarks>
+    private async Task CountFileProblemsAsync(ProjectSettings project, CancellationToken cancellationToken, bool arriving = false)
+    {
+        var waiting = await Parley.Client.Files.FileProblemSaid
+            .WaitingAsync(new BrokerClient(_directory.ClientFor(project)), cancellationToken)
+            .ConfigureAwait(false);
+
+        if ((waiting is null && !arriving)
+            || (Current ?? Projects.Selected) is not { } shown
+            || !string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (FileProblems != waiting)
+        {
+            FileProblems = waiting;
+            Relay();
+        }
+    }
 
     /// <summary>Opens the proposed roadmaps of the project in view, or of the one selected in the list.</summary>
     /// <returns>When the list has been queued.</returns>
@@ -2216,6 +2285,22 @@ internal sealed class Shell : Window
                     Category: ActionCategory.Project,
                     Chord: ProposalsKey,
                     Order: 90),
+            }
+            : Array.Empty<RegionAction>(),
+
+        // **What sweeps of the file location found, from wherever a project is in view**, beside the proposals for the
+        // same reason, and offered whether or not any are waiting so the dismissed ones can be read again.
+        .. _place.Viewing is not Viewing.Configuration
+           && (Current ?? Projects.Selected) is not null
+            ? new[]
+            {
+                new RegionAction(
+                    default,
+                    FilesProblems.Title,
+                    OpenFileProblems,
+                    Category: ActionCategory.Project,
+                    Chord: FileProblemsKey,
+                    Order: 95),
             }
             : Array.Empty<RegionAction>(),
 
@@ -3489,6 +3574,14 @@ internal sealed class Shell : Window
     /// </remarks>
     internal int? Proposals { get; private set; }
 
+    /// <summary>How many file problems are waiting for this person in the project in view, or null when it is not known.</summary>
+    /// <remarks>
+    /// Read with the proposals, when a project is opened and on the mail's poll, and shown beside them: a file a sweep moved
+    /// to quarantine is the person's to decide about (SPEC.md §9.5), and only a count on the screen tells them it happened.
+    /// Unknown is never shown as none.
+    /// </remarks>
+    internal int? FileProblems { get; private set; }
+
     /// <summary>What is said when an open transcript could not be read again.</summary>
     /// <param name="problem">What the read reported, which is a broker's words and neutralised.</param>
     /// <returns>The sentence.</returns>
@@ -3766,6 +3859,13 @@ internal sealed class Shell : Window
             else
             {
                 Proposals = null;
+            }
+
+            // The file problems on the same poll: a sweep runs whenever an agent's fetch or placement finds the location
+            // changed, so a problem can be raised while the person sits in a conversation.
+            if (Current is { } counting)
+            {
+                await CountFileProblemsAsync(counting, cancellationToken).ConfigureAwait(false);
             }
 
             // The confirmed roadmaps on the same poll: one confirmed from the web console, or by a revision, would otherwise
@@ -4438,6 +4538,9 @@ internal sealed class Shell : Window
             ShowProposals([]);
             Proposals = null;
         }
+
+        // The file problems waiting, with the proposals and by the same rule.
+        await CountFileProblemsAsync(project, cancellationToken, arriving).ConfigureAwait(false);
 
         // The roadmaps already confirmed, listed above the conversations. Unknown leaves what was shown.
         if (await BrokerDirectory.ReadAsync(async () =>
@@ -5332,8 +5435,11 @@ internal sealed class Shell : Window
                 .ConfigureAwait(false);
             int? proposals = counted.Reachable ? counted.Value : null;
 
+            // The file problems waiting, by the same rule: null when the broker cannot say.
+            var problems = await Parley.Client.Files.FileProblemSaid.WaitingAsync(client, cancellationToken).ConfigureAwait(false);
+
             var figures = registry.Value is { } agents && conversations.Value is { } page
-                ? ProjectFigures.Of(agents, page, proposals)
+                ? ProjectFigures.Of(agents, page, proposals, problems)
                 : null;
 
             return (project.Name.Value, Health: health, Figures: figures);

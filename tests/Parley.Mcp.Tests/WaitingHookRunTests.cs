@@ -544,7 +544,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         var output = Run(hookEvent);
 
-        Assert.Contains("1 notice that a file you fetched has gone", output, StringComparison.Ordinal);
+        Assert.Contains("1 notice that a file you fetched or placed has gone or was changed", output, StringComparison.Ordinal);
         Assert.DoesNotContain("price-snapshot", output, StringComparison.Ordinal);
         Assert.DoesNotContain("uncollected message", output, StringComparison.Ordinal);
     }

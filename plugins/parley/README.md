@@ -19,10 +19,11 @@
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
 | `/parley:files-open` | Opens a placed file to read, on the broker's machine |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
+| `/parley:files-problems` | Lists what Parley's checks of the file location found, and dismisses one when you ask |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has gone |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched or placed has gone or was changed |
 
-The six `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
+The seven `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
 they act on every agent's files at once, or place a file as the person.
 
 ## Why there is a hook

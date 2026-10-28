@@ -11,7 +11,7 @@ namespace Parley.Terminal;
 /// <remarks>
 /// <para>
 /// <b>The only way the person hands an agent a file.</b> A file copied into a conversation's folder by hand is never
-/// listed (§9.5), so a surface that only opened the folder would leave the person no way in.
+/// listed and the next sweep deletes it (§9.5), so a surface that only opened the folder would leave the person no way in.
 /// </para>
 /// <para>
 /// <b>From the project's files, the conversation is chosen first</b>; from a conversation's files it is that one. Only

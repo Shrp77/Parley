@@ -8,12 +8,13 @@ using Parley.Core;
 namespace Parley.Web.Pages.Projects;
 
 /// <summary>
-/// A project's file location: what is in it, and the person's five operations on it (SPEC.md §9.5, §10.2).
+/// A project's file location: what is in it, and the person's five operations on it (SPEC.md §9.5, §10.2). The
+/// problems sweeps found are on their own page, <see cref="FileProblemsModel"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <b>Placing is how the person hands an agent a file.</b> A file copied into a conversation's folder by hand is never
-/// listed (§9.5), so the page takes an upload and places it as the person, into a conversation the project lists. The
+/// listed and the next sweep deletes it (§9.5), so the page takes an upload and places it as the person, into a conversation the project lists. The
 /// browser posts the whole file in one request, which is why this page, alone, bounds a request's size
 /// (<see cref="PlaceLimitBytes"/>).
 /// </para>
