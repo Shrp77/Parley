@@ -38,10 +38,23 @@ internal static class InboxCollection
         // acknowledgement may be on its way cannot leave the broker recording a collection this caller then dropped.
         using var call = agents.DrainInbox();
 
-        await call.RequestStream.WriteAsync(new Wire.DrainInboxFrame { Collect = request }, cancellationToken)
-            .ConfigureAwait(false);
+        bool arrived;
 
-        if (!await call.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false))
+        try
+        {
+            await call.RequestStream.WriteAsync(new Wire.DrainInboxFrame { Collect = request }, cancellationToken)
+                .ConfigureAwait(false);
+
+            arrived = await call.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false);
+        }
+        catch (RpcException aborted) when (cancellationToken.IsCancellationRequested)
+        {
+            // Giving up can surface as the call aborted rather than cancelled, depending on where it lands. It is the
+            // caller's own cancellation either way, never the broker being unreachable.
+            throw new OperationCanceledException("The collection was given up before its reply arrived.", aborted, cancellationToken);
+        }
+
+        if (!arrived)
         {
             throw new RpcException(new Status(StatusCode.Unavailable, "The broker ended the collection without a reply."));
         }

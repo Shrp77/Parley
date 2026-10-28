@@ -690,26 +690,26 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <param name="limit">The most to return.</param>
     /// <param name="excluding">Notices a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The notices, oldest first, with the identifiers <see cref="MarkNoticesDeliveredAsync"/> takes.</returns>
+    /// <returns>The notices, oldest first, with the keys <see cref="MarkNoticesDeliveredAsync"/> takes.</returns>
     /// <remarks>
     /// Never wakes anybody: a notice is collected when the agent next looks, as a file's gone notice is. Marked apart
     /// from the read because a collection is recorded only once the agent acknowledges it (SPEC.md §6).
     /// </remarks>
-    public async Task<(IReadOnlyList<RoadmapNotice> Notices, IReadOnlyList<long> Ids)> PeekNoticesAsync(
+    public async Task<(IReadOnlyList<RoadmapNotice> Notices, IReadOnlyList<string> Keys)> PeekNoticesAsync(
         AgentName agent,
         int limit,
-        IReadOnlyCollection<long>? excluding = null,
+        IReadOnlyCollection<string>? excluding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
 
         var rows = (await _connection.QueryAsync<NoticeRow>(
             new CommandDefinition(
-                """
-                SELECT id AS Id, proposal_id AS ProposalId, title AS Title, outcome AS Outcome,
+                $"""
+                SELECT {NoticeKey} AS Key, proposal_id AS ProposalId, title AS Title, outcome AS Outcome,
                        created_utc AS CreatedUtc
                   FROM roadmap_notices
-                 WHERE agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Held
+                 WHERE agent = @Agent AND delivered_utc IS NULL AND {NoticeKey} NOT IN @Held
                  ORDER BY id
                  LIMIT @Limit;
                 """,
@@ -724,30 +724,34 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                     ParseState(r.Outcome),
                     ExchangeRow.ParseTimestamp(r.CreatedUtc))),
             ],
-            [.. rows.Select(r => r.Id)]);
+            [.. rows.Select(r => r.Key)]);
     }
 
     /// <summary>Records notices an agent has acknowledged collecting.</summary>
-    /// <param name="ids">The identifiers <see cref="PeekNoticesAsync"/> returned.</param>
+    /// <param name="keys">The keys <see cref="PeekNoticesAsync"/> returned.</param>
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>A task that completes when they are marked.</returns>
+    /// <remarks>
+    /// By key, never by id alone: an id is reused once its row is deleted (a purge deletes an agent's notices), so a
+    /// collection acknowledged late would otherwise mark another agent's notice delivered unread.
+    /// </remarks>
     public async Task MarkNoticesDeliveredAsync(
-        IReadOnlyCollection<long> ids,
+        IReadOnlyCollection<string> keys,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(ids);
+        ArgumentNullException.ThrowIfNull(keys);
 
-        if (ids.Count == 0)
+        if (keys.Count == 0)
         {
             return;
         }
 
         await _connection.ExecuteAsync(
             new CommandDefinition(
-                "UPDATE roadmap_notices SET delivered_utc = @When WHERE id IN @Ids AND delivered_utc IS NULL;",
-                new { Ids = ids, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                $"UPDATE roadmap_notices SET delivered_utc = @When WHERE {NoticeKey} IN @Keys AND delivered_utc IS NULL;",
+                new { Keys = keys, When = ExchangeRow.FormatTimestamp(nowUtc) },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
@@ -758,11 +762,11 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <returns>How many are undelivered.</returns>
     public async Task<int> CountNoticesAsync(
         AgentName agent,
-        IReadOnlyCollection<long>? excluding = null,
+        IReadOnlyCollection<string>? excluding = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
-                "SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Held;",
+                $"SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL AND {NoticeKey} NOT IN @Held;",
                 new { Agent = agent.Value, Held = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
@@ -1293,7 +1297,25 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
     private sealed record ReservationRow(long RoadmapId, long RoadmapNumber, string Title, long ItemNumber, long Removed);
 
-    private sealed record NoticeRow(long Id, long ProposalId, string Title, string Outcome, string CreatedUtc);
+    // A roadmap notice as a collection holds it: its id with what no reuse of the id repeats, since a proposal's id
+    // never is (migration 002).
+    private const string NoticeKey =
+        "(id || char(31) || agent || char(31) || proposal_id || char(31) || outcome || char(31) || created_utc)";
+
+    // A class with setters, as FactsRow is: an expression column carries no type for Dapper to match a constructor
+    // against when the read returns nothing.
+    private sealed class NoticeRow
+    {
+        public string Key { get; set; } = string.Empty;
+
+        public long ProposalId { get; set; }
+
+        public string Title { get; set; } = string.Empty;
+
+        public string Outcome { get; set; } = string.Empty;
+
+        public string CreatedUtc { get; set; } = string.Empty;
+    }
 
     // A class with setters rather than a record: the subselects here return NULL for a conversation that has
     // none of something, and a NULL column carries no type for Dapper to match a constructor against.

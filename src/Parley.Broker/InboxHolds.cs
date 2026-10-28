@@ -14,7 +14,7 @@ public sealed class InboxHold
         IReadOnlyList<long> messages,
         IReadOnlyList<long> requests,
         IReadOnlyList<string> fileNotices,
-        IReadOnlyList<long> roadmapNotices)
+        IReadOnlyList<string> roadmapNotices)
     {
         Agent = agent;
         Messages = messages;
@@ -35,8 +35,8 @@ public sealed class InboxHold
     /// <summary>Gets the keys of the gone notices handed over.</summary>
     public IReadOnlyList<string> FileNotices { get; }
 
-    /// <summary>Gets the roadmap notices handed over.</summary>
-    public IReadOnlyList<long> RoadmapNotices { get; }
+    /// <summary>Gets the keys of the roadmap notices handed over.</summary>
+    public IReadOnlyList<string> RoadmapNotices { get; }
 }
 
 /// <summary>Every collection in flight: handed over, not yet acknowledged (SPEC.md §6).</summary>
@@ -82,7 +82,7 @@ public sealed class InboxHolds
     /// <summary>What collections in flight hold for an agent.</summary>
     /// <param name="agent">The agent.</param>
     /// <returns>The held messages, gone-notice keys and roadmap notices.</returns>
-    internal (HashSet<long> Messages, HashSet<string> FileNotices, HashSet<long> RoadmapNotices) HeldFor(AgentName agent)
+    internal (HashSet<long> Messages, HashSet<string> FileNotices, HashSet<string> RoadmapNotices) HeldFor(AgentName agent)
     {
         lock (_gate)
         {

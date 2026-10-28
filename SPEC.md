@@ -999,7 +999,9 @@ way, or ended by a broker that stopped — records nothing, and the next collect
 collection is therefore delivered at least once. A caller keeps a reply that has arrived whole, whatever becomes of
 the call after it, so a collection is lost only if the caller's own process ends between the reply and its use; and
 it arrives twice when the broker did not record an acknowledgement the caller sent, because the broker stopped or the
-call broke first. Nothing about a hold waits on a timer: it ends with its call.
+call broke first. Nothing about a hold waits on a timer: it ends with its call. An acknowledgement records only what its
+collection handed over, matched by more than a row's id, which is reused once the row is deleted: one held across a
+purge never marks another agent's notice delivered.
 
 **A conversation waiting only on a vote is flagged as well.** Once every exchange in a conversation
 being polled has closed and nobody asked has declined, the participants that have not answered are
