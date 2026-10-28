@@ -515,6 +515,43 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
             : new FileLocationAnswer(null, RefusalOf(reply.Refusal ?? new Wire.FileRefusal()));
     }
 
+    /// <inheritdoc/>
+    public async Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.ListFileProblemsAsync(
+            new Wire.ListFileProblemsRequest { IncludeDismissed = includeDismissed },
+            cancellationToken: cancellationToken);
+
+        return new FileProblemsReport(
+            [.. reply.Problems.Select(ProblemOf)],
+            new FileLocation(reply.Machine, reply.QuarantinePath));
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> DismissFileProblemAsync(long id, CancellationToken cancellationToken = default) =>
+        (await _operators.DismissFileProblemAsync(new Wire.DismissFileProblemRequest { Id = id }, cancellationToken: cancellationToken))
+            .Changed;
+
+    private static FileProblem ProblemOf(Wire.FileProblemView view) => new(
+        view.Id,
+        view.Kind switch
+        {
+            Wire.FileProblemKind.Quarantined => FileProblemKind.Quarantined,
+            Wire.FileProblemKind.Locked => FileProblemKind.Locked,
+            _ => throw new InvalidOperationException(
+                $"The broker reported a file problem of a kind this build does not know ({view.Kind}). It speaks a different protocol."),
+        },
+        Blank(view.ConversationId),
+        view.Path,
+        HashOrNone(view.Sha256Placed),
+        HashOrNone(view.Sha256Found),
+        Blank(view.MovedTo),
+        view.Detail,
+        DateTimeOffset.Parse(view.RaisedUtc, System.Globalization.CultureInfo.InvariantCulture),
+        string.IsNullOrEmpty(view.DismissedUtc) ? null : DateTimeOffset.Parse(view.DismissedUtc, System.Globalization.CultureInfo.InvariantCulture));
+
+    private static ContentHash? HashOrNone(string text) => string.IsNullOrEmpty(text) ? null : ContentHash.Parse(text);
+
     /// <summary>Reads a shared file from the wire.</summary>
     /// <param name="view">The wire view.</param>
     /// <returns>The file.</returns>
@@ -562,6 +599,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
         Wire.FileRejection.SafeNameTaken => FileRejection.SafeNameTaken,
         Wire.FileRejection.NameHoldsOtherContent => FileRejection.NameHoldsOtherContent,
+        Wire.FileRejection.Tampered => FileRejection.Tampered,
         _ => throw new InvalidOperationException(
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };

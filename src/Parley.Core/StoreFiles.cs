@@ -59,6 +59,15 @@ public static class StoreFiles
     public const string FilesIncoming = ".files-incoming";
 
     /// <summary>
+    /// Where a sweep moves placed files whose bytes on disk no longer match what was placed (SPEC.md §9.5).
+    /// </summary>
+    /// <remarks>
+    /// Beside the location and never inside it, so nothing Parley lists, serves or sweeps reaches a tampered file, and
+    /// kept for the person, who decides what becomes of it. Deleted only with the store.
+    /// </remarks>
+    public const string FilesQuarantine = ".files-quarantine";
+
+    /// <summary>
     /// Begins the name of a copy of the store taken before it was migrated, followed by the schema reached and the time.
     /// </summary>
     /// <remarks>

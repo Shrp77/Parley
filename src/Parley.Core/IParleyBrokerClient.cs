@@ -334,6 +334,24 @@ public interface IParleyBrokerClient
         string? name = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>List what sweeps of the file location found and could not leave as it was.</summary>
+    /// <param name="includeDismissed">Whether to include the problems the person dismissed.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The problems, those waiting first, and where the quarantine directory is.</returns>
+    /// <remarks>
+    /// The person's alone (SPEC.md §9.5): a file moved to quarantine and an entry another program held are nobody's
+    /// message. A surface shows how many are waiting wherever the person is, and draws each path as somebody else's text,
+    /// because what was put on disk by something other than Parley was never checked.
+    /// </remarks>
+    Task<FileProblemsReport> ListFileProblemsAsync(bool includeDismissed = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Dismiss a problem the person has seen.</summary>
+    /// <param name="id">The problem.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns><see langword="true"/> when a waiting problem was dismissed.</returns>
+    /// <remarks>Deletes nothing on disk: a quarantined file stays for the person to look at or delete.</remarks>
+    Task<bool> DismissFileProblemAsync(long id, CancellationToken cancellationToken = default);
+
     /// <summary>List the project's roadmaps.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>One summary per roadmap.</returns>

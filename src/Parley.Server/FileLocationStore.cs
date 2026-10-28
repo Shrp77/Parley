@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Parley.Core;
 
@@ -49,22 +50,28 @@ public sealed class FileLocationStore : IDisposable
     /// <summary>Opens a file location.</summary>
     /// <param name="root">The location: a directory holding one folder per conversation.</param>
     /// <param name="incoming">The staging directory, beside the location and never inside it.</param>
-    /// <param name="deleteOnDispose">Whether both directories are deleted when this is disposed, which only a test's temporary location wants.</param>
+    /// <param name="deleteOnDispose">Whether the directories are deleted when this is disposed, which only a test's temporary location wants.</param>
     /// <param name="createStaging">
     /// Opens a staging file for writing. A seam, so a test can run out of disk on demand; <see langword="null"/>
     /// opens a real file.
+    /// </param>
+    /// <param name="quarantine">
+    /// Where a sweep moves placed files whose bytes no longer match, beside the location and never inside it, or
+    /// <see langword="null"/> for the location's own path followed by <c>-quarantine</c>.
     /// </param>
     public FileLocationStore(
         string root,
         string incoming,
         bool deleteOnDispose = false,
-        Func<string, Stream>? createStaging = null)
+        Func<string, Stream>? createStaging = null,
+        string? quarantine = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(root);
         ArgumentException.ThrowIfNullOrEmpty(incoming);
 
         Root = Path.GetFullPath(root);
         Incoming = Path.GetFullPath(incoming);
+        Quarantine = Path.GetFullPath(quarantine ?? Root + "-quarantine");
         _deleteOnDispose = deleteOnDispose;
         _createStaging = createStaging
             ?? (path => new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, FileLimits.ChunkBytes));
@@ -75,6 +82,10 @@ public sealed class FileLocationStore : IDisposable
 
     /// <summary>The staging directory's absolute path.</summary>
     public string Incoming { get; }
+
+    /// <summary>The quarantine directory's absolute path (SPEC.md §9.5).</summary>
+    /// <remarks>The person's: Parley moves files into it and never reads, serves, sweeps or deletes anything there.</remarks>
+    public string Quarantine { get; }
 
     /// <summary>Whether a disk error means there is no space left.</summary>
     /// <param name="error">The error.</param>
@@ -140,86 +151,144 @@ public sealed class FileLocationStore : IDisposable
         Directory.CreateDirectory(Incoming);
     }
 
-    /// <summary>The file a destroy or a purge leaves in a folder it could not delete, so a later start deletes it.</summary>
-    internal const string LeftBehind = ".parley-pending-removal";
-
-    /// <summary>Marks a destroyed conversation's folder to be deleted when the broker next starts, then deletes it.</summary>
-    /// <param name="folder">The folder name, as the store recorded it before its row went.</param>
+    /// <summary>Moves a placed file whose bytes no longer match what was placed into the quarantine directory.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="nowUtc">When the sweep found it, which names the copy so two never collide.</param>
+    /// <returns>Where it now is, as a path inside the quarantine directory with <c>/</c> between its parts.</returns>
+    /// <exception cref="IOException">Another program holds the file, or the move failed.</exception>
+    /// <exception cref="UnauthorizedAccessException">The broker may not move it.</exception>
     /// <remarks>
-    /// <para>
-    /// A destroy or a purge commits before it deletes, so once its rows have gone nothing else names the folder: a
-    /// folder it could not delete would stay on disk for good, though the operator was told its files went. Only a
-    /// marked folder is deleted at a start, because the location also holds what a person put there by hand and what a
-    /// store restored from a backup no longer records (SPEC.md §9.5); neither is Parley's to delete.
-    /// </para>
-    /// <para>
-    /// **Marked before the delete starts, and the mark deleted last**, so a delete that stops part way leaves the
-    /// folder marked however it stopped: a file held open, an entry it could not delete, or the process ending.
-    /// </para>
+    /// Moved rather than deleted (SPEC.md §9.5), so the person can see what the bytes became and where they may have
+    /// spread, and beside the location rather than in it, so nothing Parley serves, lists or sweeps ever reaches it.
     /// </remarks>
-    public void DeleteOrMark(string folder)
+    internal string QuarantineFile(string folder, SharedFileName name, DateTimeOffset nowUtc)
     {
-        Mark(folder);
-        _ = DeleteFolder(folder);
+        var source = AsWritten(FilePath(folder, name));
+        var into = Directory.CreateDirectory(Path.Combine(Quarantine, folder)).FullName;
+        var copy = nowUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-" + name.Value;
+
+        File.Move(source, AsWritten(Path.Combine(into, copy)), overwrite: false);
+
+        return folder + "/" + copy;
     }
 
-    private void Mark(string folder)
+    /// <summary>Deletes everything in the location that is not a recorded file directly in its own recorded folder.</summary>
+    /// <param name="kept">Each recorded folder, by the name the store recorded, with the names of its recorded files.</param>
+    /// <returns>Each entry that could not be deleted, as a path inside the location, with what stopped it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Called by a sweep inside the store's turn and while it holds every file, so no placement commits and no download
+    /// reads while it runs (SPEC.md §9.5). A file put in a folder by hand, a subfolder, a link, a recorded name now
+    /// holding something other than a file, and a folder no conversation owns all go; a link goes as a link and is
+    /// never entered.
+    /// </para>
+    /// <para>
+    /// A name differing from a recorded one only in case is that name where the disk does not tell case apart, and goes
+    /// where it does, since the recorded spelling is then beside it.
+    /// </para>
+    /// </remarks>
+    internal IReadOnlyList<(string Path, string? Folder, Exception Error)> DeleteUnrecorded(
+        IReadOnlyDictionary<string, IReadOnlySet<string>> kept)
+    {
+        ArgumentNullException.ThrowIfNull(kept);
+
+        var failed = new List<(string, string?, Exception)>();
+
+        if (!Directory.Exists(Root))
+        {
+            return failed;
+        }
+
+        var tops = Entries(AsWritten(Root), failed, null, null);
+
+        foreach (var entry in tops)
+        {
+            var top = Path.GetFileName(entry);
+
+            if (IsRealDirectory(entry) && Recorded(top, kept.Keys, tops) is { } recorded)
+            {
+                var inside = Entries(entry, failed, top, top);
+
+                foreach (var one in inside)
+                {
+                    var name = Path.GetFileName(one);
+
+                    if (!(IsRealFile(one) && Recorded(name, kept[recorded], inside) is not null))
+                    {
+                        Remove(one, top + "/" + name, recorded, failed);
+                    }
+                }
+            }
+            else
+            {
+                Remove(entry, top, null, failed);
+            }
+        }
+
+        return failed;
+    }
+
+    // The recorded name an entry on disk is, if any. Names are one name whatever their case (SPEC.md §9.5), so on a disk
+    // that does not tell case apart an entry renamed only in case is still the recorded one. On a disk that does, the
+    // recorded spelling is there beside it, and the other spelling is a different entry, put there by something else.
+    private static string? Recorded(string onDisk, IEnumerable<string> recorded, IReadOnlyCollection<string> beside)
+    {
+        foreach (var name in recorded)
+        {
+            if (string.Equals(name, onDisk, StringComparison.Ordinal))
+            {
+                return name;
+            }
+
+            if (string.Equals(name, onDisk, StringComparison.OrdinalIgnoreCase)
+                && !beside.Any(b => string.Equals(Path.GetFileName(b), name, StringComparison.Ordinal)))
+            {
+                return name;
+            }
+        }
+
+        return null;
+    }
+
+    private static List<string> Entries(
+        string directory, List<(string, string?, Exception)> failed, string? path, string? folder)
     {
         try
         {
-            // Never through a link: the mark would land in somebody else's directory.
-            if (!IsItsOwn(folder) || !Directory.Exists(FolderPath(folder)) || IsLink(FolderPath(folder)))
+            return [.. Directory.EnumerateFileSystemEntries(directory)];
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            failed.Add((path ?? ".", folder, unreadable));
+            return [];
+        }
+    }
+
+    private static void Remove(string entry, string path, string? folder, List<(string, string?, Exception)> failed)
+    {
+        try
+        {
+            if ((File.GetAttributes(entry) & FileAttributes.Directory) != 0)
             {
-                return;
+                DeleteTree(entry);
             }
-
-            // Whatever already holds the name goes first, as itself, and the mark is only ever a new file: a hard or
-            // symbolic link put there by hand would otherwise carry the write to the file it reaches, outside the location.
-            var mark = Path.Combine(FolderPath(folder), LeftBehind);
-            TryDelete(mark);
-
-            using (new FileStream(mark, FileMode.CreateNew, FileAccess.Write))
+            else
             {
+                File.Delete(entry);
             }
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
-            // Nothing more can be done from here: the folder stays, as it did before there was a mark.
+            failed.Add((path, folder, held));
         }
     }
 
-    /// <summary>Deletes every folder a destroy or a purge marked and the store no longer records.</summary>
-    /// <param name="recorded">The folder names the store records.</param>
-    /// <remarks>
-    /// Called when a broker starts, under the store's lock and before it serves, so no placement can be in flight. A
-    /// folder still held open keeps its mark and is tried again at the next start; a recorded one is never touched, mark
-    /// or not.
-    /// </remarks>
-    public void RemoveLeftBehind(IEnumerable<string> recorded)
-    {
-        ArgumentNullException.ThrowIfNull(recorded);
+    private static bool IsRealDirectory(string path) =>
+        (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == FileAttributes.Directory;
 
-        if (!Directory.Exists(Root))
-        {
-            return;
-        }
-
-        var kept = recorded.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var folder in Directory.EnumerateDirectories(Root))
-        {
-            var name = Path.GetFileName(folder);
-
-            // Only a name that comes back as itself: Windows drops a trailing dot or space from a path, so deleting a
-            // stray "stock." by name would delete the live "stock" beside it.
-            if (!kept.Contains(name)
-                && string.Equals(Path.GetFileName(FolderPath(name)), name, StringComparison.Ordinal)
-                && File.Exists(Path.Combine(folder, LeftBehind)))
-            {
-                _ = DeleteFolder(name);
-            }
-        }
-    }
+    private static bool IsRealFile(string path) =>
+        (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0;
 
     /// <summary>Whether a folder name is taken on disk.</summary>
     /// <param name="folder">The folder name.</param>
@@ -523,7 +592,7 @@ public sealed class FileLocationStore : IDisposable
 
     // A tree deleted from a stack of its own, deepest first, rather than one call a level as Directory.Delete makes on
     // Windows: a tree made by hand can be deeper than the stack, and an overflow ends the process. A link is deleted and
-    // never entered, since it may lead out of the location, and the folder's mark goes last, just before the folder.
+    // never entered, since it may lead out of the location.
     private static void DeleteTree(string folder)
     {
         var root = AsWritten(folder);
@@ -542,11 +611,6 @@ public sealed class FileLocationStore : IDisposable
         {
             if (top.Emptied)
             {
-                if (top.Path == root)
-                {
-                    TryDelete(Path.Combine(root, LeftBehind));
-                }
-
                 Directory.Delete(top.Path, recursive: false);
                 continue;
             }
@@ -559,10 +623,7 @@ public sealed class FileLocationStore : IDisposable
 
                 if ((attributes & FileAttributes.Directory) == 0)
                 {
-                    if (top.Path != root || !string.Equals(Path.GetFileName(entry), LeftBehind, StringComparison.Ordinal))
-                    {
-                        File.Delete(entry);
-                    }
+                    File.Delete(entry);
                 }
                 else if ((attributes & FileAttributes.ReparsePoint) != 0)
                 {
@@ -613,7 +674,7 @@ public sealed class FileLocationStore : IDisposable
             return;
         }
 
-        foreach (var directory in new[] { Root, Incoming })
+        foreach (var directory in new[] { Root, Incoming, Quarantine })
         {
             try
             {

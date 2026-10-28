@@ -70,7 +70,7 @@ public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
         Exec(connection, schemaOne[start..end]);
         Assert.Equal(schemaBefore, Text(connection, Schema));
 
-        Assert.Equal(1, SchemaMigrator.Migrate(connection));
+        Assert.Equal(SchemaMigrator.LatestVersion - 1, SchemaMigrator.Migrate(connection));
         Assert.Equal("2", Text(connection, "SELECT count(*) FROM roadmap_proposal_items;"));
         Assert.Equal("1", Text(connection, "SELECT count(*) FROM roadmap_proposal_needs;"));
         Assert.Equal("7", Text(connection, "SELECT seq FROM sqlite_sequence WHERE name = 'roadmap_proposals';"));

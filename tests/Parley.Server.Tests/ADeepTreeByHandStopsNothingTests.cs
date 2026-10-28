@@ -6,7 +6,8 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That a folder tree put in the file location by hand, deeper than a stack, neither stops the count of files nothing
-/// placed nor a destroy's delete, and that a destroy which stops part way leaves its folder marked (SPEC.md §9.5, §14).
+/// placed nor a destroy's delete, and that what a destroy leaves when it stops part way goes at the next sweep (SPEC.md
+/// §9.5, §14).
 /// </summary>
 /// <remarks>
 /// The count of files nothing placed and the folder delete each took one call per level, so a tree a few thousand
@@ -132,18 +133,17 @@ public sealed class ADeepTreeByHandStopsNothingTests : IDisposable
             Assert.Equal(0, mklink.ExitCode);
         }
 
-        OnASmallStack(() => location.DeleteOrMark("bait"));
+        OnASmallStack(() => location.DeleteFolder("bait"));
 
         Assert.False(Directory.Exists(folder));
         Assert.True(File.Exists(Path.Combine(outside, "keep.md")));
     }
 
     [Fact]
-    public async Task A_destroy_that_stops_part_way_leaves_its_folder_marked()
+    public async Task A_destroy_that_stops_part_way_leaves_its_folder_for_the_next_sweep()
     {
-        // A file held open below the folder stops the delete part way, after the folder's own files have gone, and the
-        // mark is what is left to tell a start to finish it: this holds that the mark is deleted last. That it is written
-        // first is held by the sweep tests' The_mark_is_written_before_anything_in_the_folder_is_deleted.
+        // A file held open below the folder stops the delete part way. Its rows have gone, so nothing names the folder
+        // any more, and the next sweep deletes it with everything else no row names.
         Assert.SkipUnless(OperatingSystem.IsWindows(), "a file held open cannot be deleted only on Windows");
 
         await using var broker = await LoopbackBroker.StartAsync(Ct);
@@ -160,9 +160,8 @@ public sealed class ADeepTreeByHandStopsNothingTests : IDisposable
         }
 
         Assert.True(Directory.Exists(folder));
-        Assert.True(File.Exists(Path.Combine(folder, ".parley-pending-removal")));
 
-        broker.Runtime.Files.RemoveLeftBehind([]);
+        await broker.Runtime.Sweeper.SweepAsync(Ct);
 
         Assert.False(Directory.Exists(folder));
     }

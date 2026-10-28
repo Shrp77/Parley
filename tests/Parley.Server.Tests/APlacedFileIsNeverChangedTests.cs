@@ -69,9 +69,10 @@ public sealed class APlacedFileIsNeverChangedTests
     }
 
     [Fact]
-    public async Task An_agent_cannot_remove_its_file_once_its_bytes_were_changed_by_hand()
+    public async Task An_agent_cannot_remove_its_file_once_its_bytes_were_changed_and_the_sweep_quarantines_it()
     {
-        // The bytes on disk are not what the agent placed, so they may be the person's; the agent never deletes them.
+        // The bytes on disk are not what the agent placed, so the agent never deletes them: the sweep the refusal starts
+        // sets them aside for the person.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
@@ -84,16 +85,13 @@ public sealed class APlacedFileIsNeverChangedTests
             cancellationToken: Ct);
 
         Assert.Empty(removed.Removed);
-        Assert.Equal(Wire.FileRejection.Changed, Assert.Single(removed.Refused).Rejection);
-        Assert.Equal("the person's own, longer", await File.ReadAllTextAsync(path, Ct));
+        Assert.Equal(Wire.FileRejection.Tampered, Assert.Single(removed.Refused).Rejection);
 
-        // The person removes it.
-        var byPerson = await broker.ConnectAsOperator().RemoveFilesAsync(
-            new Wire.RemoveFilesRequest { Files = { new Wire.FileRef { ConversationId = "pricing", Name = "notes.md" } } },
-            cancellationToken: Ct);
+        await broker.Runtime.Sweeper.IdleAsync();
+        var problem = Assert.Single((await broker.ConnectAsOperator().ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems);
 
-        Assert.Single(byPerson.Removed);
         Assert.False(File.Exists(path));
+        Assert.Equal("the person's own, longer", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.Quarantine, problem.MovedTo), Ct));
     }
 
     [Fact]
@@ -116,7 +114,7 @@ public sealed class APlacedFileIsNeverChangedTests
     }
 
     [Fact]
-    public async Task A_fetch_of_bytes_changed_by_hand_is_refused_saying_a_new_version_takes_a_new_name()
+    public async Task A_fetch_of_bytes_changed_on_disk_is_refused_as_tampered_and_the_file_set_aside()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -138,11 +136,15 @@ public sealed class APlacedFileIsNeverChangedTests
         }
 
         Assert.NotNull(refusal);
-        Assert.Equal(Wire.FileRejection.Changed, refusal!.Rejection);
-        Assert.Contains("new name", refusal.Detail, StringComparison.Ordinal);
+        Assert.Equal(Wire.FileRejection.Tampered, refusal!.Rejection);
+        Assert.Contains("no longer reliable", refusal.Detail, StringComparison.Ordinal);
 
-        // The record keeps what was placed.
-        var row = Assert.Single((await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
-        Assert.Equal(placed.Sha256, row.Sha256);
+        // The sweep the refusal started set the file aside: no longer listed, and raised to the person.
+        await broker.Runtime.Sweeper.IdleAsync();
+        var operators = broker.ConnectAsOperator();
+
+        Assert.Empty((await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
+        Assert.Equal(placed.Sha256, Assert.Single(
+            (await operators.ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems).Sha256Placed);
     }
 }

@@ -26,11 +26,11 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
     [Fact]
-    public async Task Hand_edits_racing_fetches_never_serve_changed_bytes_and_never_change_the_record()
+    public async Task Hand_edits_racing_fetches_never_serve_changed_bytes_and_the_file_is_quarantined()
     {
-        // A placed file is never changed (SPEC.md §9.5). Bytes saved over it by hand are refused by every fetch that
-        // streams them, a fetch meeting the file open for the save is refused in words rather than as a fault, and the
-        // record keeps the placed hash and placer.
+        // A placed file is never changed (SPEC.md §9.5). Bytes saved over it by something else are refused as tampered by
+        // every fetch that streams them, a fetch meeting the file open for the save is refused in words rather than as a
+        // fault, and the sweep the first refusal starts sets the file aside, after which it is no longer there.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -73,11 +73,16 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
 
         await Task.WhenAll(byHand, fetching);
 
-        Assert.All(served, s => Assert.True(s == placed.Sha256 || s == "refused Changed", s));
+        Assert.All(served, s => Assert.True(
+            s == placed.Sha256 || s is "refused Changed" or "refused Tampered" or "refused NoSuchFile", s));
 
-        var row = Assert.Single((await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
-        Assert.Equal(placed.Sha256, row.Sha256);
-        Assert.Equal(Billing, row.PlacedBy);
+        await broker.Runtime.Sweeper.IdleAsync();
+        var operators = broker.ConnectAsOperator();
+
+        Assert.Empty((await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
+        Assert.Contains(
+            (await operators.ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems,
+            p => p.Kind == Wire.FileProblemKind.Quarantined && p.Sha256Placed == placed.Sha256);
     }
 
     [Fact]
@@ -202,12 +207,23 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
         var operators = broker.ConnectAsOperator();
         Assert.True((await operators.RetireAsync(new Wire.AgentRequest { Agent = Billing }, cancellationToken: Ct)).Changed);
 
-        // Not in the location (SPEC.md §9.5): never listed, and never written over or removed by an agent.
-        await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "copied.md"), "by hand", Ct);
+        // Not in the location (SPEC.md §9.5): never listed, never written over or removed by an agent, and swept.
+        var copied = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "copied.md");
+        await File.WriteAllTextAsync(copied, "by hand", Ct);
+
+        var over = await FileWire.PlaceAsync(orders.Client, Orders, "copied.md", Text("orders'"), "pricing", Ct);
+        var removedCopied = await orders.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Orders, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "copied.md" } } },
+            cancellationToken: Ct);
+
+        Assert.NotEqual(Wire.PlaceOutcome.Placed, over.Outcome);
+        Assert.Empty(removedCopied.Removed);
+        await broker.Runtime.Sweeper.IdleAsync();
+        Assert.False(File.Exists(copied), "the sweep the refused placement started did not delete the copied file");
 
         var taken = new List<string>();
 
-        foreach (var name in new[] { "billings.md", "copied.md", "BILLINGS.MD", "Copied.md" })
+        foreach (var name in new[] { "billings.md", "BILLINGS.MD" })
         {
             var placed = await FileWire.PlaceAsync(orders.Client, Orders, name, Text("orders'"), "pricing", Ct);
 
@@ -232,8 +248,6 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
         Assert.True(taken.Count == 0, string.Join("; ", taken));
         Assert.Equal(Billing, Assert.Single(listed, f => f.Name == "billings.md").PlacedBy);
         Assert.DoesNotContain(listed, f => f.Name == "copied.md");
-        Assert.Equal(1, reply.FilesNotListed);
-        Assert.Equal("by hand", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "copied.md"), Ct));
         Assert.Equal("b", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "billings.md"), Ct));
     }
 

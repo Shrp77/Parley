@@ -147,7 +147,9 @@ language they are written in.
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
 | **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
-| **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes. Not a message: it opens nothing and owes nothing. See §9.5. |
+| **Gone notice** | What an agent that fetched or placed a file finds in its inbox when the file later goes, or is tampered with — changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
+| **Quarantine** | Where a sweep moves a placed file found tampered with: beside the file location, the person's, and never served. See §9.5. |
+| **Sweep** | The broker's check of the file location against its store, which quarantines what was tampered with, records what is missing gone, and deletes what nothing placed. See §9.5. |
 | **Roadmap** | A person-confirmed, ordered list of items of work, held by a project. It exists only once a person has confirmed a proposal, and is the person's: no agent reads, changes or marks done one (principle 2.12). See §5.7. |
 | **Roadmap item** | One step of a roadmap: a single line of text, and optionally the agent it is meant for and the earlier items it needs. Its conversation is its own, and where it stands is derived from that conversation, never stored. |
 | **Proposal** | A roadmap an agent has put forward, apart from messages: it opens no exchange and is owed no answer, and it is nothing until a person confirms it. |
@@ -2144,7 +2146,7 @@ CREATE TABLE file_fetches (
   PRIMARY KEY (agent, conversation_id, name_key)
 ) STRICT;
 
--- A gone notice (§9.5), waiting for one agent about one file it fetched. Not a message (§5), so
+-- A gone notice (§9.5), waiting for one agent about one file it fetched or placed. Not a message (§5), so
 -- not in the message log. The conversation is not a key, so a notice outlives its conversation being
 -- destroyed and the agent is still told its file is gone.
 CREATE TABLE file_notices (
@@ -2154,8 +2156,8 @@ CREATE TABLE file_notices (
   name            TEXT    NOT NULL,
   sha256_had      TEXT    NOT NULL
                   CHECK (length(sha256_had) = 64 AND sha256_had NOT GLOB '*[^0-9a-f]*'),
-  -- Schema 1 also carried the content a file changed to; a placed file never changes now (§9.5), so
-  -- these are NULL in every notice written, and a broker's start deletes any an earlier build left.
+  -- For a file found tampered with, the hash of the bytes found and their size; NULL when the file is only
+  -- gone. Migration 003 deleted the change notices builds before placed files were immutable wrote here.
   sha256_now      TEXT    CHECK (sha256_now IS NULL
                                  OR (length(sha256_now) = 64 AND sha256_now NOT GLOB '*[^0-9a-f]*')),
   size_bytes      INTEGER CHECK (size_bytes IS NULL OR size_bytes >= 0),
@@ -2179,6 +2181,35 @@ CREATE TABLE file_placements (
   bytes      INTEGER NOT NULL CHECK (bytes >= 0),
   last_utc   TEXT    NOT NULL
 ) STRICT;
+
+-- What a sweep found and could not leave as it was (§9.5), kept until the person dismisses it (§10.2).
+CREATE TABLE file_problems (
+  -- AUTOINCREMENT, so a dismissed problem's id is never a later problem's: a person dismissing from a page that
+  -- had gone stale would otherwise dismiss whichever problem took its id.
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind            TEXT    NOT NULL CHECK (kind IN ('quarantined', 'locked')),
+  -- The conversation whose folder it was in, or NULL for an entry no conversation owns. Not a key: a problem
+  -- outlives its conversation being destroyed.
+  conversation_id TEXT,
+  -- The entry, as a path inside the location with '/' between its parts.
+  path            TEXT    NOT NULL CHECK (length(path) >= 1),
+  sha256_placed   TEXT    CHECK (sha256_placed IS NULL
+                                 OR (length(sha256_placed) = 64 AND sha256_placed NOT GLOB '*[^0-9a-f]*')),
+  sha256_found    TEXT    CHECK (sha256_found IS NULL
+                                 OR (length(sha256_found) = 64 AND sha256_found NOT GLOB '*[^0-9a-f]*')),
+  -- Where a quarantined file was moved, inside the quarantine directory.
+  moved_to        TEXT,
+  detail          TEXT    NOT NULL CHECK (length(detail) >= 1),
+  raised_utc      TEXT    NOT NULL CHECK (unixepoch(raised_utc) IS NOT NULL),
+  dismissed_utc   TEXT    CHECK (dismissed_utc IS NULL OR unixepoch(dismissed_utc) IS NOT NULL),
+
+  CHECK ((kind = 'quarantined') = (moved_to IS NOT NULL)),
+  CHECK (kind <> 'quarantined' OR (sha256_placed IS NOT NULL AND sha256_found IS NOT NULL
+                                   AND sha256_placed <> sha256_found))
+) STRICT;
+
+-- What the person has not dismissed, and whether an entry is already raised.
+CREATE INDEX ix_file_problems_open ON file_problems(path, kind) WHERE dismissed_utc IS NULL;
 ```
 
 **The facilitator and its questions** (principle 2.11, §10.2). The facilitator is a row the broker
@@ -2660,7 +2691,9 @@ that needed it; an enumeration written as prose has already decayed.
 - **A folder's name is fixed and unique.** `conversation_folders` refuses a second conversation's folder
   differing only in case, and `tr_conversation_folder_is_fixed` refuses renaming one.
 - **A gone notice is one per file.** One row per agent and file, so an agent is told once that a file it
-  fetched has gone.
+  fetched or placed has gone, or was tampered with; a tampered notice carries the hash found and its size, or neither.
+- **A quarantined problem says what was found.** `file_problems` refuses one without both hashes, with the same hash
+  twice, or without where it went, and refuses where it went on any other kind.
 
 **Key on agent name, not session ID.** Session IDs churn on every restart; repository identity
 does not. This is what makes re-delivery after a restart (§6) and lazy spawning work.
@@ -2793,12 +2826,11 @@ disk, including one a person made by hand. `~` cannot occur in an identifier, so
 never another conversation's own name; and a suffixed name whose path already reaches a folder, as `ABCDEF~2` is
 another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is written to and deleted only under
 its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
-takes it as one entry, and a destroy deletes the link, never what it reaches. Nor is a mark written through one. The choice is recorded in `conversation_folders` and kept until
-the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation, and is left alone: it may be
-a person's, or a conversation a store restored from a backup no longer records. The one exception is a folder a
-destroy or a purge could not delete when it ran (§14): it is marked with a file named `.parley-pending-removal` before
-its delete begins, the mark goes last, and the next start deletes a folder no row names that holds one. The delete
-finishes once the rows have gone, whether or not the operator who asked is still there.
+takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. The choice is recorded in `conversation_folders` and kept until
+the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation,
+and the next sweep deletes it, as it deletes everything else no row names (below): a folder a destroy or a purge could
+not delete when it ran (§14) among them. A destroy's or a purge's delete finishes once its rows have gone, whether or
+not the operator who asked is still there.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). Only the name is
@@ -2824,14 +2856,16 @@ spelling it would have had, and the file already there as it is stored. `a:b.md`
 removed, opened — is never renamed, because the renamed spelling could be a different file from the
 one meant; its refusal says the spelling a placement of it would have had.
 
-**A file put in a folder by hand is not in the location.** Files enter the location only by being placed
+**Nothing but a placement puts a file in the location.** Files enter the location only by being placed
 (§10.1, §10.2), and the broker does not watch the folders. A file copied in, renamed there or named
-against a rule is never listed, fetched or opened, and the broker records and renames nothing a person
-puts on disk. The person's listing counts such files, without naming them (§10.2).
+against a rule is never listed, fetched or opened, and the broker records and renames nothing that
+something else puts on disk. The person's listing counts such files, without naming them (§10.2), and a
+listing that counts one starts a sweep, which deletes it.
 
 Names in the location are compared without regard to case. A folder that tells case apart, as every
 folder on Linux does, can hold two files whose names differ only in case; they are one name, and only
-the one placed is in the location. The other was put there by hand, and is counted with such files.
+the one placed is in the location. The other was put there by something else, is counted with such files, and goes
+at the next sweep.
 
 **The content hash is the broker's.** SHA-256 of the stored bytes, in lowercase hex, computed as they
 arrive. A placing adapter's own hash is never taken. The
@@ -2846,7 +2880,8 @@ The placer is recorded at placement and never altered (§9.3). The agent that pl
 it; no agent may remove a file another placed (§16), and a refusal names the placer without preventing
 the caller's own files in the same request. A file the person placed is the person's. A file on disk
 under a name nothing placed is refused to a placement too, so a placement never writes over bytes a
-person put there. The person may remove any file and prune them all (§10.2).
+person put there; the refusal starts a sweep, which deletes them. The person may remove any file and prune them all
+(§10.2).
 
 **A conversation is assigned as a Request's is** (§5.0), and a bare name is looked for across the whole
 location: one match is used, and several is a refusal that does nothing and lists the conversations
@@ -2860,24 +2895,57 @@ waits on it, because nothing still moving times out (principle 2.8); what waits,
 before it waits on anything, and a removal given up while it waited leaves later fetches as they were. Where the operating system can
 refuse another process's write — Windows — an editor's save is refused for that time. Where it cannot —
 Linux and macOS have no mandatory locks — the save succeeds and the fetch, which hashes what it streams,
-fails saying the file changed and writes nothing. Every platform keeps the guarantee the hold exists
+fails saying the file was tampered with and writes nothing. Every platform keeps the guarantee the hold exists
 for: no agent ever receives a mixed or partial file. The difference is stated because a second
 implementation will meet it. A fetch that finds the file held for writing by another program, or that
 the broker may not read, is refused in words and writes nothing.
 
-**Bytes changed on disk are not the file.** A placed file is not edited in place. A fetch hashes what it
-streams, and when the bytes differ from the recorded hash it is refused and writes nothing, saying the
-file changed on disk and its placer should place it again under a new name. An agent's removal is
-refused when the file on disk is not the size and time it was placed with, so an agent never deletes
-bytes it did not place; the person removes it. A recorded file no longer on disk is gone: a list, a
-fetch or the broker's start that finds it missing records it gone, as a removal does. A file in a folder the broker
-cannot read is not missing, and stays as recorded.
+**Bytes changed on disk are tampering.** A placed file is never changed through Parley, so bytes on disk
+that no longer hash to what was placed were changed by something else, and the file is no longer reliable.
+A fetch hashes what it streams, and when the bytes differ from the recorded hash it is refused as
+tampered, writes nothing, and starts a sweep. An agent's removal is refused when the file on disk is not
+the size and time it was placed with, so an agent never deletes bytes it did not place, and that too
+starts a sweep. A recorded file no longer on disk is gone: a list, a fetch or a sweep that finds it
+missing records it gone, as a removal does, and a list or a fetch then starts a sweep. A file in a
+folder the broker cannot read is not missing, and stays as recorded.
 
-**An agent that fetched a file is told when it goes.** A fetch is recorded only once the adapter reports
+**A sweep puts the location right.** The broker sweeps when it starts, before it serves, and whenever a
+list, fetch, removal or placement finds something above. One sweep runs at a time, and one asked for
+while another runs runs once more after it. It hashes every recorded file in full, holding nothing;
+then, holding every file as a destroy does (§14) and inside one turn of the store, it looks again at
+what it found, and:
+
+- moves each recorded file whose bytes do not hash to its recorded hash into the **quarantine**
+  directory beside the location, removes its row, and tells everybody who fetched or placed it that it
+  was tampered with;
+- records each recorded file that is missing gone, a recorded name now holding a folder or a link
+  among them;
+- deletes everything in the location that is not a recorded file directly in its own recorded folder:
+  a file something else put there, a subfolder, a link (as a link, never what it reaches), and a folder
+  no row names. A recorded folder holding no file stays. A name differing from a recorded one only in
+  case is that name where the disk does not tell case apart, and another entry where it does.
+
+What the sweep cannot read, move or delete because another program holds it is left as it is and raised
+as a problem; a file it found tampered with and could not move is still never served, because a fetch
+hashes what it streams. One consequence is deliberate and so stated: a store restored from a backup
+older than its location has the files of every conversation newer than the backup deleted by its first
+sweep, because nothing names them.
+
+**A problem waits for the person.** Each file moved to quarantine, and each entry a sweep could not read,
+move or delete, is a problem the person is shown on every operator surface until they dismiss it
+(§10.2): what happened, the conversation and the path, and for a quarantined file the hash placed, the
+hash found and where it went. An entry another program holds is raised once while its problem waits,
+however many sweeps find it. Dismissing deletes nothing. The quarantine directory is the person's:
+Parley moves files into it and never reads, serves, sweeps or deletes anything there, and it goes only
+with the store.
+
+**An agent that fetched a file is told when it goes, or is tampered with.** A fetch is recorded only once the adapter reports
 writing and verifying the content the broker streamed to it; any other report is refused. From then
 on, the file's removal, prune, going from disk, or its conversation being destroyed or purged (§14),
-leaves a gone notice for every such agent that is not retired: the name, and the hash it fetched. There
-is at most one per agent per file. A notice is not a message (§5): it opens no exchange, owes no reply
+leaves a gone notice for every such agent that is not retired: the name, and the hash it fetched. A file
+found tampered with leaves a tampered notice instead, for every agent that fetched it and for its placer,
+with the hash found too: the copy in the location is no longer reliable, while a copy an agent fetched
+was checked against the hash it holds when it was fetched. There is at most one per agent per file. A notice is not a message (§5): it opens no exchange, owes no reply
 and wakes nobody. It waits in `inbox()` beside closure polls, at most 200 per collection, oldest first,
 with a count of the rest. Once collected it is gone.
 
@@ -2888,7 +2956,7 @@ the conversations holding an ambiguous name, with a count of the rest; and one r
 
 **Nothing removes a file on a schedule.** A file goes when its placer removes it, when the person
 removes or prunes, when its conversation is destroyed, when an agent that took part in its conversation
-is purged (§14), or with the store. Placements are counted per agent — how many, and how many bytes —
+is purged (§14), when a sweep finds it tampered with or missing, or with the store. Placements are counted per agent — how many, and how many bytes —
 because no size limit is set, and a limit set later should be set from evidence, as rule
 8.4's cap was.
 
@@ -2907,12 +2975,12 @@ else's. §10.2 is what the person running the deployment may do, which is everyt
 | `request(to, ask, conversation_id?)` | Send a Request (§5.1): one ask, and nothing else. `to` is a full name or a bare role (§5.5). Returns, per exchange opened, its identifier and the conversation the broker assigned it to (§5.0), or a refusal (§7.3). Never returns a Result. |
 | `clarify(exchange_id, text, settles?)` | Hand the turn on an open exchange to the other participant: ask what was meant, or answer what you were asked (§5.2). On a Request the person opened, `settles` names exchanges the person's words settled (§5.6). |
 | `result(exchange_id, outcome, settles?)` | Close an exchange you received, with one outcome for its ask (§5.3). `settles` as for `clarify`; the whole call is refused if any exchange named cannot be settled. |
-| `inbox()` | Drain pending messages, debts first (§7.3). One collection carries about 64,000 characters of messages and never fewer than one, or fewer messages when the caller asks for fewer (§7.3); the rest wait for the next and are counted, because a collection too large to arrive would never be delivered (principle 2.2). Delivered only when acknowledged (§6): a collection whose call ends first is handed over again by the next. Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces the closure polls outstanding for the caller (§5.0), at most 200, oldest first, with a count of the rest, which stay outstanding until answered, and gone notices about files the caller fetched, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
+| `inbox()` | Drain pending messages, debts first (§7.3). One collection carries about 64,000 characters of messages and never fewer than one, or fewer messages when the caller asks for fewer (§7.3); the rest wait for the next and are counted, because a collection too large to arrive would never be delivered (principle 2.2). Delivered only when acknowledged (§6): a collection whose call ends first is handed over again by the next. Results arrive here, carrying the identifier `request` returned and the Request they close (§4.2, §13). Also surfaces the closure polls outstanding for the caller (§5.0), at most 200, oldest first, with a count of the rest, which stay outstanding until answered, and gone and tampered notices about files the caller fetched or placed, at most 200 at once with a count of the rest (§9.5), and what became of the caller's own roadmap proposals — confirmed, declined or superseded, each with the caller's own title cut to 200 characters as a heading is, never waking anybody (§5.7). A Request from the person arrives with the caller's own open questions to the person in that conversation, at most 20 with a count of the rest (§5.6). |
 | `conclude(conversation_id, finished)` | Say whether you are finished with a discussion. The first call opens a poll; later calls answer one. Saying finished in a roadmap item's conversation is refused, saying only the person closes it (§5.7). |
 | `file_place(name, bytes, conversation_id?)` | Place a file from the caller's own repository in a conversation's folder of the file location (§9.5). The conversation is assigned as a Request's is (§5.0), and placing makes the caller a participant. Returns the conversation, the name placed and, when characters outside the set renamed it, the name asked for, the size and the broker's content hash, and whether the file was placed or already current; or a refusal naming, where one exists, the agent that placed the name, or the file a renamed placement collides with. A name the conversation already holds with other content is refused, whoever placed it: a placed file is never changed, and a new version goes under a new name. |
-| `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. Refused too when the bytes on disk are not the bytes placed, or the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
+| `file_fetch(name, conversation_id?, expect_sha256?)` | Write one whole content of a file into the caller's own repository. Refused, writing nothing, when the file's hash is not the one expected. Refused as tampered, writing nothing and starting a sweep, when the bytes on disk are not the bytes placed; refused too when the file is held for writing by another program or cannot be read. The adapter verifies what it wrote and reports it, and only then is the fetch recorded, so a gone notice follows if the file later goes (§9.5). Never returns the file's contents. |
 | `file_list(conversation_id?, page)` | The files in the location: conversation, name, size, content hash, placer and when, with totals. Paged, and the broker bounds the page whatever is asked for. |
-| `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, and so is a file whose size or time on disk is not what was placed (§9.5), without preventing the rest. |
+| `file_remove(files)` | Remove files the caller placed. Every other name is refused, naming its placer, and so is a file whose size or time on disk is not what was placed, which starts a sweep (§9.5), without preventing the rest. |
 | `propose_roadmap(title, items, conversation_id?, revises?)` | Put forward a roadmap (§5.7): a short title and an ordered list of items, each one line with, where known, the agent it is meant for and the earlier items it needs. `conversation_id` says where it came from, and must be a conversation the caller took part in; `revises` names, by title only, a roadmap it would change. Stores a proposal and nothing else: it opens no exchange, writes no message, and creates no roadmap until a person confirms it. Returns the proposal's identifier. Refused, with a sentence the agent can act on, for an empty list, for a line break in the title or an item, for an intended agent that is not in the project, for a conversation the caller took no part in, with the same sentence whether or not that conversation exists, and for the person seat and Parley, which propose nothing. There is no operation by which an agent reads, changes, reorders, removes or marks done a roadmap, and none may be added (principle 2.12). |
 
 `conclude` is one operation rather than two because proposing and answering are the same
@@ -3029,10 +3097,12 @@ other could.
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
 | `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
 | `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current when it is the person's own with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
-| `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
+| `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them, which the next sweep deletes (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
 | `describe_file_location(conversation_id?, name?)` | The broker's machine name and the absolute path of the location, of a conversation's folder, or of one file. A surface on that machine opens the file or folder in place; anywhere else it says where it is and launches nothing (§13). |
+| `list_file_problems(include_dismissed?)` | What sweeps found and could not leave as it was (§9.5): files moved to quarantine and entries another program held, those waiting first, with the machine and the absolute path of the quarantine directory. Each path is text nothing checked, drawn as somebody else's. |
+| `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
 | `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete and how many of the person's requests were closed with no Result, how many agents' latest answer on the person's requests was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
 | `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
@@ -3097,8 +3167,11 @@ on its own.
 says where a file is so a person can open it: a surface running on the broker's machine opens a file to
 read it, or a folder in the file browser, and a surface anywhere else names the machine and the path and
 launches nothing, because the file is not there to open. A file opened is read, not edited: a placed file
-is never changed (§9.5). Both operator surfaces offer all five, like every other operation in this table;
-the command line places, lists, removes, prunes and opens them as well, because scripts need them.
+is never changed (§9.5). `list_file_problems` and `dismiss_file_problem` are the person's because what
+something else did to the location is nobody's message, and only the person decides what becomes of a
+quarantined file. Both operator surfaces offer all seven, like every other operation in this table, and
+show how many problems are waiting wherever the person is; the command line places, lists, removes,
+prunes and opens files, and lists and dismisses problems, as well, because scripts need them.
 
 ## 11. Adapters
 
@@ -3908,8 +3981,8 @@ who did nothing wrong.** It cannot be undone.
 **Their files go with them.** Placing a file makes an agent a participant (§5.0), so purging an agent
 removes the files it placed along with every other file in the conversations it took part in: their
 rows are reported with the rest, their folders are deleted from the file location once any download in
-progress finishes (a folder that cannot be deleted then, held open, is marked and goes when the broker
-next starts), and every agent that fetched one is told it is gone (§9.5). A retired agent's files
+progress finishes (a folder that cannot be deleted then, held open, goes at the next sweep), and every
+agent that fetched one is told it is gone (§9.5). A retired agent's files
 stay, still name it as their placer, and can be removed only by the person.
 
 That collateral is the definition rather than a defect being tolerated. A conversation is a record of
@@ -3976,8 +4049,8 @@ neither.
 As with a purge, what gets deleted is found from the schema rather than enumerated: every row whose
 foreign key names the conversation goes with it, and an operator is told per table rather than as a
 total. Its files go too: their rows are reported, the conversation's folder is deleted from the file
-location once any download in progress finishes (one that cannot be deleted then, held open, is marked and
-goes when the broker next starts, §9.5), and agents that fetched them are told they are gone
+location once any download in progress finishes (one that cannot be deleted then, held open, goes at the
+next sweep, §9.5), and agents that fetched them are told they are gone
 (§9.5).
 
 **The foreign keys are what carry the invariant, and they carry it by not cascading.** Every column
@@ -4372,7 +4445,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.9** and the storage schema version is **2**.
+The protocol version is **0.9** and the storage schema version is **3**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

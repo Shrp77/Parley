@@ -195,20 +195,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(project).GetAwaiter().GetResult();
         Person = new AgentRepository(connection).EnsurePersonAsync(project).GetAwaiter().GetResult();
 
-        // **A recorded file gone from disk while no broker ran is gone** (SPEC.md §9.5), with its notices, before anybody
-        // lists or fetches. Nothing else on disk is read: the broker records only what is placed through it.
-        _ = new FileNoticeRepository(connection).ForgetChangeNoticesAsync().GetAwaiter().GetResult();
-        var shared = new SharedFileRepository(connection);
-
-        foreach (var stored in shared.GetAllAsync().GetAwaiter().GetResult())
-        {
-            // Missing, not merely unreadable: a folder that cannot be read says nothing about its files.
-            if (files.IsOnDisk(stored.File.Folder, stored.File.Name) == false)
-            {
-                _ = shared.RemoveAsync(stored, null, now).GetAwaiter().GetResult();
-            }
-        }
+        // **The file location is checked against the store before anybody lists or fetches** (SPEC.md §9.5): a file
+        // gone from disk while no broker ran is gone, one whose bytes changed is quarantined, and anything no row names,
+        // a folder a destroy could not delete included, is deleted. Before serving, so nothing waits on it but the start.
+        Sweeper = new FileSweeper(this);
+        Sweeper.SweepAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
+
+    /// <summary>Gets what checks the file location against the store and puts right what was done to it (SPEC.md §9.5).</summary>
+    public FileSweeper Sweeper { get; }
 
     /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
     public AgentName Facilitator { get; }
@@ -376,13 +371,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
             // After the lock, like everything else that touches what belongs to the store: emptying the staging
             // directory while another broker was mid-placement would destroy an upload it was about to commit.
-            var files = new FileLocationStore(databasePath + StoreFiles.Files, databasePath + StoreFiles.FilesIncoming);
+            var files = new FileLocationStore(
+                databasePath + StoreFiles.Files,
+                databasePath + StoreFiles.FilesIncoming,
+                quarantine: databasePath + StoreFiles.FilesQuarantine);
             files.Prepare();
-
-            // What a destroy or a purge could not delete when it ran, held open, goes now (SPEC.md §14). Only what one
-            // marked: anything else the store does not record is a person's, or a restored backup's newer conversations.
-            files.RemoveLeftBehind(new SharedFileRepository(connection).GetFoldersAsync().GetAwaiter().GetResult()
-                .Select(folder => folder.Folder));
 
             // Looked at after the migration, and only reported. The schema number is a witness only to the
             // migrations a store was given, not to its shape, so the shape is compared directly; `StoreShape` says why a
@@ -1829,6 +1822,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
+        // First, while the store is still open: a sweep in progress finishes the entry it is on and stops.
+        await Sweeper.DisposeAsync().ConfigureAwait(false);
+
         CloseStreams();
 
         _attached.Clear();

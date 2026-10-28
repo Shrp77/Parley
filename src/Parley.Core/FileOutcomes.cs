@@ -98,6 +98,12 @@ public enum FileRejection
     /// another file's name in that conversation; nothing was placed.
     /// </summary>
     SafeNameTaken,
+
+    /// <summary>
+    /// The bytes on disk are not what was placed: something other than Parley changed them, so the file is no longer
+    /// reliable, and the broker has started a sweep that sets it aside (SPEC.md §9.5).
+    /// </summary>
+    Tampered,
 }
 
 /// <summary>

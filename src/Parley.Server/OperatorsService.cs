@@ -899,6 +899,37 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
     }
 
+    /// <inheritdoc/>
+    public override async Task<Wire.FileProblemsReply> ListFileProblems(
+        Wire.ListFileProblemsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var problems = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.FileProblemRepository(connection).ListAsync(request.IncludeDismissed, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        var reply = new Wire.FileProblemsReply { Machine = MachineName.Current, QuarantinePath = _runtime.Files.Quarantine };
+        reply.Problems.AddRange(problems.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> DismissFileProblem(
+        Wire.DismissFileProblemRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var dismissed = await _runtime.UseConnectionAsync(
+            (connection, now, ct) => new Parley.Store.FileProblemRepository(connection).DismissAsync(request.Id, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = dismissed };
+    }
+
     private Task<List<string>> RecordedFoldersAsync(CancellationToken cancellationToken) =>
         _runtime.UseConnectionAsync(
             async (connection, _, ct) => (await new Parley.Store.SharedFileRepository(connection)

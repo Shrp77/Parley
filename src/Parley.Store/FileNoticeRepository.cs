@@ -14,8 +14,8 @@ namespace Parley.Store;
 /// waits for whenever the agent next looks.
 /// </para>
 /// <para>
-/// <b>Only a file's going is noticed</b>, because a placed file never changes: a new version is a new name. At most
-/// one per agent per file, one row per key.
+/// <b>A file's going is noticed, and why</b>: gone, or tampered with, when something other than Parley changed its
+/// bytes, since a placed file never changes through Parley. At most one per agent per file, one row per key.
 /// </para>
 /// <para>
 /// A retired agent is not told. A purged one has no rows: its fetch records and notices cascade from it.
@@ -215,6 +215,76 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken));
 
+    /// <summary>Raises "tampered" notices for a placed file whose bytes on disk no longer hash to what was placed.</summary>
+    /// <param name="conversationId">The file's conversation.</param>
+    /// <param name="nameKey">The file's name key.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="placed">The hash placed.</param>
+    /// <param name="placer">The agent that placed it, or <see langword="null"/> for the person.</param>
+    /// <param name="found">The hash of the bytes found.</param>
+    /// <param name="foundBytes">Their size.</param>
+    /// <param name="whenUtc">When the sweep found it.</param>
+    /// <param name="transaction">The transaction removing the file.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when the notices are raised and the fetch records gone.</returns>
+    /// <remarks>
+    /// <para>
+    /// Every agent that fetched it, and its placer too (SPEC.md §9.5): something other than Parley changed the bytes,
+    /// a copy may have spread from them, and the placer is the one that can place the file again. A notice already
+    /// waiting about the name takes the latest state, as a gone one does.
+    /// </para>
+    /// <para>The fetch records go with the file, as a removal's do.</para>
+    /// </remarks>
+    public async Task RaiseTamperedAsync(
+        string conversationId,
+        string nameKey,
+        string name,
+        ContentHash placed,
+        AgentName? placer,
+        ContentHash found,
+        long foundBytes,
+        DateTimeOffset whenUtc,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = new
+        {
+            Conversation = conversationId,
+            Key = nameKey,
+            Name = name,
+            Placed = placed.Value,
+            Placer = placer?.Value,
+            Found = found.Value,
+            Size = foundBytes,
+            When = ExchangeRow.FormatTimestamp(whenUtc),
+        };
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                """
+                INSERT INTO file_notices
+                    (agent, conversation_id, name_key, name, sha256_had, sha256_now, size_bytes, changed_utc)
+                SELECT ff.agent, ff.conversation_id, ff.name_key, @Name, ff.sha256, @Found, @Size, @When
+                  FROM file_fetches ff
+                  JOIN agents a ON a.name = ff.agent
+                 WHERE ff.conversation_id = @Conversation AND ff.name_key = @Key AND a.status = 'active'
+                   AND ff.sha256 <> @Found
+                UNION
+                SELECT a.name, @Conversation, @Key, @Name, @Placed, @Found, @Size, @When
+                  FROM agents a
+                 WHERE a.name = @Placer AND a.status = 'active'
+                   AND NOT EXISTS (SELECT 1 FROM file_fetches ff
+                                    WHERE ff.agent = a.name AND ff.conversation_id = @Conversation
+                                      AND ff.name_key = @Key)
+                """ + Upsert + """
+
+                DELETE FROM file_fetches WHERE conversation_id = @Conversation AND name_key = @Key;
+                """,
+                parameters,
+                transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+    }
+
     /// <summary>Reads the oldest notices waiting for an agent, deleting nothing.</summary>
     /// <param name="agent">The agent collecting.</param>
     /// <param name="excluding">Keys of notices a collection in flight holds, which no other collection hands over.</param>
@@ -243,7 +313,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 new CommandDefinition(
                     $"""
                     SELECT conversation_id AS ConversationId, name_key AS NameKey, name AS Name,
-                           sha256_had AS Had, changed_utc AS ChangedUtc
+                           sha256_had AS Had, sha256_now AS Found, changed_utc AS ChangedUtc
                       FROM file_notices
                      WHERE agent = @Agent AND {KeyColumn} NOT IN @Held
                      ORDER BY changed_utc, conversation_id, name_key
@@ -265,7 +335,8 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                     r.ConversationId,
                     r.Name,
                     ContentHash.Parse(r.Had),
-                    ExchangeRow.ParseTimestamp(r.ChangedUtc)))],
+                    ExchangeRow.ParseTimestamp(r.ChangedUtc),
+                    r.Found is null ? null : ContentHash.Parse(r.Found)))],
                 left - rows.Count),
             [.. rows.Select(r => KeyOf(r.ConversationId, r.NameKey))]);
     }
@@ -297,18 +368,6 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
 
     private static string KeyOf(string conversationId, string nameKey) => conversationId + (char)31 + nameKey;
 
-    /// <summary>Deletes notices saying a file changed, which a build from before placed files were immutable left.</summary>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>How many went.</returns>
-    /// <remarks>
-    /// Read as gone notices now, they would tell an agent a file had gone that is still listed. Nothing writes one any
-    /// more, so this finds rows only in a store an earlier build served (SPEC.md §9.5).
-    /// </remarks>
-    public Task<int> ForgetChangeNoticesAsync(CancellationToken cancellationToken = default) =>
-        _connection.ExecuteAsync(
-            new CommandDefinition(
-                "DELETE FROM file_notices WHERE sha256_now IS NOT NULL;", cancellationToken: cancellationToken));
-
     /// <summary>How many notices are waiting for an agent.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
@@ -334,6 +393,8 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
         public string Name { get; init; } = "";
 
         public string Had { get; init; } = "";
+
+        public string? Found { get; init; }
 
         public string ChangedUtc { get; init; } = "";
     }

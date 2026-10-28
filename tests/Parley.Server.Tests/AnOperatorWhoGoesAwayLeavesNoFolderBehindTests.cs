@@ -39,7 +39,7 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
     }
 
     [Fact]
-    public async Task A_destroy_cancelled_after_its_rows_commit_leaves_the_folder_deleted_or_marked()
+    public async Task A_destroy_cancelled_after_its_rows_commit_leaves_no_folder_behind()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -75,7 +75,7 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         await h3.Entered;
         await Task.Delay(400, Ct);
 
-        // The person's tool goes away now: after the rows went, before the folder is deleted or marked.
+        // The person's tool goes away now: after the rows went, before the folder is deleted.
         await cts.CancelAsync();
         await Task.Delay(400, Ct);
         h3.Release.SetResult();
@@ -96,16 +96,11 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         var listed = await operators.ListConversationsAsync(
             new Wire.ListConversationsRequest { IncludeArchived = true }, cancellationToken: Ct);
         var survives = listed.Conversations.Any(c => c.ConversationId == "bait");
-        var marked = File.Exists(Path.Combine(folder, ".parley-pending-removal"));
         var files = await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
 
         var said = $"destroy={outcome}; conversation survives={survives}; folder on disk={Directory.Exists(folder)}; "
-                   + $"marked={marked}; listed={files.Files.Count}; not listed={files.FilesNotListed}";
+                   + $"listed={files.Files.Count}; not listed={files.FilesNotListed}";
         TestContext.Current.SendDiagnosticMessage(said);
-
-        // What a start would do: only a marked folder goes.
-        broker.Runtime.Files.RemoveLeftBehind([]);
-        said += $"; after a start's sweep, folder on disk={Directory.Exists(folder)}";
 
         // The cancel must land after the commit, or the case is not the one held here.
         Assert.True(outcome == "Cancelled" && !survives, "the cancel did not land after the commit: " + said);
@@ -113,7 +108,7 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
     }
 
     [Fact]
-    public async Task A_purge_cancelled_after_its_rows_commit_leaves_the_folder_deleted_or_marked()
+    public async Task A_purge_cancelled_after_its_rows_commit_leaves_no_folder_behind()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -161,11 +156,7 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 
         await Task.Delay(500, Ct);
 
-        var marked = File.Exists(Path.Combine(folder, ".parley-pending-removal"));
-        var said = $"purge={outcome}; folder on disk={Directory.Exists(folder)}; marked={marked}";
-
-        broker.Runtime.Files.RemoveLeftBehind([]);
-        said += $"; after a start's sweep, folder on disk={Directory.Exists(folder)}";
+        var said = $"purge={outcome}; folder on disk={Directory.Exists(folder)}";
         TestContext.Current.SendDiagnosticMessage(said);
 
         var stillRecorded = await broker.Runtime.UseConnectionAsync(

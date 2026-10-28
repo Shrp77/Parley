@@ -290,8 +290,11 @@ message InboxReply {
 message FileNotice {
   string conversation_id = 1;
   string name = 2;
-  string sha256_had = 3;              // what the agent fetched
+  string sha256_had = 3;              // what the agent fetched, or placed
   string gone_utc = 4;
+  // Empty when the file is only gone. Otherwise it was tampered with: the hash of the bytes found where it should have
+  // been, which something other than Parley wrote (section 9.5). The file is no longer reliable.
+  string sha256_found = 5;
 }
 
 // ===========================================================================================
@@ -432,6 +435,41 @@ message FileLocationRequest {
   string name = 2;                    // empty: the folder
 }
 
+message ListFileProblemsRequest {
+  bool include_dismissed = 1;
+}
+
+message FileProblemsReply {
+  repeated FileProblemView problems = 1;  // those waiting first, each oldest first
+  string machine = 2;                     // the broker's machine name (section 4.1.1)
+  string quarantine_path = 3;             // absolute, on that machine
+}
+
+enum FileProblemKind {
+  FILE_PROBLEM_KIND_UNSPECIFIED = 0;
+  FILE_PROBLEM_KIND_QUARANTINED = 1;      // bytes no longer matched what was placed; moved to quarantine
+  FILE_PROBLEM_KIND_LOCKED = 2;           // another program held it, so the sweep could not read, move or delete it
+}
+
+// The path is text nothing checked when the entry was put there by something other than Parley: shown as somebody
+// else's text.
+message FileProblemView {
+  int64 id = 1;
+  FileProblemKind kind = 2;
+  string conversation_id = 3;             // empty for an entry no conversation owns
+  string path = 4;                        // inside the location, '/' between its parts
+  string sha256_placed = 5;               // quarantined only
+  string sha256_found = 6;                // quarantined only
+  string moved_to = 7;                    // quarantined only: inside the quarantine directory
+  string detail = 8;
+  string raised_utc = 9;
+  string dismissed_utc = 10;              // empty while it waits
+}
+
+message DismissFileProblemRequest {
+  int64 id = 1;
+}
+
 message FileLocationReply {
   bool ok = 1;
   FileRefusal refusal = 2;            // when not ok
@@ -455,6 +493,7 @@ enum FileRejection {
   FILE_REJECTION_TOO_MANY_NAMES = 12;
   FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
   FILE_REJECTION_NAME_HOLDS_OTHER_CONTENT = 14;  // a placed file is never changed: a new version takes a new name
+  FILE_REJECTION_TAMPERED = 15;  // something other than Parley changed the bytes on disk; no longer reliable
 }
 
 enum PlaceOutcome {
@@ -736,6 +775,11 @@ service Operators {
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);
   rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
+
+  // What sweeps of the file location found and could not leave as it was (section 9.5): files moved to quarantine, and
+  // entries another program held. Kept until the person dismisses each; dismissing deletes nothing on disk.
+  rpc ListFileProblems(ListFileProblemsRequest) returns (FileProblemsReply);
+  rpc DismissFileProblem(DismissFileProblemRequest) returns (DidItReply);
 }
 
 message Empty {}

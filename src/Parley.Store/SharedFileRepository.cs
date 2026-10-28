@@ -461,6 +461,54 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         return FileRejection.None;
     }
 
+    /// <summary>Removes a placed file whose bytes on disk were found not to hash to what was placed.</summary>
+    /// <param name="file">The file, as the sweep resolved it.</param>
+    /// <param name="found">The hash of the bytes found.</param>
+    /// <param name="foundBytes">Their size.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> when it went; <see langword="false"/> when it had gone already.</returns>
+    /// <remarks>
+    /// Read again inside the transaction for the reason <see cref="RemoveAsync"/> is: the name may hold another
+    /// placement since the sweep looked. Its fetchers and its placer are told it was tampered with (SPEC.md §9.5).
+    /// </remarks>
+    public async Task<bool> RemoveTamperedAsync(
+        StoredFile file,
+        ContentHash found,
+        long foundBytes,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
+        {
+            scope.Complete();
+            return false;
+        }
+
+        await _notices.RaiseTamperedAsync(
+            current.File.ConversationId, current.NameKey, current.File.Name.Value, current.File.Sha256,
+            current.File.PlacedBy, found, foundBytes, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM shared_files WHERE conversation_id = @Conversation AND name_key = @Key;",
+                new { Conversation = current.File.ConversationId, Key = current.NameKey },
+                scope.Transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        scope.Complete();
+        return true;
+    }
+
     /// <summary>Removes every file in the location, keeping every conversation's folder name.</summary>
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>

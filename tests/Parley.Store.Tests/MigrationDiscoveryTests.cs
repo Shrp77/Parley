@@ -34,7 +34,7 @@ public sealed class MigrationDiscoveryTests
     /// **The next change to the schema is migration 003**, and this number moving to 3 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 2;
+    private const int Expected = 3;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

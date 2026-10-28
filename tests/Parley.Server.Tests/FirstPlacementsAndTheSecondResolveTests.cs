@@ -160,7 +160,7 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
         var (header, refusal) = await frames.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         Assert.NotNull(refusal);
-        Assert.Equal(Wire.FileRejection.Changed, refusal!.Rejection);
+        Assert.Equal(Wire.FileRejection.Tampered, refusal!.Rejection);
         Assert.Equal(Sha("version two, longer"), refusal.Sha256Now);
         Assert.False(broker.Runtime.Files.IsHeld("pricing", name));
     }

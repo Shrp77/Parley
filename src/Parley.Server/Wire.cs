@@ -562,6 +562,7 @@ internal static class Conversions
         FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
         FileRejection.SafeNameTaken => Wire.FileRejection.SafeNameTaken,
         FileRejection.NameHoldsOtherContent => Wire.FileRejection.NameHoldsOtherContent,
+        FileRejection.Tampered => Wire.FileRejection.Tampered,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
     };
 
@@ -655,6 +656,29 @@ internal static class Conversions
             Name = notice.Name,
             Sha256Had = notice.Had.Value,
             GoneUtc = Stamp(notice.GoneUtc),
+            Sha256Found = notice.Found?.Value ?? string.Empty,
+        };
+    }
+
+    /// <summary>Converts a problem with the file location for the wire.</summary>
+    /// <param name="problem">The problem.</param>
+    /// <returns>The wire view.</returns>
+    public static Wire.FileProblemView Out(FileProblem problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+
+        return new Wire.FileProblemView
+        {
+            Id = problem.Id,
+            Kind = problem.Kind == FileProblemKind.Quarantined ? Wire.FileProblemKind.Quarantined : Wire.FileProblemKind.Locked,
+            ConversationId = problem.ConversationId ?? string.Empty,
+            Path = problem.Path,
+            Sha256Placed = problem.PlacedSha256?.Value ?? string.Empty,
+            Sha256Found = problem.FoundSha256?.Value ?? string.Empty,
+            MovedTo = problem.MovedTo ?? string.Empty,
+            Detail = problem.Detail,
+            RaisedUtc = Stamp(problem.RaisedUtc),
+            DismissedUtc = problem.DismissedUtc is { } dismissed ? Stamp(dismissed) : string.Empty,
         };
     }
 

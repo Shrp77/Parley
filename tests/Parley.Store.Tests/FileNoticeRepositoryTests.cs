@@ -185,20 +185,49 @@ public sealed class FileNoticeRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_change_notice_an_earlier_build_left_is_forgotten_and_a_gone_notice_kept()
+    public async Task A_tampered_file_tells_its_fetchers_and_its_placer_with_the_hash_found()
     {
-        // Read as a gone notice now, a change notice would tell an agent a file had gone that is still listed.
+        // Something other than Parley changed the bytes: whoever holds a copy, and whoever can place it again, is told.
         await Place("v1");
-        Execute(
-            "INSERT INTO file_notices (agent, conversation_id, name_key, name, sha256_had, sha256_now, size_bytes, changed_utc) "
-            + $"VALUES ('orders@test', 'pricing', 'PRICE-SNAPSHOT.MD', 'price-snapshot.md', '{ContentHash.Of("v0"u8).Value}', "
-            + $"'{ContentHash.Of("v1"u8).Value}', 2, '{ExchangeRow.FormatTimestamp(Now)}');");
-        await Fetch(Inventory, "v1");
-        await _files.RemoveAsync(await Stored(), Billing, Now, cancellationToken: Ct);
+        await Fetch(Orders, "v1");
 
-        Assert.Equal(1, await _notices.ForgetChangeNoticesAsync(Ct));
-        Assert.Empty((await Collect(Orders)).Notices);
-        Assert.Single((await Collect(Inventory)).Notices);
+        Assert.True(await _files.RemoveTamperedAsync(await Stored(), ContentHash.Of("v2"u8), 2, Now.AddHours(1), cancellationToken: Ct));
+
+        foreach (var agent in new[] { Orders, Billing })
+        {
+            var notice = Assert.Single((await Collect(agent)).Notices);
+            Assert.True(notice.Tampered);
+            Assert.Equal(ContentHash.Of("v1"u8), notice.Had);
+            Assert.Equal(ContentHash.Of("v2"u8), notice.Found);
+        }
+
+        Assert.Empty((await Collect(Inventory)).Notices);
+        Assert.Null(await _files.GetAsync("pricing", SharedFileName.Create("price-snapshot.md"), cancellationToken: Ct));
+        Assert.Equal(0L, Scalar("SELECT count(*) FROM file_fetches;"));
+    }
+
+    [Fact]
+    public async Task A_placer_that_also_fetched_its_file_is_told_once()
+    {
+        await Place("v1");
+        await Fetch(Billing, "v1");
+
+        Assert.True(await _files.RemoveTamperedAsync(await Stored(), ContentHash.Of("v2"u8), 2, Now, cancellationToken: Ct));
+
+        Assert.True(Assert.Single((await Collect(Billing)).Notices).Tampered);
+    }
+
+    [Fact]
+    public async Task A_tampered_removal_of_a_file_placed_again_since_removes_nothing()
+    {
+        // The sweep looked before the name was removed and placed again: the file it found is not the one there now.
+        await Place("v1");
+        var looked = await Stored();
+        await _files.RemoveAsync(looked, Billing, Now, cancellationToken: Ct);
+        await Place("v2", Now.AddMinutes(1));
+
+        Assert.False(await _files.RemoveTamperedAsync(looked, ContentHash.Of("v3"u8), 2, Now.AddMinutes(2), cancellationToken: Ct));
+        Assert.NotNull(await _files.GetAsync("pricing", SharedFileName.Create("price-snapshot.md"), cancellationToken: Ct));
     }
 
     [Fact]

@@ -34,7 +34,53 @@ public sealed class AFolderThatIsALinkIsNeverEnteredTests
     }
 
     [Fact]
-    public async Task The_count_takes_the_folder_as_one_entry_and_a_placement_writes_nothing_through_it()
+    public async Task The_count_takes_the_folder_as_one_entry_and_the_sweep_it_starts_deletes_only_the_link()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "makes a junction with mklink");
+
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+
+        // A recorded folder holding no file, so the list finds nothing missing through the link and only counts it.
+        await FileWire.PlaceAsync(orders.Client, Orders, "a.md", "one"u8.ToArray(), "bait", Ct);
+        _ = await orders.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Orders, Files = { new Wire.FileRef { ConversationId = "bait", Name = "a.md" } } },
+            cancellationToken: Ct);
+        var folder = broker.Runtime.Files.FolderPath("bait");
+        var outside = Directory.CreateTempSubdirectory("parley-outside-");
+
+        try
+        {
+            var sub = Directory.CreateDirectory(Path.Combine(outside.FullName, "sub")).FullName;
+
+            for (var i = 0; i < 5; i++)
+            {
+                File.WriteAllText(Path.Combine(sub, $"x{i}.md"), "not the location's");
+            }
+
+            await SwapForJunctionAsync(folder, outside.FullName);
+
+            var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)
+                .ResponseAsync.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+            await broker.Runtime.Sweeper.IdleAsync();
+
+            Assert.Equal(1, listed.FilesNotListed);
+            Assert.False(Directory.Exists(folder), "the sweep left the link");
+            Assert.Equal(5, Directory.EnumerateFiles(sub).Count());
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: false);
+            }
+
+            outside.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_placement_into_the_folder_writes_nothing_through_it_and_starts_a_sweep()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "makes a junction with mklink");
 
@@ -55,14 +101,15 @@ public sealed class AFolderThatIsALinkIsNeverEnteredTests
 
             await SwapForJunctionAsync(folder, outside.FullName);
 
-            var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)
-                .ResponseAsync.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+            // A placement that meets the link is refused, and starts the sweep that deletes it.
             var refused = await Assert.ThrowsAsync<Grpc.Core.RpcException>(
                 () => FileWire.PlaceAsync(orders.Client, Orders, "b.md", "two"u8.ToArray(), "bait", Ct));
+            await broker.Runtime.Sweeper.IdleAsync();
 
-            Assert.Equal(1, listed.FilesNotListed);
             Assert.Equal(Grpc.Core.StatusCode.FailedPrecondition, refused.StatusCode);
             Assert.False(File.Exists(Path.Combine(outside.FullName, "b.md")), "the placement wrote through the link");
+            Assert.False(Directory.Exists(folder), "the sweep left the link");
+            Assert.Equal(5, Directory.EnumerateFiles(sub).Count());
         }
         finally
         {

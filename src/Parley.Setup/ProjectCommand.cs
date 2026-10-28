@@ -699,7 +699,7 @@ public static class ProjectCommand
         // The file location and its staging directory (SPEC.md §9.5), and only after the lock went: a
         // broker still serving would have kept the lock, and deleting files it may be streaming to an
         // agent would be the partial destruction the ordering above exists to prevent.
-        foreach (var suffix in new[] { Parley.Core.StoreFiles.Files, Parley.Core.StoreFiles.FilesIncoming })
+        foreach (var suffix in new[] { Parley.Core.StoreFiles.Files, Parley.Core.StoreFiles.FilesIncoming, Parley.Core.StoreFiles.FilesQuarantine })
         {
             var path = going.Store + suffix;
 

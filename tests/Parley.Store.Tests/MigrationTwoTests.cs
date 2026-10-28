@@ -50,9 +50,9 @@ public sealed class MigrationTwoTests : IDisposable
 
         var before = Dump();
 
-        Assert.Equal(1, SchemaMigrator.Migrate(_connection));
+        Assert.Equal(SchemaMigrator.LatestVersion - 1, SchemaMigrator.Migrate(_connection));
 
-        Assert.Equal(2, SchemaMigrator.GetUserVersion(_connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(_connection));
         Assert.Equal(before, Dump());
         Assert.Equal(0L, Count("SELECT count(*) FROM pragma_foreign_key_check;"));
         Assert.Empty(StoreShape.Problems(_connection));

@@ -69,8 +69,7 @@ public sealed class TheNotListedCountWalksTheDiskSafelyTests
         var folder = broker.Runtime.Files.FolderPath("bait");
         File.WriteAllText(Path.Combine(folder, "byhand.md"), "x");
 
-        var before = await ops.ListSharedFilesAsync(new Wire.ListFilesRequest { PageSize = 200 }, cancellationToken: Ct);
-
+        // One list only: a list that counts a file nothing placed starts a sweep, which deletes it.
         var sub = Path.Combine(folder, "locked");
         Directory.CreateDirectory(sub);
         Run("icacls", $"\"{sub}\" /deny \"{Environment.UserName}:(OI)(CI)(R)\"");
@@ -85,7 +84,6 @@ public sealed class TheNotListedCountWalksTheDiskSafelyTests
             Run("icacls", $"\"{sub}\" /remove:d \"{Environment.UserName}\" /T");
         }
 
-        Assert.Equal(1, before.FilesNotListed);
         Assert.Equal(1, during.FilesNotListed);
         Assert.Single(during.Files);
     }

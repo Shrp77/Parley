@@ -206,7 +206,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
             }
             catch (FileLocationStore.NotItsOwnFolderException)
             {
-                // Rolled back: nothing recorded, nothing written into the folder the name reaches.
+                // Rolled back: nothing recorded, nothing written into the folder the name reaches. A folder replaced by a
+                // link is something else's doing, and the sweep this asks for deletes the link (SPEC.md §9.5).
+                _runtime.Sweeper.Ask();
                 throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
                     "This conversation's folder on the broker's disk is not its own: another folder's short name, or a "
@@ -499,19 +501,17 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
             var streamed = ContentHash.FromDigest(hash.GetHashAndReset());
 
-            // **Bytes changed on disk are not the file** (SPEC.md §9.5). A placed file is never changed through Parley, so
-            // bytes that are not the content the header named were changed by hand, before or during the stream; the
-            // adapter is told to write nothing, and the agent is told how a new version travels.
+            // **Bytes changed on disk are tampering** (SPEC.md §9.5). A placed file is never changed through Parley, so bytes
+            // that are not the content the header named were changed by something else, before or during the stream: the
+            // adapter writes nothing, and a sweep sets the file aside and tells everybody who holds it.
             if (streamed != file.Sha256)
             {
+                _runtime.Sweeper.Ask();
+
                 await writer.WriteAsync(
                     new Wire.FetchFileFrame
                     {
-                        Refusal = Conversions.Out(
-                            FileRefusal.Of(reference, FileRejection.Changed),
-                            "The file changed on disk after it was placed, so it was not written. A placed file is never "
-                            + "changed: ask whoever placed it to place the new version under a new name.",
-                            streamed),
+                        Refusal = Conversions.Out(FileRefusal.Of(reference, FileRejection.Tampered), TamperedSentence, streamed),
                     },
                     cancellationToken).ConfigureAwait(false);
                 return;
@@ -602,6 +602,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
             if (forOperator)
             {
                 reply.FilesNotListed = NotListed(folders, placed, scope);
+
+                // Nothing but a placement puts a file in the location, so one there unplaced was put there by something
+                // else, and a sweep deletes it (SPEC.md §9.5).
+                if (reply.FilesNotListed > 0)
+                {
+                    _runtime.Sweeper.Ask();
+                }
             }
 
             return reply;
@@ -668,13 +675,15 @@ internal sealed class FileWork(BrokerRuntime runtime)
             using (await _runtime.Files.ChangeAsync(file.Folder, file.Name, cancellationToken).ConfigureAwait(false))
             {
                 // **An agent removes only the bytes it placed** (SPEC.md §9.5). A file there with another size or time was
-                // changed or put there by hand, and may be the person's; the person removes it.
+                // changed by something other than Parley; a sweep looks at it, and quarantines it if its bytes changed.
                 if (caller is not null && !_runtime.Files.HoldsTheRecordedFileOrNone(file.Folder, file.Name, (file.SizeBytes, stored.ModifiedTicks)))
                 {
+                    _runtime.Sweeper.Ask();
                     reply.Refused.Add(Conversions.Out(
-                        FileRefusal.Of(reference, FileRejection.Changed),
-                        "The file on disk is not the one you placed under this name: it was changed or put there by hand, "
-                        + "so nothing was removed. The person can remove it.",
+                        FileRefusal.Of(reference, FileRejection.Tampered),
+                        "The file on disk is not the one you placed under this name: something other than Parley changed "
+                        + "it, so nothing was removed. The broker is checking it; if its bytes changed, it is set aside and "
+                        + "you are told in your inbox.",
                         null));
                     continue;
                 }
@@ -805,7 +814,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
     {
         foreach (var folder in folders)
         {
-            _runtime.Files.DeleteOrMark(folder);
+            _ = _runtime.Files.DeleteFolder(folder);
         }
     }
 
@@ -902,6 +911,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
         // over it.
         if (look.Existing is null && look.Folder is { } folder && _runtime.Files.OnDisk(folder, name) is { } unrecorded)
         {
+            _runtime.Sweeper.Ask();
             return PersonsOnDisk(conversation, name, requested, unrecorded);
         }
 
@@ -1000,6 +1010,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 && await new SharedFileRepository(connection).RemoveAsync(stored, null, now, cancellationToken: ct)
                     .ConfigureAwait(false) == FileRejection.None,
             cancellationToken).ConfigureAwait(false);
+
+        // Nothing but Parley removes a placed file, so one gone from disk was removed by something else: a sweep looks at
+        // the rest of the location too (SPEC.md §9.5).
+        if (gone)
+        {
+            _runtime.Sweeper.Ask();
+        }
 
         return gone ? null : stored;
     }
@@ -1147,10 +1164,16 @@ internal sealed class FileWork(BrokerRuntime runtime)
             : $"{placedBy} placed that file, so nothing was done: a placed file is never changed, and only its placer or "
               + "the person removes it. To place a file, use another name.";
 
-    // A file on disk under a name nothing placed: copied there by hand, not in the location, and never written over.
+    // A file on disk under a name nothing placed: put there by something other than Parley, never written over, and
+    // deleted by the sweep this asked for.
     private const string UnplacedSentence =
-        "A file nothing placed is on disk under that name, put there by hand, so nothing was placed: a placement never "
-        + "writes over it. Use another name.";
+        "A file nothing placed is on disk under that name, put there by something other than Parley, so nothing was "
+        + "placed: a placement never writes over it. The broker is removing it; place the file again in a moment.";
+
+    // A file whose bytes on disk are not what was placed (SPEC.md §9.5).
+    private const string TamperedSentence =
+        "The file was tampered with on the broker's machine: its bytes no longer match what was placed, so it is no "
+        + "longer reliable and nothing was written. The broker is setting it aside; ask its placer to place it again.";
 
     private static FileRejection Rejection(SharedFileNameProblem problem) =>
         problem == SharedFileNameProblem.ExtensionNotAllowed ? FileRejection.ExtensionNotAllowed : FileRejection.BadName;
