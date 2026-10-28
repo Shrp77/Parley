@@ -949,7 +949,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// </para>
     /// <para>
     /// **Never cancelled**, because it runs after the rows have gone: a call given up then would leave the folders on
-    /// disk with no row naming them and no mark, so no start would delete them.
+    /// disk, deleted only by whatever next sweeps the location, though the operator was told their files went.
     /// </para>
     /// </remarks>
     private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders)

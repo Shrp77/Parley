@@ -19,7 +19,8 @@ namespace Parley.Server;
 /// <b>Hashed outside the store's turn, settled inside it.</b> Hashing every file is the slow part and reads only, so
 /// agents are not held up by it. What it found is then checked again inside one turn of the store, holding every file
 /// as a destroy does, so no placement commits and no download reads while the sweep moves and deletes, and a file
-/// placed, removed or put right since the hashing is judged as it is now.
+/// put right since the hashing is judged as it is now; one removed, or removed and placed again, is left to the next
+/// sweep to judge against its own row.
 /// </para>
 /// <para>
 /// One sweep at a time. One asked for while another runs runs once more after it, so a sweep that began before the
@@ -42,10 +43,14 @@ public sealed class FileSweeper : IAsyncDisposable
     private Task _running = Task.CompletedTask;
     private bool _again;
 
+    // Whether a run is going or about to, set and cleared only under the gate: a task's own completion is seen late, so
+    // an ask that read it in the moment between the run's last look and its end started nothing, and was lost.
+    private bool _active;
+
     internal FileSweeper(BrokerRuntime runtime) => _runtime = runtime;
 
     /// <summary>Gets or sets what is told about a sweep that failed for a reason other than a held entry.</summary>
-    /// <remarks>Set by the server to its log. A failed sweep changes nothing it had not finished, and the next one tries again.</remarks>
+    /// <remarks>Set by the server to its log. A failed sweep keeps what it finished, and the next one tries again.</remarks>
     public Action<Exception>? Failed { get; set; }
 
     /// <summary>Asks for a sweep, without waiting for it.</summary>
@@ -60,8 +65,9 @@ public sealed class FileSweeper : IAsyncDisposable
 
             _again = true;
 
-            if (_running.IsCompleted)
+            if (!_active)
             {
+                _active = true;
                 _running = Task.Run(RunAsync);
             }
         }
@@ -85,7 +91,7 @@ public sealed class FileSweeper : IAsyncDisposable
 
             lock (_gate)
             {
-                if (_running.IsCompleted && !_again)
+                if (!_active)
                 {
                     return;
                 }
@@ -94,7 +100,7 @@ public sealed class FileSweeper : IAsyncDisposable
     }
 
     /// <summary>Sweeps now and waits for it.</summary>
-    /// <param name="cancellationToken">Cancels the sweep between entries.</param>
+    /// <param name="cancellationToken">Cancels the hashing, and the rest of the sweep between entries.</param>
     /// <returns>A task that completes when the sweep has finished.</returns>
     public async Task SweepAsync(CancellationToken cancellationToken)
     {
@@ -146,6 +152,7 @@ public sealed class FileSweeper : IAsyncDisposable
             {
                 if (!_again || _stopping.IsCancellationRequested)
                 {
+                    _active = false;
                     return;
                 }
 
@@ -158,6 +165,11 @@ public sealed class FileSweeper : IAsyncDisposable
             }
             catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
             {
+                lock (_gate)
+                {
+                    _active = false;
+                }
+
                 return;
             }
             catch (Exception failed) when (failed is not OperationCanceledException)
@@ -184,23 +196,40 @@ public sealed class FileSweeper : IAsyncDisposable
 
         using var everything = await new FileWork(_runtime).HoldEverythingAsync(cancellationToken).ConfigureAwait(false);
 
+        // Inside the turn nothing is cancelled part way: an entry moved to quarantine and not recorded would be a file set
+        // aside with nobody told. A stop is seen between entries, and the next sweep does the rest.
         _ = await _runtime.UseConnectionAsync(
-            async (connection, now, ct) =>
+            async (connection, now, unused) =>
             {
+                var ct = CancellationToken.None;
                 var shared = new SharedFileRepository(connection);
                 var problems = new FileProblemRepository(connection);
 
                 foreach (var (stored, first) in looked)
                 {
-                    // Looked at again: the hashing ran outside the turn, and the file may have been put right, removed or
-                    // placed again since.
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return false;
+                    }
+
+                    // The row as it is now: the name may have been removed and placed again since the hashing, and the file
+                    // there then is that placement's, judged by the next sweep against its own row.
+                    var current = await shared.GetAsync(stored.File.ConversationId, stored.File.Name, cancellationToken: ct)
+                        .ConfigureAwait(false);
+
+                    if (current is null || current.File.Sha256 != stored.File.Sha256 || current.File.PlacedUtc != stored.File.PlacedUtc)
+                    {
+                        continue;
+                    }
+
+                    // Looked at again: the hashing ran outside the turn, and the file may have been put right since.
                     var seen = first.Kind == SeenKind.Placed ? first : await LookAsync(files, stored, ct).ConfigureAwait(false);
                     var path = stored.File.Folder + "/" + stored.File.Name.Value;
 
                     switch (seen.Kind)
                     {
                         case SeenKind.Missing:
-                            _ = await shared.RemoveAsync(stored, null, now, cancellationToken: ct).ConfigureAwait(false);
+                            _ = await shared.RemoveMissingAsync(stored, now, cancellationToken: ct).ConfigureAwait(false);
                             break;
 
                         case SeenKind.Held:
@@ -248,31 +277,45 @@ public sealed class FileSweeper : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var problems = new FileProblemRepository(connection);
-        string movedTo;
+        var movedTo = FileLocationStore.QuarantineName(stored.File.Folder, stored.File.Name, now);
+        Exception error;
 
-        try
+        // **The records and the move are one act.** The row, the notices and the problem are written in a transaction
+        // that commits only once the file has moved, so a move that fails leaves everything as it was, and nothing is
+        // recorded quarantined that is still in the location.
+        using (var scope = WriteScope.Begin(connection, null))
         {
-            movedTo = _runtime.Files.QuarantineFile(stored.File.Folder, stored.File.Name, now);
-        }
-        catch (Exception held) when (held is IOException or UnauthorizedAccessException)
-        {
-            // Left where it is and still recorded: a fetch hashes what it streams, so it is still never served.
+            if (!await new SharedFileRepository(connection)
+                    .RemoveTamperedAsync(stored, seen.Found!.Value, seen.Bytes, now, scope.Transaction, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return;
+            }
+
             _ = await problems.RaiseAsync(
-                FileProblemKind.Locked, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, null,
-                "Its bytes no longer match what was placed, and another program holds it, so it could not be moved to "
-                + "quarantine: " + held.Message,
-                now, cancellationToken: cancellationToken).ConfigureAwait(false);
-            return;
-        }
+                FileProblemKind.Quarantined, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, movedTo,
+                "Its bytes no longer match what was placed, so something other than Parley changed it. It was moved to "
+                + "quarantine and every agent that fetched or placed it was told it is no longer reliable.",
+                now, scope.Transaction, cancellationToken).ConfigureAwait(false);
 
-        _ = await new SharedFileRepository(connection)
-            .RemoveTamperedAsync(stored, seen.Found!.Value, seen.Bytes, now, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+            try
+            {
+                _runtime.Files.MoveToQuarantine(stored.File.Folder, stored.File.Name, movedTo);
+                scope.Complete();
+                return;
+            }
+            catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+            {
+                // Rolled back below: left where it is and still recorded. A fetch hashes what it streams, so it is still
+                // never served.
+                error = held;
+            }
+        }
 
         _ = await problems.RaiseAsync(
-            FileProblemKind.Quarantined, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, movedTo,
-            "Its bytes no longer match what was placed, so something other than Parley changed it. It was moved to "
-            + "quarantine and every agent that fetched or placed it was told it is no longer reliable.",
+            FileProblemKind.Locked, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, null,
+            "Its bytes no longer match what was placed, but it could not be moved to quarantine, so it stays where it "
+            + "is and is never served: " + error.Message,
             now, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -340,7 +383,7 @@ public sealed class FileSweeper : IAsyncDisposable
     }
 
     private static string Held(Exception error) =>
-        "Another program holds it, so the sweep could not read, move or delete it: " + error.Message;
+        "The sweep could not read, move or delete it, usually because another program holds it: " + error.Message;
 
     private enum SeenKind
     {

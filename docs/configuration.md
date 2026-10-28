@@ -302,7 +302,7 @@ PARLEY_TICK_SECONDS=5                 # how often deadlines are swept
 **Set these in the broker's environment**, meaning the process that runs `parley serve`. Not in
 your shell, and not on the agents' servers. The broker is the only process that reads them. Set
 them anywhere else and the broker quietly keeps the default. Pruning from the terminal only brings
-the next sweep forward, under the same policy.
+the next retention pass forward, under the same policy.
 
 A floor bounds the other direction and is not configurable. Tightening retention can never delete
 a message nobody has collected, anything on an exchange that is still open, the request a

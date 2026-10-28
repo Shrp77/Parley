@@ -461,6 +461,42 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         return FileRejection.None;
     }
 
+    /// <summary>Records a placed file gone that was found missing from disk.</summary>
+    /// <param name="file">The file, as resolved.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns><see langword="true"/> when it was recorded gone; <see langword="false"/> when it had gone already.</returns>
+    /// <remarks>
+    /// As <see cref="RemoveAsync"/> does for the person, and its placer is told too (SPEC.md §9.5): nothing but Parley
+    /// removes a placed file, so one missing was taken by something else, and its placer is the one that can place it
+    /// again.
+    /// </remarks>
+    public async Task<bool> RemoveMissingAsync(
+        StoredFile file,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
+        {
+            scope.Complete();
+            return false;
+        }
+
+        await DeleteAsync(current, nowUtc, scope.Transaction, cancellationToken, tellPlacer: true).ConfigureAwait(false);
+
+        scope.Complete();
+        return true;
+    }
+
     /// <summary>Removes a placed file whose bytes on disk were found not to hash to what was placed.</summary>
     /// <param name="file">The file, as the sweep resolved it.</param>
     /// <param name="found">The hash of the bytes found.</param>
@@ -684,11 +720,14 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         StoredFile file,
         DateTimeOffset nowUtc,
         SqliteTransaction transaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool tellPlacer = false)
     {
         await _notices.RaiseGoneAsync(
             file.File.ConversationId, file.NameKey, file.File.Name.Value, nowUtc, forgetFetches: true,
-            transaction, cancellationToken).ConfigureAwait(false);
+            transaction, cancellationToken,
+            tellPlacer ? file.File.PlacedBy : null,
+            tellPlacer ? file.File.Sha256 : null).ConfigureAwait(false);
 
         await _connection.ExecuteAsync(
             new CommandDefinition(

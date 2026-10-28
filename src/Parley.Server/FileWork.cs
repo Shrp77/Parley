@@ -808,7 +808,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
     public Task<IDisposable> HoldEverythingAsync(CancellationToken cancellationToken) =>
         _runtime.Files.ChangeEverythingAsync(cancellationToken);
 
-    /// <summary>Deletes the folders of conversations whose rows are gone, or marks them for the next start.</summary>
+    /// <summary>Deletes the folders of conversations whose rows are gone; what it cannot goes at the next sweep.</summary>
     /// <param name="folders">The folders, as they were recorded before the rows went.</param>
     public void DeleteFolders(IEnumerable<string> folders)
     {
@@ -928,8 +928,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
             transaction, cancellationToken).ConfigureAwait(false);
 
         // **A recorded file gone from disk is written again, though the hash is the row's.** The row stands until a list,
-        // a fetch or the next start finds the file missing, and the same bytes placed in that time were answered as
-        // already current with nothing on disk.
+        // a fetch or a sweep finds the file missing, and the same bytes placed in that time were answered as already
+        // current with nothing on disk.
         var write = placed.Outcome is PlaceOutcome.Placed
                     || (placed.Outcome is PlaceOutcome.AlreadyCurrent
                         && !File.Exists(_runtime.Files.FilePath(placed.File!.Folder, placed.File.Name)));
@@ -990,8 +990,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>The row, or <see langword="null"/> when the file was not on disk and is now recorded gone.</returns>
     /// <remarks>
-    /// Nothing is hashed: a placed file is never changed, and bytes changed by hand are caught by the fetch, which
-    /// hashes what it streams. A file deleted by hand is gone, as a removal is, and every agent that fetched it is told.
+    /// Nothing is hashed here: bytes changed on disk are caught by the fetch, which hashes what it streams, and by the
+    /// sweep. A file something else deleted is gone, as a removal is; its fetchers and its placer are told, and the
+    /// sweep this asks for looks at the rest of the location.
     /// </remarks>
     private async Task<StoredFile?> ReconcileAsync(StoredFile stored, CancellationToken cancellationToken)
     {
@@ -1007,8 +1008,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
         var gone = await _runtime.UseConnectionAsync(
             async (connection, now, ct) =>
                 _runtime.Files.IsOnDisk(stored.File.Folder, stored.File.Name) == false
-                && await new SharedFileRepository(connection).RemoveAsync(stored, null, now, cancellationToken: ct)
-                    .ConfigureAwait(false) == FileRejection.None,
+                && await new SharedFileRepository(connection).RemoveMissingAsync(stored, now, cancellationToken: ct)
+                    .ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
 
         // Nothing but Parley removes a placed file, so one gone from disk was removed by something else: a sweep looks at

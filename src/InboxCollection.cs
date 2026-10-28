@@ -11,10 +11,11 @@ namespace Parley;
 /// forget the acknowledgement.
 /// </para>
 /// <para>
-/// <b>The reply is the caller's only once the broker has recorded it delivered</b>, which it says by ending the call. A
-/// collection cancelled or broken before then is handed over again by the next one, so a caller that shows nothing
-/// until this returns shows everything exactly when it is delivered. The one way to lose a collection is to give up
-/// after the acknowledgement has been sent and before the broker's answer arrives.
+/// <b>The reply is the caller's once it has arrived whole.</b> A collection cancelled or broken before then is handed
+/// over again by the next one. After it, nothing is given up: the acknowledgement is sent, and the reply is returned
+/// whatever becomes of the call, because the broker may have recorded it. If the broker had not, the next collection
+/// hands it over again, so it arrives twice, which is what at least once means (SPEC.md §6). Only the caller's own
+/// process ending between the reply and its use loses a collection.
 /// </para>
 /// </remarks>
 internal static class InboxCollection
@@ -47,14 +48,21 @@ internal static class InboxCollection
 
         var reply = call.ResponseStream.Current;
 
-        await call.RequestStream.WriteAsync(
-            new Wire.DrainInboxFrame { Acknowledge = new Wire.InboxAcknowledgement() },
-            CancellationToken.None).ConfigureAwait(false);
-        await call.RequestStream.CompleteAsync().ConfigureAwait(false);
-
-        // The broker ends the call once what it handed over is recorded delivered; a failure there arrives here.
-        while (await call.ResponseStream.MoveNext(CancellationToken.None).ConfigureAwait(false))
+        try
         {
+            await call.RequestStream.WriteAsync(
+                new Wire.DrainInboxFrame { Acknowledge = new Wire.InboxAcknowledgement() },
+                CancellationToken.None).ConfigureAwait(false);
+            await call.RequestStream.CompleteAsync().ConfigureAwait(false);
+
+            // The broker ends the call once what it handed over is recorded delivered.
+            while (await call.ResponseStream.MoveNext(CancellationToken.None).ConfigureAwait(false))
+            {
+            }
+        }
+        catch (RpcException)
+        {
+            // Kept: the broker may have recorded it, and if it had not, the next collection brings it again.
         }
 
         return reply;

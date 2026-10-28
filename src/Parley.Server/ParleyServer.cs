@@ -121,6 +121,8 @@ public sealed partial class ParleyServer : IAsyncDisposable
         var application = builder.Build();
         var logs = application.Services.GetRequiredService<ILoggerFactory>();
         var lifetime = logs.CreateLogger(Category);
+        var sweeps = logs.CreateLogger(Category + ".Files");
+        runtime.Sweeper.Failed = failed => LogSweepFailed(sweeps, failed);
 
         if (diagnostics is { Heartbeat: true })
         {
@@ -163,6 +165,9 @@ public sealed partial class ParleyServer : IAsyncDisposable
 
     /// <summary>The category the broker's own lines are logged under.</summary>
     private const string Category = "Parley.Server";
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "a sweep of the file location failed; the next one tries again")]
+    private static partial void LogSweepFailed(ILogger logger, Exception failed);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "listening on {Addresses}, heartbeat {Heartbeat}")]
     private static partial void LogStarted(ILogger logger, string addresses, string heartbeat);

@@ -97,6 +97,11 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
     /// </param>
     /// <param name="transaction">The transaction removing it.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="placer">
+    /// For a file found missing, its placer, told too: something other than Parley took it, and the placer is the one
+    /// that can place it again. <see langword="null"/> for a removal Parley made, which its placer or the person asked for.
+    /// </param>
+    /// <param name="placed">The hash placed, with <paramref name="placer"/>.</param>
     public async Task RaiseGoneAsync(
         string conversationId,
         string nameKey,
@@ -104,7 +109,9 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
         DateTimeOffset goneUtc,
         bool forgetFetches,
         SqliteTransaction transaction,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AgentName? placer = null,
+        ContentHash? placed = null)
     {
         var parameters = new
         {
@@ -112,6 +119,8 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
             Key = nameKey,
             Name = name,
             When = ExchangeRow.FormatTimestamp(goneUtc),
+            Placer = placer?.Value,
+            Placed = placed?.Value,
         };
 
         await _connection.ExecuteAsync(
@@ -123,6 +132,13 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                   FROM file_fetches ff
                   JOIN agents a ON a.name = ff.agent
                  WHERE ff.conversation_id = @Conversation AND ff.name_key = @Key AND a.status = 'active'
+                UNION
+                SELECT a.name, @Conversation, @Key, @Name, @Placed, NULL, NULL, @When
+                  FROM agents a
+                 WHERE a.name = @Placer AND @Placed IS NOT NULL AND a.status = 'active'
+                   AND NOT EXISTS (SELECT 1 FROM file_fetches ff
+                                    WHERE ff.agent = a.name AND ff.conversation_id = @Conversation
+                                      AND ff.name_key = @Key)
                 """ + Upsert,
                 parameters,
                 transaction,
@@ -338,7 +354,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                     ExchangeRow.ParseTimestamp(r.ChangedUtc),
                     r.Found is null ? null : ContentHash.Parse(r.Found)))],
                 left - rows.Count),
-            [.. rows.Select(r => KeyOf(r.ConversationId, r.NameKey))]);
+            [.. rows.Select(r => KeyOf(r.ConversationId, r.NameKey, r.ChangedUtc, r.Had))]);
     }
 
     /// <summary>Deletes notices an agent has acknowledged collecting.</summary>
@@ -362,11 +378,14 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
-    // A notice is keyed by its conversation and name key; one string so a set of them can be passed to SQL. Neither part
-    // can hold a control character, so the separator cannot occur inside one.
-    private const string KeyColumn = "(conversation_id || char(31) || name_key)";
+    // A notice as it was handed over: its file and the state it carried, one string so a set of them can be passed to
+    // SQL. The state is part of it because a notice is replaced in place when the same file goes again: an
+    // acknowledgement must delete the notice it handed over, never a newer one about the same name. No part can hold a
+    // control character, so the separator cannot occur inside one.
+    private const string KeyColumn = "(conversation_id || char(31) || name_key || char(31) || changed_utc || char(31) || sha256_had)";
 
-    private static string KeyOf(string conversationId, string nameKey) => conversationId + (char)31 + nameKey;
+    private static string KeyOf(string conversationId, string nameKey, string changedUtc, string had) =>
+        string.Join((char)31, conversationId, nameKey, changedUtc, had);
 
     /// <summary>How many notices are waiting for an agent.</summary>
     /// <param name="agent">The agent.</param>

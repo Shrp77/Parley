@@ -82,9 +82,8 @@ public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePl
     /// <returns>The sentence, or <see langword="null"/> when the count is zero.</returns>
     public static string? NotListedSentenceFor(int notListed) => notListed <= 0
         ? null
-        : $"{notListed} file(s) in these folders are not listed, because nothing placed them: they were copied or " +
-          "renamed there by hand, and Parley does not take in files put in its folders. Place a file through Parley " +
-          "to share it.";
+        : $"{notListed} file(s) in these folders are not listed, because nothing placed them: something other than " +
+          "Parley put them there, and the sweep this list started deletes them. Place a file through Parley to share it.";
 }
 
 /// <summary>

@@ -102,8 +102,8 @@ public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
     [Fact]
     public async Task A_collection_cancelled_at_any_point_loses_no_result()
     {
-        // Given up after a few milliseconds, so the cancel lands somewhere different in each round: before the reply,
-        // during it, or after it and before the acknowledgement. A probe of timing, so it catches a broker that records
+        // Given up after a few milliseconds, so the cancel lands somewhere different in each round: before the reply or
+        // while it arrives. One landing after the reply has arrived is ignored, which the client exists to do. A probe of timing, so it catches a broker that records
         // before the acknowledgement most runs rather than every run; A_collection_never_acknowledged_is_handed_over_again
         // holds that rule on every run.
         await using var broker = await LoopbackBroker.StartAsync(Ct);

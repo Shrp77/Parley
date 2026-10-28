@@ -35,5 +35,5 @@ CREATE TABLE file_problems (
                                    AND sha256_placed <> sha256_found))
 ) STRICT;
 
--- What the person has not dismissed, oldest first, and whether an entry is already raised.
+-- Whether an entry already has a problem waiting, so it is raised once.
 CREATE INDEX ix_file_problems_open ON file_problems(path, kind) WHERE dismissed_utc IS NULL;

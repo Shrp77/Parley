@@ -432,7 +432,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         catch (Grpc.Core.RpcException) when (!cancellationToken.IsCancellationRequested)
         {
             // The broker answered before reading every piece: a refusal that did not need the bytes, for a conversation
-            // that does not exist or a name that holds other content. The answer is in the response, read below.
+            // that does not exist, a name another placed, or a name against the rules. The answer is in the response.
         }
 
         var reply = await call.ResponseAsync.ConfigureAwait(false);

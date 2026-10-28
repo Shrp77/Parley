@@ -5,7 +5,7 @@ disable-model-invocation: true
 
 # List the file problems in Parley's file location
 
-Nothing but Parley may change the file location. The broker checks it when it starts, and whenever an agent's fetch,
+Nothing but Parley may change the file location. The broker checks it when it starts, and whenever a list, fetch,
 removal or placement finds something wrong. A placed file whose bytes changed on disk is moved to the quarantine
 folder, beside the file location on the broker's machine. Anything Parley did not place is deleted. What another
 program held open could not be moved or deleted. Each of these is a file problem, and it waits for the person until

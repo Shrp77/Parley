@@ -11,9 +11,10 @@ namespace Parley.Client.Tests;
 internal static class FakeCollection
 {
     internal static AsyncDuplexStreamingCall<Wire.DrainInboxFrame, Wire.InboxReply> Answering(
-        Func<Wire.DrainInboxRequest, Wire.InboxReply> answer)
+        Func<Wire.DrainInboxRequest, Wire.InboxReply> answer,
+        bool breakAfterTheReply = false)
     {
-        var replies = new Replies();
+        var replies = new Replies { BreakAfterTheReply = breakAfterTheReply };
 
         return new(
             new Frames(frame =>
@@ -49,14 +50,23 @@ internal static class FakeCollection
     {
         public Queue<Wire.InboxReply> Waiting { get; } = new();
 
+        public bool BreakAfterTheReply { get; init; }
+
         public Wire.InboxReply Current { get; private set; } = new();
+
+        private bool _replied;
 
         public Task<bool> MoveNext(CancellationToken cancellationToken)
         {
             if (!Waiting.TryDequeue(out var next))
             {
-                return Task.FromResult(false);
+                // A connection lost after the reply: the broker may or may not have recorded the acknowledgement.
+                return _replied && BreakAfterTheReply
+                    ? Task.FromException<bool>(new RpcException(new Status(StatusCode.Unavailable, "the connection went.")))
+                    : Task.FromResult(false);
             }
+
+            _replied = true;
 
             Current = next;
             return Task.FromResult(true);

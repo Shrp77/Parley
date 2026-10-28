@@ -209,8 +209,8 @@ You place a file of your own from the terminal or the console, into a conversati
 does; `parley files place` does the same from the command line. Placing is the only way a file gets
 in. Nothing else may change the folder, and Parley puts it right when something does.
 
-**The sweep.** The broker checks the whole file location when it starts, and again whenever an
-agent's fetch, removal or placement finds something wrong. This check is the sweep. It does three
+**The sweep.** The broker checks the whole file location when it starts, and again whenever a
+list, fetch, removal or placement finds something wrong. This check is the sweep. It does three
 things:
 
 - A placed file whose bytes changed on disk is moved to the quarantine folder, and every agent that

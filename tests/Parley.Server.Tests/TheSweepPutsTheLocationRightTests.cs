@@ -212,6 +212,43 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
         var problem = Assert.Single((await broker.ConnectAsOperator().ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems);
         Assert.Equal(Wire.FileProblemKind.Locked, problem.Kind);
         Assert.True(File.Exists(path));
+
+        // Still recorded and still there, and never served: a fetch hashes what it streams.
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        using var call = orders.Client.FetchFile(
+            new Wire.FetchFileRequest { Agent = Orders, Name = "terms.md", ConversationId = "pricing" }, cancellationToken: Ct);
+        Wire.FileRefusal? refusal = null;
+
+        while (await call.ResponseStream.MoveNext(Ct))
+        {
+            refusal ??= call.ResponseStream.Current.FrameCase == Wire.FetchFileFrame.FrameOneofCase.Refusal ? call.ResponseStream.Current.Refusal : null;
+        }
+
+        Assert.Equal(Wire.FileRejection.Tampered, refusal?.Rejection);
+    }
+
+    [Fact]
+    public async Task A_link_put_in_the_quarantine_directory_takes_no_file_outside()
+    {
+        // The quarantine is the person's and Parley deletes nothing there, so a link put in it is refused rather than
+        // removed: the tampered file stays where it is, never served, and the person is told.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+        var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "terms.md");
+        await File.WriteAllTextAsync(path, "net 99", Ct);
+        var outside = Directory.CreateDirectory(Path.Combine(_base, "outside")).FullName;
+        Directory.CreateDirectory(broker.Runtime.Files.Quarantine);
+        Junction(Path.Combine(broker.Runtime.Files.Quarantine, "pricing"), outside);
+
+        await broker.Runtime.Sweeper.SweepAsync(Ct);
+
+        Assert.Empty(Directory.EnumerateFileSystemEntries(outside));
+        Assert.True(File.Exists(path));
+        Assert.Equal(Wire.FileProblemKind.Locked, Assert.Single(
+            (await broker.ConnectAsOperator().ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems).Kind);
+
+        Directory.Delete(Path.Combine(broker.Runtime.Files.Quarantine, "pricing"));
     }
 
     [Fact]

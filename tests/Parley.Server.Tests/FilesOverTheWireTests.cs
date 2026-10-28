@@ -226,9 +226,16 @@ public sealed class FilesOverTheWireTests
         var refused = await PlaceAsync(orders, "price list.md", Text("orders'"));
 
         Assert.Equal(Wire.FileRejection.SafeNameTaken, refused.Rejection);
-        Assert.Equal(
-            "the person's",
-            await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), Ct));
+        await NeverWrittenOverThenSweptAsync(broker, Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"));
+    }
+
+    // Never written over by the refused placement, and gone once the sweep the refusal started has run (SPEC.md §9.5).
+    private static async Task NeverWrittenOverThenSweptAsync(LoopbackBroker broker, string path)
+    {
+        Assert.True(!File.Exists(path) || await File.ReadAllTextAsync(path, Ct) == "the person's", "the placement wrote over it");
+
+        await broker.Runtime.Sweeper.IdleAsync();
+        Assert.False(File.Exists(path), "the sweep left a file nothing placed");
     }
 
     [Fact]
@@ -247,7 +254,7 @@ public sealed class FilesOverTheWireTests
 
         Assert.Equal(Wire.FileRejection.NamePlacedByAnother, refused.Rejection);
         Assert.Equal(string.Empty, refused.PlacedBy);
-        Assert.Equal("the person's", await File.ReadAllTextAsync(path, Ct));
+        await NeverWrittenOverThenSweptAsync(broker, path);
     }
 
     [Fact]

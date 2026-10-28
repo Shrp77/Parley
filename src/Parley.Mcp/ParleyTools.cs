@@ -415,8 +415,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     {
         try
         {
-            // Returned only once the broker has recorded it delivered (SPEC.md §6): a call cancelled before then hands
-            // everything over again next time, so nothing reaches the model that is not delivered, and nothing is lost.
+            // Delivered at least once (SPEC.md §6): a call given up before the reply arrives takes nothing, and one whose
+            // reply arrived keeps it whatever becomes of the call, so a message may rarely come twice.
             var inbox = await _link.Agents.DrainInboxAsync(
                 new Wire.DrainInboxRequest { Agent = _options.Agent.Value, Limit = limit ?? 0 },
                 cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -1262,7 +1262,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         """
         Remove files you placed, when they are no longer needed. Each name you did not place is refused,
         naming who did, and the rest are still removed. A file whose size or time on disk is not what you
-        placed is refused too: it may have been changed by hand. At most 200 names at once.
+        placed is refused too, and the broker checks it: if its bytes changed, you are told in your inbox. At most
+        200 names at once.
 
         Every agent that fetched a removed file is told it is gone the next time it checks its inbox.
         """)]

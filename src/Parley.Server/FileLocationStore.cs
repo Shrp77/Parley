@@ -151,26 +151,37 @@ public sealed class FileLocationStore : IDisposable
         Directory.CreateDirectory(Incoming);
     }
 
-    /// <summary>Moves a placed file whose bytes no longer match what was placed into the quarantine directory.</summary>
+    /// <summary>Where in the quarantine directory a placed file found at an instant goes.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
     /// <param name="nowUtc">When the sweep found it, which names the copy so two never collide.</param>
-    /// <returns>Where it now is, as a path inside the quarantine directory with <c>/</c> between its parts.</returns>
+    /// <returns>A path inside the quarantine directory with <c>/</c> between its parts.</returns>
+    internal static string QuarantineName(string folder, SharedFileName name, DateTimeOffset nowUtc) =>
+        folder + "/" + nowUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-" + name.Value;
+
+    /// <summary>Moves a placed file whose bytes no longer match what was placed into the quarantine directory.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="movedTo">Where it goes, from <see cref="QuarantineName"/>.</param>
     /// <exception cref="IOException">Another program holds the file, or the move failed.</exception>
     /// <exception cref="UnauthorizedAccessException">The broker may not move it.</exception>
     /// <remarks>
     /// Moved rather than deleted (SPEC.md §9.5), so the person can see what the bytes became and where they may have
     /// spread, and beside the location rather than in it, so nothing Parley serves, lists or sweeps ever reaches it.
     /// </remarks>
-    internal string QuarantineFile(string folder, SharedFileName name, DateTimeOffset nowUtc)
+    internal void MoveToQuarantine(string folder, SharedFileName name, string movedTo)
     {
-        var source = AsWritten(FilePath(folder, name));
-        var into = Directory.CreateDirectory(Path.Combine(Quarantine, folder)).FullName;
-        var copy = nowUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-" + name.Value;
+        var into = Path.Combine(Quarantine, folder);
 
-        File.Move(source, AsWritten(Path.Combine(into, copy)), overwrite: false);
+        // Never through a link put in the quarantine directory: the file would land wherever it reaches.
+        if (Directory.Exists(into) && IsLink(into))
+        {
+            throw new IOException($"The quarantine folder '{folder}' is a link, so nothing is moved into it.");
+        }
 
-        return folder + "/" + copy;
+        Directory.CreateDirectory(into);
+
+        File.Move(AsWritten(FilePath(folder, name)), AsWritten(Path.Combine(into, Path.GetFileName(movedTo))), overwrite: false);
     }
 
     /// <summary>Deletes everything in the location that is not a recorded file directly in its own recorded folder.</summary>
@@ -206,7 +217,13 @@ public sealed class FileLocationStore : IDisposable
         {
             var top = Path.GetFileName(entry);
 
-            if (IsRealDirectory(entry) && Recorded(top, kept.Keys, tops) is { } recorded)
+            if (Kind(entry) is not { } kind)
+            {
+                // Gone since the folder was read: nothing to delete.
+                continue;
+            }
+
+            if (kind == EntryKind.Directory && Recorded(top, kept.Keys, tops) is { } recorded)
             {
                 var inside = Entries(entry, failed, top, top);
 
@@ -214,7 +231,12 @@ public sealed class FileLocationStore : IDisposable
                 {
                     var name = Path.GetFileName(one);
 
-                    if (!(IsRealFile(one) && Recorded(name, kept[recorded], inside) is not null))
+                    if (Kind(one) is not { } inner)
+                    {
+                        continue;
+                    }
+
+                    if (!(inner == EntryKind.File && Recorded(name, kept[recorded], inside) is not null))
                     {
                         Remove(one, top + "/" + name, recorded, failed);
                     }
@@ -284,11 +306,34 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    private static bool IsRealDirectory(string path) =>
-        (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == FileAttributes.Directory;
+    private enum EntryKind
+    {
+        File,
+        Directory,
+        Link,
+    }
 
-    private static bool IsRealFile(string path) =>
-        (File.GetAttributes(path) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0;
+    // What an entry is, never through a link; null when it is gone since its folder was read. One that cannot be read is
+    // a link to the walk, so it is deleted as an entry and never entered.
+    private static EntryKind? Kind(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+
+            return (attributes & FileAttributes.ReparsePoint) != 0 ? EntryKind.Link
+                : (attributes & FileAttributes.Directory) != 0 ? EntryKind.Directory
+                : EntryKind.File;
+        }
+        catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return EntryKind.Link;
+        }
+    }
 
     /// <summary>Whether a folder name is taken on disk.</summary>
     /// <param name="folder">The folder name.</param>
@@ -781,7 +826,7 @@ public sealed class FileLocationStore : IDisposable
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
-            // Left for the next start, or already gone.
+            // Left for the next sweep, or already gone.
         }
     }
 

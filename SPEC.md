@@ -996,10 +996,10 @@ collection hands the same things over meanwhile; the caller acknowledges it once
 then are its messages recorded delivered, a Request's collection recorded on its exchange (the second stage above),
 its gone notices deleted and its roadmap notices marked. A call that ends first — given up by its caller, lost on the
 way, or ended by a broker that stopped — records nothing, and the next collection hands everything over again. A
-collection is therefore delivered at least once: it can arrive twice only when the broker stops after the
-acknowledgement arrived and before it was recorded, and it is lost only when the caller gives up after acknowledging
-it, so a caller does not give up once the reply has arrived. Nothing about a hold waits on a timer: it ends with its
-call.
+collection is therefore delivered at least once. A caller keeps a reply that has arrived whole, whatever becomes of
+the call after it, so a collection is lost only if the caller's own process ends between the reply and its use; and
+it arrives twice when the broker did not record an acknowledgement the caller sent, because the broker stopped or the
+call broke first. Nothing about a hold waits on a timer: it ends with its call.
 
 **A conversation waiting only on a vote is flagged as well.** Once every exchange in a conversation
 being polled has closed and nobody asked has declined, the participants that have not answered are
@@ -1276,7 +1276,7 @@ the work a project has done across its repositories.
 
 **A store is upgraded, never replaced.** The schema version is SQLite's `user_version`. Version 1
 is fixed. Every change after it is a numbered migration that upgrades a store in place, in one
-transaction with the version bump, and keeps every row, so installing a new broker never costs
+transaction with the version bump, and keeps every row it does not say it removes, so installing a new broker never costs
 a deployment its work. Before it applies a migration to a store that already has a schema, the broker
 copies the store beside itself, under its lock, named for the schema it is about to reach and the time
 (`parley.db.before-schema-2-20261027T093000Z`). Once a broker serves the upgraded store, every such
@@ -2208,7 +2208,7 @@ CREATE TABLE file_problems (
                                    AND sha256_placed <> sha256_found))
 ) STRICT;
 
--- What the person has not dismissed, and whether an entry is already raised.
+-- Whether an entry already has a problem waiting, so it is raised once.
 CREATE INDEX ix_file_problems_open ON file_problems(path, kind) WHERE dismissed_utc IS NULL;
 ```
 
@@ -2790,7 +2790,7 @@ conversation exports it (§10.2); the export is a file they own, outside the ret
 entirely.
 
 **Where the numbers come from.** The idle period and the maximum age are deployment configuration,
-read by the broker from its own environment and applied on the ordinary sweep, and `prune` (§10.2)
+read by the broker from its own environment and applied on the ordinary retention pass, and `prune` (§10.2)
 reports the policy it applied and not only what it removed — a one-shot deletion under numbers the
 operator did not realise were in force is the mistake worth making visible.
 
@@ -2923,7 +2923,10 @@ what it found, and:
 - deletes everything in the location that is not a recorded file directly in its own recorded folder:
   a file something else put there, a subfolder, a link (as a link, never what it reaches), and a folder
   no row names. A recorded folder holding no file stays. A name differing from a recorded one only in
-  case is that name where the disk does not tell case apart, and another entry where it does.
+  case is taken for it when the recorded spelling is not also there, as it never is where the disk does
+  not tell case apart; beside the recorded spelling it is another entry, and goes. Where the disk tells
+  case apart, a recorded name renamed in case is therefore not the recorded file, which is recorded gone
+  and its placer told: nothing but Parley names a placed file.
 
 What the sweep cannot read, move or delete because another program holds it is left as it is and raised
 as a problem; a file it found tampered with and could not move is still never served, because a fetch
@@ -2943,6 +2946,7 @@ with the store.
 writing and verifying the content the broker streamed to it; any other report is refused. From then
 on, the file's removal, prune, going from disk, or its conversation being destroyed or purged (§14),
 leaves a gone notice for every such agent that is not retired: the name, and the hash it fetched. A file
+found missing, which something other than Parley took, tells its placer too, with the hash it placed. A file
 found tampered with leaves a tampered notice instead, for every agent that fetched it and for its placer,
 with the hash found too: the copy in the location is no longer reliable, while a copy an agent fetched
 was checked against the hash it holds when it was fetched. There is at most one per agent per file. A notice is not a message (§5): it opens no exchange, owes no reply
@@ -3076,7 +3080,7 @@ other could.
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
-| `prune()` | Apply the retention policy immediately rather than waiting for the sweep. |
+| `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set. The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |

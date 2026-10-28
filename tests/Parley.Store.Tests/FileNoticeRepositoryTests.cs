@@ -207,6 +207,27 @@ public sealed class FileNoticeRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_found_missing_tells_its_fetchers_and_its_placer_and_a_removal_tells_only_the_fetchers()
+    {
+        // Something other than Parley took the file, so its placer, who can place it again, is told; a removal Parley
+        // made was asked for by its placer or the person, who know.
+        await Place("v1");
+        await Fetch(Orders, "v1");
+
+        Assert.True(await _files.RemoveMissingAsync(await Stored(), Now, cancellationToken: Ct));
+
+        Assert.False(Assert.Single((await Collect(Orders)).Notices).Tampered);
+        Assert.Equal(ContentHash.Of("v1"u8), Assert.Single((await Collect(Billing)).Notices).Had);
+
+        await Place("v2", Now.AddMinutes(1));
+        await Fetch(Orders, "v2");
+        await _files.RemoveAsync(await Stored(), null, Now.AddMinutes(2), cancellationToken: Ct);
+
+        Assert.Single((await Collect(Orders)).Notices);
+        Assert.Empty((await Collect(Billing)).Notices);
+    }
+
+    [Fact]
     public async Task A_placer_that_also_fetched_its_file_is_told_once()
     {
         await Place("v1");
