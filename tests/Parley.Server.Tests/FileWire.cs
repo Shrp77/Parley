@@ -77,11 +77,18 @@ internal static class FileWire
     {
         using var call = operators.PlacePersonsFile(cancellationToken: cancellationToken);
 
-        await call.RequestStream.WriteAsync(
-            new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Name = name, ConversationId = conversation } },
-            cancellationToken);
-        await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(content) }, cancellationToken);
-        await call.RequestStream.CompleteAsync();
+        try
+        {
+            await call.RequestStream.WriteAsync(
+                new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Name = name, ConversationId = conversation } },
+                cancellationToken);
+            await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(content) }, cancellationToken);
+            await call.RequestStream.CompleteAsync();
+        }
+        catch (Exception closed) when (closed is RpcException or InvalidOperationException)
+        {
+            // The broker answered before reading every piece, as it does for the agent's placement above.
+        }
 
         return await call.ResponseAsync;
     }

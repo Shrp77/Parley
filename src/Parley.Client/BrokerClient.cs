@@ -411,21 +411,30 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
         using var call = _operators.PlacePersonsFile(cancellationToken: cancellationToken);
 
-        await call.RequestStream.WriteAsync(
-            new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name } },
-            cancellationToken).ConfigureAwait(false);
-
-        var buffer = new byte[FileLimits.ChunkBytes];
-        int read;
-
-        while ((read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        try
         {
             await call.RequestStream.WriteAsync(
-                new Wire.PlaceFileFrame { Chunk = Google.Protobuf.ByteString.CopyFrom(buffer, 0, read) },
+                new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name } },
                 cancellationToken).ConfigureAwait(false);
+
+            var buffer = new byte[FileLimits.ChunkBytes];
+            int read;
+
+            while ((read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                await call.RequestStream.WriteAsync(
+                    new Wire.PlaceFileFrame { Chunk = Google.Protobuf.ByteString.CopyFrom(buffer, 0, read) },
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            await call.RequestStream.CompleteAsync().ConfigureAwait(false);
+        }
+        catch (Grpc.Core.RpcException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The broker answered before reading every piece: a refusal that did not need the bytes, for a conversation
+            // that does not exist or a name that holds other content. The answer is in the response, read below.
         }
 
-        await call.RequestStream.CompleteAsync().ConfigureAwait(false);
         var reply = await call.ResponseAsync.ConfigureAwait(false);
 
         return new PersonPlacement(
