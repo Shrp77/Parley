@@ -48,6 +48,21 @@ public sealed class TheStartupSweepTakesOnlyWhatADeleteMarkedTests : IDisposable
     }
 
     [Fact]
+    public void A_destroy_of_a_folder_that_is_a_junction_removes_the_link_and_marks_nothing_outside()
+    {
+        // The delete walks a stack of its own and marks a folder before it starts; through a link, either would reach a
+        // directory that is somebody else's.
+        var (location, outside) = Prepare();
+        Junction(Path.Combine(location.Root, "linked"), outside);
+
+        location.DeleteOrMark("linked");
+
+        Assert.False(Directory.Exists(Path.Combine(location.Root, "linked")));
+        Assert.True(File.Exists(Path.Combine(outside, "precious.txt")), "the junction's target lost its contents");
+        Assert.False(File.Exists(Path.Combine(outside, FileLocationStore.LeftBehind)), "the mark was written through the link");
+    }
+
+    [Fact]
     public void A_junction_inside_an_unrecorded_folder_is_removed_without_its_target()
     {
         var (location, outside) = Prepare();

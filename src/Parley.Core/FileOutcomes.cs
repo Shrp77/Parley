@@ -76,7 +76,8 @@ public enum FileRejection
 
     /// <summary>
     /// The content is not what was expected, or the bytes on disk are not the bytes placed: changed by hand, which a
-    /// placed file never is through Parley (SPEC.md §9.5).
+    /// placed file never is through Parley, or held for writing by another program so they cannot be read (SPEC.md
+    /// §9.5).
     /// </summary>
     Changed,
 

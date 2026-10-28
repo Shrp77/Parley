@@ -215,49 +215,55 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
     }
 
-    // Everything under a directory that is not a placed file directly in it, read one level at a time: a link is one
-    // entry and never entered, since it may lead out of the location or back into itself, and a level that cannot be
-    // read is passed over rather than costing the rest.
-    private static int Unplaced(string directory, ISet<string> placed, bool top)
+    // Everything under a directory that is not a placed file directly in it, read one level at a time from a stack of
+    // its own, since a tree made by hand thousands of levels deep overflowed the broker's stack when each level was a
+    // call. A link is one entry and never entered, since it may lead out of the location or back into itself, and a
+    // level that cannot be read is passed over rather than costing the rest.
+    private static int Unplaced(string folder, ISet<string> placed)
     {
-        IEnumerable<string> entries;
-
-        try
-        {
-            entries = [.. Directory.EnumerateFileSystemEntries(directory)];
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return 0;
-        }
-
         var count = 0;
+        var pending = new Stack<(string Directory, bool Top)>();
+        pending.Push((folder, true));
 
-        foreach (var entry in entries)
+        while (pending.TryPop(out var level))
         {
-            FileAttributes attributes;
+            IEnumerable<string> entries;
 
             try
             {
-                attributes = File.GetAttributes(entry);
+                entries = [.. Directory.EnumerateFileSystemEntries(level.Directory)];
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
             {
-                count++;
                 continue;
             }
 
-            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            foreach (var entry in entries)
             {
-                count++;
-            }
-            else if ((attributes & FileAttributes.Directory) != 0)
-            {
-                count += Unplaced(entry, placed, top: false);
-            }
-            else if (!top || !placed.Contains(Path.GetFileName(entry)))
-            {
-                count++;
+                FileAttributes attributes;
+
+                try
+                {
+                    attributes = File.GetAttributes(entry);
+                }
+                catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+                {
+                    count++;
+                    continue;
+                }
+
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    count++;
+                }
+                else if ((attributes & FileAttributes.Directory) != 0)
+                {
+                    pending.Push((entry, false));
+                }
+                else if (!level.Top || !placed.Contains(Path.GetFileName(entry)))
+                {
+                    count++;
+                }
             }
         }
 
@@ -300,19 +306,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 .Select(p => p.File.Name.Value)
                 .ToHashSet(StringComparer.Ordinal);
 
-            try
-            {
-                var directory = _runtime.Files.FolderPath(folder);
+            var directory = _runtime.Files.FolderPath(folder);
 
-                // Every file under the folder, a subfolder copied in by hand included: a placed file is only ever directly
-                // in it, so anything deeper was put there by hand, and a destroy deletes it with the folder.
-                if (Directory.Exists(directory))
-                {
-                    count += Unplaced(directory, names, top: true);
-                }
-            }
-            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            // Every file under the folder, a subfolder copied in by hand included: a placed file is only ever directly in
+            // it, so anything deeper was put there by hand, and a destroy deletes it with the folder.
+            if (Directory.Exists(directory))
             {
+                count += Unplaced(directory, names);
             }
         }
 
@@ -415,16 +415,19 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
-            // Open in another program that shares no reading, a person saving over it by hand among them: refused in words,
-            // never as a fault in the broker, which is what the agent received.
+            // Held for writing by another program, a person saving over it by hand among them, or not readable by the
+            // broker at all (SPEC.md §9.5): refused in words, never as a fault in the broker, which is what the agent got.
             await writer.WriteAsync(
                 new Wire.FetchFileFrame
                 {
                     Refusal = Conversions.Out(
                         FileRefusal.Of(reference, FileRejection.Changed),
-                        "The file is open in another program on the broker's machine, so it could not be read and nothing "
-                        + "was written. A placed file is never changed: if it is being written by hand, its placer should "
-                        + "place the new version under a new name.",
+                        held is UnauthorizedAccessException
+                            ? "The broker may not read the file on its machine, so nothing was written. Tell the person "
+                              + "running the deployment."
+                            : "The file is held for writing by another program on the broker's machine, so it could not be "
+                              + "read and nothing was written. A placed file is never changed: if it is being written by "
+                              + "hand, its placer should place the new version under a new name.",
                         null),
                 },
                 cancellationToken).ConfigureAwait(false);

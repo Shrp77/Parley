@@ -777,9 +777,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         A placed file is never changed. To send a new version, edit it in your own repository and place it
         under a new name. Placing your own file's name again with identical content changes nothing; with
-        other content it is refused, and a name another participant placed is refused whatever you send. Remove a file you placed once whoever needed it has it. The
-        conversation is decided as a request's is: leave conversation_id out while you hold requests from
-        one conversation.
+        other content it is refused, and a name another participant placed is refused whatever you send. A
+        name that becomes your own file's name once its characters are replaced counts as that name. Remove
+        a file you placed once whoever needed it has it. The conversation is decided as a request's is:
+        leave conversation_id out while you hold requests from one conversation.
         """)]
     public async Task<JsonNode> FilePlaceAsync(
         [Description("The file to place: a path inside your repository, relative to its root or absolute.")]
@@ -1241,7 +1242,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     [Description(
         """
         Remove files you placed, when they are no longer needed. Each name you did not place is refused,
-        naming who did, and the rest are still removed. At most 200 names at once.
+        naming who did, and the rest are still removed. A file whose bytes were changed on disk since you
+        placed it is refused too: it may be the person's now. At most 200 names at once.
 
         Every agent that fetched a removed file is told it is gone the next time it checks its inbox.
         """)]

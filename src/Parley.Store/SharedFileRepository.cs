@@ -134,40 +134,6 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         return rows.AsList();
     }
 
-    /// <summary>The folders of every conversation a purge of an agent would delete.</summary>
-    /// <param name="agent">The agent.</param>
-    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The folder names, read before the purge so the server can delete them after it.</returns>
-    /// <remarks>
-    /// The same three routes into a conversation <see cref="AgentRepository.PurgeAsync(AgentName, DateTimeOffset, SqliteTransaction?, CancellationToken)"/>
-    /// follows — a participant row, an exchange, a message — so the folders deleted are exactly the conversations
-    /// deleted. A purge that followed a narrower rule would leave folders on disk no row names.
-    /// </remarks>
-    public async Task<IReadOnlyList<string>> GetFoldersPurgingWouldDeleteAsync(
-        AgentName agent,
-        SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
-    {
-        var folders = await _connection.QueryAsync<string>(
-            new CommandDefinition(
-                """
-                SELECT folder FROM conversation_folders
-                 WHERE conversation_id IN (
-                     SELECT conversation_id FROM conversation_participants WHERE agent = @Name
-                     UNION
-                     SELECT conversation_id FROM exchanges
-                      WHERE requester = @Name OR receiver = @Name OR owed_by = @Name
-                     UNION
-                     SELECT conversation_id FROM messages WHERE from_agent = @Name OR to_agent = @Name);
-                """,
-                new { Name = agent.Value },
-                transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
-
-        return folders.AsList();
-    }
-
     /// <summary>Gives a conversation its folder, choosing the name the first time.</summary>
     /// <param name="conversationId">The conversation, which must exist.</param>
     /// <param name="takenOnDisk">Whether a folder name is already taken by a directory on disk.</param>

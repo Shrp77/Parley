@@ -66,10 +66,11 @@ internal static class Withdrawing
     internal const string Reinstated =
         "No file was recreated: add it again for it to be startable.";
 
-    /// <summary>What purging does, in SPEC.md §14's own words rather than a paraphrase.</summary>
+    /// <summary>What purging does, as SPEC.md §14 states it, and that the files go with it.</summary>
     internal const string Purging =
         "Purging deletes every conversation it took part in, including the halves belonging to "
-        + "peers who did nothing wrong and each conversation's folder of files, and cannot be undone.";
+        + "peers who did nothing wrong, and each one's folder of files, with anything copied into it by hand. "
+        + "It cannot be undone.";
 
     /// <summary>What retiring does.</summary>
     internal const string Retiring =

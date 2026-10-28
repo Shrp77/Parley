@@ -153,13 +153,26 @@ public sealed class FileLocationStore : IDisposable
     /// </remarks>
     public void DeleteOrMark(string folder)
     {
-        if (DeleteFolder(folder))
-        {
-            return;
-        }
+        // Marked before the delete starts and deleted last, so a delete that stops part way, the process with it, still
+        // leaves a folder the next start deletes.
+        Mark(folder);
 
+        if (!DeleteFolder(folder))
+        {
+            Mark(folder);
+        }
+    }
+
+    private void Mark(string folder)
+    {
         try
         {
+            // Never through a link: the mark would land in somebody else's directory.
+            if (!IsItsOwn(folder) || !Directory.Exists(FolderPath(folder)) || IsLink(FolderPath(folder)))
+            {
+                return;
+            }
+
             File.WriteAllText(Path.Combine(FolderPath(folder), LeftBehind), string.Empty);
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
@@ -299,6 +312,8 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="cancellationToken">Cancels waiting for a change in progress.</param>
     /// <returns>The hold, carrying the open stream; disposing it ends the hold.</returns>
     /// <exception cref="FileNotFoundException">The file is not on disk.</exception>
+    /// <exception cref="IOException">Another program holds the file for writing.</exception>
+    /// <exception cref="UnauthorizedAccessException">The broker may not read the file.</exception>
     public async Task<ReadHold> HoldForReadingAsync(string folder, SharedFileName name, CancellationToken cancellationToken)
     {
         var path = FilePath(folder, name);
@@ -488,7 +503,7 @@ public sealed class FileLocationStore : IDisposable
         {
             if (Directory.Exists(path))
             {
-                Directory.Delete(path, recursive: true);
+                DeleteTree(path);
             }
 
             return true;
@@ -496,6 +511,74 @@ public sealed class FileLocationStore : IDisposable
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
             return !Directory.Exists(path);
+        }
+    }
+
+    // A tree deleted from a stack of its own, deepest first: Directory.Delete takes one call per level on Windows, and a
+    // tree made by hand thousands of levels deep overflowed the broker's stack after a destroy had committed. A link is
+    // deleted and never entered, and the folder's mark goes last, just before the folder.
+    private static void DeleteTree(string root)
+    {
+        // A folder that is itself a link goes as a link, its target untouched.
+        if (IsLink(root))
+        {
+            DeleteLink(root);
+            return;
+        }
+
+        var pending = new Stack<(string Path, bool Emptied)>();
+        pending.Push((root, false));
+
+        while (pending.TryPop(out var top))
+        {
+            if (top.Emptied)
+            {
+                if (top.Path == root)
+                {
+                    TryDelete(Path.Combine(root, LeftBehind));
+                }
+
+                Directory.Delete(top.Path, recursive: false);
+                continue;
+            }
+
+            pending.Push((top.Path, true));
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(top.Path).ToList())
+            {
+                var attributes = File.GetAttributes(entry);
+
+                if ((attributes & FileAttributes.Directory) == 0)
+                {
+                    if (top.Path != root || !string.Equals(Path.GetFileName(entry), LeftBehind, StringComparison.Ordinal))
+                    {
+                        File.Delete(entry);
+                    }
+                }
+                else if ((attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    DeleteLink(entry);
+                }
+                else
+                {
+                    pending.Push((entry, false));
+                }
+            }
+        }
+    }
+
+    private static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+
+    // A junction is removed as a directory on Windows; elsewhere a link to a directory is unlinked.
+    private static void DeleteLink(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.Delete(path, recursive: false);
+        }
+        else
+        {
+            File.Delete(path);
         }
     }
 
@@ -513,7 +596,7 @@ public sealed class FileLocationStore : IDisposable
             {
                 if (Directory.Exists(directory))
                 {
-                    Directory.Delete(directory, recursive: true);
+                    DeleteTree(directory);
                 }
             }
             catch (Exception held) when (held is IOException or UnauthorizedAccessException)
@@ -575,8 +658,8 @@ public sealed class FileLocationStore : IDisposable
     /// </returns>
     /// <remarks>
     /// Three answers, because a recorded file missing from disk is recorded gone (SPEC.md §9.5) and a file in a folder
-    /// that cannot be read is not missing: <see cref="File.Exists(string)"/> answers false for both, and every file in
-    /// an unreadable folder was recorded gone for good, out of every list and every count.
+    /// that cannot be read is not missing. <see cref="File.Exists(string)"/> answers false for both, so it would record
+    /// gone, for good, every file in a folder the broker merely cannot read for now.
     /// </remarks>
     internal bool? IsOnDisk(string folder, SharedFileName name)
     {
