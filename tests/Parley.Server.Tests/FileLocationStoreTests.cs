@@ -10,7 +10,7 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// <para>
 /// <b>The holds are what these are mostly about</b>, because a hold that released too early delivers a mixed file
-/// and one that never released makes a file impossible to replace. Each is checked by ordering — what has and has
+/// and one that never released makes a file impossible to remove. Each is checked by ordering — what has and has
 /// not completed at a moment — rather than by timing, so a slow machine cannot turn a pass into a flake.
 /// </para>
 /// <para>

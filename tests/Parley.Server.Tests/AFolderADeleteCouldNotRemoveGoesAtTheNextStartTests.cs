@@ -65,7 +65,7 @@ public sealed class AFolderADeleteCouldNotRemoveGoesAtTheNextStartTests
 
             path = Path.Combine(first.Runtime.Files.FolderPath("stock"), "stock.md");
 
-            // The person has it open in place, in an editor that holds it (SPEC.md section 9.5's open in place).
+            // The person has it open, in a program that holds it (SPEC.md section 10.2's describe_file_location).
             using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
             {
                 purged = await new Wire.Operators.OperatorsClient(channel)

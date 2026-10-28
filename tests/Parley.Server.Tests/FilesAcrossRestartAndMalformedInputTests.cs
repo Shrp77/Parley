@@ -29,7 +29,8 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
     public async Task Hand_edits_racing_fetches_never_serve_changed_bytes_and_never_change_the_record()
     {
         // A placed file is never changed (SPEC.md §9.5). Bytes saved over it by hand are refused by every fetch that
-        // streams them, and the record keeps the placed hash and placer.
+        // streams them, a fetch meeting the file open for the save is refused in words rather than as a fault, and the
+        // record keeps the placed hash and placer.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);

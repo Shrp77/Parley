@@ -215,6 +215,55 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
     }
 
+    // Everything under a directory that is not a placed file directly in it, read one level at a time: a link is one
+    // entry and never entered, since it may lead out of the location or back into itself, and a level that cannot be
+    // read is passed over rather than costing the rest.
+    private static int Unplaced(string directory, ISet<string> placed, bool top)
+    {
+        IEnumerable<string> entries;
+
+        try
+        {
+            entries = [.. Directory.EnumerateFileSystemEntries(directory)];
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+
+        var count = 0;
+
+        foreach (var entry in entries)
+        {
+            FileAttributes attributes;
+
+            try
+            {
+                attributes = File.GetAttributes(entry);
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                count++;
+                continue;
+            }
+
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                count++;
+            }
+            else if ((attributes & FileAttributes.Directory) != 0)
+            {
+                count += Unplaced(entry, placed, top: false);
+            }
+            else if (!top || !placed.Contains(Path.GetFileName(entry)))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     /// <summary>How many files in the folders listed nothing placed, and so are not listed (SPEC.md §9.5).</summary>
     /// <param name="folders">Every recorded folder.</param>
     /// <param name="placed">Every file placed.</param>
@@ -259,9 +308,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 // in it, so anything deeper was put there by hand, and a destroy deletes it with the folder.
                 if (Directory.Exists(directory))
                 {
-                    count += Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-                        .Count(path => !string.Equals(Path.GetDirectoryName(path), directory, StringComparison.Ordinal)
-                                       || !names.Contains(Path.GetFileName(path)));
+                    count += Unplaced(directory, names, top: true);
                 }
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
@@ -364,6 +411,23 @@ internal sealed class FileWork(BrokerRuntime runtime)
         catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
         {
             await Refuse(writer, FileRefusal.Of(reference, FileRejection.NoSuchFile), cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+        {
+            // Open in another program that shares no reading, a person saving over it by hand among them: refused in words,
+            // never as a fault in the broker, which is what the agent received.
+            await writer.WriteAsync(
+                new Wire.FetchFileFrame
+                {
+                    Refusal = Conversions.Out(
+                        FileRefusal.Of(reference, FileRejection.Changed),
+                        "The file is open in another program on the broker's machine, so it could not be read and nothing "
+                        + "was written. A placed file is never changed: if it is being written by hand, its placer should "
+                        + "place the new version under a new name.",
+                        null),
+                },
+                cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -495,7 +559,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         try
         {
-            return await _runtime.UseConnectionAsync(
+            var (reply, folders, placed) = await _runtime.UseConnectionAsync(
                 async (connection, _, ct) =>
                 {
                     var files = new SharedFileRepository(connection);
@@ -506,17 +570,22 @@ internal sealed class FileWork(BrokerRuntime runtime)
                         page,
                         forOperator ? await files.GetPlacementsAsync(cancellationToken: ct).ConfigureAwait(false) : null);
 
-                    if (forOperator)
-                    {
-                        reply.FilesNotListed = NotListed(
-                            await files.GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false),
-                            await files.GetAllAsync(cancellationToken: ct).ConfigureAwait(false),
-                            scope);
-                    }
-
-                    return reply;
+                    return forOperator
+                        ? (reply,
+                           await files.GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false),
+                           await files.GetAllAsync(cancellationToken: ct).ConfigureAwait(false))
+                        : (reply, [], []);
                 },
                 cancellationToken).ConfigureAwait(false);
+
+            // Counted outside the connection's turn: a walk of the disk is as slow as what is on it, and every agent's call
+            // waits on that turn.
+            if (forOperator)
+            {
+                reply.FilesNotListed = NotListed(folders, placed, scope);
+            }
+
+            return reply;
         }
         catch (ArgumentException bad)
         {
@@ -591,13 +660,25 @@ internal sealed class FileWork(BrokerRuntime runtime)
                     continue;
                 }
 
+                // **The bytes go in the turn the row goes in**, which a placement's commit also holds while it moves its
+                // bytes in: deleted after it, they could be a placement's of the name, made in between and told Placed.
                 var rejection = await _runtime.UseConnectionAsync(
-                    (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(stored, caller, now, cancellationToken: ct),
+                    async (connection, now, ct) =>
+                    {
+                        var removed = await new SharedFileRepository(connection).RemoveAsync(stored, caller, now, cancellationToken: ct)
+                            .ConfigureAwait(false);
+
+                        if (removed == FileRejection.None)
+                        {
+                            _runtime.Files.Delete(file.Folder, file.Name);
+                        }
+
+                        return removed;
+                    },
                     cancellationToken).ConfigureAwait(false);
 
                 if (rejection == FileRejection.None)
                 {
-                    _runtime.Files.Delete(file.Folder, file.Name);
                     reply.Removed.Add(Conversions.Out(new FileRef(file.ConversationId, file.Name.Value)));
                     reply.BytesFreed += file.SizeBytes;
                 }
@@ -623,14 +704,22 @@ internal sealed class FileWork(BrokerRuntime runtime)
     {
         using (await _runtime.Files.ChangeEverythingAsync(cancellationToken).ConfigureAwait(false))
         {
+            // The bytes go in the rows' turn, as a single removal's do, so a placement of a pruned name made after the
+            // rows went is never deleted with them.
             var removed = await _runtime.UseConnectionAsync(
-                (connection, now, ct) => new SharedFileRepository(connection).RemoveAllAsync(now, cancellationToken: ct),
-                cancellationToken).ConfigureAwait(false);
+                async (connection, now, ct) =>
+                {
+                    var gone = await new SharedFileRepository(connection).RemoveAllAsync(now, cancellationToken: ct)
+                        .ConfigureAwait(false);
 
-            foreach (var stored in removed)
-            {
-                _runtime.Files.Delete(stored.File.Folder, stored.File.Name);
-            }
+                    foreach (var stored in gone)
+                    {
+                        _runtime.Files.Delete(stored.File.Folder, stored.File.Name);
+                    }
+
+                    return gone;
+                },
+                cancellationToken).ConfigureAwait(false);
 
             return new Wire.PruneFilesReply
             {
@@ -1034,10 +1123,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
     private static string PlacerSentence(string? placedBy) =>
         placedBy is null
-            ? "The person running the deployment placed that file, so nothing was placed and no agent may remove it. A "
-              + "placed file is never changed: use another name."
-            : $"{placedBy} placed that file, so nothing was placed: a placed file is never changed, and only its placer "
-              + "or the person removes it. Use another name.";
+            ? "The person running the deployment placed that file, so nothing was done: a placed file is never changed, "
+              + "and no agent removes the person's. To place a file, use another name."
+            : $"{placedBy} placed that file, so nothing was done: a placed file is never changed, and only its placer or "
+              + "the person removes it. To place a file, use another name.";
 
     // A file on disk under a name nothing placed: copied there by hand, not in the location, and never written over.
     private const string UnplacedSentence =

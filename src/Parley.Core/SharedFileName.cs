@@ -62,7 +62,7 @@ public enum SharedFileNameProblem
 /// <para>
 /// <see cref="Safe"/> replaces each character outside the set with <c>_</c>, one for one, so a renamed
 /// placement is the same length as the name asked for. The broker renames; nothing else does. A name
-/// arriving anywhere else — a fetch, a removal, a file a person copied in by hand — is checked as it is,
+/// arriving anywhere else — a fetch, a removal, an opening — is checked as it is,
 /// because renaming a name somebody is looking <i>up</i> would find a different file from the one they
 /// meant.
 /// </para>

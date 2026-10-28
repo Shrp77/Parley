@@ -108,7 +108,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                       + "not started, and nothing can be asked of a machine whose node is not running.", false),
 
             "purge" => ($"'{Subject}' will be deleted, along with every conversation it was party "
-                      + "to — including its peers' side of those conversations. Its name becomes "
+                      + "to — including its peers' side of those conversations and each one's folder of files, "
+                      + "with anything copied into it by hand. Its name becomes "
                       + "free for another agent. This cannot be undone, and retiring it instead "
                       + "achieves everything except freeing the name.", true),
 

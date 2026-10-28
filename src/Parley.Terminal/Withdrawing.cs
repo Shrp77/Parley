@@ -69,7 +69,7 @@ internal static class Withdrawing
     /// <summary>What purging does, in SPEC.md §14's own words rather than a paraphrase.</summary>
     internal const string Purging =
         "Purging deletes every conversation it took part in, including the halves belonging to "
-        + "peers who did nothing wrong, and cannot be undone.";
+        + "peers who did nothing wrong and each conversation's folder of files, and cannot be undone.";
 
     /// <summary>What retiring does.</summary>
     internal const string Retiring =

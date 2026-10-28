@@ -157,7 +157,7 @@ public sealed class FileStoreConstraintTests : IDisposable
     }
 
     [Fact]
-    public void A_replacement_and_a_rename_in_place_are_admitted_and_keep_the_placer()
+    public void Schema_ones_update_in_place_and_rename_are_still_admitted_and_keep_the_placer()
     {
         File("pricing", "NOTES.MD", "notes.md");
 

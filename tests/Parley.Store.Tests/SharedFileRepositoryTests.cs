@@ -5,8 +5,8 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// Every branch of <see cref="SharedFileRepository"/>: placing, replacing, resolving, removing, reconciling,
-/// renaming, listing and counting (SPEC.md §9.5).
+/// Every branch of <see cref="SharedFileRepository"/>: placing, resolving, removing, listing and counting
+/// (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <para>

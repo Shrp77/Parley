@@ -371,12 +371,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-        var folders = await _runtime.UseConnectionAsync(
-            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
-                .GetFoldersPurgingWouldDeleteAsync(agent, cancellationToken: ct),
-            context.CancellationToken).ConfigureAwait(false);
+        // **Every recorded folder, before and after**, rather than the ones the purge would delete, read before it: a
+        // Request joining the agent to a conversation that has files can land between the read and the purge, and that
+        // conversation's folder was then left on disk with no row naming it, neither deleted nor marked nor counted.
+        var before = await RecordedFoldersAsync(context).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
+
+        var after = await RecordedFoldersAsync(context).ConfigureAwait(false);
+        var folders = before.Except(after, StringComparer.Ordinal).ToList();
 
         await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
 
@@ -894,6 +897,14 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
     }
+
+    private Task<List<string>> RecordedFoldersAsync(ServerCallContext context) =>
+        _runtime.UseConnectionAsync(
+            async (connection, _, ct) => (await new Parley.Store.SharedFileRepository(connection)
+                    .GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false))
+                .Select(f => f.Folder)
+                .ToList(),
+            context.CancellationToken);
 
     /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
     /// <param name="files">The file operations.</param>

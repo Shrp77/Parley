@@ -2147,7 +2147,7 @@ CREATE TABLE file_notices (
   sha256_had      TEXT    NOT NULL
                   CHECK (length(sha256_had) = 64 AND sha256_had NOT GLOB '*[^0-9a-f]*'),
   -- Schema 1 also carried the content a file changed to; a placed file never changes now (§9.5), so
-  -- these are NULL in every notice written.
+  -- these are NULL in every notice written, and a broker's start deletes any an earlier build left.
   sha256_now      TEXT    CHECK (sha256_now IS NULL
                                  OR (length(sha256_now) = 64 AND sha256_now NOT GLOB '*[^0-9a-f]*')),
   size_bytes      INTEGER CHECK (size_bytes IS NULL OR size_bytes >= 0),
