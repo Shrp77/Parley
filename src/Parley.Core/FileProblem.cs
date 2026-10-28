@@ -18,8 +18,8 @@ public enum FileProblemKind
 /// <param name="Kind">What happened.</param>
 /// <param name="ConversationId">The conversation whose folder held it, or <see langword="null"/> for none.</param>
 /// <param name="Path">The entry, as a path inside the location with <c>/</c> between its parts.</param>
-/// <param name="PlacedSha256">For a quarantined file, the hash placed.</param>
-/// <param name="FoundSha256">For a quarantined file, the hash found.</param>
+/// <param name="PlacedSha256">For a quarantined file, or a tampered one the sweep could not move, the hash placed.</param>
+/// <param name="FoundSha256">For a quarantined file, or a tampered one the sweep could not move, the hash found.</param>
 /// <param name="MovedTo">For a quarantined file, where in the quarantine directory it now is.</param>
 /// <param name="Detail">The broker's own sentence about it.</param>
 /// <param name="RaisedUtc">When it was raised.</param>

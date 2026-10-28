@@ -50,6 +50,25 @@ public sealed class RefillRaceTests
     private static ProjectName Beta { get; } = ProjectName.Create("beta");
 
     [Fact]
+    public void The_status_line_is_one_row_whatever_its_text()
+    {
+        // Found by review, round 51, from a Linux CI failure of the test below: the status line's text is set from pool
+        // threads, and a label sized to its text reads a cached size the setter clears, so a draw meeting a write threw
+        // "Nullable object must have a value" in DimAuto.Calculate. One write in about 580,000 hit it, too rare to hold
+        // here by racing; a fixed height takes the label out of that path, so this holds the height.
+        using var directory = new BrokerDirectory(
+            [new ProjectSettings(Alpha, string.Empty, "http://127.0.0.1:1", null)],
+            _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+        using var shell = new Shell(directory);
+
+        var status = (View)typeof(Shell)
+            .GetField("_status", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(shell)!;
+
+        Assert.Equal(Dim.Absolute(1), status.Height);
+    }
+
+    [Fact]
     public async Task Changing_view_from_many_threads_while_drawing_does_not_throw()
     {
         // **The second finding of the same run, by a different mechanism.** `ArrangeLocked` used

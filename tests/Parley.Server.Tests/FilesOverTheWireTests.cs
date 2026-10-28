@@ -235,14 +235,21 @@ public sealed class FilesOverTheWireTests
     // Never written over by the refused placement, and gone once the sweep the refusal started has run (SPEC.md §9.5).
     private static async Task NeverWrittenOverThenSweptAsync(LoopbackBroker broker, string path)
     {
-        // The sweep may delete it between looking and reading, which is gone, not written over.
+        // The sweep may delete it as this reads, which is gone, not written over. Read sharing delete, so the read neither
+        // stops the delete nor fails because one is under way; a file whose delete is pending refuses to open.
         string? found;
 
         try
         {
-            found = await File.ReadAllTextAsync(path, Ct);
+            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+
+            await using (stream.ConfigureAwait(false))
+            {
+                using var reader = new StreamReader(stream);
+                found = await reader.ReadToEndAsync(Ct);
+            }
         }
-        catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException)
+        catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
         {
             found = null;
         }

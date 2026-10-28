@@ -70,9 +70,10 @@ service Agents {
   // file is never changed: a name already holding other content is refused, and a new version takes a new name.
   rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
 
-  // Streams one whole file: a header and then bytes, or a refusal instead of the header. While the call is open the
-  // stored file is held for reading and a removal waits. Bytes changed on disk since the placement are refused. The
-  // adapter writes the bytes to disk; nothing carries them into a model's context.
+  // Streams one whole file: a header and then bytes, or a refusal instead of the header. A refusal can also follow the
+  // bytes, when what was streamed does not hash to what was placed (FILE_REJECTION_TAMPERED); the adapter then writes
+  // nothing. While the call is open the stored file is held for reading and a removal waits. The adapter writes the
+  // bytes to disk; nothing carries them into a model's context.
   rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
 
   // Reports that a fetch was written and verified. Only then is it recorded, so a gone notice follows if the file
@@ -266,13 +267,13 @@ message InboxReply {
   repeated DeliveredMessage messages = 1;
   repeated ClosurePoll closure_polls = 2;
 
-  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest change first, whatever
+  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest first, whatever
   // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
   repeated FileNotice file_notices = 3;
   int32 file_notices_waiting = 4;
 
   // Section 5.7. What became of this agent's own roadmap proposals, with its own title. Not messages: nothing is
-  // owed back and nothing is woken.
+  // owed back and nothing is woken. At most 50 in one collection; the rest are counted here.
   repeated RoadmapNotice roadmap_notices = 5;
   int32 roadmap_notices_waiting = 6;
 
@@ -286,7 +287,8 @@ message InboxReply {
   int32 closure_polls_not_listed = 8;
 }
 
-// That a file the agent fetched has gone since. A name, the hash fetched and when, never the content.
+// That a file the agent fetched has gone since, or that one it fetched or placed went missing or was tampered with
+// (section 9.5). A name, the hash it had and when, never the content.
 message FileNotice {
   string conversation_id = 1;
   string name = 2;
@@ -342,7 +344,7 @@ message FetchFileFrame {
   oneof frame {
     SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
     bytes chunk = 2;
-    FileRefusal refusal = 3;          // sent instead of a header
+    FileRefusal refusal = 3;          // sent instead of a header, or after the bytes when they were tampered with
   }
 }
 
@@ -357,7 +359,7 @@ message FileRefusal {
   string placed_by = 3;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string conversations = 4;  // on AMBIGUOUS_NAME: at most 200 holding the name
   int32 conversations_more = 5;       // how many more hold it than are listed
-  string sha256_now = 6;              // on CHANGED: the hash the location holds
+  string sha256_now = 6;              // on CHANGED: the hash the location holds; on TAMPERED: the hash of the bytes found
   string detail = 7;                  // the rule, in words
 }
 
@@ -448,7 +450,8 @@ message FileProblemsReply {
 enum FileProblemKind {
   FILE_PROBLEM_KIND_UNSPECIFIED = 0;
   FILE_PROBLEM_KIND_QUARANTINED = 1;      // bytes no longer matched what was placed; moved to quarantine
-  FILE_PROBLEM_KIND_LOCKED = 2;           // the sweep could not read, move or delete it: held, refused, or in the way
+  FILE_PROBLEM_KIND_LOCKED = 2;           // the sweep could not read, move or delete it: another program held it, the
+                                          // broker may not, or the quarantine folder is a link
 }
 
 // The path is text nothing checked when the entry was put there by something other than Parley: shown as somebody
@@ -458,8 +461,8 @@ message FileProblemView {
   FileProblemKind kind = 2;
   string conversation_id = 3;             // empty for an entry no conversation owns
   string path = 4;                        // inside the location, '/' between its parts
-  string sha256_placed = 5;               // quarantined only
-  string sha256_found = 6;                // quarantined only
+  string sha256_placed = 5;               // quarantined, and a tampered file the sweep could not move
+  string sha256_found = 6;                // the same
   string moved_to = 7;                    // quarantined only: inside the quarantine directory
   string detail = 8;
   string raised_utc = 9;
@@ -486,7 +489,8 @@ enum FileRejection {
   FILE_REJECTION_AMBIGUOUS_NAME = 5;
   FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
   FILE_REJECTION_CONVERSATION_CLOSED = 7;
-  FILE_REJECTION_CHANGED = 8;
+  FILE_REJECTION_CHANGED = 8;             // not the content expected, or held for writing or unreadable; bytes changed
+                                          // on disk are TAMPERED
   FILE_REJECTION_NO_SPACE = 9;
   FILE_REJECTION_EXTENSION_NOT_ALLOWED = 10;
   FILE_REJECTION_NOT_FETCHED = 11;
@@ -777,7 +781,7 @@ service Operators {
   rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
 
   // What sweeps of the file location found and could not leave as it was (section 9.5): files moved to quarantine, and
-  // entries another program held. Kept until the person dismisses each; dismissing deletes nothing on disk.
+  // entries a sweep could not read, move or delete. Kept until the person dismisses each; dismissing deletes nothing on disk.
   rpc ListFileProblems(ListFileProblemsRequest) returns (FileProblemsReply);
   rpc DismissFileProblem(DismissFileProblemRequest) returns (DidItReply);
 }

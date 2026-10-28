@@ -590,7 +590,9 @@ internal sealed class Shell : Window
     internal const char WholeKey = 'e';
 
     private readonly BrokerDirectory _directory;
-    private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+    // One row by design, and fixed at one: its text is set from pool threads (a count read off the loop redraws it),
+    // and a label sized to its text reads a cached size the setter clears, so a draw that met a write mid-layout threw.
+    private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), Height = 1 };
 
     /// <summary>The menu bar, on the top row, always visible.</summary>
     /// <remarks>

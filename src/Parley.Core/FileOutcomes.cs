@@ -75,9 +75,9 @@ public enum FileRejection
     ConversationClosed,
 
     /// <summary>
-    /// The content is not what was expected, or the bytes on disk cannot be vouched for as the bytes placed: changed by
-    /// hand, which a placed file never is through Parley, held for writing by another program, or not readable by the
-    /// broker at all. The refusal's detail says which (SPEC.md §9.5).
+    /// The content is not the one expected, or the file could not be read for the broker: held for writing by another
+    /// program, or not readable by the broker at all. Bytes changed on disk are <see cref="Tampered"/>. The refusal's
+    /// detail says which (SPEC.md §9.5).
     /// </summary>
     Changed,
 
