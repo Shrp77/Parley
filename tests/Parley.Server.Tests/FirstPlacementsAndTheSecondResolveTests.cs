@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using Google.Protobuf;
 using Grpc.Core;
@@ -277,7 +278,15 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
         var release = new TaskCompletionSource();
         var occupied = broker.Runtime.UseConnectionAsync<bool>(async (_, _, _) => { await release.Task; return true; }, Ct);
         turn.Dispose();
-        await Task.Delay(300, Ct);
+
+        // Polled rather than waited a fixed time: a slow runner took longer than one to reach the hold.
+        var waited = Stopwatch.StartNew();
+
+        while (!broker.Runtime.Files.IsHeld("pricing", name) && waited.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            await Task.Delay(25, Ct);
+        }
+
         Assert.True(broker.Runtime.Files.IsHeld("pricing", name), "the fetch did not take its hold before the second resolve");
         await cancel.CancelAsync();
         await Task.Delay(300, Ct);

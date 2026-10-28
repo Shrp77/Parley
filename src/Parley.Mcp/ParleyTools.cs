@@ -1242,8 +1242,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     [Description(
         """
         Remove files you placed, when they are no longer needed. Each name you did not place is refused,
-        naming who did, and the rest are still removed. A file whose bytes were changed on disk since you
-        placed it is refused too: it may be the person's now. At most 200 names at once.
+        naming who did, and the rest are still removed. A file whose size or time on disk is not what you
+        placed is refused too: it may have been changed by hand. At most 200 names at once.
 
         Every agent that fetched a removed file is told it is gone the next time it checks its inbox.
         """)]

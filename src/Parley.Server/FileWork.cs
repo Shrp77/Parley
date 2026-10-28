@@ -209,17 +209,30 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 // Rolled back: nothing recorded, nothing written into the folder the name reaches.
                 throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
-                    "This conversation's folder is another folder's short name on the broker's disk, so nothing "
-                    + "was written. Tell the person running the deployment."));
+                    "This conversation's folder on the broker's disk is not its own: another folder's short name, or a "
+                    + "link put there by hand. Nothing was written. Tell the person running the deployment."));
             }
         }
     }
 
+    // A folder that cannot be read is not taken for a link; the walk passes it over.
+    private static bool IsLink(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     // Everything under a directory that is not a placed file directly in it, read one level at a time from a stack of
-    // its own, since a tree made by hand thousands of levels deep overflowed the broker's stack when each level was a
-    // call. A link is one entry and never entered, since it may lead out of the location or back into itself, and a
+    // its own rather than one call a level: a tree made by hand can be deeper than the stack, and an overflow ends the
+    // process. A link is one entry and never entered, since it may lead out of the location or back into itself, and a
     // level that cannot be read is passed over rather than costing the rest.
-    private static int Unplaced(string folder, ISet<string> placed)
+    internal static int Unplaced(string folder, ISet<string> placed)
     {
         var count = 0;
         var pending = new Stack<(string Directory, bool Top)>();
@@ -310,10 +323,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
             // Every file under the folder, a subfolder copied in by hand included: a placed file is only ever directly in
             // it, so anything deeper was put there by hand, and a destroy deletes it with the folder.
-            if (Directory.Exists(directory))
+            if (!Directory.Exists(directory))
             {
-                count += Unplaced(directory, names);
+                continue;
             }
+
+            // A folder that is itself a link counts as one entry, never walked, as a link inside it does.
+            count += IsLink(directory) ? 1 : Unplaced(directory, names);
         }
 
         return count;

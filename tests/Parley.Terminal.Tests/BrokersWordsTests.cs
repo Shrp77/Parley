@@ -20,11 +20,11 @@ namespace Parley.Terminal.Tests;
 public sealed class BrokersWordsTests
 {
     [Fact]
-    public void The_purge_consequence_is_the_specifications_own_sentence()
+    public void The_purge_consequence_keeps_the_specifications_words()
     {
-        // Quoted rather than paraphrased, because a paraphrase drifts and this one is the whole of
-        // what a person is agreeing to.
-        Assert.Contains("peers who did nothing wrong", Withdrawing.Purging, StringComparison.Ordinal);
+        // SPEC.md §14's own words for whose parts go and that it cannot be undone, because a
+        // paraphrase drifts and this is the whole of what a person is agreeing to.
+        Assert.Contains("participants who did nothing wrong", Withdrawing.Purging, StringComparison.Ordinal);
         Assert.Contains("cannot be undone", Withdrawing.Purging, StringComparison.Ordinal);
     }
 

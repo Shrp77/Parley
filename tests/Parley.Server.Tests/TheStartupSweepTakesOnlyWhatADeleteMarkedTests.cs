@@ -13,7 +13,7 @@ namespace Parley.Server.Tests;
 /// <b>Found by review, round 19.</b> The first sweep deleted every folder the store did not record: a person's own
 /// folder in the location (SPEC.md §9.5 expects one), and, after a store was restored from a backup, the files of every
 /// conversation newer than the backup. Only a folder carrying <see cref="FileLocationStore.LeftBehind"/> goes now. The
-/// link cases held from the first: .NET's recursive delete removes a junction or link, never its target.
+/// link cases: the location's delete removes a junction or link, the folder itself included, never its target.
 /// </remarks>
 public sealed class TheStartupSweepTakesOnlyWhatADeleteMarkedTests : IDisposable
 {
@@ -60,6 +60,37 @@ public sealed class TheStartupSweepTakesOnlyWhatADeleteMarkedTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(location.Root, "linked")));
         Assert.True(File.Exists(Path.Combine(outside, "precious.txt")), "the junction's target lost its contents");
         Assert.False(File.Exists(Path.Combine(outside, FileLocationStore.LeftBehind)), "the mark was written through the link");
+    }
+
+    [Theory]
+    [InlineData("0.", false)]
+    [InlineData("copied.", false)]
+    [InlineData("sub ", true)]
+    [InlineData("sub.", true)]
+    public void A_destroy_deletes_an_entry_whose_name_Windows_trims_and_everything_beside_it(string name, bool directory)
+    {
+        // Windows drops a trailing dot or space from a path not written as \\?\, so such an entry could be neither read
+        // nor deleted, and stopped the delete with the placed files after it still on disk.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "only Windows trims a name");
+
+        var (location, _) = Prepare();
+        var folder = Directory.CreateDirectory(Path.Combine(location.Root, "gone")).FullName;
+        File.WriteAllText(Path.Combine(folder, "a.md"), "placed");
+        var odd = @"\\?\" + Path.Combine(folder, name);
+
+        if (directory)
+        {
+            Directory.CreateDirectory(odd);
+            File.WriteAllText(odd + @"\inside.md", "x");
+        }
+        else
+        {
+            File.WriteAllText(odd, "x");
+        }
+
+        location.DeleteOrMark("gone");
+
+        Assert.False(Directory.Exists(folder), "the folder stayed");
     }
 
     [Fact]

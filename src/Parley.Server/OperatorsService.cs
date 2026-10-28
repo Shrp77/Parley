@@ -152,7 +152,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             (console, now, ct) => console.DestroyConversationAsync(conversationId, now, ct),
             context).ConfigureAwait(false);
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
+        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder]).ConfigureAwait(false);
 
         var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -374,14 +374,15 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         // **Every recorded folder, before and after**, rather than the ones the purge would delete, read before it: a
         // Request joining the agent to a conversation that has files can land between the read and the purge, and that
         // conversation's folder was then left on disk with no row naming it, neither deleted nor marked nor counted.
-        var before = await RecordedFoldersAsync(context).ConfigureAwait(false);
+        var before = await RecordedFoldersAsync(context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
 
-        var after = await RecordedFoldersAsync(context).ConfigureAwait(false);
+        // Not cancelled from here: the rows have gone, so their folders go whatever the caller does.
+        var after = await RecordedFoldersAsync(CancellationToken.None).ConfigureAwait(false);
         var folders = before.Except(after, StringComparer.Ordinal).ToList();
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
+        await DeleteFoldersWhoseRowsWentAsync(files, folders).ConfigureAwait(false);
 
         var reply = new Wire.PurgeReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -898,24 +899,29 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
     }
 
-    private Task<List<string>> RecordedFoldersAsync(ServerCallContext context) =>
+    private Task<List<string>> RecordedFoldersAsync(CancellationToken cancellationToken) =>
         _runtime.UseConnectionAsync(
             async (connection, _, ct) => (await new Parley.Store.SharedFileRepository(connection)
                     .GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false))
                 .Select(f => f.Folder)
                 .ToList(),
-            context.CancellationToken);
+            cancellationToken);
 
     /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
     /// <param name="files">The file operations.</param>
     /// <param name="folders">The folders as they were recorded before the delete.</param>
-    /// <param name="context">The call.</param>
     /// <returns>A task that completes when they are deleted.</returns>
     /// <remarks>
+    /// <para>
     /// Checked against the store rather than assumed from the outcome, so a destroy or purge that deleted nothing —
     /// no such conversation, no such agent — can never take a folder that still belongs to one.
+    /// </para>
+    /// <para>
+    /// **Never cancelled**, because it runs after the rows have gone: a call given up then would leave the folders on
+    /// disk with no row naming them and no mark, so no start would delete them.
+    /// </para>
     /// </remarks>
-    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders, ServerCallContext context)
+    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders)
     {
         if (folders.Count == 0)
         {
@@ -938,7 +944,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
                 return orphaned;
             },
-            context.CancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
 
         files.DeleteFolders(gone);
     }

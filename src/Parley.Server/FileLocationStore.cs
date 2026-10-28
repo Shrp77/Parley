@@ -146,21 +146,21 @@ public sealed class FileLocationStore : IDisposable
     /// <summary>Deletes a destroyed conversation's folder, or marks it to be deleted when the broker next starts.</summary>
     /// <param name="folder">The folder name, as the store recorded it before its row went.</param>
     /// <remarks>
-    /// Marked rather than forgotten: a destroy or a purge commits before it deletes, so a folder held open when it ran
-    /// (an editor with a file locked) kept a conversation's files on disk for good, though the operator was told they
-    /// went. Only a marked folder is deleted at a start, because the location also holds what a person put there by hand
-    /// and what a store restored from a backup no longer records (SPEC.md §9.5); neither is Parley's to delete.
+    /// <para>
+    /// A destroy or a purge commits before it deletes, so once its rows have gone nothing else names the folder: a
+    /// folder it could not delete would stay on disk for good, though the operator was told its files went. Only a
+    /// marked folder is deleted at a start, because the location also holds what a person put there by hand and what a
+    /// store restored from a backup no longer records (SPEC.md §9.5); neither is Parley's to delete.
+    /// </para>
+    /// <para>
+    /// **Marked before the delete starts, and the mark deleted last**, so a delete that stops part way leaves the
+    /// folder marked however it stopped: a file held open, an entry it could not delete, or the process ending.
+    /// </para>
     /// </remarks>
     public void DeleteOrMark(string folder)
     {
-        // Marked before the delete starts and deleted last, so a delete that stops part way, the process with it, still
-        // leaves a folder the next start deletes.
         Mark(folder);
-
-        if (!DeleteFolder(folder))
-        {
-            Mark(folder);
-        }
+        _ = DeleteFolder(folder);
     }
 
     private void Mark(string folder)
@@ -514,11 +514,13 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    // A tree deleted from a stack of its own, deepest first: Directory.Delete takes one call per level on Windows, and a
-    // tree made by hand thousands of levels deep overflowed the broker's stack after a destroy had committed. A link is
-    // deleted and never entered, and the folder's mark goes last, just before the folder.
-    private static void DeleteTree(string root)
+    // A tree deleted from a stack of its own, deepest first, rather than one call a level as Directory.Delete makes on
+    // Windows: a tree made by hand can be deeper than the stack, and an overflow ends the process. A link is deleted and
+    // never entered, since it may lead out of the location, and the folder's mark goes last, just before the folder.
+    private static void DeleteTree(string folder)
     {
+        var root = AsWritten(folder);
+
         // A folder that is itself a link goes as a link, its target untouched.
         if (IsLink(root))
         {
@@ -569,6 +571,20 @@ public sealed class FileLocationStore : IDisposable
 
     private static bool IsLink(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
+    // Windows takes a path exactly as written only with the \\?\ prefix. Without it a trailing dot or space is dropped
+    // from every name, so an entry put in by hand as "copied." could be neither read nor deleted, and stopped the delete.
+    private static string AsWritten(string path)
+    {
+        if (!OperatingSystem.IsWindows() || path.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        var full = Path.GetFullPath(path);
+
+        return full.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + full[2..] : @"\\?\" + full;
+    }
+
     // A junction is removed as a directory on Windows; elsewhere a link to a directory is unlinked.
     private static void DeleteLink(string path)
     {
@@ -615,7 +631,8 @@ public sealed class FileLocationStore : IDisposable
         // **Into the folder itself, or nowhere.** A folder can be recorded before it is made (a placement refused for its
         // length still records it), and on a volume that keeps 8.3 names a later folder can take its name as a short
         // name: writing then put one agent's file in another conversation's folder, listed there as the person's.
-        if (!IsItsOwn(folder))
+        // Nor through a folder that is a link, which may lead out of the location.
+        if (!IsItsOwn(folder) || IsLink(FolderPath(folder)))
         {
             throw new NotItsOwnFolderException(folder);
         }

@@ -140,7 +140,7 @@ internal static class FilesPlacing
 
         var choosing = Prompting.Choose(
             Title,
-            "Which conversation does the file go in? It is placed as yours, and every participant can fetch it.",
+            "Which conversation does the file go in? It is placed as yours, and any agent in the project can fetch it.",
             [Back, .. rows]);
 
         var token = Prompting.Open(app, choosing);

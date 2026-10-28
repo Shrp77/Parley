@@ -6,7 +6,7 @@ disable-model-invocation: true
 # Place a file in Parley's file location
 
 Takes the path of a file on this machine and the conversation it goes in. The file is placed as the person's, not as
-any agent's, and every participant in that conversation can fetch it. This is the only way the person hands an agent a
+any agent's, and any agent in the project can fetch it. This is the only way the person hands an agent a
 file: one copied into a conversation's folder by hand is not in Parley and is never listed.
 
 Run, with the path, `--conversation <id>`, and any `--name <name>` or `--project <name>` the person gave - and, when this machine names more than one project and they named none, `--project` with the one this repository answers in (the `PARLEY_PROJECT` of its `parley-<project>` entry in `.mcp.json`; ask which if it has several):
