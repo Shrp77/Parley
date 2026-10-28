@@ -134,7 +134,10 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    /// <summary>Makes sure the location and the staging directory exist, and empties the staging directory.</summary>
+    /// <summary>
+    /// Makes sure the location and the staging directory exist as directories of the broker's own, and empties the staging
+    /// directory.
+    /// </summary>
     /// <remarks>Called when a broker starts: nothing staged by a previous one can still be finished.</remarks>
     public void Prepare()
     {
@@ -657,7 +660,7 @@ public sealed class FileLocationStore : IDisposable
             AsWritten(FilePath(folder, name)),
             overwrite: false);
 
-    /// <summary>Whether a recorded folder has been replaced by a link (SPEC.md §9.5).</summary>
+    /// <summary>Whether a recorded folder, or the location holding it, is a link (SPEC.md §9.5).</summary>
     /// <param name="folder">The folder name.</param>
     /// <returns><see langword="true"/> when it is a link; never through one is anything read, moved or deleted.</returns>
     internal bool IsLinkedFolder(string folder)
@@ -706,7 +709,7 @@ public sealed class FileLocationStore : IDisposable
 
     /// <summary>Deletes a conversation's folder and everything in it.</summary>
     /// <param name="folder">The folder name.</param>
-    /// <returns><see langword="true"/> when the folder is gone.</returns>
+    /// <returns><see langword="true"/> when the folder is gone, or the location is a link and holds none of Parley's.</returns>
     public bool DeleteFolder(string folder)
     {
         var path = FolderPath(folder);

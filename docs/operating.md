@@ -226,6 +226,10 @@ So do not keep anything of your own in the file location. The list counts files 
 placed, so you can see they are there before the next sweep deletes them. A folder that a destroy or
 a purge could not delete, because a file in it was open, goes at the next sweep too.
 
+Do not move the file location, its staging folder or the quarantine folder behind a link. A broker
+that finds one removes the link, leaves what it points to alone, and makes the folder again; every
+file placed in a location that was a link is then recorded gone.
+
 **The quarantine folder** is `<store>.files-quarantine`, beside the file location on the broker's
 machine. It is yours. Parley moves changed files into it and never reads, serves or deletes
 anything there; look at what is there, and delete it when you are done. It goes only when the

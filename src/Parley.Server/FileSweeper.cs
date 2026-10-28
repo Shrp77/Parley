@@ -12,8 +12,8 @@ namespace Parley.Server;
 /// there by hand.</b> Nothing outside Parley should touch the location, so anything that did is put right whole rather
 /// than one file at a time: a recorded file whose bytes no longer hash to what was placed is moved to quarantine and
 /// its fetchers and placer are told it was tampered with; a recorded file missing is recorded gone; and everything
-/// else on disk that no row names is deleted. What another program holds, so it cannot be read, moved or deleted, is
-/// left and raised as a problem for the person.
+/// else on disk that no row names is deleted. What it cannot read, move or delete (another program holds it, the broker
+/// may not, or the quarantine folder is a link) is left and raised as a problem for the person.
 /// </para>
 /// <para>
 /// <b>Hashed outside the store's turn, settled inside it.</b> Hashing every file is the slow part and reads only, so

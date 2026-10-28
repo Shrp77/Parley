@@ -26,6 +26,7 @@ internal static class InboxCollection
     /// <param name="cancellationToken">Cancels the collection; before the acknowledgement, nothing is lost by it.</param>
     /// <returns>The collection: recorded delivered, or, when the call broke after it arrived, kept anyway.</returns>
     /// <exception cref="RpcException">The broker refused the collection or ended it without a reply.</exception>
+    /// <exception cref="OperationCanceledException">The caller gave the collection up before its reply arrived.</exception>
     internal static async Task<Wire.InboxReply> DrainInboxAsync(
         this Wire.Agents.AgentsClient agents,
         Wire.DrainInboxRequest request,

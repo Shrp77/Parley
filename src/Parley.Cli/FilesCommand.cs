@@ -29,7 +29,7 @@ namespace Parley.Cli;
 /// </para>
 /// <para>
 /// <b>What a sweep could not leave as it was is listed by <c>problems</c></b>: a placed file whose bytes changed on disk,
-/// moved to quarantine, and an entry another program held. <c>dismiss</c> takes one off the list and deletes nothing on
+/// moved to quarantine, and an entry the sweep could not read, move or delete. <c>dismiss</c> takes one off the list and deletes nothing on
 /// disk, so it asks nothing first.
 /// </para>
 /// <para>

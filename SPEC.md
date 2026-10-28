@@ -147,7 +147,7 @@ language they are written in.
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
 | **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
-| **Gone notice** | What an agent that fetched or placed a file finds in its inbox when the file later goes, or is tampered with — changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
+| **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes, and what its placer finds too when it is found missing or tampered with — taken or changed on disk by something other than Parley. Not a message: it opens nothing and owes nothing. See §9.5. |
 | **Quarantine** | Where a sweep moves a placed file found tampered with: beside the file location, the person's, and never served. See §9.5. |
 | **Sweep** | The broker's check of the file location against its store, which quarantines what was tampered with, records what is missing gone, and deletes what nothing placed. See §9.5. |
 | **Roadmap** | A person-confirmed, ordered list of items of work, held by a project. It exists only once a person has confirmed a proposal, and is the person's: no agent reads, changes or marks done one (principle 2.12). See §5.7. |

@@ -21,7 +21,7 @@
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `/parley:files-problems` | Lists what Parley's checks of the file location found, and dismisses one when you ask |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched or placed has gone or was changed |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has gone, or one it fetched or placed went missing or was changed |
 
 The seven `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
 they act on every agent's files at once, or place a file as the person.

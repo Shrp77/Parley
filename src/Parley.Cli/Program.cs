@@ -109,7 +109,7 @@ const string Help = """
                                                        location, or say which machine holds it
       parley files problems [--all]                    what sweeps of the location found: files
                                                        changed on disk and moved to quarantine,
-                                                       and entries another program held
+                                                       and entries it could not move or delete
       parley files dismiss <id>                        take a problem off the list; deletes
                                                        nothing on disk
       parley open                                      every conversation with an exchange

@@ -7,7 +7,7 @@ namespace Parley.Server.Tests;
 
 /// <summary>
 /// That a sweep puts the file location right against the store: a tampered file quarantined and its holders told, a
-/// missing one recorded gone, anything no row names deleted, and what another program holds raised to the person
+/// missing one recorded gone, anything no row names deleted, and what it cannot move or delete raised to the person
 /// (SPEC.md §9.5).
 /// </summary>
 /// <remarks>

@@ -296,7 +296,7 @@ So it forgets by default:
 ```
 PARLEY_RETENTION_IDLE_HOURS=72
 PARLEY_RETENTION_MAX_AGE_HOURS=720
-PARLEY_TICK_SECONDS=5                 # how often deadlines are swept
+PARLEY_TICK_SECONDS=5                 # how often deadlines are checked
 ```
 
 **Set these in the broker's environment**, meaning the process that runs `parley serve`. Not in

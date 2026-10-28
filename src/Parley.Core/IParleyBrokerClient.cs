@@ -339,7 +339,7 @@ public interface IParleyBrokerClient
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The problems, those waiting first, and where the quarantine directory is.</returns>
     /// <remarks>
-    /// The person's alone (SPEC.md §9.5): a file moved to quarantine and an entry another program held are nobody's
+    /// The person's alone (SPEC.md §9.5): a file moved to quarantine and an entry a sweep could not read, move or delete are nobody's
     /// message. A surface shows how many are waiting wherever the person is, and draws each path as somebody else's text,
     /// because what was put on disk by something other than Parley was never checked.
     /// </remarks>

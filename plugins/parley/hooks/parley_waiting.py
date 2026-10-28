@@ -96,8 +96,8 @@ quiet.
 
 File gone notices
 -----------------
-A notice that a file this agent fetched or placed has gone, or was changed on
-disk by something other than Parley, is counted with the mail, and like the mail it is only a count: never the file's name, which
+A notice that a file this agent fetched has gone, or that one it fetched or placed
+went missing or was changed on disk by something other than Parley, is counted with the mail, and like the mail it is only a count: never the file's name, which
 its placer chose and which is as much a peer's words as a payload is. A notice
 wakes nothing -- it waits for the next inbox check -- and holding a turn open
 at ``Stop`` is asking for a turn, so there notices are mentioned only beside
