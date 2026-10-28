@@ -41,8 +41,8 @@ public sealed class RoadmapNoticesStayCollectableTests
             var draining2 = orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct);
 
             Assert.True((await declining.ResponseAsync).Done);
-            var told = (await draining.ResponseAsync).RoadmapNotices.Count(n => n.ProposalId == proposed.ProposalId)
-                + (await draining2.ResponseAsync).RoadmapNotices.Count(n => n.ProposalId == proposed.ProposalId)
+            var told = (await draining).RoadmapNotices.Count(n => n.ProposalId == proposed.ProposalId)
+                + (await draining2).RoadmapNotices.Count(n => n.ProposalId == proposed.ProposalId)
                 + (await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = orders.Name }, cancellationToken: Ct))
                     .RoadmapNotices.Count(n => n.ProposalId == proposed.ProposalId);
 

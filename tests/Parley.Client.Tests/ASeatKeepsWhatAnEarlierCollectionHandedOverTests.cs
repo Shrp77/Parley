@@ -50,7 +50,10 @@ public sealed class ASeatKeepsWhatAnEarlierCollectionHandedOverTests
         public override AsyncServerStreamingCall<Wire.Event> Attach(Wire.AttachRequest request, CallOptions options) =>
             new(new Acknowledged(), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
 
-        public override AsyncUnaryCall<Wire.InboxReply> DrainInboxAsync(Wire.DrainInboxRequest request, CallOptions options)
+        public override AsyncDuplexStreamingCall<Wire.DrainInboxFrame, Wire.InboxReply> DrainInbox(CallOptions options) =>
+            FakeCollection.Answering(Answer);
+
+        private Wire.InboxReply Answer(Wire.DrainInboxRequest request)
         {
             Calls++;
 
@@ -76,7 +79,7 @@ public sealed class ASeatKeepsWhatAnEarlierCollectionHandedOverTests
                 Envelope = string.Empty
             });
 
-            return new(Task.FromResult(reply), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
+            return reply;
         }
     }
 

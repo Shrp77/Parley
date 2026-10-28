@@ -92,11 +92,11 @@ public sealed class ManyAgentsTests : IDisposable
 
         foreach (var agent in Agents)
         {
-            waiting += await _messages.CountPendingAsync(agent, Ct);
+            waiting += await _messages.CountPendingAsync(agent, cancellationToken: Ct);
         }
 
         // Exactly the one piece of work repo-6 was carrying. Twenty other lines of work untouched.
         Assert.Equal(1, waiting);
-        Assert.Equal(1, await _messages.CountPendingAsync(Agents[5], Ct));
+        Assert.Equal(1, await _messages.CountPendingAsync(Agents[5], cancellationToken: Ct));
     }
 }

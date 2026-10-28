@@ -42,7 +42,8 @@ public sealed class SurfaceBoundaryTests
         nameof(Broker.ClarifyAsync),
         nameof(Broker.ResultAsync),
         nameof(Broker.ConcludeAsync),
-        nameof(Broker.DrainInboxAsync),
+        nameof(Broker.CollectInboxAsync),
+        nameof(Broker.AcknowledgeInboxAsync),
         nameof(Broker.ListAgentsAsync),
 
         // The one roadmap operation an agent has (§10.1, principle 2.12): it stores a proposal and nothing else, so
@@ -246,7 +247,7 @@ public sealed class SurfaceBoundaryTests
         var leaked = PublicMethodsOf(typeof(OperatorConsole))
             .Where(n => n is nameof(Broker.RequestAsync) or nameof(Broker.ClarifyAsync)
                           or nameof(Broker.ResultAsync) or nameof(Broker.ConcludeAsync)
-                          or nameof(Broker.DrainInboxAsync));
+                          or nameof(Broker.CollectInboxAsync) or nameof(Broker.AcknowledgeInboxAsync));
 
         Assert.Empty(leaked);
     }

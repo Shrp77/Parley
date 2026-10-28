@@ -525,8 +525,9 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         DrainAsync(null, cancellationToken);
 
     // One collection carries a bounded amount (SPEC.md §10.1), so a person is handed everything by asking again until
-    // nothing is left. Each pass stamps what it hands over, so the loop ends. **Each pass is handed on as it arrives**:
-    // a later pass that fails would otherwise drop what the broker had already stamped delivered.
+    // nothing is left. Each pass is acknowledged and recorded delivered before it returns, so the loop ends. **Each pass
+    // is handed on as it arrives**: a later pass that fails would otherwise drop what the broker had already recorded
+    // delivered. A pass that fails before its acknowledgement records nothing, and the next collection brings it again.
     private async Task<(IReadOnlyList<Delivered> Messages, int ClosurePolls)> DrainAsync(
         Action<IReadOnlyList<Delivered>>? eachPass, CancellationToken cancellationToken)
     {
@@ -537,7 +538,7 @@ public sealed class SeatVoice(Wire.Agents.AgentsClient agents, Seat seat)
         {
             reply = await _agents.DrainInboxAsync(
                 new Wire.DrainInboxRequest { Agent = _seat.Name.Value, Limit = 0 },
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             List<Delivered> pass = [.. reply.Messages.Select(one => new Delivered(Read(one.Message)))];
             eachPass?.Invoke(pass);

@@ -392,7 +392,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         Collect what is waiting for you: requests to work on, clarifications, and Results of requests you
         sent. Work you owe comes first. Also lists conversations you are asked to agree are finished, the oldest
         200: answer each with parley_conclude.
-        One call carries a bounded amount; when messages_waiting is present, call again for the rest.
+        One call carries a bounded amount; when messages_waiting is present, call again for the rest. A call
+        that does not finish takes nothing: what it was carrying comes in the next. Rarely a message comes
+        twice; one you already have, by its exchange_id, needs nothing more.
 
         Work what you collect. For each request, do the work in your repository or resolve what stops it,
         and send parley_result. A Result arrives with the request you sent attached, so you can see what
@@ -412,9 +414,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     {
         try
         {
+            // Returned only once the broker has recorded it delivered (SPEC.md §6): a call cancelled before then hands
+            // everything over again next time, so nothing reaches the model that is not delivered, and nothing is lost.
             var inbox = await _link.Agents.DrainInboxAsync(
                 new Wire.DrainInboxRequest { Agent = _options.Agent.Value, Limit = limit ?? 0 },
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
             // So a channel can tell the next arrival: the broker says nothing when a drain takes mail away.
             await _link.CollectedAsync(cancellationToken).ConfigureAwait(false);

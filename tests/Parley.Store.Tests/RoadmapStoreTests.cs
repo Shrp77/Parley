@@ -270,9 +270,9 @@ public sealed class RoadmapStoreTests : IDisposable
         var id = await ProposedAsync();
         await Repository.DeclineAsync(id, Now, cancellationToken: Ct);
 
-        Assert.Equal(1, await Repository.CountNoticesAsync(Orders, Ct));
+        Assert.Equal(1, await Repository.CountNoticesAsync(Orders, cancellationToken: Ct));
         Assert.Single(await Repository.DrainNoticesAsync(Orders, 10, Now, cancellationToken: Ct));
-        Assert.Equal(0, await Repository.CountNoticesAsync(Orders, Ct));
+        Assert.Equal(0, await Repository.CountNoticesAsync(Orders, cancellationToken: Ct));
         Assert.Empty(await Repository.DrainNoticesAsync(Orders, 10, Now, cancellationToken: Ct));
     }
 

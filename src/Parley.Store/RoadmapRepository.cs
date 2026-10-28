@@ -13,7 +13,8 @@ namespace Parley.Store;
 /// <b>A proposal is stored apart from messages and is not a roadmap.</b> Nothing here opens an exchange or writes a
 /// message, so a proposal can appear in no transcript, and nothing becomes a roadmap until
 /// <see cref="ConfirmAsync"/> is called with a person's final content. No agent-facing operation reaches any method
-/// here except <see cref="ProposeAsync"/> and <see cref="DrainNoticesAsync"/> (principle 2.12).
+/// here except <see cref="ProposeAsync"/>, <see cref="PeekNoticesAsync"/> and <see cref="MarkNoticesDeliveredAsync"/>
+/// (principle 2.12).
 /// </para>
 /// <para>
 /// <b>Where an item stands is never written here.</b> <see cref="GetAsync"/> reads what the store holds about each
@@ -684,24 +685,23 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             : (row.RoadmapId, (int)row.RoadmapNumber, row.Title, (int)row.ItemNumber, row.Removed != 0);
     }
 
-    /// <summary>Collects what became of an agent's proposals, marking each delivered.</summary>
-    /// <param name="agent">The agent draining its inbox.</param>
+    /// <summary>Reads what became of an agent's proposals, marking nothing.</summary>
+    /// <param name="agent">The agent collecting its inbox.</param>
     /// <param name="limit">The most to return.</param>
-    /// <param name="nowUtc">The current instant.</param>
-    /// <param name="transaction">The transaction the drain runs in, or <see langword="null"/>.</param>
+    /// <param name="excluding">Notices a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The notices, oldest first.</returns>
-    /// <remarks>Never wakes anybody: a notice is collected when the agent next looks, as a file's gone notice is.</remarks>
-    public async Task<IReadOnlyList<RoadmapNotice>> DrainNoticesAsync(
+    /// <returns>The notices, oldest first, with the identifiers <see cref="MarkNoticesDeliveredAsync"/> takes.</returns>
+    /// <remarks>
+    /// Never wakes anybody: a notice is collected when the agent next looks, as a file's gone notice is. Marked apart
+    /// from the read because a collection is recorded only once the agent acknowledges it (SPEC.md §6).
+    /// </remarks>
+    public async Task<(IReadOnlyList<RoadmapNotice> Notices, IReadOnlyList<long> Ids)> PeekNoticesAsync(
         AgentName agent,
         int limit,
-        DateTimeOffset nowUtc,
-        SqliteTransaction? transaction = null,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
-
-        using var scope = WriteScope.Begin(_connection, transaction);
 
         var rows = (await _connection.QueryAsync<NoticeRow>(
             new CommandDefinition(
@@ -709,45 +709,61 @@ public sealed class RoadmapRepository(SqliteConnection connection)
                 SELECT id AS Id, proposal_id AS ProposalId, title AS Title, outcome AS Outcome,
                        created_utc AS CreatedUtc
                   FROM roadmap_notices
-                 WHERE agent = @Agent AND delivered_utc IS NULL
+                 WHERE agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Held
                  ORDER BY id
                  LIMIT @Limit;
                 """,
-                new { Agent = agent.Value, Limit = limit },
-                scope.Transaction,
+                new { Agent = agent.Value, Limit = limit, Held = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).ToList();
 
-        foreach (var row in rows)
+        return (
+            [
+                .. rows.Select(r => new RoadmapNotice(
+                    r.ProposalId,
+                    r.Title,
+                    ParseState(r.Outcome),
+                    ExchangeRow.ParseTimestamp(r.CreatedUtc))),
+            ],
+            [.. rows.Select(r => r.Id)]);
+    }
+
+    /// <summary>Records notices an agent has acknowledged collecting.</summary>
+    /// <param name="ids">The identifiers <see cref="PeekNoticesAsync"/> returned.</param>
+    /// <param name="nowUtc">The current instant.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when they are marked.</returns>
+    public async Task MarkNoticesDeliveredAsync(
+        IReadOnlyCollection<long> ids,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        if (ids.Count == 0)
         {
-            await _connection.ExecuteAsync(
-                new CommandDefinition(
-                    "UPDATE roadmap_notices SET delivered_utc = @When WHERE id = @Id;",
-                    new { Id = row.Id, When = ExchangeRow.FormatTimestamp(nowUtc) },
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return;
         }
 
-        scope.Complete();
-
-        return
-        [
-            .. rows.Select(r => new RoadmapNotice(
-                r.ProposalId,
-                r.Title,
-                ParseState(r.Outcome),
-                ExchangeRow.ParseTimestamp(r.CreatedUtc))),
-        ];
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE roadmap_notices SET delivered_utc = @When WHERE id IN @Ids AND delivered_utc IS NULL;",
+                new { Ids = ids, When = ExchangeRow.FormatTimestamp(nowUtc) },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>Counts the notices waiting for an agent, marking nothing.</summary>
     /// <param name="agent">The agent.</param>
+    /// <param name="excluding">Notices to leave out of the count, or <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>How many are undelivered.</returns>
-    public async Task<int> CountNoticesAsync(AgentName agent, CancellationToken cancellationToken = default) =>
+    public async Task<int> CountNoticesAsync(
+        AgentName agent,
+        IReadOnlyCollection<long>? excluding = null,
+        CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
-                "SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL;",
-                new { Agent = agent.Value },
+                "SELECT COUNT(*) FROM roadmap_notices WHERE agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Held;",
+                new { Agent = agent.Value, Held = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     // ---- writing a roadmap's content

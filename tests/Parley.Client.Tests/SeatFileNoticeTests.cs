@@ -55,7 +55,10 @@ public sealed class SeatFileNoticeTests
             new(new Acknowledged(), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
 
         /// <inheritdoc/>
-        public override AsyncUnaryCall<Wire.InboxReply> DrainInboxAsync(Wire.DrainInboxRequest request, CallOptions options)
+        public override AsyncDuplexStreamingCall<Wire.DrainInboxFrame, Wire.InboxReply> DrainInbox(CallOptions options) =>
+            FakeCollection.Answering(Answer);
+
+        private Wire.InboxReply Answer(Wire.DrainInboxRequest request)
         {
             var reply = new Wire.InboxReply { FileNoticesWaiting = 3 };
 
@@ -91,7 +94,7 @@ public sealed class SeatFileNoticeTests
                 GoneUtc = "2026-09-14T00:00:00Z"
             });
 
-            return new(Task.FromResult(reply), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
+            return reply;
         }
     }
 

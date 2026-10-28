@@ -285,6 +285,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     public FileLocationStore Files { get; }
 
+    /// <summary>Gets what each collection in flight has handed over and not yet had acknowledged (SPEC.md §6).</summary>
+    /// <remarks>
+    /// Here for the reason <see cref="Files"/> is: shared by every session of every agent this broker serves, and in
+    /// memory, so a restart releases every hold and the store still holds everything as waiting.
+    /// </remarks>
+    public Parley.Broker.InboxHolds InboxHolds { get; } = new();
+
     /// <summary>Gets the fetches streamed to completion and not yet reported as written.</summary>
     public ServedFetches Fetches { get; } = new();
 
@@ -1708,7 +1715,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 async (connection, _, ct) =>
                 {
                     var waiting = await new MessageRepository(connection)
-                        .CountPendingAsync(agent, ct).ConfigureAwait(false);
+                        .CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false);
 
                     var polls = await new ConversationRepository(connection)
                         .CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false);

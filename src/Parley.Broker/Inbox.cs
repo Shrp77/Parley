@@ -28,6 +28,9 @@ namespace Parley.Broker;
 /// <param name="ClosurePollsNotListed">
 /// Closure polls outstanding beyond those this collection lists, which later ones list (SPEC.md §10.1).
 /// </param>
+/// <param name="RoadmapNoticesWaiting">
+/// Roadmap notices left for a later collection, besides those this one and any other in flight hold.
+/// </param>
 /// <remarks>
 /// <para>
 /// The poll travels here rather than as a message because SPEC.md §5 admits three message types
@@ -36,8 +39,8 @@ namespace Parley.Broker;
 /// </para>
 /// <para>
 /// Two collections rather than one sequence of a common supertype, deliberately. A message is
-/// delivered once and stamped so it is not handed over again, while a poll stays outstanding until
-/// the participant answers it. Flattening them would put that difference behind a type test.
+/// delivered once and stamped, when the collection is acknowledged, so it is not handed over again, while a poll
+/// stays outstanding until the participant answers it. Flattening them would put that difference behind a type test.
 /// </para>
 /// </remarks>
 public sealed record Inbox(
@@ -46,7 +49,8 @@ public sealed record Inbox(
     FileNoticeBatch? FileNotices = null,
     IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null,
     int MessagesWaiting = 0,
-    int ClosurePollsNotListed = 0)
+    int ClosurePollsNotListed = 0,
+    int RoadmapNoticesWaiting = 0)
 {
     /// <summary>
     /// Gets what became of this agent's own roadmap proposals, collected with this inbox.
@@ -62,7 +66,8 @@ public sealed record Inbox(
     /// </summary>
     /// <remarks>
     /// A third collection for the reason polls are a second: a notice is not a message (SPEC.md §9.5). It is
-    /// deleted as it is handed over, like a message, but it owes nothing and wakes nothing, like a poll.
+    /// deleted once the collection is acknowledged, as a message is stamped, but it owes nothing and wakes nothing,
+    /// like a poll.
     /// </remarks>
     public FileNoticeBatch Notices => FileNotices ?? FileNoticeBatch.None;
 

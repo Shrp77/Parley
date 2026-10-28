@@ -238,7 +238,14 @@ public sealed class FileNoticeRepositoryTests : IDisposable
             Now,
             cancellationToken: Ct);
 
-    private Task<FileNoticeBatch> Collect(AgentName agent) => _notices.CollectAsync(agent, cancellationToken: Ct);
+    // Read and deleted in one act, as an acknowledged collection does.
+    private async Task<FileNoticeBatch> Collect(AgentName agent)
+    {
+        var (batch, keys) = await _notices.PeekAsync(agent, cancellationToken: Ct);
+        await _notices.DeleteAsync(agent, keys, Ct);
+
+        return batch;
+    }
 
     private async Task<StoredFile> Stored() =>
         (await _files.GetAsync("pricing", SharedFileName.Create("price-snapshot.md"), cancellationToken: Ct))!;

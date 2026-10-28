@@ -37,7 +37,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </remarks>
     private const string PendingPredicate =
         """
-        WHERE to_agent = @Agent AND delivered_utc IS NULL
+        WHERE to_agent = @Agent AND delivered_utc IS NULL AND id NOT IN @Excluding
           AND (type <> 'request'
                OR EXISTS (SELECT 1 FROM exchanges e
                            WHERE e.id = messages.exchange_id AND e.state = 'OPEN'))
@@ -181,6 +181,7 @@ public sealed class MessageRepository(SqliteConnection connection)
 
     /// <summary>The oldest message waiting for a participant that is not on an exchange it owes a move on.</summary>
     /// <param name="agent">The recipient.</param>
+    /// <param name="excluding">Messages a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The message, or <see langword="null"/> when every waiting message is a debt.</returns>
     /// <remarks>
@@ -189,6 +190,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     /// </remarks>
     public async Task<Message?> GetOldestNotOwedAsync(
         AgentName agent,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default) =>
         (await _connection.QueryAsync<MessageRow>(
             new CommandDefinition(
@@ -202,7 +204,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                 ORDER BY id
                 LIMIT 1;
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Excluding = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false)).FirstOrDefault()?.ToDomain();
 
     /// <summary>The open exchanges a participant owes a move on.</summary>
@@ -224,11 +226,13 @@ public sealed class MessageRepository(SqliteConnection connection)
 
     /// <summary>How many messages are waiting for a participant.</summary>
     /// <param name="agent">The participant.</param>
+    /// <param name="excluding">Messages to leave out of the count, or <see langword="null"/> for none.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The number <see cref="GetPendingAsync"/> would hand over, unlimited.</returns>
     /// <remarks>Reads and changes nothing, so it is safe to call from something that will not act on it.</remarks>
     public async Task<int> CountPendingAsync(
         AgentName agent,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default) =>
         await _connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
@@ -236,12 +240,13 @@ public sealed class MessageRepository(SqliteConnection connection)
                 SELECT count(*) FROM messages
                 {PendingPredicate};
                 """,
-                new { Agent = agent.Value },
+                new { Agent = agent.Value, Excluding = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
     /// <summary>Loads the messages awaiting delivery to a participant, debts first.</summary>
     /// <param name="agent">The recipient.</param>
     /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
+    /// <param name="excluding">Messages a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>
     /// Pending messages: those on exchanges it owes a move on first, taken in turn across senders, then the rest by age.
@@ -261,6 +266,7 @@ public sealed class MessageRepository(SqliteConnection connection)
     public async Task<IReadOnlyList<Message>> GetPendingAsync(
         AgentName agent,
         int? limit = null,
+        IReadOnlyCollection<long>? excluding = null,
         CancellationToken cancellationToken = default)
     {
         if (limit is { } max)
@@ -299,7 +305,7 @@ public sealed class MessageRepository(SqliteConnection connection)
                 ORDER BY taken.owed_rank, taken.turn, messages.id
                 LIMIT @Limit;
                 """,
-                new { Agent = agent.Value, Limit = limit ?? -1 },
+                new { Agent = agent.Value, Limit = limit ?? -1, Excluding = excluding ?? [] },
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return [.. rows.Select(r => r.ToDomain())];

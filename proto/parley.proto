@@ -49,9 +49,12 @@ service Agents {
   rpc Conclude(ConcludeRequest) returns (ConcludeReply);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsReply);
 
-  // What is waiting, up to what one collection carries (section 10.1), each message taken once and already inside
-  // the section 13 envelope. The only path a participant's words travel to a model.
-  rpc DrainInbox(DrainInboxRequest) returns (InboxReply);
+  // What is waiting, up to what one collection carries (section 10.1), each message already inside the section 13
+  // envelope. The only path a participant's words travel to a model. Two-way so delivery is acknowledged (section 6):
+  // the caller sends `collect`, reads the InboxReply, sends `acknowledge`, and the broker ends the call once what it
+  // handed over is recorded delivered. A call that ends without `acknowledge` records nothing, and the next collection
+  // hands it all over again.
+  rpc DrainInbox(stream DrainInboxFrame) returns (stream InboxReply);
 
   // How much is waiting, without taking any of it. For a caller that holds no stream -- an editor
   // hook that wants to say "work is waiting" before a turn. Marks nothing delivered.
@@ -248,6 +251,16 @@ message DrainInboxRequest {
   string agent = 1;
   int32 limit = 2;
 }
+
+message DrainInboxFrame {
+  oneof frame {
+    DrainInboxRequest collect = 1;
+    InboxAcknowledgement acknowledge = 2;
+  }
+}
+
+// Sent once the caller holds the InboxReply. Carries nothing: it acknowledges the reply on its own call.
+message InboxAcknowledgement {}
 
 message InboxReply {
   repeated DeliveredMessage messages = 1;

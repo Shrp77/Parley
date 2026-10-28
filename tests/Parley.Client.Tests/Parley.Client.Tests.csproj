@@ -50,4 +50,8 @@
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\..\BannedSymbols.txt" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\src\InboxCollection.cs" Link="InboxCollection.cs" />
+  </ItemGroup>
+
 </Project>

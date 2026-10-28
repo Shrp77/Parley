@@ -34,4 +34,10 @@
     <ProjectReference Include="..\Parley.Transport\Parley.Transport.csproj" />
   </ItemGroup>
 
+  <!-- The one way a client collects and acknowledges an inbox (SPEC.md section 6), shared as source because
+       the generated transport holds no hand-written code. -->
+  <ItemGroup>
+    <Compile Include="..\InboxCollection.cs" Link="InboxCollection.cs" />
+  </ItemGroup>
+
 </Project>

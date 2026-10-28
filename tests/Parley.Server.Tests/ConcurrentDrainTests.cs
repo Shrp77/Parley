@@ -65,7 +65,7 @@ public sealed class ConcurrentDrainTests
             var second = billing.Client.DrainInboxAsync(
                 new Wire.DrainInboxRequest { Agent = billing.Name }, cancellationToken: token);
 
-            var drains = await Task.WhenAll(first.ResponseAsync, second.ResponseAsync);
+            var drains = await Task.WhenAll(first, second);
 
             var handed = drains
                 .SelectMany(drain => drain.Messages)

@@ -85,17 +85,17 @@ public sealed class Broker
     /// About how many characters of messages one collection hands over; what would pass it waits for the next.
     /// </summary>
     /// <remarks>
-    /// Messages are stamped delivered as they are handed over, so a collection too large to arrive loses every one of
-    /// them: the reply is refused at the adapter's message size and nothing hands them over again. One agent sending
-    /// another a few hundred long Requests made that happen to everybody else's messages. Kept well under what an
-    /// adapter's own output carries to a model, and never fewer than one message, so a collection always moves.
+    /// A collection too large to arrive is never delivered: the reply is refused at the adapter's message size, so it is
+    /// never acknowledged, and the next collection is the same size again. One agent sending another a few hundred long
+    /// Requests made that happen to everybody else's messages. Kept well under what an adapter's own output carries to a
+    /// model, and never fewer than one message, so a collection always moves.
     /// </remarks>
     private const int MessageCharactersPerCollection = 64_000;
 
     /// <summary>The most closure polls one collection lists; the rest are listed by later ones.</summary>
     /// <remarks>
     /// One agent can open any number of conversations with another and propose each is finished. Unbounded, the polls
-    /// alone made a collection too large to arrive, after its messages had been stamped delivered.
+    /// alone made a collection too large to arrive, and so never delivered.
     /// </remarks>
     private const int ClosurePollsPerCollection = 200;
 
@@ -977,18 +977,24 @@ public sealed class Broker
         return new TickResult(concluded, pruned);
     }
 
-    /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3).</summary>
+    /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3), and holds it for the caller.</summary>
     /// <param name="agent">The participant collecting.</param>
-    /// <param name="nowUtc">The instant.</param>
+    /// <param name="holds">What collections in flight hold, which this one leaves out and adds its own hold to.</param>
     /// <param name="limit">
     /// The most messages to return besides the oldest that is not a debt, which comes as well (SPEC.md §7.3), or
     /// <see langword="null"/> for as many as one collection carries.
     /// </param>
-    /// <param name="cancellationToken">Cancels the drain.</param>
+    /// <param name="cancellationToken">Cancels the collection.</param>
     /// <returns>
-    /// The messages, each already wrapped in its envelope, how many are still waiting, and any closure poll outstanding.
+    /// The messages, each already wrapped in its envelope, how many are still waiting, any closure poll outstanding, and
+    /// the hold <see cref="AcknowledgeInboxAsync"/> records once the caller has them.
     /// </returns>
     /// <remarks>
+    /// <para>
+    /// <b>Nothing is recorded delivered here</b> (SPEC.md §6). A collection is delivered when the caller acknowledges
+    /// it, so one whose reply never arrives, cancelled by its caller or lost on the way, leaves everything waiting for the
+    /// next. The caller releases the hold when the call ends, acknowledged or not.
+    /// </para>
     /// <para>
     /// <b>Wrapped here and nowhere else</b> (§13), with a fresh token per message so a sender that saw one
     /// cannot close the next one's payload block.
@@ -997,21 +1003,18 @@ public sealed class Broker
     /// <b>A Result carries its Request back</b> (§4.2), because the requester's context will have moved
     /// on and an identifier alone means nothing to a model that no longer remembers sending it.
     /// </para>
-    /// <para>
-    /// Collecting a Request records it on the exchange, which is where §6's second stage begins. The
-    /// exchange is told before the message is stamped: a crash in between hands the Request over again,
-    /// where the other order would leave it flagged as uncollected while somebody worked on it.
-    /// </para>
     /// </remarks>
-    public async Task<Inbox> DrainInboxAsync(
+    public async Task<(Inbox Inbox, InboxHold Hold)> CollectInboxAsync(
         AgentName agent,
-        DateTimeOffset nowUtc,
+        InboxHolds holds,
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
         RequireStarted("collecting an inbox");
+        ArgumentNullException.ThrowIfNull(holds);
 
-        var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken).ConfigureAwait(false);
+        var (heldMessages, heldFileNotices, heldRoadmapNotices) = holds.HeldFor(agent);
+        var pending = await _messages.GetPendingAsync(agent, limit, heldMessages, cancellationToken).ConfigureAwait(false);
         var owed = await _messages.GetOwedExchangeIdsAsync(agent, cancellationToken).ConfigureAwait(false);
         var handed = 0;
 
@@ -1022,13 +1025,15 @@ public sealed class Broker
         var riding = pending.FirstOrDefault(m => !owed.Contains(m.ExchangeId));
 
         if (riding is null && limit is not null
-            && await _messages.GetOldestNotOwedAsync(agent, cancellationToken).ConfigureAwait(false) is { } oldest)
+            && await _messages.GetOldestNotOwedAsync(agent, heldMessages, cancellationToken).ConfigureAwait(false) is { } oldest)
         {
             riding = oldest;
             pending = [.. pending, oldest];
         }
 
         var delivered = new List<DeliveredMessage>(pending.Count);
+        var handedIds = new List<long>(pending.Count);
+        var requests = new List<long>();
         (DeliveredMessage One, int Size)? kept = riding is null ? null : await BuildAsync(riding, agent, cancellationToken).ConfigureAwait(false);
         var full = false;
 
@@ -1045,8 +1050,8 @@ public sealed class Broker
 
             var (one, size) = rides ? kept!.Value : await BuildAsync(message, agent, cancellationToken).ConfigureAwait(false);
 
-            // **Built and measured before it is stamped**, so a message that would make the collection too large to
-            // arrive is left waiting for the next one rather than marked delivered and lost with the rest.
+            // **Built and measured before it is held**, so a message that would make the collection too large to arrive
+            // is left waiting for the next one rather than carried by a reply that cannot be delivered.
             var room = rides || delivered.Count == 0 || handed + size + (kept is { Size: var reserved } ? reserved : 0)
                        <= MessageCharactersPerCollection;
 
@@ -1059,7 +1064,7 @@ public sealed class Broker
 
             if (message.Type == MessageType.Request)
             {
-                await RecordCollectionAsync(message.ExchangeId, nowUtc, cancellationToken).ConfigureAwait(false);
+                requests.Add(message.ExchangeId);
             }
 
             if (rides)
@@ -1067,17 +1072,13 @@ public sealed class Broker
                 kept = null;
             }
 
-            if (!await _messages.MarkDeliveredAsync(message.Id, nowUtc, cancellationToken).ConfigureAwait(false))
-            {
-                // Delivered by a drain that raced this one; skipped rather than handed over twice.
-                continue;
-            }
-
             handed += size;
             delivered.Add(one);
+            handedIds.Add(message.Id);
         }
 
-        var waiting = await _messages.CountPendingAsync(agent, cancellationToken).ConfigureAwait(false);
+        var waiting = await _messages.CountPendingAsync(agent, [.. heldMessages, .. handedIds], cancellationToken)
+            .ConfigureAwait(false);
         // Bounded like file notices, and nothing is lost by it: a poll stays outstanding until it is answered, so the rest
         // are listed by later collections (SPEC.md §10.1).
         var polls = await _conversations.GetOutstandingPollsAsync(agent, ClosurePollsPerCollection, cancellationToken)
@@ -1088,16 +1089,59 @@ public sealed class Broker
 
         // Whatever the limit said about messages (SPEC.md §9.5): a limit meant for messages must not hold back the
         // notices, and the notices carry their own bound.
-        var notices = await new FileNoticeRepository(_connection).CollectAsync(agent, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        var (notices, noticeKeys) = await new FileNoticeRepository(_connection)
+            .PeekAsync(agent, heldFileNotices, cancellationToken).ConfigureAwait(false);
 
         // What became of the agent's own proposals. Never a reason to wake anything (SPEC.md §5.7): collected when
         // the agent next looks, like a gone notice for a file.
-        var proposals = await new RoadmapRepository(_connection)
-            .DrainNoticesAsync(agent, RoadmapNoticesPerCollection, nowUtc, cancellationToken: cancellationToken)
+        var roadmaps = new RoadmapRepository(_connection);
+        var (proposals, proposalIds) = await roadmaps
+            .PeekNoticesAsync(agent, RoadmapNoticesPerCollection, heldRoadmapNotices, cancellationToken)
             .ConfigureAwait(false);
+        var proposalsWaiting = await roadmaps
+            .CountNoticesAsync(agent, [.. heldRoadmapNotices, .. proposalIds], cancellationToken).ConfigureAwait(false);
 
-        return new Inbox(delivered, polls, notices, proposals, waiting, pollsWaiting);
+        var hold = new InboxHold(agent, handedIds, requests, noticeKeys, proposalIds);
+        holds.Add(hold);
+
+        return (new Inbox(delivered, polls, notices, proposals, waiting, pollsWaiting, proposalsWaiting), hold);
+    }
+
+    /// <summary>Records a collection delivered once its caller says it has it (SPEC.md §6).</summary>
+    /// <param name="hold">The hold <see cref="CollectInboxAsync"/> returned.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the writes.</param>
+    /// <returns>A task that completes when everything the hold covers is recorded.</returns>
+    /// <remarks>
+    /// <para>
+    /// Collecting a Request records it on the exchange, which is where §6's second stage begins. The exchange is told
+    /// before the message is stamped: a crash in between hands the Request over again, where the other order would
+    /// leave it flagged as uncollected while somebody worked on it.
+    /// </para>
+    /// <para>
+    /// Each stamp is guarded on the message still waiting, so an acknowledgement that arrives twice records nothing
+    /// twice. Gone notices are deleted and roadmap notices marked only here, for the reason messages are.
+    /// </para>
+    /// </remarks>
+    public async Task AcknowledgeInboxAsync(InboxHold hold, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+    {
+        RequireStarted("acknowledging a collection");
+        ArgumentNullException.ThrowIfNull(hold);
+
+        foreach (var exchange in hold.Requests)
+        {
+            await RecordCollectionAsync(exchange, nowUtc, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var message in hold.Messages)
+        {
+            _ = await _messages.MarkDeliveredAsync(message, nowUtc, cancellationToken).ConfigureAwait(false);
+        }
+
+        await new FileNoticeRepository(_connection).DeleteAsync(hold.Agent, hold.FileNotices, cancellationToken)
+            .ConfigureAwait(false);
+        await new RoadmapRepository(_connection).MarkNoticesDeliveredAsync(hold.RoadmapNotices, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>Wraps one waiting message as it is handed over, and measures it.</summary>

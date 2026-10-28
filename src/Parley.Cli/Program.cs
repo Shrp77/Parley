@@ -1193,7 +1193,7 @@ try
 
         // **What is in flight, for the one caller that has to know before it stops a broker.**
         // §12 says the node stopping tells every agent it started to quit, and a Request already
-        // drained into an agent's inbox is marked delivered -- so killing the agent that holds it
+        // drained into an agent's inbox and acknowledged is marked delivered -- so killing the agent that holds it
         // leaves the exchange open and owed with nothing running to do the work, flagged as
         // collected and left (§6) against an agent that was killed rather than one that ignored
         // anything.

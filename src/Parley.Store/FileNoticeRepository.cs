@@ -215,59 +215,87 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 transaction,
                 cancellationToken: cancellationToken));
 
-    /// <summary>Hands over the oldest notices waiting for an agent, and deletes them.</summary>
+    /// <summary>Reads the oldest notices waiting for an agent, deleting nothing.</summary>
     /// <param name="agent">The agent collecting.</param>
-    /// <param name="transaction">The transaction draining its inbox, or <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>At most <see cref="FileLimits.NoticesPerCollection"/> notices, oldest change first, and how many are left.</returns>
+    /// <param name="excluding">Keys of notices a collection in flight holds, which no other collection hands over.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>
+    /// At most <see cref="FileLimits.NoticesPerCollection"/> notices, oldest change first, how many are left besides them
+    /// and the held ones, and the keys <see cref="DeleteAsync"/> takes once the agent has them.
+    /// </returns>
     /// <remarks>
+    /// <para>
     /// Oldest first, so a burst of new removals cannot hold an old notice back. The ones left are not asked for again
     /// the way a limited message drain is: a notice wakes nothing, so they wait for the agent's next look.
+    /// </para>
+    /// <para>
+    /// Read apart from the delete because a collection is recorded only once the agent acknowledges it (SPEC.md §6): a
+    /// reply that never arrived would otherwise have taken notices nobody read.
+    /// </para>
     /// </remarks>
-    public async Task<FileNoticeBatch> CollectAsync(
+    public async Task<(FileNoticeBatch Batch, IReadOnlyList<string> Keys)> PeekAsync(
         AgentName agent,
-        SqliteTransaction? transaction = null,
+        IReadOnlyCollection<string>? excluding = null,
         CancellationToken cancellationToken = default)
     {
-        using var scope = WriteScope.Begin(_connection, transaction);
-
+        var held = excluding ?? [];
         var rows = (await _connection.QueryAsync<NoticeRow>(
                 new CommandDefinition(
-                    """
+                    $"""
                     SELECT conversation_id AS ConversationId, name_key AS NameKey, name AS Name,
                            sha256_had AS Had, changed_utc AS ChangedUtc
                       FROM file_notices
-                     WHERE agent = @Agent
+                     WHERE agent = @Agent AND {KeyColumn} NOT IN @Held
                      ORDER BY changed_utc, conversation_id, name_key
                      LIMIT @Take;
                     """,
-                    new { Agent = agent.Value, Take = FileLimits.NoticesPerCollection },
-                    scope.Transaction,
+                    new { Agent = agent.Value, Take = FileLimits.NoticesPerCollection, Held = held },
                     cancellationToken: cancellationToken)).ConfigureAwait(false))
             .AsList();
 
-        if (rows.Count > 0)
+        var left = await _connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(
+                $"SELECT count(*) FROM file_notices WHERE agent = @Agent AND {KeyColumn} NOT IN @Held;",
+                new { Agent = agent.Value, Held = held },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return (
+            new FileNoticeBatch(
+                [.. rows.Select(r => new FileNotice(
+                    r.ConversationId,
+                    r.Name,
+                    ContentHash.Parse(r.Had),
+                    ExchangeRow.ParseTimestamp(r.ChangedUtc)))],
+                left - rows.Count),
+            [.. rows.Select(r => KeyOf(r.ConversationId, r.NameKey))]);
+    }
+
+    /// <summary>Deletes notices an agent has acknowledged collecting.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="keys">The keys <see cref="PeekAsync"/> returned with them.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when they are deleted.</returns>
+    public async Task DeleteAsync(AgentName agent, IReadOnlyCollection<string> keys, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        if (keys.Count == 0)
         {
-            await _connection.ExecuteAsync(
-                new CommandDefinition(
-                    "DELETE FROM file_notices WHERE agent = @Agent AND conversation_id = @ConversationId AND name_key = @NameKey;",
-                    rows.Select(r => new { Agent = agent.Value, r.ConversationId, r.NameKey }),
-                    scope.Transaction,
-                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+            return;
         }
 
-        var left = await CountWaitingAsync(agent, scope.Transaction, cancellationToken).ConfigureAwait(false);
-
-        scope.Complete();
-
-        return new FileNoticeBatch(
-            [.. rows.Select(r => new FileNotice(
-                r.ConversationId,
-                r.Name,
-                ContentHash.Parse(r.Had),
-                ExchangeRow.ParseTimestamp(r.ChangedUtc)))],
-            left);
+        await _connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DELETE FROM file_notices WHERE agent = @Agent AND {KeyColumn} IN @Keys;",
+                new { Agent = agent.Value, Keys = keys },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
+
+    // A notice is keyed by its conversation and name key; one string so a set of them can be passed to SQL. Neither part
+    // can hold a control character, so the separator cannot occur inside one.
+    private const string KeyColumn = "(conversation_id || char(31) || name_key)";
+
+    private static string KeyOf(string conversationId, string nameKey) => conversationId + (char)31 + nameKey;
 
     /// <summary>Deletes notices saying a file changed, which a build from before placed files were immutable left.</summary>
     /// <param name="cancellationToken">Cancels the write.</param>
