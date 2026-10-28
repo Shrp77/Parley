@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
@@ -9,7 +8,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// Files when the broker restarts, when a person edits what the broker is replacing, when a placer cannot object, and when
+/// Files when the broker restarts, when a person edits a placed file by hand, when a placer cannot object, and when
 /// the wire carries nonsense (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
@@ -27,34 +26,17 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
     [Fact]
-    public async Task Broker_replacements_racing_hand_edits_end_with_the_row_matching_the_disk()
+    public async Task Hand_edits_racing_fetches_never_serve_changed_bytes_and_never_change_the_record()
     {
+        // A placed file is never changed (SPEC.md §9.5). Bytes saved over it by hand are refused by every fetch that
+        // streams them, and the record keeps the placed hash and placer.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
-        await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text("v0"), "pricing", Ct);
-        await FileWire.FetchAndReportAsync(orders.Client, Orders, "notes.md", "pricing", Ct);
-
+        var placed = await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text("v0"), "pricing", Ct);
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md");
-        var noticesSeen = new List<Wire.FileNotice>();
-
-        var byBroker = Task.Run(async () =>
-        {
-            for (var i = 1; i <= 20; i++)
-            {
-                try
-                {
-                    await FileWire.PlaceAsync(billing.Client, Billing, "notes.md", Text($"broker {i}"), "pricing", Ct);
-                }
-                catch (RpcException)
-                {
-                    // An abort is an allowed answer to a file that kept changing.
-                }
-
-                await Task.Delay(15, Ct);
-            }
-        }, Ct);
+        var served = new List<string>();
 
         var byHand = Task.Run(async () =>
         {
@@ -66,48 +48,35 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
                 }
                 catch (Exception held) when (held is IOException or UnauthorizedAccessException)
                 {
-                    // Held by a placement's move or a hash: what a person meets when saving over a busy file.
+                    // Held by a fetch: what a person meets when saving over a file being read.
                 }
 
                 await Task.Delay(17, Ct);
             }
         }, Ct);
 
-        var collecting = Task.Run(async () =>
+        var fetching = Task.Run(async () =>
         {
             for (var i = 0; i < 20; i++)
             {
-                var inbox = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+                var outcome = await FetchOutcomeAsync(orders.Client, Orders, "notes.md");
 
-                lock (noticesSeen)
+                lock (served)
                 {
-                    noticesSeen.AddRange(inbox.FileNotices);
+                    served.Add(outcome);
                 }
 
                 await Task.Delay(25, Ct);
             }
         }, Ct);
 
-        await Task.WhenAll(byBroker, byHand, collecting);
+        await Task.WhenAll(byHand, fetching);
 
-        // Past the watcher's quiet period, and then a list, which reconciles before it answers.
-        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+        Assert.All(served, s => Assert.True(s == placed.Sha256 || s == "refused Changed", s));
 
         var row = Assert.Single((await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
-        var onDisk = Convert.ToHexStringLower(SHA256.HashData(await File.ReadAllBytesAsync(path, Ct)));
-
-        Assert.Equal(onDisk, row.Sha256);
+        Assert.Equal(placed.Sha256, row.Sha256);
         Assert.Equal(Billing, row.PlacedBy);
-
-        var last = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
-        noticesSeen.AddRange(last.FileNotices);
-
-        Assert.All(noticesSeen, n => Assert.NotEqual(n.Sha256Had, n.Sha256Now));
-
-        if (noticesSeen.Count > 0)
-        {
-            Assert.Equal(row.Sha256, noticesSeen[^1].Sha256Now);
-        }
     }
 
     [Fact]
@@ -128,20 +97,23 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
 
                 v1 = (await FileWire.PlaceAsync(billing, Billing, "notes.md", Text("v1"), "pricing", Ct)).Sha256;
                 await FileWire.FetchAndReportAsync(orders, Orders, "notes.md", "pricing", Ct);
+
+                // Removed, leaving orders a notice, and placed again under the name with other content.
+                _ = await billing.RemoveOwnFilesAsync(
+                    new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "notes.md" } } },
+                    cancellationToken: Ct);
                 v2 = (await FileWire.PlaceAsync(billing, Billing, "notes.md", Text("v2"), "pricing", Ct)).Sha256;
 
                 unreported = await FetchOnlyAsync(orders, "notes.md");
             }
 
             await using var second = await Served.StartAsync(store, Ct);
-            await second.Server.Runtime.Watcher.Scanned.WaitAsync(Within, Ct);
 
             var returned = await second.AttachAsync(Orders, Ct);
 
             var inbox = await returned.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
             var notice = Assert.Single(inbox.FileNotices);
             Assert.Equal(v1, notice.Sha256Had);
-            Assert.Equal(v2, notice.Sha256Now);
 
             var reported = await returned.FetchedFileAsync(
                 new Wire.FetchedFileRequest { Agent = Orders, ConversationId = unreported.ConversationId, Name = unreported.Name, Sha256 = unreported.Sha256 },
@@ -154,6 +126,50 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
 
             var staging = store + StoreFiles.FilesIncoming;
             Assert.True(!Directory.Exists(staging) || !Directory.EnumerateFileSystemEntries(staging).Any(), "staging was not emptied at start");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best effort.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task A_file_deleted_while_no_broker_ran_is_gone_at_the_next_start_and_its_fetcher_is_told()
+    {
+        var directory = Directory.CreateTempSubdirectory("parley-restart-").FullName;
+        var store = Path.Combine(directory, "alpha.db");
+
+        try
+        {
+            string path;
+
+            await using (var first = await Served.StartAsync(store, Ct))
+            {
+                var billing = await first.AttachAsync(Billing, Ct);
+                var orders = await first.AttachAsync(Orders, Ct);
+
+                await FileWire.PlaceAsync(billing, Billing, "notes.md", Text("v1"), "pricing", Ct);
+                await FileWire.FetchAndReportAsync(orders, Orders, "notes.md", "pricing", Ct);
+                path = Path.Combine(first.Server.Runtime.Files.FolderPath("pricing"), "notes.md");
+            }
+
+            File.Delete(path);
+
+            await using var second = await Served.StartAsync(store, Ct);
+
+            // Collected before anything lists or fetches, which would record it gone themselves: the start did.
+            var returned = await second.AttachAsync(Orders, Ct);
+            var inbox = await returned.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+            Assert.Equal("notes.md", Assert.Single(inbox.FileNotices).Name);
+
+            Assert.Empty((await second.Operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files);
         }
         finally
         {
@@ -185,8 +201,8 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
         var operators = broker.ConnectAsOperator();
         Assert.True((await operators.RetireAsync(new Wire.AgentRequest { Agent = Billing }, cancellationToken: Ct)).Changed);
 
+        // Not in the location (SPEC.md §9.5): never listed, and never written over or removed by an agent.
         await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "copied.md"), "by hand", Ct);
-        await FileWire.WaitForAsync(operators, files => files.Any(f => f.Name == "copied.md"), Within, Ct);
 
         var taken = new List<string>();
 
@@ -209,11 +225,14 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
             }
         }
 
-        var listed = (await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct)).Files;
+        var reply = await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
+        var listed = reply.Files;
 
         Assert.True(taken.Count == 0, string.Join("; ", taken));
         Assert.Equal(Billing, Assert.Single(listed, f => f.Name == "billings.md").PlacedBy);
-        Assert.Equal(string.Empty, Assert.Single(listed, f => f.Name == "copied.md").PlacedBy);
+        Assert.DoesNotContain(listed, f => f.Name == "copied.md");
+        Assert.Equal(1, reply.FilesNotListed);
+        Assert.Equal("by hand", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "copied.md"), Ct));
         Assert.Equal("b", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "billings.md"), Ct));
     }
 
@@ -289,6 +308,27 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
         // A DEL in a name is no longer malformed: it is a character outside the set, so the placement is renamed and
         // stored as a_.md (SPEC.md §9.5). Everything else probed here stores nothing.
         Assert.Equal(["a_.md", "seed.md"], listed.Files.Select(f => f.Name).Order(StringComparer.Ordinal));
+    }
+
+    // The hash a whole fetch streamed, or the refusal that ended it, which may come after the bytes.
+    private static async Task<string> FetchOutcomeAsync(Wire.Agents.AgentsClient client, string agent, string name)
+    {
+        using var call = client.FetchFile(
+            new Wire.FetchFileRequest { Agent = agent, Name = name, ConversationId = "pricing" }, cancellationToken: Ct);
+
+        string? sha256 = null;
+
+        await foreach (var frame in call.ResponseStream.ReadAllAsync(Ct))
+        {
+            if (frame.FrameCase == Wire.FetchFileFrame.FrameOneofCase.Refusal)
+            {
+                return "refused " + frame.Refusal.Rejection;
+            }
+
+            sha256 ??= frame.FrameCase == Wire.FetchFileFrame.FrameOneofCase.Header ? frame.Header.Sha256 : null;
+        }
+
+        return sha256 ?? "nothing";
     }
 
     private static async Task<Wire.SharedFileView> FetchOnlyAsync(Wire.Agents.AgentsClient client, string name, string? expect = null)

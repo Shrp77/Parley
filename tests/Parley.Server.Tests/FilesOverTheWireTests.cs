@@ -194,9 +194,10 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
-    public async Task A_renamed_placement_colliding_with_the_callers_own_file_is_refused_and_the_safe_spelling_replaces_it()
+    public async Task A_renamed_placement_colliding_with_the_callers_own_file_is_refused_and_so_is_the_safe_spelling()
     {
-        // 'a:b.md' and 'a?b.md' are one safe spelling. Replacing silently would let either overwrite the other.
+        // 'a:b.md' and 'a?b.md' are one safe spelling. Replacing silently would let either overwrite the other, and a
+        // placed file is never changed, so the safe spelling with other content is refused too (SPEC.md §9.5).
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
@@ -208,8 +209,8 @@ public sealed class FilesOverTheWireTests
 
         var onPurpose = await PlaceAsync(billing, "a_b.md", Text("two"), conversation: "pricing");
 
-        Assert.Equal(Wire.PlaceOutcome.Replaced, onPurpose.Outcome);
-        Assert.Equal(first.Sha256, onPurpose.PreviousSha256);
+        Assert.Equal(Wire.FileRejection.NameHoldsOtherContent, onPurpose.Rejection);
+        Assert.Equal(first.Sha256, onPurpose.Sha256);
     }
 
     [Fact]
@@ -308,18 +309,23 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
-    public async Task Its_placer_replaces_it_and_identical_content_is_already_current()
+    public async Task A_placed_file_is_never_changed_and_identical_content_is_already_current()
     {
+        // A new version is a new name (SPEC.md §9.5): the placer's own name with other content is refused, and says so.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
         var first = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
-        var replaced = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
-        var again = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
+        var refused = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
+        var again = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
 
-        Assert.Equal(Wire.PlaceOutcome.Replaced, replaced.Outcome);
-        Assert.Equal(first.Sha256, replaced.PreviousSha256);
+        Assert.Equal(Wire.PlaceOutcome.HoldsOtherContent, refused.Outcome);
+        Assert.Equal(Wire.FileRejection.NameHoldsOtherContent, refused.Rejection);
+        Assert.Contains("new name", refused.Detail, StringComparison.Ordinal);
         Assert.Equal(Wire.PlaceOutcome.AlreadyCurrent, again.Outcome);
+        Assert.Equal(first.Sha256, again.Sha256);
+        Assert.Equal("net", await File.ReadAllTextAsync(
+            Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md"), Ct));
     }
 
     [Fact]
@@ -376,6 +382,11 @@ public sealed class FilesOverTheWireTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
         var first = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
+
+        // The name is free again once its file is removed, and placed with other content (SPEC.md §9.5).
+        _ = await billing.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "notes.md" } } },
+            cancellationToken: Ct);
         var second = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
 
         var refused = await FetchAsync(orders, "notes.md", expect: first.Sha256);
@@ -418,8 +429,10 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
-    public async Task An_agent_that_reported_a_fetch_finds_one_notice_when_the_file_changes_and_nothing_wakes()
+    public async Task A_file_deleted_by_hand_is_gone_at_the_next_list_with_one_notice_and_nothing_wakes()
     {
+        // No watcher (SPEC.md §9.5): a recorded file missing from disk is recorded gone by whatever next lists or
+        // fetches, as a removal is, and every agent that fetched it is told.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -428,8 +441,10 @@ public sealed class FilesOverTheWireTests
         await FetchAsync(orders, "notes.md");
         await ReportAsync(orders, placed);
 
-        await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
-        var latest = await PlaceAsync(billing, "notes.md", Text("gross, rounded"), conversation: "pricing");
+        File.Delete(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md"));
+
+        var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
+        Assert.Empty(listed.Files);
 
         var waiting = await orders.Client.WaitingAsync(new Wire.WaitingRequest { Agent = Orders }, cancellationToken: Ct);
         Assert.Equal(1, waiting.FileNoticesWaiting);
@@ -439,8 +454,6 @@ public sealed class FilesOverTheWireTests
 
         var notice = Assert.Single(inbox.FileNotices);
         Assert.Equal(placed.Sha256, notice.Sha256Had);
-        Assert.Equal(latest.Sha256, notice.Sha256Now);
-        Assert.False(notice.Gone);
         Assert.Equal(0, inbox.FileNoticesWaiting);
         Assert.Empty(inbox.Messages);
     }
@@ -463,7 +476,7 @@ public sealed class FilesOverTheWireTests
         Assert.Single(removed.Removed);
 
         var inbox = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
-        Assert.True(Assert.Single(inbox.FileNotices).Gone);
+        Assert.Equal(placed.Sha256, Assert.Single(inbox.FileNotices).Sha256Had);
     }
 
     [Fact]

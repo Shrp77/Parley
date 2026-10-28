@@ -8,9 +8,15 @@ using Parley.Core;
 namespace Parley.Web.Pages.Projects;
 
 /// <summary>
-/// A project's file location: what is in it, and the person's four operations on it (SPEC.md §9.5, §10.2).
+/// A project's file location: what is in it, and the person's five operations on it (SPEC.md §9.5, §10.2).
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>Placing is how the person hands an agent a file.</b> A file copied into a conversation's folder by hand is never
+/// listed (§9.5), so the page takes an upload and places it as the person, into a conversation the project lists. The
+/// browser posts the whole file in one request, which is why this page, alone, bounds a request's size
+/// (<see cref="PlaceLimitBytes"/>).
+/// </para>
 /// <para>
 /// <b>Removing and pruning each describe what will go before anything goes.</b> Removal lists the files, their sizes
 /// and who placed them, and takes a second press; pruning says how many files and how much space, and takes the
@@ -29,8 +35,25 @@ namespace Parley.Web.Pages.Projects;
 /// </para>
 /// </remarks>
 /// <param name="directory">The projects and their brokers.</param>
+[RequestSizeLimit(PlaceLimitBytes)]
+[RequestFormLimits(MultipartBodyLengthLimit = PlaceLimitBytes)]
 public sealed class FilesModel(BrokerDirectory directory) : PageModel
 {
+    /// <summary>The largest request this page accepts, and so the largest file it can place.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not the message cap.</b> The 8,000 characters bound what an agent reads; a placed file's bytes never reach a
+    /// model's context, and SPEC.md sets no size for a file. This bound is the console's own, on one browser upload.
+    /// </para>
+    /// <para>
+    /// Set here rather than left to the server's default, which is 30 MB on Kestrel and none at all elsewhere, so what
+    /// the console accepts does not depend on which server hosts it. 256 MiB is far past any <c>.md</c> or <c>.txt</c>
+    /// a person hands over; the command line and the terminal stream from disk and have no bound but the broker's
+    /// disk.
+    /// </para>
+    /// </remarks>
+    public const long PlaceLimitBytes = 256L * 1024 * 1024;
+
     /// <summary>Which project.</summary>
     [BindProperty(SupportsGet = true)]
     public string? Project { get; set; }
@@ -51,6 +74,9 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
 
     /// <summary>Whether a prune is waiting for the project's name.</summary>
     public bool ConfirmingPrune { get; private set; }
+
+    /// <summary>The conversations a file can be placed in: the one in view, or every one the project lists.</summary>
+    public IReadOnlyList<string> Placeable { get; private set; } = [];
 
     /// <summary>What happened, once something has.</summary>
     public string? Outcome { get; private set; }
@@ -76,6 +102,64 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         if (directory.Find(Project) is not { } project)
         {
             return RedirectToPage("/Index");
+        }
+
+        await LoadAsync(project).ConfigureAwait(false);
+
+        return Page();
+    }
+
+    /// <summary>Places an uploaded file in a conversation, as the person.</summary>
+    /// <param name="upload">The file.</param>
+    /// <param name="placeIn">The conversation.</param>
+    /// <param name="placeAs">The name to place it under, or empty for the file's own name.</param>
+    /// <returns>The page, saying what came of it.</returns>
+    /// <remarks>
+    /// Nothing to describe first: placing removes nothing and never changes a file already there, because a name that
+    /// already holds other content is refused (§9.5). Only a conversation the project lists is accepted, so a field
+    /// edited in the browser cannot name one this page did not offer.
+    /// </remarks>
+    public async Task<IActionResult> OnPostPlaceAsync(
+        [FromForm] IFormFile? upload, [FromForm] string? placeIn, [FromForm] string? placeAs)
+    {
+        if (directory.Find(Project) is not { } project)
+        {
+            return RedirectToPage("/Index");
+        }
+
+        await LoadAsync(project).ConfigureAwait(false);
+
+        if (upload is null)
+        {
+            Outcome = "No file was chosen. Nothing was placed.";
+            return Page();
+        }
+
+        if (placeIn is null || !Placeable.Contains(placeIn, StringComparer.Ordinal))
+        {
+            Outcome = "Choose a conversation this project has. Nothing was placed.";
+            return Page();
+        }
+
+        var name = string.IsNullOrWhiteSpace(placeAs) ? Path.GetFileName(upload.FileName) : placeAs.Trim();
+
+        if (name.Length == 0)
+        {
+            Outcome = "The file has no name to place it under. Give it one. Nothing was placed.";
+            return Page();
+        }
+
+        var broker = new BrokerClient(directory.ClientFor(project));
+        var token = HttpContext.RequestAborted;
+
+        var content = upload.OpenReadStream();
+
+        await using (content.ConfigureAwait(false))
+        {
+            var placed = await BrokerDirectory.ReadAsync(
+                () => broker.PlacePersonsFileAsync(placeIn, name, content, token)).ConfigureAwait(false);
+
+            Outcome = placed.Reachable ? PlacementSaid.Of(placed.Value!, name, Size) : placed.Problem;
         }
 
         await LoadAsync(project).ConfigureAwait(false);
@@ -194,7 +278,7 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
         return Page();
     }
 
-    /// <summary>Opens one file in its registered editor, on this machine.</summary>
+    /// <summary>Opens one file to read, on this machine.</summary>
     /// <param name="file">The file's name.</param>
     /// <param name="inConversation">Its conversation.</param>
     /// <returns>The page, saying what happened.</returns>
@@ -270,6 +354,35 @@ public sealed class FilesModel(BrokerDirectory directory) : PageModel
 
         Listing = read.Value;
         Problem ??= read.Problem;
+
+        if (scope is not null)
+        {
+            Placeable = [scope];
+            return;
+        }
+
+        var conversations = await BrokerDirectory.ReadAsync(
+            () => EveryConversationAsync(broker, token)).ConfigureAwait(false);
+
+        Placeable = conversations.Value ?? [];
+        Problem ??= conversations.Problem;
+    }
+
+    private static async Task<IReadOnlyList<string>> EveryConversationAsync(BrokerClient broker, CancellationToken token)
+    {
+        var ids = new List<string>();
+        string? next = null;
+
+        do
+        {
+            var page = await broker.ConversationsAsync(pageToken: next, cancellationToken: token).ConfigureAwait(false);
+
+            ids.AddRange(page.Items.Select(c => c.Id));
+            next = page.NextPageToken;
+        }
+        while (next is not null);
+
+        return ids;
     }
 
     private static async Task<IReadOnlyList<SharedFile>> EveryFileAsync(BrokerClient broker, CancellationToken token)

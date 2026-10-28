@@ -96,12 +96,14 @@ const string Help = """
                                                        start them; --describe changes nothing
 
       parley registry                                  every registered agent, with its workspace
-      parley files list [--conversation <id>]          the files agents placed: name, size, sha256,
+      parley files list [--conversation <id>]          the files placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
+      parley files place <path> --conversation <id>    place a .md or .txt file from this machine
+                        [--name <name>]                in a conversation, as the person
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first
       parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
-      parley files open <name>... [--conversation <id>]  open files in their editor on this
+      parley files open <name>... [--conversation <id>]  open files to read on this
                                                        machine, or say which machine holds them
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it

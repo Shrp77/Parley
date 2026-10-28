@@ -63,16 +63,17 @@ service Agents {
 
   // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
   // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
-  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant.
+  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant. A placed
+  // file is never changed: a name already holding other content is refused, and a new version takes a new name.
   rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
 
-  // Streams one whole content of a file: a header and then bytes, or a refusal instead of the header. While the
-  // call is open the stored file is held for reading and a replacement or removal waits. The adapter writes the
-  // bytes to disk; nothing carries them into a model's context.
+  // Streams one whole file: a header and then bytes, or a refusal instead of the header. While the call is open the
+  // stored file is held for reading and a removal waits. Bytes changed on disk since the placement are refused. The
+  // adapter writes the bytes to disk; nothing carries them into a model's context.
   rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
 
-  // Reports that a fetch was written and verified. Only then is it recorded, so change notices follow. A report of
-  // a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
+  // Reports that a fetch was written and verified. Only then is it recorded, so a gone notice follows if the file
+  // goes. A report of a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
   rpc FetchedFile(FetchedFileRequest) returns (FetchedFileReply);
 
   // A page of the files in the location: names, sizes, hashes and placers, never contents.
@@ -277,10 +278,7 @@ message FileNotice {
   string conversation_id = 1;
   string name = 2;
   string sha256_had = 3;              // what the agent fetched
-  string sha256_now = 4;              // empty when gone
-  int64 size_bytes = 5;               // 0 when gone
-  string changed_utc = 6;
-  bool gone = 7;
+  string gone_utc = 4;
 }
 
 // ===========================================================================================
@@ -305,12 +303,11 @@ message PlaceFileHeader {
 
 message PlaceFileReply {
   PlaceOutcome outcome = 1;
-  FileRejection rejection = 2;        // NONE when the file was placed, replaced or already current
+  FileRejection rejection = 2;        // NONE when the file was placed or already current
   string conversation_id = 3;
   string name = 4;
   int64 size_bytes = 5;
   string sha256 = 6;                  // the broker's, never the placer's
-  string previous_sha256 = 7;         // on REPLACED
   string placed_by = 8;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
   int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
@@ -374,7 +371,6 @@ message SharedFileView {
   string sha256 = 4;
   string placed_by = 5;               // empty: the person
   string placed_utc = 6;
-  string changed_utc = 7;
   string folder = 8;                  // the conversation's folder on disk
 }
 
@@ -385,7 +381,7 @@ message FilesReply {
   repeated FilePlacementCount placements = 4;     // Operators only
   string next_page_token = 5;                     // empty at the end
   int32 total_files = 6;                          // the files total_bytes counts
-  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules, case twins included
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders that nothing placed (section 9.5)
 }
 
 message ConversationFilesTotal {
@@ -445,15 +441,16 @@ enum FileRejection {
   FILE_REJECTION_NOT_FETCHED = 11;
   FILE_REJECTION_TOO_MANY_NAMES = 12;
   FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
+  FILE_REJECTION_NAME_HOLDS_OTHER_CONTENT = 14;  // a placed file is never changed: a new version takes a new name
 }
 
 enum PlaceOutcome {
   PLACE_OUTCOME_UNSPECIFIED = 0;
   PLACE_OUTCOME_PLACED = 1;
-  PLACE_OUTCOME_REPLACED = 2;
   PLACE_OUTCOME_ALREADY_CURRENT = 3;
   PLACE_OUTCOME_PLACED_BY_ANOTHER = 4;
   PLACE_OUTCOME_DOES_NOT_FIT = 5;
+  PLACE_OUTCOME_HOLDS_OTHER_CONTENT = 6;
 }
 
 // A message and the envelope that marks it as a participant's words, per section 13. Built by the
@@ -717,8 +714,11 @@ service Operators {
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
 
-  // The file location (section 9.5). Removing any file and pruning them all are the person's, because they remove
-  // files other agents placed. Describing where a file is lets a surface on that machine open it in place.
+  // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
+  // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
+  // machine open it to read. The person's placement streams as an agent's does, its header naming no agent and
+  // naming a conversation that exists. Named apart from Agents.PlaceFile, as section 10.2 names it apart.
+  rpc PlacePersonsFile(stream PlaceFileFrame) returns (PlaceFileReply);
   rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);

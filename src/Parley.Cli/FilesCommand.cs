@@ -7,7 +7,7 @@ using Parley.Core;
 namespace Parley.Cli;
 
 /// <summary>
-/// <c>parley files list|remove|prune|open|folder</c>: the person's operations on a project's file location
+/// <c>parley files list|place|remove|prune|open|folder</c>: the person's operations on a project's file location
 /// (SPEC.md §9.5, §10.2).
 /// </summary>
 /// <remarks>
@@ -21,6 +21,11 @@ namespace Parley.Cli;
 /// <b>Every name printed is somebody else's text</b>, so each line is flattened: a character that would start a new
 /// line or move the cursor is replaced before it reaches the terminal, and a file name cannot forge a second row of
 /// this report.
+/// </para>
+/// <para>
+/// <b>Placing is the only way a file gets in.</b> A file copied into a conversation's folder by hand is never listed
+/// (§9.5), so <c>place</c> is how a person hands an agent a file from a script; it places as the person, never as an
+/// agent, and a name already holding other content is refused rather than overwritten.
 /// </para>
 /// <para>
 /// Opening launches on this machine only when the broker says the location is here; anywhere else it says which
@@ -48,6 +53,7 @@ public sealed class FilesCommand(
     /// <summary>What <c>parley files</c> with no subcommand, or a wrong one, says.</summary>
     internal const string Help =
         "Usage: parley files list [--conversation <id>] [--full]\n" +
+        "       parley files place <path> --conversation <id> [--name <name>]\n" +
         "       parley files remove <name>... [--conversation <id>] [--yes]\n" +
         "       parley files prune [--yes-remove-every-file]\n" +
         "       parley files open <name>... [--conversation <id>]\n" +
@@ -60,7 +66,7 @@ public sealed class FilesCommand(
     /// already refuses an option it does not know; so they are named here, once, for that refusal to read.
     /// </remarks>
     internal static readonly IReadOnlySet<string> OwnOptions =
-        new HashSet<string>(["--conversation", "-c", "--full", "--yes", "--yes-remove-every-file"], StringComparer.Ordinal);
+        new HashSet<string>(["--conversation", "-c", "--name", "--full", "--yes", "--yes-remove-every-file"], StringComparer.Ordinal);
 
     private readonly IParleyBrokerClient _broker = broker ?? throw new ArgumentNullException(nameof(broker));
     private readonly TextWriter _output = output ?? throw new ArgumentNullException(nameof(output));
@@ -102,6 +108,8 @@ public sealed class FilesCommand(
         return arguments[0] switch
         {
             "list" when parsed.Names.Count == 0 => await ListAsync(parsed, cancellationToken).ConfigureAwait(false),
+            "place" when parsed.Names.Count == 1 && parsed.Conversation is not null =>
+                await PlaceAsync(parsed, cancellationToken).ConfigureAwait(false),
             "remove" when parsed.Names.Count > 0 => await RemoveAsync(parsed, cancellationToken).ConfigureAwait(false),
             "prune" when parsed.Names.Count == 0 && parsed.Conversation is null =>
                 await PruneAsync(parsed, cancellationToken).ConfigureAwait(false),
@@ -183,7 +191,7 @@ public sealed class FilesCommand(
                     $"  {Flat(file.Name.Value),-40} {Size(file.SizeBytes),10}  " +
                     $"{(options.Full ? file.Sha256.Value : file.Sha256.Short)}  " +
                     $"{(file.PlacedBy is { } placer ? placer.Value : "the person"),-24} " +
-                    $"{LocalTime.Write(file.ChangedUtc)}")).ConfigureAwait(false);
+                    $"{LocalTime.Write(file.PlacedUtc)}")).ConfigureAwait(false);
             }
         }
 
@@ -223,6 +231,50 @@ public sealed class FilesCommand(
                 CultureInfo.InvariantCulture,
                 $"  {Flat(count.Agent),-24} {count.Placements} placement(s), {Size(count.Bytes)}")).ConfigureAwait(false);
         }
+    }
+
+    private async Task<int> PlaceAsync(Options options, CancellationToken cancellationToken)
+    {
+        var path = options.Names[0];
+        var name = options.Name ?? Path.GetFileName(path);
+
+        // Asked here rather than left to the broker, so a mistyped path says which path and nothing is streamed.
+        if (!File.Exists(path))
+        {
+            await _error.WriteLineAsync($"There is no file at {Flat(path)}. Nothing was placed.").ConfigureAwait(false);
+            return NothingDone;
+        }
+
+        PersonPlacement placed;
+
+        try
+        {
+            var content = File.OpenRead(path);
+
+            await using (content.ConfigureAwait(false))
+            {
+                placed = await _broker.PlacePersonsFileAsync(options.Conversation!, name, content, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            await _error.WriteLineAsync($"{Flat(path)} could not be read: {Flat(unreadable.Message)} Nothing was placed.")
+                .ConfigureAwait(false);
+            return NothingDone;
+        }
+
+        var said = Flat(PlacementSaid.Of(placed, name, Size));
+
+        if (!placed.InPlace)
+        {
+            await _error.WriteLineAsync(said).ConfigureAwait(false);
+            return NothingDone;
+        }
+
+        await _output.WriteLineAsync(said).ConfigureAwait(false);
+
+        return 0;
     }
 
     private async Task<int> RemoveAsync(Options options, CancellationToken cancellationToken)
@@ -369,6 +421,7 @@ public sealed class FilesCommand(
     private static readonly Dictionary<string, IReadOnlySet<string>> Takes = new(StringComparer.Ordinal)
     {
         ["list"] = new HashSet<string>(["--conversation", "--full"], StringComparer.Ordinal),
+        ["place"] = new HashSet<string>(["--conversation", "--name"], StringComparer.Ordinal),
         ["remove"] = new HashSet<string>(["--conversation", "--yes"], StringComparer.Ordinal),
         ["prune"] = new HashSet<string>(["--yes-remove-every-file"], StringComparer.Ordinal),
         ["open"] = new HashSet<string>(["--conversation"], StringComparer.Ordinal),
@@ -380,6 +433,7 @@ public sealed class FilesCommand(
         var names = new List<string>();
         var given = new List<string>();
         string? conversation = null;
+        string? name = null;
         bool full = false, yes = false, everyFile = false;
 
         for (var i = 0; i < arguments.Count; i++)
@@ -389,6 +443,10 @@ public sealed class FilesCommand(
                 case "--conversation" or "-c" when i + 1 < arguments.Count:
                     conversation = arguments[++i];
                     given.Add("--conversation");
+                    break;
+                case "--name" when i + 1 < arguments.Count:
+                    name = arguments[++i];
+                    given.Add("--name");
                     break;
                 case "--full":
                     full = true;
@@ -410,12 +468,13 @@ public sealed class FilesCommand(
             }
         }
 
-        return new Options(names, conversation, full, yes, everyFile, given);
+        return new Options(names, conversation, name, full, yes, everyFile, given);
     }
 
     private sealed record Options(
         IReadOnlyList<string> Names,
         string? Conversation,
+        string? Name,
         bool Full,
         bool Yes,
         bool YesRemoveEveryFile,

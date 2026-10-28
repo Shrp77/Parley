@@ -230,8 +230,7 @@ public sealed class FilesPageTests : IDisposable
         SizeBytes = size,
         Sha256 = hash,
         PlacedBy = placedBy,
-        PlacedUtc = "2026-09-14T09:00:00Z",
-        ChangedUtc = "2026-09-14T09:00:00Z"
+        PlacedUtc = "2026-09-14T09:00:00Z"
     };
 
     /// <summary>Posts to one of the page's handlers, with the token a real form on the page would carry.</summary>

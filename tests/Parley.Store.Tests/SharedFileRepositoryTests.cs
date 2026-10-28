@@ -54,16 +54,41 @@ public sealed class SharedFileRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Its_placer_replacing_it_with_different_content_is_a_replacement_carrying_the_previous_hash()
+    public async Task Its_placer_placing_other_content_under_it_is_refused_and_the_file_is_unchanged()
     {
+        // A placed file is never changed (SPEC.md §9.5): a new version is a new name.
         var first = await Place("pricing", "price-snapshot.md", "net of tax", Billing);
         var second = await Place("pricing", "price-snapshot.md", "gross of tax", Billing, at: Now.AddHours(1));
 
-        Assert.Equal(PlaceOutcome.Replaced, second.Outcome);
-        Assert.Equal(first.File!.Sha256, second.Previous);
-        Assert.Equal(ContentHash.Of("gross of tax"u8), second.File!.Sha256);
-        Assert.Equal(first.File.PlacedUtc, second.File.PlacedUtc);
-        Assert.Equal(Now.AddHours(1), second.File.ChangedUtc);
+        Assert.Equal(PlaceOutcome.HoldsOtherContent, second.Outcome);
+        Assert.Equal(first.File!.Sha256, second.File!.Sha256);
+        Assert.Equal(first.File.Sha256, (await Get("pricing", "price-snapshot.md"))!.File.Sha256);
+        Assert.Equal(1, Assert.Single(await _files.GetPlacementsAsync(cancellationToken: Ct)).Placements);
+    }
+
+    [Fact]
+    public async Task The_persons_placement_has_no_placer_counts_against_nobody_and_no_agent_may_take_it()
+    {
+        var placed = await Place("pricing", "notes.md", "the person's", placer: null);
+
+        Assert.Equal(PlaceOutcome.Placed, placed.Outcome);
+        Assert.Null(placed.File!.PlacedBy);
+        Assert.Empty(await _files.GetPlacementsAsync(cancellationToken: Ct));
+        Assert.Equal(PlaceOutcome.PlacedByAnother, (await Place("pricing", "notes.md", "b", Billing)).Outcome);
+
+        var stored = (await Get("pricing", "notes.md"))!;
+        Assert.Equal(FileRejection.NamePlacedByAnother, await _files.RemoveAsync(stored, Billing, Now, cancellationToken: Ct));
+        Assert.Equal(FileRejection.None, await _files.RemoveAsync(stored, caller: null, Now, cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task The_write_time_a_placed_file_has_on_disk_is_recorded_once_its_bytes_are_in_place()
+    {
+        await Place("pricing", "a.md", "x", Billing);
+
+        await _files.RecordPlacedTimeAsync((await Get("pricing", "a.md"))!, 999, cancellationToken: Ct);
+
+        Assert.Equal(999, (await Get("pricing", "a.md"))!.ModifiedTicks);
     }
 
     [Fact]
@@ -73,7 +98,7 @@ public sealed class SharedFileRepositoryTests : IDisposable
         var again = await Place("pricing", "PRICE-SNAPSHOT.md", "net of tax", Billing, at: Now.AddHours(1));
 
         Assert.Equal(PlaceOutcome.AlreadyCurrent, again.Outcome);
-        Assert.Equal(Now, again.File!.ChangedUtc);
+        Assert.Equal(Now, again.File!.PlacedUtc);
         Assert.Equal(1, Assert.Single(await _files.GetPlacementsAsync(cancellationToken: Ct)).Placements);
     }
 
@@ -86,21 +111,6 @@ public sealed class SharedFileRepositoryTests : IDisposable
         Assert.Equal(PlaceOutcome.PlacedByAnother, refused.Outcome);
         Assert.Equal(Billing, refused.File!.PlacedBy);
         Assert.Equal(ContentHash.Of("net of tax"u8), (await Get("pricing", "price-snapshot.md"))!.File.Sha256);
-    }
-
-    [Fact]
-    public async Task A_file_the_person_put_there_cannot_be_replaced_or_removed_by_any_agent()
-    {
-        // A file can only appear in a folder that exists, and a conversation has a folder once it has had one.
-        await _files.EnsureFolderAsync("pricing", _ => false, Now, cancellationToken: Ct);
-
-        var found = await _files.RecordFoundAsync(
-            "pricing", SharedFileName.Create("notes.md"), ContentHash.Of("a"u8), 1, 1, Now, cancellationToken: Ct);
-
-        Assert.Null(found!.File.PlacedBy);
-        Assert.Equal(PlaceOutcome.PlacedByAnother, (await Place("pricing", "notes.md", "b", Billing)).Outcome);
-        Assert.Equal(FileRejection.NamePlacedByAnother, await _files.RemoveAsync(found, Billing, Now, cancellationToken: Ct));
-        Assert.Equal(FileRejection.None, await _files.RemoveAsync(found, caller: null, Now, cancellationToken: Ct));
     }
 
     [Fact]
@@ -320,76 +330,6 @@ public sealed class SharedFileRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task A_reconcile_with_the_same_hash_changes_nothing_but_the_time_it_read()
-    {
-        await Place("pricing", "a.md", "x", Billing);
-        var known = (await Get("pricing", "a.md"))!;
-
-        Assert.Equal(ReconcileOutcome.Unchanged, await _files.ReconcileAsync(known, known.File.Sha256, 1, 999, Now.AddHours(1), cancellationToken: Ct));
-
-        var after = (await Get("pricing", "a.md"))!;
-        Assert.Equal(999, after.ModifiedTicks);
-        Assert.Equal(Now, after.File.ChangedUtc);
-    }
-
-    [Fact]
-    public async Task A_reconcile_with_a_new_hash_records_the_change_and_keeps_the_placer()
-    {
-        await Place("pricing", "a.md", "x", Billing);
-        var known = (await Get("pricing", "a.md"))!;
-
-        Assert.Equal(ReconcileOutcome.Changed, await _files.ReconcileAsync(known, ContentHash.Of("edited"u8), 6, 999, Now.AddHours(1), cancellationToken: Ct));
-
-        var after = (await Get("pricing", "a.md"))!;
-        Assert.Equal(ContentHash.Of("edited"u8), after.File.Sha256);
-        Assert.Equal(6, after.File.SizeBytes);
-        Assert.Equal(Billing, after.File.PlacedBy);
-        Assert.Equal(Now.AddHours(1), after.File.ChangedUtc);
-    }
-
-    [Fact]
-    public async Task A_reconcile_of_a_row_that_moved_on_since_it_was_read_writes_nothing()
-    {
-        // A look read the row and hashed the old bytes while a placement replaced them and recorded its own hash. Written,
-        // the look's hash listed the old content over the new until the next look (macOS CI at f19f792).
-        await Place("pricing", "a.md", "x", Billing);
-        var known = (await Get("pricing", "a.md"))!;
-
-        Assert.Equal(ReconcileOutcome.Changed, await _files.ReconcileAsync(known, ContentHash.Of("replaced"u8), 8, 500, Now.AddHours(1), cancellationToken: Ct));
-        Assert.Equal(ReconcileOutcome.MovedOn, await _files.ReconcileAsync(known, ContentHash.Of("x"u8), 1, 400, Now.AddHours(2), cancellationToken: Ct));
-
-        var after = (await Get("pricing", "a.md"))!;
-        Assert.Equal(ContentHash.Of("replaced"u8), after.File.Sha256);
-        Assert.Equal(500, after.ModifiedTicks);
-    }
-
-    [Fact]
-    public async Task A_rename_keeps_the_placer_and_when_it_was_placed()
-    {
-        await Place("pricing", "a.md", "x", Billing);
-        var known = (await Get("pricing", "a.md"))!;
-
-        var renamed = await _files.RenameAsync(known, SharedFileName.Create("b.md"), 5, Now.AddHours(1), cancellationToken: Ct);
-
-        Assert.Equal("b.md", renamed!.File.Name.Value);
-        Assert.Equal(Billing, renamed.File.PlacedBy);
-        Assert.Equal(Now, renamed.File.PlacedUtc);
-        Assert.Null(await Get("pricing", "a.md"));
-    }
-
-    [Fact]
-    public async Task A_rename_over_an_existing_name_takes_that_file_out_first()
-    {
-        await Place("pricing", "a.md", "x", Billing);
-        await Place("pricing", "b.md", "y", Orders);
-
-        var renamed = await _files.RenameAsync((await Get("pricing", "a.md"))!, SharedFileName.Create("b.md"), 5, Now, cancellationToken: Ct);
-
-        Assert.Equal(Billing, renamed!.File.PlacedBy);
-        Assert.Single(await _files.GetAllAsync(cancellationToken: Ct));
-    }
-
-    [Fact]
     public async Task A_list_is_paged_at_fifty_and_never_more_than_two_hundred_and_reaches_every_file_once()
     {
         for (var i = 0; i < 250; i++)
@@ -464,10 +404,10 @@ public sealed class SharedFileRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Placements_are_counted_per_agent_with_their_bytes_and_replacements_count_too()
+    public async Task Placements_are_counted_per_agent_with_their_bytes()
     {
         await Place("pricing", "a.md", "12345", Billing);
-        await Place("pricing", "a.md", "1234567", Billing);
+        await Place("pricing", "c.md", "1234567", Billing);
         await Place("refunds", "b.md", "1", Orders);
 
         var counts = await _files.GetPlacementsAsync(cancellationToken: Ct);
@@ -526,13 +466,13 @@ public sealed class SharedFileRepositoryTests : IDisposable
         Assert.Equal(0L, Scalar("SELECT count(*) FROM pragma_foreign_key_check;"));
     }
 
-    private Task<PlaceResult> Place(string conversation, string name, string content, AgentName by, DateTimeOffset? at = null) =>
+    private Task<PlaceResult> Place(string conversation, string name, string content, AgentName? placer, DateTimeOffset? at = null) =>
         _files.PlaceAsync(
             conversation,
             SharedFileName.Create(name),
             ContentHash.Of(System.Text.Encoding.UTF8.GetBytes(content)),
             System.Text.Encoding.UTF8.GetByteCount(content),
-            by,
+            placer,
             modifiedTicks: 1,
             at ?? Now,
             takenOnDisk: _ => false,

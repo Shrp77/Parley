@@ -402,6 +402,51 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<PersonPlacement> PlacePersonsFileAsync(
+        string conversationId, string name, Stream content, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(conversationId);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(content);
+
+        using var call = _operators.PlacePersonsFile(cancellationToken: cancellationToken);
+
+        await call.RequestStream.WriteAsync(
+            new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name } },
+            cancellationToken).ConfigureAwait(false);
+
+        var buffer = new byte[FileLimits.ChunkBytes];
+        int read;
+
+        while ((read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            await call.RequestStream.WriteAsync(
+                new Wire.PlaceFileFrame { Chunk = Google.Protobuf.ByteString.CopyFrom(buffer, 0, read) },
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        await call.RequestStream.CompleteAsync().ConfigureAwait(false);
+        var reply = await call.ResponseAsync.ConfigureAwait(false);
+
+        return new PersonPlacement(
+            reply.Outcome switch
+            {
+                Wire.PlaceOutcome.Placed => PlaceOutcome.Placed,
+                Wire.PlaceOutcome.AlreadyCurrent => PlaceOutcome.AlreadyCurrent,
+                Wire.PlaceOutcome.PlacedByAnother => PlaceOutcome.PlacedByAnother,
+                Wire.PlaceOutcome.DoesNotFit => PlaceOutcome.DoesNotFit,
+                Wire.PlaceOutcome.HoldsOtherContent => PlaceOutcome.HoldsOtherContent,
+                _ => null,
+            },
+            RejectionOf(reply.Rejection),
+            reply.ConversationId,
+            reply.Name,
+            reply.SizeBytes,
+            ContentHash.TryParse(reply.Sha256, out var hash) ? hash : null,
+            Blank(reply.Detail));
+    }
+
+    /// <inheritdoc/>
     public async Task<SharedFileListing> ListSharedFilesAsync(
         string? conversationId = null,
         int pageSize = 0,
@@ -490,8 +535,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
                 ? hash
                 : throw new InvalidOperationException("The broker listed a file with a hash that is not one."),
             string.IsNullOrEmpty(view.PlacedBy) ? null : AgentName.Create(view.PlacedBy),
-            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue,
-            Read(view.ChangedUtc) ?? DateTimeOffset.MinValue);
+            Read(view.PlacedUtc) ?? DateTimeOffset.MinValue);
 
     private static FileRefusal RefusalOf(Wire.FileRefusal refusal) =>
         new(
@@ -517,6 +561,7 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
         Wire.FileRejection.NotFetched => FileRejection.NotFetched,
         Wire.FileRejection.TooManyNames => FileRejection.TooManyNames,
         Wire.FileRejection.SafeNameTaken => FileRejection.SafeNameTaken,
+        Wire.FileRejection.NameHoldsOtherContent => FileRejection.NameHoldsOtherContent,
         _ => throw new InvalidOperationException(
             $"The broker refused a file operation for a reason this build does not know ({rejection}). It speaks a different protocol.")
     };

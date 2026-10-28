@@ -61,6 +61,31 @@ internal static class FileWire
         return await call.ResponseAsync;
     }
 
+    /// <summary>Places a file as the person, through the operator surface, in one piece.</summary>
+    /// <param name="operators">The operator client.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="content">The bytes.</param>
+    /// <param name="conversation">The conversation, which must exist.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>What the placement came to.</returns>
+    public static async Task<Wire.PlaceFileReply> PlaceAsPersonAsync(
+        Wire.Operators.OperatorsClient operators,
+        string name,
+        byte[] content,
+        string conversation,
+        CancellationToken cancellationToken)
+    {
+        using var call = operators.PlacePersonsFile(cancellationToken: cancellationToken);
+
+        await call.RequestStream.WriteAsync(
+            new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Name = name, ConversationId = conversation } },
+            cancellationToken);
+        await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(content) }, cancellationToken);
+        await call.RequestStream.CompleteAsync();
+
+        return await call.ResponseAsync;
+    }
+
     /// <summary>Fetches a file and reports it, as an adapter does once it has written and verified the bytes.</summary>
     /// <param name="client">The agent's client.</param>
     /// <param name="agent">The agent's name.</param>

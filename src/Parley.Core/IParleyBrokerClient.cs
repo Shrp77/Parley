@@ -270,6 +270,20 @@ public interface IParleyBrokerClient
     Task<bool> StartAsync(
         AgentName agent, string because, CancellationToken cancellationToken = default);
 
+    /// <summary>Place a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
+    /// <param name="conversationId">The conversation.</param>
+    /// <param name="name">The name to place it under; characters outside the set become <c>_</c> (§9.5).</param>
+    /// <param name="content">The bytes, read to their end.</param>
+    /// <param name="cancellationToken">Cancels the call; nothing is left behind.</param>
+    /// <returns>What the placement came to.</returns>
+    /// <remarks>
+    /// The person's, because no agent places as anybody but itself. A file in the location enters only by placement:
+    /// one copied into a folder by hand is never listed, so this is how the person hands an agent a file. A placed
+    /// file is never changed, so a new version goes under a new name.
+    /// </remarks>
+    Task<PersonPlacement> PlacePersonsFileAsync(
+        string conversationId, string name, Stream content, CancellationToken cancellationToken = default);
+
     /// <summary>List a page of the file location (SPEC.md §9.5).</summary>
     /// <param name="conversationId">One conversation's files, or <see langword="null"/> for every one.</param>
     /// <param name="pageSize">Files per page; zero or less for the broker's default. The broker bounds it.</param>

@@ -15,7 +15,7 @@ namespace Parley.Server;
 /// </para>
 /// <para>
 /// <b>A placement is staged beside the location and moved in when complete</b>: the
-/// folder a person opens and the watcher watches never hold a half-uploaded file, and on the same disk the move
+/// folder a person opens never holds a half-uploaded file, and on the same disk the move
 /// is one step. A staged file that is never committed is deleted, and the staging directory is emptied when the
 /// broker starts, because nothing survives a broker that could have finished writing it.
 /// </para>
@@ -257,9 +257,9 @@ public sealed class FileLocationStore : IDisposable
     /// <returns>The file's name as it is on disk, or <see langword="null"/>.</returns>
     /// <remarks>
     /// Compared by key, because Windows and macOS hold <c>Notes.md</c> and <c>notes.md</c> as one file, and a placement
-    /// committed under either spelling would replace it there. Asked of the disk rather than of the store: a file a
-    /// person put in the folder has no row until the watcher or the next list records it, and until then the disk is
-    /// the only thing that knows it is there.
+    /// committed under either spelling would write over it there. Asked of the disk rather than of the store: a file a
+    /// person put in the folder by hand has no row, ever (SPEC.md §9.5), and the disk is the only thing that knows it is
+    /// there.
     /// </remarks>
     public string? OnDisk(string folder, SharedFileName name)
     {
@@ -523,7 +523,7 @@ public sealed class FileLocationStore : IDisposable
         }
     }
 
-    internal void Commit(string stagedPath, string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks)? expected)
+    internal void Commit(string stagedPath, string folder, SharedFileName name)
     {
         var target = FilePath(folder, name);
 
@@ -537,74 +537,42 @@ public sealed class FileLocationStore : IDisposable
             throw new NotItsOwnFolderException(folder);
         }
 
-        // **A replacement waits a moment for a read of the file to finish.** On Windows a move over a file open for reading
-        // is refused, and the broker's own watcher reads a file to hash it after every change it sees, so an agent
-        // replacing its own file just after placing it meets that read. One hash is short, so a wait of a second outlasts
-        // it; a file held longer, by anything, is refused in words.
-        //
-        // **Only over the file the store recorded.** The placement decided it may replace the file recorded under the name,
-        // or that there is none; a person can move that file aside and save their own under the name before the move or
-        // while the wait runs, and the move would write the agent's bytes over the person's. So each try first compares
-        // what is on disk with the record, and anything else there is refused, with nothing written.
-        for (var attempt = 1; ; attempt++)
+        // **Never over a file** (SPEC.md §9.5). A placed file is never changed, so a placement writes only a name nothing
+        // holds on disk; one put there by hand since the placement looked is refused, with nothing written.
+        try
         {
-            try
-            {
-                if (!IsTheRecordedFile(target, expected))
-                {
-                    throw new Grpc.Core.RpcException(new Grpc.Core.Status(
-                        Grpc.Core.StatusCode.Aborted,
-                        "The file on disk is not the one Parley recorded under this name, so it was not replaced and "
-                        + "nothing was written. Look at the file again before placing it."));
-                }
-
-                File.Move(stagedPath, target, overwrite: true);
-                return;
-            }
-            catch (Exception held) when (held is UnauthorizedAccessException or IOException && attempt < 40 && File.Exists(stagedPath))
-            {
-                Thread.Sleep(25);
-            }
-            catch (Exception held) when (held is UnauthorizedAccessException or IOException && File.Exists(stagedPath))
-            {
-                throw new Grpc.Core.RpcException(new Grpc.Core.Status(
+            File.Move(stagedPath, target, overwrite: false);
+        }
+        catch (IOException taken) when (File.Exists(target))
+        {
+            throw new Grpc.Core.RpcException(
+                new Grpc.Core.Status(
                     Grpc.Core.StatusCode.Aborted,
-                    "The file was being read, so it was not replaced and nothing was written. Place it again."),
-                    held.Message);
-            }
+                    "A file was put under this name on disk while the placement arrived, so nothing was written. Place it "
+                    + "under another name."),
+                taken.Message);
         }
     }
 
-    // Whether what is under the name is the file the store recorded: none, for a name nothing holds, or one of the
-    // recorded size and write time. A row whose time was never recorded is compared by size alone.
     /// <summary>Whether a file on disk, if there is one, is the one the store recorded under its name.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
     /// <param name="recorded">The size and write time recorded.</param>
     /// <returns><see langword="true"/> when no file is there, or the one there has the recorded size and time.</returns>
     /// <remarks>
-    /// For a removal by the agent that placed it: a file there that is not the recorded one may be the person's, put under
-    /// the name since the agent's went, and the watcher has not yet said so. Removing it would delete the person's bytes.
+    /// For a removal by the agent that placed it: a file there that is not the one placed was changed or put there by
+    /// hand, and may be the person's. Removing it would delete bytes the agent never placed (SPEC.md §9.5).
     /// </remarks>
     internal bool HoldsTheRecordedFileOrNone(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks) recorded)
     {
         var path = FilePath(folder, name);
 
-        return !File.Exists(path) || IsTheRecordedFile(path, recorded);
-    }
-
-    private static bool IsTheRecordedFile(string path, (long SizeBytes, long ModifiedTicks)? expected)
-    {
         var info = new FileInfo(path);
 
-        if (expected is not { } recorded)
-        {
-            return !info.Exists;
-        }
-
-        return info.Exists
-               && info.Length == recorded.SizeBytes
-               && (recorded.ModifiedTicks == 0 || info.LastWriteTimeUtc.Ticks == recorded.ModifiedTicks);
+        // A row whose time was never recorded is compared by size alone.
+        return !info.Exists
+               || (info.Length == recorded.SizeBytes
+                   && (recorded.ModifiedTicks == 0 || info.LastWriteTimeUtc.Ticks == recorded.ModifiedTicks));
     }
 
     private static void TryDelete(string path)
@@ -690,23 +658,21 @@ public sealed class FileLocationStore : IDisposable
             return ContentHash.FromDigest(_hash.GetHashAndReset());
         }
 
-        /// <summary>Moves the finished file into its folder, over the file the store recorded under that name if any.</summary>
+        /// <summary>Moves the finished file into its folder, under a name nothing holds on disk.</summary>
         /// <param name="folder">The conversation's folder name.</param>
         /// <param name="name">The file's name.</param>
-        /// <param name="expected">The size and write time recorded for the file it replaces, or <see langword="null"/> when none is recorded.</param>
         /// <returns>The last-write time the committed file carries.</returns>
         /// <exception cref="Grpc.Core.RpcException">
-        /// <c>Aborted</c>: what is on disk under the name is not the recorded file, or it stayed in use; nothing was written.
+        /// <c>Aborted</c>: a file was put under the name on disk meanwhile; nothing was written.
         /// </exception>
-        /// <remarks>Call inside <see cref="FileLocationStore.ChangeAsync"/> when a file of that name may exist.</remarks>
-        public long CommitTo(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks)? expected)
+        public long CommitTo(string folder, SharedFileName name)
         {
             if (!_closed)
             {
                 throw new InvalidOperationException("A staged file is committed only once it is finished.");
             }
 
-            _location.Commit(Path, folder, name, expected);
+            _location.Commit(Path, folder, name);
             _committed = true;
 
             return File.GetLastWriteTimeUtc(_location.FilePath(folder, name)).Ticks;

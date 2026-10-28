@@ -71,7 +71,7 @@ public sealed class ANewNameTakesNoTurnTests
         var sha = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
 
         Assert.True(
-            new[] { a.Outcome, b.Outcome }.Order().SequenceEqual(new[] { Wire.PlaceOutcome.Placed, Wire.PlaceOutcome.Replaced }.Order()),
+            new[] { a.Outcome, b.Outcome }.Order().SequenceEqual(new[] { Wire.PlaceOutcome.Placed, Wire.PlaceOutcome.HoldsOtherContent }.Order()),
             $"outcomes {a.Outcome}, {b.Outcome}");
         Assert.Equal(row.Sha256, sha);
         Assert.Equal(["new.md", "start.md"], OnDisk(broker, "bait").Order().ToArray());
@@ -178,8 +178,9 @@ public sealed class ANewNameTakesNoTurnTests
 
         await FileWire.PlaceAsync(billing.Client, Billing, "start.md", Text("x"), "pricing", Ct);
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "mine.md");
-        await File.WriteAllTextAsync(path, "the person's", Ct);
-        await FileWire.WaitForAsync(operators, l => l.Any(f => f.Name == "mine.md"), TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal(
+            Wire.PlaceOutcome.Placed,
+            (await FileWire.PlaceAsPersonAsync(operators, "mine.md", Text("the person's"), "pricing", Ct)).Outcome);
 
         var reading = await broker.Runtime.Files.HoldForReadingAsync("pricing", SharedFileName.Create("mine.md"), Ct);
         var mine = new Wire.FileRef { ConversationId = "pricing", Name = "mine.md" };

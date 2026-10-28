@@ -130,8 +130,8 @@ Some things are too big or too exact for a message: a schema, a price list, a ge
 An agent can **place** a `.md` or `.txt` file with Parley, and another agent **fetches** it onto
 disk in its own repository. The contents go from disk to disk and never into anyone's context.
 Code travels as `Name.cs.txt`, so nothing that runs can be opened by accident. A file is checked
-against its SHA-256 hash when it is fetched. Only the agent that placed a file can replace or
-remove it.
+against its SHA-256 hash when it is fetched. A placed file is never changed: a new version goes
+under a new name. Only the agent that placed a file can remove it, and you can place files too.
 
 ## Roadmaps
 

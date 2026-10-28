@@ -91,7 +91,7 @@ internal sealed class FileLocationFixture : IAsyncDisposable
         var reply = await call.ResponseAsync;
 
         Assert.True(
-            reply.Outcome is Wire.PlaceOutcome.Placed or Wire.PlaceOutcome.Replaced,
+            reply.Outcome is Wire.PlaceOutcome.Placed,
             string.Create(CultureInfo.InvariantCulture, $"the fixture's placement of {name} came to {reply.Outcome}: {reply.Detail}"));
     }
 

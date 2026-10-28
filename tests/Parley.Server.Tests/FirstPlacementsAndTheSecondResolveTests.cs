@@ -76,7 +76,17 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
 
         var folders = Directory.GetDirectories(broker.Runtime.Files.Root).Select(Path.GetFileName).ToArray();
         Assert.True(folders.Length == 1, $"{a.Outcome}/{b.Outcome}; folders: {string.Join(", ", folders)}");
-        Assert.All(new[] { a, b }, r => Assert.Equal(Wire.FileRejection.None, r.Rejection));
+
+        // Two names both land; one name with two contents has one winner, and the other is refused (SPEC.md §9.5).
+        if (string.Equals(first, second, StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.None);
+            Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.NameHoldsOtherContent);
+        }
+        else
+        {
+            Assert.All(new[] { a, b }, r => Assert.Equal(Wire.FileRejection.None, r.Rejection));
+        }
 
         // What is on disk is what the store says.
         var listed = await FileWire.WaitForAsync(broker.ConnectAsOperator(), _ => true, TimeSpan.FromSeconds(5), Ct);
@@ -112,7 +122,8 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
 
         var a = await x.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var b = await y.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        Assert.All(new[] { a, b }, r => Assert.Equal(Wire.FileRejection.None, r.Rejection));
+        Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.None);
+        Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.NameHoldsOtherContent);
 
         var file = (await FileWire.WaitForAsync(broker.ConnectAsOperator(), l => l.Any(f => f.Name == "notes.md"), TimeSpan.FromSeconds(5), Ct)).Single(f => f.Name == "notes.md");
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md");
@@ -122,7 +133,7 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task A_change_landing_between_the_two_resolves_is_refused_naming_the_new_content(bool expecting)
+    public async Task A_hand_edit_landing_between_the_two_resolves_is_refused_naming_the_bytes_streamed(bool expecting)
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
@@ -131,7 +142,8 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
         var name = SharedFileName.Create("notes.md");
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md");
 
-        // The fetch resolves v1, then waits on the change's turn; the person saves v2 inside it.
+        // The fetch resolves v1, then waits on the change's turn; the person saves over it by hand inside it, which a
+        // placed file never is through Parley, so what streams is not the file and is refused (SPEC.md §9.5).
         var turn = await broker.Runtime.Files.ChangeAsync("pricing", name, Ct);
         using var call = orders.Client.FetchFile(
             new Wire.FetchFileRequest
@@ -146,7 +158,6 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
 
         var (header, refusal) = await frames.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
-        Assert.Null(header);
         Assert.NotNull(refusal);
         Assert.Equal(Wire.FileRejection.Changed, refusal!.Rejection);
         Assert.Equal(Sha("version two, longer"), refusal.Sha256Now);

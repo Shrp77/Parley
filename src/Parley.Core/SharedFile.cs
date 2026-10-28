@@ -6,11 +6,10 @@ namespace Parley.Core;
 /// <param name="ConversationId">The conversation it belongs to.</param>
 /// <param name="Folder">The conversation's folder name on disk.</param>
 /// <param name="Name">Its name.</param>
-/// <param name="SizeBytes">How many bytes its current content is.</param>
-/// <param name="Sha256">The broker's hash of its current content.</param>
-/// <param name="PlacedBy">The agent that placed it, or <see langword="null"/> when the person put it there.</param>
-/// <param name="PlacedUtc">When it was first placed.</param>
-/// <param name="ChangedUtc">When its current content arrived, by any route.</param>
+/// <param name="SizeBytes">How many bytes it is.</param>
+/// <param name="Sha256">The broker's hash of its bytes.</param>
+/// <param name="PlacedBy">The agent that placed it, or <see langword="null"/> when the person placed it.</param>
+/// <param name="PlacedUtc">When it was placed; a placed file never changes.</param>
 /// <remarks>
 /// No contents, ever. Nothing in Parley reads a file's bytes except to hash and copy them, and a type that
 /// could carry them would be a type something eventually puts in a reply.
@@ -22,8 +21,7 @@ public sealed record SharedFile(
     long SizeBytes,
     ContentHash Sha256,
     AgentName? PlacedBy,
-    DateTimeOffset PlacedUtc,
-    DateTimeOffset ChangedUtc);
+    DateTimeOffset PlacedUtc);
 
 /// <summary>
 /// A conversation's share of the file location.
@@ -67,15 +65,15 @@ public sealed record SharedFilePage(
 /// <param name="Page">The page.</param>
 /// <param name="Placements">How many placements and bytes each agent has made.</param>
 /// <param name="NotListed">
-/// Files in the folders listed whose names break the rules of SPEC.md §9.5, and so are in no list. A count and never
-/// the names, which are text nothing has checked.
+/// Files in the folders listed that nothing placed, copied or renamed there by hand, and so are in no list (SPEC.md
+/// §9.5). A count and never the names, which are text nothing has checked.
 /// </param>
 public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePlacementCount> Placements, int NotListed = 0)
 {
     /// <summary>The sentence a surface shows when <see cref="NotListed"/> is more than zero.</summary>
     /// <remarks>
     /// One sentence for every surface, so the terminal, the web UI and the command line say the same thing about the
-    /// same files. It says where the rule is broken rather than naming the files, and what to do.
+    /// same files. It says why they are not listed rather than naming them, and what to do.
     /// </remarks>
     public string? NotListedSentence => NotListedSentenceFor(NotListed);
 
@@ -84,10 +82,9 @@ public sealed record SharedFileListing(SharedFilePage Page, IReadOnlyList<FilePl
     /// <returns>The sentence, or <see langword="null"/> when the count is zero.</returns>
     public static string? NotListedSentenceFor(int notListed) => notListed <= 0
         ? null
-        : $"{notListed} file(s) in these folders are not listed, because their names break the rules: a name uses only " +
-          $"{SharedFileName.AllowedCharactersInWords}, ends in .md or .txt, does not begin with a dot, is not too long " +
-          "or a name Windows reserves such as CON, and is not another file's name in other case (of a.md and A.md " +
-          "beside it, one is listed). Rename them on disk to list them.";
+        : $"{notListed} file(s) in these folders are not listed, because nothing placed them: they were copied or " +
+          "renamed there by hand, and Parley does not take in files put in its folders. Place a file through Parley " +
+          "to share it.";
 }
 
 /// <summary>

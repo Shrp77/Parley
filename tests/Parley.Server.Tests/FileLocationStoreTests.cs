@@ -56,7 +56,7 @@ public sealed class FileLocationStoreTests : IDisposable
             Assert.Equal(ContentHash.FromDigest(expected.GetHashAndReset()), hash);
             Assert.Equal((long)Pieces * FileLimits.ChunkBytes, staged.SizeBytes);
 
-            staged.CommitTo("pricing", Notes, null);
+            staged.CommitTo("pricing", Notes);
         }
 
         var read = await FileLocationStore.HashAsync(_location.FilePath("pricing", Notes), Ct);
@@ -96,7 +96,7 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_replacement_waits_for_a_download_in_progress_and_the_download_reads_what_it_started_on()
+    public async Task A_removal_waits_for_a_download_in_progress_and_the_download_reads_what_it_started_on()
     {
         await Write("pricing", Notes, "net of tax");
 
@@ -114,10 +114,10 @@ public sealed class FileLocationStoreTests : IDisposable
 
         using (await change.WaitAsync(TimeSpan.FromSeconds(10), Ct))
         {
-            await Write("pricing", Notes, "gross of tax");
+            _location.Delete("pricing", Notes);
         }
 
-        Assert.Equal("gross of tax", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
+        Assert.False(File.Exists(_location.FilePath("pricing", Notes)));
     }
 
     [Fact]
@@ -307,10 +307,10 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_replacement_of_a_file_never_read_does_not_wait_out_a_hold_over_everything()
+    public async Task A_change_to_a_name_never_read_does_not_wait_out_a_hold_over_everything()
     {
-        // A replacement that waited out a destroy waited, with every other agent's, behind any download the destroy
-        // waited on. One of a file never read lands before or after the destroy's transaction, so it need not.
+        // A change that waited out a destroy waited, with every other agent's, behind any download the destroy waited
+        // on. One to a name never read lands before or after the destroy's transaction, so it need not.
         await Write("pricing", Notes, "a");
 
         using var everything = await _location.ChangeEverythingAsync(Ct);
@@ -320,37 +320,26 @@ public sealed class FileLocationStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_commit_moves_only_over_the_file_the_store_recorded()
+    public async Task A_commit_never_moves_over_a_file()
     {
-        // Round 37: a replacement waiting for a read to finish could move over a file a person put under the name in
-        // the meantime. A commit now compares what is on disk with the record first, before every try.
-        await Write("pricing", Notes, "the agent's own");
-        var recorded = Recorded(_location.FilePath("pricing", Notes));
+        // A placed file is never changed (SPEC.md §9.5): a commit writes only a name nothing holds, so a file put under
+        // the name by hand while the placement arrived is refused and kept.
+        await File.WriteAllTextAsync(Path.Combine(Directory.CreateDirectory(_location.FolderPath("pricing")).FullName, Notes.Value), "the person's own", Ct);
 
-        await File.WriteAllTextAsync(_location.FilePath("pricing", Notes), "the person's own notes, longer", Ct);
+        await using var staged = _location.Stage();
+        await staged.WriteAsync("the agent's"u8.ToArray(), Ct);
+        await staged.FinishAsync(Ct);
 
-        foreach (var expected in new[] { recorded, null })
-        {
-            await using var staged = _location.Stage();
-            await staged.WriteAsync("the agent's replacement"u8.ToArray(), Ct);
-            await staged.FinishAsync(Ct);
-
-            var refused = Assert.Throws<Grpc.Core.RpcException>(() => staged.CommitTo("pricing", Notes, expected));
-            Assert.Equal(Grpc.Core.StatusCode.Aborted, refused.StatusCode);
-        }
-
-        Assert.Equal("the person's own notes, longer", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
+        var refused = Assert.Throws<Grpc.Core.RpcException>(() => staged.CommitTo("pricing", Notes));
+        Assert.Equal(Grpc.Core.StatusCode.Aborted, refused.StatusCode);
+        Assert.Equal("the person's own", await File.ReadAllTextAsync(_location.FilePath("pricing", Notes), Ct));
     }
-
-    // These write straight to the location, so the file a commit may replace is whatever is on disk now.
-    internal static (long SizeBytes, long ModifiedTicks)? Recorded(string path) =>
-        File.Exists(path) ? (new FileInfo(path).Length, File.GetLastWriteTimeUtc(path).Ticks) : null;
 
     private async Task Write(string folder, SharedFileName name, string content)
     {
         await using var staged = _location.Stage();
         await staged.WriteAsync(System.Text.Encoding.UTF8.GetBytes(content), Ct);
         await staged.FinishAsync(Ct);
-        staged.CommitTo(folder, name, Recorded(_location.FilePath(folder, name)));
+        staged.CommitTo(folder, name);
     }
 }

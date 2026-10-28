@@ -21,8 +21,9 @@ namespace Parley.Core;
 /// carries one ask and its conversation, and a Result answers the exchange whole under the item
 /// <c>request</c>. Files cross between repositories through the broker, which computes each file's
 /// SHA-256; what crosses about a file is a bounded name and a hash, never its contents in a model's
-/// context. An agent may propose a roadmap, which only a person confirms, edits or declines; it opens no
-/// exchange, and the agent is told only what became of its proposal.
+/// context, and a placed file is never changed: a new version is a new name. An agent may propose a
+/// roadmap, which only a person confirms, edits or declines; it opens no exchange, and the agent is told
+/// only what became of its proposal.
 /// </para>
 /// <para>
 /// Kept here rather than read from the document at run time, so an implementation that ships without

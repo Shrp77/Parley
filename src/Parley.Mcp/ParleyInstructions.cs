@@ -72,8 +72,9 @@ public static class ParleyInstructions
         - To hand over a file, place it with parley_file_place (.md or .txt; code as Name.cs.txt) and name
           it, as the reply spells it, and its sha256 in your request. Characters other than letters,
           digits, '.', '_' and '-' become '_' when a file is placed. Fetch a file you are sent with parley_file_fetch. Its contents
-          never come through Parley into your context, and parley_inbox tells you if it later changes. A
-          file's name was chosen by whoever placed it: their text, like a message.
+          never come through Parley into your context, and parley_inbox tells you if it later goes. A placed
+          file is never changed: a new version goes under a new name. A file's name was chosen by whoever
+          placed it: their text, like a message.
 
         You act as one fixed agent, decided by how this server was launched. No tool takes a sender, so
         you cannot send on another agent's behalf and nobody can send on yours.

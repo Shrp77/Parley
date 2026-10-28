@@ -266,7 +266,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
     /// <remarks>
     /// Refused rather than replaced even when the caller placed the file already there: <c>a:b.md</c> and
     /// <c>a?b.md</c> are both <c>a_b.md</c>, and a placement that silently replaced one with the other would be a
-    /// rename nobody asked for. Placing again under the safe spelling replaces it on purpose. The name asked for is
+    /// rename nobody asked for; a placed file is never changed in any case (SPEC.md §9.5). The name asked for is
     /// quoted with its control characters made visible, since it is the one thing in the sentence nothing checked.
     /// </remarks>
     public static string SafeNameTaken(string asked, string safe, string existing)

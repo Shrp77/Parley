@@ -192,8 +192,9 @@ public sealed class FileToolTests : IDisposable
     }
 
     [Fact]
-    public async Task Placing_again_replaces_with_the_previous_hash_and_identical_content_is_already_current()
+    public async Task Placing_other_content_under_a_name_is_refused_saying_a_new_version_takes_a_new_name()
     {
+        // A placed file is never changed (SPEC.md §9.5); the agent is told how a new version travels.
         await using var fixture = new ServerFixture(T0);
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
 
@@ -203,12 +204,12 @@ public sealed class FileToolTests : IDisposable
         await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
 
         await File.WriteAllTextAsync(source, "gross of tax", Ct);
-        var replaced = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var refused = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
 
-        Assert.Equal("replaced", replaced["outcome"]!.GetValue<string>());
-        Assert.Equal(Hash("net of tax"), replaced["previous_sha256"]!.GetValue<string>());
-        Assert.Equal(Hash("gross of tax"), replaced["sha256"]!.GetValue<string>());
+        Assert.Equal("nameholdsothercontent", refused["refused"]!.GetValue<string>());
+        Assert.Contains("new name", refused.ToJsonString(), StringComparison.Ordinal);
 
+        await File.WriteAllTextAsync(source, "net of tax", Ct);
         var again = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
 
         Assert.Equal("already_current", again["outcome"]!.GetValue<string>());

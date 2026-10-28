@@ -58,7 +58,7 @@ public sealed class FilesListCommandTests : IAsyncDisposable
     {
         // Counted so a limit can be set from evidence, and shown to the person because they would set it.
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
-        await _files.PlaceAsync(Billing, "notes.md", "gross of tax", "pricing");
+        await _files.PlaceAsync(Billing, "notes-v2.md", "gross of tax", "pricing");
 
         var (_, output, _) = await _files.RunAsync("list");
 

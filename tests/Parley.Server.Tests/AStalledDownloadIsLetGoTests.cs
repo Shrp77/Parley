@@ -37,7 +37,7 @@ public sealed class AStalledDownloadIsLetGoTests
         Random.Shared.NextBytes(big);
         await FileWire.PlaceAsync(orders.Client, Orders, "big.md", big, "bait", Ct);
 
-        // An unrelated conversation with a file, which the person destroys; and another with a file inventory replaces.
+        // An unrelated conversation with a file, which the person destroys; and another with a file inventory removes.
         await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
         await FileWire.PlaceAsync(inventory.Client, Inventory, "stock.md", Text("12"), "stock", Ct);
 
@@ -51,7 +51,9 @@ public sealed class AStalledDownloadIsLetGoTests
             .DestroyAsync(new Wire.ConversationRequest { ConversationId = "pricing" }, cancellationToken: Ct).ResponseAsync;
         await Task.Delay(300, Ct);
 
-        var replacing = FileWire.PlaceAsync(inventory.Client, Inventory, "stock.md", Text("13"), "stock", Ct);
+        var replacing = inventory.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Inventory, Files = { new Wire.FileRef { ConversationId = "stock", Name = "stock.md" } } },
+            cancellationToken: Ct).ResponseAsync;
         var firstPlacing = FileWire.PlaceAsync(billing.Client, Billing, "fresh.md", Text("new"), "elsewhere", Ct);
 
         await Task.WhenAll(
@@ -62,11 +64,11 @@ public sealed class AStalledDownloadIsLetGoTests
         Assert.True(
             destroying.IsCompleted && replacing.IsCompleted && firstPlacing.IsCompleted,
             $"after 5s with orders' fetch unread: destroy of an unrelated conversation done={destroying.IsCompleted}, "
-            + $"inventory's replacement done={replacing.IsCompleted}, billing's first placement done={firstPlacing.IsCompleted}");
+            + $"inventory's removal done={replacing.IsCompleted}, billing's first placement done={firstPlacing.IsCompleted}");
 
         // Done, not merely finished: a fault is completed too.
         Assert.Equal(Wire.DestroyVerdict.Gone, (await destroying).Verdict);
-        Assert.Equal(Wire.FileRejection.None, (await replacing).Rejection);
+        Assert.Single((await replacing).Removed);
         Assert.Equal(Wire.FileRejection.None, (await firstPlacing).Rejection);
 
         // And the unread download was ended, not left running.

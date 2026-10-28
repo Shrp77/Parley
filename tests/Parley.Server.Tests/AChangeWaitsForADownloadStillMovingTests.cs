@@ -6,7 +6,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a change of a file waits for a download still taking frames and never ends it, and that a change refused, given
+/// That a removal of a file waits for a download still taking frames and never ends it, and that a change refused, given
 /// up, or of the same bytes leaves downloads as they were (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
@@ -56,7 +56,7 @@ public sealed class AChangeWaitsForADownloadStillMovingTests
     };
 
     [Fact]
-    public async Task A_replacement_waits_for_a_download_still_taking_frames_past_the_bound_and_then_lands()
+    public async Task A_removal_waits_for_a_download_still_taking_frames_past_the_bound_and_then_lands()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -76,18 +76,20 @@ public sealed class AChangeWaitsForADownloadStillMovingTests
         Assert.True(await call.ResponseStream.MoveNext(Ct));
         var reading = ReadSteadilyAsync(call, 150);
 
-        var replacing = FileWire.PlaceAsync(orders.Client, Orders, "big.md", "smaller"u8.ToArray(), "bait", Ct);
+        var replacing = orders.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Orders, Files = { new Wire.FileRef { ConversationId = "bait", Name = "big.md" } } },
+            cancellationToken: Ct).ResponseAsync;
 
         await Task.Delay(broker.Runtime.Files.StallAfter * 2, Ct);
-        Assert.False(replacing.IsCompleted, "the replacement did not wait for a download still taking frames");
+        Assert.False(replacing.IsCompleted, "the removal did not wait for a download still taking frames");
         Assert.False(reading.IsCompleted, "a download still taking frames was ended");
 
         var (status, detail, bytes) = await reading.WaitAsync(TimeSpan.FromSeconds(90), Ct);
         Assert.True(status == StatusCode.OK, $"status={status} detail={detail} bytes={bytes} of {big.Length}");
         Assert.Equal(big.Length, bytes);
 
-        var placed = await replacing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        Assert.Equal(Wire.FileRejection.None, placed.Rejection);
+        var removed = await replacing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Single(removed.Removed);
     }
 
     [Fact]

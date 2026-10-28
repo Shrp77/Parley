@@ -13,16 +13,17 @@
 | `/parley:setup` | Configures this repository as a Parley agent: checks the tools are installed, enrolls this repository with `parley enroll`, and sends you to restart - which is when the tools appear, and therefore before `/parley:write-peers` can read anything |
 | `/parley:setup-many` | Configures several repositories in one pass: finds the git repositories under a directory, offers them to tick, then configures, catalogues and starts the ones chosen. Leaves the roster to `/parley:write-peers` |
 | `/parley:write-peers` | Writes or refreshes the `## Peers` block in this repository's standing instructions, from the live roster |
-| `/parley:files-list` | Shows the files agents have placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-list` | Shows the files placed in the project: sizes, hashes, and who placed each |
+| `/parley:files-place` | Places a `.md` or `.txt` file from this machine in a conversation, as you |
 | `/parley:files-remove` | Removes named files, whoever placed them, after showing what goes and asking you |
 | `/parley:files-prune` | Removes every file in the project, behind the project's name typed back |
-| `/parley:files-open` | Opens a placed file in its editor, on the broker's machine |
+| `/parley:files-open` | Opens a placed file to read, on the broker's machine |
 | `/parley:files-folder` | Opens a conversation's files folder, or the whole file location |
 | `parley-operator` skill | The `parley` command-line tool - the operations that are deliberately not tools |
-| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has changed or gone |
+| `parley_waiting` hook | Tells an attended session when mail is waiting — on session start, on every prompt, after every batch of tool calls, and rather than letting the session go idle carrying it — and when a file it fetched has gone |
 
-The five `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
-they act on every agent's files at once.
+The six `files-` commands can only be typed by a person: each is marked so that a model cannot invoke it, because
+they act on every agent's files at once, or place a file as the person.
 
 ## Why there is a hook
 

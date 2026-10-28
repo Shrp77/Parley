@@ -94,9 +94,9 @@ alternative is losing the message silently. A deployment that cannot collect
 its mail is broken, and being told so on every turn is better than hours of
 quiet.
 
-File change notices
--------------------
-A notice that a file this agent fetched has changed or gone is counted with
+File gone notices
+-----------------
+A notice that a file this agent fetched has gone is counted with
 the mail, and like the mail it is only a count: never the file's name, which
 its placer chose and which is as much a peer's words as a payload is. A notice
 wakes nothing -- it waits for the next inbox check -- and holding a turn open
@@ -237,7 +237,7 @@ def waiting(
     root: Path | None = None,
     budget: float = TIMEOUT,
 ) -> tuple[int, int, int]:
-    """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file change notices."""
+    """Ask the broker what is waiting: uncollected messages, polls owed a vote, and file gone notices."""
     # Asked rather than read. One process owns the store (SPEC.md section 4), it
     # may be on another machine entirely, and SQLite in WAL mode needs coherent
     # shared memory between everything touching it -- so a hook reaching for the
@@ -266,7 +266,7 @@ def waiting(
     # safe direction -- a session that does not know it has mail is a great deal
     # better than one that cannot be worked in.
     #
-    # File change notices are a third count, asked for with --with-files.
+    # File gone notices are a third count, asked for with --with-files.
     child = dict(os.environ)
 
     if machine:
@@ -319,7 +319,7 @@ def tally(unread: int, owed: int, notices: int = 0) -> str:
     # and is as much a peer's words as a payload is.
     if notices:
         parts.append(
-            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched has changed or gone"
+            f"{notices} notice{'s' if notices != 1 else ''} that a file you fetched has gone"
         )
 
     return " and ".join(parts)
@@ -438,7 +438,7 @@ def main() -> int:
         owed += more_owed
         notices += more_notices
 
-    # A change notice wakes nothing (SPEC.md 9.5): it is told at the next inbox
+    # A gone notice wakes nothing (SPEC.md 9.5): it is told at the next inbox
     # check and never asks for a turn. Holding a turn open at Stop is asking for
     # one, so notices alone do not; they are mentioned there only beside mail
     # that does.

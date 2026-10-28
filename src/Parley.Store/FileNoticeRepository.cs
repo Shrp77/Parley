@@ -5,18 +5,17 @@ using Parley.Core;
 namespace Parley.Store;
 
 /// <summary>
-/// Who fetched which file, and the change notices waiting for them (SPEC.md §9.5).
+/// Who fetched which file, and the gone notices waiting for them (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A notice is raised in the transaction that changes the file</b>, by <see cref="SharedFileRepository"/>, and
-/// collected in the transaction that drains an inbox. Nothing here wakes anything: a notice waits for whenever
-/// the agent next looks, which is the reason a file saved often costs no turns.
+/// <b>A notice is raised in the transaction that removes the file</b>, by <see cref="SharedFileRepository"/> or a
+/// destroy or purge, and collected in the transaction that drains an inbox. Nothing here wakes anything: a notice
+/// waits for whenever the agent next looks.
 /// </para>
 /// <para>
-/// <b>At most one per agent per file, carrying the latest state</b>, and the schema holds both halves: one row per
-/// key, and a row saying nothing changed cannot be stored. So a change back to the content an agent fetched
-/// deletes its notice rather than updating it.
+/// <b>Only a file's going is noticed</b>, because a placed file never changes: a new version is a new name. At most
+/// one per agent per file, one row per key.
 /// </para>
 /// <para>
 /// A retired agent is not told. A purged one has no rows: its fetch records and notices cascade from it.
@@ -43,10 +42,8 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <remarks>
-    /// A later fetch replaces the record, so the next notice compares against it. If the file has changed since the
-    /// content the agent received — the report arrived after a replacement — the notice is raised now rather than
-    /// waiting for a change that has already happened; otherwise any notice waiting is withdrawn, since the agent
-    /// holds the current content.
+    /// A later fetch replaces the record. A notice still waiting about a file of that name is withdrawn: the agent
+    /// holds the file as it is there now, which a name removed and placed again may be.
     /// </remarks>
     public async Task RecordFetchAsync(
         AgentName agent,
@@ -73,12 +70,6 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                    SET name = excluded.name, sha256 = excluded.sha256, fetched_utc = excluded.fetched_utc;
 
                 DELETE FROM file_notices WHERE agent = @Agent AND conversation_id = @Conversation AND name_key = @Key;
-
-                INSERT INTO file_notices
-                    (agent, conversation_id, name_key, name, sha256_had, sha256_now, size_bytes, changed_utc)
-                SELECT @Agent, f.conversation_id, f.name_key, f.name, @Sha256, f.sha256, f.size_bytes, f.changed_utc
-                  FROM shared_files f
-                 WHERE f.conversation_id = @Conversation AND f.name_key = @Key AND f.sha256 <> @Sha256;
                 """,
                 new
                 {
@@ -94,52 +85,6 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
 
         scope.Complete();
     }
-
-    /// <summary>Raises or withdraws notices for a file whose content changed.</summary>
-    /// <param name="conversationId">The file's conversation.</param>
-    /// <param name="nameKey">The file's name key.</param>
-    /// <param name="name">The file's name.</param>
-    /// <param name="now">The hash of its content now.</param>
-    /// <param name="sizeBytes">Its size now.</param>
-    /// <param name="changedUtc">When it changed.</param>
-    /// <param name="transaction">The transaction that changed it.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
-    public Task RaiseChangedAsync(
-        string conversationId,
-        string nameKey,
-        string name,
-        ContentHash now,
-        long sizeBytes,
-        DateTimeOffset changedUtc,
-        SqliteTransaction transaction,
-        CancellationToken cancellationToken = default) =>
-        _connection.ExecuteAsync(
-            new CommandDefinition(
-                """
-                DELETE FROM file_notices
-                 WHERE conversation_id = @Conversation AND name_key = @Key
-                   AND agent IN (SELECT agent FROM file_fetches
-                                  WHERE conversation_id = @Conversation AND name_key = @Key AND sha256 = @Now);
-
-                INSERT INTO file_notices
-                    (agent, conversation_id, name_key, name, sha256_had, sha256_now, size_bytes, changed_utc)
-                SELECT ff.agent, ff.conversation_id, ff.name_key, @Name, ff.sha256, @Now, @Size, @When
-                  FROM file_fetches ff
-                  JOIN agents a ON a.name = ff.agent
-                 WHERE ff.conversation_id = @Conversation AND ff.name_key = @Key
-                   AND ff.sha256 <> @Now AND a.status = 'active'
-                """ + Upsert,
-                new
-                {
-                    Conversation = conversationId,
-                    Key = nameKey,
-                    Name = name,
-                    Now = now.Value,
-                    Size = sizeBytes,
-                    When = ExchangeRow.FormatTimestamp(changedUtc),
-                },
-                transaction,
-                cancellationToken: cancellationToken));
 
     /// <summary>Raises "gone" notices for a file that was removed, pruned, renamed away or destroyed.</summary>
     /// <param name="conversationId">The file's conversation.</param>
@@ -276,7 +221,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
     /// <param name="cancellationToken">Cancels the write.</param>
     /// <returns>At most <see cref="FileLimits.NoticesPerCollection"/> notices, oldest change first, and how many are left.</returns>
     /// <remarks>
-    /// Oldest first, so a burst of new changes cannot hold an old notice back. The ones left are not asked for again
+    /// Oldest first, so a burst of new removals cannot hold an old notice back. The ones left are not asked for again
     /// the way a limited message drain is: a notice wakes nothing, so they wait for the agent's next look.
     /// </remarks>
     public async Task<FileNoticeBatch> CollectAsync(
@@ -290,7 +235,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 new CommandDefinition(
                     """
                     SELECT conversation_id AS ConversationId, name_key AS NameKey, name AS Name,
-                           sha256_had AS Had, sha256_now AS Now, size_bytes AS SizeBytes, changed_utc AS ChangedUtc
+                           sha256_had AS Had, changed_utc AS ChangedUtc
                       FROM file_notices
                      WHERE agent = @Agent
                      ORDER BY changed_utc, conversation_id, name_key
@@ -320,8 +265,6 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 r.ConversationId,
                 r.Name,
                 ContentHash.Parse(r.Had),
-                r.Now is null ? null : ContentHash.Parse(r.Now),
-                r.SizeBytes,
                 ExchangeRow.ParseTimestamp(r.ChangedUtc)))],
             left);
     }
@@ -351,10 +294,6 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
         public string Name { get; init; } = "";
 
         public string Had { get; init; } = "";
-
-        public string? Now { get; init; }
-
-        public long? SizeBytes { get; init; }
 
         public string ChangedUtc { get; init; } = "";
     }

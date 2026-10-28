@@ -52,10 +52,9 @@ public static class StoreFiles
     /// Where placements in progress are written before they are moved into the location.
     /// </summary>
     /// <remarks>
-    /// Beside the location and never inside it: the folder a person opens and the
-    /// watcher watches then never holds a half-uploaded file, and on the same disk a finished upload still
-    /// moves into place in one step. Emptied when a broker starts, because nothing survives a broker that
-    /// could have finished writing it.
+    /// Beside the location and never inside it: the folder a person opens then never holds a half-uploaded file,
+    /// and on the same disk a finished upload still moves into place in one step. Emptied when a broker starts,
+    /// because nothing survives a broker that could have finished writing it.
     /// </remarks>
     public const string FilesIncoming = ".files-incoming";
 

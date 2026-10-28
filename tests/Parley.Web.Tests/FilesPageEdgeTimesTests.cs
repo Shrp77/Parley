@@ -32,8 +32,7 @@ public sealed class FilesPageEdgeTimesTests : IDisposable
             SizeBytes = 3,
             Sha256 = new string('a', 64),
             PlacedBy = "billing@alpha",
-            PlacedUtc = stamp,
-            ChangedUtc = stamp
+            PlacedUtc = stamp
         });
 
         using var client = _console.CreateClient();

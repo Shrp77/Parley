@@ -58,7 +58,7 @@ public sealed class ASuffixedFolderIsNotAnotherFoldersShortNameTests : IDisposab
         var placed = await FileWire.PlaceAsync(agents, Inventory, "notes.md", "inventory's words"u8.ToArray(), "ABCDEF", Ct);
 
         Assert.Equal("billing's own words", await File.ReadAllTextAsync(Path.Combine(victim, "notes.md"), Ct));
-        Assert.NotEqual(Wire.PlaceOutcome.Replaced, placed.Outcome);
+        Assert.Equal(Wire.PlaceOutcome.Placed, placed.Outcome);
     }
 
     [Fact]
@@ -206,7 +206,7 @@ public sealed class ASuffixedFolderIsNotAnotherFoldersShortNameTests : IDisposab
     private static async Task PlaceAsync(Wire.Agents.AgentsClient agents, string agent, string name, string words, string conversation)
     {
         var placed = await FileWire.PlaceAsync(agents, agent, name, System.Text.Encoding.UTF8.GetBytes(words), conversation, Ct);
-        Assert.True(placed.Outcome is Wire.PlaceOutcome.Placed or Wire.PlaceOutcome.Replaced, $"{name} in {conversation}: {placed}");
+        Assert.True(placed.Outcome is Wire.PlaceOutcome.Placed or Wire.PlaceOutcome.AlreadyCurrent, $"{name} in {conversation}: {placed}");
     }
 
     private static async Task<IDisposable> AttachAsync(Wire.Agents.AgentsClient agents, string agent)

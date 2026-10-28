@@ -89,7 +89,7 @@ not a refinement added later.
 
 **A file is not text that crosses.** Its bytes are written to disk in the receiving agent's own
 repository and are never returned into a model's context by Parley. What an operation returns
-*about* files — names, sizes, hashes, lists, change notices — is text that crosses, and is
+*about* files — names, sizes, hashes, lists, gone notices — is text that crosses, and is
 bounded like any other: a name has a maximum length, and a list or a batch of notices has a
 maximum count per call.
 

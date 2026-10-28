@@ -40,11 +40,45 @@ internal sealed class FileWork(BrokerRuntime runtime)
 {
     private readonly BrokerRuntime _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 
-    /// <summary>Places a file, streamed as a header and then pieces.</summary>
+    /// <summary>Places a file for the attached agent the header names, streamed as a header and then pieces.</summary>
     /// <param name="frames">The client's stream.</param>
     /// <param name="cancellationToken">Cancels the placement; nothing is left behind.</param>
     /// <returns>What the placement came to.</returns>
     public async Task<Wire.PlaceFileReply> PlaceAsync(
+        IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        CancellationToken cancellationToken)
+    {
+        var header = await HeaderAsync(frames, cancellationToken).ConfigureAwait(false);
+        var agent = Name(header.Agent);
+
+        RequireAttached(agent);
+
+        return await PlaceAsync(header, frames, agent, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Places a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
+    /// <param name="frames">The surface's stream; the header names no agent.</param>
+    /// <param name="cancellationToken">Cancels the placement; nothing is left behind.</param>
+    /// <returns>What the placement came to.</returns>
+    /// <remarks>
+    /// The person's file is recorded with no placer, which is what "the person's" is in the store, and is counted
+    /// against nobody. It joins nobody to the conversation: the person reads every conversation already.
+    /// </remarks>
+    public async Task<Wire.PlaceFileReply> PlaceAsPersonAsync(
+        IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        CancellationToken cancellationToken)
+    {
+        var header = await HeaderAsync(frames, cancellationToken).ConfigureAwait(false);
+
+        if (Blank(header.ConversationId) is null)
+        {
+            throw Invalid("A placement by the person names the conversation it goes in.");
+        }
+
+        return await PlaceAsync(header, frames, placer: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<Wire.PlaceFileHeader> HeaderAsync(
         IAsyncStreamReader<Wire.PlaceFileFrame> frames,
         CancellationToken cancellationToken)
     {
@@ -54,11 +88,15 @@ internal sealed class FileWork(BrokerRuntime runtime)
             throw Invalid("A placement begins with a header naming the file.");
         }
 
-        var header = frames.Current.Header;
-        var agent = Name(header.Agent);
+        return frames.Current.Header;
+    }
 
-        RequireAttached(agent);
-
+    private async Task<Wire.PlaceFileReply> PlaceAsync(
+        Wire.PlaceFileHeader header,
+        IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        AgentName? placer,
+        CancellationToken cancellationToken)
+    {
         // Renamed here and nowhere else (SPEC.md §9.5). An adapter shows an agent the same spelling before it sends, but
         // the broker must not trust that it did, and a second implementation's adapter may not.
         var safe = SharedFileName.Safe(header.Name);
@@ -92,7 +130,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
 
         var before = await _runtime.UseConnectionAsync(
-            (connection, _, ct) => LookAsync(connection, agent, named, name, transaction: null, ct),
+            (connection, _, ct) => LookAsync(connection, placer, named, name, transaction: null, ct),
             cancellationToken).ConfigureAwait(false);
 
         if (before.Refusal is { } early)
@@ -105,7 +143,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
             return SafeNameTaken(requested, name, clash.File);
         }
 
-        if (before.Existing is { } taken && taken.File.PlacedBy != agent)
+        if (before.Existing is { } taken && taken.File.PlacedBy != placer)
         {
             return PlacedByAnother(taken.File);
         }
@@ -152,77 +190,51 @@ internal sealed class FileWork(BrokerRuntime runtime)
             }
 
             var sha256 = await staged.FinishAsync(cancellationToken).ConfigureAwait(false);
-            var folder = before.Folder;
 
-            // The first attempt takes no turn, whatever the first look saw: that look is as old as the upload, and the file
-            // may since be another agent's, or hold the same bytes. A turn taken on it waited for every download to finish
-            // and held new ones back meanwhile, and then wrote nothing. The commit asks for a turn only on the agent's own
-            // file, with other bytes, and the next attempt takes it.
-            string? turnOn = null;
+            // **A placement writes only a name nothing holds**, so it never waits on a download: no file it could write
+            // over is being fetched (SPEC.md §9.5). A conversation's first file makes its folder, which only one
+            // placement may do at a time.
+            using var turn = before.Folder is null
+                ? await _runtime.Files.FirstPlacementAsync(conversation, cancellationToken).ConfigureAwait(false)
+                : null;
 
-            // Twice for a replacement: the first attempt finds the agent's own file and asks for its turn, and the second
-            // holds it. The bound is headroom: once the turn is held, the folder it is held on cannot change, because a
-            // conversation's folder is fixed and a destroyed conversation refuses the commit first.
-            for (var attempt = 0; attempt < 3; attempt++)
+            try
             {
-                var turn = folder is null
-                    ? await _runtime.Files.FirstPlacementAsync(conversation, cancellationToken).ConfigureAwait(false)
-                    : turnOn is null
-                        ? null
-                        : await _runtime.Files.ChangeAsync(turnOn, name, cancellationToken).ConfigureAwait(false);
-
-                using (turn)
-                {
-                    var heldFolder = turnOn;
-
-                    Committed committed;
-
-                    try
-                    {
-                        committed = await _runtime.UseConnectionAsync(
-                            (connection, now, ct) => CommitAsync(
-                                connection, agent, conversation, name, requested, staged, sha256, heldFolder, now, ct),
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (FileLocationStore.NotItsOwnFolderException)
-                    {
-                        // Rolled back: nothing recorded, nothing written into the folder the name reaches.
-                        throw new RpcException(new Status(
-                            StatusCode.FailedPrecondition,
-                            "This conversation's folder is another folder's short name on the broker's disk, so nothing "
-                            + "was written. Tell the person running the deployment."));
-                    }
-
-                    if (committed.Reply is { } reply)
-                    {
-                        return reply;
-                    }
-
-                    folder = turnOn = committed.NeedsTurnOn;
-                }
+                return await _runtime.UseConnectionAsync(
+                    (connection, now, ct) => CommitAsync(connection, placer, conversation, name, requested, staged, sha256, now, ct),
+                    cancellationToken).ConfigureAwait(false);
             }
-
-            throw new RpcException(new Status(
-                StatusCode.Aborted, "The file kept changing while it was being placed, and nothing was written. Place it again."));
+            catch (FileLocationStore.NotItsOwnFolderException)
+            {
+                // Rolled back: nothing recorded, nothing written into the folder the name reaches.
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    "This conversation's folder is another folder's short name on the broker's disk, so nothing "
+                    + "was written. Tell the person running the deployment."));
+            }
         }
     }
 
-    /// <summary>How many files in the folders listed have names §9.5 does not accept, case twins included, and so are not listed.</summary>
+    /// <summary>How many files in the folders listed nothing placed, and so are not listed (SPEC.md §9.5).</summary>
     /// <param name="folders">Every recorded folder.</param>
+    /// <param name="placed">Every file placed.</param>
     /// <param name="scope">The conversation listed, or <see langword="null"/> for all of them.</param>
     /// <returns>The count.</returns>
     /// <remarks>
     /// <para>
-    /// The person's alone. Such a file is never listed, fetched or opened, and the broker does not rename a file a person
-    /// put on their own disk — so without this count, one copied in as <c>Meeting notes.md</c> is simply absent from
-    /// every surface, with nothing to say why. A count rather than the names, because a name that breaks the rules is
-    /// exactly the text nothing has checked. Agents are not told: the files are not theirs, and not in the location.
+    /// The person's alone. Files enter the location only by being placed, so one copied into a folder, renamed there or
+    /// named against the rules is never listed, fetched or opened, and without this count it is simply absent from every
+    /// surface, with nothing to say why. A count rather than the names, because such a name is text nothing has
+    /// checked. Agents are not told: the files are not theirs, and not in the location.
     /// </para>
     /// <para>
     /// A folder that cannot be read counts nothing rather than failing the list, which answers a different question.
     /// </para>
     /// </remarks>
-    private int NotListed(IReadOnlyList<(string ConversationId, string Folder)> folders, string? scope)
+    private int NotListed(
+        IReadOnlyList<(string ConversationId, string Folder)> folders,
+        IReadOnlyList<StoredFile> placed,
+        string? scope)
     {
         var count = 0;
 
@@ -233,18 +245,19 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 continue;
             }
 
+            // The spelling placed, exactly: of two names differing only in case on a disk that tells them apart, only the
+            // one placed is the file.
+            var names = placed.Where(p => p.File.ConversationId == conversation)
+                .Select(p => p.File.Name.Value)
+                .ToHashSet(StringComparer.Ordinal);
+
             try
             {
                 var directory = _runtime.Files.FolderPath(folder);
 
                 if (Directory.Exists(directory))
                 {
-                    var names = Directory.EnumerateFiles(directory).Select(Path.GetFileName).ToList();
-                    var accepted = names.Where(name => SharedFileName.Check(name) == SharedFileNameProblem.None).ToList();
-
-                    // Of two names differing only in case one is in the location and the other breaks a rule (§9.5).
-                    count += names.Count - accepted.Count
-                        + accepted.GroupBy(name => SharedFileName.Create(name!).Key, StringComparer.Ordinal).Sum(same => same.Count() - 1);
+                    count += Directory.EnumerateFiles(directory).Count(path => !names.Contains(Path.GetFileName(path)));
                 }
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
@@ -399,15 +412,21 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
             var streamed = ContentHash.FromDigest(hash.GetHashAndReset());
 
-            // Where the operating system cannot refuse an editor's save, a save during the stream shows here: the
-            // bytes sent are not the content the header named, and the adapter is told to write nothing.
+            // **Bytes changed on disk are not the file** (SPEC.md §9.5). A placed file is never changed through Parley, so
+            // bytes that are not the content the header named were changed by hand, before or during the stream; the
+            // adapter is told to write nothing, and the agent is told how a new version travels.
             if (streamed != file.Sha256)
             {
-                // The record is behind the disk; the watcher hashes it again, so the next fetch is served.
-                _runtime.Watcher.LookAgain(file.Folder, file.Name);
-
-                await Refuse(writer, FileRefusal.Of(reference, FileRejection.Changed), cancellationToken, streamed)
-                    .ConfigureAwait(false);
+                await writer.WriteAsync(
+                    new Wire.FetchFileFrame
+                    {
+                        Refusal = Conversions.Out(
+                            FileRefusal.Of(reference, FileRejection.Changed),
+                            "The file changed on disk after it was placed, so it was not written. A placed file is never "
+                            + "changed: ask whoever placed it to place the new version under a new name.",
+                            streamed),
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -486,7 +505,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
                     if (forOperator)
                     {
                         reply.FilesNotListed = NotListed(
-                            await files.GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false), scope);
+                            await files.GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false),
+                            await files.GetAllAsync(cancellationToken: ct).ConfigureAwait(false),
+                            scope);
                     }
 
                     return reply;
@@ -554,17 +575,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
             using (await _runtime.Files.ChangeAsync(file.Folder, file.Name, cancellationToken).ConfigureAwait(false))
             {
-                // **An agent removes only the file the store recorded.** A file there with another size or time may be the
-                // person's, put under the name after the agent's went and before the watcher's second look said so (SPEC.md
-                // §9.5); placing over it is refused the same way. The watcher looks again, and once it has judged, a removal
-                // of the agent's edited file goes ahead and the person's own is refused as theirs.
+                // **An agent removes only the bytes it placed** (SPEC.md §9.5). A file there with another size or time was
+                // changed or put there by hand, and may be the person's; the person removes it.
                 if (caller is not null && !_runtime.Files.HoldsTheRecordedFileOrNone(file.Folder, file.Name, (file.SizeBytes, stored.ModifiedTicks)))
                 {
-                    _runtime.Watcher.LookAgain(file.Folder, file.Name);
                     reply.Refused.Add(Conversions.Out(
                         FileRefusal.Of(reference, FileRejection.Changed),
-                        "The file on disk is not the one Parley recorded under this name, so nothing was removed: it may be "
-                        + "a file the person put there since. List the files again to see whose it is.",
+                        "The file on disk is not the one you placed under this name: it was changed or put there by hand, "
+                        + "so nothing was removed. The person can remove it.",
                         null));
                     continue;
                 }
@@ -681,86 +699,98 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
     private static async Task<Look> LookAsync(
         SqliteConnection connection,
-        AgentName agent,
+        AgentName? placer,
         string? named,
         SharedFileName name,
         SqliteTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        var adapter = await new AgentRepository(connection).AdapterOfAsync(agent, transaction, cancellationToken)
-            .ConfigureAwait(false);
+        string conversation;
+        var starts = false;
 
-        var assignment = await new ExchangeRepository(connection).AssignConversationAsync(
-            agent,
-            named,
-            senderIsPerson: string.Equals(adapter, PersonSeat.Adapter, StringComparison.Ordinal),
-            transaction,
-            cancellationToken).ConfigureAwait(false);
-
-        if (assignment.Refusal is { } refused)
+        if (placer is { } agent)
         {
-            return new Look(NotAssignable(refused, named, name), null, false, null, null);
+            var adapter = await new AgentRepository(connection).AdapterOfAsync(agent, transaction, cancellationToken)
+                .ConfigureAwait(false);
+
+            var assignment = await new ExchangeRepository(connection).AssignConversationAsync(
+                agent,
+                named,
+                senderIsPerson: string.Equals(adapter, PersonSeat.Adapter, StringComparison.Ordinal),
+                transaction,
+                cancellationToken).ConfigureAwait(false);
+
+            if (assignment.Refusal is { } refused)
+            {
+                return new Look(NotAssignable(refused, named, name), null, false, null, null);
+            }
+
+            conversation = assignment.ConversationId!;
+            starts = assignment.Starts;
+        }
+        else
+        {
+            // The person places into a conversation that exists, and starts none (SPEC.md §10.2 place_persons_file).
+            if (await new ConversationRepository(connection).GetAsync(named!, transaction, cancellationToken)
+                    .ConfigureAwait(false) is null)
+            {
+                return new Look(
+                    new Wire.PlaceFileReply
+                    {
+                        Rejection = Wire.FileRejection.ConversationNotAssignable,
+                        Name = name.Value,
+                        ConversationId = named,
+                        Detail = $"There is no conversation '{named}' to place the file in.",
+                    },
+                    null,
+                    false,
+                    null,
+                    null);
+            }
+
+            conversation = named!;
         }
 
         var files = new SharedFileRepository(connection);
-        var conversation = assignment.ConversationId!;
         var folder = await files.GetFolderAsync(conversation, transaction, cancellationToken).ConfigureAwait(false);
         var existing = folder is null
             ? null
             : await files.GetAsync(conversation, name, transaction, cancellationToken).ConfigureAwait(false);
 
-        return new Look(null, conversation, assignment.Starts, folder, existing);
+        return new Look(null, conversation, starts, folder, existing);
     }
 
-    private async Task<Committed> CommitAsync(
+    private async Task<Wire.PlaceFileReply> CommitAsync(
         SqliteConnection connection,
-        AgentName agent,
+        AgentName? placer,
         string conversation,
         SharedFileName name,
         string? requested,
         FileLocationStore.StagedFile staged,
         ContentHash sha256,
-        string? heldFolder,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
         using var transaction = connection.BeginTransaction(IsolationLevel.Serializable, deferred: false);
 
-        var look = await LookAsync(connection, agent, conversation, name, transaction, cancellationToken).ConfigureAwait(false);
+        var look = await LookAsync(connection, placer, conversation, name, transaction, cancellationToken).ConfigureAwait(false);
 
         if (look.Refusal is { } refusal)
         {
-            return new Committed(refusal, null);
+            return refusal;
         }
 
-        // Asked again inside the transaction, because the name can be taken while the bytes arrive — and before the
-        // turn is sought, since a collision is refused whoever holds the file and needs no turn to say so.
+        // Asked again inside the transaction, because the name can be taken while the bytes arrive.
         if (requested is not null && look.Existing is { } clash)
         {
-            return new Committed(SafeNameTaken(requested, name, clash.File), null);
+            return SafeNameTaken(requested, name, clash.File);
         }
 
-        // A file on disk that no row names yet is the person's (§9.5), and committing over it would destroy it. Only
-        // the watcher records such a file, and it may not have looked yet, so the disk is asked.
+        // A file on disk under a name nothing placed was put there by hand (SPEC.md §9.5), and a placement never writes
+        // over it.
         if (look.Existing is null && look.Folder is { } folder && _runtime.Files.OnDisk(folder, name) is { } unrecorded)
         {
-            return new Committed(PersonsOnDisk(conversation, name, requested, unrecorded), null);
-        }
-
-        // Another's file is refused here, before any turn is sought: a turn waits for the file's downloads and holds new
-        // ones back while it waits, so a placement that was never going to land would stop the file being fetched.
-        if (look.Existing is { } another && another.File.PlacedBy != agent)
-        {
-            return new Committed(PlacedByAnother(another.File), null);
-        }
-
-        // A file of this name exists now, with other bytes, and this attempt does not hold its turn: a download of it may
-        // be streaming, and replacing it under that download is what the hold exists to prevent. Rolled back, and tried
-        // again holding the turn. The same bytes again change nothing and need no turn.
-        if (look.Existing is { } current && current.File.Sha256 != sha256
-            && !string.Equals(look.Folder, heldFolder, StringComparison.Ordinal))
-        {
-            return new Committed(null, look.Folder);
+            return PersonsOnDisk(conversation, name, requested, unrecorded);
         }
 
         if (look.Starts)
@@ -772,34 +802,27 @@ internal sealed class FileWork(BrokerRuntime runtime)
         var files = new SharedFileRepository(connection);
 
         var placed = await files.PlaceAsync(
-            conversation, name, sha256, staged.SizeBytes, agent, modifiedTicks: 0, nowUtc, _runtime.Files.IsTakenOnDisk,
+            conversation, name, sha256, staged.SizeBytes, placer, modifiedTicks: 0, nowUtc, _runtime.Files.IsTakenOnDisk,
             transaction, cancellationToken).ConfigureAwait(false);
 
-        // **A recorded file gone from disk is placed again, whatever the hash says.** The row outlives its file until the
-        // watcher judges it gone, and the same bytes placed in that time were answered as already current with nothing
-        // written, then the row went: the agent was told its file was there and it never was.
-        var goneFromDisk = placed.File is { } wanted && !File.Exists(_runtime.Files.FilePath(wanted.Folder, wanted.Name));
+        // **A recorded file gone from disk is written again, though the hash is the row's.** The row stands until a list,
+        // a fetch or the next start finds the file missing, and the same bytes placed in that time were answered as
+        // already current with nothing on disk.
+        var write = placed.Outcome is PlaceOutcome.Placed
+                    || (placed.Outcome is PlaceOutcome.AlreadyCurrent
+                        && !File.Exists(_runtime.Files.FilePath(placed.File!.Folder, placed.File.Name)));
 
-        if (placed.Outcome is PlaceOutcome.Placed or PlaceOutcome.Replaced
-            || (placed.Outcome is PlaceOutcome.AlreadyCurrent && goneFromDisk))
+        if (write)
         {
-            // The stored name, not the one asked with: a replacement spelled in a different case is the same file, and
-            // on a disk that tells case apart the other spelling would be a second file beside it. Nothing to move over
-            // when the recorded file has gone from disk.
-            var ticks = staged.CommitTo(
-                placed.File!.Folder,
-                placed.File.Name,
-                look.Existing is { } recorded && !goneFromDisk ? (recorded.File.SizeBytes, recorded.ModifiedTicks) : null);
-
-            // The watcher may have found the old file gone and be waiting to judge it; what is there now is this placement.
-            _runtime.Watcher.Placed(placed.File.Folder, placed.File.Name);
+            // The stored name, not the one asked with: on a disk that tells case apart the other spelling would be a
+            // second file beside it.
+            var ticks = staged.CommitTo(placed.File!.Folder, placed.File.Name);
             var stored = await files.GetAsync(conversation, placed.File.Name, transaction, cancellationToken).ConfigureAwait(false);
 
-            await files.ReconcileAsync(stored!, sha256, staged.SizeBytes, ticks, nowUtc, transaction, cancellationToken)
-                .ConfigureAwait(false);
+            await files.RecordPlacedTimeAsync(stored!, ticks, transaction, cancellationToken).ConfigureAwait(false);
         }
 
-        if (placed.Outcome is PlaceOutcome.Placed or PlaceOutcome.Replaced or PlaceOutcome.AlreadyCurrent)
+        if (placer is { } agent && placed.Outcome is PlaceOutcome.Placed or PlaceOutcome.AlreadyCurrent)
         {
             await new ConversationRepository(connection).JoinByPlacingAsync(conversation, agent, nowUtc, transaction, cancellationToken)
                 .ConfigureAwait(false);
@@ -807,7 +830,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         transaction.Commit();
 
-        return new Committed(Reply(placed, conversation, name, requested), null);
+        return Reply(placed, conversation, name, requested);
     }
 
     private async Task<FileResolution> ResolveCurrentAsync(FileRef reference, CancellationToken cancellationToken)
@@ -840,70 +863,26 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
     }
 
-    /// <summary>Brings a row into line with the file on disk before it is served (SPEC.md §9.5).</summary>
+    /// <summary>Records a file gone when it is no longer on disk, before it is listed or served (SPEC.md §9.5).</summary>
     /// <param name="stored">The row.</param>
-    /// <param name="cancellationToken">Cancels the hash.</param>
-    /// <returns>The row as it now stands, or <see langword="null"/> when the file is not on disk.</returns>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The row, or <see langword="null"/> when the file was not on disk and is now recorded gone.</returns>
     /// <remarks>
-    /// <para>
-    /// A size or modification time that differs from the row means somebody changed the file outside Parley and the
-    /// watcher has not caught up, so the file is hashed — outside the gate — and the row updated inside it. A missed
-    /// event is then a delay, never a stale hash served.
-    /// </para>
-    /// <para>
-    /// <b>A missing file is not recorded as gone here.</b> An editor saving by rename deletes and recreates, and a
-    /// fetch landing between the two would otherwise remove the row and lose the placer. The watcher and the scan
-    /// at start decide what is gone; this only declines to serve what is not there.
-    /// </para>
+    /// Nothing is hashed: a placed file is never changed, and bytes changed by hand are caught by the fetch, which
+    /// hashes what it streams. A file deleted by hand is gone, as a removal is, and every agent that fetched it is told.
     /// </remarks>
     private async Task<StoredFile?> ReconcileAsync(StoredFile stored, CancellationToken cancellationToken)
     {
-        var path = _runtime.Files.FilePath(stored.File.Folder, stored.File.Name);
-        var info = new FileInfo(path);
-
-        if (!info.Exists)
-        {
-            return null;
-        }
-
-        if (info.Length == stored.File.SizeBytes && info.LastWriteTimeUtc.Ticks == stored.ModifiedTicks)
+        if (File.Exists(_runtime.Files.FilePath(stored.File.Folder, stored.File.Name)))
         {
             return stored;
         }
 
-        // The recorded file went, and what is there now is the watcher's to judge (SPEC.md §9.5): recorded here, the
-        // person's new file would become an edit of the agent's. Left as it stands, a fetch of it is refused as changed.
-        if (_runtime.Watcher.Judging(stored.File.Folder, stored.File.Name))
-        {
-            return stored;
-        }
-
-        if (await FileLocationStore.HashAsync(path, cancellationToken).ConfigureAwait(false) is not { } measured)
-        {
-            return stored;
-        }
-
-        var (outcome, current) = await _runtime.UseConnectionAsync(
-            async (connection, now, ct) =>
-            {
-                var files = new SharedFileRepository(connection);
-
-                var outcome = await files.ReconcileAsync(
-                    stored, measured.Sha256, measured.SizeBytes, measured.ModifiedTicks, now, cancellationToken: ct)
-                    .ConfigureAwait(false);
-
-                return (outcome, await files.GetAsync(stored.File.ConversationId, stored.File.Name, cancellationToken: ct)
-                    .ConfigureAwait(false));
-            },
+        _ = await _runtime.UseConnectionAsync(
+            (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(stored, null, now, cancellationToken: ct),
             cancellationToken).ConfigureAwait(false);
 
-        // Dropped because something else wrote the row meanwhile, perhaps from older bytes: the watcher measures it again.
-        if (outcome == ReconcileOutcome.MovedOn)
-        {
-            _runtime.Watcher.LookAgain(stored.File.Folder, stored.File.Name);
-        }
-
-        return current;
+        return null;
     }
 
     private static Wire.PlaceFileReply Reply(PlaceResult placed, string conversation, SharedFileName asked, string? requested) => placed.Outcome switch
@@ -911,6 +890,17 @@ internal sealed class FileWork(BrokerRuntime runtime)
         // A file on disk that no row named yet is refused here rather than in the look, and it is still a collision.
         PlaceOutcome.PlacedByAnother when requested is not null => SafeNameTaken(requested, asked, placed.File!),
         PlaceOutcome.PlacedByAnother => PlacedByAnother(placed.File!),
+        PlaceOutcome.HoldsOtherContent => new Wire.PlaceFileReply
+        {
+            Outcome = Wire.PlaceOutcome.HoldsOtherContent,
+            Rejection = Wire.FileRejection.NameHoldsOtherContent,
+            ConversationId = conversation,
+            Name = placed.File!.Name.Value,
+            Sha256 = placed.File.Sha256.Value,
+            Detail =
+                $"'{placed.File.Name.Value}' is already here with other content, and a placed file is never changed. "
+                + "Place the new version under a new name, and remove this one when nobody needs it."
+        },
         PlaceOutcome.DoesNotFit => new Wire.PlaceFileReply
         {
             Outcome = Wire.PlaceOutcome.DoesNotFit,
@@ -930,7 +920,6 @@ internal sealed class FileWork(BrokerRuntime runtime)
             Name = placed.File!.Name.Value,
             SizeBytes = placed.File.SizeBytes,
             Sha256 = placed.File.Sha256.Value,
-            PreviousSha256 = placed.Previous?.Value ?? string.Empty,
             RequestedName = requested ?? string.Empty
         }
     };
@@ -1068,5 +1057,4 @@ internal sealed class FileWork(BrokerRuntime runtime)
         string? Folder,
         StoredFile? Existing);
 
-    private sealed record Committed(Wire.PlaceFileReply? Reply, string? NeedsTurnOn);
 }

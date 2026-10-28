@@ -561,6 +561,7 @@ internal static class Conversions
         FileRejection.NotFetched => Wire.FileRejection.NotFetched,
         FileRejection.TooManyNames => Wire.FileRejection.TooManyNames,
         FileRejection.SafeNameTaken => Wire.FileRejection.SafeNameTaken,
+        FileRejection.NameHoldsOtherContent => Wire.FileRejection.NameHoldsOtherContent,
         _ => throw new ArgumentOutOfRangeException(nameof(rejection), rejection, "Not a defined file rejection.")
     };
 
@@ -571,10 +572,10 @@ internal static class Conversions
     public static Wire.PlaceOutcome Out(PlaceOutcome outcome) => outcome switch
     {
         PlaceOutcome.Placed => Wire.PlaceOutcome.Placed,
-        PlaceOutcome.Replaced => Wire.PlaceOutcome.Replaced,
         PlaceOutcome.AlreadyCurrent => Wire.PlaceOutcome.AlreadyCurrent,
         PlaceOutcome.PlacedByAnother => Wire.PlaceOutcome.PlacedByAnother,
         PlaceOutcome.DoesNotFit => Wire.PlaceOutcome.DoesNotFit,
+        PlaceOutcome.HoldsOtherContent => Wire.PlaceOutcome.HoldsOtherContent,
         _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, "Not a defined place outcome.")
     };
 
@@ -594,7 +595,6 @@ internal static class Conversions
             Sha256 = file.Sha256.Value,
             PlacedBy = file.PlacedBy?.Value ?? string.Empty,
             PlacedUtc = Stamp(file.PlacedUtc),
-            ChangedUtc = Stamp(file.ChangedUtc),
             Folder = file.Folder
         };
     }
@@ -654,10 +654,7 @@ internal static class Conversions
             ConversationId = notice.ConversationId,
             Name = notice.Name,
             Sha256Had = notice.Had.Value,
-            Sha256Now = notice.Now?.Value ?? string.Empty,
-            SizeBytes = notice.SizeBytes ?? 0,
-            ChangedUtc = Stamp(notice.ChangedUtc),
-            Gone = notice.Gone
+            GoneUtc = Stamp(notice.GoneUtc),
         };
     }
 

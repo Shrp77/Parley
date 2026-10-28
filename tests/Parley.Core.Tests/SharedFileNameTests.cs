@@ -216,15 +216,14 @@ public sealed class SharedFileNameTests
     }
 
     [Fact]
-    public void The_not_listed_sentence_names_every_reason_a_file_is_counted()
+    public void The_not_listed_sentence_says_nothing_placed_them_and_how_a_file_is_shared()
     {
-        // Round 34: the count took in case twins, and the sentence still named only the character rules, so a person
-        // with a.md and A.md was told a name broke rules none of them broke.
+        // Files enter the location only by placement (SPEC.md §9.5), so a file in a folder that nothing placed is counted
+        // whatever its name, and the person is told how to share one.
         var said = SharedFileListing.NotListedSentenceFor(1)!;
 
-        Assert.Contains("in other case", said, StringComparison.Ordinal);
-        Assert.Contains("reserves", said, StringComparison.Ordinal);
-        Assert.Contains("too long", said, StringComparison.Ordinal);
+        Assert.Contains("nothing placed them", said, StringComparison.Ordinal);
+        Assert.Contains("Place a file through Parley", said, StringComparison.Ordinal);
         Assert.Null(SharedFileListing.NotListedSentenceFor(0));
     }
 

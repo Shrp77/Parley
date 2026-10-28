@@ -7,7 +7,7 @@ using Wire = Parley.Transport;
 namespace Parley.Client.Tests;
 
 /// <summary>
-/// That a seat's drain leaves file change notices alone (SPEC.md §9.5).
+/// That a seat's drain leaves file gone notices alone (SPEC.md §9.5).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -80,9 +80,7 @@ public sealed class SeatFileNoticeTests
                 ConversationId = "pricing",
                 Name = "notes.md",
                 Sha256Had = new string('a', 64),
-                Sha256Now = new string('b', 64),
-                SizeBytes = 12,
-                ChangedUtc = "2026-09-14T00:00:00Z"
+                GoneUtc = "2026-09-14T00:00:00Z"
             });
 
             reply.FileNotices.Add(new Wire.FileNotice
@@ -90,8 +88,7 @@ public sealed class SeatFileNoticeTests
                 ConversationId = "pricing",
                 Name = "rates.md",
                 Sha256Had = new string('c', 64),
-                ChangedUtc = "2026-09-14T00:00:00Z",
-                Gone = true
+                GoneUtc = "2026-09-14T00:00:00Z"
             });
 
             return new(Task.FromResult(reply), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });

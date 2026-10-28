@@ -200,14 +200,20 @@ before anything is saved, because the agent holding it is not told.
 
 ## Files
 
-Placed files live in a folder beside the broker's store, with one folder per conversation. You can
-read and change them there. An edit is the file's new content, and every agent that fetched it is
-told. A rename keeps who placed it. A deletion is the file gone, except that a file put back under the same
-name within half a second is taken as an edit, because that is how many editors save. To replace an agent's
-file with your own, delete it and wait a moment before putting yours there.
+Placed files live in a folder beside the broker's store, with one folder per conversation. A file
+is placed, read and removed, and never changed: to send a new version, place it under a new name.
+Files are hand-offs. An agent fetches one into its own repository, and whoever placed it removes it
+once nobody needs it.
 
-The terminal and the console both list the files, with who placed how much. You can open a file in
-its editor, open its folder, remove files, or remove every file. Removing every file asks you to
+You place a file of your own from the terminal or the console, into a conversation, the way an agent
+does; `parley files place` does the same from the command line. A file copied into a folder by hand
+is not in Parley: it is never listed or fetched, and the list counts such files so you can see they
+are there. If you change a placed file's bytes on disk, agents can no longer fetch it, and the agent
+that placed it can no longer remove it; you can. A file you delete by hand is gone, and every agent
+that fetched it is told.
+
+The terminal and the console both list the files, with who placed how much. You can place a file,
+open a file to read it, open its folder, remove files, or remove every file. Removing every file asks you to
 type the project's name. Opening only happens on the broker's own machine, and only `.md` and
 `.txt` files are ever opened. A file goes when its placer removes it, when you remove it, or when
 its conversation is destroyed or an agent that took part is purged. Nothing removes a file on a

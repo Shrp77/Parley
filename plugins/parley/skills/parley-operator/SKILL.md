@@ -100,10 +100,11 @@ parley registry                       every registered agent, with its workspace
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
 parley waiting <agent|role>           how many messages and polls await an agent
-parley files list [--conversation <id>] [--full]  the files agents placed: size, sha256, who placed each
+parley files list [--conversation <id>] [--full]  the files placed: size, sha256, who placed each
+parley files place <path> --conversation <id> [--name <name>]  place a .md or .txt file from here, as the person
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
-parley files open <name>... [--conversation <id>]  open files in their editor here, or say where they are
+parley files open <name>... [--conversation <id>]  open files to read here, or say where they are
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
 parley --help                         the same list, on stdout, exiting zero
 ```

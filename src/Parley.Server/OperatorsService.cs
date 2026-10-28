@@ -844,6 +844,20 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent places only as itself (SPEC.md §10.2).
+    /// </remarks>
+    public override Task<Wire.PlaceFileReply> PlacePersonsFile(
+        IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PlaceAsPersonAsync(requestStream, context.CancellationToken);
+    }
+
+    /// <inheritdoc/>
     public override Task<Wire.FilesReply> ListSharedFiles(Wire.ListFilesRequest request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

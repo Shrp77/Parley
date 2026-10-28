@@ -195,10 +195,17 @@ public sealed class BrokerRuntime : IAsyncDisposable
         Facilitator = new AgentRepository(connection).EnsureFacilitatorAsync(project).GetAwaiter().GetResult();
         Person = new AgentRepository(connection).EnsurePersonAsync(project).GetAwaiter().GetResult();
 
-        // Last, once everything it reads through is in place: the scan it starts goes through the gate like any other
-        // write, and changes made while no broker was running are found before anybody asks.
-        Watcher = new FolderWatcher(this);
-        Watcher.Start();
+        // **A recorded file gone from disk while no broker ran is gone** (SPEC.md §9.5), with its notices, before anybody
+        // lists or fetches. Nothing else on disk is read: the broker records only what is placed through it.
+        var shared = new SharedFileRepository(connection);
+
+        foreach (var stored in shared.GetAllAsync().GetAwaiter().GetResult())
+        {
+            if (!File.Exists(files.FilePath(stored.File.Folder, stored.File.Name)))
+            {
+                _ = shared.RemoveAsync(stored, null, now).GetAwaiter().GetResult();
+            }
+        }
     }
 
     /// <summary>Gets the facilitator's name in this store (SPEC.md principle 2.11).</summary>
@@ -209,9 +216,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets the project this store serves, which both broker-provided participants are named for.</summary>
     public ProjectName Project { get; }
-
-    /// <summary>Gets what notices changes made to the file location outside Parley (SPEC.md §9.5).</summary>
-    internal FolderWatcher Watcher { get; }
 
     /// <summary>
     /// How long a wake stays pending before another may be asked for.
@@ -1816,9 +1820,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <returns>A task that completes when it is closed.</returns>
     public async ValueTask DisposeAsync()
     {
-        // Before the gate and the connection go: a look it had scheduled would otherwise reach for both.
-        await Watcher.DisposeAsync().ConfigureAwait(false);
-
         CloseStreams();
 
         _attached.Clear();
