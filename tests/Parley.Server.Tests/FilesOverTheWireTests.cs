@@ -220,6 +220,9 @@ public sealed class FilesOverTheWireTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
         await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
+
+        // Any sweep already asked has run, so the person's file below is on disk when the placement looks.
+        await broker.Runtime.Sweeper.IdleAsync();
         await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), "the person's", Ct);
         await RequestAsync(billing, Orders, "pricing", "does this match yours?");
 
@@ -232,7 +235,19 @@ public sealed class FilesOverTheWireTests
     // Never written over by the refused placement, and gone once the sweep the refusal started has run (SPEC.md §9.5).
     private static async Task NeverWrittenOverThenSweptAsync(LoopbackBroker broker, string path)
     {
-        Assert.True(!File.Exists(path) || await File.ReadAllTextAsync(path, Ct) == "the person's", "the placement wrote over it");
+        // The sweep may delete it between looking and reading, which is gone, not written over.
+        string? found;
+
+        try
+        {
+            found = await File.ReadAllTextAsync(path, Ct);
+        }
+        catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException)
+        {
+            found = null;
+        }
+
+        Assert.True(found is null or "the person's", "the placement wrote over it");
 
         await broker.Runtime.Sweeper.IdleAsync();
         Assert.False(File.Exists(path), "the sweep left a file nothing placed");
@@ -246,6 +261,9 @@ public sealed class FilesOverTheWireTests
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
         await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
+
+        // Any sweep already asked has run, so the person's file below is on disk when the placement looks.
+        await broker.Runtime.Sweeper.IdleAsync();
 
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "Price_List.md");
         await File.WriteAllTextAsync(path, "the person's", Ct);

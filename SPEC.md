@@ -2828,7 +2828,9 @@ another folder's short name on a volume that keeps 8.3 names, is passed over, an
 its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
 takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. A recorded
 folder replaced by a link holds none of its files: they are recorded gone, and no fetch, removal or move reaches
-through it. The choice is recorded in `conversation_folders` and kept until
+through it. So it is of the location, its staging directory and its quarantine directory themselves: one found to be a
+link is removed as a link, never what it reaches, and made again as a directory of the broker's own, and every file
+recorded in a location that was a link is gone. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation,
 and the next sweep deletes it, as it deletes everything else no row names (below): a folder a destroy or a purge could
 not delete when it ran (§14) among them. A destroy's or a purge's delete finishes once its rows have gone, whether or
@@ -2919,7 +2921,9 @@ what it found, and:
 
 - moves each recorded file whose bytes do not hash to its recorded hash into the **quarantine**
   directory beside the location, removes its row, and tells everybody who fetched or placed it that it
-  was tampered with;
+  was tampered with. A file moved whose records then cannot be written is put back, so the next sweep does it
+  again; one that cannot be put back either stays in quarantine and is still raised as a problem, and the next
+  sweep records it gone;
 - records each recorded file that is missing gone, a recorded name now holding a folder or a link
   among them;
 - deletes everything in the location that is not a recorded file directly in its own recorded folder:

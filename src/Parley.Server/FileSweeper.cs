@@ -279,6 +279,7 @@ public sealed class FileSweeper : IAsyncDisposable
         var problems = new FileProblemRepository(connection);
         var movedTo = FileLocationStore.QuarantineName(stored.File.Folder, stored.File.Name, now);
         Exception? error = null;
+        Exception? unkept = null;
 
         // **The records and the move are one act.** The row, the notices and the problem are written in a transaction
         // that commits only once the file has moved, so a move that fails leaves everything as it was, and nothing is
@@ -316,14 +317,39 @@ public sealed class FileSweeper : IAsyncDisposable
                     scope.Complete();
                     return;
                 }
-                catch
+                catch (Exception failed)
                 {
                     // Moved, but the records could not be kept: put back where the next sweep finds it and does it all
                     // again, rather than quarantined with nobody told.
-                    _runtime.Files.PutBackFromQuarantine(stored.File.Folder, stored.File.Name, movedTo);
-                    throw;
+                    try
+                    {
+                        _runtime.Files.PutBackFromQuarantine(stored.File.Folder, stored.File.Name, movedTo);
+                    }
+                    catch (Exception stuck) when (stuck is IOException or UnauthorizedAccessException)
+                    {
+                        unkept = failed;
+                        error = stuck;
+                    }
+
+                    if (unkept is null)
+                    {
+                        throw;
+                    }
                 }
             }
+        }
+
+        if (unkept is not null)
+        {
+            // Neither recorded nor put back: shown in a write of its own once the failed one has rolled back, so a file in
+            // quarantine always has a problem the person sees. The next sweep finds it missing and tells agents it is gone.
+            _ = await problems.RaiseAsync(
+                FileProblemKind.Quarantined, stored.File.ConversationId, path, stored.File.Sha256, seen.Found, movedTo,
+                "Its bytes no longer match what was placed, so something other than Parley changed it. It was moved to "
+                + "quarantine, but that could not be recorded and it could not be put back, so agents are told it is gone: "
+                + error!.Message,
+                now, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(unkept);
         }
 
         _ = await problems.RaiseAsync(

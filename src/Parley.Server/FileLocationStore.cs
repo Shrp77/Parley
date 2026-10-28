@@ -138,7 +138,9 @@ public sealed class FileLocationStore : IDisposable
     /// <remarks>Called when a broker starts: nothing staged by a previous one can still be finished.</remarks>
     public void Prepare()
     {
-        Directory.CreateDirectory(Root);
+        // A root already a link when the broker starts is never entered: what it reaches is somebody else's.
+        MakeReal(Root);
+        MakeReal(Incoming);
 
         if (Directory.Exists(Incoming))
         {
@@ -178,7 +180,10 @@ public sealed class FileLocationStore : IDisposable
 
         var into = Path.Combine(Quarantine, folder);
 
-        // Never through a link put in the quarantine directory: the file would land wherever it reaches.
+        // Never through a link put in the quarantine directory, or one that is the directory: the file would land
+        // wherever it reaches.
+        MakeReal(Quarantine);
+
         if (Directory.Exists(into) && IsLink(into))
         {
             throw new IOException($"The quarantine folder '{folder}' is a link, so nothing is moved into it.");
@@ -210,6 +215,21 @@ public sealed class FileLocationStore : IDisposable
         ArgumentNullException.ThrowIfNull(kept);
 
         var failed = new List<(string, string?, Exception)>();
+
+        // The location itself replaced by a link: the link goes, never what it reaches, and nothing is in it.
+        if (IsLinkedRoot(Root))
+        {
+            try
+            {
+                MakeReal(Root);
+            }
+            catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+            {
+                failed.Add((Root, null, held));
+            }
+
+            return failed;
+        }
 
         if (!Directory.Exists(Root))
         {
@@ -425,7 +445,7 @@ public sealed class FileLocationStore : IDisposable
     /// <exception cref="IOException">The staging file could not be created, including for want of space.</exception>
     public StagedFile Stage()
     {
-        Directory.CreateDirectory(Incoming);
+        MakeReal(Incoming);
 
         var path = Path.Combine(Incoming, Guid.NewGuid().ToString("N") + ".part");
 
@@ -642,6 +662,11 @@ public sealed class FileLocationStore : IDisposable
     /// <returns><see langword="true"/> when it is a link; never through one is anything read, moved or deleted.</returns>
     internal bool IsLinkedFolder(string folder)
     {
+        if (IsLinkedRoot(Root))
+        {
+            return true;
+        }
+
         try
         {
             var path = FolderPath(folder);
@@ -652,6 +677,31 @@ public sealed class FileLocationStore : IDisposable
         {
             return false;
         }
+    }
+
+    // Whether the location, staging or quarantine directory is itself a link, read from the link's own attributes so one
+    // reaching nothing counts too.
+    private static bool IsLinkedRoot(string root)
+    {
+        try
+        {
+            return IsLink(AsWritten(root));
+        }
+        catch (Exception absent) when (absent is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    // A root that is a link is removed as a link, its target untouched, and made again as a directory of Parley's own.
+    private static void MakeReal(string root)
+    {
+        if (IsLinkedRoot(root))
+        {
+            DeleteLink(AsWritten(root));
+        }
+
+        Directory.CreateDirectory(root);
     }
 
     /// <summary>Deletes a conversation's folder and everything in it.</summary>
@@ -785,6 +835,12 @@ public sealed class FileLocationStore : IDisposable
     internal void Commit(string stagedPath, string folder, SharedFileName name)
     {
         var target = FilePath(folder, name);
+
+        // Never a folder made through a location that is a link.
+        if (IsLinkedRoot(Root))
+        {
+            throw new NotItsOwnFolderException(folder);
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 

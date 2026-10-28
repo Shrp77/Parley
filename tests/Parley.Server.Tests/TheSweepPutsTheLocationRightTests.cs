@@ -395,8 +395,9 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
     }
 
     [Fact]
-    public void A_location_reached_through_a_junction_keeps_its_recorded_folders()
+    public void A_location_that_is_a_junction_is_replaced_and_nothing_it_reaches_is_touched()
     {
+        // A link is never entered (SPEC.md §9.5), the location itself included: what it reaches may be anybody's.
         var real = Directory.CreateDirectory(Path.Combine(_base, "real-location")).FullName;
         File.WriteAllText(Path.Combine(Directory.CreateDirectory(Path.Combine(real, "stock")).FullName, "stock.md"), "x");
         Directory.CreateDirectory(Path.Combine(real, "gone"));
@@ -408,8 +409,10 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
         Assert.Empty(location.DeleteUnrecorded(Kept(("stock", ["stock.md"]))));
 
         Assert.True(File.Exists(Path.Combine(real, "stock", "stock.md")));
-        Assert.False(Directory.Exists(Path.Combine(real, "gone")));
+        Assert.True(Directory.Exists(Path.Combine(real, "gone")));
         Assert.True(Directory.Exists(linked));
+        Assert.Null(new DirectoryInfo(linked).LinkTarget);
+        Assert.False(File.Exists(Path.Combine(linked, "stock", "stock.md")));
     }
 
     private static Dictionary<string, IReadOnlySet<string>> Kept(params (string Folder, string[] Names)[] folders) =>
