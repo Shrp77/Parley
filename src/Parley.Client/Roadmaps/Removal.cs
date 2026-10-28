@@ -96,9 +96,17 @@ public static class Removal
             + "Close the work in the conversation if it should stop.";
     }
 
-    /// <summary>An item's words, cut to <see cref="QuotedLength"/> characters with an ellipsis, never inside a pair.</summary>
-    private static string Quoted(string text)
+    /// <summary>An agent's words, cut to <see cref="QuotedLength"/> characters with an ellipsis, never inside a pair.</summary>
+    /// <param name="text">The words.</param>
+    /// <returns>The words, or as many as fit and an ellipsis.</returns>
+    /// <remarks>
+    /// For a sentence that carries an agent's words inside the person's own: roadmap text has no bound, and a dialog
+    /// that cannot scroll cuts its tail, so unquoted words would push what the sentence says off the screen.
+    /// </remarks>
+    public static string Quoted(string text)
     {
+        ArgumentNullException.ThrowIfNull(text);
+
         if (text.Length <= QuotedLength)
         {
             return text;

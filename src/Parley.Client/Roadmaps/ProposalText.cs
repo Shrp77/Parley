@@ -30,14 +30,15 @@ public static class ProposalText
             $"{proposal.Content.Title} — {proposal.Proposer.Role}, {count} item{(count == 1 ? string.Empty : "s")}");
     }
 
-    /// <summary>What heads a proposal: who put it forward and from where, what it says it would change, and its title.</summary>
+    /// <summary>What heads a proposal: who put it forward and from where, its title, and what it says it would change.</summary>
     /// <param name="proposal">The proposal.</param>
     /// <param name="sameTitle">The title of a live roadmap that matches the one it says it would change, if there is one.</param>
     /// <returns>The lines, which are an agent's words and are not safe to draw as they are.</returns>
     /// <remarks>
     /// Separate from the items and from the agents because a surface that shows them apart — the terminal draws the
-    /// items on the left and who is named on the right — needs each block on its own. The title comes last because it is
-    /// the agent's and has no bound, so a long one cannot push who proposed it out of view.
+    /// items on the left and who is named on the right — needs each block on its own. Who proposed it comes first, so a
+    /// long title cannot push it out of view, and the title next, because it is what a confirm records; the roadmap it
+    /// says it would change is last and quoted short, so it cannot push the title out of a heading of a few rows.
     /// </remarks>
     public static string Header(RoadmapProposal proposal, string? sameTitle = null)
     {
@@ -50,14 +51,14 @@ public static class ProposalText
                 : "."),
         };
 
+        lines.Add(proposal.Content.Title);
+
         if (proposal.TargetTitle is { Length: > 0 } target)
         {
             lines.Add(sameTitle is null
-                ? $"It says it would change a roadmap called '{target}'; there is none by that name."
-                : $"It says it would change the roadmap '{sameTitle}'. You choose whether it does.");
+                ? $"It says it would change a roadmap called '{Removal.Quoted(target)}'; there is none by that name."
+                : $"It says it would change the roadmap '{Removal.Quoted(sameTitle)}'. You choose whether it does.");
         }
-
-        lines.Add(proposal.Content.Title);
 
         return string.Join('\n', lines);
     }

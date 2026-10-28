@@ -316,11 +316,13 @@ internal static class Proposing
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done)
     {
+        // What declining does first and the agent's title last, quoted short: the dialog cannot scroll and cuts its tail,
+        // so a long title put first hid what the choice does.
         var description =
-            Safe.Text(proposal.Content.Title)
-            + $"\n\nProposed by {Safe.Text(proposal.Proposer.Value)}.\n\n"
-            + "Declining keeps no roadmap. The agent that proposed it is told, in its own inbox, that it was declined; "
-            + "nothing it was working on changes, and the conversation it came from is untouched.";
+            "Declining keeps no roadmap. The agent that proposed it is told, in its own inbox, that it was declined; "
+            + "nothing it was working on changes, and the conversation it came from is untouched."
+            + $"\n\nProposed by {Safe.Text(proposal.Proposer.Value)}: "
+            + Safe.Text(Removal.Quoted(proposal.Content.Title));
 
         var choosing = Prompting.Choose(DeclineTitle, description, [Leave, Decline]);
         var open = Prompting.Open(app, choosing);
@@ -395,10 +397,12 @@ internal static class Proposing
         }
 
         // The title is a hint and a person decides what it means: shown with the match, never acted on.
-        var revise = $"Revise the roadmap '{Safe.Text(match.Title)}'";
+        // Quoted short, so a long title cannot push what a revision does off a dialog that cannot scroll.
+        var matched = Safe.Text(Removal.Quoted(match.Title));
+        var revise = $"Revise the roadmap '{matched}'";
         var choosing = Prompting.Choose(
             Title,
-            $"This proposal's title matches the roadmap '{Safe.Text(match.Title)}'. A revision replaces every item that " +
+            $"This proposal's title matches the roadmap '{matched}'. A revision replaces every item that " +
             "roadmap has with these; the items it had are removed, and their conversations stay. A new roadmap leaves it alone.",
             [NewRoadmap, revise]);
 

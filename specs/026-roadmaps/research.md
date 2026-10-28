@@ -82,7 +82,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 **Decision**: the person edits a confirmed roadmap through `EditRoadmap(roadmap, content)`, with the same shape as confirmation and the same revision rule. It is the only way an item is added, reworded, reordered or removed after confirmation, and is the answer to spec clarification 1's "edit the roadmap to remove it".
 **Rationale**: spec FR-009 and the edge case on dead items.
-**Door**: removing an item whose conversation has an open exchange is allowed (R7 keeps the conversation) but is described first on every surface; a typed-name confirmation is not required, because nothing is deleted. `SurfaceTests` is extended to hold the call in one file per surface.
+**Door**: removing an item whose conversation has an open exchange is allowed (R7 keeps the conversation) but is described first on every surface; a typed-name confirmation is not required, because nothing is deleted. `SurfaceTests` holds `EditRoadmap` and `DeclineProposal` each in one terminal file carrying its door; on the web each is its own page, held by `EveryActionHasADoorTests`.
 
 ## R12. Parley is not a proposer
 

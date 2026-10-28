@@ -722,8 +722,8 @@ hundred Requests cost one turn, in which the receiver collects until nothing is 
 right number rather than a rationed one.
 The asking is satisfied when a collection **begins**, not when it returns: a message stored while
 one is under way would otherwise be neither read by it nor asked for. The cost is at most one
-turn that finds nothing. A collection that leaves messages behind — by its caller's limit, or because one collection
-carries a bounded amount (§10.1) — does not satisfy the asking for those: the broker asks
+turn that finds nothing. A collection that leaves messages behind — by its caller's limit, because one collection
+carries a bounded amount (§10.1), or because its call ended before it was acknowledged (§6) — does not satisfy the asking for those: the broker asks
 again for what it left.
 
 - **The bound is per receiver across every sender**, because the receiver's machine is what
@@ -2185,7 +2185,7 @@ CREATE TABLE file_placements (
   last_utc   TEXT    NOT NULL
 ) STRICT;
 
--- What a sweep found and could not leave as it was (§9.5), kept until the person dismisses it (§10.2).
+-- What a sweep found and could not leave as it was (§9.5), waiting until the person dismisses it (§10.2).
 CREATE TABLE file_problems (
   -- AUTOINCREMENT, so a dismissed problem's id is never a later problem's: a person dismissing from a page that
   -- had gone stale would otherwise dismiss whichever problem took its id.
@@ -2960,7 +2960,7 @@ found tampered with leaves a tampered notice instead, for every agent that fetch
 with the hash found too: the copy in the location is no longer reliable, while a copy an agent fetched
 was checked against the hash it holds when it was fetched. There is at most one per agent per file. A notice is not a message (§5): it opens no exchange, owes no reply
 and wakes nobody. It waits in `inbox()` beside closure polls, at most 200 per collection, oldest first,
-with a count of the rest. Once collected it is gone. An agent that fetches the name again holds that name's file as it
+with a count of the rest. Once a collection carrying it is acknowledged (§6) it is gone. An agent that fetches the name again holds that name's file as it
 is now, so a notice still waiting for it about the name is withdrawn.
 
 **What is returned about files is bounded** (principle 2.2). A name is bounded by the schema. A list is

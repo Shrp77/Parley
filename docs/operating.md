@@ -108,7 +108,7 @@ where each agent stands, in these words: *never run yet, can be started* means i
 startable and has not registered yet, and *not running, and only runs when somebody opens it* means
 nothing will start it for you.
 
-**Every action is Alt and a letter, or a function key** (F1, F3, F4, F5, F8), in dialogs too (for example `Alt+a` and `Alt+n` to tick all
+**Every action is Alt and a letter, or a function key** (F1, F3, F4, F5, F8; F10 opens the menus), in dialogs too (for example `Alt+a` and `Alt+n` to tick all
 or none, `Alt+c`, `Alt+e` and `Alt+d` on a proposed roadmap). A plain letter is never an action, so
 typing can never set one off by accident. Press `Alt+?` for a list of everything the current view can do, `F10` opens the menu
 bar, and `F8` opens the web console on whatever is in front of you. In a conversation, `Alt+c`
