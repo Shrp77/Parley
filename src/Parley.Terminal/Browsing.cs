@@ -93,6 +93,7 @@ internal sealed class Browsing : Dialog
 
     private Browsing(string opening, bool ofRepositories)
     {
+        HotKeySpecifier = Parley.Terminal.Plain.NoHotKey;
         _ofRepositories = ofRepositories;
         Title = ofRepositories ? FolderName : Name;
         Width = Dim.Percent(80);

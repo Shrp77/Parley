@@ -51,6 +51,7 @@ public sealed class FileProblemsPageTests : IDisposable
 
         Assert.Contains("#7", body, StringComparison.Ordinal);
         Assert.Contains("Changed on disk, moved to quarantine", body, StringComparison.Ordinal);
+        Assert.Contains("<td>pricing</td>", body, StringComparison.Ordinal);
         Assert.Contains("pricing/terms.md", body, StringComparison.Ordinal);
         Assert.Contains(Placed, body, StringComparison.Ordinal);
         Assert.Contains(Found, body, StringComparison.Ordinal);

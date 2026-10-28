@@ -35,8 +35,8 @@
     @* What a sweep does, said once, so the list below is read for what it is: things nothing else would tell the person. *@
     <p>
         Parley checks the file location when the broker starts, and whenever a list, fetch, removal or placement finds
-        something changed. A placed file whose bytes changed on disk is moved to quarantine, and anything Parley did not
-        place is deleted. What it could not move or delete, usually because another program held it, is left and listed here.
+        something wrong. A placed file whose bytes changed on disk is moved to quarantine, and anything Parley did not
+        place is deleted. What it could not read, move or delete, usually because another program held it, is left and listed here.
     </p>
 
     <p>@FileProblemSaid.Quarantine(report.Quarantine)</p>

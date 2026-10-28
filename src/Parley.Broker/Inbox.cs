@@ -14,8 +14,8 @@ namespace Parley.Broker;
 /// Conversations this agent has been asked to conclude and has not yet answered, the oldest 200.
 /// </param>
 /// <param name="FileNotices">
-/// Gone notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
-/// the rest; <see langword="null"/> where nothing collected them.
+/// Gone and tampered notices about files this agent fetched or placed (SPEC.md §9.5), at most a collection's worth,
+/// with a count of the rest; <see langword="null"/> where nothing collected them.
 /// </param>
 /// <param name="RoadmapNoticeBatch">
 /// What became of this agent's own roadmap proposals (SPEC.md §5.7), or <see langword="null"/> where nothing

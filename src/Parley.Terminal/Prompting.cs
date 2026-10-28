@@ -242,6 +242,7 @@ internal sealed class TextDialog : Dialog
         Func<string, string>? correct = null,
         string? corrected = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         _problem = problem;
         _correct = correct;
         _corrected = corrected ?? string.Empty;
@@ -395,6 +396,7 @@ internal sealed class ChoiceDialog : Dialog
 
     internal ChoiceDialog(string title, string description, IReadOnlyList<string> choices)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(choices);
 
         Title = title;
@@ -592,6 +594,7 @@ internal sealed class FormDialog : Dialog
 
     internal FormDialog(string title, IReadOnlyList<FormField> fields)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(fields);
 
         _fields = fields;

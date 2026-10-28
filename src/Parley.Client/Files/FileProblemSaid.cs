@@ -67,7 +67,7 @@ public static class FileProblemSaid
     public static string Kind(FileProblemKind kind) => kind switch
     {
         FileProblemKind.Quarantined => "Changed on disk, moved to quarantine",
-        FileProblemKind.Locked => "Could not be moved or deleted",
+        FileProblemKind.Locked => "Could not be read, moved or deleted",
         _ => kind.ToString(),
     };
 

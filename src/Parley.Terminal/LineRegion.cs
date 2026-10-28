@@ -91,6 +91,7 @@ internal sealed class LineRegion : FrameView
 
     internal LineRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));

@@ -48,6 +48,7 @@ internal sealed class ProjectsRegion : FrameView
 
     internal ProjectsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Projects));

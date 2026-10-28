@@ -535,9 +535,9 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="cancellationToken">Cancels the wait.</param>
     /// <returns>The turn; disposing it lets the next in.</returns>
     /// <remarks>
-    /// A first placement had nothing to take a turn on, so one could commit between a destroy reading the conversation's
-    /// folder (none yet) and destroying it, and its folder stayed on disk for good, unmarked. Its turn is one a hold over
-    /// everything waits for, or waits out.
+    /// A first placement has no file's gate to take, so it takes this turn: without it, one could commit between a destroy
+    /// reading the conversation's folder (none yet) and destroying it, and leave a folder behind the destroy. Its turn is
+    /// one a hold over everything waits for, or waits out.
     /// </remarks>
     public Task<IDisposable> FirstPlacementAsync(string conversation, CancellationToken cancellationToken) =>
         EnterAfterAnyHoldAsync("first placement in " + conversation, cancellationToken);

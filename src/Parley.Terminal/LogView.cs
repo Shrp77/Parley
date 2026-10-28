@@ -39,6 +39,7 @@ internal sealed class LogView : Dialog
 
     internal LogView(string title)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = title;
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);
@@ -171,7 +172,9 @@ internal sealed class LogView : Dialog
     /// <b>It does not touch the view, and that is the whole of it.</b> The follower runs off the
     /// main loop and the toolkit draws on it; a source collection mutated during a draw throws or
     /// is read half-written, and either way the failure lands in the draw rather than anywhere
-    /// near its cause. Lines are queued here and the selection is set only on the drawing thread.
+    /// near its cause. Lines are queued here and the selection is set only on the drawing thread. What it does
+    /// set is the flag that asks for that draw: without it a quiet screen drew nothing, and a line appeared only when
+    /// something else redrew the dialog.
     /// </remarks>
     internal void Append(string line)
     {
@@ -179,14 +182,20 @@ internal sealed class LogView : Dialog
         {
             _pending.Add(line);
         }
+
+        SetNeedsDraw();
     }
 
     /// <inheritdoc/>
-    protected override bool OnDrawingContent(DrawContext? context)
+    /// <remarks>
+    /// Drained here, before the list draws, rather than with the dialog's content, which the toolkit draws after its
+    /// subviews: there the list showed each line one draw late.
+    /// </remarks>
+    protected override bool OnClearingViewport()
     {
         Drain();
 
-        return base.OnDrawingContent(context);
+        return base.OnClearingViewport();
     }
 
     /// <summary>Moves whatever the follower has read into the view, on the drawing thread.</summary>

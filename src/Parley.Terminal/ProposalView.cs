@@ -75,6 +75,7 @@ internal sealed class ProposalView : Dialog
     /// <param name="sameTitle">The title of the live roadmap it says it would change, when there is one.</param>
     internal ProposalView(RoadmapProposal proposal, string? sameTitle = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(proposal);
 
         Title = Proposing.Title;

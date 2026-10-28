@@ -337,6 +337,7 @@ internal sealed class ResponsibilityDialog : Dialog
     /// <param name="canSave">Whether the line can be written from here at all.</param>
     internal ResponsibilityDialog(string description, string line, bool canSave)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = Responsibility.Title;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);

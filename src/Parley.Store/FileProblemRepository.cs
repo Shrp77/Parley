@@ -18,8 +18,8 @@ public sealed class FileProblemRepository(SqliteConnection connection)
     /// <param name="kind">What happened.</param>
     /// <param name="conversationId">The conversation whose folder held it, or <see langword="null"/>.</param>
     /// <param name="path">The entry, as a path inside the location.</param>
-    /// <param name="placed">For a quarantined file, the hash placed.</param>
-    /// <param name="found">For a quarantined file, the hash found.</param>
+    /// <param name="placed">For a quarantined file, or a tampered one the sweep could not move, the hash placed.</param>
+    /// <param name="found">For a quarantined file, or a tampered one the sweep could not move, the hash found.</param>
     /// <param name="movedTo">For a quarantined file, where it now is.</param>
     /// <param name="detail">The broker's sentence about it.</param>
     /// <param name="nowUtc">The current instant.</param>

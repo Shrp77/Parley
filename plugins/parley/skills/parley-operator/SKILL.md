@@ -106,7 +106,7 @@ parley files remove <name>... [--conversation <id>] [--yes]  remove files whoeve
 parley files prune [--yes-remove-every-file]  REMOVE every file; asks for the project's name
 parley files open <name>... [--conversation <id>]  open files to read here, or say where they are
 parley files folder [--conversation <id>] open a conversation's folder, or say where it is
-parley files problems [--all]         what checks of the location found: files changed on disk and moved to quarantine, and entries it could not move or delete
+parley files problems [--all]         what checks of the location found: files changed on disk and moved to quarantine, and entries it could not read, move or delete
 parley files dismiss <id>             take a problem off the list; deletes nothing on disk
 parley --help                         the same list, on stdout, exiting zero
 ```

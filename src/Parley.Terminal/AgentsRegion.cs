@@ -110,6 +110,7 @@ internal sealed class AgentsRegion : FrameView
 
     internal AgentsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Agents));

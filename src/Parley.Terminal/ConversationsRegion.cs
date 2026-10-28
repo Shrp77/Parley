@@ -50,6 +50,7 @@ internal sealed class ConversationsRegion : FrameView
 
     internal ConversationsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));

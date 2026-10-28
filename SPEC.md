@@ -436,8 +436,9 @@ what fails.
 
 **Files follow the same rule.** Placing a file returns once the broker holds all of it, and fetching
 one returns once it is written into the fetching agent's repository; neither waits on another
-participant. An agent is told that a file it fetched has gone in `inbox()`, whenever it next looks
-(§9.5), and nothing is started to tell it.
+participant. An agent is told in `inbox()`, whenever it next looks, that a file it fetched has gone or
+was tampered with, and so is its placer when something other than Parley took or changed it (§9.5); nothing is
+started to tell it.
 
 ## 5. Messages
 
@@ -2959,7 +2960,8 @@ found tampered with leaves a tampered notice instead, for every agent that fetch
 with the hash found too: the copy in the location is no longer reliable, while a copy an agent fetched
 was checked against the hash it holds when it was fetched. There is at most one per agent per file. A notice is not a message (§5): it opens no exchange, owes no reply
 and wakes nobody. It waits in `inbox()` beside closure polls, at most 200 per collection, oldest first,
-with a count of the rest. Once collected it is gone.
+with a count of the rest. Once collected it is gone. An agent that fetches the name again holds that name's file as it
+is now, so a notice still waiting for it about the name is withdrawn.
 
 **What is returned about files is bounded** (principle 2.2). A name is bounded by the schema. A list is
 paged, 50 files by default and never more than 200 whatever is asked; a refusal names at most 200 of

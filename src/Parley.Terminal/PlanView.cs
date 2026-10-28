@@ -65,6 +65,7 @@ internal sealed class PlanView : Dialog
     /// <param name="itemNumber">The item to start on, when reached from its conversation; otherwise the next item.</param>
     internal PlanView(Roadmap roadmap, RoadmapStanding standing, int? itemNumber = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(roadmap);
         ArgumentNullException.ThrowIfNull(standing);
 

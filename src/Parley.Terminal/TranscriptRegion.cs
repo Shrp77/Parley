@@ -96,6 +96,7 @@ internal sealed class TranscriptRegion : FrameView
 
     internal TranscriptRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Transcript));

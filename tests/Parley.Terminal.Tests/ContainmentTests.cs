@@ -114,4 +114,23 @@ public sealed class ContainmentTests
         new(
             [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, "http://127.0.0.1:1", null)],
             _ => GrpcChannel.ForAddress("http://127.0.0.1:1"));
+
+    [Fact]
+    public void A_line_appended_to_a_followed_log_is_drawn_by_the_next_draw_alone()
+    {
+        // Found by review, round 52: a line was queued and nothing asked for a draw, so a quiet screen never showed it,
+        // and a forced draw showed it one draw late. The screen is read, not Lines, which drains the queue itself.
+        using var driving = Driving.Open(width: 100, height: 30);
+        var view = new LogView("following a probe");
+
+        driving.Show(view);
+        driving.App.LayoutAndDraw(true);
+
+        view.Append("probe-line-one");
+
+        // What the loop does each iteration: draw what needs drawing, not force it.
+        driving.App.LayoutAndDraw();
+
+        Assert.Contains("probe-line-one", driving.Text(), StringComparison.Ordinal);
+    }
 }

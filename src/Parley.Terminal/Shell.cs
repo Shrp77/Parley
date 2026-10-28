@@ -687,6 +687,7 @@ internal sealed class Shell : Window
 
     internal Shell(BrokerDirectory directory)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(directory);
 
         _directory = directory;
