@@ -142,4 +142,33 @@ public sealed class StoreLockTests : IDisposable
 
         Assert.IsNotType<StoreHeldException>(failure);
     }
+
+    [Fact]
+    public void An_owner_record_name_that_is_a_link_is_replaced_never_written_through()
+    {
+        // Found by review, round 52: the record was written through a link left at its name, overwriting whatever the
+        // link reached.
+        var outside = Path.Combine(_directory, "persons-notes.txt");
+        File.WriteAllText(outside, "the person's own notes");
+
+        try
+        {
+            File.CreateSymbolicLink(Store + StoreFiles.Owner, outside);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip($"this machine will not create a symbolic link for a test ({refused.GetType().Name})");
+        }
+
+        using (StoreLock.Acquire(Store))
+        {
+            Assert.Null(new FileInfo(Store + StoreFiles.Owner).LinkTarget);
+            Assert.Contains("pid=", File.ReadAllText(Store + StoreFiles.Owner), StringComparison.Ordinal);
+        }
+
+        Assert.Equal("the person's own notes", File.ReadAllText(outside));
+        Assert.DoesNotContain(
+            Directory.EnumerateFiles(_directory),
+            f => Path.GetFileName(f).StartsWith("parley.db" + StoreFiles.Owner + ".", StringComparison.Ordinal));
+    }
 }
