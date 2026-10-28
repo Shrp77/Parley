@@ -21,8 +21,8 @@ namespace Parley.Server;
 /// </para>
 /// <para>
 /// <b>A download holds its file, and a change through Parley waits for every hold.</b> A read opens the file with
-/// no write or delete sharing, so on Windows an editor's save is refused for as long as it runs. A replacement,
-/// removal or prune asks for the file's gate and waits until the reads in progress finish; a read that arrives
+/// no write or delete sharing, so on Windows an editor's save is refused for as long as it runs. A removal or prune
+/// asks for the file's gate and waits until the reads in progress finish; a read that arrives
 /// while a change is waiting waits for the change, so a busy file cannot hold a change back for ever. On Linux and
 /// macOS nothing refuses the editor, which is why every read is hashed against the row (§9.5).
 /// </para>
@@ -355,7 +355,7 @@ public sealed class FileLocationStore : IDisposable
     /// It does not wait out a hold over everything: that hold enters every file's gate there is, so a change to a file is
     /// in turn with it already, and one to a file never changed or read lands either before the destroy's, purge's or
     /// prune's transaction, and goes with it, or after it, refused or placed again as a new file. Waiting would hold every
-    /// agent's replacement behind one hold.
+    /// agent's removal behind one hold.
     /// </remarks>
     public Task<IDisposable> ChangeAsync(string folder, SharedFileName name, CancellationToken cancellationToken) =>
         GateFor(FilePath(folder, name)).EnterChangeAsync(cancellationToken);
@@ -564,9 +564,39 @@ public sealed class FileLocationStore : IDisposable
     /// hand, and may be the person's. Removing it would delete bytes the agent never placed (SPEC.md §9.5).
     /// </remarks>
     internal bool HoldsTheRecordedFileOrNone(string folder, SharedFileName name, (long SizeBytes, long ModifiedTicks) recorded)
-    {
-        var path = FilePath(folder, name);
+        => HoldsTheRecordedFileOrNoneAt(FilePath(folder, name), recorded);
 
+    /// <summary>Whether a file is on disk, is not, or cannot be told.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <returns>
+    /// <see langword="true"/> when it is there, <see langword="false"/> when it is not, and <see langword="null"/> when
+    /// the disk would not say, as for a folder that cannot be read.
+    /// </returns>
+    /// <remarks>
+    /// Three answers, because a recorded file missing from disk is recorded gone (SPEC.md §9.5) and a file in a folder
+    /// that cannot be read is not missing: <see cref="File.Exists(string)"/> answers false for both, and every file in
+    /// an unreadable folder was recorded gone for good, out of every list and every count.
+    /// </remarks>
+    internal bool? IsOnDisk(string folder, SharedFileName name)
+    {
+        try
+        {
+            _ = File.GetAttributes(FilePath(folder, name));
+            return true;
+        }
+        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception unreadable) when (unreadable is UnauthorizedAccessException or IOException)
+        {
+            return null;
+        }
+    }
+
+    private static bool HoldsTheRecordedFileOrNoneAt(string path, (long SizeBytes, long ModifiedTicks) recorded)
+    {
         var info = new FileInfo(path);
 
         // A row whose time was never recorded is compared by size alone.

@@ -23,7 +23,7 @@ The plugin does not install the server. Until the first release you build the to
 | `/parley:setup-many` | Does the same for several repositories at once |
 | `/parley:write-peers` | Writes or refreshes the Peers section in the repository's standing instructions, from the live list of agents |
 | `/parley:status` | Reports whether Parley is working here: tools bound, agent registered, and the Peers section matching the live list |
-| `/parley:files-list`, `-remove`, `-prune`, `-open`, `-folder` | Manage the files agents have placed. A person has to type these; a model cannot run them |
+| `/parley:files-place`, `-list`, `-remove`, `-prune`, `-open`, `-folder` | Place your own files and manage the files agents have placed. A person has to type these; a model cannot run them |
 | `parley-operator` skill | Lets you ask for a roster, an export or a report in words instead of remembering command flags |
 | A hook | Tells you in one line when mail is waiting for an open session |
 

@@ -255,9 +255,13 @@ internal sealed class FileWork(BrokerRuntime runtime)
             {
                 var directory = _runtime.Files.FolderPath(folder);
 
+                // Every file under the folder, a subfolder copied in by hand included: a placed file is only ever directly
+                // in it, so anything deeper was put there by hand, and a destroy deletes it with the folder.
                 if (Directory.Exists(directory))
                 {
-                    count += Directory.EnumerateFiles(directory).Count(path => !names.Contains(Path.GetFileName(path)));
+                    count += Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+                        .Count(path => !string.Equals(Path.GetDirectoryName(path), directory, StringComparison.Ordinal)
+                                       || !names.Contains(Path.GetFileName(path)));
                 }
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
@@ -873,16 +877,23 @@ internal sealed class FileWork(BrokerRuntime runtime)
     /// </remarks>
     private async Task<StoredFile?> ReconcileAsync(StoredFile stored, CancellationToken cancellationToken)
     {
-        if (File.Exists(_runtime.Files.FilePath(stored.File.Folder, stored.File.Name)))
+        // A folder that cannot be read says nothing about its files, which stay as recorded.
+        if (_runtime.Files.IsOnDisk(stored.File.Folder, stored.File.Name) != false)
         {
             return stored;
         }
 
-        _ = await _runtime.UseConnectionAsync(
-            (connection, now, ct) => new SharedFileRepository(connection).RemoveAsync(stored, null, now, cancellationToken: ct),
+        // Asked again inside the connection's turn, which a placement's commit also holds while it moves its bytes in: a
+        // placement of the name between the two would otherwise have its row recorded gone with its file on disk. And
+        // only the file resolved goes; one placed under the name since is not it.
+        var gone = await _runtime.UseConnectionAsync(
+            async (connection, now, ct) =>
+                _runtime.Files.IsOnDisk(stored.File.Folder, stored.File.Name) == false
+                && await new SharedFileRepository(connection).RemoveAsync(stored, null, now, cancellationToken: ct)
+                    .ConfigureAwait(false) == FileRejection.None,
             cancellationToken).ConfigureAwait(false);
 
-        return null;
+        return gone ? null : stored;
     }
 
     private static Wire.PlaceFileReply Reply(PlaceResult placed, string conversation, SharedFileName asked, string? requested) => placed.Outcome switch
@@ -932,7 +943,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 Rejection = Wire.FileRejection.NamePlacedByAnother,
                 ConversationId = conversation,
                 Name = name.Value,
-                Detail = PlacerSentence(null)
+                Detail = UnplacedSentence
             }
             : new()
             {
@@ -1017,14 +1028,21 @@ internal sealed class FileWork(BrokerRuntime runtime)
         FileRejection.NamePlacedByAnother => PlacerSentence(refusal.PlacedBy),
         FileRejection.Changed =>
             $"The file is not the content expected: the location holds {sha256Now?.Value ?? "different content"}. " +
-            "Nothing was written. Fetch it again, and check with whoever named the hash if it matters.",
+            "Nothing was written. A placed file is never changed, so check with whoever named the hash which file they meant.",
         _ => "The file operation was refused."
     };
 
     private static string PlacerSentence(string? placedBy) =>
         placedBy is null
-            ? "The person running the deployment put that file there, so no agent may replace or remove it."
-            : $"{placedBy} placed that file, and only the agent that placed a file may replace or remove it.";
+            ? "The person running the deployment placed that file, so nothing was placed and no agent may remove it. A "
+              + "placed file is never changed: use another name."
+            : $"{placedBy} placed that file, so nothing was placed: a placed file is never changed, and only its placer "
+              + "or the person removes it. Use another name.";
+
+    // A file on disk under a name nothing placed: copied there by hand, not in the location, and never written over.
+    private const string UnplacedSentence =
+        "A file nothing placed is on disk under that name, put there by hand, so nothing was placed: a placement never "
+        + "writes over it. Use another name.";
 
     private static FileRejection Rejection(SharedFileNameProblem problem) =>
         problem == SharedFileNameProblem.ExtensionNotAllowed ? FileRejection.ExtensionNotAllowed : FileRejection.BadName;

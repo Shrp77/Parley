@@ -429,8 +429,8 @@ public sealed class FileEdgesOverTheWireTests
     public async Task A_prune_racing_placements_leaves_the_disk_and_the_list_agreeing()
     {
         // Thirty rounds of five placements and a prune at once. What must hold afterwards
-        // is not who won but that no file is on disk unlisted — which the watcher would then hand to the person — and
-        // no row names a file that is not there.
+        // is not who won but that no file is on disk unlisted — counted as put there by hand, though Parley wrote it —
+        // and no row names a file that is not there.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         var operators = broker.ConnectAsOperator();
@@ -485,9 +485,6 @@ public sealed class FileEdgesOverTheWireTests
 
     private static async Task AssertDiskAndListAgreeAsync(LoopbackBroker broker)
     {
-        // Past the watcher's quiet period, so anything it would record has been recorded.
-        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
-
         var operators = broker.ConnectAsOperator();
         var all = new List<Wire.SharedFileView>();
         var next = string.Empty;

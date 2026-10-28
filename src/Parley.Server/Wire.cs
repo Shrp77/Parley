@@ -641,7 +641,7 @@ internal static class Conversions
         return reply;
     }
 
-    /// <summary>Converts a change notice for the wire.</summary>
+    /// <summary>Converts a gone notice for the wire.</summary>
     /// <param name="notice">The notice.</param>
     /// <returns>The wire notice.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="notice"/> is null.</exception>

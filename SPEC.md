@@ -145,7 +145,7 @@ language they are written in.
 | **Conversation** | Every exchange belonging to one line of work: the request that began it and everything that request caused. Started only by a person, by an agent holding no request, or by the facilitator (principle 2.10). See §5.0. |
 | **Pair** | An unordered set of exactly two agents. Identifies traffic between them; see §7.1. |
 | **File location** | The place beside a broker's store where placed files live, one folder per conversation that has files. See §9.5. |
-| **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent, which alone may remove it, or by the person. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
+| **Shared file** | A `.md` or `.txt` file in a conversation's folder, placed by an agent or by the person; only its placing agent or the person removes it. Never changed once placed: a new version is a new file. Fetched onto disk, never into a model's context. |
 | **Content hash** | The SHA-256 of a shared file's content, computed by the broker as it arrives. The same hash is the same content; it attests nothing about who wrote it. |
 | **Gone notice** | What an agent that fetched a file finds in its inbox when the file later goes. Not a message: it opens nothing and owes nothing. See §9.5. |
 | **Roadmap** | A person-confirmed, ordered list of items of work, held by a project. It exists only once a person has confirmed a proposal, and is the person's: no agent reads, changes or marks done one (principle 2.12). See §5.7. |
@@ -929,7 +929,7 @@ confirmation as a revision, that removes such an item before saving it, and save
 deliberate act.
 
 **An agent is told what became of its proposal and nothing else.** Confirmed, declined or superseded
-reaches the proposer as a notice with its own title, cut to 200 characters (§10.1), in its inbox beside change
+reaches the proposer as a notice with its own title, cut to 200 characters (§10.1), in its inbox beside gone
 notices (§9.5). It
 opens nothing, is owed nothing and wakes nobody.
 
@@ -2064,7 +2064,7 @@ CREATE TABLE shared_files (
   size_bytes      INTEGER NOT NULL CHECK (size_bytes >= 0),
   -- The broker's SHA-256 of the stored bytes, never the placer's.
   sha256          TEXT    NOT NULL CHECK (length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
-  -- An agent, or NULL for a file the person put there. Text rather than a key: purge deletes these
+  -- An agent, or NULL for a file the person placed. Text rather than a key: purge deletes these
   -- rows by name and reports them (§14), where a key would cascade silently or refuse the purge.
   placed_by       TEXT,
   placed_utc      TEXT    NOT NULL,
@@ -2160,7 +2160,7 @@ CREATE TABLE file_notices (
   CHECK ((sha256_now IS NULL) = (size_bytes IS NULL))
 ) STRICT;
 
--- A collection takes the oldest first (§9.5), so a burst of new changes cannot hold an old one back.
+-- A collection takes the oldest first (§9.5), so a burst of new removals cannot hold an old one back.
 CREATE INDEX ix_file_notices_collection ON file_notices(agent, changed_utc);
 
 -- Placements counted per agent, so a size limit can be set from evidence as rule 8.4's cap was. Not
@@ -2760,7 +2760,7 @@ they once carried. Pruning the text while keeping the skeleton is what lets a de
 "how often does this agent end up blocked, and on what" a year later without retaining a year of
 what anybody said.
 
-**Files are outside this policy.** Retention never touches placed files, fetch records or change
+**Files are outside this policy.** Retention never touches placed files, fetch records or gone
 notices (§9.5). A file is not traffic: it goes when somebody removes it, and a pruned conversation's
 files stay where they are.
 
@@ -2829,8 +2829,9 @@ same hash is the same content; it attests nothing about who wrote it.
 
 **A placed file is never changed.** It is created by a placement, read by fetches, and removed. A new
 version is a new file: its placer changes it in its own repository and places it under a new name.
-Placing a name a conversation already holds is already current when the content is the same, and with
-other content is refused, saying to place the new version under a new name, whoever placed the file.
+Placing a name a conversation already holds is already current when its own placer places the same
+content again. Anything else is refused: the placer's own name with other content, saying to place the new
+version under a new name, and a name another placed, naming its placer.
 The placer is recorded at placement and never altered (§9.3). The agent that placed a file may remove
 it; no agent may remove a file another placed (§16), and a refusal names the placer without preventing
 the caller's own files in the same request. A file the person placed is the person's. A file on disk
@@ -2858,7 +2859,8 @@ streams, and when the bytes differ from the recorded hash it is refused and writ
 file changed on disk and its placer should place it again under a new name. An agent's removal is
 refused when the file on disk is not the size and time it was placed with, so an agent never deletes
 bytes it did not place; the person removes it. A recorded file no longer on disk is gone: a list, a
-fetch or the broker's start that finds it missing records it gone, as a removal does.
+fetch or the broker's start that finds it missing records it gone, as a removal does. A file in a folder the broker
+cannot read is not missing, and stays as recorded.
 
 **An agent that fetched a file is told when it goes.** A fetch is recorded only once the adapter reports
 writing and verifying the content the broker streamed to it; any other report is refused. From then
@@ -3015,7 +3017,7 @@ other could.
 | `unarchive(conversation)` | Reverse it. |
 | `destroy(conversation)` | Delete a conversation and every message, exchange and file belonging to it, for every participant. Destroys its peers' side too and cannot be undone. Leaves the record of §14, which holds facts and no content. Named apart from `purge`, which takes an agent: two operations on different subjects sharing one name is how the wrong one gets bound. |
 | `start(agent)` | Ask a node that can resolve this agent's name to a catalogued checkout (§12) to launch it now, rather than waiting for a question to arrive. Returns whether a node accepted the request. The agent registers itself on attaching, exactly as §12.3 permits — this operation causes a launch and never a registration. Refused for the person seat: nothing starts a person. Refused for an agent open outside Parley (§11.7): a second process in one checkout is two models editing it. |
-| `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
+| `place_persons_file(conversation_id, name, bytes)` | Place a file as the person, into a conversation that exists, under §9.5's rules for a placement: renamed for its characters, refused when the name already holds other content or a file nothing placed, and already current when it is the person's own with the same content. The file is the person's. Named apart from §10.1's `file_place`, which is an agent's. |
 | `list_shared_files(conversation_id?, page)` | Every file in the location, with its conversation, size, content hash, placer and when, totals per conversation and overall, how many placements and bytes each agent has made, and how many files in the folders listed are not listed because nothing placed them (§9.5). Paged, and the broker bounds the page whatever is asked for. Named apart from §10.1's `file_list`, which does not report placement counts. |
 | `remove_files(files)` | Remove any files, whichever agent placed them (§9.5). A name held by several conversations must name one; names not present are reported without preventing the rest. Named apart from §10.1's `file_remove`, which removes only the caller's own. |
 | `prune_files()` | Remove every file in the location, in every conversation. Conversations, exchanges, messages and agents are untouched. Not available to agents, because it removes files other agents placed; named apart from `prune`, which applies retention to messages and never touches a file. |
@@ -3659,7 +3661,7 @@ its rules, and for the same reason:
 - **Per-sender rate limits.** *Not held by anything.* No such limit exists, here or in the reference
   implementation. Listing it among the controls would make the set look closed when the one control
   against volume is the one that is absent. See §17 question 1.
-- **What crosses about a file is bounded.** Held: a name by the schema (§9.3); a list, a batch of change
+- **What crosses about a file is bounded.** Held: a name by the schema (§9.3); a list, a batch of gone
   notices, an ambiguity refusal and a removal by the broker's own ceilings, whatever a caller asks for
   (§9.5).
 

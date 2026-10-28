@@ -459,8 +459,9 @@ public sealed class SharedFileRepository(SqliteConnection connection)
     /// asked to remove a file it did not place; <see cref="FileRejection.NoSuchFile"/> when it had already gone.
     /// </returns>
     /// <remarks>
-    /// The placer is read again inside this transaction, from the row, rather than trusted from the resolution the
-    /// caller holds: a placement could have landed between the two.
+    /// The row is read again inside this transaction rather than trusted from the resolution the caller holds: the file
+    /// resolved may have gone and another been placed under its name since, and removing that one would delete a file
+    /// nobody named. So the file removed is the one resolved, by its hash and placement time, or none.
     /// </remarks>
     public async Task<FileRejection> RemoveAsync(
         StoredFile file,
@@ -476,7 +477,7 @@ public sealed class SharedFileRepository(SqliteConnection connection)
         var current = await GetAsync(file.File.ConversationId, file.File.Name, scope.Transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        if (current is null)
+        if (current is null || current.File.Sha256 != file.File.Sha256 || current.File.PlacedUtc != file.File.PlacedUtc)
         {
             scope.Complete();
             return FileRejection.NoSuchFile;

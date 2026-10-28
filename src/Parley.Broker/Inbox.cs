@@ -14,7 +14,7 @@ namespace Parley.Broker;
 /// Conversations this agent has been asked to conclude and has not yet answered, the oldest 200.
 /// </param>
 /// <param name="FileNotices">
-/// Change notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
+/// Gone notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
 /// the rest; <see langword="null"/> where nothing collected them.
 /// </param>
 /// <param name="RoadmapNoticeBatch">
@@ -58,7 +58,7 @@ public sealed record Inbox(
     public IReadOnlyList<RoadmapNotice> RoadmapNotices => RoadmapNoticeBatch ?? [];
 
     /// <summary>
-    /// Gets the change notices this collection handed over, and how many are left for a later one.
+    /// Gets the gone notices this collection handed over, and how many are left for a later one.
     /// </summary>
     /// <remarks>
     /// A third collection for the reason polls are a second: a notice is not a message (SPEC.md §9.5). It is

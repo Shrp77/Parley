@@ -35,7 +35,7 @@ public sealed record ConversationFilesTotal(string ConversationId, int Files, lo
 /// How many placements, and how many bytes, one agent has made (SPEC.md §9.5).
 /// </summary>
 /// <param name="Agent">The agent, which may since have been purged.</param>
-/// <param name="Placements">Placements, and replacements with new content.</param>
+/// <param name="Placements">How many files it has placed.</param>
 /// <param name="Bytes">The bytes those carried.</param>
 /// <param name="LastUtc">When the most recent one was made.</param>
 /// <remarks>

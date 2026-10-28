@@ -8,14 +8,14 @@ namespace Parley.Server;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>What lets a report of a fetch be believed.</b> A fetch is recorded, and change notices follow it, only once
+/// <b>What lets a report of a fetch be believed.</b> A fetch is recorded, and a gone notice follows it, only once
 /// the adapter reports it wrote and verified the content. Without this, an agent could report having fetched a
 /// file it never asked for, or a hash it never received, and the broker would record it — harmless noise, but a
 /// record saying something that did not happen, which is what this store exists not to hold.
 /// </para>
 /// <para>
-/// <b>Keyed by the content, not only by the file</b>, so two fetches of one file by one agent, with a replacement
-/// between them, are each reportable with the hash each actually streamed.
+/// <b>Keyed by the content, not only by the file</b>, so two fetches of one name by one agent, with a removal and a
+/// new placement between them, are each reportable with the hash each actually streamed.
 /// </para>
 /// <para>
 /// In memory, and forgotten when the agent's last session ends or the broker restarts. A report that arrives

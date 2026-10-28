@@ -197,11 +197,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         // **A recorded file gone from disk while no broker ran is gone** (SPEC.md §9.5), with its notices, before anybody
         // lists or fetches. Nothing else on disk is read: the broker records only what is placed through it.
+        _ = new FileNoticeRepository(connection).ForgetChangeNoticesAsync().GetAwaiter().GetResult();
         var shared = new SharedFileRepository(connection);
 
         foreach (var stored in shared.GetAllAsync().GetAwaiter().GetResult())
         {
-            if (!File.Exists(files.FilePath(stored.File.Folder, stored.File.Name)))
+            // Missing, not merely unreadable: a folder that cannot be read says nothing about its files.
+            if (files.IsOnDisk(stored.File.Folder, stored.File.Name) == false)
             {
                 _ = shared.RemoveAsync(stored, null, now).GetAwaiter().GetResult();
             }

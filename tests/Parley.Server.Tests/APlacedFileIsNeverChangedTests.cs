@@ -97,6 +97,25 @@ public sealed class APlacedFileIsNeverChangedTests
     }
 
     [Fact]
+    public async Task Files_in_a_subfolder_copied_in_by_hand_are_counted_as_not_listed()
+    {
+        // A placed file is only ever directly in its folder, so anything deeper was put there by hand; counted only at the
+        // top, a folder of notes dragged in was on no surface and in no count.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        await FileWire.PlaceAsync(billing.Client, Billing, "terms.md", Text("net 30"), "pricing", Ct);
+        var dragged = Directory.CreateDirectory(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes"));
+        await File.WriteAllTextAsync(Path.Combine(dragged.FullName, "a.md"), "a", Ct);
+        await File.WriteAllTextAsync(Path.Combine(dragged.FullName, "terms.md"), "same name as a placed file", Ct);
+
+        var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
+
+        Assert.Equal("terms.md", Assert.Single(listed.Files).Name);
+        Assert.Equal(2, listed.FilesNotListed);
+    }
+
+    [Fact]
     public async Task A_fetch_of_bytes_changed_by_hand_is_refused_saying_a_new_version_takes_a_new_name()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

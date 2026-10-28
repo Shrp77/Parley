@@ -22,7 +22,7 @@ public static class FileLimits
     /// <summary>The most files on a page, whatever is asked for.</summary>
     public const int MaximumPageSize = 200;
 
-    /// <summary>The most change notices one inbox collection hands over.</summary>
+    /// <summary>The most gone notices one inbox collection hands over.</summary>
     public const int NoticesPerCollection = 200;
 
     /// <summary>The most conversations an ambiguity refusal names.</summary>

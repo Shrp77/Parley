@@ -86,7 +86,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
         scope.Complete();
     }
 
-    /// <summary>Raises "gone" notices for a file that was removed, pruned, renamed away or destroyed.</summary>
+    /// <summary>Raises "gone" notices for a file that was removed, pruned, found gone from disk or destroyed.</summary>
     /// <param name="conversationId">The file's conversation.</param>
     /// <param name="nameKey">The file's name key.</param>
     /// <param name="name">The file's name.</param>
@@ -268,6 +268,18 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
                 ExchangeRow.ParseTimestamp(r.ChangedUtc)))],
             left);
     }
+
+    /// <summary>Deletes notices saying a file changed, which a build from before placed files were immutable left.</summary>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>How many went.</returns>
+    /// <remarks>
+    /// Read as gone notices now, they would tell an agent a file had gone that is still listed. Nothing writes one any
+    /// more, so this finds rows only in a store an earlier build served (SPEC.md §9.5).
+    /// </remarks>
+    public Task<int> ForgetChangeNoticesAsync(CancellationToken cancellationToken = default) =>
+        _connection.ExecuteAsync(
+            new CommandDefinition(
+                "DELETE FROM file_notices WHERE sha256_now IS NOT NULL;", cancellationToken: cancellationToken));
 
     /// <summary>How many notices are waiting for an agent.</summary>
     /// <param name="agent">The agent.</param>

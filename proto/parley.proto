@@ -273,7 +273,7 @@ message InboxReply {
   int32 closure_polls_not_listed = 8;
 }
 
-// That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
+// That a file the agent fetched has gone since. A name, the hash fetched and when, never the content.
 message FileNotice {
   string conversation_id = 1;
   string name = 2;

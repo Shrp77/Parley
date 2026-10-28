@@ -4,7 +4,7 @@ using Parley.Core;
 namespace Parley.Client.Files;
 
 /// <summary>
-/// What the person's placement came to, in words (SPEC.md §10.2 <c>place_file</c>).
+/// What the person's placement came to, in words (SPEC.md §10.2 <c>place_persons_file</c>).
 /// </summary>
 /// <remarks>
 /// <para>

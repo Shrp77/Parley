@@ -1092,7 +1092,7 @@ public sealed class Broker
             .ConfigureAwait(false);
 
         // What became of the agent's own proposals. Never a reason to wake anything (SPEC.md §5.7): collected when
-        // the agent next looks, like a change notice for a file.
+        // the agent next looks, like a gone notice for a file.
         var proposals = await new RoadmapRepository(_connection)
             .DrainNoticesAsync(agent, RoadmapNoticesPerCollection, nowUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);

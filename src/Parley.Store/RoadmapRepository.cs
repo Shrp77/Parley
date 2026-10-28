@@ -691,7 +691,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <param name="transaction">The transaction the drain runs in, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>The notices, oldest first.</returns>
-    /// <remarks>Never wakes anybody: a notice is collected when the agent next looks, as a file's change notice is.</remarks>
+    /// <remarks>Never wakes anybody: a notice is collected when the agent next looks, as a file's gone notice is.</remarks>
     public async Task<IReadOnlyList<RoadmapNotice>> DrainNoticesAsync(
         AgentName agent,
         int limit,

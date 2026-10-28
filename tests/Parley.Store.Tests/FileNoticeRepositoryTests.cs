@@ -185,6 +185,23 @@ public sealed class FileNoticeRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_change_notice_an_earlier_build_left_is_forgotten_and_a_gone_notice_kept()
+    {
+        // Read as a gone notice now, a change notice would tell an agent a file had gone that is still listed.
+        await Place("v1");
+        Execute(
+            "INSERT INTO file_notices (agent, conversation_id, name_key, name, sha256_had, sha256_now, size_bytes, changed_utc) "
+            + $"VALUES ('orders@test', 'pricing', 'PRICE-SNAPSHOT.MD', 'price-snapshot.md', '{ContentHash.Of("v0"u8).Value}', "
+            + $"'{ContentHash.Of("v1"u8).Value}', 2, '{ExchangeRow.FormatTimestamp(Now)}');");
+        await Fetch(Inventory, "v1");
+        await _files.RemoveAsync(await Stored(), Billing, Now, cancellationToken: Ct);
+
+        Assert.Equal(1, await _notices.ForgetChangeNoticesAsync(Ct));
+        Assert.Empty((await Collect(Orders)).Notices);
+        Assert.Single((await Collect(Inventory)).Notices);
+    }
+
+    [Fact]
     public async Task A_collected_notice_is_gone()
     {
         await Place("v1");

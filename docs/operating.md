@@ -237,7 +237,7 @@ parley enroll <folder>              find repositories, choose some, configure an
 parley registry                     every agent, what it owns, and its workspace
 parley open                         every conversation with an exchange still open
 parley waiting <agent|role>         how many messages and polls await an agent
-parley files list|remove|prune|open|folder
+parley files place|list|remove|prune|open|folder
 parley web-ui [<url>]               the web console
 parley terminal                     the terminal (the same as `parley` with no arguments)
 parley --help                       the same list

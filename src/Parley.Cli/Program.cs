@@ -380,7 +380,7 @@ if (hostWebUi && verb != "serve")
 if (withFiles && verb != "waiting")
 {
     await Console.Error.WriteLineAsync(
-        $"--with-files is only for `parley waiting`, where it adds the file change notices waiting as a third count. "
+        $"--with-files is only for `parley waiting`, where it adds the file gone notices waiting as a third count. "
         + $"`parley {verb}` has no count to add it to.").ConfigureAwait(false);
 
     return Usage;

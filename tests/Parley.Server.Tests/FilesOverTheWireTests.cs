@@ -187,8 +187,7 @@ public sealed class FilesOverTheWireTests
         Assert.Equal("a:b.md", refused.RequestedName);
         Assert.Equal(
             "File 'a:b.md' has illegal characters and will be named 'a_b.md', which collides with an existing file with " +
-            "that name ('A_B.md'). Nothing was placed. Choose another name, or place it as 'a_b.md' to replace that file " +
-            "if it is yours.",
+            "that name ('A_B.md'). Nothing was placed. Choose another name: a placed file is never changed.",
             refused.Detail);
         Assert.Equal(kept.Sha256, (await FetchAsync(orders, "A_B.md", conversation: "pricing")).Header!.Sha256);
     }

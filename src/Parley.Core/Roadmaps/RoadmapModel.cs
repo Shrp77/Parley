@@ -239,7 +239,7 @@ public sealed record RoadmapChange(
 /// <param name="Outcome">Confirmed, declined or superseded.</param>
 /// <param name="CreatedUtc">When the decision was made.</param>
 /// <remarks>
-/// Not a message: it opens nothing, is owed nothing and wakes nobody, as a change notice for a file does not.
+/// Not a message: it opens nothing, is owed nothing and wakes nobody, as a gone notice for a file does not.
 /// </remarks>
 public sealed record RoadmapNotice(
     long ProposalId, string Title, ProposalState Outcome, DateTimeOffset CreatedUtc);
