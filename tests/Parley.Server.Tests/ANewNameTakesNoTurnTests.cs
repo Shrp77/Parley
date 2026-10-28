@@ -107,8 +107,8 @@ public sealed class ANewNameTakesNoTurnTests
         Assert.Equal(Wire.PlaceOutcome.Placed, placed.Outcome);
         Assert.Contains(destroyed.Destroyed, t => t.Table == "shared_files" && t.Rows == 2);
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-pending-removal"),
-            $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk, unmarked: {string.Join(", ", left)}");
+            left.Length == 0,
+            $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk: {string.Join(", ", left)}");
 
         var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(
             new Wire.ListFilesRequest { PageSize = FileLimits.MaximumPageSize }, cancellationToken: Ct);
@@ -136,8 +136,8 @@ public sealed class ANewNameTakesNoTurnTests
         var left = OnDisk(broker, "pricing");
 
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-pending-removal"),
-            $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk, unmarked: {string.Join(", ", left)}");
+            left.Length == 0,
+            $"placement {placed.Outcome}, destroy {destroyed.Verdict}; left on disk: {string.Join(", ", left)}");
         Assert.Contains(destroyed.Destroyed, t => t.Table == "shared_files" && t.Rows == 2);
     }
 

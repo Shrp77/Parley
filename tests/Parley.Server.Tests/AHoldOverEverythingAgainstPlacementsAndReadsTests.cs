@@ -11,7 +11,7 @@ namespace Parley.Server.Tests;
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 21.</b> A conversation's first placement had no turn to take, so it committed between a
-/// destroy reading the folder and destroying it, and the folder stayed on disk unmarked; and a download that waited out
+/// destroy reading the folder and destroying it, and the folder stayed on disk; and a download that waited out
 /// a destroy whose folder a viewer held open served the destroyed file. A first placement now takes a turn the hold
 /// waits for or out, and a download resolves its file again once it holds it. The other cases held.
 /// </remarks>
@@ -132,9 +132,9 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         var left = Directory.Exists(folder) ? Directory.GetFileSystemEntries(folder).Select(Path.GetFileName).ToArray() : [];
 
         Assert.True(
-            left.Length == 0 || left.Contains(".parley-pending-removal"),
+            left.Length == 0,
             $"placement {placed.Outcome}, destroy {destroyed.Verdict} ({string.Join(", ", destroyed.Destroyed.Select(t => $"{t.Table}={t.Rows}"))}); "
-            + $"left on disk, unmarked: {string.Join(", ", left)}");
+            + $"left on disk: {string.Join(", ", left)}");
     }
 
     [Fact]

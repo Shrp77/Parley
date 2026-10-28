@@ -103,7 +103,9 @@ public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
     public async Task A_collection_cancelled_at_any_point_loses_no_result()
     {
         // Given up after a few milliseconds, so the cancel lands somewhere different in each round: before the reply,
-        // during it, or after it and before the acknowledgement.
+        // during it, or after it and before the acknowledgement. A probe of timing, so it catches a broker that records
+        // before the acknowledgement most runs rather than every run; A_collection_never_acknowledged_is_handed_over_again
+        // holds that rule on every run.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
         await using var inventory = await AttachedClient.AttachAsync(broker, "inventory@test", cancellationToken: Ct);
@@ -112,7 +114,7 @@ public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
         var cancelled = 0;
         var seen = new HashSet<long>();
 
-        for (var round = 0; round < 12; round++)
+        for (var round = 0; round < 18; round++)
         {
             var exchanges = new List<long>();
 
@@ -134,17 +136,37 @@ public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
 
             using (var giveUp = CancellationTokenSource.CreateLinkedTokenSource(Ct))
             {
-                giveUp.CancelAfter(TimeSpan.FromMilliseconds(1 + (round % 6)));
+                // Every third round holds the store's turn so the collection is certainly in flight when it is given up;
+                // the rest give up after a few milliseconds, landing wherever the timing puts them.
+                var release = new TaskCompletionSource();
+                var occupied = round % 3 == 0
+                    ? broker.Runtime.UseConnectionAsync<bool>(async (_, _, _) => { await release.Task; return true; }, Ct)
+                    : Task.FromResult(true);
+
+                var collecting = orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: giveUp.Token);
+
+                if (round % 3 == 0)
+                {
+                    await Task.Delay(100, Ct);
+                    await giveUp.CancelAsync();
+                }
+                else
+                {
+                    giveUp.CancelAfter(TimeSpan.FromMilliseconds(1 + (round % 6)));
+                }
 
                 try
                 {
-                    var reply = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: giveUp.Token);
+                    var reply = await collecting;
                     seen.UnionWith(reply.Messages.Select(m => m.Message.Id));
                 }
                 catch (Exception gone) when (gone is RpcException { StatusCode: StatusCode.Cancelled } or OperationCanceledException)
                 {
                     cancelled++;
                 }
+
+                release.TrySetResult();
+                await occupied;
             }
 
             // Long enough for the broker to see the call end and release what it held.

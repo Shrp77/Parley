@@ -74,14 +74,13 @@ public sealed class ARemovalTakesOnlyWhatItRemovedTests
 
         var said = $"purge={purged.Verdict}; request ok={asked.Outcomes[0].Ok} rej={asked.Outcomes[0].Rejection}; "
                    + $"conversation survives={survives}; folder on disk={Directory.Exists(folderPath)}; "
-                   + $"marked={File.Exists(Path.Combine(folderPath, ".parley-pending-removal"))}; "
                    + $"listed files={files.Files.Count}; not listed={files.FilesNotListed}; "
                    + $"bytes on disk={(Directory.Exists(folderPath) ? string.Join(",", Directory.EnumerateFiles(folderPath).Select(Path.GetFileName)) : "")}";
 
         TestContext.Current.SendDiagnosticMessage(said);
 
-        // The conversation went with the purge, so its folder must have gone or been marked.
-        Assert.True(survives || !Directory.Exists(folderPath) || File.Exists(Path.Combine(folderPath, ".parley-pending-removal")), said);
+        // The conversation went with the purge, so its folder must have gone.
+        Assert.True(survives || !Directory.Exists(folderPath), said);
     }
 
     [Fact]
