@@ -141,9 +141,9 @@ public sealed class ADeepTreeByHandStopsNothingTests : IDisposable
     [Fact]
     public async Task A_destroy_that_stops_part_way_leaves_its_folder_marked()
     {
-        // A file held open below the folder stops the delete part way, after the folder's own files have gone. The mark,
-        // written before the delete started and deleted last, is what is left to tell a start to finish it; a mark
-        // written only after a failure would never be written if the process ended instead.
+        // A file held open below the folder stops the delete part way, after the folder's own files have gone, and the
+        // mark is what is left to tell a start to finish it: this holds that the mark is deleted last. That it is written
+        // first is held by the sweep tests' The_mark_is_written_before_anything_in_the_folder_is_deleted.
         Assert.SkipUnless(OperatingSystem.IsWindows(), "a file held open cannot be deleted only on Windows");
 
         await using var broker = await LoopbackBroker.StartAsync(Ct);

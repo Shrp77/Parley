@@ -107,7 +107,9 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         broker.Runtime.Files.RemoveLeftBehind([]);
         said += $"; after a start's sweep, folder on disk={Directory.Exists(folder)}";
 
-        Assert.True(survives || !Directory.Exists(folder), said);
+        // The cancel must land after the commit, or the case is not the one held here.
+        Assert.True(outcome == "Cancelled" && !survives, "the cancel did not land after the commit: " + said);
+        Assert.False(Directory.Exists(folder), said);
     }
 
     [Fact]
@@ -159,9 +161,8 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 
         await Task.Delay(500, Ct);
 
-        var registry = await operators.DescribeRegistryAsync(new Wire.Empty(), cancellationToken: Ct);
         var marked = File.Exists(Path.Combine(folder, ".parley-pending-removal"));
-        var said = $"purge={outcome}; agents now={registry.ToString().Length}; folder on disk={Directory.Exists(folder)}; marked={marked}";
+        var said = $"purge={outcome}; folder on disk={Directory.Exists(folder)}; marked={marked}";
 
         broker.Runtime.Files.RemoveLeftBehind([]);
         said += $"; after a start's sweep, folder on disk={Directory.Exists(folder)}";
@@ -171,6 +172,7 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
             (connection, _, ct) => new Parley.Store.SharedFileRepository(connection).GetConversationForFolderAsync("bait", cancellationToken: ct),
             Ct);
 
-        Assert.True(stillRecorded is not null || !Directory.Exists(folder), said);
+        Assert.True(outcome == "Cancelled" && stillRecorded is null, "the cancel did not land after the commit: " + said);
+        Assert.False(Directory.Exists(folder), said);
     }
 }

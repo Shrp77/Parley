@@ -143,7 +143,7 @@ public sealed class FileLocationStore : IDisposable
     /// <summary>The file a destroy or a purge leaves in a folder it could not delete, so a later start deletes it.</summary>
     internal const string LeftBehind = ".parley-pending-removal";
 
-    /// <summary>Deletes a destroyed conversation's folder, or marks it to be deleted when the broker next starts.</summary>
+    /// <summary>Marks a destroyed conversation's folder to be deleted when the broker next starts, then deletes it.</summary>
     /// <param name="folder">The folder name, as the store recorded it before its row went.</param>
     /// <remarks>
     /// <para>
@@ -173,7 +173,14 @@ public sealed class FileLocationStore : IDisposable
                 return;
             }
 
-            File.WriteAllText(Path.Combine(FolderPath(folder), LeftBehind), string.Empty);
+            // Whatever already holds the name goes first, as itself, and the mark is only ever a new file: a hard or
+            // symbolic link put there by hand would otherwise carry the write to the file it reaches, outside the location.
+            var mark = Path.Combine(FolderPath(folder), LeftBehind);
+            TryDelete(mark);
+
+            using (new FileStream(mark, FileMode.CreateNew, FileAccess.Write))
+            {
+            }
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
@@ -858,10 +865,12 @@ public sealed class FileLocationStore : IDisposable
         public void Dispose() => turns.ForEach(t => t.Dispose());
     }
 
-    /// <summary>A conversation's folder that the disk resolves to another folder, by its short name.</summary>
+    /// <summary>
+    /// A conversation's folder that is not its own on disk: another folder's short name, or a link put there by hand.
+    /// </summary>
     /// <param name="folder">The folder the store recorded.</param>
     internal sealed class NotItsOwnFolderException(string folder)
-        : IOException($"The folder '{folder}' is another folder's short name on this volume.");
+        : IOException($"The folder '{folder}' is another folder's short name on this volume, or a link.");
 
     private sealed class Reopening(Action reopen) : IDisposable
     {

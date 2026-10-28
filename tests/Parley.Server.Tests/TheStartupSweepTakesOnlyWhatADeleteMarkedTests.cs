@@ -62,6 +62,70 @@ public sealed class TheStartupSweepTakesOnlyWhatADeleteMarkedTests : IDisposable
         Assert.False(File.Exists(Path.Combine(outside, FileLocationStore.LeftBehind)), "the mark was written through the link");
     }
 
+    [Fact]
+    public async Task The_mark_is_written_before_anything_in_the_folder_is_deleted()
+    {
+        // A delete that stops because the process ends leaves only what was done before it, so a mark written after a
+        // failure would never be written. A folder that deletes cleanly shows the order: the mark appears first.
+        Assert.SkipWhen(OperatingSystem.IsMacOS(), "FSEvents may coalesce a create and a delete into one event");
+
+        var (location, _) = Prepare();
+        var folder = Directory.CreateDirectory(Path.Combine(location.Root, "gone")).FullName;
+        File.WriteAllText(Path.Combine(folder, "a.md"), "placed");
+        var seen = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        using (var watcher = new FileSystemWatcher(folder) { NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName })
+        {
+            watcher.Created += (_, e) => seen.Enqueue("created " + e.Name);
+            watcher.Deleted += (_, e) => seen.Enqueue("deleted " + e.Name);
+            watcher.EnableRaisingEvents = true;
+
+            location.DeleteOrMark("gone");
+
+            for (var waited = 0; waited < 100 && !seen.Contains("deleted a.md"); waited++)
+            {
+                await Task.Delay(50, Ct);
+            }
+        }
+
+        Assert.False(Directory.Exists(folder));
+        Assert.Equal("created " + FileLocationStore.LeftBehind, seen.FirstOrDefault());
+    }
+
+    [Fact]
+    public void A_link_under_the_marks_name_takes_no_write_to_the_file_it_reaches()
+    {
+        // The mark was written over whatever held its name, so a hard link put there by hand emptied a file outside the
+        // location before the delete began. Windows only: the hard link is made with mklink, which needs no privilege.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "makes a hard link with mklink");
+
+        var (location, outside) = Prepare();
+        var folder = Directory.CreateDirectory(Path.Combine(location.Root, "gone")).FullName;
+        var target = Path.Combine(outside, "precious.txt");
+
+        using (var mklink = Process.Start(new ProcessStartInfo(
+            "cmd.exe", $"/c mklink /H \"{Path.Combine(folder, FileLocationStore.LeftBehind)}\" \"{target}\"")
+        {
+            UseShellExecute = false, RedirectStandardOutput = true,
+        })!)
+        {
+            mklink.WaitForExit();
+            Assert.Equal(0, mklink.ExitCode);
+        }
+
+        // Held open below the folder, so the delete stops and the folder keeps the mark written for it.
+        var held = Directory.CreateDirectory(Path.Combine(folder, "sub")).FullName;
+        File.WriteAllText(Path.Combine(held, "open.md"), "x");
+
+        using (File.Open(Path.Combine(held, "open.md"), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            location.DeleteOrMark("gone");
+        }
+
+        Assert.Equal("not Parley's", File.ReadAllText(target));
+        Assert.True(File.Exists(Path.Combine(folder, FileLocationStore.LeftBehind)), "the folder was left unmarked");
+    }
+
     [Theory]
     [InlineData("0.", false)]
     [InlineData("copied.", false)]

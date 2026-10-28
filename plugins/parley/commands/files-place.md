@@ -1,5 +1,5 @@
 ---
-description: Place a .md or .txt file from this machine in a Parley conversation, as the person, so its agents can fetch it.
+description: Place a .md or .txt file from this machine in a Parley conversation, as the person, so any agent in the project can fetch it.
 disable-model-invocation: true
 ---
 

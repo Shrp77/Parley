@@ -2784,11 +2784,13 @@ identifier beginning or ending in a dot, or one that differs only in case from a
 disk, including one a person made by hand. `~` cannot occur in an identifier, so a suffixed folder is
 never another conversation's own name; and a suffixed name whose path already reaches a folder, as `ABCDEF~2` is
 another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is written to and deleted only under
-its own name. The choice is recorded in `conversation_folders` and kept until
+its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
+takes it as one entry, and a destroy deletes the link, never what it reaches. Nor is a mark written through one. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation, and is left alone: it may be
 a person's, or a conversation a store restored from a backup no longer records. The one exception is a folder a
-destroy or a purge could not delete when it ran (§14): it is left holding a file named `.parley-pending-removal`, and the
-next start deletes a folder no row names that holds one.
+destroy or a purge could not delete when it ran (§14): it is marked with a file named `.parley-pending-removal` before
+its delete begins, the mark goes last, and the next start deletes a folder no row names that holds one. The delete
+finishes once the rows have gone, whether or not the operator who asked is still there.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed
 in a location has a handler that runs a program when a person opens it (§13). Only the name is
