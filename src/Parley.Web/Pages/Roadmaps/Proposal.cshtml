@@ -29,7 +29,7 @@ else if (Model.Proposal is { } proposal)
 
         @if (Model.Match is { } match)
         {
-            <p>Its title matches the roadmap <strong>@match.Title</strong>.</p>
+            <p>Its title matches <a href="/Roadmaps/Roadmap?project=@Model.Project&amp;id=@match.Id">roadmap #@match.Number, <strong>@match.Title</strong></a>, which has @match.LiveItems @(match.LiveItems == 1 ? "item" : "items").</p>
         }
         else if (proposal.TargetTitle is { Length: > 0 } hint)
         {
@@ -69,7 +69,8 @@ else if (Model.Proposal is { } proposal)
                 <legend>What it becomes</legend>
                 @{ var revising = Model.Target == revises.Id.ToString(System.Globalization.CultureInfo.InvariantCulture); }
                 <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
-                <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of <em>@revises.Title</em></label>
+                <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of roadmap #@revises.Number, <em>@revises.Title</em></label>
+                <p class="composer-note">A revision replaces every item that roadmap has with these, except an item whose line ends <code>| item: n</code>, which is carried across; the items it had are removed, and their conversations stay. A new roadmap leaves it alone.</p>
                 <input type="hidden" name="Revision" value="@(Model.Revision ?? revises.Revision)" />
                 @if (Model.Superseding is { Length: > 0 } superseding)
                 {

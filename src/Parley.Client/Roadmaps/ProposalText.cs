@@ -167,34 +167,41 @@ public static class ProposalText
     /// <summary>What confirming a proposal as a revision of a roadmap also does to the other proposals waiting on it.</summary>
     /// <param name="proposal">The proposal being confirmed.</param>
     /// <param name="roadmap">The roadmap it would revise.</param>
-    /// <param name="waiting">The proposals awaiting a decision, or <see langword="null"/> when they could not be read.</param>
+    /// <param name="waiting">The headings of the proposals awaiting a decision, or <see langword="null"/> when unread.</param>
     /// <returns>The sentence, or an empty string when no other proposal waits on it.</returns>
     /// <remarks>
-    /// A revision supersedes every other waiting proposal whose hint names the roadmap (SPEC.md §5.7), and a superseded
-    /// proposal is shown nowhere after, so the door says so before the person chooses. Unread is not none: it then says
-    /// that any such proposal goes too.
+    /// A revision supersedes every other waiting proposal whose whole hint names the roadmap, ignoring case (SPEC.md
+    /// §5.7), and a superseded proposal is shown nowhere after, so the door says so before the person chooses. The
+    /// headings are the newest <see cref="RoadmapProposal.HeadingLimit"/> with hints cut to
+    /// <see cref="RoadmapProposal.HeadingLength"/>, so a number is given only when they are certainly all of them:
+    /// unread, a title longer than a cut hint, or a full list, and the sentence says any such proposal goes, or at least
+    /// how many. Unread is not none, and neither is a count that could be short.
     /// </remarks>
     public static string Superseding(RoadmapProposal proposal, RoadmapSummary roadmap, IReadOnlyList<RoadmapProposal>? waiting)
     {
         ArgumentNullException.ThrowIfNull(proposal);
         ArgumentNullException.ThrowIfNull(roadmap);
 
-        if (waiting is null)
+        const string Any = "A revision also settles any other proposal waiting to revise this roadmap, as superseded, and tells its proposer.";
+
+        if (waiting is null || roadmap.Title.Length > RoadmapProposal.HeadingLength)
         {
-            return "Any other proposal waiting to revise it is settled too, as superseded, and its proposer told.";
+            return Any;
         }
 
         var others = waiting.Count(p =>
             p.Id != proposal.Id && string.Equals(p.TargetTitle, roadmap.Title, StringComparison.OrdinalIgnoreCase));
+        var atLeast = waiting.Count >= RoadmapProposal.HeadingLimit;
 
-        return others switch
+        if (others == 0)
         {
-            0 => string.Empty,
-            1 => "It also settles 1 other proposal waiting to revise it, as superseded, and its proposer is told.",
-            _ => string.Create(
-                CultureInfo.InvariantCulture,
-                $"It also settles {others} other proposals waiting to revise it, as superseded, and their proposers are told."),
-        };
+            return atLeast ? Any : string.Empty;
+        }
+
+        return "A revision also settles " + (atLeast ? "at least " : string.Empty)
+            + others.ToString(CultureInfo.InvariantCulture) + (others == 1 ? " other proposal" : " other proposals")
+            + " waiting to revise this roadmap, as superseded, and tells "
+            + (others == 1 && !atLeast ? "its proposer." : "their proposers.");
     }
 
     /// <summary>The roadmap a proposal's title hint matches, if any.</summary>

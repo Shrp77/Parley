@@ -167,14 +167,38 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
     {
         // Round 58: a revision supersedes every other waiting proposal hinting at the roadmap, which are shown nowhere
         // after, and the choice did not say so.
-        using var driving = Driving.Open(width: 140, height: 40);
-        using var directory = Directory();
-        using var shell = await OpenAsync(driving, directory);
 
         var made = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
         Assert.True((await Repository.ConfirmAsync(made!.Id, made.Content, null, T0, cancellationToken: Ct)).Done);
-        await ProposeAsync("One way", target: "Billing export");
-        await ProposeAsync("Another way", target: "billing export");
+
+        // The two others name it in other cases, as the store's match ignores case; the newest is the one opened.
+        await ProposeAsync("One way", target: "BILLING EXPORT");
+        await ProposeAsync("Another way", target: "billing Export");
+        await ProposeAsync("The one opened", target: "Billing export");
+
+        Assert.Contains("A revision also settles 2 other proposals waiting to revise this roadmap", await ReviseChoiceAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_revise_choice_says_any_other_proposal_is_settled_when_the_title_is_longer_than_a_heading_shows()
+    {
+        // Round 59: the proposal list carries hints cut to 200 characters, so a longer title matched none of them and the
+        // choice said nothing while the store superseded them all.
+        var title = string.Concat(Enumerable.Repeat("Billing export ", 20)).Trim();
+        var made = await Repository.GetProposalAsync(await ProposeAsync(title), Ct);
+        Assert.True((await Repository.ConfirmAsync(made!.Id, made.Content, null, T0, cancellationToken: Ct)).Done);
+        await ProposeAsync("One way", target: title);
+        await ProposeAsync("The one opened", target: title);
+
+        Assert.Contains("A revision also settles any other proposal waiting to revise this roadmap", await ReviseChoiceAsync(), StringComparison.Ordinal);
+    }
+
+    // Opens the proposals, opens the newest, chooses to confirm it, and returns what the revise choice says.
+    private async Task<string> ReviseChoiceAsync()
+    {
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
 
         await shell.Global().Single(a => a.Label == Proposing.Title).Run();
         await shell.Settled;
@@ -182,9 +206,7 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         await shell.Settled;
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
-        var choosing = (ChoiceDialog)driving.Find(Proposing.Title);
-
-        Assert.Contains("It also settles 1 other proposal waiting to revise it, as superseded", choosing.Described, StringComparison.Ordinal);
+        return ((ChoiceDialog)driving.Find(Proposing.Title)).Described;
     }
 
     [Theory]

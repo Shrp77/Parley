@@ -171,7 +171,7 @@ public sealed class ProposalsOnThePageTests
 
         var page = await client.GetStringAsync(ProposalUri(8), TestContext.Current.CancellationToken);
 
-        Assert.Contains("matches the roadmap <strong>Billing export</strong>", page, StringComparison.Ordinal);
+        Assert.Contains("<strong>Billing export</strong></a>, which has", page, StringComparison.Ordinal);
         Assert.Matches(new Regex("name=\"Target\" value=\"new\" checked", RegexOptions.None, TimeSpan.FromSeconds(2)), page);
         Assert.Contains("value=\"3\"", page, StringComparison.Ordinal);
 

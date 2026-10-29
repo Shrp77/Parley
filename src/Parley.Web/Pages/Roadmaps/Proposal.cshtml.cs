@@ -136,6 +136,9 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
                 + "Choose again.";
             Target = null;
 
+            // The revision kept was another roadmap's: the page shows the one it now matches, at the revision it reads.
+            Revision = null;
+
             return Page();
         }
 
@@ -146,7 +149,7 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             Problem = string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
                 $"Roadmap #{Match.Number} has changed since this page showed it, so nothing was confirmed. It is at revision "
-                + $"{Match.Revision}; read what it now holds and choose again.");
+                + $"{Match.Revision}; open roadmap #{Match.Number} to read what it now holds, then choose again.");
             Revision = Match.Revision;
 
             return Page();
