@@ -69,7 +69,8 @@ public static class OffMachineLinks
         return DosDevice(full[..2]) switch
         {
             null => (LetterKind.Undefined, string.Empty),
-            ['\\', '?', '?', '\\', _, ':', ..] name when char.IsAsciiLetter(name[4]) => (LetterKind.Substitute, name[4..]),
+            ['\\', '?', '?', '\\', _, ':', ..] name when char.IsAsciiLetter(name[4]) && ReadsAsWritten(name[4..], absolute: true)
+                => (LetterKind.Substitute, name[4..]),
             var name when IsLocalVolume(name) => (LetterKind.LocalDisk, string.Empty),
             _ => (LetterKind.Elsewhere, string.Empty),
         };
@@ -85,6 +86,49 @@ public static class OffMachineLinks
         && ((string[])[@"\Device\LanmanRedirector", @"\Device\Mup", @"\Device\WebDavRedirector", @"\??\UNC\", @"\??\GLOBALROOT\Device\Mup"])
             .Any(share => name.StartsWith(share, StringComparison.OrdinalIgnoreCase));
 
+    // Whether a target Windows follows as stored (a link's, or a subst letter's folder) names the same thing once the walk
+    // reads it as a Win32 path. GetFullPath drops a trailing dot or space from each part and folds `.`, `..` and doubled
+    // separators; the system following the link does none of that in an absolute target, and keeps the dots and spaces in
+    // a relative one. So a link to `decoy.` was checked as the plain folder `decoy` beside it while Windows followed the
+    // real `decoy.` into OneDrive or to a share (review, lens 2 run 78).
+    private static bool ReadsAsWritten(string target, bool absolute)
+    {
+        var parts = target.Split(Separators);
+
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i];
+
+            if (part is "." or "..")
+            {
+                if (absolute)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (part.Length == 0)
+            {
+                // Only a trailing separator, or the one after the drive's colon, leaves an empty part.
+                if (absolute && i != parts.Length - 1)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (part[^1] is '.' or ' ')
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool IsLocalVolume(string device)
     {
         const string Volume = @"\Device\HarddiskVolume";
@@ -94,7 +138,7 @@ public static class OffMachineLinks
             && device[Volume.Length..].All(char.IsAsciiDigit);
     }
 
-    // A mount point's target, `Volume{GUID}\` as .NET hands it back (it reads as relative), or with `\\?\` or `\??\`.
+    // A mount point's target as its reparse data stores it, `\??\Volume{GUID}\`, or spelled with `\\?\` or bare.
     private static string? MountedVolume(string target)
     {
         var name = target.StartsWith(@"\\?\", StringComparison.Ordinal) || target.StartsWith(@"\??\", StringComparison.Ordinal)
@@ -109,6 +153,41 @@ public static class OffMachineLinks
                 ? name
                 : null;
     }
+
+    // The drive letter a volume is mounted at (`D:\`), or null when it has none: GetVolumePathNamesForVolumeName lists
+    // every place a volume is mounted, read from the mount manager, which opens nothing on the volume.
+    private static string? LetteredPath(string volume)
+    {
+        var names = new char[4096];
+
+        try
+        {
+            if (!GetVolumePathNamesForVolumeName($@"\\?\{volume}\", names, (uint)names.Length, out _))
+            {
+                return null;
+            }
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
+
+        return new string(names).Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(name => name is [var letter, ':', '\\'] && char.IsAsciiLetter(letter));
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll",
+        EntryPoint = "GetVolumePathNamesForVolumeNameW",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetVolumePathNamesForVolumeName(
+        string volumeName,
+        [System.Runtime.InteropServices.Out] char[] pathNames,
+        uint length,
+        out uint returned);
 
     // What a DOS device name (`K:`, `Volume{GUID}`) is defined as: null only when Windows says it is not defined, and the
     // empty string, which matches no kind and is refused, when the name could not be read. A definition longer than the
@@ -258,9 +337,10 @@ public static class OffMachineLinks
         SetLastError = true)]
     private static extern uint QueryDosDevice(string deviceName, [System.Runtime.InteropServices.Out] char[] targetPath, uint max);
 
-    // The walk. `fromTarget` is how many leading parts of the path came from the link just followed: a part among those
-    // that is not there means the link named something this walk cannot see (an NT path .NET hands back as a relative one,
-    // such as GLOBALROOT\Device\Mup\host), so it is refused; a part past them that is not there is only a missing file.
+    // The walk. `fromTarget` is how many leading parts of the path came from the link or subst letter just followed: a
+    // part among those that is not there means it named something this walk cannot see (a dangling target, or on Unix a
+    // name the link's text spells differently), so it is refused; a part past them that is not there is only a missing
+    // file.
     private static bool Leads(string path, int links, int fromTarget, out string reached)
     {
         reached = path;
@@ -362,22 +442,40 @@ public static class OffMachineLinks
 
                 if (link.Relative)
                 {
+                    if (!ReadsAsWritten(link.Target, absolute: false))
+                    {
+                        return true;
+                    }
+
                     target = link.Target;
                 }
                 else if (link.Target is ['\\', '?', '?', '\\', var drive, ':', '\\', ..] && char.IsAsciiLetter(drive))
                 {
+                    if (!ReadsAsWritten(link.Target[4..], absolute: true))
+                    {
+                        return true;
+                    }
+
                     target = link.Target[4..];
                 }
                 else if (MountedVolume(link.Target) is { } volume)
                 {
-                    // A folder that mounts a disk names its volume (a second disk at C:\mnt\data). A local disk's volume
-                    // is walked through as a folder; any other volume is not this machine's own (lens 1 run 71).
-                    if (DosDevice(volume) is { } device && IsLocalVolume(device))
+                    // A folder that mounts a disk names its volume (a second disk at C:\mnt\data). Any volume but a local
+                    // disk's is not this machine's own (lens 1 run 71). A local disk that also has a drive letter is
+                    // walked on from that letter, so the walk ends where the folder really is: D:\Dropbox mounted again
+                    // at C:\mnt\data reads as D:\Dropbox, which is Dropbox (lens 1 run 75). One with no letter is walked
+                    // through as a folder.
+                    if (DosDevice(volume) is not { } device || !IsLocalVolume(device))
                     {
-                        continue;
+                        return true;
                     }
 
-                    return true;
+                    if (LetteredPath(volume) is { } lettered)
+                    {
+                        return Leads(Path.Combine([lettered, .. parts[(i + 1)..]]), links + 1, 0, out reached);
+                    }
+
+                    continue;
                 }
                 else
                 {
@@ -398,16 +496,27 @@ public static class OffMachineLinks
                 }
             }
 
-            // A target rooted without a drive is read against whichever drive the process is on, not the link's, so it
-            // is not followed either.
+            // A relative target rooted without a drive (`\Users\…`) is resolved by Windows on the link's own volume, which
+            // GetFullPath would read against the process's drive instead, so it is not followed.
             if (target is null
                 || (OperatingSystem.IsWindows() && Path.IsPathRooted(target) && !Path.IsPathFullyQualified(target)))
             {
                 return true;
             }
 
-            var reachedTarget = Path.GetFullPath(
-                Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target));
+            string reachedTarget;
+
+            try
+            {
+                reachedTarget = Path.GetFullPath(
+                    Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target));
+            }
+            catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                // A target no path can name, such as one holding a NUL, which a junction made by hand can store: it is
+                // refused, never thrown out of the walk, where one such `.git` would stop a whole scan (lens 1 run 75).
+                return true;
+            }
             var reachedParts = reachedTarget[(Path.GetPathRoot(reachedTarget) ?? string.Empty).Length..]
                 .Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length;
 

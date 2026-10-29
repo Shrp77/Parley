@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.47.38, protocol 0.9, schema 3. Nothing has been released, but **live stores hold work
+- Version 0.47.39, protocol 0.9, schema 3. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -313,7 +313,8 @@ implementation detail, and needs to be argued.
 - **Nothing times out.** An exchange that stops moving is flagged to the person. A
   conversation ends by consensus of the participants asked, or by a person.
 - **Credentials are references, never values.** `env:`, `keychain:`, `file:`. The broker
-  resolves them at invocation and never persists or logs them.
+  resolves them at invocation and never persists or logs them. **Not built yet**: nothing takes a
+  credential today (SPEC §12); this is the rule for when something does.
 - **No network bind; tunnel only.** All three gRPC services share one port, so a reachable
   port is the control plane (`Export`, `Purge`, `Start`) with no authentication
   on the wire (§16). Brokers bind loopback. The supported remote path is an SSH port-forward

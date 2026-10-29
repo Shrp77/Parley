@@ -160,8 +160,8 @@ A headless participant uses the same tools as any other. What makes it headless 
 at its keyboard: when mail arrives, the node gives it a turn.
 
 Most agents need no credential from Parley, because the command-line tool behind them signs in
-on its own. Where the broker itself needs a secret, the registry holds a reference such as `env:`
-or `file:`, never the value, so the file is safe to commit.
+on its own. Nothing in Parley takes a credential yet. When an agent that needs one is supported,
+its launch settings will hold a reference such as `env:` or `file:`, never the value.
 
 ## Next
 

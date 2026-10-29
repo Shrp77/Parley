@@ -103,11 +103,11 @@ this machine's own disks, so no sync client copies a store while it is being wri
 
 ## Credentials
 
-Credentials are **references, never values**. A launch setting that needs a credential
-holds `env:`, `keychain:` or `file:`, and the broker resolves it when it is needed, and never
-stores or logs the value. The database holds no credential reference at all, and a launch
-configuration is safe to commit. Most agents need no credential from Parley at all, because the
-command-line tool behind them signs in on its own and keeps its own token.
+Most agents need no credential from Parley at all, because the command-line tool behind them signs
+in on its own and keeps its own token. **Nothing in Parley takes a credential yet**: no launch
+setting has a place for one, and the database holds none. The rule for when one does is that it
+holds a **reference, never a value** (`env:` or `file:`), which the broker resolves when it is
+needed and never stores or logs.
 
 ## Reaching a broker from another machine
 

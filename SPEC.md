@@ -3490,6 +3490,11 @@ itself, or invoking a script that needs a token. There the broker genuinely need
 and the rule is that it is given a *reference*, never a value, resolves it at invocation, and neither
 persists nor logs what it resolved. The database holds no credential reference of any kind.
 
+**Not built yet.** No Headless adapter that makes such a call ships, so nothing takes a credential
+today: a catalogue entry holds a command and a workspace, and no code reads a `credentials:` entry
+or resolves a reference. What this section says about credentials is the design for when one does,
+recorded so the rule holds from the first such adapter.
+
 ```yaml
 agents:
   # The common case: the CLI is already authenticated. Nothing to register.
@@ -3526,7 +3531,7 @@ both name find the process the first ask started, rather than launching a second
 working directory. Keying by the checkout makes "one working directory, two launched processes"
 unrepresentable rather than forbidden.
 
-Supported reference schemes: `env:`, `file:` (a path readable only by the broker's user),
+The design's reference schemes: `env:`, `file:` (a path readable only by the broker's user),
 and `keychain:` (an OS credential store — declared, but see §12.2).
 
 Rationale:
@@ -3561,15 +3566,15 @@ is required, and whether it is a secret. Registration collects exactly that. The
 learns nothing about any vendor, and a new adapter needs no schema change.
 
 `config` is free-form because it carries no invariant. Credentials are the opposite case,
-which is why they are not in it: they are references in the launch environment, and no
-value is held anywhere.
+which is why they are not in it: in the design they are references in the launch environment,
+and no value is held anywhere.
 
 Credential parameter names are lowercase, digits and underscore, up to 64 characters —
 `api_key`, `org_token`.
 
-### 12.2 Which schemes are implemented, and why not the third
+### 12.2 Which schemes the design implements, and why not the third
 
-`env:` and `file:` are sufficient for the cases that need a credential at all, and cost
+When credentials are built, `env:` and `file:` are sufficient for the cases that need a credential at all, and cost
 nothing to support: the broker already has an environment, and reading an owner-only file
 is the same permission discipline §9.1 applies to the database.
 

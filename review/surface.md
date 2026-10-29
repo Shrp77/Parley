@@ -30,5 +30,7 @@ Low: a wrong word that misleads nobody, a stale citation, a comment out of place
 - **Parley is not addressable** by agents for now; agents ask the person directly.
 - **A turn-cost report, in US dollars, comes after #94** as its own feature. Until then the docs say the cost is
   recorded and shown nowhere.
+- **Credential references are not built yet.** SPEC §12 and the docs say so; building `env:` and `file:` is a later
+  feature.
 - The review rules live in this folder, not in CLAUDE.md.
 - The lows triaged in the ledger's 2026-10-29 entry as moot or by design stay that way.

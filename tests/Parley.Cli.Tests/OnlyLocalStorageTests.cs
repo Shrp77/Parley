@@ -21,12 +21,17 @@ public sealed class OnlyLocalStorageTests : IDisposable
 
     public void Dispose()
     {
-        try
+        // A junction inside the home folder leaves the last removal failing once with the folder already emptied, so a
+        // second try is made; a temporary folder that piles up breaks other tests' timing.
+        for (var attempt = 0; attempt < 2 && Directory.Exists(_home); attempt++)
         {
-            Directory.Delete(_home, recursive: true);
-        }
-        catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
-        {
+            try
+            {
+                Directory.Delete(_home, recursive: true);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 
@@ -382,6 +387,108 @@ public sealed class OnlyLocalStorageTests : IDisposable
             // The link alone, before the home folder is deleted: it leads to the whole disk.
             Directory.Delete(mounted);
         }
+    }
+
+    [Fact]
+    public void A_link_to_a_name_with_a_trailing_dot_is_refused_whatever_stands_beside_it()
+    {
+        // GetFullPath turns `code.` into `code`; Windows following the link does not. A plain `code\orders` beside a
+        // link `code.` into OneDrive made a link to `code.` read as local (lens 2 run 78, there with junctions, which
+        // mklink will not name with a trailing dot; symbolic links here).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+        var work = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "work", "orders")).Parent!.FullName;
+        Directory.CreateDirectory(Path.Combine(_home, "repo", "code", "orders"));
+
+        if (!TrySymbolicLink(@"\\?\" + Path.Combine(_home, "repo", "code."), work)
+            || !TrySymbolicLink(Path.Combine(_home, "repo", "j"), "code."))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        // Windows itself goes into OneDrive through `j`, which is what makes the plain folder a decoy.
+        File.WriteAllText(Path.Combine(_home, "repo", "j", "orders", "probe.txt"), "x");
+        Assert.True(File.Exists(Path.Combine(work, "orders", "probe.txt")));
+        Assert.NotNull(LocalStorage.Problem(Path.Combine(_home, "repo", "j", "orders"), Environment()));
+    }
+
+    [Fact]
+    public async Task A_folder_reached_through_a_mount_of_a_lettered_disk_is_judged_where_it_really_is()
+    {
+        // A junction to this disk's own volume, then down into OneDrive: the walk ended on the path as written and
+        // admitted it (lens 1 run 75). A disk with a letter is walked on from that letter.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "volume mount points");
+        var mountPoint = new char[1024];
+        var volume = new char[64];
+        Assert.True(GetVolumePathName(_home, mountPoint, (uint)mountPoint.Length));
+        Assert.True(GetVolumeNameForVolumeMountPoint(new string(mountPoint).TrimEnd('\0'), volume, (uint)volume.Length));
+        var onedrive = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "orders")).Parent!.FullName;
+        var mounted = Path.Combine(_home, "repo", "vol");
+        Directory.CreateDirectory(Path.GetDirectoryName(mounted)!);
+        await LinkAsync(mounted, new string(volume).TrimEnd('\0'));
+
+        try
+        {
+            var through = Path.Combine(mounted, onedrive[Path.GetPathRoot(onedrive)!.Length..], "orders");
+
+            Assert.True(Directory.Exists(through));
+            Assert.Contains("on OneDrive", LocalStorage.Problem(through, Environment()), StringComparison.Ordinal);
+        }
+        finally
+        {
+            // The link alone, before the home folder is deleted: it leads to the whole disk.
+            Directory.Delete(mounted);
+        }
+    }
+
+    [Fact]
+    public void A_junction_whose_stored_target_holds_a_nul_is_refused_not_thrown()
+    {
+        // FSCTL_SET_REPARSE_POINT stores what it is given; a NUL in the target made the walk throw out of every scan
+        // that met it (lens 1 run 75).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "reparse points");
+        var real = Directory.CreateDirectory(Path.Combine(_home, "real")).FullName;
+        var junction = Directory.CreateDirectory(Path.Combine(_home, "repo", ".git")).FullName;
+        SetMountPoint(junction, $@"\??\{real}" + "\0zz");
+
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(junction, "config")));
+        Assert.NotNull(LocalStorage.Problem(Path.Combine(_home, "repo", ".git"), Environment()));
+    }
+
+    // Writes a mount-point reparse buffer by hand, the way a program can without privilege.
+    private static void SetMountPoint(string folder, string substitute)
+    {
+        var name = System.Text.Encoding.Unicode.GetBytes(substitute);
+        var buffer = new byte[8 + 8 + name.Length + 4];
+        BitConverter.GetBytes(0xA0000003u).CopyTo(buffer, 0);
+        BitConverter.GetBytes((ushort)(8 + name.Length + 4)).CopyTo(buffer, 4);
+        BitConverter.GetBytes((ushort)0).CopyTo(buffer, 8);
+        BitConverter.GetBytes((ushort)name.Length).CopyTo(buffer, 10);
+        BitConverter.GetBytes((ushort)(name.Length + 2)).CopyTo(buffer, 12);
+        BitConverter.GetBytes((ushort)0).CopyTo(buffer, 14);
+        name.CopyTo(buffer, 16);
+
+        using var handle = CreateFile(@"\\?\" + folder, 0x40000000, 0x7, IntPtr.Zero, 3, 0x00200000 | 0x02000000, IntPtr.Zero);
+        Assert.False(handle.IsInvalid);
+        Assert.True(DeviceIoControl(handle, 0x000900A4, buffer, (uint)buffer.Length, null, 0, out _, IntPtr.Zero));
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string fileName, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle device, uint code, byte[] input, uint inputSize, byte[]? output, uint outputSize, out uint returned, IntPtr overlapped);
+
+    [Fact]
+    public void A_subst_letter_for_a_name_with_a_trailing_dot_is_refused()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+        Directory.CreateDirectory(Path.Combine(_home, "plain"));
+
+        WithLetter($@"\??\{Path.Combine(_home, "plain")}.", letter =>
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\orders")));
     }
 
     [Fact]

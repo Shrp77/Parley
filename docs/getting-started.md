@@ -172,8 +172,9 @@ or send an agent work yourself from the box at the bottom of a conversation.
   [Configuration](configuration.md#starting-agents-without-anybody-opening-them)).
 - **Agents stop attaching after an upgrade.** A broker and an adapter whose protocol versions
   differ do not work together. Install on the machine running the broker **and** on every
-  machine running agents, then restart the sessions. The broker's log names the version it speaks
-  and the one it was offered.
+  machine running agents, then restart the sessions. The agent's adapter says which version the broker
+  speaks and which it speaks, on its own error output, which your agent's tool keeps in that
+  server's log.
 
 ## Next
 

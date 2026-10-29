@@ -156,7 +156,8 @@ MCP client launches. A new operation is a decision about which side it belongs o
 
 **Credentials are references, never values** — `env:`, `keychain:`, `file:`. The broker
 resolves them at invocation and never persists or logs them. This is what makes a manifest
-safe to commit.
+safe to commit. **Not built yet**: nothing takes a credential today (SPEC §12); this is the rule for
+when something does.
 
 **The protocol is the product; the transport is disposable.** If a platform ships native
 cross-session messaging, Parley should run over it rather than compete with it.
@@ -231,4 +232,4 @@ versioning: MAJOR for a principle or boundary removed or redefined, MINOR for on
 materially expanded, PATCH for wording. **An amendment that changes what a principle permits is
 MAJOR even when its title is unchanged.**
 
-**Version**: 6.1.0 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-29 (restates five standing constraints CLAUDE.md held and this did not)
+**Version**: 6.1.1 | **Ratified**: 2026-08-22 | **Last Amended**: 2026-10-29 (says credential references are not built yet)
