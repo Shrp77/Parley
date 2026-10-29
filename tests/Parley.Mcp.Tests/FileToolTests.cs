@@ -113,11 +113,19 @@ public sealed class FileToolTests : IDisposable
     [InlineData(".git/notes.md")]
     [InlineData("docs/notes.cs")]
     [InlineData("run.ps1")]
+    [InlineData("CLAUDE.md")]
+    [InlineData("src/claude.md")]
+    [InlineData("AGENTS.md")]
+    [InlineData("docs/CLAUDE.local.md")]
+    [InlineData("GEMINI.md")]
+    [InlineData(".github/copilot-instructions.md")]
+    [InlineData(".cursor/rules/notes.md")]
     public async Task A_fetch_is_never_written_as_configuration_hooks_or_code(string destination)
     {
         // Found by review, round 62: a peer's file was written wherever the destination said, a settings file holding a
         // hook, an adapter's configuration and a git hook among them, though a fetched file "cannot change your
-        // configuration". It lands only as a .md or .txt file, outside .git and .claude.
+        // configuration". It lands only as a .md or .txt file, outside .git and .claude. Round 65 and lens 1 run 59: a
+        // .md file can be standing instructions too, so CLAUDE.md, AGENTS.md and their kind are refused at any depth.
         await using var fixture = new ServerFixture(T0);
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
@@ -129,6 +137,36 @@ public sealed class FileToolTests : IDisposable
 
         Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));
+    }
+
+    [Fact]
+    public async Task A_file_that_arrives_at_the_path_while_a_fetch_streams_is_never_written_over_unasked()
+    {
+        // Found by review, lens 1 run 59: whether the path was free was asked when the header came, and the move at the
+        // end overwrote whatever had arrived since, though replace was false.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        await File.WriteAllTextAsync(Path.Combine(BillingRepository, "big.md"), new string('x', 40_000_000), Ct);
+        _ = await billing.FilePlaceAsync("big.md", conversationId: "pricing", cancellationToken: Ct);
+
+        var target = Path.Combine(OrdersRepository, "x.md");
+        var fetching = orders.FileFetchAsync("big.md", "x.md", conversationId: "pricing", cancellationToken: Ct);
+
+        while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".x.md.*.fetching").Length == 0)
+        {
+            await Task.Delay(1, Ct);
+        }
+
+        Assert.False(fetching.IsCompleted, "The fetch finished before its temporary file was seen, so nothing was tested.");
+        await File.WriteAllTextAsync(target, "MY OWN WORK", Ct);
+
+        var answer = await fetching;
+
+        Assert.Equal("exists", answer["refused"]!.GetValue<string>());
+        Assert.Equal("MY OWN WORK", await File.ReadAllTextAsync(target, Ct));
+        Assert.Empty(Directory.GetFiles(OrdersRepository, ".x.md.*.fetching"));
     }
 
     [Fact]

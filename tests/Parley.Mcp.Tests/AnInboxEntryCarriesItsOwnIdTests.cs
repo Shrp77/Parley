@@ -81,6 +81,9 @@ public sealed class AnInboxEntryCarriesItsOwnIdTests
             .Single()
             .Description;
 
-        Assert.Contains("one whose message_id you already have needs nothing more", described, StringComparison.Ordinal);
+        Assert.Contains("one this tool already gave you with that message_id needs nothing more", described, StringComparison.Ordinal);
+
+        // Round 65: two projects' stores hand out the same ids, and an agent enrolled in both reads both inboxes.
+        Assert.Contains("ids are its own", described, StringComparison.Ordinal);
     }
 }
