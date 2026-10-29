@@ -62,12 +62,20 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      # Advisories are published continuously, so a package that was clean at merge
-      # can be vulnerable a week later without anything in the repository changing.
+      # A log, never a failure: high and critical advisories already fail the build through
+      # NuGetAudit, and low and moderate ones are non-fatal on purpose (CLAUDE.md). It lists
+      # every severity so a lower one is seen before it is raised.
       - name: Vulnerable packages
         run: dotnet list package --vulnerable --include-transitive
 
-      # Deprecation produces no build warning at all. The xUnit v2 deprecation was
-      # only caught by looking; this makes it visible without looking.
+      # Deprecation produces no build warning at all, and the command exits 0 whatever it
+      # finds, so the step fails on its own output. The xUnit v2 deprecation was only caught
+      # by looking.
       - name: Deprecated packages
-        run: dotnet list package --deprecated
+        shell: bash
+        run: |
+          dotnet list package --deprecated | tee deprecated.txt
+          if grep -q "has the following deprecated packages" deprecated.txt; then
+            echo "::error::A package is deprecated; replace it before merging."
+            exit 1
+          fi

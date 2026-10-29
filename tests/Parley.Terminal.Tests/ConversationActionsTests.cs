@@ -229,9 +229,7 @@ public sealed class ConversationActionsTests
         var consequence = (ChoiceDialog)driving.Find(Destroying.ConsequenceTitle);
 
         driving.Row(consequence.Choices, Destroying.Keep);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Destroying.Kept, shell.Said);
         Assert.False(driving.Has(Destroying.TypeItBack));

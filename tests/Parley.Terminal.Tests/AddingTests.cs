@@ -236,9 +236,7 @@ public sealed class AddingTests : IAsyncDisposable
         Assert.DoesNotContain(Workspace, asking.Described, StringComparison.Ordinal);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.True(
             File.Exists(Path.Combine(elsewhere, ".mcp.json")),
@@ -453,8 +451,6 @@ public sealed class AddingTests : IAsyncDisposable
         var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
     }
 }

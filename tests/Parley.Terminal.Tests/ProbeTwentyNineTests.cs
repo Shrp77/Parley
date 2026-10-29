@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli.Tests;
 using Parley.Client;
 using Parley.Configuration;
@@ -101,9 +102,7 @@ public sealed class ProbeTwentyNineTests : IAsyncDisposable
         var asking = (ChoiceDialog)driving.Find(Adding.ConfirmTitle);
 
         driving.Row(asking.Choices, Adding.Write);
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
     }
 
     /// <summary>Puts something at the catalogue's path that cannot be written over.</summary>

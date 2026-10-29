@@ -110,9 +110,7 @@ public sealed class WaitingOnYouListTests : IAsyncDisposable
         Assert.Contains("who owns refunds?", entries[2], StringComparison.Ordinal);
 
         driving.Row(listing.Choices, "gross or net?");
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(shell.Panes.ToList().IndexOf(shell.Transcript), shell.FocusedRegion);
 
@@ -157,9 +155,7 @@ public sealed class WaitingOnYouListTests : IAsyncDisposable
         var before = shell.Transcript.List.SelectedItem;
 
         driving.Row(listing.Choices, "which invoice schema?");
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(RoomRegion.SettledSince, shell.Said);
         Assert.Equal(before, shell.Transcript.List.SelectedItem);
