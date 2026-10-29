@@ -38,7 +38,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 | Retire or purge an agent | Agents list, Alt+r (*Remove this agent*). It describes the agent, offers keeping it first, and takes the agent's name typed back. | The agent's page: Retire, Purge. |
 | Reinstate a retired agent | Agents list, Alt+i. | The agent's page: Reinstate. |
 | See or change what an agent is responsible for, or have it say it again | Agents list, Alt+n. | The agent's page: *What this agent is responsible for*. |
-| Start an agent | Agents list, Enter on its row. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
+| Start an agent | Agents list, Enter on its row, then *Start* in its menu. Alt+u starts every agent that has never registered. | The agent's page: *Start*. |
 | Apply the retention policy now | Projects list, Alt+p. | Health page, "Apply the retention policy now". |
 | What needs a person, and what the work came to | Alt+y (Health), from the projects list or a conversations list. It shows flags, who waits on whom, results, size refusals and clarifications. | The project's Health page. |
 | Decide a roadmap an agent proposed | F4, or the project's *Proposed roadmaps* pane, Enter on one. Edit it, confirm it, or decline it. | The project's *Roadmaps* page lists the proposals waiting, each with its own page. |
@@ -99,7 +99,7 @@ parley enroll <dir> --describe        say what enrolling them would change, and 
 parley registry                       every registered agent, with its workspace
 parley open                           conversations with an exchange still open, and who is in
                                       them; what stopping the broker would interrupt
-parley waiting <agent|role>           how many messages and polls await an agent
+parley waiting <agent|role> [--with-files]   how many messages and polls await an agent; --with-files adds its file notices
 parley files list [--conversation <id>] [--full]  the files placed: size, sha256, who placed each
 parley files place <path> --conversation <id> [--name <name>]  place a .md or .txt file from here, as the person
 parley files remove <name>... [--conversation <id>] [--yes]  remove files whoever placed them; describes them and asks
@@ -235,7 +235,7 @@ a deployment did. None of it changes anything.
   nobody has touched for too long, work owed by a retired agent, or a conversation waiting only on
   a participant saying it is finished. The remedies are starting the agent, answering what it is
   waiting on, or closing the conversation with a reason.
-- **Results** say what came back, item by item: done, answered, acknowledged, or blocked, and on
+- **Results** say what each request came to: done, answered, acknowledged, or blocked, and on
   what (`missing_information`, `conflict` or `permission`). A blocker is not an agent behaving
   badly. It is the protocol handing a person the one thing no agent could settle. Read the blocked
   ones first.

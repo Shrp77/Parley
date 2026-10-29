@@ -329,7 +329,7 @@ Three numbers answer different questions:
 
 | Number | Where | Moves when |
 |---|---|---|
-| Tool version | the `parley` and `parley-mcp` packages | anything ships |
+| Tool version | the `parley`, `parley-mcp`, `parley-terminal` and `parley-web-ui` packages | anything ships |
 | Protocol version | the top of [SPEC.md](../SPEC.md) | the wire contract changes |
 | Schema version | SQLite's `user_version` | the tables change |
 

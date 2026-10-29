@@ -60,6 +60,16 @@ public sealed class UnnamedMachineTests
     }
 
     [Fact]
+    public void An_offered_broker_that_is_no_address_is_kept_as_written_so_its_row_says_why()
+    {
+        // Review, lens 3 run 68: the catch path had no case. Read refuses it, and the row is then the person's own text,
+        // shown as unreachable, never a default dialled in its place.
+        using var directory = BrokerDirectory.FromManifest(NoManifestHere, new FallbackBroker("ftp://nowhere"));
+
+        Assert.Equal("ftp://nowhere", Assert.Single(directory.Projects).Endpoint);
+    }
+
+    [Fact]
     public void The_offered_project_is_reachable_by_the_name_the_page_links_to()
     {
         // The list renders a link built from the name, and every page below reads the name back

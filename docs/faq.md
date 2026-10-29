@@ -42,12 +42,12 @@ coordinates the work it needs.
 
 The request waits. If its machine has the repository listed as startable, a node starts the
 agent and the request is there when it arrives. If it is not listed, the request waits until
-somebody opens that repository, and Parley flags it to you as never collected.
+somebody opens that repository, and Parley flags it to you as not collected.
 
 ## What if an agent never answers?
 
 Nothing times out, so nothing is quietly dropped. Work that stops moving is flagged to you, and
-you can start the agent, answer for it, or close the conversation with a reason.
+you can start the agent, ask it, or close the conversation with a reason.
 
 ## Will agents run up my bill while I sleep?
 

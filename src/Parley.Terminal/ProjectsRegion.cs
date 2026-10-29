@@ -31,6 +31,9 @@ internal sealed class ProjectsRegion : FrameView
     /// <summary>A broker that did not answer within the window.</summary>
     internal const string NotAnswering = "not answering";
 
+    /// <summary>The phrase for a project whose endpoint cannot be dialled as written.</summary>
+    internal const string Undiallable = "address not usable";
+
     /// <summary>A broker that answered.</summary>
     internal const string Answering = "answering";
 
@@ -142,6 +145,7 @@ internal sealed class ProjectsRegion : FrameView
         // somebody has to go and look at rather than one that is simply down.
         return line.Contains($"[{Answering}]", StringComparison.Ordinal) ? Colours.Good
             : line.Contains($"[{NotAnswering}]", StringComparison.Ordinal) ? Colours.Bad
+            : line.Contains($"[{Undiallable}]", StringComparison.Ordinal) ? Colours.Bad
             : line.Contains($"[{Asking}]", StringComparison.Ordinal) ? Colours.Quiet
             : line.Contains("speaks ", StringComparison.Ordinal) ? Colours.Warn
             : null;
@@ -172,6 +176,7 @@ internal sealed class ProjectsRegion : FrameView
         health switch
         {
             null => Asking,
+            { Undiallable: true } => Undiallable,
             { Reachable: false } => NotAnswering,
             { Agrees: false } => $"speaks {Safe.Text(health.Speaks)}, this build speaks {ProtocolVersion.Current}",
             _ => Answering,

@@ -392,7 +392,7 @@ public sealed class ResidentAgent : IAsyncDisposable
 
     /// <summary>
     /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
-    /// between the two (SPEC.md §11.1's fourth way a resident ends).
+    /// between the two (SPEC.md §11.1's third way a resident ends, the refresh).
     /// </summary>
     /// <param name="grace">How long to allow it to exit once told, before killing it.</param>
     /// <param name="cancellationToken">Cancels the wait for the turn, which leaves the agent running.</param>

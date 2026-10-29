@@ -131,6 +131,7 @@ public sealed class FileToolTests : IDisposable
     [InlineData(".junie/guidelines.md")]
     [InlineData(".continue/rules/notes.md")]
     [InlineData("docs/CONVENTIONS.md")]
+    [InlineData("run.ps1:x.md")]
     public async Task A_fetch_is_never_written_as_configuration_hooks_or_code(string destination)
     {
         // Found by review, round 62: a peer's file was written wherever the destination said, a settings file holding a
@@ -148,6 +149,70 @@ public sealed class FileToolTests : IDisposable
 
         Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));
+    }
+
+    [Fact]
+    public async Task A_fetch_to_the_repository_itself_keeps_the_files_name()
+    {
+        // Review, lens 1 run 60: "." was refused as outside the repository, though an existing directory keeps the name.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+
+        var fetched = await orders.FileFetchAsync("notes.md", ".", conversationId: "pricing", cancellationToken: Ct);
+
+        Assert.Equal("written", fetched["outcome"]?.GetValue<string>());
+        Assert.Equal(PeerWords, await File.ReadAllTextAsync(Path.Combine(OrdersRepository, "notes.md"), Ct));
+    }
+
+    [Fact]
+    public async Task A_fetch_to_a_folder_that_is_not_there_says_so()
+    {
+        // Review, lens 1 run 59: it was refused with the sentence about extensions, which is about a file.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+
+        var refused = await orders.FileFetchAsync("notes.md", "missing/", conversationId: "pricing", cancellationToken: Ct);
+
+        Assert.Equal("nosuchfolder", refused["refused"]!.GetValue<string>());
+        Assert.False(Directory.Exists(Path.Combine(OrdersRepository, "missing")));
+    }
+
+    [Fact]
+    public async Task The_same_bytes_arriving_at_the_path_while_a_fetch_streams_are_that_fetch_done()
+    {
+        // Review, lens 1 run 60: two fetches of one file to one free path at once, the second refused as exists though
+        // what was there was exactly what it carried.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        var source = Path.Combine(BillingRepository, "big.md");
+        await File.WriteAllTextAsync(source, new string('x', 40_000_000), Ct);
+        _ = await billing.FilePlaceAsync("big.md", conversationId: "pricing", cancellationToken: Ct);
+
+        var target = Path.Combine(OrdersRepository, "x.md");
+        var fetching = orders.FileFetchAsync("big.md", "x.md", conversationId: "pricing", cancellationToken: Ct);
+
+        while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".parley-*.fetching").Length == 0)
+        {
+            await Task.Delay(1, Ct);
+        }
+
+        Assert.False(fetching.IsCompleted, "The fetch finished before its temporary file was seen, so nothing was tested.");
+        File.Copy(source, target);
+
+        var answer = await fetching;
+
+        Assert.Equal("already_current", answer["outcome"]?.GetValue<string>());
+        Assert.Empty(Directory.GetFiles(OrdersRepository, ".parley-*.fetching"));
     }
 
     [Fact]

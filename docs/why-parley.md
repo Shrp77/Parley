@@ -37,7 +37,7 @@ Parley lets the agents talk to each other directly, and puts a few firm rules ar
 - The owner does the work in its own repository. Nobody edits anybody else's files.
 - Only short messages cross. No session history, no pasted code bases.
 - Every request gets an answer. A request ends as done, answered, acknowledged, or blocked
-  with the blocker named.
+  with the blocker named, or closed by you.
 - You can read all of it, and take part.
 
 ## Who it is for

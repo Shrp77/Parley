@@ -369,8 +369,7 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.True(shell.Plans.OpenSelected());
         await shell.Settled;
 
-        driving.Press(Key.Esc);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.IsNotType<PlanView>(driving.App.TopRunnableView);
         Assert.Equal(Viewing.Project, shell.Place.Viewing);

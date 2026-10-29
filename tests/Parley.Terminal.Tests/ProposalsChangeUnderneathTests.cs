@@ -290,8 +290,7 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
         var whole = await Repository.GetProposalAsync(id, Ct);
         Assert.True((await Repository.ConfirmAsync(id, whole!.Content, null, T0, cancellationToken: Ct)).Done);
 
-        driving.Press(Key.D.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.D.WithAlt, () => shell.Settled);
 
         var asking = (ChoiceDialog)driving.Find(Proposing.DeclineTitle);
         driving.Row(asking.Choices, Proposing.Decline);

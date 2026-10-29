@@ -154,7 +154,7 @@ const string Help = """
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
     Explicit flags and environment variables still win over a project.
 
-    Every command except `serve`, `autostart` and `project` connects to a broker, at
+    Every command except `serve`, `autostart`, `project`, `use`, `terminal` and `web-ui` connects to a broker, at
     --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
@@ -789,7 +789,11 @@ if (verb == "serve" && rest.Length == 0)
                 start.Environment[ProjectManifest.PathVariable] = manifestPath;
 
                 // Only when there is a broker. A machine serving a manifest that names no project yet has none, and
-                // the web UI then reads the manifest and says how to name the first one.
+                // the web UI then reads the manifest and says how to name the first one. Never this process's
+                // PARLEY_BROKER: the web UI reads it as `--broker`, and here it names somebody else's host, so a
+                // console beside a broker with no project would offer that one as this machine.
+                start.Environment.Remove(BrokerEndpoint.Variable);
+
                 if (addresses.Count > 0)
                 {
                     start.ArgumentList.Add("--broker");

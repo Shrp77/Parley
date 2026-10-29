@@ -317,6 +317,15 @@ public static class ProjectCommand
             return Usage;
         }
 
+        if (ProjectName.IsDeviceName(name.Value))
+        {
+            await error.WriteLineAsync(
+                $"'{name}' is a name Windows keeps for a device, so a project's folder cannot be called it. " +
+                "Choose another name.").ConfigureAwait(false);
+
+            return Usage;
+        }
+
         // A name is the whole of it: the store is derived from the name and the port is claimed, so
         // there is nothing left to get wrong.
         if (ProjectFolder.TryRead(root, name, out _, out _))

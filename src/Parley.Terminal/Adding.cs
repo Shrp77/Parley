@@ -568,10 +568,10 @@ internal sealed record Catalogue(string? ManifestPath, string? Given = null)
             return named;
         }
 
-        if (ManifestPath is { Length: > 0 } manifest
-            && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory)
+        // In the root itself, never its parent: the manifest path is the root (`ProjectResolution.BesideTheManifest`).
+        if (ManifestPath is { Length: > 0 } manifest)
         {
-            return Path.Combine(directory, NodeCatalogue.DefaultFileName);
+            return Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName);
         }
 
         return NodeCatalogue.DefaultFileName;

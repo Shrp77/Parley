@@ -201,8 +201,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // opening reads the proposal whole first, and a press would draw here while that work opens the view.
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
-        driving.Press(Key.E.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.E.WithAlt, () => shell.Settled);
 
         var form = (FormDialog)driving.Find(Proposing.Title);
 
@@ -234,8 +233,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // opening reads the proposal whole first, and a press would draw here while that work opens the view.
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
-        driving.Press(Key.E.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.E.WithAlt, () => shell.Settled);
 
         var form = (FormDialog)driving.Find(Proposing.Title);
 
@@ -263,8 +261,7 @@ public sealed class ProposingTests : IAsyncDisposable
         // opening reads the proposal whole first, and a press would draw here while that work opens the view.
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
-        driving.Press(Key.D.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.D.WithAlt, () => shell.Settled);
 
         // The deliberate act: a second dialog that says what declining does, with the safe answer first.
         var asking = (ChoiceDialog)driving.Find(Proposing.DeclineTitle);
@@ -301,8 +298,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await shell.Settled;
 
         // Escape leaves it, as it does everywhere on this surface, and changes nothing.
-        driving.Escape();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Proposing.Left, shell.Said);
         Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
@@ -410,8 +406,7 @@ public sealed class ProposingTests : IAsyncDisposable
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
         Assert.IsType<ChoiceDialog>(driving.Find(Proposing.Title));
 
-        driving.Escape();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Single(await Client.RoadmapsAsync(Ct));
         Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(second, Ct))!.State);

@@ -304,7 +304,8 @@ public static class ProjectManifest
 
     /// <summary>The broker an endpoint names, so two spellings of one are one.</summary>
     /// <param name="endpoint">The endpoint as written.</param>
-    /// <returns>The host and port, with every loopback spelling one host; the text, case set aside, when it is no address.</returns>
+    /// <returns>The host and port, with every name for this machine one host (loopback, the unspecified addresses, and
+    /// either as an IPv4-mapped IPv6 address); the text, case set aside, when it is no address.</returns>
     /// <remarks>
     /// A trailing slash, <c>localhost</c> or <c>127.000.000.001</c> name the same broker as <c>http://127.0.0.1:19100</c>,
     /// and a comparison of the text let each serve a second project: its agents joined the first's roster and store, and
@@ -336,9 +337,10 @@ public static class ProjectManifest
         var host = address.IdnHost.TrimStart('[').TrimEnd(']').TrimEnd('.');
         var loopback = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
             || (System.Net.IPAddress.TryParse(host, out var ip)
-                && (System.Net.IPAddress.IsLoopback(ip)
-                    || ip.Equals(System.Net.IPAddress.Any)
-                    || ip.Equals(System.Net.IPAddress.IPv6Any)));
+                && (ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip) is var plain
+                && (System.Net.IPAddress.IsLoopback(plain)
+                    || plain.Equals(System.Net.IPAddress.Any)
+                    || plain.Equals(System.Net.IPAddress.IPv6Any)));
 
         return string.Create(
             System.Globalization.CultureInfo.InvariantCulture,

@@ -70,7 +70,9 @@ jobs:
 
       # Deprecation produces no build warning at all, and the command exits 0 whatever it
       # finds, so the step fails on its own output. The xUnit v2 deprecation was only caught
-      # by looking.
+      # by looking. Only packages this repository names fail it: a deprecated package another
+      # one depends on (xunit.v3 on Microsoft.Testing.Platform.MSBuild, as of 4.0.0) is not
+      # ours to replace, so the transitive list is printed beside it to be read, not to fail.
       - name: Deprecated packages
         shell: bash
         run: |
@@ -79,3 +81,4 @@ jobs:
             echo "::error::A package is deprecated; replace it before merging."
             exit 1
           fi
+          dotnet list package --deprecated --include-transitive

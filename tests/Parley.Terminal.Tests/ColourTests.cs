@@ -105,6 +105,16 @@ public sealed class ColourTests
     }
 
     [Fact]
+    public void An_endpoint_that_cannot_be_dialled_is_not_called_a_broker_not_answering()
+    {
+        // Review, lens 1 run 57: the two need different repairs, starting a broker against correcting project.json.
+        Assert.Equal(
+            ProjectsRegion.Undiallable,
+            ProjectsRegion.Describe(new ProjectHealth(
+                null, "This project's endpoint cannot be reached as written: Invalid URI: The URI scheme is not valid.")));
+    }
+
+    [Fact]
     public void A_message_cannot_move_the_cursor_of_the_terminal_it_is_read_in()
     {
         // The injection, in the shape this toolkit has. A payload is agent-written and may contain

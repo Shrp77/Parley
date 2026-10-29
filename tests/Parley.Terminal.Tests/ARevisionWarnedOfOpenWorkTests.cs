@@ -208,8 +208,7 @@ public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
         await shell.Settled;
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
-        driving.Press(Key.E.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.E.WithAlt, () => shell.Settled);
 
         var roadmap = (await Repository.ListAsync(Ct)).Single();
         Assert.True((await Repository.EditAsync(

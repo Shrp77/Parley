@@ -73,8 +73,7 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         await shell.Settled;
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
-        driving.Press(Key.D.WithAlt);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.D.WithAlt, () => shell.Settled);
 
         _ = (ChoiceDialog)driving.Find(Proposing.DeclineTitle);
         driving.App.LayoutAndDraw(true);

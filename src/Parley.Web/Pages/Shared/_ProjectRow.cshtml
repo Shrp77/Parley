@@ -64,6 +64,10 @@
             {
                 <span class="faint" role="status">Checking…</span>
             }
+            else if (state == "down" && health!.Undiallable)
+            {
+                <span class="alarm">Address not usable</span>
+            }
             else if (state == "down")
             {
                 <span class="alarm">Not answering</span>

@@ -420,9 +420,10 @@ public sealed class BrokerDirectory : IDisposable
         {
             // A channel opened by a read that did not go through a directory's client, which turns this into a call
             // that fails as unavailable (UnusableEndpoint). Contained for the same reason as the rest: one unusable
-            // endpoint must not take down the page for every project beside it.
-            return ProjectRead<T>.Unreachable(
-                $"This project's endpoint cannot be reached as written: {failure.Message}");
+            // endpoint must not take down the page for every project beside it. Said without naming the endpoint: an
+            // InvalidOperationException can come from elsewhere in the read, and blaming the endpoint would send the
+            // person to correct an address that is fine.
+            return ProjectRead<T>.Unreachable($"This project could not be read: {failure.Message}");
         }
     }
 

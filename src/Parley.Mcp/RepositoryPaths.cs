@@ -56,6 +56,13 @@ public static class RepositoryPaths
 
         var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
+        // The repository itself is inside it: "." names the root, where a fetch keeps the file's name.
+        if (string.Equals(Path.TrimEndingDirectorySeparator(full), Path.TrimEndingDirectorySeparator(root), comparison))
+        {
+            resolved = root;
+            return null;
+        }
+
         if (!full.StartsWith(root + Path.DirectorySeparatorChar, comparison))
         {
             return $"'{candidate}' is outside your repository. You read and write files only in your own repository; " +

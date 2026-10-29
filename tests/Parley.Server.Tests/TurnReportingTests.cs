@@ -132,6 +132,26 @@ public sealed class TurnReportingTests
     }
 
     [Fact]
+    public async Task A_start_heard_after_its_own_end_leaves_nothing_running()
+    {
+        // Found by review, lens 1 run 62: a start report that missed its deadline on the node can still be handled after
+        // its end, and the agent read as working until its next report.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0), cancellationToken: Ct);
+
+        Assert.Empty((await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+
+        // A later turn still reads as running.
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(5)), cancellationToken: Ct);
+
+        Assert.Equal(Stamp(T0.AddMinutes(5)), (await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+    }
+
+    [Fact]
     public async Task A_node_that_goes_away_mid_turn_is_no_longer_claimed_to_be_running_one()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

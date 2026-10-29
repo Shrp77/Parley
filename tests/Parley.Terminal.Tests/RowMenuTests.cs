@@ -1,4 +1,5 @@
 using Parley.Client.Views;
+using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -71,8 +72,7 @@ public sealed class RowMenuTests
             Drawn.Rows(seated.Shell.Conversations.List),
             row => string.Equals(row.Trim(), ConversationsRegion.FilteredTo(Seated.Billing).Trim(), StringComparison.Ordinal));
 
-        seated.Session.Escape();
-        await seated.Shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => seated.Shell.Settled);
 
         Assert.Null(seated.Shell.ConversationsOf);
         Assert.Contains(seated.Shell.Conversations.Conversations, row => row.Id == Seated.Conversation);

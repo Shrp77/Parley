@@ -164,7 +164,7 @@ or send an agent work yourself from the box at the bottom of a conversation.
   Check that its instructions have a Peers section, which enrolling adds. Name the peers in it by
   hand, or with `/parley:write-peers` if you use the plugin. See
   [Claude Code](claude-code.md#standing-instructions).
-- **A request waits and is flagged as never collected.** Nothing is running that agent. Either
+- **A request waits and is flagged as not collected.** Nothing is running that agent. Either
   open its repository, or make sure it is listed as startable on its machine (see
   [Configuration](configuration.md#starting-agents-without-anybody-opening-them)).
 - **Agents stop attaching after an upgrade.** A broker and an adapter whose protocol versions

@@ -23,8 +23,7 @@ public sealed class EscapeWithAWrittenLineTests
         var shell = seated.Shell;
 
         shell.Line.Written = "a long answer I have not sent";
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
@@ -42,8 +41,7 @@ public sealed class EscapeWithAWrittenLineTests
         var shell = seated.Shell;
 
         shell.Line.Written = "nothing I mind losing";
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
@@ -59,8 +57,7 @@ public sealed class EscapeWithAWrittenLineTests
         await using var seated = await Seated.OpenAsync(Ct);
         var shell = seated.Shell;
 
-        seated.Session.Press(Key.Esc);
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
     }

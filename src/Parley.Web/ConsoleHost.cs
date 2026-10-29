@@ -364,10 +364,10 @@ public static class ConsoleHost
     /// spelling nobody anticipated produces a warning that is merely unnecessary rather than a
     /// silence that is wrong.
     /// </remarks>
-    private static bool IsLoopback(string address) =>
+    internal static bool IsLoopback(string address) =>
         address.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .All(one =>
-                one.Contains("127.0.0.1", StringComparison.Ordinal)
-                || one.Contains("[::1]", StringComparison.Ordinal)
-                || one.Contains("localhost", StringComparison.OrdinalIgnoreCase));
+                Uri.TryCreate(one, UriKind.Absolute, out var uri)
+                && (string.Equals(uri.IdnHost, "localhost", StringComparison.OrdinalIgnoreCase)
+                    || (System.Net.IPAddress.TryParse(uri.IdnHost.Trim('[', ']'), out var ip) && System.Net.IPAddress.IsLoopback(ip))));
 }

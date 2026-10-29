@@ -179,8 +179,7 @@ public sealed class RemovingTests : IDisposable
 
         driving.Row(choosing.Choices, Removing.Destroy);
         driving.Enter();
-        driving.Escape();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));

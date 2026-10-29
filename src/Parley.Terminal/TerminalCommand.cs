@@ -33,7 +33,7 @@ namespace Parley.Terminal;
 public static class TerminalCommand
 {
     /// <summary>Runs the terminal surface until the person leaves it.</summary>
-    /// <param name="manifestPath">Where this machine's project manifest is.</param>
+    /// <param name="manifestPath">This machine's deployment root, where its projects and manifest live.</param>
     /// <param name="fallbackEndpoint">A broker to offer when the manifest names none.</param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
@@ -105,7 +105,7 @@ public static class TerminalCommand
     /// <param name="app">The application to build the surface in.</param>
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="seats">Where a person's seat is held, for as long as they hold one.</param>
-    /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
+    /// <param name="manifestPath">The deployment root, for the screens that write to it.</param>
     /// <param name="installed">
     /// What this machine's supervisor runs, or null for none or unknown. Passed rather than read
     /// here, for the reason the application is: a test drives this on a machine that has an entry,
@@ -173,7 +173,7 @@ public static class TerminalCommand
     /// <summary>Builds the surface without running it.</summary>
     /// <param name="directory">The projects, and the clients that reach them.</param>
     /// <param name="seats">Where a person's seat is held.</param>
-    /// <param name="manifestPath">The manifest, for the screens that write to it.</param>
+    /// <param name="manifestPath">The deployment root, for the screens that write to it.</param>
     /// <param name="installed">What this machine's supervisor runs, or null.</param>
     /// <param name="cataloguePath">This machine's node catalogue, or null to take it from the manifest.</param>
     /// <param name="addressingPath">Where who-each-line-goes-to is kept, or null for this run only.</param>

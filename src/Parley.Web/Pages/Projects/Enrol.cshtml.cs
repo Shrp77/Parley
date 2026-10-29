@@ -276,8 +276,9 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
 
         Catalogue = resolved.Value is { Length: > 0 } named
             ? named
-            : manifest is { Length: > 0 } && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } where
-                ? Path.Combine(where, NodeCatalogue.DefaultFileName)
+            : manifest is { Length: > 0 }
+                // In the root itself, as `ProjectResolution.BesideTheManifest` puts it: the manifest path is the root.
+                ? Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName)
                 : NodeCatalogue.DefaultFileName;
 
         Role = string.IsNullOrWhiteSpace(Role) ? Role : EnrollmentPlan.CorrectName(Role);

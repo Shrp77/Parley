@@ -371,6 +371,8 @@ public sealed class ProjectManifestTests : IDisposable
     [InlineData("http://0.0.0.0:51707")]
     [InlineData("http://[::]:51707")]
     [InlineData("http://localhost.:51707")]
+    [InlineData("http://[::ffff:0.0.0.0]:51707")]
+    [InlineData("http://[::ffff:127.0.0.1]:51707")]
     public void One_broker_spelled_another_way_is_a_shared_endpoint_and_both_are_left_out(string spelling)
     {
         // Found by review, round 61: the text was compared, ignoring case only, so each of these served a second

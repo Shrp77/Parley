@@ -3,7 +3,8 @@ namespace Parley.Core;
 /// <summary>
 /// Work in front of the person running the deployment: SPEC.md §10.2's <c>flags()</c>.
 /// </summary>
-/// <param name="Exchanges">Open exchanges that have gone quiet, or are owed by an agent that is gone.</param>
+/// <param name="Exchanges">What needs the person: open exchanges that have gone quiet or are owed by an agent that is
+/// gone, a conversation waiting only on a participant who has not voted, and a turn stopped by a refused permission.</param>
 /// <param name="Cycles">Cycles of Requests recorded in conversations that still have work open.</param>
 /// <remarks>
 /// <para>

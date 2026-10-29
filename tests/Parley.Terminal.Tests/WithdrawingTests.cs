@@ -215,9 +215,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         driving.Row(choosing.Choices, Withdrawing.Purge);
         driving.Enter();
-        driving.Escape();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();

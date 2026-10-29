@@ -240,8 +240,7 @@ public sealed class OpeningTests : IAsyncDisposable
         Assert.Equal("only", shell.Transcript.Open);
 
         gate.Arm();
-        driving.Escape();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
         Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the back read never reached the broker");
 
         Assert.True(shell.Conversations.OpenSelected());
