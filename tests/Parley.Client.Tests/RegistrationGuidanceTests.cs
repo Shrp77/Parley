@@ -53,8 +53,9 @@ public sealed class RegistrationGuidanceTests
     public void It_says_how_to_confirm_the_registration_took()
     {
         // Instructions that end at "write this file" leave somebody unable to tell success from a
-        // server that never started. The confirmation is the roster, and the page links it.
-        Assert.Contains("/Projects/Agents?project=", Page, StringComparison.Ordinal);
+        // server that never started. The confirmation is the roster, and the page links it: the agents tab, never the
+        // Conversations page, where the new name does not appear (review, lens 3 run 67).
+        Assert.Contains("/?tab=agents&amp;project=", Page, StringComparison.Ordinal);
         Assert.Contains("appears there once its session has attached", Page, StringComparison.Ordinal);
     }
 
