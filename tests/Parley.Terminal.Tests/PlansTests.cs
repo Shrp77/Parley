@@ -63,7 +63,7 @@ public sealed class PlansTests : IAsyncDisposable
             _ => GrpcChannel.ForAddress(_broker.Address));
 
     /// <summary>Proposes and confirms a roadmap, the way a person does.</summary>
-    private async Task ConfirmedAsync(string title = "Billing export")
+    private async Task ConfirmedAsync(string title = "Billing export", AgentName? first = null)
     {
         var repository = new RoadmapRepository(_connection);
 
@@ -73,7 +73,7 @@ public sealed class PlansTests : IAsyncDisposable
             null,
             new RoadmapContent(title,
             [
-                new RoadmapItemDraft(null, "Add CSV export", Billing, []),
+                new RoadmapItemDraft(null, "Add CSV export", first ?? Billing, []),
                 new RoadmapItemDraft(null, "Call it from the report", Orders, [1]),
             ]),
             T0,
@@ -200,6 +200,31 @@ public sealed class PlansTests : IAsyncDisposable
             row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal) && row.Contains("orders", StringComparison.Ordinal));
         Assert.Contains(shell.Room.Written, row => row.Contains("orders", StringComparison.Ordinal));
         Assert.Empty((await new BrokerClient(_broker.Operators).ConversationsAsync(cancellationToken: Ct)).Items);
+    }
+
+    [Fact]
+    public async Task An_item_that_is_the_persons_own_opens_its_conversation_addressed_to_nobody()
+    {
+        // The owner's call, 2026-10-29: an item may be the person's own, and starting it ticks nobody; they choose who,
+        // if anybody, it goes to. Must fail against addressing the item's named seat (lens 3 run 76 found it untested).
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory, seated: true);
+
+        await ConfirmedAsync(first: AgentName.Create("human-user@test"));
+        await ReselectAsync(shell);
+
+        shell.Focus(shell.Panes.ToList().IndexOf(shell.Plans));
+        Assert.True(shell.Plans.OpenSelected());
+        await shell.Settled;
+        var view = Assert.IsType<PlanView>(driving.App.TopRunnableView);
+
+        view.OpenSelected();
+        await shell.Settled;
+
+        Assert.Equal("rm1-1", shell.Place.Title);
+        Assert.Equal("Add CSV export", shell.Line.Written);
+        Assert.DoesNotContain(shell.Room.Written, row => row.StartsWith(RoomRegion.Addressed, StringComparison.Ordinal));
     }
 
     /// <summary>Opens the confirmed roadmap's view and asks to edit it, leaving the form open.</summary>

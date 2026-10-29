@@ -863,7 +863,7 @@ surface draws, and that a proposal is not empty.
 **An item needs only an earlier item.** It may name items that must be done first, each earlier in the
 order and live. A cycle is therefore impossible rather than checked for. Because a reorder or a
 removal can break that, confirming and editing validate the person's whole final content: an intended
-agent must be in the project, and every need must name a live earlier item. A reorder or removal that
+agent must be in the project and may be the person but never Parley, which receives no work, and every need must name a live earlier item. A reorder or removal that
 leaves a live item needing a later or removed item is refused, with a sentence. A removed item is
 therefore never a dependency of a live one.
 
@@ -905,7 +905,7 @@ words, because the person may change the item's words before sending them.
 
 **Starting an item is the person's request, and adds no operation.** A surface opens the item's
 conversation with the item's words in the box and only the item's intended agent ticked, or nobody
-when it names none. The person changes the words and the agents as they choose, and nothing is sent
+when it names none or names the person, whose own item it is. The person changes the words and the agents as they choose, and nothing is sent
 until they send: then each agent ticked receives an ordinary Request (§5.6, §12.3) from the person's
 seat, in the item's conversation, carrying exactly what the person sent. It is the person's words in
 the transcript, not an operator instruction. An item already started opens its conversation as it

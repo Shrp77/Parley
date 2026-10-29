@@ -38,8 +38,10 @@ report is which of the three reasons it is:
 - **Configured and failing to start.** The entry is there and a restart has happened. The server
   exits at launch rather than starting and failing every call, so the cause is in what it was
   given: a `PARLEY_OWNS` with a line break or an unescaped quotation mark, a name that is not a
-  role, a `PARLEY_BROKER` pointing at nothing. Say which of these the launch configuration could
-  produce; do not guess which one it did.
+  role, a `PARLEY_BROKER` pointing at nothing, or a repository that is not on this machine's own disks
+  (a synced cloud folder such as OneDrive, a network drive or a virtual drive), which Parley refuses
+  even for a repository enrolled before that rule. Say which of these the launch configuration and the
+  repository's location could produce; do not guess which one it did.
 
 Stop here if the tool did not answer. The remaining checks need the roster, and inferring them
 from files would produce a report that describes the configuration rather than the running

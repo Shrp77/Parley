@@ -76,8 +76,11 @@ at. A server that must answer with nobody signed in needs a real service, and th
 privileges.
 
 Nothing else may open the store. A store has one broker, and a second one says so and exits. The
-store must not be on a network share. SQLite in WAL mode needs shared memory that is coherent
-between every process touching it, so a store on a share is corrupted, not just slow.
+deployment's root, and so every store, must be on this machine's own disk: Parley refuses a synced
+cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual drive,
+and a folder reached through a link to one. SQLite in WAL mode needs shared memory that is coherent
+between every process touching it, and a sync client copies a store while it is being written. If
+the default root is in such a folder, set another with `--config` or `PARLEY_CONFIG`.
 
 ## The launch configuration
 

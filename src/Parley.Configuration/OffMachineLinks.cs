@@ -28,13 +28,25 @@ public static class OffMachineLinks
     /// <param name="path">The path as written.</param>
     /// <returns><see langword="true"/> when it must not be looked up.</returns>
     public static bool LeadsOffThisMachine(string? path) =>
-        path is not null && Leads(path.Trim(), 0);
+        path is not null && Leads(path.Trim(), 0, 0, out _);
+
+    /// <summary>Where a path leads once every link along it is followed, unless it leads off this machine.</summary>
+    /// <param name="path">The path as written.</param>
+    /// <param name="reached">The path the walk ends on, links resolved; the path as written when it could not be read.</param>
+    /// <returns><see langword="true"/> when it must not be looked up, as <see cref="LeadsOffThisMachine(string?)"/>.</returns>
+    /// <remarks>
+    /// What a folder is on is decided by where it really is: a junction from <c>C:\code</c> into a synced folder reads
+    /// as local and is synced all the same (review, lens 1 run 69).
+    /// </remarks>
+    internal static bool LeadsOffThisMachine(string path, out string reached) => Leads(path.Trim(), 0, 0, out reached);
 
     // The walk. `fromTarget` is how many leading parts of the path came from the link just followed: a part among those
     // that is not there means the link named something this walk cannot see (an NT path .NET hands back as a relative one,
     // such as GLOBALROOT\Device\Mup\host), so it is refused; a part past them that is not there is only a missing file.
-    private static bool Leads(string path, int links, int fromTarget = 0)
+    private static bool Leads(string path, int links, int fromTarget, out string reached)
     {
+        reached = path;
+
         if (LocalPath.IsOffThisMachine(path))
         {
             return true;
@@ -56,6 +68,8 @@ public static class OffMachineLinks
         {
             return false;
         }
+
+        reached = full;
 
         var root = Path.GetPathRoot(full) ?? string.Empty;
         var parts = full[root.Length..].Split(Separators, StringSplitOptions.RemoveEmptyEntries);
@@ -108,12 +122,12 @@ public static class OffMachineLinks
                 return true;
             }
 
-            var reached = Path.GetFullPath(
+            var reachedTarget = Path.GetFullPath(
                 Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target));
-            var reachedParts = reached[(Path.GetPathRoot(reached) ?? string.Empty).Length..]
+            var reachedParts = reachedTarget[(Path.GetPathRoot(reachedTarget) ?? string.Empty).Length..]
                 .Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length;
 
-            return Leads(Path.Combine([reached, .. parts[(i + 1)..]]), links + 1, reachedParts);
+            return Leads(Path.Combine([reachedTarget, .. parts[(i + 1)..]]), links + 1, reachedParts, out reached);
         }
 
         return false;

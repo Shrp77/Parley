@@ -181,7 +181,7 @@ revise an existing roadmap or create a new one. Nothing is a roadmap until you c
 Each item gets a conversation of its own, named from the roadmap and the item number, such as
 `rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first.
 **Starting an item sends nothing.** It opens that conversation with the item's words in the box
-and the agent the item is for ticked. Tick anyone else in the project you want it to reach, and
+and the agent the item is for ticked, or nobody when the item is yours or names nobody. Tick anyone else in the project you want it to reach, and
 send it. The words are sent as words, even ones that look like a command. The roadmap shows
 where each item stands, worked out from its conversation: not started, in progress, waiting on an
 agent, waiting on you, blocked (and why), done, or closed. It also says which item is next. Nobody

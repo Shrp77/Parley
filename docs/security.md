@@ -127,8 +127,9 @@ whoever read the log and not to whoever made the edit.
 ## The store
 
 A store has one broker. A lock is taken before anything else touches the store, and a second
-launcher says so and exits. Do not put a store on a network share. SQLite in WAL mode needs
-coherent shared memory, so a store on a share is corrupted, not just slow.
+launcher says so and exits. A store is served only from this machine's own disks, as described
+above: SQLite in WAL mode needs coherent shared memory, so a store on a share is corrupted, not just
+slow.
 
 Retention removes old messages on a schedule, with a floor that can never delete a message nobody
 has collected, anything on an open exchange, or the rows deduplication still reads. See

@@ -98,6 +98,64 @@ public sealed class OnlyLocalStorageTests : IDisposable
     }
 
     [Fact]
+    public async Task A_link_into_a_synced_folder_is_judged_where_it_leads()
+    {
+        // C:\code as a junction to OneDrive\code reads as local and is synced all the same (review, lens 1 run 69).
+        var synced = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "code")).FullName;
+        Directory.CreateDirectory(Path.Combine(synced, "orders"));
+        var link = Path.Combine(_home, "code");
+        await LinkAsync(link, synced);
+
+        var problem = LocalStorage.Problem(Path.Combine(link, "orders"), Environment());
+
+        Assert.NotNull(problem);
+        Assert.Contains("through a link to", problem, StringComparison.Ordinal);
+        Assert.Contains("on OneDrive", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_stream_spelling_of_a_folder_is_refused()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "NTFS streams");
+        var onedrive = Path.Combine(_home, "OneDrive");
+        Directory.CreateDirectory(onedrive);
+
+        Assert.Contains("stream", LocalStorage.Problem(onedrive + @"::$INDEX_ALLOCATION\orders", Environment()), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"text\"")]
+    public void A_dropbox_info_file_that_is_not_an_object_names_no_folder_and_stops_nothing(string written)
+    {
+        var local = Path.Combine(_home, "AppData", "Local");
+        Directory.CreateDirectory(Path.Combine(local, "Dropbox"));
+        File.WriteAllText(Path.Combine(local, "Dropbox", "info.json"), written);
+        var repository = Path.Combine(_home, "src", "orders");
+
+        Assert.Null(LocalStorage.Problem(repository, Environment(("LOCALAPPDATA", local))));
+    }
+
+    private static async Task LinkAsync(string link, string target)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return;
+        }
+
+        // A junction needs no privilege, where a symbolic link on Windows needs Developer Mode.
+        using var mklink = System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+            {
+                UseShellExecute = false, RedirectStandardOutput = true,
+            })!;
+        await mklink.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, mklink.ExitCode);
+    }
+
+    [Fact]
     public void Enrolment_refuses_a_repository_that_is_not_on_local_storage()
     {
         var problems = EnrollmentPlan.Validate(

@@ -1,7 +1,7 @@
 # The review gate
 
-A pull request merges when three lenses each pass three times in a row, all on the same commit, and CI is green on
-that commit. This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
+A pull request merges when three lenses each pass three times in a row on the same shipped code, and CI is green on
+the commit that merges. A commit that changes only tests, CI, docs or plugin prose keeps the counts (see below). This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
 
 | File | What it covers |
 |---|---|
@@ -24,7 +24,8 @@ it, and what the owner has already settled.
 
 ## What counts
 
-- **A clean run** finds nothing above low. Three clean runs in a row per lens, all three lenses, on one commit.
+- **A clean run** finds nothing above low. Three clean runs in a row per lens, all three lenses, on one version of
+  `src`.
 - **A finding above low resets that lens to zero.** After fixing it, run the same lens again before moving on.
 - **A change to `src` restarts every lens**, because it is a new commit of shipped code. A change only to tests, CI,
   docs or plugin prose keeps the counts: the code the clean runs read is unchanged.

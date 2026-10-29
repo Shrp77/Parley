@@ -116,6 +116,29 @@ public sealed class RoadmapOnThePageTests
         Assert.DoesNotContain("With=human-user", page, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("billing@test", true)]
+    [InlineData("human-user@test", false)]
+    public async Task An_items_conversation_ticks_its_agent_but_never_the_person(string agent, bool ticked)
+    {
+        // What the conversation page draws ticked, whatever the roadmap's link says (lens 3 run 76 found only the link
+        // tested). The person's seat is never drawn as a box to tick, so for their own item nothing is.
+        using var console = Confirmed(Item(1, "Approve the rate card", agent, started: false));
+        console.Broker.Registry.AddRange(
+        [
+            new Wire.RegistryRow { Name = "billing@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+            new Wire.RegistryRow { Name = "human-user@test", Adapter = "parley-console", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active },
+        ]);
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(
+            new Uri($"/Conversations/Detail?project={RoadmapConsole.Project}&id=rm1-1", UriKind.Relative),
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(">Approve the rate card</textarea>", page, StringComparison.Ordinal);
+        Assert.Equal(ticked, page.Contains("checked=\"checked\"", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task An_item_naming_no_agent_opens_its_conversation_with_nobody_ticked()
     {
