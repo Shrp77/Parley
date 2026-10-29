@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using Parley.Core;
 
 namespace Parley.Server;
@@ -161,8 +162,27 @@ public sealed class FileLocationStore : IDisposable
     /// <param name="name">The file's name.</param>
     /// <param name="nowUtc">When the sweep found it, which names the copy so two never collide.</param>
     /// <returns>A path inside the quarantine directory with <c>/</c> between its parts.</returns>
-    internal static string QuarantineName(string folder, SharedFileName name, DateTimeOffset nowUtc) =>
-        folder + "/" + nowUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-" + name.Value;
+    /// <remarks>
+    /// <b>Never longer than a file system allows one name to be.</b> The stamp adds 20 characters, and a placed name may
+    /// be up to 254, so a long one could not be moved, the sweep raised it as locked, and nobody who fetched it was
+    /// told (review, lens 1 run 62). Such a name keeps its start and its extension and gains eight characters of its own
+    /// hash, so two long names in one sweep never meet; the whole name stays in the problem's path.
+    /// </remarks>
+    internal static string QuarantineName(string folder, SharedFileName name, DateTimeOffset nowUtc)
+    {
+        var stamp = nowUtc.UtcDateTime.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-";
+        var room = SharedFileName.MaxPathCharacters - stamp.Length;
+        var kept = name.Value;
+
+        if (kept.Length > room)
+        {
+            var extension = Path.GetExtension(kept);
+            var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(kept)))[..8];
+            kept = kept[..(room - extension.Length - hash.Length - 1)] + "~" + hash + extension;
+        }
+
+        return folder + "/" + stamp + kept;
+    }
 
     /// <summary>Moves a placed file whose bytes no longer match what was placed into the quarantine directory.</summary>
     /// <param name="folder">The conversation's folder name.</param>

@@ -76,7 +76,9 @@ still owed exactly what it owed, which is how a runaway first shows itself.
 **A web page reaching your console.** The web console answers only loopback host names and the
 address it binds, which protects against DNS rebinding. No other site can show the console inside
 a frame and trick you into clicking its buttons. The one page the console frames is a roadmap
-item's conversation, inside the console's own roadmap page.
+item's conversation, inside the console's own roadmap page. A request another site starts, such as an
+image pointing at the console, is refused before any page runs, so it cannot take your seat or
+mark your mail as read.
 
 **A link in an agent's message.** Links in what agents write are live, so a link can open any
 console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends

@@ -141,6 +141,24 @@ public static class ConsoleHost
 
         var app = builder.Build();
 
+        // **Nothing another site starts reaches a page.** A page here does things on a GET: it takes the person's seat and
+        // records their mail as delivered. An image or a link on any site the person visits would send that GET with the
+        // console's own Host, which the host check admits, and forge the delivery record (review, lens 2 run 66). The
+        // browser says who started a request; another site, or another port on this machine, is refused before any page
+        // runs. A typed address or a bookmark says `none`, the console's own pages `same-origin`.
+        app.Use(async (context, next) =>
+        {
+            if (StartedElsewhere(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsync(StartedElsewhereSaid, context.RequestAborted).ConfigureAwait(false);
+
+                return;
+            }
+
+            await next(context).ConfigureAwait(false);
+        });
+
         // **No other page may frame this one.** The console can purge an agent and read every transcript, and a page in
         // another tab that frames it can place its own buttons over the console's and have the person press them
         // (clickjacking). `frame-ancestors` is the current control and `X-Frame-Options` the one older browsers read.
@@ -167,6 +185,28 @@ public static class ConsoleHost
         MapBrand(app);
 
         return app;
+    }
+
+    /// <summary>What a request another site started is told.</summary>
+    internal const string StartedElsewhereSaid =
+        "This console answers only its own pages, and an address typed or bookmarked. Open it from its own address.";
+
+    /// <summary>Whether the browser says another site started a request.</summary>
+    /// <param name="context">The request.</param>
+    /// <returns>True when <c>Sec-Fetch-Site</c> is <c>cross-site</c> or <c>same-site</c>.</returns>
+    /// <remarks>
+    /// <c>same-site</c> is refused too: on a loopback address every port is the same site, so another program's page on
+    /// this machine reads as one. A request with no such header comes from something that is not a browser, or one too
+    /// old to send it, and is left to the host check.
+    /// </remarks>
+    internal static bool StartedElsewhere(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var site = context.Request.Headers["Sec-Fetch-Site"].ToString();
+
+        return string.Equals(site, "cross-site", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(site, "same-site", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Whether a request is the console framing one of its own conversation pages.</summary>

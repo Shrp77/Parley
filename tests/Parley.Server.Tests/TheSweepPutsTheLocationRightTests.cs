@@ -69,6 +69,50 @@ public sealed class TheSweepPutsTheLocationRightTests : IDisposable
     }
 
     [Fact]
+    public async Task A_tampered_file_under_the_longest_name_that_fits_is_quarantined_and_both_are_told()
+    {
+        // Found by review, lens 1 run 62: the quarantine name added 20 characters to the placed one, so a name over 235
+        // could not be moved, the sweep raised it as locked, and neither the fetcher nor the placer was ever told.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        var name = new string('a', SharedFileName.CharactersLeftIn("pricing") - 3) + ".md";
+        _ = await FileWire.PlaceAsync(billing.Client, Billing, name, Text("net 30"), "pricing", Ct);
+        _ = await FileWire.FetchAndReportAsync(orders.Client, Orders, name, "pricing", Ct);
+
+        await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), name), "net 99", Ct);
+        await broker.Runtime.Sweeper.SweepAsync(Ct);
+
+        var operators = broker.ConnectAsOperator();
+        var problem = Assert.Single((await operators.ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems);
+        Assert.Equal(Wire.FileProblemKind.Quarantined, problem.Kind);
+        Assert.Equal("net 99", await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.Quarantine, problem.MovedTo), Ct));
+
+        foreach (var told in new[] { orders, billing })
+        {
+            var notice = Assert.Single((await told.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = told.Name }, cancellationToken: Ct)).FileNotices);
+            Assert.Equal(name, notice.Name);
+        }
+    }
+
+    [Fact]
+    public void Two_long_names_alike_up_to_the_cut_are_quarantined_apart_and_each_fits()
+    {
+        var now = new DateTimeOffset(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);
+        var room = SharedFileName.CharactersLeftIn("pricing");
+        var one = SharedFileName.Create(new string('a', room - 4) + "1.md");
+        var two = SharedFileName.Create(new string('a', room - 4) + "2.md");
+
+        var first = Path.GetFileName(FileLocationStore.QuarantineName("pricing", one, now));
+        var second = Path.GetFileName(FileLocationStore.QuarantineName("pricing", two, now));
+
+        Assert.NotEqual(first, second);
+        Assert.True(first.Length <= SharedFileName.MaxPathCharacters, first);
+        Assert.EndsWith(".md", first, StringComparison.Ordinal);
+        Assert.Equal("pricing/20261029T120000000Z-terms.md", FileLocationStore.QuarantineName("pricing", SharedFileName.Create("terms.md"), now));
+    }
+
+    [Fact]
     public async Task A_fetch_of_a_tampered_file_is_refused_as_tampered_and_starts_a_sweep()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

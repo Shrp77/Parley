@@ -90,24 +90,18 @@ public sealed class SchemaConformanceTests : IDisposable
         Assert.Equal(CheckLiterals(_fromSpec), CheckLiterals(_fromMigration));
     }
 
-    [Theory]
-    [InlineData("agents")]
-    [InlineData("exchanges")]
-    [InlineData("conversations")]
-    [InlineData("conversation_participants")]
-    [InlineData("messages")]
-    [InlineData("size_refusals")]
-    [InlineData("conversation_cycles")]
-    [InlineData("result_items")]
-    [InlineData("result_sources")]
-    [InlineData("conversation_folders")]
-    [InlineData("shared_files")]
-    [InlineData("file_fetches")]
-    [InlineData("file_notices")]
-    [InlineData("file_placements")]
-    public void Every_column_agrees(string table)
+    [Fact]
+    public void Every_column_agrees()
     {
-        Assert.Equal(Columns(_fromSpec, table), Columns(_fromMigration, table));
+        // Every table the document creates, never a list kept by hand: the list named 14 of 29, so a migration could
+        // change a roadmap table or file_problems and the document would go on describing the old one (review, lens 3
+        // run 69).
+        var tables = Names(_fromSpec, "table");
+
+        Assert.True(tables.Count > 20, $"the document's schema yielded only {tables.Count} tables");
+        Assert.Equal(
+            tables.Select(table => $"{table}: {string.Join(", ", Columns(_fromSpec, table))}"),
+            tables.Select(table => $"{table}: {string.Join(", ", Columns(_fromMigration, table))}"));
     }
 
     /// <summary>Every quoted literal appearing inside a CHECK constraint, per object.</summary>
