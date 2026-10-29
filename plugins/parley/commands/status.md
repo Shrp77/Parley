@@ -61,7 +61,7 @@ at the moment it attaches. One fact establishes the other, and the evidence is a
 from step 1.
 
 That leaves one thing this command genuinely cannot see: the name this repository registered
-under. The machine half is detected rather than configured, so a repository can register as
+under. The machine half is detected unless `PARLEY_MACHINE` sets it, so a repository can register as
 `docs@some-unexpected-host` and nothing in an agent's own view would show it. Say that it is
 not visible from here rather than inferring it from the launch configuration, which records
 what was asked for and not what the broker recorded. An operator can see it with a registry
@@ -92,18 +92,15 @@ repeating the claims here invites somebody to act on a description that has not 
 
 ## 4. What was left behind
 
-One file survives a purge and a re-run, and it is the class of thing that looks like a fresh
-install and is not:
+Do not look for it yourself. The per-machine catalogue (`node.json`) holds every repository's path,
+which is the map of the deployment step 1 keeps out of this report, and nothing you can call tells
+you which of its entries are still registered.
 
-- **`node.json`**, in the same folder as the projects or wherever `PARLEY_NODE_CONFIG` points, may
-  hold an entry for an identity that is not registered. That entry is standing consent for this
-  machine to start a repository unattended, and it outlives the registration it was written for
-  - a purge clears the broker's store and touches neither the repository nor the machine.
-
-  **This repository's own identity is not evidence of anything here.** The roster omits the caller,
-  so its entry looks unregistered from inside and always will; judging it by what step 1 returned
-  reports a stale consent that is nothing of the kind. Check the other entries and leave this
-  one alone.
+Say instead, in one line, where the person can see it: retiring or purging an agent in the terminal
+removes its `.mcp.json` entry and its catalogue line when the repository is on that machine, so an
+entry can outlive its agent only when the agent was withdrawn from another machine, or when a
+withdrawal printed a note that it could not remove something. The terminal's agent list shows
+what is registered, for the person to compare.
 
 ## 5. Say it in one place
 

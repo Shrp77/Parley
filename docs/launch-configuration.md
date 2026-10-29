@@ -36,7 +36,8 @@ each reader owes the rules below.
 
 `parleyAgentId` sits beside `mcpServers`, not inside an entry. It belongs to the repository, so a
 repository that answers in two projects has one identity and two entries. It is minted the first time
-the repository is enrolled and kept after that. The per-machine catalogue (`node.json`) is keyed by
+the repository is enrolled and kept after that, until the last of its entries is withdrawn: a
+repository enrolled again after that is a new agent. The per-machine catalogue (`node.json`) is keyed by
 it.
 
 **The identity is what an agent is. The name is only what a project shows for it.** The agent's
@@ -81,6 +82,7 @@ A path containing `}` or `$` is written plainly, because the expansion has no es
 | `PARLEY_OWNS` | What the agent is responsible for. |
 | `PARLEY_WORKSPACE` | The directory the agent works in. Unset means unknown. |
 | `PARLEY_RESPONDER` | The model named on each message. Defaults to `unknown-model`. |
+| `PARLEY_MACHINE` | The machine half of the agent's name. Unset means this machine's own name. |
 
 An agent a node starts also carries `PARLEY_LAUNCH_TOKEN`. It is not written to the file.
 
