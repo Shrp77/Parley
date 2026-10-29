@@ -169,23 +169,15 @@ public sealed class OnlyLocalStorageTests : IDisposable
         // run 74). The letter is defined for a TEST-NET host, which never answers: a lookup that slipped through takes
         // the SMB wait, about 21 seconds.
         Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
-        var letter = Enumerable.Range('K', 'Z' - 'K' + 1).Select(c => $"{(char)c}:")
-            .First(l => QueryDosDevice(l, new char[1024], 1024) == 0);
-        // A fresh host each run: Windows answers a host it failed to reach a moment ago at once, which would hide a lookup.
-        var share = $@"\??\UNC\192.0.2.{Random.Shared.Next(2, 254)}\share";
-        Assert.True(DefineDosDevice(RawTargetPath, letter, share));
 
-        try
+        // A fresh host each run: Windows answers a host it failed to reach a moment ago at once, which would hide a lookup.
+        WithLetter($@"\??\UNC\192.0.2.{Random.Shared.Next(2, 254)}\share", letter =>
         {
             // A symbolic link, because mklink /J looks its target up as it makes the junction. Making one needs Developer
             // Mode or an elevated runner.
             var link = Path.Combine(_home, "repo");
 
-            try
-            {
-                Directory.CreateSymbolicLink(link, $@"{letter}\x");
-            }
-            catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+            if (!TrySymbolicLink(link, $@"{letter}\x"))
             {
                 Assert.Skip("symbolic links need Developer Mode here");
             }
@@ -195,12 +187,9 @@ public sealed class OnlyLocalStorageTests : IDisposable
             Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\x\.mcp.json"));
             Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(link, ".mcp.json")));
             Assert.NotNull(LocalStorage.Problem(link, Environment()));
+            Assert.Contains("a network drive", LocalStorage.Problem($@"{letter}\x", Environment()), StringComparison.Ordinal);
             Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the share was asked: {timer.Elapsed}");
-        }
-        finally
-        {
-            DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, share);
-        }
+        });
     }
 
     [Fact]
@@ -322,6 +311,77 @@ public sealed class OnlyLocalStorageTests : IDisposable
         }
 
         Assert.Contains("on OneDrive", LocalStorage.Problem(Path.Combine(_home, "x", "orders"), Environment()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_link_to_an_nt_path_is_refused_whatever_stands_beside_it()
+    {
+        // LinkTarget hands `\\?\GLOBALROOT\Device\Mup\host\s` back as `GLOBALROOT\Device\Mup\host\s`, which reads as
+        // relative; folders of that name beside the link made it look local while Windows went to the share (lens 2
+        // run 77). A fresh TEST-NET host each run: a lookup that slipped through takes the SMB wait.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "NT paths");
+        var host = $"192.0.2.{Random.Shared.Next(2, 254)}";
+        Directory.CreateDirectory(Path.Combine(_home, "GLOBALROOT", "Device", "Mup", host, "s", ".git"));
+
+        if (!TrySymbolicLink(Path.Combine(_home, "g2"), $@"\\?\GLOBALROOT\Device\Mup\{host}\s"))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(_home, "g2", ".git")));
+        Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the share was asked: {timer.Elapsed}");
+    }
+
+    [Fact]
+    public void A_link_to_a_folder_by_its_volume_path_is_refused_whatever_stands_beside_it()
+    {
+        // `\\?\Volume{GUID}\Users\…\OneDrive\orders` with a decoy of that relative name beside the link: the walk checked
+        // the decoy and admitted a folder on OneDrive (lens 2 run 77).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "volume names");
+        var mountPoint = new char[1024];
+        var volume = new char[64];
+        Assert.True(GetVolumePathName(_home, mountPoint, (uint)mountPoint.Length));
+        Assert.True(GetVolumeNameForVolumeMountPoint(new string(mountPoint).TrimEnd('\0'), volume, (uint)volume.Length));
+        var onedrive = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "orders")).Parent!.FullName;
+        var underVolume = onedrive[Path.GetPathRoot(onedrive)!.Length..];
+        var volumeName = new string(volume).TrimEnd('\0');
+        Directory.CreateDirectory(Path.Combine(_home, volumeName[4..].TrimEnd('\\'), underVolume, "orders"));
+
+        if (!TrySymbolicLink(Path.Combine(_home, "code"), volumeName + underVolume))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        Assert.NotNull(LocalStorage.Problem(Path.Combine(_home, "code", "orders"), Environment()));
+    }
+
+    [Fact]
+    public async Task A_mount_point_at_a_long_path_is_walked_through()
+    {
+        // The link is read with a `\\?\` path, so a mount point past 260 characters is read too (lens 1 run 73).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "volume mount points");
+        var mountPoint = new char[1024];
+        var volume = new char[64];
+        Assert.True(GetVolumePathName(_home, mountPoint, (uint)mountPoint.Length));
+        Assert.True(GetVolumeNameForVolumeMountPoint(new string(mountPoint).TrimEnd('\0'), volume, (uint)volume.Length));
+        var deep = Directory.CreateDirectory(Path.Combine([_home, .. Enumerable.Repeat("deeper-folder-name", 15)])).FullName;
+        Directory.CreateDirectory(Path.Combine(_home, "src", "orders"));
+        var mounted = Path.Combine(deep, "mounted");
+        await LinkAsync(mounted, new string(volume).TrimEnd('\0'));
+
+        try
+        {
+            Assert.True(mounted.Length > 260);
+            Assert.Null(LocalStorage.Problem(
+                Path.Combine(mounted, _home[(Path.GetPathRoot(_home)!.Length)..], "src", "orders"), Environment()));
+        }
+        finally
+        {
+            // The link alone, before the home folder is deleted: it leads to the whole disk.
+            Directory.Delete(mounted);
+        }
     }
 
     [Fact]

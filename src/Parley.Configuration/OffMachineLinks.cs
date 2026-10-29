@@ -156,61 +156,98 @@ public static class OffMachineLinks
         return string.Empty;
     }
 
-    // Whether a reparse point is a mount point (a junction or a mounted volume), read from the folder's own entry in its
-    // parent, which follows nothing. A symbolic link whose target is the text `Volume{GUID}` is a relative link to a
-    // sibling of that name, which can lead anywhere (review, lens 1 run 72); only a mount point names a volume.
-    private static bool IsMountPoint(string path)
+    // A symbolic link or a mount point as it is stored: the target exactly as written (`\??\C:\folder`, `\??\Volume{GUID}\`,
+    // `\??\UNC\host\share`, or a relative path) and whether a symbolic link's target is relative to the link's folder.
+    // A symbolic link whose target is the text `Volume{GUID}` is relative, and its sibling of that name can lead anywhere
+    // (lens 1 run 72); only an absolute target names a volume.
+    private readonly record struct Link(string Target, bool Relative);
+
+    // FSCTL_GET_REPARSE_POINT on a handle opened on the link itself (FILE_FLAG_OPEN_REPARSE_POINT), which follows nothing.
+    // Null when it cannot be read or is another kind of reparse point.
+    private static Link? ReadLink(string path)
     {
+        const uint ReadAttributes = 0x80;
+        const uint ShareAll = 0x7;
+        const uint OpenExisting = 3;
+        const uint OpenReparsePoint = 0x00200000;
+        const uint BackupSemantics = 0x02000000;
+        const uint GetReparsePoint = 0x000900A8;
+        const uint SymbolicLink = 0xA000000C;
         const uint MountPoint = 0xA0000003;
+        const uint RelativeFlag = 0x1;
 
-        var handle = FindFirstFile(path, out var found);
+        using var handle = CreateFile(
+            path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path : @"\\?\" + path,
+            ReadAttributes,
+            ShareAll,
+            IntPtr.Zero,
+            OpenExisting,
+            OpenReparsePoint | BackupSemantics,
+            IntPtr.Zero);
 
-        if (handle == new IntPtr(-1))
+        if (handle.IsInvalid)
         {
-            return false;
+            return null;
         }
 
-        FindClose(handle);
+        var buffer = new byte[16 * 1024];
 
-        return (found.Attributes & (uint)FileAttributes.ReparsePoint) != 0 && found.ReparseTag == MountPoint;
-    }
+        if (!DeviceIoControl(handle, GetReparsePoint, IntPtr.Zero, 0, buffer, (uint)buffer.Length, out var returned, IntPtr.Zero)
+            || returned < 16)
+        {
+            return null;
+        }
 
-    [System.Runtime.InteropServices.StructLayout(
-        System.Runtime.InteropServices.LayoutKind.Sequential,
-        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-    private struct FindData
-    {
-        public uint Attributes;
-        public uint CreatedLow;
-        public uint CreatedHigh;
-        public uint AccessedLow;
-        public uint AccessedHigh;
-        public uint WrittenLow;
-        public uint WrittenHigh;
-        public uint SizeHigh;
-        public uint SizeLow;
-        public uint ReparseTag;
-        public uint Reserved;
+        // REPARSE_DATA_BUFFER: the tag, then the substitute name's offset and length into the path buffer, which starts
+        // after the flags for a symbolic link and straight after the four offsets for a mount point.
+        var tag = BitConverter.ToUInt32(buffer, 0);
+        var (start, relative) = tag switch
+        {
+            SymbolicLink when returned >= 20 => (20, (BitConverter.ToUInt32(buffer, 16) & RelativeFlag) != 0),
+            MountPoint => (16, false),
+            _ => (-1, false),
+        };
 
-        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string Name;
+        if (start < 0)
+        {
+            return null;
+        }
 
-        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 14)]
-        public string ShortName;
+        var offset = BitConverter.ToUInt16(buffer, 8);
+        var length = BitConverter.ToUInt16(buffer, 10);
+
+        return start + offset + length > returned
+            ? null
+            : new Link(System.Text.Encoding.Unicode.GetString(buffer, start + offset, length), relative);
     }
 
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     [System.Runtime.InteropServices.DllImport(
         "kernel32.dll",
-        EntryPoint = "FindFirstFileW",
+        EntryPoint = "CreateFileW",
         CharSet = System.Runtime.InteropServices.CharSet.Unicode,
         SetLastError = true)]
-    private static extern IntPtr FindFirstFile(string fileName, out FindData found);
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(
+        string fileName,
+        uint access,
+        uint share,
+        IntPtr security,
+        uint creation,
+        uint flags,
+        IntPtr template);
 
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-    private static extern bool FindClose(IntPtr handle);
+    private static extern bool DeviceIoControl(
+        Microsoft.Win32.SafeHandles.SafeFileHandle device,
+        uint code,
+        IntPtr input,
+        uint inputSize,
+        [System.Runtime.InteropServices.Out] byte[] output,
+        uint outputSize,
+        out uint returned,
+        IntPtr overlapped);
 
     // `DllImport` for the reason Windowless gives, resolved from System32 only so a planted kernel32.dll is never loaded.
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
@@ -310,34 +347,62 @@ public static class OffMachineLinks
 
             string? target;
 
-            try
+            if (OperatingSystem.IsWindows())
             {
-                target = new FileInfo(current).LinkTarget;
+                // Read from the link itself, never from LinkTarget's text: .NET hands an absolute NT target such as
+                // `\??\GLOBALROOT\Device\Mup\host\share` back without its prefix, so it read as relative, and a decoy
+                // folder of that name beside the link made it look local while Windows followed the real target to
+                // the share (review, lens 2 run 77). A reparse point that cannot be read, or is neither a symbolic link
+                // nor a mount point (a cloud placeholder among them), is never walked through: its own permissions can
+                // hide a link to a share (lens 1 run 68).
+                if (ReadLink(current) is not { } link)
+                {
+                    return true;
+                }
+
+                if (link.Relative)
+                {
+                    target = link.Target;
+                }
+                else if (link.Target is ['\\', '?', '?', '\\', var drive, ':', '\\', ..] && char.IsAsciiLetter(drive))
+                {
+                    target = link.Target[4..];
+                }
+                else if (MountedVolume(link.Target) is { } volume)
+                {
+                    // A folder that mounts a disk names its volume (a second disk at C:\mnt\data). A local disk's volume
+                    // is walked through as a folder; any other volume is not this machine's own (lens 1 run 71).
+                    if (DosDevice(volume) is { } device && IsLocalVolume(device))
+                    {
+                        continue;
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    // A share, GLOBALROOT, a volume path with folders after it, a device: none is a folder on this
+                    // machine's own disk by a path the walk can read.
+                    return true;
+                }
             }
-            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            else
             {
-                return true;
+                try
+                {
+                    target = new FileInfo(current).LinkTarget;
+                }
+                catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+                {
+                    return true;
+                }
             }
 
-            // A reparse point whose target cannot be read is never walked through: its own permissions can hide a link
-            // to a share (review, lens 1 run 68). A cloud placeholder is refused with it, as the file location refuses
-            // every reparse point. A target rooted without a drive is read against whichever drive the process is on,
-            // not the link's, so it is not followed either.
+            // A target rooted without a drive is read against whichever drive the process is on, not the link's, so it
+            // is not followed either.
             if (target is null
                 || (OperatingSystem.IsWindows() && Path.IsPathRooted(target) && !Path.IsPathFullyQualified(target)))
             {
-                return true;
-            }
-
-            // A folder that mounts a disk holds the volume's name, not a path (a second disk at C:\mnt\data). A local
-            // disk's volume is walked through as a folder; any other volume is not this machine's own (lens 1 run 71).
-            if (OperatingSystem.IsWindows() && MountedVolume(target) is { } volume && IsMountPoint(current))
-            {
-                if (DosDevice(volume) is { } device && IsLocalVolume(device))
-                {
-                    continue;
-                }
-
                 return true;
             }
 
