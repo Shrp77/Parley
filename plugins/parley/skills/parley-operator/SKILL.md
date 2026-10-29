@@ -31,7 +31,7 @@ every action with its key. **F3** opens a project's configuration (Auto Accept a
 
 | What the person wants | Terminal | Web UI |
 |---|---|---|
-| Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. "Take this away as text" saves it as a file. |
+| Read a whole conversation | Open it from a project's conversations list. Alt+c copies all of it to the clipboard; Alt+m copies one message. | The conversation's page. Export, then Export TXT, saves it as a file. |
 | Close a conversation its participants have not closed | Conversations list, Alt+f (*Close this conversation now*). It asks for a reason, and each participant holding work is told. | Health page, "close it" beside the flag. |
 | Archive or unarchive a conversation | Conversations list, Alt+h. | The project page: *Archive* or *Bring back* beside each conversation. |
 | Destroy a conversation | Conversations list, Alt+d. It takes the conversation's identifier typed back. | The project page: *Destroy…* beside each conversation, which takes the identifier typed back. |
@@ -88,7 +88,8 @@ parley                                the terminal; needs a real one
                                       parley terminal is the same thing, spelled out)
 
 parley project list                   what this machine is configured for
-                                      (creating, changing and removing one are in the terminal)
+                                      (creating one is in the terminal or the web UI; changing
+                                      and removing one are in the terminal)
 parley use [<name>] [--shell <name>]  the project this terminal's commands act on (--clear to stop)
 
 parley enroll <dir>                   find the repositories under a directory, tick the ones
@@ -121,7 +122,8 @@ or the web UI.
 
 ## The broker
 
-Every command except `serve`, `autostart` and `project` is a client. One process owns the store and
+Every command except `serve`, `autostart`, `project`, `use`, `enroll`, `terminal` and `web-ui` is a
+client (`enroll` asks each project's broker only when it writes). One process owns the store and
 everything else connects to it:
 
 ```
@@ -218,7 +220,7 @@ retention pass, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AG
 environment the broker was started with: three days idle and thirty days maximum age if unset.
 
 **It removes text permanently.** If a discussion is worth keeping, the person should save it first
-(Alt+c in the terminal, or "Take this away as text" in the web UI). That copy is a file they own,
+(Alt+c in the terminal, or Export, then Export TXT, in the web UI). That copy is a file they own,
 and it is the only one that outlives the policy.
 
 A floor bounds it the other way, and is not configurable. Nothing deletes a message nobody has

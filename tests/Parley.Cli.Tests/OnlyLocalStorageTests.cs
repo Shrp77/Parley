@@ -286,10 +286,59 @@ public sealed class OnlyLocalStorageTests : IDisposable
         }
     }
 
+    [Fact]
+    public void A_letter_whose_definition_is_too_long_to_read_at_first_is_still_judged()
+    {
+        // A definition longer than the first buffer failed as "not defined", and the letter was read (lens 2 run 76).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+        var share = $@"\??\UNC\192.0.2.{Random.Shared.Next(2, 254)}\share" + string.Concat(Enumerable.Repeat(@"\aaaaaaaaa", 110));
+
+        WithLetter(share, letter =>
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\x"));
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the share was asked: {timer.Elapsed}");
+        });
+    }
+
+    [Fact]
+    public async Task A_symbolic_link_spelled_as_a_volume_is_followed_as_the_relative_link_it_is()
+    {
+        // `x` -> `Volume{GUID}` is relative to its folder, where a sibling of that name can lead anywhere; only a mount
+        // point names a volume (lens 1 run 72).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "volume names");
+        var mountPoint = new char[1024];
+        var volume = new char[64];
+        Assert.True(GetVolumePathName(_home, mountPoint, (uint)mountPoint.Length));
+        Assert.True(GetVolumeNameForVolumeMountPoint(new string(mountPoint).TrimEnd('\0'), volume, (uint)volume.Length));
+        var name = new string(volume).TrimEnd('\0')[4..].TrimEnd('\\');
+        var onedrive = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "orders")).Parent!.FullName;
+        await LinkAsync(Path.Combine(_home, name), onedrive);
+
+        if (!TrySymbolicLink(Path.Combine(_home, "x"), name))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        Assert.Contains("on OneDrive", LocalStorage.Problem(Path.Combine(_home, "x", "orders"), Environment()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_subst_letter_for_a_folder_that_is_not_there_is_refused()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+
+        WithLetter($@"\??\{Path.Combine(_home, "gone")}", letter =>
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\orders")));
+    }
+
     private static void WithLetter(string definition, Action<string> act)
     {
+        // Free means Windows says the letter is not defined; a definition too long for a small buffer is not "free".
         var letter = Enumerable.Range('K', 'Z' - 'K' + 1).Select(c => $"{(char)c}:")
-            .First(l => QueryDosDevice(l, new char[1024], 1024) == 0);
+            .First(l => QueryDosDevice(l, new char[65536], 65536) == 0
+                && System.Runtime.InteropServices.Marshal.GetLastPInvokeError() == 2);
         Assert.True(DefineDosDevice(RawTargetPath, letter, definition));
 
         try

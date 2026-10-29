@@ -62,7 +62,7 @@ public static class LocalStorage
         // reading anything on it, so only a path it ends on is asked its drive's kind.
         if (OffMachineLinks.LeadsOffThisMachine(full, out var reached))
         {
-            return Said(path, Unfollowed);
+            return Said(path, OffMachineLinks.IsNetworkLetter(full) ? "a network drive" : Unfollowed);
         }
 
         if (DriveProblem(reached) is { } drive)

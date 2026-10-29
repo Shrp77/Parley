@@ -17,6 +17,12 @@ namespace Parley.Configuration;
 /// So every part of the path is asked what it links to, which reads the link itself on this machine, and the walk
 /// continues from the target. Nothing here calls <c>Exists</c> on a path whose parts have not been read this way.
 /// </para>
+/// <para>
+/// <b>On Windows a drive letter is judged by its name.</b> Each letter the walk lands on is read with QueryDosDevice,
+/// never asked what kind of drive it is, because asking can open a share: a local disk volume is walked, a
+/// <c>subst</c> letter is walked as the folder it stands for, a letter that is not defined holds nothing to read, and
+/// any other letter is refused. A mount point is walked through only when its volume is a local disk.
+/// </para>
 /// </remarks>
 public static class OffMachineLinks
 {
@@ -69,6 +75,16 @@ public static class OffMachineLinks
         };
     }
 
+    /// <summary>Whether a full path's drive letter is defined for a share, read from its name alone.</summary>
+    /// <param name="full">A full path.</param>
+    /// <returns><see langword="true"/> for a mapped drive or a letter a program defined for a share.</returns>
+    /// <remarks>For the refusal's words only: the walk refuses such a letter whatever it is called.</remarks>
+    internal static bool IsNetworkLetter(string full) =>
+        Letter(full) is (LetterKind.Elsewhere, _)
+        && DosDevice(full[..2]) is { } name
+        && ((string[])[@"\Device\LanmanRedirector", @"\Device\Mup", @"\Device\WebDavRedirector", @"\??\UNC\", @"\??\GLOBALROOT\Device\Mup"])
+            .Any(share => name.StartsWith(share, StringComparison.OrdinalIgnoreCase));
+
     private static bool IsLocalVolume(string device)
     {
         const string Volume = @"\Device\HarddiskVolume";
@@ -94,25 +110,107 @@ public static class OffMachineLinks
                 : null;
     }
 
-    // What a DOS device name (`K:`, `Volume{GUID}`) is defined as, or null when it is not defined.
+    // What a DOS device name (`K:`, `Volume{GUID}`) is defined as: null only when Windows says it is not defined, and the
+    // empty string, which matches no kind and is refused, when the name could not be read. A definition longer than the
+    // buffer failed as "not defined" and the letter was then read (review, lens 2 run 76), so it is asked again with room
+    // for the longest a definition can be, and any other failure is not taken for "not defined".
     private static string? DosDevice(string device)
     {
+        const int NotFound = 2;
+        const int TooSmall = 122;
+
         if (!OperatingSystem.IsWindows())
         {
             return null;
         }
 
-        var target = new char[1024];
+        foreach (var size in (int[])[1024, 65536])
+        {
+            var target = new char[size];
 
-        try
-        {
-            return QueryDosDevice(device, target, (uint)target.Length) == 0 ? null : new string(target).Split('\0')[0];
+            try
+            {
+                if (QueryDosDevice(device, target, (uint)target.Length) != 0)
+                {
+                    return new string(target).Split('\0')[0];
+                }
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return string.Empty;
+            }
+
+            var error = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
+
+            if (error == NotFound)
+            {
+                return null;
+            }
+
+            if (error != TooSmall)
+            {
+                break;
+            }
         }
-        catch (EntryPointNotFoundException)
-        {
-            return null;
-        }
+
+        return string.Empty;
     }
+
+    // Whether a reparse point is a mount point (a junction or a mounted volume), read from the folder's own entry in its
+    // parent, which follows nothing. A symbolic link whose target is the text `Volume{GUID}` is a relative link to a
+    // sibling of that name, which can lead anywhere (review, lens 1 run 72); only a mount point names a volume.
+    private static bool IsMountPoint(string path)
+    {
+        const uint MountPoint = 0xA0000003;
+
+        var handle = FindFirstFile(path, out var found);
+
+        if (handle == new IntPtr(-1))
+        {
+            return false;
+        }
+
+        FindClose(handle);
+
+        return (found.Attributes & (uint)FileAttributes.ReparsePoint) != 0 && found.ReparseTag == MountPoint;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential,
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private struct FindData
+    {
+        public uint Attributes;
+        public uint CreatedLow;
+        public uint CreatedHigh;
+        public uint AccessedLow;
+        public uint AccessedHigh;
+        public uint WrittenLow;
+        public uint WrittenHigh;
+        public uint SizeHigh;
+        public uint SizeLow;
+        public uint ReparseTag;
+        public uint Reserved;
+
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string Name;
+
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.ByValTStr, SizeConst = 14)]
+        public string ShortName;
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll",
+        EntryPoint = "FindFirstFileW",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    private static extern IntPtr FindFirstFile(string fileName, out FindData found);
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool FindClose(IntPtr handle);
 
     // `DllImport` for the reason Windowless gives, resolved from System32 only so a planted kernel32.dll is never loaded.
     [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
@@ -233,7 +331,7 @@ public static class OffMachineLinks
 
             // A folder that mounts a disk holds the volume's name, not a path (a second disk at C:\mnt\data). A local
             // disk's volume is walked through as a folder; any other volume is not this machine's own (lens 1 run 71).
-            if (OperatingSystem.IsWindows() && MountedVolume(target) is { } volume)
+            if (OperatingSystem.IsWindows() && MountedVolume(target) is { } volume && IsMountPoint(current))
             {
                 if (DosDevice(volume) is { } device && IsLocalVolume(device))
                 {

@@ -35,7 +35,8 @@ Check a change against each; a new page or a new path lookup must keep all of th
   machine, a link whose target cannot be read, a target rooted without a drive, a link whose target names
   something not there, and a stream spelling (`folder::$INDEX_ALLOCATION`). Each drive letter the walk lands on, typed or
   through a link, is judged by the name Windows keeps for it, never by asking the drive (asking can open a share): a
-  local disk volume is walked, a `subst` letter is walked as the folder it stands for, and anything else is refused.
+  local disk volume is walked, a `subst` letter is walked as the folder it stands for, an undefined letter holds
+  nothing to read, and anything else is refused (a letter whose name cannot be read included).
   A folder that mounts a local disk is walked through. Every surface that looks up a path an agent can influence goes through it: the web Enrol page
   and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, and the ownership
   write Auto Accept makes.
