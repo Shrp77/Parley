@@ -12,7 +12,7 @@ namespace Parley.Setup;
 /// <para>
 /// <b>This is the only thing that makes an accepted line reach anybody.</b> The registry's
 /// <c>owns</c> is filled from the launch environment when an agent attaches (SPEC.md §12.3) and no
-/// operation writes it, so a line a person agreed to is a record and nothing else until it is in the
+/// operation writes it, so an accepted line (by Auto Accept or by a person) is a record and nothing else until it is in the
 /// file the agent's server is started with. <c>record_ownership</c> stores the decision; this puts it
 /// where the decision takes effect.
 /// </para>

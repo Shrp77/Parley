@@ -525,10 +525,11 @@ public static class EnrollmentPlan
             // worse one than a sentence somebody meant.
             //
             // It says how to get one, because enrolment deliberately does not ask: the line is
-            // something the agent is asked for and a person accepts.
+            // something the agent is asked for once it attaches, and its answer is accepted for it
+            // (Auto Accept, the default) or by a person.
             notes.Add(
-                ".mcp.json: no owns line; peers will see only the name. Ask the agent what it owns "
-                + "from the terminal or the console, and accepting the answer writes it here.");
+                ".mcp.json: no owns line yet; peers will see only the name until it has one. Parley asks the agent "
+                + "what it owns once it registers, and its accepted answer is written here.");
         }
 
         string? instructionsOutput = null;

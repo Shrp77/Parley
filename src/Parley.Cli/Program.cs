@@ -828,7 +828,7 @@ if (verb == "serve" && rest.Length == 0)
                 ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
                     + "   Open that one in a browser."
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
-                    + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
+                    + $"   The broker is still serving. {Forwarding.InstallHint("parley-web-ui")}";
 
             var body =
                 opening + Environment.NewLine

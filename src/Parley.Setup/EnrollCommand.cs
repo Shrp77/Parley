@@ -1130,7 +1130,9 @@ public static class EnrollCommand
     /// its agent may never read — which is the failure the peers frame exists to prevent, wearing
     /// a different hat.
     /// </remarks>
-    private static string InstructionsFile(string workspace)
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The file the peers frame goes into.</returns>
+    public static string InstructionsFile(string workspace)
     {
         foreach (var name in (string[])["CLAUDE.md", "AGENTS.md"])
         {

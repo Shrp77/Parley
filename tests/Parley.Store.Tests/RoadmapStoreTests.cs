@@ -130,6 +130,20 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
     }
 
+    [Theory]
+    [InlineData("human-user@test")]
+    [InlineData("parley-facilitator@test")]
+    public async Task An_item_cannot_be_meant_for_the_person_or_Parley(string seat)
+    {
+        // Review, lens 2 run 69: both seats are rows in agents, so an item for either was admitted and confirmed, and
+        // starting it failed at the send. The person sends an item; Parley never receives anybody's work.
+        var refused = await Repository.ProposeAsync(
+            Orders, null, null, Content("Plan", Item("Do it", AgentName.Create(seat))), Now, cancellationToken: Ct);
+
+        Assert.Contains("takes no work", refused.Problem, StringComparison.Ordinal);
+        Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
+    }
+
     [Fact]
     public async Task A_proposal_cannot_name_an_existing_item()
     {

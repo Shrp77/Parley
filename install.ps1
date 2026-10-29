@@ -1002,27 +1002,31 @@ Write-Host ''
 Write-Host 'The broker is running, and starts again when you log in.' -ForegroundColor Green
 Write-Host ''
 
-# **What to do next is the terminal's flow:** make a project, then enrol agents into it from
-# inside it. Doing any of it needs the terminal, and on a machine without one there is no way at
-# all: the command line cannot name a project and the web UI cannot either, by the one-writer rule
-# its own naming page records. So a machine without the terminal is told outright rather than
-# handed steps it cannot follow.
+# **What to do next:** make a project, then enrol agents into it. The terminal does both, and so
+# does the web console (its project list creates one, a project's Agents tab registers agents), so a
+# machine with only the web UI is sent there rather than told to install a second tool. Only a
+# machine with neither is told it has nowhere to do it.
 if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
     Write-Host 'Next, run:  parley' -ForegroundColor White
 
     if ($named) {
-        Write-Host '  1. Open a project, or create a new one with c.' -ForegroundColor White
+        Write-Host '  1. Open a project, or create a new one with Alt+c.' -ForegroundColor White
     }
     else {
-        Write-Host '  1. Create a project with c. There is none yet, so nothing is being served.' -ForegroundColor White
+        Write-Host '  1. Create a project with Alt+c. There is none yet, so nothing is being served.' -ForegroundColor White
     }
 
-    Write-Host '  2. In the project, choose Agent > Enroll agents from folders (f).' -ForegroundColor White
+    Write-Host '  2. In the project, choose Agent > Enroll agents from folders (Alt+f).' -ForegroundColor White
     Write-Host '  3. Pick the folder that holds your repositories, tick the ones you want, press Enter.' -ForegroundColor White
 }
+elseif ($webUi) {
+    Write-Host "Next, open the web UI at $webUi" -ForegroundColor White
+    Write-Host '  1. Create or open a project.' -ForegroundColor White
+    Write-Host "  2. On the project's Agents tab, choose Register an agent, and give it a repository or a folder of them." -ForegroundColor White
+}
 else {
-    Write-Warning 'Projects and agents are set up in the terminal, and this machine has not installed it.'
-    Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+    Write-Warning 'Projects and agents are set up in the terminal or the web UI, and this machine has installed neither.'
+    Write-Host '  .\install.ps1 -Only parley-terminal               installs the terminal without stopping the broker' -ForegroundColor White
 }
 
 if ($webUi) {

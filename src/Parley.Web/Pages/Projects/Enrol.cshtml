@@ -176,7 +176,7 @@ else
             <dt>Launch</dt>
             <dd>@Enrolment.LaunchPath(Model.Workspace!.Trim()) — launches this repository as <code>@Model.Role</code> in @Model.Project.</dd>
             <dt>Instructions</dt>
-            <dd>@System.IO.Path.Combine(Model.Workspace!.Trim(), "CLAUDE.md") — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</dd>
+            <dd>@EnrollCommand.InstructionsFile(Model.Workspace!.Trim()) — a <code>@EnrollmentPlan.PeersHeading</code> section, if it has none.</dd>
             <dt>Catalogue</dt>
             <dd>@Model.Catalogue — lets this machine start it when a question arrives.</dd>
         </dl>

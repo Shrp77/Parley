@@ -959,6 +959,14 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
         foreach (var agent in content.Items.Select(i => i.IntendedAgent).Where(a => a is not null).Distinct())
         {
+            // Neither seat takes work: the person is who sends an item, never who it is for, and Parley never receives
+            // anybody's work (review, lens 2 run 69: both were admitted, and starting the item failed at the send).
+            if (agent!.Value.Role == PersonSeat.Role || agent.Value.Role == Facilitation.Role)
+            {
+                return $"{agent.Value} takes no work, so an item cannot be meant for it. Name the agent that will do it, "
+                    + "or nobody.";
+            }
+
             var known = await _connection.ExecuteScalarAsync<int>(
                 new CommandDefinition(
                     "SELECT COUNT(*) FROM agents WHERE name = @Name AND status <> 'retired';",

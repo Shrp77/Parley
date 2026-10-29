@@ -92,6 +92,9 @@ cd Parley
 ./install.sh         # Linux and macOS
 ```
 
+On Linux and macOS the install leaves the terminal out unless you ask for it
+(`./install.sh --surfaces both`), and the web console does everything below.
+
 Then add your repositories. You can do this in the terminal or in the web console:
 
 1. Open the terminal with `parley`, or the web console at <http://127.0.0.1:5280>.
