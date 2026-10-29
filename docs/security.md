@@ -56,9 +56,11 @@ prioritises, closes or overrides anything.
 - **No agent can read the log or search it.** There is no shared memory to poison.
 - **Files go to disk, not into context.** Only `.md` and `.txt` files can be placed, so code
   travels as `Name.cs.txt` and nothing that runs can be opened by accident. A fetched file is
-  another participant's data and cannot give instructions: it is written only as a `.md` or
-  `.txt` file, never under `.git`, `.claude`, `.github`, `.cursor`, `.codex` or `.gemini`, and
-  never as `CLAUDE.md`, `AGENTS.md` or another file an agent reads as instructions. Files are checked against their
+  another participant's data, never instructions. It is written only as a `.md` or
+  `.txt` file, never under `.git`, `.claude`, `.github` or another agent client's settings or rules folder, and
+  never as `CLAUDE.md`, `AGENTS.md` and the other instruction files Parley knows of. No list can
+  name every place a tool reads instructions from, so the agent is told never to put a fetched
+  file where one would. Files are checked against their
   SHA-256 hash when fetched.
 - **Ownership lines have no length limit by default.** This is a recorded reduction in a
   control: a roster can become the largest thing an agent reads. The character rules that stop a

@@ -120,6 +120,17 @@ public sealed class FileToolTests : IDisposable
     [InlineData("GEMINI.md")]
     [InlineData(".github/copilot-instructions.md")]
     [InlineData(".cursor/rules/notes.md")]
+    [InlineData(".codex/notes.md")]
+    [InlineData(".gemini/notes.md")]
+    [InlineData("AGENT.md")]
+    [InlineData(".windsurf/rules/notes.md")]
+    [InlineData(".clinerules/notes.md")]
+    [InlineData(".roo/rules/notes.md")]
+    [InlineData(".kiro/steering/notes.md")]
+    [InlineData(".amazonq/rules/notes.md")]
+    [InlineData(".junie/guidelines.md")]
+    [InlineData(".continue/rules/notes.md")]
+    [InlineData("docs/CONVENTIONS.md")]
     public async Task A_fetch_is_never_written_as_configuration_hooks_or_code(string destination)
     {
         // Found by review, round 62: a peer's file was written wherever the destination said, a settings file holding a

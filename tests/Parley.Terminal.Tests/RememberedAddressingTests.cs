@@ -163,5 +163,17 @@ public sealed class RememberedAddressingTests
 
     /// <summary>A file name in the temporary folder, unique to one test.</summary>
     /// <returns>The path; nothing is created.</returns>
+    [Fact]
+    public void The_file_is_kept_in_the_deployment_root_never_beside_it()
+    {
+        // Found by review, lens 3 run 66: the terminal hands over the root folder, and the file went to its parent,
+        // whatever folder holds the deployment.
+        var root = Path.Combine(Path.GetTempPath(), $"parley-root-{Guid.NewGuid():N}");
+
+        Assert.Equal(Path.Combine(root, AddressBook.FileName), AddressBook.In(root));
+        Assert.Equal(Path.Combine(root, AddressBook.FileName), AddressBook.In(root + Path.DirectorySeparatorChar));
+        Assert.Null(AddressBook.In(null));
+    }
+
     private static string Scratch() => Path.Combine(Path.GetTempPath(), $"parley-addressing-{Guid.NewGuid():N}.json");
 }

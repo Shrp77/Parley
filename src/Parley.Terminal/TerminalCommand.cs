@@ -96,7 +96,7 @@ public static class TerminalCommand
             null, Environment.GetEnvironmentVariable, manifestPath).Value;
 
         return await DriveAsync(
-            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, AddressBook.Beside(manifestPath),
+            app, directory, seats, manifestPath, InstalledEntry.Installed(), catalogue, AddressBook.In(manifestPath),
             cancellationToken)
             .ConfigureAwait(false);
     }

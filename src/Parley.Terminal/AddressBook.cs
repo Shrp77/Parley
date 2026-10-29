@@ -38,14 +38,15 @@ internal sealed class AddressBook(string? path)
 
     private Dictionary<string, Dictionary<string, List<string>>>? _entries;
 
-    /// <summary>The file for a manifest, or <see langword="null"/> when there is no manifest to sit beside.</summary>
-    /// <param name="manifestPath">The manifest.</param>
+    /// <summary>The file for a deployment, or <see langword="null"/> when there is no deployment folder to keep it in.</summary>
+    /// <param name="root">The deployment's root folder, where its manifest lives.</param>
     /// <returns>The path.</returns>
-    internal static string? Beside(string? manifestPath) =>
-        manifestPath is { Length: > 0 } manifest
-        && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory
-            ? Path.Combine(directory, FileName)
-            : null;
+    /// <remarks>
+    /// In the root itself, never its parent: the parent is whatever folder holds the deployment, a person's own folder
+    /// among others, and no removal of the deployment would take the file away (review, lens 3 run 66).
+    /// </remarks>
+    internal static string? In(string? root) =>
+        root is { Length: > 0 } folder ? Path.Combine(Path.GetFullPath(folder), FileName) : null;
 
     /// <summary>Who the line in a conversation was narrowed to, or <see langword="null"/> when it goes to everyone.</summary>
     /// <param name="project">The project.</param>
