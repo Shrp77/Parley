@@ -159,7 +159,7 @@ or send an agent work yourself from the box at the bottom of a conversation.
   Restart the session. If the file is tracked by Git, it only exists on branches that contain it.
   Put the entry on the branch everything else is cut from. If the tools are still missing after a
   restart, check where the repository is: Parley refuses one on a synced cloud folder (OneDrive,
-  Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual drive, or reached through a
+  Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system, or reached through a
   link to one. Move it to a folder on this machine's own disk.
 - **"No broker is listening."** The broker is not running. `parley autostart status` says
   whether it is set up. `parley autostart install` sets it up and starts it.

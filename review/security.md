@@ -32,13 +32,15 @@ Check a change against each; a new page or a new path lookup must keep all of th
 **Paths and links**
 - No path is looked up on another machine. `LocalPath` refuses a share or device written as text; `OffMachineLinks`
   walks a path part by part, reading each link's target without opening it, and refuses a link that leads off this
-  machine, a link whose target cannot be read, a target rooted without a drive, and a link whose target names
-  something not there. Every surface that looks up a path an agent can influence goes through it: the web Enrol page
+  machine, a link whose target cannot be read, a target rooted without a drive, a link whose target names
+  something not there, and a stream spelling (`folder::$INDEX_ALLOCATION`). Each drive the walk lands on, typed or
+  through a link or a `subst` letter, is asked its kind before anything on it is read, so a network letter is never
+  looked up. Every surface that looks up a path an agent can influence goes through it: the web Enrol page
   and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, and the ownership
   write Auto Accept makes.
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
-  synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual drive
+  synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system
   (`LocalStorage`).
 
 **Files between agents**

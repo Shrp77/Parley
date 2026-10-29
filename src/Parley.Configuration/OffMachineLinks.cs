@@ -40,6 +40,91 @@ public static class OffMachineLinks
     /// </remarks>
     internal static bool LeadsOffThisMachine(string path, out string reached) => Leads(path.Trim(), 0, 0, out reached);
 
+    /// <summary>A path with its drive letter replaced by the folder <c>subst</c> made it stand for, once.</summary>
+    /// <param name="full">A full path.</param>
+    /// <returns>The path on the folder the letter names, or <paramref name="full"/> when the letter is a drive's own.</returns>
+    /// <remarks>QueryDosDevice names a subst letter as <c>\??\C:\folder</c>; reading that name opens nothing.</remarks>
+    internal static string Unsubstituted(string full)
+    {
+        var name = DosDevice(full);
+
+        return name is not null && name.StartsWith(@"\??\", StringComparison.Ordinal) && name.Length > 6 && name[5] == ':'
+            ? Path.Join(name[4..], full[2..])
+            : full;
+    }
+
+    // Whether the drive a full path is on is a network drive, or a letter defined for something that is not a folder on
+    // a disk, after following subst letters to the drive they stand on.
+    private static bool DriveIsElsewhere(string full)
+    {
+        var on = full;
+
+        for (var i = 0; ; i++)
+        {
+            var real = Unsubstituted(on);
+
+            if (string.Equals(real, on, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            if (i > MostLinks || LocalPath.IsOffThisMachine(real))
+            {
+                return true;
+            }
+
+            on = real;
+        }
+
+        try
+        {
+            var root = Path.GetPathRoot(on) ?? on;
+
+            return new DriveInfo(root).DriveType switch
+            {
+                DriveType.Network => true,
+
+                // A letter nobody defined is only a folder that is not there; one defined for something with no root
+                // folder is a device.
+                DriveType.NoRootDirectory => DosDevice(on) is not null,
+                _ => false,
+            };
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    // What a drive letter is defined as, or null when it is not a letter or not defined.
+    private static string? DosDevice(string full)
+    {
+        if (!OperatingSystem.IsWindows() || full.Length < 2 || full[1] != ':' || !char.IsAsciiLetter(full[0]))
+        {
+            return null;
+        }
+
+        var target = new char[1024];
+
+        try
+        {
+            return QueryDosDevice(full[..2], target, (uint)target.Length) == 0 ? null : new string(target).Split('\0')[0];
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    // `DllImport` for the reason Windowless gives, resolved from System32 only so a planted kernel32.dll is never loaded.
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll",
+        EntryPoint = "QueryDosDeviceW",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        SetLastError = true)]
+    private static extern uint QueryDosDevice(string deviceName, [System.Runtime.InteropServices.Out] char[] targetPath, uint max);
+
     // The walk. `fromTarget` is how many leading parts of the path came from the link just followed: a part among those
     // that is not there means the link named something this walk cannot see (an NT path .NET hands back as a relative one,
     // such as GLOBALROOT\Device\Mup\host), so it is refused; a part past them that is not there is only a missing file.
@@ -70,6 +155,16 @@ public static class OffMachineLinks
         }
 
         reached = full;
+
+        // The walk lands on a drive letter as typed and again after every link. Its kind is asked, which opens nothing,
+        // before any part of it is read: a link to a mapped network letter, or to a letter a program defined for a share,
+        // would otherwise sign the person in to that host (review, lens 2 run 74). A colon past the drive is a stream
+        // spelling, `folder::$INDEX_ALLOCATION`, which is the folder to Windows but not to a comparison of text (lens 1
+        // run 70).
+        if (OperatingSystem.IsWindows() && (full.IndexOf(':', 2) >= 0 || DriveIsElsewhere(full)))
+        {
+            return true;
+        }
 
         var root = Path.GetPathRoot(full) ?? string.Empty;
         var parts = full[root.Length..].Split(Separators, StringSplitOptions.RemoveEmptyEntries);

@@ -29,7 +29,7 @@
         Pick: true);
 }
 @* A new conversation takes the project's default agent as a start; a roadmap item's does not, since who it is for is the
-   item's and the page has ticked that agent, or nobody when it names none (SPEC.md §5.7). *@
+   item's and the page has ticked that agent, or nobody when it names none or is the person's own (SPEC.md §5.7). *@
 <aside class="recipients" aria-label="Who to talk to" data-new="@(Model.Messages.Count == 0 && Model.Item is null ? "true" : null)">
     <h2>To</h2>
 

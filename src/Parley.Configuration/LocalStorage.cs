@@ -4,7 +4,8 @@ using Parley.Core;
 namespace Parley.Configuration;
 
 /// <summary>
-/// Whether a folder is on this machine's own disks: never a network drive, a synced cloud folder or a virtual drive.
+/// Whether a folder is on this machine's own disks: never a network drive, a synced cloud folder or a virtual file
+/// system.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,7 +37,7 @@ public static class LocalStorage
 
         if (LocalPath.IsOffThisMachine(path.Trim()))
         {
-            return Said(path, "another machine, a device, or a link to one");
+            return Said(path, Unfollowed);
         }
 
         string full;
@@ -63,7 +64,7 @@ public static class LocalStorage
 
         for (var round = 0; ; round++)
         {
-            var real = Unsubstituted(reached);
+            var real = OffMachineLinks.Unsubstituted(reached);
 
             if (DriveProblem(real) is { } drive)
             {
@@ -72,7 +73,7 @@ public static class LocalStorage
 
             if (OffMachineLinks.LeadsOffThisMachine(real, out var walked) || round > 8)
             {
-                return Said(path, "another machine, a device, or a link to one");
+                return Said(path, Unfollowed);
             }
 
             if (string.Equals(walked, reached, StringComparison.Ordinal))
@@ -94,53 +95,14 @@ public static class LocalStorage
         return null;
     }
 
+    // A link that leads off this machine, and one whose target is missing, hidden or a stream, are refused alike.
+    private const string Unfollowed = "another machine, a device, or a link Parley cannot follow";
+
     private static string Through(string full, string reached) =>
         string.Equals(full, reached, StringComparison.Ordinal) ? full : $"{full}, through a link to {reached},";
 
     private static string Said(string path, string what) =>
         $"{path} is on {what}. Parley keeps its work only on this machine's own disks: move it to a local folder.";
-
-    // A drive letter `subst` made stands for a folder on another drive; QueryDosDevice names it as `\??\C:\folder`.
-    // Reading that name opens nothing.
-    private static string Unsubstituted(string full)
-    {
-        if (!OperatingSystem.IsWindows()
-            || full.Length < 2
-            || full[1] != ':'
-            || !char.IsAsciiLetter(full[0]))
-        {
-            return full;
-        }
-
-        var target = new char[1024];
-
-        try
-        {
-            if (QueryDosDevice(full[..2], target, (uint)target.Length) == 0)
-            {
-                return full;
-            }
-        }
-        catch (EntryPointNotFoundException)
-        {
-            return full;
-        }
-
-        var name = new string(target).Split('\0')[0];
-
-        return name.StartsWith(@"\??\", StringComparison.Ordinal) && name.Length > 6 && name[5] == ':'
-            ? Path.Join(name[4..], full[2..])
-            : full;
-    }
-
-    // `DllImport` for the reason Windowless gives, resolved from System32 only so a planted kernel32.dll is never loaded.
-    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
-    [System.Runtime.InteropServices.DllImport(
-        "kernel32.dll",
-        EntryPoint = "QueryDosDeviceW",
-        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
-        SetLastError = true)]
-    private static extern uint QueryDosDevice(string deviceName, [System.Runtime.InteropServices.Out] char[] targetPath, uint max);
 
     // The folders the sync clients keep, as each says where it put them.
     private static string? SyncedFolder(string full, Func<string, string?> read)
@@ -187,12 +149,13 @@ public static class LocalStorage
 
         var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
+        // A sync folder's own path can pass through a link (OneDrive moved to another disk and linked back, or macOS's
+        // /var, which is /private/var), so each is compared as written and where it leads, as the folder is.
         foreach (var (root, name) in roots)
         {
-            var trimmed = Path.TrimEndingDirectorySeparator(root);
+            string[] spellings = OffMachineLinks.LeadsOffThisMachine(root, out var resolved) ? [root] : [root, resolved];
 
-            if (string.Equals(full, trimmed, comparison)
-                || full.StartsWith(trimmed + Path.DirectorySeparatorChar, comparison))
+            if (spellings.Any(spelling => Within(full, Path.TrimEndingDirectorySeparator(spelling), comparison)))
             {
                 return name;
             }
@@ -200,6 +163,9 @@ public static class LocalStorage
 
         return null;
     }
+
+    private static bool Within(string full, string root, StringComparison comparison) =>
+        string.Equals(full, root, comparison) || full.StartsWith(root + Path.DirectorySeparatorChar, comparison);
 
     // Dropbox writes where each of its accounts keeps its folder into info.json.
     private static IEnumerable<string>? DropboxRoots(string info)

@@ -114,6 +114,18 @@ public sealed class OnlyLocalStorageTests : IDisposable
     }
 
     [Fact]
+    public async Task A_sync_folder_that_is_itself_a_link_is_known_where_it_leads()
+    {
+        // OneDrive moved to another disk and linked back from the home folder, or macOS's /var, which is /private/var: a
+        // folder named where the link leads is still in it (CI on macOS, 0.47.34).
+        var moved = Directory.CreateDirectory(Path.Combine(_home, "Elsewhere", "OneDrive")).FullName;
+        var repository = Directory.CreateDirectory(Path.Combine(moved, "orders")).FullName;
+        await LinkAsync(Path.Combine(_home, "OneDrive"), moved);
+
+        Assert.Contains("on OneDrive", LocalStorage.Problem(repository, Environment()), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_stream_spelling_of_a_folder_is_refused()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "NTFS streams");
@@ -136,6 +148,73 @@ public sealed class OnlyLocalStorageTests : IDisposable
 
         Assert.Null(LocalStorage.Problem(repository, Environment(("LOCALAPPDATA", local))));
     }
+
+    [Fact]
+    public async Task A_link_whose_target_is_a_stream_spelling_of_a_synced_folder_is_refused()
+    {
+        // The target `OneDrive::$INDEX_ALLOCATION` opens as OneDrive itself but compares as other text (lens 1 run 70).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "NTFS streams");
+        var onedrive = Directory.CreateDirectory(Path.Combine(_home, "OneDrive")).FullName;
+        Directory.CreateDirectory(Path.Combine(onedrive, "inside"));
+        var link = Path.Combine(_home, "code");
+        await LinkAsync(link, onedrive + "::$INDEX_ALLOCATION");
+
+        Assert.NotNull(LocalStorage.Problem(Path.Combine(link, "inside"), Environment()));
+    }
+
+    [Fact]
+    public void A_link_to_a_letter_for_a_share_is_refused_without_the_share_being_asked()
+    {
+        // A link to `K:\x`, where K: is a share's letter, was read on K: and signed the person in to its host (lens 2
+        // run 74). The letter is defined for a TEST-NET host, which never answers: a lookup that slipped through takes
+        // the SMB wait, about 21 seconds.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+        var letter = Enumerable.Range('K', 'Z' - 'K' + 1).Select(c => $"{(char)c}:")
+            .First(l => QueryDosDevice(l, new char[1024], 1024) == 0);
+        // A fresh host each run: Windows answers a host it failed to reach a moment ago at once, which would hide a lookup.
+        var share = $@"\??\UNC\192.0.2.{Random.Shared.Next(2, 254)}\share";
+        Assert.True(DefineDosDevice(RawTargetPath, letter, share));
+
+        try
+        {
+            // A symbolic link, because mklink /J looks its target up as it makes the junction. Making one needs Developer
+            // Mode or an elevated runner.
+            var link = Path.Combine(_home, "repo");
+
+            try
+            {
+                Directory.CreateSymbolicLink(link, $@"{letter}\x");
+            }
+            catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+            {
+                Assert.Skip("symbolic links need Developer Mode here");
+            }
+
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\x\.mcp.json"));
+            Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(link, ".mcp.json")));
+            Assert.NotNull(LocalStorage.Problem(link, Environment()));
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the share was asked: {timer.Elapsed}");
+        }
+        finally
+        {
+            DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, share);
+        }
+    }
+
+    private const uint RawTargetPath = 0x1;
+    private const uint RemoveDefinition = 0x2;
+    private const uint ExactMatchOnRemove = 0x4;
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "DefineDosDeviceW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool DefineDosDevice(uint flags, string deviceName, string targetPath);
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "QueryDosDeviceW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint QueryDosDevice(string deviceName, [System.Runtime.InteropServices.Out] char[] targetPath, uint max);
 
     private static async Task LinkAsync(string link, string target)
     {
