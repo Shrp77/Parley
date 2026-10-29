@@ -11,13 +11,17 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That an agent's long roadmap title never pushes what a choice does, or the proposal's own title, off the screen.
+/// That an agent's long words — a roadmap title, an ownership line, an answer — never push what a choice does, what it
+/// records, or the proposal's own title off the screen.
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 56.</b> Roadmap text has no bound, and a choice dialog cannot scroll and cuts its tail: the
 /// decline door put the agent's title first, so a long one hid what declining does; the revise choice quoted the
 /// matched roadmap's title whole, hiding that a revision replaces every item; and a long revise hint in the proposal's
-/// heading hid the title a confirm records. Each sentence now quotes the agent's words short.
+/// heading hid the title a confirm records. Each sentence now quotes the agent's words short. Round 57 found that a
+/// shortened title cannot tell apart two roadmaps that share its first eighty characters, so the revise choice names
+/// the roadmap by number; that a long ownership line hid what retiring and purging do; and that an answer padded with
+/// blank lines hid words Accept records.
 /// </remarks>
 public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
 {
@@ -124,6 +128,85 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
 
         Assert.Contains(ProposalView.ConfirmLabel, screen, StringComparison.Ordinal);
         Assert.Contains("Rotate every production key", screen, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(140, 40)]
+    [InlineData(80, 24)]
+    public async Task The_revise_choice_names_which_of_two_like_titled_roadmaps_it_replaces(int width, int height)
+    {
+        using var driving = Driving.Open(width: width, height: height);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+        var prefix = "Ship the quarterly billing export to every regional ledger and reconcile them all by";
+
+        foreach (var title in new[] { prefix + " Friday, phase one", prefix + " Friday, phase two" })
+        {
+            var made = await Repository.GetProposalAsync(await ProposeAsync(title), Ct);
+            Assert.True((await Repository.ConfirmAsync(made!.Id, made.Content, null, T0, cancellationToken: Ct)).Done);
+        }
+
+        await ProposeAsync("Short", target: prefix + " Friday, phase two");
+
+        await shell.Global().Single(a => a.Label == Proposing.Title).Run();
+        await shell.Settled;
+        Assert.True(shell.Roadmaps.OpenSelected());
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+
+        _ = (ChoiceDialog)driving.Find(Proposing.Title);
+        driving.App.LayoutAndDraw(true);
+        var flat = driving.Text().Replace("\n", " ", StringComparison.Ordinal);
+
+        Assert.Contains("Revise roadmap #2", flat, StringComparison.Ordinal);
+        Assert.Contains("replaces every item", flat, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(140, 40)]
+    [InlineData(80, 24)]
+    public async Task A_long_ownership_line_leaves_what_retiring_and_purging_do_in_view(int width, int height)
+    {
+        using var driving = Driving.Open(width: width, height: height);
+        var owns = "Owns billing: " + string.Concat(Enumerable.Repeat("invoices, ledgers, exports, refunds, ", 40)).Trim();
+        var row = new AgentRow("billing@test", "active", "pull", owns, "/repos/billing", false);
+        var agent = new AgentRecord(Billing, "mcp", AgentTier.Pull, "/repos/billing", null, null, false, AgentStatus.Active, owns);
+
+        await Withdrawing.OpenAsync(
+            driving.App, new BrokerClient(_broker.Operators), row, agent, [], null, null, _ => { }, _ => Task.CompletedTask);
+
+        driving.App.LayoutAndDraw(true);
+        var flat = driving.Text().Replace("\n", " ", StringComparison.Ordinal);
+
+        Assert.Contains("Retiring withdraws", flat, StringComparison.Ordinal);
+        Assert.Contains("Purging deletes", flat, StringComparison.Ordinal);
+        Assert.Contains("cannot be undone", flat, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(140, 40)]
+    [InlineData(80, 24)]
+    public void An_answer_padded_with_blank_lines_shows_what_accept_records(int width, int height)
+    {
+        using var driving = Driving.Open(width: width, height: height);
+        var answer = "I own billing and nothing else."
+            + string.Concat(Enumerable.Repeat("\n", 40))
+            + "Also orders; ask first.";
+        var flattened = OwnershipStatement.Flatten(answer);
+        var question = new OwnershipQuestion(Billing, "ownership-1", 1, QuestionState.Waiting, answer, flattened, "auto accept is off", T0, null);
+        var agent = new AgentRecord(Billing, "mcp", AgentTier.Pull, "/repos/billing", null, null, false, AgentStatus.Active);
+
+        // As OwnershipReview builds it.
+        Prompting.Open(
+            driving.App,
+            Prompting.Choose(OwnershipReview.Title, OwnershipReview.Detail(agent, question), OwnershipReview.Choices(question)));
+        driving.App.LayoutAndDraw(true);
+
+        // Read as words: the dialog wraps the answer, and its border stands between the halves of a line.
+        var flat = System.Text.RegularExpressions.Regex.Replace(driving.Text(), @"[\s┃│]+", " ");
+
+        Assert.Contains(OwnershipReview.Accept, OwnershipReview.Choices(question));
+        Assert.Contains("Also orders; ask first.", flat, StringComparison.Ordinal);
     }
 
     private BrokerDirectory Directory() =>

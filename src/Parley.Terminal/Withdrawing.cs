@@ -95,11 +95,12 @@ internal static class Withdrawing
         ArgumentNullException.ThrowIfNull(owed);
 
         // The row's values are already neutralised where they enter it; the adapter is read here
-        // and is the agent's own string, so it is neutralised here.
+        // and is the agent's own string, so it is neutralised here. The ownership line has no bound and can be the
+        // agent's own words, so it is shortened: drawn whole, a long one pushed the rest off a dialog that cannot scroll.
         var said = $"{row.Name}{Environment.NewLine}"
             + $"  state      {row.State}{Environment.NewLine}"
             + $"  workspace  {row.Workspace}{Environment.NewLine}"
-            + $"  owns       {row.Owns}{Environment.NewLine}"
+            + $"  owns       {AgentWords.Shortened(row.Owns)}{Environment.NewLine}"
             + $"  adapter    {Safe.Text(agent?.Adapter ?? "not registered")}{Environment.NewLine}";
 
         return owed.Count == 0
@@ -165,11 +166,12 @@ internal static class Withdrawing
             return Task.CompletedTask;
         }
 
+        // What each choice does first, then the agent: the dialog cannot scroll and cuts its tail.
         var choosing = Prompting.Choose(
             Title,
-            Describe(agent, row, owed)
-            + Environment.NewLine + Environment.NewLine + Retiring
-            + Environment.NewLine + Purging,
+            Retiring
+            + Environment.NewLine + Purging
+            + Environment.NewLine + Environment.NewLine + Describe(agent, row, owed),
             Choices);
 
         var token = Prompting.Open(app, choosing);

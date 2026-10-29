@@ -1,3 +1,4 @@
+using System.Globalization;
 using Parley.Client;
 using Parley.Client.Roadmaps;
 using Parley.Core;
@@ -322,7 +323,7 @@ internal static class Proposing
             "Declining keeps no roadmap. The agent that proposed it is told, in its own inbox, that it was declined; "
             + "nothing it was working on changes, and the conversation it came from is untouched."
             + $"\n\nProposed by {Safe.Text(proposal.Proposer.Value)}: "
-            + Safe.Text(Removal.Quoted(proposal.Content.Title));
+            + Safe.Text(AgentWords.Shortened(proposal.Content.Title));
 
         var choosing = Prompting.Choose(DeclineTitle, description, [Leave, Decline]);
         var open = Prompting.Open(app, choosing);
@@ -397,13 +398,17 @@ internal static class Proposing
         }
 
         // The title is a hint and a person decides what it means: shown with the match, never acted on.
-        // Quoted short, so a long title cannot push what a revision does off a dialog that cannot scroll.
-        var matched = Safe.Text(Removal.Quoted(match.Title));
-        var revise = $"Revise the roadmap '{matched}'";
+        // Quoted short, so a long title cannot push what a revision does off a dialog that cannot scroll, and named by its
+        // number, as the roadmaps pane names it: titles are not unique and two may share every character quoted.
+        var number = "#" + match.Number.ToString(CultureInfo.InvariantCulture);
+        var matched = Safe.Text(AgentWords.Shortened(match.Title));
+        var revise = $"Revise roadmap {number}";
         var choosing = Prompting.Choose(
             Title,
-            $"This proposal's title matches the roadmap '{matched}'. A revision replaces every item that " +
-            "roadmap has with these; the items it had are removed, and their conversations stay. A new roadmap leaves it alone.",
+            $"This proposal's title matches roadmap {number}, '{matched}', which has "
+            + match.LiveItems.ToString(CultureInfo.InvariantCulture) + (match.LiveItems == 1 ? " item" : " items")
+            + ". A revision replaces every item that roadmap has with these; the items it had are removed, and their "
+            + "conversations stay. A new roadmap leaves it alone.",
             [NewRoadmap, revise]);
 
         var open = Prompting.Open(app, choosing);

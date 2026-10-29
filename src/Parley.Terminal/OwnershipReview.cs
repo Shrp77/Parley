@@ -1,3 +1,4 @@
+using System.Globalization;
 using Parley.Client;
 using Parley.Core;
 using Terminal.Gui.App;
@@ -168,27 +169,36 @@ internal static class OwnershipReview
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        var peers = agent.Owns is { Length: > 0 } owns ? $"'{Safe.Text(owns)}'" : "no line";
+        // Ownership lines have no bound, so both are shortened: what this dialog decides is the answer below.
+        var peers = agent.Owns is { Length: > 0 } owns ? $"'{Safe.Text(AgentWords.Shortened(owns))}'" : "no line";
         var accepted = agent.OwnsAccepted is { Length: > 0 } line
-            ? $"'{Safe.Text(line)}' -- {Provenance.Of(agent.OwnsSource)}"
+            ? $"'{Safe.Text(AgentWords.Shortened(line))}' -- {Provenance.Of(agent.OwnsSource)}"
             : Provenance.Of((OwnershipSource?)null);
 
-        var answer = question?.Answer is { Length: > 0 } said
+        // The answer as Accept records it, flattened, never as written: blank lines in it pushed words the person never
+        // saw below the bottom of a dialog that cannot scroll, and Accept recorded them as the person's choice. A long one
+        // is shortened and says so, since Edit is where the whole of it can be read.
+        var answer = question?.Flattened is { Length: > 0 } flattened
             ? $"""
 
-               What {Safe.Text(agent.Name.Value)} answered, in its own words:
+               What {Safe.Text(agent.Name.Value)} answered, as Accept would record it:
 
-               {Safe.Lines(said)}
+               {Safe.Text(AgentWords.Shortened(flattened))}
                """
+              + (flattened.Length > AgentWords.ShortLength
+                  ? Environment.NewLine + Environment.NewLine
+                    + $"That is the start of {flattened.Length.ToString(CultureInfo.InvariantCulture)} characters. "
+                    + $"Choose '{Edit}' to read all of it before it is recorded."
+                  : string.Empty)
             : string.Empty;
 
+        // The answer straight after the name: it is what a choice here records, and the dialog cuts its tail.
         return $"""
-                {Safe.Text(agent.Name.Value)}
+                {Safe.Text(agent.Name.Value)}{answer}
 
                 Peers read: {peers}
                 Accepted: {accepted}
                 Parley: {Safe.Text(Provenance.Of(question))}
-                {answer}
                 """;
     }
 

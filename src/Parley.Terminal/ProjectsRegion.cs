@@ -274,7 +274,7 @@ internal sealed record ProjectFigures(
     {
         var conversations = $"{Conversations.ToString(CultureInfo.InvariantCulture)}{(More ? "+" : string.Empty)}";
 
-        var proposed = Parley.Client.Roadmaps.ProposalCount.Says(Proposals);
+        var proposed = Parley.Client.Roadmaps.WaitingProposals.Says(Proposals);
 
         var counted = string.Create(
             CultureInfo.InvariantCulture,

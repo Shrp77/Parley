@@ -43,7 +43,7 @@
                 {
                     <span class="faint">(@summary.Archived archived)</span>
                 }
-                @if (ProposalCount.Says(summary.Proposals) is { Length: > 0 } proposed)
+                @if (WaitingProposals.Says(summary.Proposals) is { Length: > 0 } proposed)
                 {
                     <span class="faint">· @proposed</span>
                 }

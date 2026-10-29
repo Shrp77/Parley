@@ -3849,7 +3849,7 @@ internal sealed class Shell : Window
                 Current is { } now && string.Equals(now.Name.Value, read.Name.Value, StringComparison.Ordinal);
 
             if (Current is { } where
-                && await Parley.Client.Roadmaps.ProposalCount
+                && await Parley.Client.Roadmaps.WaitingProposals
                     .ListAsync(new BrokerClient(_directory.ClientFor(where)), cancellationToken)
                     .ConfigureAwait(false) is { } listed)
             {
@@ -4529,7 +4529,7 @@ internal sealed class Shell : Window
 
         // What agents have proposed, with the rest of the project. Unknown leaves what was shown, rather than
         // emptying the pane because a broker did not answer.
-        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
+        if (await Parley.Client.Roadmaps.WaitingProposals.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
         {
             if (StillShown())
             {

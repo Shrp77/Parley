@@ -217,19 +217,6 @@ internal sealed class FileWork(BrokerRuntime runtime)
         }
     }
 
-    // A folder that cannot be read is not taken for a link; the walk passes it over.
-    private static bool IsLink(string path)
-    {
-        try
-        {
-            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
-        }
-        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
     // Everything under a directory that is not a placed file directly in it, read one level at a time from a stack of
     // its own rather than one call a level: a tree made by hand can be deeper than the stack, and an overflow ends the
     // process. A link is one entry and never entered, since it may lead out of the location or back into itself, and a
@@ -321,6 +308,14 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 .Select(p => p.File.Name.Value)
                 .ToHashSet(StringComparer.Ordinal);
 
+            // A folder that is a link, or one in a location that is, counts as one entry and is never walked, as a link
+            // inside a folder is: by the one rule the store holds for what is a link (SPEC.md §9.5).
+            if (_runtime.Files.IsLinkedFolder(folder))
+            {
+                count++;
+                continue;
+            }
+
             var directory = _runtime.Files.FolderPath(folder);
 
             // Every file under the folder, a subfolder copied in by hand included: a placed file is only ever directly in
@@ -330,8 +325,7 @@ internal sealed class FileWork(BrokerRuntime runtime)
                 continue;
             }
 
-            // A folder that is itself a link counts as one entry, never walked, as a link inside it does.
-            count += IsLink(directory) ? 1 : Unplaced(directory, names);
+            count += Unplaced(directory, names);
         }
 
         return count;

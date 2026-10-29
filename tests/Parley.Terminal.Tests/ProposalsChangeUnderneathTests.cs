@@ -214,7 +214,7 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
 
         if (driving.App.TopRunnableView is ChoiceDialog choosing)
         {
-            driving.Row(choosing.Choices, "Revise the roadmap 'Billing export'");
+            driving.Row(choosing.Choices, "Revise roadmap #1");
             choosing.Choices.InvokeCommand(Command.Accept);
             await shell.Settled;
         }
@@ -324,7 +324,7 @@ public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
 
         var choosing = (ChoiceDialog)driving.Find(Proposing.Title);
-        driving.Row(choosing.Choices, "Revise the roadmap 'Billing export'");
+        driving.Row(choosing.Choices, "Revise roadmap #1");
         choosing.Choices.InvokeCommand(Command.Accept);
         await shell.Settled;
 

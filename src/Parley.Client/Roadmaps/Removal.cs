@@ -66,9 +66,6 @@ public static class Removal
         return string.Join(",", open.Select(i => i.Number.ToString(CultureInfo.InvariantCulture)));
     }
 
-    /// <summary>How many characters of an item's words the description quotes.</summary>
-    public const int QuotedLength = 80;
-
     /// <summary>The sentence a surface shows before saving such an edit or revision.</summary>
     /// <param name="items">What <see cref="StillOpen"/> found.</param>
     /// <returns>The description, or <see langword="null"/> when there is nothing to say.</returns>
@@ -88,37 +85,11 @@ public static class Removal
 
         var named = string.Join(
             "; ",
-            items.Select(i => string.Create(CultureInfo.InvariantCulture, $"item {i.Number}, \"{Quoted(i.Text)}\", in {i.ConversationName}")));
+            items.Select(i => string.Create(CultureInfo.InvariantCulture, $"item {i.Number}, \"{AgentWords.Shortened(i.Text)}\", in {i.ConversationName}")));
 
         return (items.Count == 1 ? "This removes an item whose work is still open: " : "This removes items whose work is still open: ")
             + named
             + ". The conversation and its open requests stay, and the agents holding them are not told. "
             + "Close the work in the conversation if it should stop.";
-    }
-
-    /// <summary>An agent's words, cut to <see cref="QuotedLength"/> characters with an ellipsis, never inside a pair.</summary>
-    /// <param name="text">The words.</param>
-    /// <returns>The words, or as many as fit and an ellipsis.</returns>
-    /// <remarks>
-    /// For a sentence that carries an agent's words inside the person's own: roadmap text has no bound, and a dialog
-    /// that cannot scroll cuts its tail, so unquoted words would push what the sentence says off the screen.
-    /// </remarks>
-    public static string Quoted(string text)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-
-        if (text.Length <= QuotedLength)
-        {
-            return text;
-        }
-
-        var cut = QuotedLength - 1;
-
-        if (char.IsHighSurrogate(text[cut - 1]))
-        {
-            cut--;
-        }
-
-        return string.Concat(text.AsSpan(0, cut), "…");
     }
 }

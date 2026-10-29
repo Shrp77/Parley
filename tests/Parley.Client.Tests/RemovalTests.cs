@@ -72,7 +72,7 @@ public sealed class RemovalTests
         Assert.True(said.Length < 400, $"the description is {said.Length} characters");
         Assert.Contains("item 2, \"Item 2\", in rm1-2", said, StringComparison.Ordinal);
         Assert.Contains("not told", said, StringComparison.Ordinal);
-        Assert.Contains(new string('w', Removal.QuotedLength - 1) + "…", said, StringComparison.Ordinal);
+        Assert.Contains(new string('w', AgentWords.ShortLength - 1) + "…", said, StringComparison.Ordinal);
     }
 
     [Theory]

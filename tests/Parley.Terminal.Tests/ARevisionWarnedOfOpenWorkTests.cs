@@ -129,7 +129,7 @@ public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
-        Accept(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+        Accept(driving, Proposing.Title, "Revise roadmap #1");
         await shell.Settled;
 
         var warning = (ChoiceDialog)driving.Find(Proposing.Title);

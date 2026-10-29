@@ -56,8 +56,8 @@ public static class ProposalText
         if (proposal.TargetTitle is { Length: > 0 } target)
         {
             lines.Add(sameTitle is null
-                ? $"It says it would change a roadmap called '{Removal.Quoted(target)}'; there is none by that name."
-                : $"It says it would change the roadmap '{Removal.Quoted(sameTitle)}'. You choose whether it does.");
+                ? $"It says it would change a roadmap called '{AgentWords.Shortened(target)}'; there is none by that name."
+                : $"It says it would change the roadmap '{AgentWords.Shortened(sameTitle)}'. You choose whether it does.");
         }
 
         return string.Join('\n', lines);

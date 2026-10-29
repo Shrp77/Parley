@@ -333,10 +333,10 @@ public sealed class ProposingTests : IAsyncDisposable
         // Shown with the match, and nothing is decided for the person (spec FR-009b).
         var choosing = (ChoiceDialog)driving.Find(Proposing.Title);
 
-        Assert.Contains("matches the roadmap 'Billing export'", choosing.Described, StringComparison.Ordinal);
+        Assert.Contains("matches roadmap #1, 'Billing export'", choosing.Described, StringComparison.Ordinal);
         Assert.Equal(Proposing.NewRoadmap, choosing.Choices.Source!.ToList()[0]?.ToString());
 
-        driving.Row(choosing.Choices, "Revise the roadmap 'Billing export'");
+        driving.Row(choosing.Choices, "Revise roadmap #1");
         driving.Enter();
         await shell.Settled;
 
@@ -373,7 +373,7 @@ public sealed class ProposingTests : IAsyncDisposable
             Assert.True(shell.Roadmaps.OpenSelected());
             await shell.Settled;
             await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
-            Accept(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+            Accept(driving, Proposing.Title, "Revise roadmap #1");
             await shell.Settled;
         }
 
@@ -447,7 +447,7 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.True(shell.Roadmaps.OpenSelected());
         await shell.Settled;
         await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
-        Accept(driving, Proposing.Title, "Revise the roadmap 'Billing export'");
+        Accept(driving, Proposing.Title, "Revise roadmap #1");
         await shell.Settled;
 
         Assert.Equal(1, (await Client.RoadmapsAsync(Ct)).Single().Revision);

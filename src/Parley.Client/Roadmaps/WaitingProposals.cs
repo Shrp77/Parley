@@ -4,7 +4,8 @@ using Parley.Core;
 namespace Parley.Client.Roadmaps;
 
 /// <summary>
-/// The roadmap proposals awaiting a person in a project, for the pane that lists them (SPEC.md §5.7).
+/// The roadmap proposals awaiting a person in a project: their headings for the pane that lists them, and a count in
+/// words for a project's row (SPEC.md §5.7).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,7 +19,7 @@ namespace Parley.Client.Roadmaps;
 /// when it is opened.
 /// </para>
 /// </remarks>
-public static class ProposalCount
+public static class WaitingProposals
 {
     /// <summary>The headings of the proposals awaiting a decision, or null when they could not be read.</summary>
     /// <param name="broker">The project's operator client.</param>
