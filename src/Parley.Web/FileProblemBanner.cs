@@ -36,10 +36,14 @@ internal static class FileProblemBanner
             ? directory.Projects
             : directory.Find(project) is { } one ? [one] : [];
 
+        // Each project read on its own guard, the client built inside it: an endpoint that cannot be dialled throws as the
+        // client is made, and one project's must not take the page down for every other.
         var counts = await Task.WhenAll(asked.Select(async settings =>
             (Project: settings.Name.Value,
-             Waiting: await FileProblemSaid.WaitingAsync(new BrokerClient(directory.ClientFor(settings)), cancellationToken)
-                .ConfigureAwait(false)))).ConfigureAwait(false);
+             Waiting: (await BrokerDirectory.ReadAsync(async () =>
+                     await FileProblemSaid.WaitingAsync(new BrokerClient(directory.ClientFor(settings)), cancellationToken)
+                         .ConfigureAwait(false))
+                 .ConfigureAwait(false)).Value))).ConfigureAwait(false);
 
         return [.. counts.Where(c => c.Waiting is > 0).Select(c => (c.Project, c.Waiting!.Value))];
     }

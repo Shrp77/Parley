@@ -176,7 +176,10 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         await ProposeAsync("Another way", target: "billing Export");
         await ProposeAsync("The one opened", target: "Billing export");
 
-        Assert.Contains("A revision also settles 2 other proposals waiting to revise this roadmap", await ReviseChoiceAsync(), StringComparison.Ordinal);
+        var said = await ReviseChoiceAsync();
+
+        Assert.Contains("A revision also settles 2 other proposals waiting to revise this roadmap", said, StringComparison.Ordinal);
+        Assert.Contains(Parley.Client.Roadmaps.ProposalText.RevisionReplaces, said, StringComparison.Ordinal);
     }
 
     [Fact]

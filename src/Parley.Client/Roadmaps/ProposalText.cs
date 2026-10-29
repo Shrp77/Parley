@@ -165,11 +165,14 @@ public static class ProposalText
         + string.Join(", ", items.Select(n => n.ToString(CultureInfo.InvariantCulture)));
 
     /// <summary>What a revision does to the roadmap's items, said wherever a person chooses one.</summary>
-    /// <remarks>One sentence for both surfaces, so neither tells the person less: the codec carries a numbered item across.</remarks>
+    /// <remarks>
+    /// One sentence for both surfaces, so neither tells the person less: the store keeps a live item a line names by number
+    /// (<c>| item: n</c>), and removes the rest.
+    /// </remarks>
     public const string RevisionReplaces =
-        "A revision replaces every item that roadmap has with these, except one whose line carries | item: n, where n is "
-        + "an item that roadmap has, which keeps that item and its conversation; every other item it had is removed, and "
-        + "its conversation stays. A new roadmap leaves it alone.";
+        "A revision replaces every item that roadmap has with these. A line carrying | item: n, where n is one of its live "
+        + "items, keeps that item and its conversation; every other item it had is removed, and its conversation stays. "
+        + "A new roadmap leaves it alone.";
 
     /// <summary>What confirming a proposal as a revision of a roadmap also does to the other proposals waiting on it.</summary>
     /// <param name="proposal">The proposal being confirmed.</param>

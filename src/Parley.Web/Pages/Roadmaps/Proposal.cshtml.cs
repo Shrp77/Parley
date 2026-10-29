@@ -127,21 +127,13 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             return Page();
         }
 
-        var (content, problem) = RoadmapTextCodec.Parse(Text);
-
-        if (content is null || problem is not null)
-        {
-            Problem = problem ?? "That is not a roadmap.";
-
-            return Page();
-        }
-
         long? target = Match is not null && string.Equals(Target, Match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
             ? Match.Id
             : null;
 
         // A revision the person chose is never confirmed as something else. When the roadmap it named no longer matches,
-        // renamed meanwhile say, nothing is confirmed and the page is shown again as it now reads.
+        // renamed meanwhile say, nothing is confirmed and the page is shown again as it now reads. Checked before the text
+        // is read: a page drawn again for a problem in the text would otherwise offer a new roadmap in its place.
         if (target is null && Target is { Length: > 0 } chosen && !string.Equals(chosen, "new", StringComparison.Ordinal))
         {
             Problem = "The roadmap you chose to revise is no longer the one this proposal matches, so nothing was confirmed. "
@@ -150,6 +142,15 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
 
             // The revision kept was another roadmap's: the page shows the one it now matches, at the revision it reads.
             Revision = null;
+
+            return Page();
+        }
+
+        var (content, problem) = RoadmapTextCodec.Parse(Text);
+
+        if (content is null || problem is not null)
+        {
+            Problem = problem ?? "That is not a roadmap.";
 
             return Page();
         }

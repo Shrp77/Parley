@@ -111,6 +111,43 @@ public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
         Assert.Empty(console.Broker.Confirmed);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_revision_the_person_chose_is_never_turned_into_a_new_roadmap_by_a_page_drawn_again(bool another)
+    {
+        // Round 56: a page drawn again for a problem in the text came before the check that the roadmap chosen still
+        // matched, so a renamed roadmap left "A new roadmap" checked, or no choice at all, and the next submit made one.
+        using var console = new RoadmapConsole();
+        var a = new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 3, LiveItems = 0 };
+        var b = new Wire.RoadmapSummary { Id = 4, Number = 2, Title = "Other", Revision = 1, LiveItems = 0 };
+        console.Broker.Roadmaps.Add(a);
+        console.Broker.Roadmaps.Add(b);
+        console.Broker.Details[3] = new Wire.RoadmapDetail { Id = 3, Number = 1, Title = "Billing export", Revision = 3 };
+        console.Broker.Details[4] = new Wire.RoadmapDetail { Id = 4, Number = 2, Title = "Other", Revision = 1 };
+        console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
+        using var client = console.CreateClient();
+        var opened = await OpenAsync(client);
+
+        // Elsewhere: A renamed away, and B renamed to the hint or not.
+        a.Title = "Billing export, old";
+        a.Revision = 4;
+        console.Broker.Details[3] = new Wire.RoadmapDetail { Id = 3, Number = 1, Title = a.Title, Revision = 4 };
+
+        if (another)
+        {
+            b.Title = "Billing export";
+            b.Revision = 2;
+            console.Broker.Details[4] = new Wire.RoadmapDetail { Id = 4, Number = 2, Title = b.Title, Revision = 2 };
+        }
+
+        // The person chose to revise #1, and typed something the codec refuses.
+        var drawn = await opened.PostAsync(client, new() { ["Text"] = "garbage", ["Target"] = "3" });
+
+        Assert.Contains("no longer the one this proposal matches", drawn, StringComparison.Ordinal);
+        Assert.Empty(console.Broker.Confirmed);
+    }
+
     private static async Task<Opened> OpenAsync(HttpClient client)
     {
         using var opening = new HttpRequestMessage(HttpMethod.Get, ProposalUri(8));

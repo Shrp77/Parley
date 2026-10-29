@@ -413,7 +413,7 @@ internal static class Proposing
             Title,
             $"This proposal's title matches roadmap {number}, '{matched}', which has "
             + match.LiveItems.ToString(CultureInfo.InvariantCulture) + (match.LiveItems == 1 ? " item" : " items")
-            + ". " + (superseding.Length > 0 ? superseding + " " : string.Empty) + ProposalText.RevisionReplaces,
+            + ". " + ProposalText.RevisionReplaces + (superseding.Length > 0 ? " " + superseding : string.Empty),
             [NewRoadmap, revise]);
 
         var open = Prompting.Open(app, choosing);
