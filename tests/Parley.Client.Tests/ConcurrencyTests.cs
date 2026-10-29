@@ -25,9 +25,9 @@ public sealed class ConcurrencyTests
 {
     /// <summary>How many threads ask at once.</summary>
     /// <remarks>
-    /// Enough to be a real crowd and few enough that every one of them gets a thread: they wait
-    /// for each other before asking, so a pool that ran them in batches would never produce the
-    /// simultaneous arrival the race needs.
+    /// Enough to be a real crowd. Each gets a thread of its own rather than the pool's: they wait for each other before
+    /// asking, so on the pool they held every pool thread blocked until it grew to sixteen, which under load took most
+    /// of a minute and stalled every other test in the process that needed one (two seat tests failed on CI for it).
     /// </remarks>
     private const int Callers = 16;
 
@@ -58,17 +58,19 @@ public sealed class ConcurrencyTests
 
         var project = directory.Projects[0];
 
-        await Task.WhenAll(Enumerable.Range(0, Callers).Select(_ => Task.Run(
+        await Task.WhenAll(Enumerable.Range(0, Callers).Select(_ => Task.Factory.StartNew(
             () =>
             {
                 // Every caller waits for every other before asking, so they arrive together
-                // rather than in whatever order the pool happened to start them.
+                // rather than in whatever order they happened to start.
                 arrived.Signal();
                 arrived.Wait(TestContext.Current.CancellationToken);
 
                 Assert.NotNull(directory.ClientFor(project));
             },
-            TestContext.Current.CancellationToken)));
+            TestContext.Current.CancellationToken,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default)));
 
         arrived.Dispose();
 

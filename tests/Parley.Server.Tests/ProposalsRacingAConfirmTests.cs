@@ -67,7 +67,7 @@ public sealed class ProposalsRacingAConfirmTests
             var confirm = operators.ConfirmProposalAsync(
                 new Wire.ConfirmProposalRequest
                 {
-                    Id = revision.ProposalId, Content = Plan(title + " v2"), TargetRoadmap = made.RoadmapId,
+                    Id = revision.ProposalId, Content = Plan(title + " v2"), TargetRoadmap = made.RoadmapId, TargetRevision = made.Revision,
                 },
                 cancellationToken: Ct).ResponseAsync;
 

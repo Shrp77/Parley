@@ -63,6 +63,43 @@ public sealed class RoadmapOverTheWireTests
     }
 
     [Fact]
+    public async Task A_revision_names_the_revision_it_was_chosen_against_and_is_refused_once_that_has_moved()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, "orders@test", cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, "billing@test", cancellationToken: Ct);
+        var operators = broker.ConnectAsOperator();
+
+        var roadmap = await ConfirmedAsync(broker, await ProposeAsync(orders));
+        var revision = await ProposeAsync(orders);
+
+        // No revision named: refused, whatever the roadmap is at.
+        var unnamed = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap }, cancellationToken: Ct);
+        Assert.False(unnamed.Done);
+        Assert.Contains("names the revision", unnamed.Problem, StringComparison.Ordinal);
+
+        // Edited on another surface since revision 1 was shown: refused, and the edit stays.
+        var edited = await operators.EditRoadmapAsync(
+            new Wire.EditRoadmapRequest { Id = roadmap, Revision = 1, Content = Plan("Billing export, edited") }, cancellationToken: Ct);
+        Assert.True(edited.Done, edited.Problem);
+
+        var stale = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap, TargetRevision = 1 },
+            cancellationToken: Ct);
+        Assert.False(stale.Done);
+        Assert.Equal(
+            "Billing export, edited",
+            (await operators.RoadmapAsync(new Wire.RoadmapRequest { Id = roadmap }, cancellationToken: Ct)).Roadmap!.Title);
+
+        // At the revision it now is: done.
+        var current = await operators.ConfirmProposalAsync(
+            new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap, TargetRevision = edited.Revision },
+            cancellationToken: Ct);
+        Assert.True(current.Done, current.Problem);
+    }
+
+    [Fact]
     public async Task A_proposal_is_waiting_until_a_person_confirms_it_and_then_the_proposer_is_told()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

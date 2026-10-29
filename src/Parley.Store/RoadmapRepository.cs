@@ -265,6 +265,7 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="expectedRevision">For a revision, the revision the person was shown; refused when it has moved.</param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// <para>
@@ -284,7 +285,8 @@ public sealed class RoadmapRepository(SqliteConnection connection)
         long? targetRoadmap,
         DateTimeOffset nowUtc,
         SqliteTransaction? transaction = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? expectedRevision = null)
     {
         ArgumentNullException.ThrowIfNull(final);
 
@@ -374,6 +376,14 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             if (existing is null)
             {
                 return Refused("There is no such roadmap to revise.");
+            }
+
+            // As an edit is: a revision chosen against one revision never replaces items saved since.
+            if (expectedRevision is { } expected && existing.Revision != expected)
+            {
+                return Refused(
+                    $"The roadmap has changed since you chose to revise it: it is at revision {existing.Revision} and " +
+                    $"you were shown revision {expected}. Open the proposal again to choose.");
             }
 
             origin = RoadmapOrigin.Edited;

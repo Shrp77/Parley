@@ -86,7 +86,7 @@ public sealed class RoadmapNoticesStayCollectableTests
 
         // The person confirms one as the revision: the other 49 are superseded, and orders is told of all 50.
         var revised = await operators.ConfirmProposalAsync(
-            new Wire.ConfirmProposalRequest { Id = ids[0], Content = Plan("Billing export v2"), TargetRoadmap = confirmed.RoadmapId },
+            new Wire.ConfirmProposalRequest { Id = ids[0], Content = Plan("Billing export v2"), TargetRoadmap = confirmed.RoadmapId, TargetRevision = confirmed.Revision },
             cancellationToken: Ct);
         Assert.True(revised.Done, revised.Problem);
 

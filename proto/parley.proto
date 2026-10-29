@@ -1431,6 +1431,7 @@ message ConfirmProposalRequest {
   int64 id = 1;
   RoadmapContent content = 2;         // the person's final content, which may be the proposal's own
   int64 target_roadmap = 3;           // 0 for a new roadmap
+  int32 target_revision = 4;          // the target's revision the caller read; required with a target
 }
 
 message EditRoadmapRequest {

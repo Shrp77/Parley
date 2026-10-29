@@ -209,6 +209,47 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         Assert.Contains("Also orders; ask first.", flat, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void An_answer_already_accepted_names_no_choice_the_review_does_not_offer()
+    {
+        // Round 57: the review said "as Accept would record it" and pointed at Edit for an answer already accepted, where
+        // neither is offered and the line is already recorded.
+        var answer = string.Concat(Enumerable.Repeat("I own billing, invoices and refunds. ", 10)).Trim();
+        var question = new OwnershipQuestion(
+            Billing, "ownership-1", 1, QuestionState.Accepted, answer, OwnershipStatement.Flatten(answer), null, T0, null);
+        var agent = new AgentRecord(Billing, "mcp", AgentTier.Pull, "/repos/billing", null, null, false, AgentStatus.Active);
+
+        var detail = OwnershipReview.Detail(agent, question);
+
+        Assert.DoesNotContain(OwnershipReview.Edit, OwnershipReview.Choices(question));
+        Assert.DoesNotContain(OwnershipReview.Edit, detail, StringComparison.Ordinal);
+        Assert.DoesNotContain("as Accept would record it", detail, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(140, 40)]
+    [InlineData(80, 24)]
+    public void The_agents_own_page_says_what_save_records_whatever_its_answer(int width, int height)
+    {
+        // Round 57: the page an agent's line is changed on (Alt+n) drew the answer with its blank lines and every line
+        // whole, so what Save records went below a page that cannot scroll.
+        using var driving = Driving.Open(width: width, height: height);
+        var answer = "I own billing and nothing else." + string.Concat(Enumerable.Repeat("\n", 40)) + "Also orders; ask first.";
+        var question = new OwnershipQuestion(
+            Billing, "ownership-1", 1, QuestionState.Waiting, answer, OwnershipStatement.Flatten(answer), "auto accept is off", T0, null);
+        var owns = string.Concat(Enumerable.Repeat("invoices, ledgers, exports, refunds, ", 40)).Trim();
+        var agent = new AgentRecord(Billing, "mcp", AgentTier.Pull, "/repos/billing", null, null, false, AgentStatus.Active, owns);
+
+        Prompting.Open(
+            driving.App,
+            new ResponsibilityDialog(Responsibility.Described(agent, question, [("orders@test", owns)], null), owns, canSave: true));
+        driving.App.LayoutAndDraw(true);
+
+        var flat = System.Text.RegularExpressions.Regex.Replace(driving.Text(), @"[\s┃│]+", " ");
+
+        Assert.Contains("Saving records the words as yours", flat, StringComparison.Ordinal);
+    }
+
     private BrokerDirectory Directory() =>
         new(
             [new ProjectSettings(Walking.Alpha, "unused.db", _broker.Address, null)],

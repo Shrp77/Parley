@@ -785,10 +785,20 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
     /// <inheritdoc/>
     public async Task<RoadmapChange> ConfirmProposalAsync(
-        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default)
+        long id,
+        RoadmapContent content,
+        long? targetRoadmap,
+        int? targetRevision,
+        CancellationToken cancellationToken = default)
     {
         var reply = await _operators.ConfirmProposalAsync(
-            new Wire.ConfirmProposalRequest { Id = id, Content = ContentOut(content), TargetRoadmap = targetRoadmap ?? 0 },
+            new Wire.ConfirmProposalRequest
+            {
+                Id = id,
+                Content = ContentOut(content),
+                TargetRoadmap = targetRoadmap ?? 0,
+                TargetRevision = targetRevision ?? 0,
+            },
             cancellationToken: cancellationToken);
 
         return ChangeIn(reply);

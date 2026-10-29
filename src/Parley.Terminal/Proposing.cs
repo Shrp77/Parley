@@ -33,7 +33,7 @@ internal static class Proposing
     /// <summary>Said when no proposal is waiting.</summary>
     internal const string NoneWaiting = "No roadmap is awaiting your decision.";
 
-    /// <summary>Leaves a proposal as it is, and is where every dialog here opens.</summary>
+    /// <summary>Leaves a proposal as it is: the first choice of the waiting list and of the decline door.</summary>
     internal const string Leave = "Leave it as it is";
 
     /// <summary>Declines it.</summary>
@@ -432,7 +432,7 @@ internal static class Proposing
                 return;
             }
 
-            queue(t => ReviseAsync(app, client, proposal, content, match.Id, queue, done, t));
+            queue(t => ReviseAsync(app, client, proposal, content, match.Id, match.Revision, queue, done, t));
         };
     }
 
@@ -448,6 +448,7 @@ internal static class Proposing
         RoadmapProposal proposal,
         RoadmapContent content,
         long roadmapId,
+        int revision,
         Action<Func<CancellationToken, Task>> queue,
         Func<string, Task> done,
         CancellationToken cancellationToken)
@@ -467,7 +468,7 @@ internal static class Proposing
 
         if (Removal.Describe(opened) is not { } warning)
         {
-            await SendAsync(client, proposal, content, roadmapId, done, cancellationToken).ConfigureAwait(false);
+            await SendAsync(client, proposal, content, (roadmapId, revision), done, cancellationToken).ConfigureAwait(false);
 
             return;
         }
@@ -488,7 +489,7 @@ internal static class Proposing
                     // Going ahead covers what was described, read again now (Revising.StillCoveredAsync says why).
                     if (await Revising.StillCoveredAsync(client, roadmapId, content, shown, "confirmed", done, t).ConfigureAwait(false))
                     {
-                        await SendAsync(client, proposal, content, roadmapId, done, t).ConfigureAwait(false);
+                        await SendAsync(client, proposal, content, (roadmapId, revision), done, t).ConfigureAwait(false);
                     }
                 });
             }
@@ -503,12 +504,13 @@ internal static class Proposing
         BrokerClient client,
         RoadmapProposal proposal,
         RoadmapContent content,
-        long? target,
+        (long Id, int Revision)? target,
         Func<string, Task> done,
         CancellationToken cancellationToken)
     {
         var outcome = await BrokerDirectory.ReadAsync(
-            async () => await client.ConfirmProposalAsync(proposal.Id, content, target, cancellationToken).ConfigureAwait(false))
+            async () => await client.ConfirmProposalAsync(
+                proposal.Id, content, target?.Id, target?.Revision, cancellationToken).ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (!outcome.Reachable)

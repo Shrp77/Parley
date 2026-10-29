@@ -407,15 +407,21 @@ public interface IParleyBrokerClient
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content, which may be the proposal's own.</param>
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
+    /// <param name="targetRevision">The revision of that roadmap the person was shown; required with a target.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What it came to, with a sentence when it was refused.</returns>
     /// <remarks>
     /// Validates the whole content (<see cref="RoadmapRules"/>), and records whether it was confirmed as proposed
     /// or edited by comparing it with the stored proposal — never from a flag the caller passes, which would be
-    /// right only as often as somebody remembered to set it.
+    /// right only as often as somebody remembered to set it. A revision is refused when the roadmap has moved past the
+    /// revision shown, as an edit is, so a revision never replaces items another surface saved meanwhile.
     /// </remarks>
     Task<RoadmapChange> ConfirmProposalAsync(
-        long id, RoadmapContent content, long? targetRoadmap, CancellationToken cancellationToken = default);
+        long id,
+        RoadmapContent content,
+        long? targetRoadmap,
+        int? targetRevision,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Decline a waiting proposal.</summary>
     /// <param name="id">The proposal.</param>

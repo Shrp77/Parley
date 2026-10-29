@@ -920,6 +920,55 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.False(items[2].Facts!.TextEditedSinceStarted);
     }
 
+    [Fact]
+    public async Task A_revision_chosen_against_an_older_revision_is_refused_and_the_edit_made_since_stays()
+    {
+        // Found by review, round 54: a revision confirmed from a stale read replaced the items another surface had saved
+        // meanwhile, the person's own new item among them. It is now refused as an edit at a stale revision is.
+        var (first, firstProblem) = await Repository.ProposeAsync(
+            Orders, null, null,
+            new RoadmapContent("Export", [new RoadmapItemDraft(null, "One", null, []), new RoadmapItemDraft(null, "Two", null, [])]),
+            Now, cancellationToken: Ct);
+        Assert.Null(firstProblem);
+        var made = await Repository.ConfirmAsync(first!.Value, (await Repository.GetProposalAsync(first.Value, Ct))!.Content, null, Now, cancellationToken: Ct);
+        Assert.True(made.Done, made.Problem);
+
+        var (second, secondProblem) = await Repository.ProposeAsync(
+            Orders, null, "Export", new RoadmapContent("Export", [new RoadmapItemDraft(null, "Replacement", null, [])]), Now, cancellationToken: Ct);
+        Assert.Null(secondProblem);
+
+        // One surface chooses to revise at the revision it read; another saves the person's new item first.
+        var shown = (await Repository.GetAsync(made.RoadmapId!.Value, Ct))!.Revision;
+        var edited = await Repository.EditAsync(
+            made.RoadmapId.Value,
+            shown,
+            new RoadmapContent(
+                "Export",
+                [
+                    new RoadmapItemDraft(1, "One", null, []),
+                    new RoadmapItemDraft(2, "Two", null, []),
+                    new RoadmapItemDraft(null, "The person's new item", null, []),
+                ]),
+            Now,
+            cancellationToken: Ct);
+        Assert.True(edited.Done, edited.Problem);
+
+        var revised = await Repository.ConfirmAsync(
+            second!.Value,
+            (await Repository.GetProposalAsync(second.Value, Ct))!.Content,
+            made.RoadmapId.Value,
+            Now,
+            cancellationToken: Ct,
+            expectedRevision: shown);
+
+        Assert.False(revised.Done);
+        Assert.Contains("changed since you chose to revise it", revised.Problem, StringComparison.Ordinal);
+        Assert.Contains(
+            "The person's new item",
+            (await Repository.GetAsync(made.RoadmapId.Value, Ct))!.Items.Where(i => !i.Removed).Select(i => i.Text));
+        Assert.Equal(ProposalState.Waiting, (await Repository.GetProposalAsync(second.Value, Ct))!.State);
+    }
+
     /// <summary>Ends the newest open exchange of a conversation on a Result from its receiver, as an agent's answer does.</summary>
     private void Answer(string conversation, string outcome)
     {

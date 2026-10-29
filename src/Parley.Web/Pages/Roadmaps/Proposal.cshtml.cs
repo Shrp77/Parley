@@ -44,6 +44,10 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     [BindProperty, FromForm]
     public string? Target { get; set; }
 
+    /// <summary>The revision of the roadmap to revise that the page showed, so a revision never replaces items saved since.</summary>
+    [BindProperty, FromForm]
+    public int? Revision { get; set; }
+
     /// <summary>Set by the second submit, after the page described the open work a revision removes.</summary>
     [BindProperty, FromForm]
     public bool ConfirmRemoval { get; set; }
@@ -157,7 +161,9 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
 
         var outcome = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(project))
-                .ConfirmProposalAsync(Proposal.Id, content, target, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ConfirmProposalAsync(
+                    Proposal.Id, content, target, target is null ? null : Revision, HttpContext.RequestAborted)
+                .ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (!outcome.Reachable)

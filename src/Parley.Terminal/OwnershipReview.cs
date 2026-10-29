@@ -30,7 +30,7 @@ internal static class OwnershipReview
     /// <summary>The door the review passes through.</summary>
     internal const string Title = "Review ownership";
 
-    /// <summary>Accepts a waiting answer as the agent wrote it.</summary>
+    /// <summary>Accepts a waiting answer, flattened, as the agent's words.</summary>
     internal const string Accept = "Accept its answer as it is";
 
     /// <summary>Opens a waiting answer for editing before it is accepted.</summary>
@@ -159,13 +159,15 @@ internal static class OwnershipReview
     /// <summary>Everything about one agent's line, for a person deciding.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="question">Its latest question, if it was ever asked.</param>
+    /// <param name="editing">Whether the person is already editing the answer, so is not pointed at Edit.</param>
     /// <returns>The description.</returns>
     /// <remarks>
-    /// <b>The answer is shown as the agent wrote it, and marked as the agent's</b>: what the person is deciding is
-    /// whether a model's sentence becomes what every peer reads, which depends on a reader telling a model's words
-    /// from a person's.
+    /// <b>A waiting answer is shown as Accept records it, flattened and shortened, and marked as the agent's</b>: what
+    /// the person is deciding is whether a model's sentence becomes what every peer reads, which depends on a reader
+    /// telling a model's words from a person's. An answer already decided is shown as what it answered, since nothing
+    /// here records it.
     /// </remarks>
-    internal static string Detail(AgentRecord agent, OwnershipQuestion? question)
+    internal static string Detail(AgentRecord agent, OwnershipQuestion? question, bool editing = false)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
@@ -175,20 +177,21 @@ internal static class OwnershipReview
             ? $"'{Safe.Text(AgentWords.Shortened(line))}' -- {Provenance.Of(agent.OwnsSource)}"
             : Provenance.Of((OwnershipSource?)null);
 
-        // The answer as Accept records it, flattened, never as written: blank lines in it pushed words the person never
-        // saw below the bottom of a dialog that cannot scroll, and Accept recorded them as the person's choice. A long one
-        // is shortened and says so, since Edit is where the whole of it can be read.
+        // The answer flattened, never as written: blank lines in it would push words below the bottom of a dialog that
+        // cannot scroll, and Accept records them as the person's choice. While it waits, a long one says Edit is where the
+        // whole of it can be read; once decided, nothing here records it, so neither is said.
+        var waiting = question?.State == QuestionState.Waiting;
         var answer = question?.Flattened is { Length: > 0 } flattened
             ? $"""
 
-               What {Safe.Text(agent.Name.Value)} answered, as Accept would record it:
+               What {Safe.Text(agent.Name.Value)} answered{(waiting ? ", as Accept would record it" : string.Empty)}:
 
                {Safe.Text(AgentWords.Shortened(flattened))}
                """
               + (flattened.Length > AgentWords.ShortLength
                   ? Environment.NewLine + Environment.NewLine
-                    + $"That is the start of {flattened.Length.ToString(CultureInfo.InvariantCulture)} characters. "
-                    + $"Choose '{Edit}' to read all of it before it is recorded."
+                    + $"That is the start of {flattened.Length.ToString(CultureInfo.InvariantCulture)} characters."
+                    + (waiting && !editing ? $" Choose '{Edit}' to read all of it before it is recorded." : string.Empty)
                   : string.Empty)
             : string.Empty;
 
@@ -289,7 +292,7 @@ internal static class OwnershipReview
         // a person's edit — a comparison, never a flag somebody sets (Ownership.Chosen).
         var typing = Prompting.Text(
             Title,
-            Detail(agent, question),
+            Detail(agent, question, editing: true),
             line,
             problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
 

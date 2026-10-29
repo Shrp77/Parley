@@ -95,9 +95,9 @@ internal sealed class ProposalView : Dialog
         heading.Width = Dim.Fill(2);
         heading.Height = Math.Min(Prompting.Rows(_header) + 1, MostHeadingRows);
 
-        // **Headings above the paragraphs, and no borders on them.** Bordered frames draw through the toolkit's line
-        // canvas, which a dialog opened from the queue's thread while the loop draws can corrupt. The dialogs here
-        // have one border, their own.
+        // **Headings above the paragraphs, and no borders on them.** A bordered frame draws through the toolkit's line
+        // canvas, which the driven suite never exercises because it never pumps the loop. The dialogs here have one
+        // border, their own.
         var itemsHeading = new Plain { Text = "The roadmap", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(AgentsWidth + 3), Height = 1 };
 
         // The roadmap takes everything the heading, the hint and the buttons leave.

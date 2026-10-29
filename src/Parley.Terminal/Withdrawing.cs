@@ -96,7 +96,7 @@ internal static class Withdrawing
 
         // The row's values are already neutralised where they enter it; the adapter is read here
         // and is the agent's own string, so it is neutralised here. The ownership line has no bound and can be the
-        // agent's own words, so it is shortened: drawn whole, a long one pushed the rest off a dialog that cannot scroll.
+        // agent's own words, so it is shortened: drawn whole, a long one would push the rest off a dialog that cannot scroll.
         var said = $"{row.Name}{Environment.NewLine}"
             + $"  state      {row.State}{Environment.NewLine}"
             + $"  workspace  {row.Workspace}{Environment.NewLine}"
