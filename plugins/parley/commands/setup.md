@@ -108,9 +108,10 @@ is not what the user wants - it should name the domain this repository owns, suc
 `billing` or `inventory`, not the directory, the framework or the model - put the intended
 `PARLEY_AGENT` into the repository's `.mcp.json` before enrolling, and enroll will take it. If the
 repository is already enrolled under the wrong name, change `PARLEY_AGENT` in its `.mcp.json`,
-restart, and retire the old name from the terminal. Two repositories must never share a name:
-identity is the one thing Parley makes unforgeable, and it does that by taking the name from the
-launch environment, which is worth nothing if two servers claim the same name.
+close the session and open the repository again: the agent keeps its identity (`parleyAgentId`)
+and everything it was party to, and takes the new name. Two repositories must never share a name:
+who is speaking is the one thing Parley makes unforgeable, and it does that by taking the name from
+the launch environment, which is worth nothing if two servers claim the same name.
 
 **The `owns` line is not written by enrolling, and not by you.** Once the agent attaches, Parley
 asks it what it owns and what it does not, and the answer is the line. With the project's Auto

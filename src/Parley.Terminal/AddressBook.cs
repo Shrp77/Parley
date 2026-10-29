@@ -15,7 +15,7 @@ namespace Parley.Terminal;
 /// of them.
 /// </para>
 /// <para>
-/// <b>Kept on this machine, beside the manifest, and nowhere else.</b> Who a person is writing to is a fact about their
+/// <b>Kept on this machine, in the deployment's root, and nowhere else.</b> Who a person is writing to is a fact about their
 /// screen rather than about the deployment: the broker records what was sent, never what was about to be. A file of the
 /// terminal's own keeps it out of the protocol and off every other surface, which is the size this deserves.
 /// </para>
@@ -31,7 +31,7 @@ namespace Parley.Terminal;
 /// </remarks>
 internal sealed class AddressBook(string? path)
 {
-    /// <summary>What the file is called, in the Parley folder beside the manifest.</summary>
+    /// <summary>What the file is called, in the deployment's root folder.</summary>
     internal const string FileName = "terminal-addressing.json";
 
     private readonly Lock _gate = new();

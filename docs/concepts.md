@@ -96,7 +96,7 @@ An agent has eleven tools. There is no tool for saying who it is.
 |---|---|
 | `parley_request` | Ask another agent to do work, or for information |
 | `parley_clarify` | Ask the requester a question, or answer one |
-| `parley_result` | Report what each item came to, and close the exchange |
+| `parley_result` | Report what the request came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
 | `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
@@ -150,11 +150,11 @@ An adapter connects a participant to the broker, and participants differ in how 
 
 - **Full**: can call tools and can be pushed into a running turn.
 - **Pull-only**: can call tools, and collects mail on demand.
-- **Headless**: the broker invokes the participant with a one-shot prompt.
+- **Headless**: a node on the participant's machine starts it and keeps it running, and it is
+  told only that it has mail. The broker never learns how it was started.
 
-The headless kind means a responder does not have to be an agent at all. A plain model call, a
-local model, or a script that searches a contracts folder can take part. Anything that accepts a
-bounded request and returns text will do.
+A headless participant uses the same tools as any other. What makes it headless is that nobody is
+at its keyboard: when mail arrives, the node gives it a turn.
 
 Most agents need no credential from Parley, because the command-line tool behind them signs in
 on its own. Where the broker itself needs a secret, the registry holds a reference such as `env:`

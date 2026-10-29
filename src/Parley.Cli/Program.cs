@@ -330,8 +330,10 @@ if (arguments.Count == 0)
         // of them this one. The rule is right: `"parley"` is a launch key, and a fourth meaning for
         // it should be a decision somebody makes in that list rather than a spelling that drifts in
         // here. The sentence reads better this way in any case.
+        // The raw command line, as `parley terminal` forwards it: nothing is left here only because the options were
+        // taken above, and `--broker` and `--config` are the terminal's to read (review, lens 3 run 67).
         var opened = await Forwarding.RunAsync(
-            "parley-terminal", "Parley.Terminal", "The terminal", [], Console.Error).ConfigureAwait(false);
+            "parley-terminal", "Parley.Terminal", "The terminal", args, Console.Error).ConfigureAwait(false);
 
         if (opened != Unavailable)
         {

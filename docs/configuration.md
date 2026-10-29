@@ -86,6 +86,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 ```jsonc
 {
+  "parleyAgentId": "6f1c…",                        // the repository's identity, written by enroll
   "mcpServers": {
     "parley-acme": {                                   // parley-<project>, or `parley` if no projects
       "command": "parley-mcp",
@@ -105,7 +106,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 | Setting | What it does |
 |---|---|
-| `PARLEY_AGENT` | The agent's role. This is its identity. No tool can change it. |
+| `PARLEY_AGENT` | The agent's role: the name a project shows. Its identity is `parleyAgentId`, so changing the role renames the agent ([how](launch-configuration.md)). No tool can change either. |
 | `PARLEY_PROJECT` | The project to connect to. Use this on a machine that serves several. |
 | `PARLEY_BROKER` | A broker address, instead of a project. If both are set, the address wins and the server says so. |
 | `PARLEY_OWNS` | The ownership line (see below). |
