@@ -202,6 +202,14 @@ public sealed class NameAsYouTypeTests
             + $"screen: {string.Join(" ", missing.Take(12))}");
     }
 
+    [Fact]
+    public void A_device_name_is_refused_at_the_field_rather_than_after_the_description()
+    {
+        // Review, lens 3 run 70: the rule lives in ProjectCommand, and the field said nothing until four answers later.
+        Assert.Contains("keeps for a device", Naming.NameProblem("con", []), StringComparison.Ordinal);
+        Assert.Null(Naming.NameProblem("console", []));
+    }
+
     private static BrokerDirectory Directory() =>
         new(
             [new ProjectSettings(ProjectName.Create("alpha"), "a.db", "http://127.0.0.1:1", null)],

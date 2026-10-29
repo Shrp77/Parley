@@ -1090,7 +1090,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             {
                 return FileRefused(
                     "nosuchfolder",
-                    $"'{to}' names a folder that is not there. Make the folder first, or end the path with the file's name.");
+                    File.Exists(Path.TrimEndingDirectorySeparator(target))
+                        ? $"'{to}' ends as a folder does, but a file is there. Name a folder, or the file's own path without the last separator."
+                        : $"'{to}' names a folder that is not there. Make the folder first, or end the path with the file's name.");
             }
 
             if (Directory.Exists(target))

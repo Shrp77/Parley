@@ -152,6 +152,22 @@ public sealed class TurnReportingTests
     }
 
     [Fact]
+    public async Task A_turn_begun_by_a_clock_that_stepped_back_still_reads_as_running()
+    {
+        // Review, lens 1 run 63 and lens 2 run 67: a start no later than the last end was dropped, so a node whose clock
+        // stepped back, or an agent moved to a node whose clock is behind, read idle while it worked.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var agent = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(10)), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Ended(Here, Agent, T0.AddMinutes(10)), cancellationToken: Ct);
+        await node.Nodes.ReportTurnAsync(Started(Here, Agent, T0.AddMinutes(1)), cancellationToken: Ct);
+
+        Assert.Equal(Stamp(T0.AddMinutes(1)), (await RowAsync(broker, Agent)).TurnRunningSinceUtc);
+    }
+
+    [Fact]
     public async Task A_node_that_goes_away_mid_turn_is_no_longer_claimed_to_be_running_one()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

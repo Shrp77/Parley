@@ -154,8 +154,9 @@ const string Help = """
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
     Explicit flags and environment variables still win over a project.
 
-    Every command except `serve`, `autostart`, `project`, `use`, `terminal` and `web-ui` connects to a broker, at
-    --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
+    Every command except `serve`, `autostart`, `project`, `use`, `enroll`, `terminal` and `web-ui` connects to a
+    broker, at --broker or PARLEY_BROKER, and defaults to the local one; `enroll` asks each project's own broker,
+    and only when it writes. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
     serve opens its projects' stores — and it is the only command that touches a file. There is no

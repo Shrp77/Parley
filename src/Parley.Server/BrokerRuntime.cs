@@ -72,10 +72,11 @@ public sealed class BrokerRuntime : IAsyncDisposable
     // restart forgetting them is right by construction, where a column would be false after every crash.
     private readonly ConcurrentDictionary<AgentName, RunningTurn> _turns = new();
 
-    // When the latest turn each agent was heard to end began. A start report slower than its own end (the node's call
-    // gave up after its deadline and the broker handled it anyway) is no newer than this, and must not leave the agent
-    // reading as working until its next report.
-    private readonly ConcurrentDictionary<AgentName, DateTimeOffset> _lastEnded = new();
+    // When the last few turns each agent was heard to end began. A start report slower than its own end (the node's call
+    // gave up after its deadline and the broker handled it anyway) carries that same time, and must not leave the agent
+    // reading as working until its next report. The same time, never an earlier one: a node's clock may step back, or
+    // the agent move to a node whose clock is behind, and an earlier start is then a real turn (review, run 63).
+    private readonly ConcurrentDictionary<AgentName, DateTimeOffset[]> _lastEnded = new();
 
     /// <summary>The silent participants each closure poll has already asked again, keyed by poll.</summary>
     /// <remarks>
@@ -939,9 +940,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         return true;
     }
 
-    // Whether a turn that began then has already been heard to end.
+    // Whether the turn that began then has already been heard to end.
     private bool EndedSince(AgentName agent, DateTimeOffset startedUtc) =>
-        _lastEnded.TryGetValue(agent, out var last) && last >= startedUtc;
+        _lastEnded.TryGetValue(agent, out var ends) && ends.Contains(startedUtc);
 
     /// <summary>Whether a node's word about when a turn began is within a day of this broker's clock.</summary>
     /// <param name="startedUtc">The node's time.</param>
@@ -987,7 +988,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             return false;
         }
 
-        _ = _lastEnded.AddOrUpdate(agent, ended.StartedUtc, (_, was) => was > ended.StartedUtc ? was : ended.StartedUtc);
+        _ = _lastEnded.AddOrUpdate(agent, [ended.StartedUtc], (_, was) => [.. was.TakeLast(7), ended.StartedUtc]);
 
         var before = _turns.TryGetValue(agent, out var running) && running.Started == ended.StartedUtc
             ? running.WaitingBefore

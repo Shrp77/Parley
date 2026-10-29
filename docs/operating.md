@@ -15,7 +15,8 @@ person can do to a deployment is available in the terminal. The command line kee
 commands, listed [below](#the-command-line).
 
 The web console answers only loopback host names and the address it binds to, which protects it
-from DNS rebinding. It binds to loopback unless you give it an address.
+from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
+through it. It binds to loopback unless you give it an address.
 
 ## Your seat
 

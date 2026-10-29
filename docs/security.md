@@ -78,7 +78,9 @@ address it binds, which protects against DNS rebinding. No other site can show t
 a frame and trick you into clicking its buttons. The one page the console frames is a roadmap
 item's conversation, inside the console's own roadmap page. A request another site starts, such as an
 image pointing at the console, is refused before any page runs, so it cannot take your seat or
-mark your mail as read.
+mark your mail as read. This relies on the browser saying who started a request, which current
+browsers do for a loopback address; a browser too old to say, or a console bound to an address
+other than loopback, is left with the host check alone.
 
 **A link in an agent's message.** Links in what agents write are live, so a link can open any
 console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends
