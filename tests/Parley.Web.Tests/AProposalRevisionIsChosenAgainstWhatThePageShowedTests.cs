@@ -6,13 +6,12 @@ namespace Parley.Web.Tests;
 
 /// <summary>
 /// That a revision confirmed on the proposal page is confirmed against the revision of the roadmap the page showed
-/// (SPEC.md §10.2), however many times the page is drawn again first.
+/// (SPEC.md §10.2), whatever the page drew in between, and never against another roadmap's.
 /// </summary>
 /// <remarks>
-/// <b>Found by review, round 58.</b> The page drew its hidden revision from each read, so when the roadmap moved after it
-/// was opened and the revision would remove open work, the warning's page carried the new revision and its second
-/// submit replaced the item another surface had saved meanwhile. The page now keeps the revision it showed, and a moved
-/// roadmap confirms nothing and says so before any warning.
+/// The page carries the revision it showed, and the roadmap that revision is of. A roadmap that moved since confirms
+/// nothing and says so before any warning, and a hint that now matches another roadmap drops the kept revision on every
+/// path that draws the page again, so a revision the person never saw is never sent.
 /// </remarks>
 public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
 {
@@ -20,6 +19,11 @@ public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
 
     private static Uri ProposalUri(long id) =>
         new($"/Roadmaps/Proposal?project={RoadmapConsole.Project}&id={id}", UriKind.Relative);
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static string Field(string html, string name) =>
+        Regex.Match(html, $"name=\"{name}\" value=\"([^\"]*)\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
 
     private static Wire.RoadmapDetail Detail(int revision, bool open)
     {
@@ -52,55 +56,29 @@ public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
         console.Broker.Details[3] = Detail(1, open);
         console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
         using var client = console.CreateClient();
-        var token = TestContext.Current.CancellationToken;
+        var opened = await OpenAsync(client);
 
-        // The person opens the proposal: the page shows revision 1.
-        using var opening = new HttpRequestMessage(HttpMethod.Get, ProposalUri(8));
-        using var get = await client.SendAsync(opening, token);
-        var html = await get.Content.ReadAsStringAsync(token);
-        var shown = Regex.Match(html, "name=\"Revision\" value=\"(\\d+)\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
-        var antiforgery = Regex.Match(
-            html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
-        var cookies = get.Headers.TryGetValues("Set-Cookie", out var set)
-            ? string.Join("; ", set.Select(x => x.Split(';')[0]))
-            : string.Empty;
-
-        Assert.Equal("1", shown);
+        Assert.Equal("1", Field(opened.Html, "Revision"));
 
         // Another surface saves an item meanwhile: revision 2.
         summary.Revision = 2;
         summary.LiveItems = 2;
         console.Broker.Details[3] = Detail(2, open);
 
-        using var posting = new HttpRequestMessage(HttpMethod.Post, ProposalUri(8))
-        {
-            Content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["Text"] = "title: Billing export\n1. One",
-                ["Target"] = "3",
-                ["Revision"] = shown,
-                ["__RequestVerificationToken"] = antiforgery,
-            }),
-        };
-
-        if (cookies.Length > 0)
-        {
-            posting.Headers.Add("Cookie", cookies);
-        }
-
-        using var posted = await client.SendAsync(posting, token);
-        var page = await posted.Content.ReadAsStringAsync(token);
+        var page = await opened.PostAsync(client, new() { ["Text"] = Text, ["Target"] = "3" });
 
         Assert.Empty(console.Broker.Confirmed);
         Assert.Contains("has changed since this page showed it", page, StringComparison.Ordinal);
         Assert.DoesNotContain("Remove them and confirm", page, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task A_revision_kept_for_one_roadmap_is_never_carried_to_another_the_hint_now_matches()
+    [Theory]
+    [InlineData("3", Text)]
+    [InlineData("new", "garbage")]
+    public async Task A_revision_kept_for_one_roadmap_is_never_carried_to_another_the_hint_now_matches(string target, string text)
     {
-        // Round 55: when the roadmap chosen was renamed away and another took the hint, the page kept the first one's
-        // revision for the second, and a revision the person was never shown could pass.
+        // Whichever path draws the page again, the chosen roadmap renamed away or a new roadmap's text refused: the hint
+        // now matches another roadmap, so the revision kept for the first is dropped and the page shows the second's.
         using var console = new RoadmapConsole();
         var a = new Wire.RoadmapSummary { Id = 3, Number = 1, Title = "Billing export", Revision = 3, LiveItems = 0 };
         var b = new Wire.RoadmapSummary { Id = 4, Number = 2, Title = "Other", Revision = 1, LiveItems = 0 };
@@ -110,16 +88,7 @@ public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
         console.Broker.Details[4] = new Wire.RoadmapDetail { Id = 4, Number = 2, Title = "Other", Revision = 1 };
         console.Broker.Propose(8, "orders@test", "Billing export", ["One"], target: "billing export");
         using var client = console.CreateClient();
-        var token = TestContext.Current.CancellationToken;
-
-        using var opening = new HttpRequestMessage(HttpMethod.Get, ProposalUri(8));
-        using var get = await client.SendAsync(opening, token);
-        var html = await get.Content.ReadAsStringAsync(token);
-        var antiforgery = Regex.Match(
-            html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
-        var cookies = get.Headers.TryGetValues("Set-Cookie", out var set)
-            ? string.Join("; ", set.Select(x => x.Split(';')[0]))
-            : string.Empty;
+        var opened = await OpenAsync(client);
 
         // Elsewhere: A renamed away, B renamed to the hint at revision 2.
         a.Title = "Billing export, old";
@@ -129,32 +98,54 @@ public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
         b.Revision = 2;
         console.Broker.Details[4] = new Wire.RoadmapDetail { Id = 4, Number = 2, Title = b.Title, Revision = 2 };
 
-        var page = await PostAsync(client, antiforgery, cookies, new() { ["Text"] = Text, ["Target"] = "3", ["Revision"] = "3" });
-        var carried = Regex.Match(page, "name=\"Revision\" value=\"(\\d+)\"", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
+        var drawn = await opened.PostAsync(client, new() { ["Text"] = text, ["Target"] = target });
 
-        Assert.Contains("no longer the one this proposal matches", page, StringComparison.Ordinal);
-        Assert.Equal("2", carried);
+        Assert.Equal("2", Field(drawn, "Revision"));
+        Assert.Equal("4", Field(drawn, "RevisionOf"));
 
-        // B is edited elsewhere after the page showed it at 2: the revision the page carries is now stale.
+        // B is edited elsewhere after the page showed it at 2: what the page carries is now stale, and is refused.
         b.Revision = 3;
         console.Broker.Details[4] = new Wire.RoadmapDetail { Id = 4, Number = 2, Title = b.Title, Revision = 3 };
-        _ = await PostAsync(client, antiforgery, cookies, new() { ["Text"] = Text, ["Target"] = "4", ["Revision"] = carried });
+        _ = await opened.With(drawn).PostAsync(client, new() { ["Text"] = Text, ["Target"] = "4" });
 
         Assert.Empty(console.Broker.Confirmed);
     }
 
-    private static async Task<string> PostAsync(HttpClient client, string antiforgery, string cookies, Dictionary<string, string> form)
+    private static async Task<Opened> OpenAsync(HttpClient client)
     {
-        form["__RequestVerificationToken"] = antiforgery;
-        using var posting = new HttpRequestMessage(HttpMethod.Post, ProposalUri(8)) { Content = new FormUrlEncodedContent(form) };
+        using var opening = new HttpRequestMessage(HttpMethod.Get, ProposalUri(8));
+        using var get = await client.SendAsync(opening, Ct);
+        var html = await get.Content.ReadAsStringAsync(Ct);
+        var antiforgery = Regex.Match(
+            html, """name="__RequestVerificationToken"[^>]*value="([^"]+)""", RegexOptions.None, TimeSpan.FromSeconds(2)).Groups[1].Value;
+        var cookies = get.Headers.TryGetValues("Set-Cookie", out var set)
+            ? string.Join("; ", set.Select(x => x.Split(';')[0]))
+            : string.Empty;
 
-        if (cookies.Length > 0)
+        return new Opened(html, antiforgery, cookies);
+    }
+
+    // A page as the person has it: the revision fields it drew go back with every submit, as a browser sends them.
+    private sealed record Opened(string Html, string Antiforgery, string Cookies)
+    {
+        public Opened With(string html) => this with { Html = html };
+
+        public async Task<string> PostAsync(HttpClient client, Dictionary<string, string> form)
         {
-            posting.Headers.Add("Cookie", cookies);
+            form["__RequestVerificationToken"] = Antiforgery;
+            form["Revision"] = Field(Html, "Revision");
+            form["RevisionOf"] = Field(Html, "RevisionOf");
+
+            using var posting = new HttpRequestMessage(HttpMethod.Post, ProposalUri(8)) { Content = new FormUrlEncodedContent(form) };
+
+            if (Cookies.Length > 0)
+            {
+                posting.Headers.Add("Cookie", Cookies);
+            }
+
+            using var posted = await client.SendAsync(posting, Ct);
+
+            return await posted.Content.ReadAsStringAsync(Ct);
         }
-
-        using var posted = await client.SendAsync(posting, TestContext.Current.CancellationToken);
-
-        return await posted.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
     }
 }

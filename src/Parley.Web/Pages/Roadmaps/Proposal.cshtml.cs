@@ -52,6 +52,10 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     [BindProperty, FromForm]
     public int? Revision { get; set; }
 
+    /// <summary>The roadmap <see cref="Revision"/> is a revision of, so it is never taken for another roadmap's.</summary>
+    [BindProperty, FromForm]
+    public long? RevisionOf { get; set; }
+
     /// <summary>What a revision also does to the other proposals waiting to revise the same roadmap; empty when nothing.</summary>
     public string Superseding { get; private set; } = string.Empty;
 
@@ -110,6 +114,14 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
 
         await ReadAsync().ConfigureAwait(false);
 
+        // A kept revision belongs to the roadmap it was shown for. When the hint now matches another, renamed meanwhile
+        // say, it is dropped on every path, and the page draws the one it now matches at the revision this read found.
+        if (RevisionOf != Match?.Id)
+        {
+            Revision = null;
+            RevisionOf = null;
+        }
+
         if (Proposal is null)
         {
             return Page();
@@ -155,7 +167,7 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             return Page();
         }
 
-        // A proposal's items carry no item numbers, so a revision replaces every item the roadmap had. Open work it would
+        // A revision keeps only the items the person numbered, so it removes the rest the roadmap had. Open work it would
         // remove is described first and confirmed only on a second, deliberate submit, as an edit's is (SPEC.md §5.7).
         if (target is { } revising)
         {

@@ -51,7 +51,8 @@ internal static class Proposing
     /// <summary>What the edit field asks.</summary>
     private const string EditAsks =
         "One line per item, in order: a number and a dot, then what is to be done. Add | for: role@machine and | needs: 1, 2 " +
-        "where you know them. Move a line to move the item. The first line is the title.";
+        "where you know them, and, when it revises a roadmap, | item: n to keep that roadmap's item n. Move a line to move " +
+        "the item. The first line is the title.";
 
     /// <summary>The door declining passes through.</summary>
     internal const string DeclineTitle = "Decline a proposed roadmap";
@@ -412,9 +413,7 @@ internal static class Proposing
             Title,
             $"This proposal's title matches roadmap {number}, '{matched}', which has "
             + match.LiveItems.ToString(CultureInfo.InvariantCulture) + (match.LiveItems == 1 ? " item" : " items")
-            + ". A revision replaces every item that roadmap has with these; the items it had are removed, and their "
-            + "conversations stay. " + (superseding.Length > 0 ? superseding + " " : string.Empty)
-            + "A new roadmap leaves it alone.",
+            + ". " + (superseding.Length > 0 ? superseding + " " : string.Empty) + ProposalText.RevisionReplaces,
             [NewRoadmap, revise]);
 
         var open = Prompting.Open(app, choosing);

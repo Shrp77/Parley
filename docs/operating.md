@@ -195,7 +195,8 @@ blocked it says so, with the blocker.
 An item's conversation is marked with its item in every conversation list, and leads back to its
 roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
 conversation where it is, marked *formerly*. A proposal confirmed as a revision replaces the
-roadmap's items, so it removes them too. If a removed item's work is still open, you are told so
+roadmap's items with its own, except a line you gave `| item: n`, which keeps that item and its conversation; the rest
+are removed. It also settles the other proposals waiting to revise that roadmap, and the choice says how many. If a removed item's work is still open, you are told so
 before anything is saved, because the agent holding it is not told.
 
 ## Files

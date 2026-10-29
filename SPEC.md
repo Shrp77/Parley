@@ -866,7 +866,11 @@ can name one it wants revised only by its title, which is a hint, matched ignori
 chooses at confirmation whether the proposal revises an existing roadmap or becomes a new one, and a
 proposal whose title matches an existing roadmap is shown with that match. Confirming a revision
 supersedes any other waiting proposal whose hint names the roadmap revised, by its title before the
-revision, and its proposer is told. Confirming a new roadmap supersedes nothing.
+revision, and its proposer is told. Confirming a new roadmap supersedes nothing. A revision makes the roadmap exactly
+the person's final content: a line that names one of its live items by number keeps that item and its conversation, and
+every other item it had is removed, as an edit removes one. Before the person chooses, a surface says that a revision
+supersedes the other waiting proposals that name the roadmap, because a superseded proposal is shown nowhere after, and
+gives how many only when it has read them all.
 
 **Where an item stands is derived, never stored.** A surface reads the roadmap, which returns for each
 live item what the broker already holds — whether its conversation exists, how many exchanges in it are

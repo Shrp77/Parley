@@ -193,6 +193,23 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         Assert.Contains("A revision also settles any other proposal waiting to revise this roadmap", await ReviseChoiceAsync(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_revise_choice_gives_no_number_at_a_title_exactly_as_long_as_a_heading_shows()
+    {
+        // Round 60: a longer hint cut to 200 characters equals a 200-character title, so the headings counted a rival the
+        // store, matching whole hints, does not supersede.
+        var title = new string('b', RoadmapProposal.HeadingLength);
+        var made = await Repository.GetProposalAsync(await ProposeAsync(title), Ct);
+        Assert.True((await Repository.ConfirmAsync(made!.Id, made.Content, null, T0, cancellationToken: Ct)).Done);
+        await ProposeAsync("Longer hint", target: title + "c");
+        await ProposeAsync("The one opened", target: title);
+
+        var said = await ReviseChoiceAsync();
+
+        Assert.DoesNotContain("settles 1 other proposal", said, StringComparison.Ordinal);
+        Assert.Contains("A revision also settles any other proposal waiting to revise this roadmap", said, StringComparison.Ordinal);
+    }
+
     // Opens the proposals, opens the newest, chooses to confirm it, and returns what the revise choice says.
     private async Task<string> ReviseChoiceAsync()
     {

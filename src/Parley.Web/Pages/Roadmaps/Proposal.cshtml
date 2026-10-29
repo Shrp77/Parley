@@ -70,8 +70,9 @@ else if (Model.Proposal is { } proposal)
                 @{ var revising = Model.Target == revises.Id.ToString(System.Globalization.CultureInfo.InvariantCulture); }
                 <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
                 <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of roadmap #@revises.Number, <em>@revises.Title</em></label>
-                <p class="composer-note">A revision replaces every item that roadmap has with these, except an item whose line ends <code>| item: n</code>, which is carried across; the items it had are removed, and their conversations stay. A new roadmap leaves it alone.</p>
+                <p class="composer-note">@Parley.Client.Roadmaps.ProposalText.RevisionReplaces</p>
                 <input type="hidden" name="Revision" value="@(Model.Revision ?? revises.Revision)" />
+                <input type="hidden" name="RevisionOf" value="@(Model.RevisionOf ?? revises.Id)" />
                 @if (Model.Superseding is { Length: > 0 } superseding)
                 {
                     <p class="composer-note">@superseding</p>

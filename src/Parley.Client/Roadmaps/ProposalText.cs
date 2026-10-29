@@ -164,6 +164,13 @@ public static class ProposalText
         (items.Count == 1 ? "item " : "items ")
         + string.Join(", ", items.Select(n => n.ToString(CultureInfo.InvariantCulture)));
 
+    /// <summary>What a revision does to the roadmap's items, said wherever a person chooses one.</summary>
+    /// <remarks>One sentence for both surfaces, so neither tells the person less: the codec carries a numbered item across.</remarks>
+    public const string RevisionReplaces =
+        "A revision replaces every item that roadmap has with these, except one whose line carries | item: n, where n is "
+        + "an item that roadmap has, which keeps that item and its conversation; every other item it had is removed, and "
+        + "its conversation stays. A new roadmap leaves it alone.";
+
     /// <summary>What confirming a proposal as a revision of a roadmap also does to the other proposals waiting on it.</summary>
     /// <param name="proposal">The proposal being confirmed.</param>
     /// <param name="roadmap">The roadmap it would revise.</param>
@@ -173,9 +180,10 @@ public static class ProposalText
     /// A revision supersedes every other waiting proposal whose whole hint names the roadmap, ignoring case (SPEC.md
     /// §5.7), and a superseded proposal is shown nowhere after, so the door says so before the person chooses. The
     /// headings are the newest <see cref="RoadmapProposal.HeadingLimit"/> with hints cut to
-    /// <see cref="RoadmapProposal.HeadingLength"/>, so a number is given only when they are certainly all of them:
-    /// unread, a title longer than a cut hint, or a full list, and the sentence says any such proposal goes, or at least
-    /// how many. Unread is not none, and neither is a count that could be short.
+    /// <see cref="RoadmapProposal.HeadingLength"/>, so a number is given only when they are certainly all of them. When
+    /// they were not read, or the title is at least as long as a cut hint (a longer hint cut could then equal it), the
+    /// sentence says any such proposal goes. When the list is full it says at least how many, or any when it counted
+    /// none. Otherwise it gives the number. Unread is not none, and neither is a count that could be short or long.
     /// </remarks>
     public static string Superseding(RoadmapProposal proposal, RoadmapSummary roadmap, IReadOnlyList<RoadmapProposal>? waiting)
     {
@@ -184,7 +192,7 @@ public static class ProposalText
 
         const string Any = "A revision also settles any other proposal waiting to revise this roadmap, as superseded, and tells its proposer.";
 
-        if (waiting is null || roadmap.Title.Length > RoadmapProposal.HeadingLength)
+        if (waiting is null || roadmap.Title.Length >= RoadmapProposal.HeadingLength)
         {
             return Any;
         }
