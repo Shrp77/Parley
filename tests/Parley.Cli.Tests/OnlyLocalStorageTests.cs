@@ -5,7 +5,7 @@ using Xunit;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That Parley keeps its work only on this machine's own disks: never a synced cloud folder, a share or a virtual drive.
+/// That Parley keeps its work only on this machine's own disks: never a synced cloud folder, a share or a virtual file system.
 /// </summary>
 /// <remarks>
 /// <b>The owner's rule, 2026-10-29.</b> A repository, a deployment's root and an agent's workspace are refused on
@@ -109,7 +109,7 @@ public sealed class OnlyLocalStorageTests : IDisposable
         var problem = LocalStorage.Problem(Path.Combine(link, "orders"), Environment());
 
         Assert.NotNull(problem);
-        Assert.Contains("through a link to", problem, StringComparison.Ordinal);
+        Assert.Contains("which leads to", problem, StringComparison.Ordinal);
         Assert.Contains("on OneDrive", problem, StringComparison.Ordinal);
     }
 
@@ -202,6 +202,128 @@ public sealed class OnlyLocalStorageTests : IDisposable
             DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, share);
         }
     }
+
+    [Fact]
+    public void A_subst_letter_for_a_synced_folder_is_refused_as_that_folder()
+    {
+        // SPEC §4.1's "or a subst letter": nothing held it (lens 3 run 78).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+        var onedrive = Directory.CreateDirectory(Path.Combine(_home, "OneDrive")).FullName;
+
+        WithLetter($@"\??\{onedrive}", letter =>
+            Assert.Contains("on OneDrive", LocalStorage.Problem($@"{letter}\orders", Environment()), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_subst_letter_is_walked_as_the_folder_it_stands_for()
+    {
+        // K: standing for a folder in the repository that links to a share: reading K:\x went through that link to the
+        // share (lens 2 run 75). A TEST-NET host, fresh each run, never answers, so a lookup takes the SMB wait.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+        var hop = Path.Combine(_home, "hop");
+
+        if (!TrySymbolicLink(hop, $@"\\192.0.2.{Random.Shared.Next(2, 254)}\share"))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        WithLetter($@"\??\{hop}", letter =>
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\x\.mcp.json"));
+            Assert.NotNull(LocalStorage.Problem($@"{letter}\x", Environment()));
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the share was asked: {timer.Elapsed}");
+        });
+    }
+
+    [Theory]
+    [InlineData(@"\??\GLOBALROOT\Device\Mup\192.0.2.{0}\share")]
+    [InlineData(@"\Device\Mup\192.0.2.{0}\share")]
+    [InlineData(@"\Device\Null")]
+    public void A_letter_for_anything_but_a_local_disk_is_refused_without_being_asked(string definition)
+    {
+        // Asking a letter defined for GLOBALROOT\Device\Mup what kind of drive it is opened the share (lens 2 run 75), so
+        // a letter is judged by its name alone.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+
+        WithLetter(string.Format(System.Globalization.CultureInfo.InvariantCulture, definition, Random.Shared.Next(2, 254)), letter =>
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+
+            Assert.True(OffMachineLinks.LeadsOffThisMachine($@"{letter}\x"));
+            Assert.NotNull(LocalStorage.Problem($@"{letter}\x", Environment()));
+            Assert.True(timer.Elapsed < TimeSpan.FromSeconds(5), $"the letter was asked: {timer.Elapsed}");
+        });
+    }
+
+    [Fact]
+    public async Task A_folder_that_mounts_a_local_disk_is_walked_through()
+    {
+        // A second disk mounted at C:\mnt\data reads its target as `Volume{GUID}\`, which the walk refused as a target it
+        // could not find (lens 1 run 71). The temporary folder's own volume stands in for the second disk.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "volume mount points");
+        var mountPoint = new char[1024];
+        var volume = new char[64];
+        Assert.True(GetVolumePathName(_home, mountPoint, (uint)mountPoint.Length));
+        Assert.True(GetVolumeNameForVolumeMountPoint(new string(mountPoint).TrimEnd('\0'), volume, (uint)volume.Length));
+        var mounted = Path.Combine(_home, "mounted");
+        await LinkAsync(mounted, new string(volume).TrimEnd('\0'));
+
+        try
+        {
+            var repository = Path.Combine(mounted, _home[(Path.GetPathRoot(_home)!.Length)..], "src", "orders");
+            Directory.CreateDirectory(Path.Combine(_home, "src", "orders"));
+
+            Assert.True(Directory.Exists(repository));
+            Assert.False(OffMachineLinks.LeadsOffThisMachine(repository));
+            Assert.Null(LocalStorage.Problem(repository, Environment()));
+        }
+        finally
+        {
+            // The link alone, before the home folder is deleted: it leads to the whole disk.
+            Directory.Delete(mounted);
+        }
+    }
+
+    private static void WithLetter(string definition, Action<string> act)
+    {
+        var letter = Enumerable.Range('K', 'Z' - 'K' + 1).Select(c => $"{(char)c}:")
+            .First(l => QueryDosDevice(l, new char[1024], 1024) == 0);
+        Assert.True(DefineDosDevice(RawTargetPath, letter, definition));
+
+        try
+        {
+            act(letter);
+        }
+        finally
+        {
+            DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, definition);
+        }
+    }
+
+    private static bool TrySymbolicLink(string link, string target)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetVolumePathNameW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetVolumePathName(string fileName, [System.Runtime.InteropServices.Out] char[] volumePathName, uint length);
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "GetVolumeNameForVolumeMountPointW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetVolumeNameForVolumeMountPoint(string mountPoint, [System.Runtime.InteropServices.Out] char[] volumeName, uint length);
 
     private const uint RawTargetPath = 0x1;
     private const uint RemoveDefinition = 0x2;

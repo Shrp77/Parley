@@ -58,30 +58,16 @@ public static class LocalStorage
         }
 
         // What a folder is on is decided where it really is: a subst drive letter and a link each lead somewhere the
-        // text does not say (review, lens 1 run 69). The drive is asked before the walk reads anything on it, so a
-        // network drive is refused without being touched.
-        var reached = full;
-
-        for (var round = 0; ; round++)
+        // text does not say (review, lens 1 run 69). The walk decides what each drive letter is from its name before
+        // reading anything on it, so only a path it ends on is asked its drive's kind.
+        if (OffMachineLinks.LeadsOffThisMachine(full, out var reached))
         {
-            var real = OffMachineLinks.Unsubstituted(reached);
+            return Said(path, Unfollowed);
+        }
 
-            if (DriveProblem(real) is { } drive)
-            {
-                return Said(Through(full, real), drive);
-            }
-
-            if (OffMachineLinks.LeadsOffThisMachine(real, out var walked) || round > 8)
-            {
-                return Said(path, Unfollowed);
-            }
-
-            if (string.Equals(walked, reached, StringComparison.Ordinal))
-            {
-                break;
-            }
-
-            reached = walked;
+        if (DriveProblem(reached) is { } drive)
+        {
+            return Said(Through(full, reached), drive);
         }
 
         foreach (var where in (string[])[full, reached])
@@ -99,7 +85,7 @@ public static class LocalStorage
     private const string Unfollowed = "another machine, a device, or a link Parley cannot follow";
 
     private static string Through(string full, string reached) =>
-        string.Equals(full, reached, StringComparison.Ordinal) ? full : $"{full}, through a link to {reached},";
+        string.Equals(full, reached, StringComparison.Ordinal) ? full : $"{full}, which leads to {reached},";
 
     private static string Said(string path, string what) =>
         $"{path} is on {what}. Parley keeps its work only on this machine's own disks: move it to a local folder.";
@@ -223,7 +209,12 @@ public static class LocalStorage
                 return "a network drive";
             }
 
-            if (drive.DriveType is DriveType.CDRom or DriveType.NoRootDirectory)
+            if (drive.DriveType == DriveType.NoRootDirectory)
+            {
+                return "a drive letter this machine does not have";
+            }
+
+            if (drive.DriveType == DriveType.CDRom)
             {
                 return "a drive that is not a disk";
             }
@@ -235,10 +226,13 @@ public static class LocalStorage
                 return "Google Drive";
             }
 
-            // A FUSE file system is a program's, and the ones in use for this are remote (rclone, sshfs, gvfs);
-            // fuseblk is a local disk read through FUSE, such as NTFS.
+            // A FUSE file system is a program's, and the ones in use for this are remote (rclone, sshfs, gvfs): `fuse` and
+            // `fuse.<name>` on Linux, `macfuse` or `osxfuse` on macOS. fuseblk is a local disk read through FUSE, such as
+            // NTFS. On Windows a FUSE drive (WinFsp) names its own device, which the link walk already refuses.
             if (!OperatingSystem.IsWindows()
-                && drive.DriveFormat.StartsWith("fuse.", StringComparison.Ordinal))
+                && drive.DriveFormat is var format
+                && (format is "fuse" or "macfuse" or "osxfuse"
+                    || format.StartsWith("fuse.", StringComparison.Ordinal)))
             {
                 return "a virtual file system";
             }

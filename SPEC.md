@@ -301,7 +301,7 @@ names its store or its port.
 
 **Only this machine's own disks.** The root, and every repository enrolled from it, is refused on a
 synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual
-file system, and so is a folder reached through a link or a `subst` letter to one: a sync client can copy a store mid-write, a placeholder can vanish from under a fetch, and a
+file system (a FUSE mount on Linux and macOS; on Windows, any drive that is not a local disk volume), and so is a folder reached through a link or a `subst` letter to one: a sync client can copy a store mid-write, a placeholder can vanish from under a fetch, and a
 path there reaches somebody else's servers. Creating a project, serving its store, enrolling a
 repository and starting an agent's adapter each refuse, naming where the folder is.
 

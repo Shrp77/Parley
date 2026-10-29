@@ -40,66 +40,64 @@ public static class OffMachineLinks
     /// </remarks>
     internal static bool LeadsOffThisMachine(string path, out string reached) => Leads(path.Trim(), 0, 0, out reached);
 
-    /// <summary>A path with its drive letter replaced by the folder <c>subst</c> made it stand for, once.</summary>
-    /// <param name="full">A full path.</param>
-    /// <returns>The path on the folder the letter names, or <paramref name="full"/> when the letter is a drive's own.</returns>
-    /// <remarks>QueryDosDevice names a subst letter as <c>\??\C:\folder</c>; reading that name opens nothing.</remarks>
-    internal static string Unsubstituted(string full)
+    // What a drive letter is, decided from the name Windows keeps for it and never by asking the drive: asking a letter
+    // defined as `\??\GLOBALROOT\Device\Mup\host\share` what kind of drive it is opens the share (review, lens 2 run 75).
+    // A local disk's letter names a `\Device\HarddiskVolume<n>`; a subst letter names `\??\C:\folder`; anything else, a
+    // share, a redirector, WebDAV, a FUSE driver's own device, is not this machine's own disk.
+    private enum LetterKind
     {
-        var name = DosDevice(full);
-
-        return name is not null && name.StartsWith(@"\??\", StringComparison.Ordinal) && name.Length > 6 && name[5] == ':'
-            ? Path.Join(name[4..], full[2..])
-            : full;
+        NotALetter,
+        Undefined,
+        LocalDisk,
+        Substitute,
+        Elsewhere,
     }
 
-    // Whether the drive a full path is on is a network drive, or a letter defined for something that is not a folder on
-    // a disk, after following subst letters to the drive they stand on.
-    private static bool DriveIsElsewhere(string full)
+    private static (LetterKind Kind, string Folder) Letter(string full)
     {
-        var on = full;
-
-        for (var i = 0; ; i++)
+        if (full.Length < 2 || full[1] != ':' || !char.IsAsciiLetter(full[0]))
         {
-            var real = Unsubstituted(on);
-
-            if (string.Equals(real, on, StringComparison.Ordinal))
-            {
-                break;
-            }
-
-            if (i > MostLinks || LocalPath.IsOffThisMachine(real))
-            {
-                return true;
-            }
-
-            on = real;
+            return (LetterKind.NotALetter, string.Empty);
         }
 
-        try
+        return DosDevice(full[..2]) switch
         {
-            var root = Path.GetPathRoot(on) ?? on;
-
-            return new DriveInfo(root).DriveType switch
-            {
-                DriveType.Network => true,
-
-                // A letter nobody defined is only a folder that is not there; one defined for something with no root
-                // folder is a device.
-                DriveType.NoRootDirectory => DosDevice(on) is not null,
-                _ => false,
-            };
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
+            null => (LetterKind.Undefined, string.Empty),
+            ['\\', '?', '?', '\\', _, ':', ..] name when char.IsAsciiLetter(name[4]) => (LetterKind.Substitute, name[4..]),
+            var name when IsLocalVolume(name) => (LetterKind.LocalDisk, string.Empty),
+            _ => (LetterKind.Elsewhere, string.Empty),
+        };
     }
 
-    // What a drive letter is defined as, or null when it is not a letter or not defined.
-    private static string? DosDevice(string full)
+    private static bool IsLocalVolume(string device)
     {
-        if (!OperatingSystem.IsWindows() || full.Length < 2 || full[1] != ':' || !char.IsAsciiLetter(full[0]))
+        const string Volume = @"\Device\HarddiskVolume";
+
+        return device.Length > Volume.Length
+            && device.StartsWith(Volume, StringComparison.Ordinal)
+            && device[Volume.Length..].All(char.IsAsciiDigit);
+    }
+
+    // A mount point's target, `Volume{GUID}\` as .NET hands it back (it reads as relative), or with `\\?\` or `\??\`.
+    private static string? MountedVolume(string target)
+    {
+        var name = target.StartsWith(@"\\?\", StringComparison.Ordinal) || target.StartsWith(@"\??\", StringComparison.Ordinal)
+            ? target[4..]
+            : target;
+        name = name.TrimEnd('\\');
+
+        return name.Length == "Volume{}".Length + 36
+            && name.StartsWith("Volume{", StringComparison.OrdinalIgnoreCase)
+            && name[^1] == '}'
+            && Guid.TryParse(name[6..], out _)
+                ? name
+                : null;
+    }
+
+    // What a DOS device name (`K:`, `Volume{GUID}`) is defined as, or null when it is not defined.
+    private static string? DosDevice(string device)
+    {
+        if (!OperatingSystem.IsWindows())
         {
             return null;
         }
@@ -108,7 +106,7 @@ public static class OffMachineLinks
 
         try
         {
-            return QueryDosDevice(full[..2], target, (uint)target.Length) == 0 ? null : new string(target).Split('\0')[0];
+            return QueryDosDevice(device, target, (uint)target.Length) == 0 ? null : new string(target).Split('\0')[0];
         }
         catch (EntryPointNotFoundException)
         {
@@ -156,14 +154,30 @@ public static class OffMachineLinks
 
         reached = full;
 
-        // The walk lands on a drive letter as typed and again after every link. Its kind is asked, which opens nothing,
-        // before any part of it is read: a link to a mapped network letter, or to a letter a program defined for a share,
-        // would otherwise sign the person in to that host (review, lens 2 run 74). A colon past the drive is a stream
-        // spelling, `folder::$INDEX_ALLOCATION`, which is the folder to Windows but not to a comparison of text (lens 1
-        // run 70).
-        if (OperatingSystem.IsWindows() && (full.IndexOf(':', 2) >= 0 || DriveIsElsewhere(full)))
+        // The walk lands on a drive letter as typed and again after every link, and decides what the letter is before
+        // any part of it is read: a link to a mapped network letter, or to a letter a program defined for a share, would
+        // otherwise sign the person in to that host (review, lens 2 run 74). A subst letter is walked as the folder it
+        // stands for, part by part, since reading through the letter follows whatever that folder links to (run 75). A
+        // colon past the drive is a stream spelling, `folder::$INDEX_ALLOCATION`, which is the folder to Windows but not
+        // to a comparison of text (lens 1 run 70).
+        if (OperatingSystem.IsWindows())
         {
-            return true;
+            if (full.IndexOf(':', 2) >= 0)
+            {
+                return true;
+            }
+
+            switch (Letter(full))
+            {
+                case (LetterKind.Elsewhere, _):
+                    return true;
+
+                case (LetterKind.Substitute, var folder):
+                    var folderParts = folder[(Path.GetPathRoot(folder) ?? string.Empty).Length..]
+                        .Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length;
+
+                    return Leads(Path.Join(folder, full[2..]), links + 1, folderParts + fromTarget, out reached);
+            }
         }
 
         var root = Path.GetPathRoot(full) ?? string.Empty;
@@ -214,6 +228,18 @@ public static class OffMachineLinks
             if (target is null
                 || (OperatingSystem.IsWindows() && Path.IsPathRooted(target) && !Path.IsPathFullyQualified(target)))
             {
+                return true;
+            }
+
+            // A folder that mounts a disk holds the volume's name, not a path (a second disk at C:\mnt\data). A local
+            // disk's volume is walked through as a folder; any other volume is not this machine's own (lens 1 run 71).
+            if (OperatingSystem.IsWindows() && MountedVolume(target) is { } volume)
+            {
+                if (DosDevice(volume) is { } device && IsLocalVolume(device))
+                {
+                    continue;
+                }
+
                 return true;
             }
 

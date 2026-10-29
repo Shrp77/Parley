@@ -77,8 +77,9 @@ privileges.
 
 Nothing else may open the store. A store has one broker, and a second one says so and exits. The
 deployment's root, and so every store, must be on this machine's own disk: Parley refuses a synced
-cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system (rclone, sshfs and their kind),
-and a folder reached through a link to one. SQLite in WAL mode needs shared memory that is coherent
+cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system (a FUSE mount such as rclone or sshfs on Linux and macOS; on Windows, any drive that is not a
+local disk volume),
+and a folder reached through a link or a `subst` letter to one. SQLite in WAL mode needs shared memory that is coherent
 between every process touching it, and a sync client copies a store while it is being written. If
 the default root is in such a folder, set another with `--config` or `PARLEY_CONFIG`.
 

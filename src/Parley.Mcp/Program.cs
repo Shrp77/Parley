@@ -63,7 +63,7 @@ catch (InvalidOperationException ex)
 }
 
 // Only on this machine's own disks (the owner's rule, 2026-10-29): an agent whose repository sits on a synced cloud folder,
-// a share or a virtual drive would fetch into and place from somebody else's servers. Said and exited, as a bad
+// a share or a virtual file system would fetch into and place from somebody else's servers. Said and exited, as a bad
 // configuration is, before it attaches.
 if (Parley.Configuration.LocalStorage.Problem(options.Workspace ?? Environment.CurrentDirectory) is { } notLocal)
 {

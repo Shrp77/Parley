@@ -238,7 +238,7 @@ public static class EnrollmentPlan
                 occupied[entry.Workspace] = i;
             }
 
-            // Only this machine's own disks: never a synced cloud folder, a network share or a virtual drive (the owner's
+            // Only this machine's own disks: never a synced cloud folder, a network share or a virtual file system (the owner's
             // rule, 2026-10-29). Every surface enrols through this plan, so the refusal is said once, here.
             if (LocalStorage.Problem(entry.Workspace) is { } notLocal)
             {
