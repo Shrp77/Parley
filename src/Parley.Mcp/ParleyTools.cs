@@ -39,7 +39,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     internal const string Settling =
         "These are questions you asked the person that are still open. If their words answer any of them or make them " +
         "moot, name those in settles when you reply, and say so in your reply. Leave the rest open. A person asking " +
-        "you to explain a question has not answered it.";
+        "you to explain a question has not answered it. A request of theirs you had asked back about is handed back " +
+        "to you, not closed: answer it with parley_result.";
 
     /// <summary>Sends a Request.</summary>
     /// <param name="to">A whole agent name, or a role.</param>
@@ -177,8 +178,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
             "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
-            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
-            "reply which ones you settled.")]
+            "inbox. Your own requests to them close as settled by you; a request of theirs you had asked back about is " +
+            "handed back to you instead, and you then answer it with parley_result. Asking you to explain a question " +
+            "does not settle it. Say in your reply which ones you settled.")]
         long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
@@ -274,8 +276,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
             "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
-            "inbox. Those close as settled by you. Asking you to explain a question does not settle it. Say in your " +
-            "reply which ones you settled.")]
+            "inbox. Your own requests to them close as settled by you; a request of theirs you had asked back about is " +
+            "handed back to you instead, and you then answer it with parley_result. Asking you to explain a question " +
+            "does not settle it. Say in your reply which ones you settled.")]
         long[]? settles = null,
         CancellationToken cancellationToken = default)
     {
@@ -364,6 +367,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             // The person's own requests you had asked back about: the turn is yours again, so answer each.
             confirmation["handed_back_to_you"] =
                 new JsonArray([.. reply.HandedBack.Select(id => (JsonNode?)JsonValue.Create(id))]);
+            confirmation["handed_back_note"] =
+                "These are the person's requests you had asked back about. They are open and yours again: answer each "
+                + "with parley_result.";
         }
 
         return confirmation;
@@ -394,7 +400,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         200: answer each with parley_conclude.
         One call carries a bounded amount; when messages_waiting is present, call again for the rest. A call
         that does not finish takes nothing: what it was carrying comes in the next. Rarely a message comes
-        twice; one you already have, by its exchange_id, needs nothing more.
+        twice; one whose message_id you already have needs nothing more. Every message on an exchange shares
+        its exchange_id, so that is never how to tell.
 
         Work what you collect. For each request, do the work in your repository or resolve what stops it,
         and send parley_result. A Result arrives with the request you sent attached, so you can see what
@@ -430,6 +437,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             {
                 var entry = new JsonObject
                 {
+                    // Its own id, which a message delivered twice repeats: the exchange id is every reply's on it.
+                    ["message_id"] = delivered.Message.Id,
                     ["exchange_id"] = delivered.Message.ExchangeId,
                     ["type"] = MessageIdentity.FormatType(WireCodec.In(delivered.Message.Type)),
                     ["from"] = delivered.Message.From,

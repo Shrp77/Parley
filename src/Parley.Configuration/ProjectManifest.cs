@@ -212,7 +212,7 @@ public static class ProjectManifest
 
         var clashing = found
             .Where(p => !string.IsNullOrEmpty(p.Endpoint))
-            .GroupBy(p => p.Endpoint, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(p => Broker(p.Endpoint), StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
             .SelectMany(g => g)
             .ToHashSet();
@@ -278,7 +278,7 @@ public static class ProjectManifest
         ArgumentNullException.ThrowIfNull(projects);
 
         var problems = new List<string>();
-        var endpoints = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var endpoints = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var project in projects)
         {
@@ -287,7 +287,7 @@ public static class ProjectManifest
                 continue;
             }
 
-            if (endpoints.TryGetValue(project.Endpoint, out var first))
+            if (endpoints.TryGetValue(Broker(project.Endpoint), out var first))
             {
                 problems.Add(
                     $"'{project.Name}' and '{first}' share an endpoint ('{project.Endpoint}'): "
@@ -295,11 +295,39 @@ public static class ProjectManifest
             }
             else
             {
-                endpoints[project.Endpoint] = project.Name.Value;
+                endpoints[Broker(project.Endpoint)] = project.Name.Value;
             }
         }
 
         return problems;
+    }
+
+    /// <summary>The broker an endpoint names, so two spellings of one are one.</summary>
+    /// <param name="endpoint">The endpoint as written.</param>
+    /// <returns>The host and port, with every loopback spelling one host; the text, case set aside, when it is no address.</returns>
+    /// <remarks>
+    /// A trailing slash, <c>localhost</c> or <c>127.000.000.001</c> name the same broker as <c>http://127.0.0.1:19100</c>,
+    /// and a comparison of the text let each serve a second project: its agents joined the first's roster and store, and
+    /// its pages acted there. The scheme is left out, since one port holds one broker whatever is said to reach it.
+    /// </remarks>
+    internal static string Broker(string endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+
+        var written = endpoint.Contains("://", StringComparison.Ordinal) ? endpoint : "http://" + endpoint;
+
+        if (!Uri.TryCreate(written.Trim(), UriKind.Absolute, out var address) || address.Port < 0)
+        {
+            return endpoint.Trim().ToUpperInvariant();
+        }
+
+        var host = address.IdnHost.TrimStart('[').TrimEnd(']');
+        var loopback = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || (System.Net.IPAddress.TryParse(host, out var ip) && System.Net.IPAddress.IsLoopback(ip));
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{(loopback ? "loopback" : host.ToUpperInvariant())}:{address.Port}");
     }
 
     /// <summary>

@@ -360,6 +360,35 @@ public sealed class ProjectManifestTests : IDisposable
         Assert.Contains("billing", problem, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("http://127.0.0.1:51707/")]
+    [InlineData("http://localhost:51707")]
+    [InlineData("http://127.000.000.001:51707")]
+    [InlineData("http://127.0.0.1:51707/anything")]
+    [InlineData("HTTP://127.0.0.1:51707")]
+    public void One_broker_spelled_another_way_is_a_shared_endpoint_and_both_are_left_out(string spelling)
+    {
+        // Found by review, round 61: the text was compared, ignoring case only, so each of these served a second
+        // project on the first's broker, its agents joining the first's roster and its pages acting in its store.
+        Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
+        Given("billing", $$"""{ "endpoint": "{{spelling}}" }""");
+
+        Assert.True(ProjectManifest.TryRead(_root, out var projects, out var problem));
+
+        Assert.Empty(projects);
+        Assert.Contains("share an endpoint", problem, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_ports_on_one_host_are_two_brokers()
+    {
+        var problems = ProjectManifest.Collisions(
+            [Project("orders", "http://127.0.0.1:51707"),
+             Project("billing", "http://localhost:51708")]);
+
+        Assert.Empty(problems);
+    }
+
     [Fact]
     public void A_shared_endpoint_is_reported_when_the_directory_is_read()
     {

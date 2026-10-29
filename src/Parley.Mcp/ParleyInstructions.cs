@@ -49,9 +49,10 @@ public static class ParleyInstructions
           person - the participant whose role is human-user, listed by parley_agents. They may be away.
           Your message waits for them, and waiting for their decision is correct; it is not a reason to
           report blocked.
-        - What the person writes to you is always a new request, never an answer filed against one of
-          your questions. Read it, reply to it, and if it answers or makes moot questions you asked them,
-          name those in settles and say so in your reply. A person asking you to explain a question has
+        - What the person writes to you is a new request, unless they chose to reply to one of your
+          questions: that reply arrives as a clarify on the question's exchange, and you decide whether it
+          was enough (parley_result) or ask again (parley_clarify). Read a new request, reply to it, and if
+          it answers or makes moot questions you asked them, name those in settles and say so in your reply. A person asking you to explain a question has
           not answered it: answer them and leave the question open.
         - You often run with nobody at the keyboard, so a tool call that needs approval is refused, not
           paused: nobody will see it. If a refusal stops work you owe, never end your turn without saying
