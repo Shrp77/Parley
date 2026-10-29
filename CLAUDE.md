@@ -44,7 +44,9 @@ src/Parley.Transport     gRPC contract generated from proto/parley.proto. No han
 src/Parley.Server        The broker process (§4): the only thing that opens the database.
 src/Parley.Configuration The project manifest (§4.1) and the node catalogue: where they live
                          and what they hold. Read by both Parley.Cli and Parley.Mcp. Written
-                         only through Parley.Setup's ProjectCommand.
+                         only through Parley.Setup's ProjectCommand. Also where a path may
+                         be looked up: OffMachineLinks (no link off this machine) and
+                         LocalStorage (only this machine's own disks).
 src/Parley.Setup         What a person does to a machine: enrolling a repository, naming
                          projects, resolving per-machine paths, the autostart entry. Shared
                          by `parley` and `parley-terminal`, which run the same commands in
@@ -223,7 +225,8 @@ once the parent's own floor catches up (`dotnet nuget why`).
 ## Review gate
 
 A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
-integrity, API surface and maintainability) on one commit, with CI green on that commit. The rules live in
+integrity, API surface and maintainability) on the same shipped code, with CI green on the commit that merges; a commit
+that changes only tests, CI, docs or plugin prose keeps the counts. The rules live in
 [`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
 probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this
 one, is where a new review rule goes.
