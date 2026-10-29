@@ -65,7 +65,8 @@ address and any warnings. Inside a project:
 - **Inbox**: everything waiting on you, across projects.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
-- **Health**: stopped agents, flagged work, the latest turns and message sizes.
+- **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
+  whom, message sizes refused, clarifications, and what requests came to.
 - **Notifications**: a bell that tells you when something needs you.
 - **Settings**: choose which agents are ticked by default in a new conversation, and the other
   project-level actions. Renaming a project is the terminal's; Settings says how.

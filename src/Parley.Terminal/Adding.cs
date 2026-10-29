@@ -85,12 +85,18 @@ internal static class Adding
             return "Name a repository directory on this machine.";
         }
 
+        var git = Path.Combine(workspace, ".git");
+
+        // Before any lookup, as on the web console's Enrol page: the lookup itself is what reaches another machine.
+        if (OffMachineLinks.LeadsOffThisMachine(workspace) || OffMachineLinks.LeadsOffThisMachine(git))
+        {
+            return LocalPath.OffThisMachine;
+        }
+
         if (!Directory.Exists(workspace))
         {
             return $"There is no directory at {workspace}.";
         }
-
-        var git = Path.Combine(workspace, ".git");
 
         return Directory.Exists(git) || File.Exists(git)
             ? null

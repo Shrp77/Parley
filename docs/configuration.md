@@ -242,8 +242,9 @@ requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
 Every turn is a real session on your account. The broker records each turn: count, duration,
-cost, and how often an agent ran and still owed exactly what it owed. `parley up` prints a turn
-that failed; no screen shows the cost yet, so your provider's bill is where you see it. That last figure is the shape a runaway takes before it looks like one.
+cost, and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
+takes before it looks like one. No screen shows those figures yet, so your provider's bill is
+where you see the cost; `parley up` prints a turn that failed.
 
 ## Reaching a broker from another machine
 

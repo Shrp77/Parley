@@ -30,17 +30,10 @@ public static class OffMachineLinks
     public static bool LeadsOffThisMachine(string? path) =>
         path is not null && Leads(path.Trim(), 0);
 
-    /// <summary>Whether an entry already found in a folder is a link that leads off this machine.</summary>
-    /// <param name="entry">The entry, as enumeration found it.</param>
-    /// <returns><see langword="true"/> when nothing inside it may be looked up.</returns>
-    public static bool IsLinkOffThisMachine(FileSystemInfo entry)
-    {
-        ArgumentNullException.ThrowIfNull(entry);
-
-        return entry.Attributes.HasFlag(FileAttributes.ReparsePoint) && LeadsOffThisMachine(entry.FullName);
-    }
-
-    private static bool Leads(string path, int links)
+    // The walk. `fromTarget` is how many leading parts of the path came from the link just followed: a part among those
+    // that is not there means the link named something this walk cannot see (an NT path .NET hands back as a relative one,
+    // such as GLOBALROOT\Device\Mup\host), so it is refused; a part past them that is not there is only a missing file.
+    private static bool Leads(string path, int links, int fromTarget = 0)
     {
         if (LocalPath.IsOffThisMachine(path))
         {
@@ -72,6 +65,28 @@ public static class OffMachineLinks
         {
             current = Path.Combine(current, parts[i]);
 
+            // Every part before this one is a plain folder, read or followed already, so asking this part's own
+            // attributes traverses nothing that has not been checked.
+            FileAttributes attributes;
+
+            try
+            {
+                attributes = File.GetAttributes(current);
+            }
+            catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return i < fromTarget;
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                return true;
+            }
+
+            if ((attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                continue;
+            }
+
             string? target;
 
             try
@@ -80,18 +95,25 @@ public static class OffMachineLinks
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
             {
-                // A part that cannot be read is not followed here, and the lookup after this fails on it locally.
-                return false;
+                return true;
             }
 
-            if (target is null)
+            // A reparse point whose target cannot be read is never walked through: its own permissions can hide a link
+            // to a share (review, lens 1 run 68). A cloud placeholder is refused with it, as the file location refuses
+            // every reparse point. A target rooted without a drive is read against whichever drive the process is on,
+            // not the link's, so it is not followed either.
+            if (target is null
+                || (OperatingSystem.IsWindows() && Path.IsPathRooted(target) && !Path.IsPathFullyQualified(target)))
             {
-                continue;
+                return true;
             }
 
-            var reached = Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target);
+            var reached = Path.GetFullPath(
+                Path.IsPathRooted(target) ? target : Path.Combine(Path.GetDirectoryName(current) ?? root, target));
+            var reachedParts = reached[(Path.GetPathRoot(reached) ?? string.Empty).Length..]
+                .Split(Separators, StringSplitOptions.RemoveEmptyEntries).Length;
 
-            return Leads(Path.Combine([reached, .. parts[(i + 1)..]]), links + 1);
+            return Leads(Path.Combine([reached, .. parts[(i + 1)..]]), links + 1, reachedParts);
         }
 
         return false;

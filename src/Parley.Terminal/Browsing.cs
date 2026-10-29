@@ -1,3 +1,4 @@
+using Parley.Setup;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -201,7 +202,9 @@ internal sealed class Browsing : Dialog
     {
         var git = Path.Combine(folder, ".git");
 
-        return Directory.Exists(git) || File.Exists(git);
+        // Never looked up through a link off this machine: a folder link an agent made beside its repository would have
+        // every listing offer the person's sign-in to the share it names (review, lens 2 run 72).
+        return !OffMachineLinks.LeadsOffThisMachine(git) && (Directory.Exists(git) || File.Exists(git));
     }
 
     /// <summary>Opens a folder, as if a row for it had been pressed.</summary>

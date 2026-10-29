@@ -55,14 +55,15 @@ is usually missing is a project:
 parley project list
 ```
 
-If it names none, have the user name one on the first screen of:
+If it names none, have the user name one on the first screen of the terminal:
 
 ```
 parley
 ```
 
-That is the only place a project is created - there is no command-line verb for it, so do not
-offer one. The broker starts the project within seconds. If a broker is running, show the user who
+or in the web console at <http://127.0.0.1:5280>, on the projects list. On Linux and macOS the
+install leaves the terminal out by default, so the web console is the one there. Those are the
+only places a project is created - there is no command-line verb for it, so do not offer one. The broker starts the project within seconds. If a broker is running, show the user who
 is already registered before they go on:
 
 ```

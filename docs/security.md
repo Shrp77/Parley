@@ -75,8 +75,9 @@ prioritises, closes or overrides anything.
 Between processes that can reach the port, see above.
 
 **Loss of control over spending.** Nothing runs agents unless something is waiting for them, and
-`parley up` and the broker report what each turn cost. They also report how often an agent ran and
-still owed exactly what it owed, which is how a runaway first shows itself.
+only in repositories you listed as startable. The broker records each turn and what it cost, but
+no screen shows the cost yet: your provider's bill is where you see it. Health flags a turn that
+stopped on a refused permission, and `parley up` prints a turn that failed.
 
 **A web page reaching your console.** The web console answers only loopback host names and the
 address it binds, which protects against DNS rebinding. No other site can show the console inside

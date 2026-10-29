@@ -246,18 +246,45 @@ public static class Enrolment
     /// into what the person reads. Internal rather than private because the readers are in
     /// <c>EnrollCommand</c>, and a second implementation is how two rules come to differ.
     /// </para>
+    /// <para>
+    /// <b>A link whose target cannot be read is still a link.</b> Its own permissions can hide the target, and then reading
+    /// it gives nothing rather than failing; taking that as "no link" let a write go through it (review, lens 2 run 72).
+    /// So a reparse point is a link whatever its target reads as, and so is a path whose attributes cannot be read.
+    /// </para>
     /// </remarks>
     internal static string? Linked(string path)
     {
+        FileAttributes attributes;
+
         try
         {
-            return new FileInfo(path).LinkTarget;
+            attributes = File.GetAttributes(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception missing) when (missing is FileNotFoundException or DirectoryNotFoundException)
         {
             return null;
         }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return UnreadableTarget;
+        }
+
+        if ((attributes & FileAttributes.ReparsePoint) == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return new FileInfo(path).LinkTarget ?? UnreadableTarget;
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return UnreadableTarget;
+        }
     }
+
+    private const string UnreadableTarget = "a target that cannot be read";
 
     /// <summary>Takes the launch configuration for the length of a read-modify-write.</summary>
     /// <param name="path">The launch configuration.</param>

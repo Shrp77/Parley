@@ -61,6 +61,72 @@ public sealed class NoLinkLeadsALookupOffThisMachineTests : IDisposable
     }
 
     [Fact]
+    public void A_link_to_the_redirector_by_its_device_name_leads_off_this_machine()
+    {
+        // Review, lens 1 run 68: .NET hands back \\?\GLOBALROOT\Device\Mup\host as the relative-looking
+        // GLOBALROOT\Device\Mup\host, which Windows still follows to the network.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the NT namespace is Windows'");
+        var link = Path.Combine(_root, "g2");
+        var host = "192.0.2." + Random.Shared.Next(10, 250).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        try
+        {
+            Directory.CreateSymbolicLink(link, $@"\\?\GLOBALROOT\Device\Mup\{host}\s");
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip($"this machine cannot make a folder link here: {refused.Message}");
+        }
+
+        var waited = Stopwatch.StartNew();
+
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(link, ".git")));
+        Assert.True(waited.Elapsed < TimeSpan.FromSeconds(5), $"the check waited {waited.Elapsed}, as a lookup would");
+    }
+
+    [Fact]
+    public void A_link_whose_own_permissions_hide_its_target_is_never_walked_through()
+    {
+        // Review, lens 1 run 68: with its target unreadable the link read as a plain folder, and the walk asked the path
+        // below it, which followed the link to the share: the check itself was the lookup.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "the permissions are Windows'");
+        var link = LinkToAShare("c8");
+        using var icacls = Process.Start(new ProcessStartInfo("icacls", [link, "/L", "/inheritance:r", "/grant:r", "*S-1-1-0:(X)"])
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        })!;
+        icacls.WaitForExit();
+        Assert.SkipUnless(icacls.ExitCode == 0, "icacls could not hide the link's target");
+
+        var waited = Stopwatch.StartNew();
+
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(link, ".git")));
+        Assert.True(waited.Elapsed < TimeSpan.FromSeconds(5), $"the check waited {waited.Elapsed}, as a lookup would");
+    }
+
+    [Fact]
+    public void A_link_to_a_local_folder_with_nothing_below_it_is_still_this_machine()
+    {
+        var target = Path.Combine(_root, "elsewhere");
+        Directory.CreateDirectory(target);
+        var link = Path.Combine(_root, "docs");
+
+        try
+        {
+            Directory.CreateSymbolicLink(link, target);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip($"this machine cannot make a folder link here: {refused.Message}");
+        }
+
+        Assert.False(OffMachineLinks.LeadsOffThisMachine(link));
+        Assert.False(OffMachineLinks.LeadsOffThisMachine(Path.Combine(link, ".git")));
+    }
+
+    [Fact]
     public async Task The_enrol_page_refuses_a_workspace_reached_through_such_a_link()
     {
         var link = LinkToAShare("docs");
