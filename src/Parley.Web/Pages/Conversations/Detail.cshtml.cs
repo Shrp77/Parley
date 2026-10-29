@@ -577,7 +577,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             // **The item's own agent is ticked, and no other**, whatever a link asks, as in the terminal. A link an agent
             // wrote in a message is live on this page, and `With=` naming another agent would hand that agent the item's
             // words on one press of Send. Ticking nobody instead would let the page's own default choose.
-            With = ItemAgent is { } agent ? [agent.Value] : [];
+            With = ItemAgent is { } agent && !PersonSeat.Is(agent) ? [agent.Value] : [];
         }
 
         return Page();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Parley.Configuration;
 using Parley.Setup;
 using Xunit;
 

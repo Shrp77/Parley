@@ -62,6 +62,15 @@ catch (InvalidOperationException ex)
     return 78; // EX_CONFIG, which is what a supervisor reads to tell "wrong" from "broken".
 }
 
+// Only on this machine's own disks (the owner's rule, 2026-10-29): an agent whose repository sits on a synced cloud folder,
+// a share or a virtual drive would fetch into and place from somebody else's servers. Said and exited, as a bad
+// configuration is, before it attaches.
+if (Parley.Configuration.LocalStorage.Problem(options.Workspace ?? Environment.CurrentDirectory) is { } notLocal)
+{
+    await Console.Error.WriteLineAsync(notLocal).ConfigureAwait(false);
+    return 78; // EX_CONFIG.
+}
+
 // Said rather than silently applied. A launch configuration carrying both a project and an
 // address is somebody's half-finished edit, and the endpoint winning quietly is how an agent
 // ends up in the wrong deployment with nothing anywhere that looks wrong.

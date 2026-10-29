@@ -284,7 +284,16 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
                 && (OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git"))
                     || OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json")))))
         {
-            return false;
+            // Then the owner's rule, said before the plan says it: only this machine's own disks.
+            if ((LocalStorage.Problem(Folder) ?? LocalStorage.Problem(workspace)) is not { } notLocal)
+            {
+                return false;
+            }
+
+            Problems = [notLocal];
+            Entries = [];
+
+            return true;
         }
 
         Problems = [LocalPath.OffThisMachine];

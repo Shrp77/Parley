@@ -93,6 +93,12 @@ internal static class Adding
             return LocalPath.OffThisMachine;
         }
 
+        // Said at the field, as the enrolment plan will say it: only this machine's own disks.
+        if (LocalStorage.Problem(workspace) is { } notLocal)
+        {
+            return notLocal;
+        }
+
         if (!Directory.Exists(workspace))
         {
             return $"There is no directory at {workspace}.";

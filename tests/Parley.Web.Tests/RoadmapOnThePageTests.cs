@@ -102,6 +102,21 @@ public sealed class RoadmapOnThePageTests
     }
 
     [Fact]
+    public async Task An_item_that_is_the_persons_own_opens_with_nobody_ticked()
+    {
+        // The owner's call, 2026-10-29: an item may be the person's own. Ticking the person would make the start a request
+        // to themselves, which is refused; nobody is ticked, and the person chooses.
+        using var console = Confirmed(Item(1, "Approve the rate card", "human-user@test", started: false));
+        using var client = console.CreateClient();
+
+        var page = await client.GetStringAsync(PageUri(1), TestContext.Current.CancellationToken);
+
+        Assert.Contains("for human-user@test", page, StringComparison.Ordinal);
+        Assert.Contains("id=rm1-1&amp;", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("With=human-user", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task An_item_naming_no_agent_opens_its_conversation_with_nobody_ticked()
     {
         // The person chooses from the room, which lists the whole project. Must fail against borrowing another item's agent.

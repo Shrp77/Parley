@@ -2032,7 +2032,9 @@ internal sealed class Shell : Window
 
         if (!started)
         {
-            _pending = (project.Name.Value, item.ConversationName, item.IntendedAgent is { } agent ? [agent] : []);
+            // An item that is the person's own ticks nobody: they choose who, if anybody, it is sent to.
+            _pending = (project.Name.Value, item.ConversationName,
+                item.IntendedAgent is { } agent && !PersonSeat.Is(agent) ? [agent] : []);
         }
 
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);

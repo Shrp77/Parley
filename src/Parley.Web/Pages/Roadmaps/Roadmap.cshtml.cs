@@ -120,7 +120,10 @@ public sealed class RoadmapModel(BrokerDirectory directory) : PageModel
             // ticks nobody, and the person chooses from the room. The item's words are not in the link: roadmap text has
             // no bound, and a long item would make a link the server refuses. The conversation page reads them from the
             // item its reservation names.
-            path += state.Item.IntendedAgent is { } agent ? $"&With={Uri.EscapeDataString(agent.Value)}" : string.Empty;
+            // An item that is the person's own ticks nobody, as one naming none does.
+            path += state.Item.IntendedAgent is { } agent && !PersonSeat.Is(agent)
+                ? $"&With={Uri.EscapeDataString(agent.Value)}"
+                : string.Empty;
         }
 
         return embedded ? path + "&embed=1" : path;

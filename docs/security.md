@@ -96,7 +96,9 @@ or reaching one through a folder link, is refused before anything touches the di
 sign-in to that machine.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
-understand, and refuse to write when anything was left out of a read.
+understand, and refuse to write when anything was left out of a read. Nothing is kept on a synced cloud
+folder, a network drive or a virtual drive: the deployment's folder and every repository must be on
+this machine's own disks, so no sync client copies a store while it is being written.
 
 ## Credentials
 

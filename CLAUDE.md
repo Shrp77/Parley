@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.47.32, protocol 0.9, schema 3. Nothing has been released, but **live stores hold work
+- Version 0.47.33, protocol 0.9, schema 3. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -222,33 +222,11 @@ once the parent's own floor catches up (`dotnet nuget why`).
 
 ## Review gate
 
-Two parts: a mechanical floor that runs as tests, and three judgement lenses that do not.
-
-**The floor.** `tests/Parley.Spec.Tests` checks SPEC.md: section references resolve, no table
-is ragged, no operation name spans the §10.1/§10.2 boundary, §8's rules are numbered
-contiguously and all appear in its enforcement table, `proto/parley.proto` agrees with the
-document, and every schema fragment executes against SQLite in the order written. Do not
-hand-verify a constraint and move on; add the case. Triggers contain semicolons, so they are
-matched to `END;`, and `The_document_contains_a_schema` guards against an extraction that
-silently matches nothing.
-
-**The lenses**, each finding nothing above low:
-
-1. Correctness and concurrency
-2. Security and data integrity
-3. API surface and maintainability
-
-The gate is **three consecutive runs per lens with no finding above low**; a finding above
-low resets that lens to zero. All three must reach three. Each run must probe something the
-previous runs did not, because re-reading the same code is one run repeated. After fixing
-findings, re-run the same lens before rotating. Probe, do not reason: write the malicious case
-and watch it be admitted.
-
-- Run the lenses after the last edit, not alongside it.
-- The running count lives in untracked `REVIEW-LEDGER.md`. Log clean runs too, with what they
-  probed. Record real findings below the bar as *low, recorded not acted on*.
-- Verify CI ran against `HEAD`: `gh pr checks --watch` can return the previous run. Compare
-  the run's commit with `git rev-parse HEAD`.
+A pull request merges after three clean runs of each of three lenses (correctness and concurrency, security and data
+integrity, API surface and maintainability) on one commit, with CI green on that commit. The rules live in
+[`review/`](review/README.md), one file for how the gate runs and one per lens, each with what counts as medium, how to
+probe, and what the owner has settled. Read the gate's file and the lens's file before a pass; a lens file, not this
+one, is where a new review rule goes.
 
 ## Answering as an agent
 

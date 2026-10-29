@@ -130,18 +130,30 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
     }
 
-    [Theory]
-    [InlineData("human-user@test")]
-    [InlineData("parley-facilitator@test")]
-    public async Task An_item_cannot_be_meant_for_the_person_or_Parley(string seat)
+    [Fact]
+    public async Task An_item_cannot_be_meant_for_Parley()
     {
-        // Review, lens 2 run 69: both seats are rows in agents, so an item for either was admitted and confirmed, and
-        // starting it failed at the send. The person sends an item; Parley never receives anybody's work.
+        // Review, lens 2 run 69: Parley is a row in agents, so an item for it was admitted and confirmed, and starting it
+        // failed at the send. Parley never receives anybody's work.
         var refused = await Repository.ProposeAsync(
-            Orders, null, null, Content("Plan", Item("Do it", AgentName.Create(seat))), Now, cancellationToken: Ct);
+            Orders, null, null, Content("Plan", Item("Do it", AgentName.Create("parley-facilitator@test"))), Now,
+            cancellationToken: Ct);
 
         Assert.Contains("takes no work", refused.Problem, StringComparison.Ordinal);
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals;"));
+    }
+
+    [Fact]
+    public async Task An_item_may_be_the_persons_own()
+    {
+        // The owner's call, 2026-10-29: the person may have something to do for a roadmap, and may argue somebody else
+        // should do it. Starting such an item ticks nobody, so the person chooses.
+        var (id, problem) = await Repository.ProposeAsync(
+            Orders, null, null, Content("Plan", Item("Approve the rate card", AgentName.Create("human-user@test"))), Now,
+            cancellationToken: Ct);
+
+        Assert.Null(problem);
+        Assert.NotNull(id);
     }
 
     [Fact]

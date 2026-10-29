@@ -28,8 +28,7 @@ public sealed class SetupSurfaceJustifiedTests
 
     /// <summary>The source of every tool that reaches Parley.Setup, as one string.</summary>
     /// <remarks>
-    /// The web console is one: it creates projects and enrols repositories through it, and is where
-    /// <c>OffMachineLinks</c> guards the pages that look a path up.
+    /// The web console is one: it creates projects and enrols repositories through it.
     /// </remarks>
     private static string Tools()
     {

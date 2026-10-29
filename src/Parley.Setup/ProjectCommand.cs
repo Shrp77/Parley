@@ -317,6 +317,15 @@ public static class ProjectCommand
             return Usage;
         }
 
+        // A project's store and file location live under the root, so the root must be this machine's own disk (the owner's
+        // rule, 2026-10-29): a sync client copying a store mid-write, or a share, is where a deployment's records go wrong.
+        if (LocalStorage.Problem(root) is { } notLocal)
+        {
+            await error.WriteLineAsync(notLocal).ConfigureAwait(false);
+
+            return Usage;
+        }
+
         if (ProjectName.IsDeviceName(name.Value))
         {
             await error.WriteLineAsync(

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Client;
 using Parley.Client.Rendering;

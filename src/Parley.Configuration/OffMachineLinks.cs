@@ -1,6 +1,6 @@
 using Parley.Core;
 
-namespace Parley.Setup;
+namespace Parley.Configuration;
 
 /// <summary>
 /// Whether a path leads off this machine once its links are followed, found by reading link targets and never by

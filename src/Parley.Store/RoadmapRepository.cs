@@ -959,12 +959,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
 
         foreach (var agent in content.Items.Select(i => i.IntendedAgent).Where(a => a is not null).Distinct())
         {
-            // Neither seat takes work: the person is who sends an item, never who it is for, and Parley never receives
-            // anybody's work (review, lens 2 run 69: both were admitted, and starting the item failed at the send).
-            if (agent!.Value.Role == PersonSeat.Role || agent.Value.Role == Facilitation.Role)
+            // Parley never receives anybody's work, so no item is for it. The person may be: an item can be theirs to do,
+            // and starting it opens its conversation with nobody ticked, for them to choose (the owner's call, 2026-10-29).
+            if (agent!.Value.Role == Facilitation.Role)
             {
-                return $"{agent.Value} takes no work, so an item cannot be meant for it. Name the agent that will do it, "
-                    + "or nobody.";
+                return $"{agent.Value} is Parley, which takes no work, so an item cannot be meant for it. Name the agent "
+                    + "that will do it, the person, or nobody.";
             }
 
             var known = await _connection.ExecuteScalarAsync<int>(

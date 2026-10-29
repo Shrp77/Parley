@@ -1,4 +1,4 @@
-using Parley.Setup;
+using Parley.Configuration;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;

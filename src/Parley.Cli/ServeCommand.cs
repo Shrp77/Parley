@@ -144,6 +144,15 @@ public static class ServeCommand
         {
             BrokerRuntime runtime;
 
+            // Never a store on a synced cloud folder, a share or a virtual drive (the owner's rule, 2026-10-29): a sync
+            // client can copy it mid-write. Said and skipped, as an unopenable store is, so the other projects serve.
+            if (LocalStorage.Problem(Path.GetDirectoryName(Path.GetFullPath(project.Store))) is { } notLocal)
+            {
+                await error.WriteLineAsync($"{project.Name}: its store is not served. {notLocal}").ConfigureAwait(false);
+
+                return Start.Failed;
+            }
+
             try
             {
                 runtime = BrokerRuntime.Open(project.Name, project.Store, BrokerOptions.Default, TimeProvider.System);
