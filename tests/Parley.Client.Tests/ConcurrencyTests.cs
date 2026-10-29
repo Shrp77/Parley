@@ -117,16 +117,17 @@ public sealed class ConcurrencyTests
     public async Task An_endpoint_that_cannot_be_dialled_takes_down_only_its_own_project()
     {
         // The manifest accepts more than gRPC can dial -- "localhost:5301" with no scheme is the
-        // usual way to find that out -- and the throw happens where the channel is opened rather
-        // than at startup. Uncontained, one bad row costs the whole page, which is the coupling
-        // ReadAsync exists to prevent.
+        // usual way to find that out. Making the client never throws, wherever a caller makes it
+        // (the web's pages and the terminal's survey made it outside every guard); the call does,
+        // as unavailable, and ReadAsync says what it is.
         using var directory = new BrokerDirectory(
             [new ProjectSettings(
                 ProjectName.Create("alpha"), "a.db", "localhost:5301", null)],
             GrpcChannel.ForAddress);
 
-        var read = await BrokerDirectory.ReadAsync(() =>
-            Task.FromResult(directory.ClientFor(directory.Projects[0])));
+        var client = directory.ClientFor(directory.Projects[0]);
+        var read = await BrokerDirectory.ReadAsync(async () =>
+            await new BrokerClient(client).ProposalCountAsync(null, TestContext.Current.CancellationToken));
 
         Assert.False(read.Reachable);
         Assert.Contains("cannot be reached as written", read.Problem, StringComparison.Ordinal);

@@ -11,7 +11,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>
-/// That one project whose broker cannot be dialled takes down no page the console draws for every project.
+/// That a project whose broker cannot be dialled takes down no page: neither one drawn for every project nor its own.
 /// </summary>
 /// <remarks>
 /// <b>Found by review, round 56.</b> The file-problems banner every page draws built each project's client outside the
@@ -20,13 +20,26 @@ namespace Parley.Web.Tests;
 /// </remarks>
 public sealed class ABrokerThatCannotBeDialledTakesDownNoOtherPageTests
 {
-    [Fact]
-    public async Task The_inbox_draws_beside_a_project_whose_endpoint_cannot_be_dialled()
+    [Theory]
+    [InlineData("/Inbox")]
+    [InlineData("/Notifications")]
+    [InlineData("/Projects/Agents?project=beta")]
+    [InlineData("/Projects/FileProblems?project=beta")]
+    [InlineData("/Projects/Files?project=beta")]
+    [InlineData("/Projects/Health?project=beta")]
+    [InlineData("/Projects/Ownership?project=beta")]
+    [InlineData("/Conversations/Destroy?project=beta&id=pricing")]
+    [InlineData("/Roadmaps?project=beta")]
+    [InlineData("/Roadmaps/Roadmap?project=beta&id=1")]
+    [InlineData("/Roadmaps/Edit?project=beta&id=1")]
+    [InlineData("/Roadmaps/Proposal?project=beta&id=1")]
+    public async Task A_page_beside_or_for_a_project_whose_endpoint_cannot_be_dialled_draws(string path)
     {
+        // Round 62: the client was made outside every guard, and making it opened the channel, so these answered 500.
         using var console = new TwoProjects();
         using var client = console.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-        using var response = await client.GetAsync(new Uri("/Inbox", UriKind.Relative), TestContext.Current.CancellationToken);
+        using var response = await client.GetAsync(new Uri(path, UriKind.Relative), TestContext.Current.CancellationToken);
 
         Assert.NotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
     }

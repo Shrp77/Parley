@@ -313,7 +313,7 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()));
+        return new Wire.Operators.OperatorsClient(Invoker(channel));
     }
 
     /// <summary>Opens an agent client for one project, for the seat a person holds there.</summary>
@@ -348,7 +348,22 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()));
+        return new Wire.Agents.AgentsClient(Invoker(channel));
+    }
+
+    // A project's channel with every call's deadline (Patience). An endpoint gRPC cannot dial throws as the channel opens;
+    // the client is then given calls that fail as unavailable, so making a client never throws and every guard around a
+    // call contains it.
+    private static CallInvoker Invoker(Lazy<GrpcChannel> channel)
+    {
+        try
+        {
+            return channel.Value.Intercept(new Patience());
+        }
+        catch (Exception unusable) when (unusable is UriFormatException or InvalidOperationException)
+        {
+            return new UnusableEndpoint(unusable.Message);
+        }
     }
 
     /// <summary>Runs one read against one project, containing a failure to that project.</summary>
@@ -370,6 +385,12 @@ public sealed class BrokerDirectory : IDisposable
         {
             return ProjectRead<T>.Read(await read().ConfigureAwait(false));
         }
+        catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable
+            && failure.Status.Detail.StartsWith(UnusableEndpoint.Said, StringComparison.Ordinal))
+        {
+            // An endpoint gRPC cannot dial as written: said as what it is, since no broker behind it will ever answer.
+            return ProjectRead<T>.Unreachable(failure.Status.Detail);
+        }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
             return ProjectRead<T>.Unreachable(
@@ -382,14 +403,9 @@ public sealed class BrokerDirectory : IDisposable
         }
         catch (Exception failure) when (failure is UriFormatException or InvalidOperationException)
         {
-            // Opening the channel, not making the call. An endpoint the manifest accepted and a
-            // URL Grpc can dial are not the same set -- "localhost:5301" with no scheme is the
-            // usual way to find that out -- and this throws where the connection is first
-            // attempted, which is inside here rather than at startup.
-            //
-            // Contained for the same reason as the rest: without it, one unusable endpoint takes
-            // down the page for every project beside it, which is precisely the coupling this
-            // method exists to prevent.
+            // A channel opened by a read that did not go through a directory's client, which turns this into a call
+            // that fails as unavailable (UnusableEndpoint). Contained for the same reason as the rest: one unusable
+            // endpoint must not take down the page for every project beside it.
             return ProjectRead<T>.Unreachable(
                 $"This project's endpoint cannot be reached as written: {failure.Message}");
         }

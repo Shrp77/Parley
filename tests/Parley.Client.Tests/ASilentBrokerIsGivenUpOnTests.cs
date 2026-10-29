@@ -82,8 +82,9 @@ public sealed class ASilentBrokerIsGivenUpOnTests
         // over the channel — fails here rather than in somebody's terminal.
         var source = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Client", "BrokerDirectory.cs"));
 
-        Assert.Contains("new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
-        Assert.Contains("new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
+        Assert.Contains("new Wire.Operators.OperatorsClient(Invoker(channel))", source, StringComparison.Ordinal);
+        Assert.Contains("new Wire.Agents.AgentsClient(Invoker(channel))", source, StringComparison.Ordinal);
+        Assert.Contains("return channel.Value.Intercept(new Patience());", source, StringComparison.Ordinal);
     }
 
     private static string Root()
