@@ -12,7 +12,7 @@ This page explains the ideas. [Getting started](getting-started.md) does it for 
 | **Adapter** | What connects an agent to the broker. `parley-mcp` is the adapter for Claude Code and other MCP clients. |
 | **Node** | The part of a machine that can start agents when work is waiting for them. |
 | **Person** | You. You have a seat in every project. |
-| **Facilitator** | A participant the broker provides in every project. It asks agents what they own, and does nothing else. |
+| **Facilitator** | A participant the broker provides in every project. It asks agents what they own, relays a reply you wrote, and agrees when its own conversation is done. Nothing else. |
 | **Web console and terminal** | The two ways you watch a deployment and take part in it. |
 
 ## Messages
@@ -73,7 +73,8 @@ address or a command to Parley.
 adapter starts. No tool takes a "from" argument, so no tool call can change who is speaking.
 
 **Peers, not a hierarchy.** No agent has authority over another. You hold the operator
-operations. The facilitator may ask a question and relay what you wrote, nothing more.
+operations. The facilitator may ask a question, relay what you wrote, and agree that its own conversation
+is done, nothing more.
 
 **Durable.** Exchanges live in SQLite. Agents are known by name, not by session, so a restart
 loses nothing. An agent that comes back is handed the work it had collected again.
@@ -121,8 +122,10 @@ inventory  Stock levels and reservations. Does not decide whether an order may b
 ```
 
 The line says what an agent owns and what it does not. The exclusion is what stops a peer asking
-the wrong agent. No tool an agent has can set the line. Only an agent's launch setting, or you,
-can. See [Configuration](configuration.md#the-ownership-line).
+the wrong agent. No tool an agent has writes the line directly. Parley asks the agent once it
+attaches, and its answer becomes the line: automatically while Auto Accept is on (the default), or
+once you accept it. You can review, edit or replace any line. See
+[Configuration](configuration.md#the-ownership-line).
 
 ## Files
 

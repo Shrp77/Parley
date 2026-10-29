@@ -86,6 +86,11 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             return RedirectToPage("/Index", new { tab = "agents" });
         }
 
+        if (OffThisMachine())
+        {
+            return Page();
+        }
+
         if (FolderMode)
         {
             Entries = Directory.Exists(Folder!.Trim()) ? EnrollCommand.Find(Folder.Trim()) : [];
@@ -118,6 +123,11 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         if (!Prepare())
         {
             return RedirectToPage("/Index", new { tab = "agents" });
+        }
+
+        if (OffThisMachine())
+        {
+            return Page();
         }
 
         List<EnrollmentEntry> wanted;
@@ -262,6 +272,21 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
     }
 
     /// <summary>Finds the project and the catalogue file; false when the project is not one this machine knows.</summary>
+    // Before any lookup, because the lookup is what reaches the network: a link in an agent's message can carry either
+    // field, and a GET would otherwise ask another machine about it with the person's credentials (LocalPath).
+    private bool OffThisMachine()
+    {
+        if (!LocalPath.IsOffThisMachine(Folder) && !LocalPath.IsOffThisMachine(Workspace))
+        {
+            return false;
+        }
+
+        Problems = [LocalPath.OffThisMachine];
+        Entries = [];
+
+        return true;
+    }
+
     private bool Prepare()
     {
         Found = directory.Find(Project);

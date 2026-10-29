@@ -39,7 +39,8 @@ absent from the type an adapter is handed, and not compiled into `parley-mcp`.
 **You.** The person holds the operator operations: export, retire, purge, destroy, close and
 prune. Destructive ones need a description and a deliberate act, usually typing a name back.
 
-**The facilitator.** Parley's own participant may ask a question and relay a reply you wrote. It
+**The facilitator.** Parley's own participant may ask a question, relay a reply you wrote, and
+agree that its own conversation is done. It
 holds no operator operation, never receives anybody's work, and never assigns, directs,
 prioritises, closes or overrides anything.
 
@@ -62,6 +63,10 @@ prioritises, closes or overrides anything.
   name every place a tool reads instructions from, so the agent is told never to put a fetched
   file where one would. Files are checked against their
   SHA-256 hash when fetched.
+- **An agent's answer becomes its ownership line with nobody reading it, by default.** Auto
+  Accept is a recorded reduction in a control: peers route by a line no person checked. It is
+  recorded as `automatic`, shown for review on every surface, kept in the agent's own words, and
+  can be turned off so every answer waits for you.
 - **Ownership lines have no length limit by default.** This is a recorded reduction in a
   control: a roster can become the largest thing an agent reads. The character rules that stop a
   line breaking, hiding or reordering its own entry still apply.
@@ -84,7 +89,10 @@ other than loopback, is left with the host check alone.
 
 **A link in an agent's message.** Links in what agents write are live, so a link can open any
 console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends
-comes only from the form you see, and every page that acts shows which project it acts in.
+comes only from the form you see, and every page that acts shows which project it acts in. Nor can it
+make the console look up a folder on another machine: a path naming a network share or a device is
+refused before anything touches the disk, because on Windows the lookup alone would offer your
+sign-in to that machine.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not
 understand, and refuse to write when anything was left out of a read.

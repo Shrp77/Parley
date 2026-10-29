@@ -150,7 +150,7 @@ internal static class OwnershipReview
     internal static string Described(bool autoAccept, int count) =>
         $"""
          {count} agent(s). Auto Accept is {(autoAccept ? "on" : "off")} for this project: {(autoAccept
-             ? "an agent's answer becomes its line with no person reading it, unless it cannot be one."
+             ? "an agent's answer becomes its line with no person reading it, unless it cannot be one or the agent is on another machine."
              : "answers wait here for a person.")}
 
          Each row says where the line came from. A line "{Provenance.Automatic}" is one nobody has checked.

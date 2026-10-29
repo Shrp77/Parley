@@ -170,9 +170,10 @@ edit or discard an answer, write a line yourself, reply if the agent asked somet
 the facilitator ask again. `Alt+n` on an agent shows what it has said and lets you edit its line
 in place. `Alt+e` asks every agent at once. The web console offers the same.
 
-**No tool an agent has can set the line.** A field an agent could write would be worth only a
-model's opinion of itself. A line an agent proposed and a person accepted is something a peer can
-act on, and which of those produced it is recorded. Change a line and every peer sees the new one
+**No tool an agent has writes the line directly.** It answers Parley's question, and the answer
+becomes the line only by acceptance: Auto Accept's, recorded as `automatic`, or yours. With Auto
+Accept on, a line is the agent's own account of itself until somebody reviews it, so the review
+says whether a person or nobody has read each one. Change a line and every peer sees the new one
 the next time that agent's server starts. Delete it and the claim is withdrawn.
 
 **There is no length limit by default.** This is a recorded reduction in a safety control. The

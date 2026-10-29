@@ -51,7 +51,7 @@ public static class Forwarding
     /// <param name="tool">The tool's command name.</param>
     /// <returns>The sentence, naming both install scripts.</returns>
     public static string InstallHint(string tool) =>
-        $"Install it from your Parley checkout with: install.ps1 -Only {tool} (Windows), or ./install.sh --only {tool}.";
+        $"Install it from your Parley checkout with: .\\install.ps1 -Only {tool} (Windows), or ./install.sh --only {tool}.";
 
     /// <summary>
     /// Runs another tool with the arguments given and returns what it returned.

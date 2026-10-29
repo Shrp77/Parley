@@ -282,6 +282,12 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         var wanted = path.Trim();
 
+        // Never looked up when it names another machine: the lookup itself would offer the person's credentials there.
+        if (LocalPath.IsOffThisMachine(wanted))
+        {
+            return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = LocalPath.OffThisMachine });
+        }
+
         if (!Path.IsPathRooted(wanted) || !Directory.Exists(wanted))
         {
             return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = "There is no such folder." });
