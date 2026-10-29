@@ -90,8 +90,8 @@ other than loopback, is left with the host check alone.
 **A link in an agent's message.** Links in what agents write are live, so a link can open any
 console page. It cannot choose what you send, to whom, or skip a confirmation: what a form sends
 comes only from the form you see, and every page that acts shows which project it acts in. Nor can it
-make the console look up a folder on another machine: a path naming a network share or a device is
-refused before anything touches the disk, because on Windows the lookup alone would offer your
+make the console look up a folder on another machine: a path naming a network share or a device,
+or reaching one through a folder link, is refused before anything touches the disk, because on Windows the lookup alone would offer your
 sign-in to that machine.
 
 **Silent damage to your files.** Project files are written atomically, preserve what they do not

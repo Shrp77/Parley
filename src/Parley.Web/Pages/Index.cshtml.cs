@@ -282,8 +282,9 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         var wanted = path.Trim();
 
-        // Never looked up when it names another machine: the lookup itself would offer the person's credentials there.
-        if (LocalPath.IsOffThisMachine(wanted))
+        // Never looked up when it, or a link along it, leads off this machine: the lookup itself would offer the person's
+        // credentials there (OffMachineLinks).
+        if (OffMachineLinks.LeadsOffThisMachine(wanted))
         {
             return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = LocalPath.OffThisMachine });
         }
@@ -309,7 +310,9 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
                 {
                     name = Path.GetFileName(full),
                     full,
-                    repo = Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git")),
+                    // A child, or its .git, that is a link off this machine is listed and never looked into.
+                    repo = !OffMachineLinks.LeadsOffThisMachine(Path.Combine(full, ".git"))
+                        && (Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git"))),
                 })
                 .OrderBy(folder => folder.name, StringComparer.OrdinalIgnoreCase)
                 .Take(Cap)

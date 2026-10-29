@@ -336,7 +336,7 @@ internal static class Ownership
     internal static string Asked(AgentName agent, bool autoAccept)
     {
         var becomes = autoAccept
-            ? "Auto Accept is on, so its answer becomes its line unless it cannot be one."
+            ? "Auto Accept is on, so its answer becomes its line unless it cannot be one or the agent is on another machine."
             : "Auto Accept is off, so its answer waits for a person in the ownership review.";
 
         return $"""

@@ -91,6 +91,11 @@ public sealed class SetupSurfaceTests
                 // One agent that was enrolled and did not register, with why. `EnrolmentOutcome` lists them.
                 "NotStarted",
 
+                // Whether a path leads off this machine once its links are followed, read without opening a target.
+                // Public because the web console's pages look paths up from links an agent can write, and the scan
+                // and the ownership write here ask the same question.
+                "OffMachineLinks",
+
                 // **The only thing that makes an accepted ownership line reach anybody.** The
                 // registry's `owns` is filled from the launch environment on attach and no operation
                 // writes it, so `record_ownership` stores a decision and this puts it where the

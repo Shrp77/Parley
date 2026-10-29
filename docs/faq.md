@@ -53,7 +53,8 @@ you can start the agent, ask it, or close the conversation with a reason.
 
 Only if you let nodes start them. A node starts an agent only when something is waiting for it,
 and only for repositories you listed as startable. Every started turn is a real session on your
-account, and Parley reports what each one cost. Leave a repository off the list, and nothing
+account. The broker records what each one cost, but no screen shows the figure yet, so your
+provider's bill is where you see it. Leave a repository off the list, and nothing
 starts it without you.
 
 ## How do I stop an agent guessing about another repository?
@@ -63,11 +64,12 @@ repository adds a Peers section that says so. To name the actual peers, edit the
 or in Claude Code run the optional plugin's `/parley:write-peers`, which writes it from the live
 list of agents. See [Claude Code](claude-code.md#standing-instructions).
 
-## Why can't an agent set its own ownership line?
+## Why doesn't an agent write its own ownership line?
 
-A field an agent could write would be worth only a model's opinion of itself. A line the agent
-proposed and a person accepted is something its peers can rely on. By default Parley asks each
-agent once and accepts the answer automatically, and you can review every line and change it. See
+No tool an agent has writes the line. Parley asks each agent once what it owns, and its answer
+becomes the line only when it is accepted: automatically by default (Auto Accept), or by you when
+that is off. Either way the line is recorded with who accepted it, and you can review every line
+and change it. See
 [Configuration](configuration.md#the-ownership-line).
 
 ## Why is there no network option?

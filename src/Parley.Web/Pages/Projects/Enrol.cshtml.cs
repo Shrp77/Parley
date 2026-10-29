@@ -271,12 +271,18 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         return Page();
     }
 
-    /// <summary>Finds the project and the catalogue file; false when the project is not one this machine knows.</summary>
     // Before any lookup, because the lookup is what reaches the network: a link in an agent's message can carry either
-    // field, and a GET would otherwise ask another machine about it with the person's credentials (LocalPath).
+    // field, and a GET would otherwise ask another machine about it with the person's credentials. The workspace's .git
+    // and .mcp.json are read next, so a link there is refused too (OffMachineLinks).
     private bool OffThisMachine()
     {
-        if (!LocalPath.IsOffThisMachine(Folder) && !LocalPath.IsOffThisMachine(Workspace))
+        var workspace = Workspace?.Trim();
+
+        if (!OffMachineLinks.LeadsOffThisMachine(Folder)
+            && !OffMachineLinks.LeadsOffThisMachine(workspace)
+            && !(workspace is { Length: > 0 }
+                && (OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git"))
+                    || OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json")))))
         {
             return false;
         }
@@ -287,6 +293,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         return true;
     }
 
+    /// <summary>Finds the project and the catalogue file; false when the project is not one this machine knows.</summary>
     private bool Prepare()
     {
         Found = directory.Find(Project);

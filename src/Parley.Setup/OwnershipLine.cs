@@ -66,6 +66,16 @@ public static class OwnershipLine
             return wrong;
         }
 
+        // The workspace is what the agent's adapter reported on attach, so it is never looked up when it, its .mcp.json
+        // or a link along either leads off this machine: Auto Accept would otherwise offer the person's sign-in to a
+        // host with no click at all (review, lens 2 run 71).
+        if (OffMachineLinks.LeadsOffThisMachine(workspace)
+            || (!string.IsNullOrWhiteSpace(workspace) && OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json"))))
+        {
+            return $"the registry says '{agent.Value}' runs in {workspace}, which is not a folder on this machine. " +
+                   "Nothing has been written.";
+        }
+
         if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))
         {
             return $"the registry says '{agent.Value}' runs in " +

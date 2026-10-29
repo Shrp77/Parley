@@ -66,6 +66,31 @@ public sealed class EnrolmentRunsTests
     }
 
     [Fact]
+    public async Task A_full_list_lets_the_oldest_finished_run_go_never_the_newest()
+    {
+        // Review, lens 1 run 67: runs were dropped in the dictionary's own order, so starting one more could drop the run
+        // whose page was about to ask for its result (10 of 200 trials) while older ones stayed.
+        var runs = new EnrolmentRuns();
+        var ids = new List<string>();
+
+        for (var i = 0; i < 20; i++)
+        {
+            var id = runs.Start(["orders"], _ => Task.FromResult<IReadOnlyList<string>>([]));
+            ids.Add(id);
+
+            for (var wait = 0; wait < 100 && runs.Finished(id) is null; wait++)
+            {
+                await Task.Delay(5, TestContext.Current.CancellationToken);
+            }
+        }
+
+        _ = runs.Start(["billing"], _ => Task.FromResult<IReadOnlyList<string>>([]));
+
+        Assert.Null(runs.Finished(ids[0]));
+        Assert.NotNull(runs.Finished(ids[^1]));
+    }
+
+    [Fact]
     public void An_unknown_run_is_not_a_finished_one()
     {
         var runs = new EnrolmentRuns();

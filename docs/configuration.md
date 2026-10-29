@@ -241,9 +241,9 @@ one: the receiver is started to do the work, a clarification hands the turn back
 requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
-Every turn is a real session on your account. `parley up` prints what each turn cost, and the
-broker keeps the same figures: count, duration, cost, and how often an agent ran and still owed
-exactly what it owed. That last figure is the shape a runaway takes before it looks like one.
+Every turn is a real session on your account. The broker records each turn: count, duration,
+cost, and how often an agent ran and still owed exactly what it owed. `parley up` prints a turn
+that failed; no screen shows the cost yet, so your provider's bill is where you see it. That last figure is the shape a runaway takes before it looks like one.
 
 ## Reaching a broker from another machine
 

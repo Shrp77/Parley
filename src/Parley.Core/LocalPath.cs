@@ -11,8 +11,9 @@ namespace Parley.Core;
 /// the person's own click make that offer to a host the agent named (review, lens 2 run 66 onward).
 /// </para>
 /// <para>
-/// Every spelling of a network or device path starts with two separators, in either direction, or with the
-/// <c>\??\</c> prefix. A path that only begins like one on a system where it means a local root is refused too: Parley
+/// Every spelling of a network path starts with two separators, in either direction, or with the <c>\??\</c> prefix, and
+/// so does a device named by path. A bare device name such as <c>CON</c> is not caught here; it reaches nothing off this
+/// machine. A path that only begins like one on a system where it means a local root is refused too: Parley
 /// asks for a folder on this machine, and refusing there costs nothing.
 /// </para>
 /// </remarks>

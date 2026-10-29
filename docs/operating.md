@@ -65,10 +65,10 @@ address and any warnings. Inside a project:
 - **Inbox**: everything waiting on you, across projects.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
-- **Health**: stopped agents, flagged work, turn costs and message sizes.
+- **Health**: stopped agents, flagged work, the latest turns and message sizes.
 - **Notifications**: a bell that tells you when something needs you.
-- **Settings**: rename the project, choose which agents are ticked by default in a new
-  conversation, and the other project-level actions.
+- **Settings**: choose which agents are ticked by default in a new conversation, and the other
+  project-level actions. Renaming a project is the terminal's; Settings says how.
 
 It follows a conversation as it happens. If you are at the very end of the page when a message
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
@@ -281,8 +281,8 @@ parley --help                       the same list
 Most of these are clients. They connect to the broker at `--broker`, or `PARLEY_BROKER`, which
 defaults to the local one. **None of them opens a store, and none can be pointed at one.** There
 is no option that names a database file, so a client cannot be aimed at the wrong one.
-`parley serve` and `parley up` run things instead. `prune` applies the policy the broker started
-with, which is the only policy in the deployment.
+`parley serve` and `parley up` run things instead. Pruning, in the terminal and the web console,
+applies the policy the broker started with, which is the only policy in the deployment.
 
 ### The broker's log
 

@@ -478,8 +478,8 @@ if (Moved.Contains(verb, StringComparer.Ordinal))
         $"'{verb}' is not a command here. Reading and changing a deployment happens in the "
         + "terminal, which shows the lists it works on:"
         + $"{Environment.NewLine}{Environment.NewLine}    parley{Environment.NewLine}"
-        + $"{Environment.NewLine}A machine with no terminal reaches the web UI over an SSH tunnel; "
-        + "the README has the recipe.").ConfigureAwait(false);
+        + $"{Environment.NewLine}The web console does the same, at {WebUiAddress.Loopback} on this machine; "
+        + "from another machine, forward its port over SSH.").ConfigureAwait(false);
 
     // EX_USAGE, so a script detects it rather than reading an empty success.
     return Usage;
