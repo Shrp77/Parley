@@ -105,6 +105,32 @@ public sealed class FileToolTests : IDisposable
         Assert.False(File.Exists(Path.Combine(BillingRepository, "planted.md")));
     }
 
+    [Theory]
+    [InlineData(".claude/settings.json")]
+    [InlineData(".claude/notes.md")]
+    [InlineData(".mcp.json")]
+    [InlineData(".git/hooks/pre-commit")]
+    [InlineData(".git/notes.md")]
+    [InlineData("docs/notes.cs")]
+    [InlineData("run.ps1")]
+    public async Task A_fetch_is_never_written_as_configuration_hooks_or_code(string destination)
+    {
+        // Found by review, round 62: a peer's file was written wherever the destination said, a settings file holding a
+        // hook, an adapter's configuration and a git hook among them, though a fetched file "cannot change your
+        // configuration". It lands only as a .md or .txt file, outside .git and .claude.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+
+        await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+
+        var refused = await orders.FileFetchAsync("notes.md", destination, conversationId: "pricing", replace: true, cancellationToken: Ct);
+
+        Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
+        Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));
+    }
+
     [Fact]
     public async Task A_link_leading_out_of_the_repository_is_refused()
     {

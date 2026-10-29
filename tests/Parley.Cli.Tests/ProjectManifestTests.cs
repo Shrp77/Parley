@@ -366,12 +366,17 @@ public sealed class ProjectManifestTests : IDisposable
     [InlineData("http://127.000.000.001:51707")]
     [InlineData("http://127.0.0.1:51707/anything")]
     [InlineData("HTTP://127.0.0.1:51707")]
+    [InlineData(@"http:\\127.0.0.1:51707")]
+    [InlineData(@"http:\/127.0.0.1:51707")]
+    [InlineData("http://0.0.0.0:51707")]
+    [InlineData("http://[::]:51707")]
+    [InlineData("http://localhost.:51707")]
     public void One_broker_spelled_another_way_is_a_shared_endpoint_and_both_are_left_out(string spelling)
     {
         // Found by review, round 61: the text was compared, ignoring case only, so each of these served a second
         // project on the first's broker, its agents joining the first's roster and its pages acting in its store.
         Given("orders", """{ "endpoint": "http://127.0.0.1:51707" }""");
-        Given("billing", $$"""{ "endpoint": "{{spelling}}" }""");
+        Given("billing", $$"""{ "endpoint": {{System.Text.Json.JsonSerializer.Serialize(spelling)}} }""");
 
         Assert.True(ProjectManifest.TryRead(_root, out var projects, out var problem));
 

@@ -314,16 +314,31 @@ public static class ProjectManifest
     {
         ArgumentNullException.ThrowIfNull(endpoint);
 
-        var written = endpoint.Contains("://", StringComparison.Ordinal) ? endpoint : "http://" + endpoint;
+        // As written first, as gRPC reads it: "http:\\127.0.0.1:p" is an http address to 127.0.0.1 though it holds no
+        // "://". Only what is no http address as written is read as a bare host and port.
+        var trimmed = endpoint.Trim();
 
-        if (!Uri.TryCreate(written.Trim(), UriKind.Absolute, out var address) || address.Port < 0)
+        if (!(Uri.TryCreate(trimmed, UriKind.Absolute, out var address)
+                && address.Scheme is "http" or "https"
+                && address.IdnHost.Length > 0)
+            && !Uri.TryCreate("http://" + trimmed, UriKind.Absolute, out address))
         {
-            return endpoint.Trim().ToUpperInvariant();
+            return trimmed.ToUpperInvariant();
         }
 
-        var host = address.IdnHost.TrimStart('[').TrimEnd(']');
+        if (address.Port < 0)
+        {
+            return trimmed.ToUpperInvariant();
+        }
+
+        // Every name for this machine is one host: localhost (with or without its trailing dot), every loopback
+        // address, and the unspecified ones, which a connection on this machine reaches through loopback.
+        var host = address.IdnHost.TrimStart('[').TrimEnd(']').TrimEnd('.');
         var loopback = string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-            || (System.Net.IPAddress.TryParse(host, out var ip) && System.Net.IPAddress.IsLoopback(ip));
+            || (System.Net.IPAddress.TryParse(host, out var ip)
+                && (System.Net.IPAddress.IsLoopback(ip)
+                    || ip.Equals(System.Net.IPAddress.Any)
+                    || ip.Equals(System.Net.IPAddress.IPv6Any)));
 
         return string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
