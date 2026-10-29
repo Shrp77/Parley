@@ -19,6 +19,7 @@ parley-web-ui: the operator's web UI.
 
   <url>, --listen     Where to listen. Defaults to http://127.0.0.1:5280.
   --broker <address>  A broker to offer when this machine's manifest names no project.
+                      PARLEY_BROKER says the same; the flag wins.
   --version, -v       The build and the protocol it speaks.
   --help, -h          This.
 
@@ -56,7 +57,9 @@ if (arguments.Exists(argument => argument is "--version" or "-v"))
 string? missingValue = null;
 
 var listenOn = TakeOption("--listen", "-l");
-var brokerAddress = TakeOption("--broker", "-b");
+// PARLEY_BROKER says the same as --broker, as it does to the terminal and to `parley`; the flag wins.
+var brokerAddress = TakeOption("--broker", "-b")
+    ?? (Environment.GetEnvironmentVariable(BrokerEndpoint.Variable) is { Length: > 0 } named ? named : null);
 
 if (missingValue is not null)
 {

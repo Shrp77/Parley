@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -249,8 +250,7 @@ public sealed class WithdrawingTests : IAsyncDisposable
 
         Assert.Equal(Withdrawing.Keep, accepting.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Withdrawing.Kept, shell.Said);
         await AssertStillThereAsync();

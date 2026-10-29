@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli.Tests;
 using Xunit;
 
@@ -39,8 +40,7 @@ public sealed class FilesPruningTests : IAsyncDisposable
         Assert.Contains("2 file(s), 24 B", pruning.Described, StringComparison.Ordinal);
         Assert.Equal("Keep them", pruning.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("Nothing was removed.", shell.Said);
 

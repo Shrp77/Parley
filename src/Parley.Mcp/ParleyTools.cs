@@ -1137,8 +1137,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                             if (!alreadyCurrent)
                             {
                                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                                // Not named after the file: a placed name may be 254 characters, and the 43 more a
+                                // name-plus-guid took made a legal name unfetchable under itself (review, lens 1 run 60).
                                 temporary = Path.Combine(
-                                    Path.GetDirectoryName(target)!, $".{Path.GetFileName(target)}.{Guid.NewGuid():N}.fetching");
+                                    Path.GetDirectoryName(target)!, $".parley-{Guid.NewGuid():N}.fetching");
                                 output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, FileLimits.ChunkBytes, useAsync: true);
                             }
 

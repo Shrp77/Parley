@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Client.Views;
@@ -46,8 +47,7 @@ public sealed class NavigatingTests
 
         var chosen = shell.Projects.Selected?.Name.Value;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
         Assert.Equal(chosen, shell.Place.Project?.Value);
@@ -126,8 +126,7 @@ public sealed class NavigatingTests
         await shell.Settled;
 
         driving.Row(shell.Projects.List, "beta");
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("beta", shell.Place.Project?.Value);
     }

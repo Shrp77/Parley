@@ -109,8 +109,7 @@ public sealed class FilesProblemsTests : IAsyncDisposable
         Assert.Contains("deletes nothing on disk", screen, StringComparison.Ordinal);
         Assert.Equal("Back", one.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(1, (await _files.Client.ListFileProblemsAsync(cancellationToken: Ct)).Waiting);
     }

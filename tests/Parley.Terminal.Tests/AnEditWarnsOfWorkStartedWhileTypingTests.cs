@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
@@ -180,8 +181,7 @@ public sealed class AnEditWarnsOfWorkStartedWhileTypingTests : IAsyncDisposable
             T0, cancellationToken: Ct)).Done);
 
         driving.Row(asking.Choices, Revising.RemoveAnyway);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var now = (await Client.RoadmapAsync(roadmap.Id, Ct))!;
         Assert.False(now.Items.Single(i => i.Number == 2).Removed, $"Said: {shell.Said}");
@@ -198,8 +198,7 @@ public sealed class AnEditWarnsOfWorkStartedWhileTypingTests : IAsyncDisposable
         using var _ = shell;
 
         driving.Row(asking.Choices, Revising.Leave);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var roadmap = Assert.Single(await Client.RoadmapsAsync(Ct));
         Assert.False((await Client.RoadmapAsync(roadmap.Id, Ct))!.Items.Single(i => i.Number == 2).Removed);
@@ -217,8 +216,7 @@ public sealed class AnEditWarnsOfWorkStartedWhileTypingTests : IAsyncDisposable
         await _broker.DisposeAsync();
 
         driving.Row(asking.Choices, Revising.RemoveAnyway);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.StartsWith("The roadmap could not be read, so nothing was saved", shell.Said, StringComparison.Ordinal);
         Assert.False((await Repository.ListAsync(Ct)).Single().Revision > 1);

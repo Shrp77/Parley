@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli;
 using Parley.Client;
 using Parley.Configuration;
@@ -56,8 +57,7 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Equal(Removing.Keep, choosing.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));
@@ -78,8 +78,7 @@ public sealed class RemovingTests : IDisposable
         var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
         driving.Row(choosing.Choices, Removing.Forget);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains("Nothing was deleted", shell.Said, StringComparison.Ordinal);
         Assert.True(File.Exists(alpha.Store));

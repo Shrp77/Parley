@@ -516,6 +516,16 @@ public sealed class FileLocationStore : IDisposable
     /// <returns><see langword="true"/> while a hold is open.</returns>
     public bool IsHeld(string folder, SharedFileName name) => GateFor(FilePath(folder, name)).Readers > 0;
 
+    /// <summary>Whether a download of a file is waiting for a change to it to finish.</summary>
+    /// <param name="folder">The conversation's folder name.</param>
+    /// <param name="name">The file's name.</param>
+    /// <returns><see langword="true"/> while a reader waits on a change's turn.</returns>
+    /// <remarks>
+    /// For tests that need a download parked at the turn before they change what it does next: a fixed delay was not long
+    /// enough on a slow runner, and the download reached the store after the test had occupied it.
+    /// </remarks>
+    internal bool IsWaitingToRead(string folder, SharedFileName name) => GateFor(FilePath(folder, name)).Waiting > 0;
+
     /// <summary>Waits for every download of a file to finish and holds new ones back until the change is made.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
@@ -1101,6 +1111,7 @@ public sealed class FileLocationStore : IDisposable
     {
         private readonly object _lock = new();
         private int _readers;
+        private int _waiting;
         private bool _changing;
         private TaskCompletionSource _drained = Completed();
         private TaskCompletionSource _changed = Completed();
@@ -1112,6 +1123,17 @@ public sealed class FileLocationStore : IDisposable
                 lock (_lock)
                 {
                     return _readers;
+                }
+            }
+        }
+
+        public int Waiting
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _waiting;
                 }
             }
         }
@@ -1131,9 +1153,20 @@ public sealed class FileLocationStore : IDisposable
                     }
 
                     wait = _changed.Task;
+                    _waiting++;
                 }
 
-                await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await wait.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    lock (_lock)
+                    {
+                        _waiting--;
+                    }
+                }
             }
         }
 

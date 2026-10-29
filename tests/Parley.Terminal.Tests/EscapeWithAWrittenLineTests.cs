@@ -29,8 +29,7 @@ public sealed class EscapeWithAWrittenLineTests
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
         seated.Session.Row(dialog.Choices, Shell.KeepWriting);
-        seated.Session.Enter();
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Conversation, shell.Place.Viewing);
         Assert.Equal("a long answer I have not sent", shell.Line.Written);
@@ -49,8 +48,7 @@ public sealed class EscapeWithAWrittenLineTests
         var dialog = (ChoiceDialog)seated.Session.Find(Shell.DiscardTitle);
 
         seated.Session.Row(dialog.Choices, Shell.Discard);
-        seated.Session.Enter();
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
     }

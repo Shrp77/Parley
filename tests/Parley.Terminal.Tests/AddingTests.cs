@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.Sqlite;
+﻿using Terminal.Gui.Input;
+using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client.Views;
 using Parley.Client;
@@ -342,8 +343,7 @@ public sealed class AddingTests : IAsyncDisposable
 
         Assert.Equal(Adding.NotNow, asking.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Adding.NothingWritten, shell.Said);
         Assert.False(File.Exists(LaunchFile), "a declined add wrote the launch configuration");

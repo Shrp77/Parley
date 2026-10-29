@@ -211,7 +211,7 @@ public sealed class BrokerDirectory : IDisposable
 
         if (projects.Count == 0 && fallback is { Endpoint.Length: > 0 } offer)
         {
-            return new Snapshot([Unnamed(offer.Endpoint)], problem, stamp);
+            return new Snapshot([Unnamed(Dialable(offer.Endpoint))], problem, stamp);
         }
 
         // The projects that read, and what was left out beside them: one bad folder costs that project, not the screen.
@@ -235,6 +235,21 @@ public sealed class BrokerDirectory : IDisposable
     /// <param name="Stamp">What the projects looked like when this was read.</param>
     private sealed record Snapshot(
         IReadOnlyList<ProjectSettings> Projects, string? Problem, string Stamp);
+
+    // An offered broker is read as every other tool reads `--broker` and PARLEY_BROKER: a bare host and port is given the
+    // scheme, which is what people type and what the docs show (review, lens 1 run 60). One that is not an address at all
+    // is kept as written, so the row says why it cannot be reached.
+    private static string Dialable(string endpoint)
+    {
+        try
+        {
+            return BrokerEndpoint.Read(name => name == BrokerEndpoint.Variable ? endpoint : null);
+        }
+        catch (InvalidOperationException)
+        {
+            return endpoint;
+        }
+    }
 
     private static ProjectSettings Unnamed(string endpoint) =>
         new(ProjectName.Create("this-machine"),

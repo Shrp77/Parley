@@ -348,8 +348,7 @@ public sealed class PlansTests : IAsyncDisposable
         Assert.Equal(2, (await client.RoadmapAsync(id, Ct))!.Items.Count(i => !i.Removed));
 
         driving.Row(asking.Choices, Revising.RemoveAnyway);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(1, (await client.RoadmapAsync(id, Ct))!.Items.Count(i => !i.Removed));
     }

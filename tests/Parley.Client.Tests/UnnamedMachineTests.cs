@@ -50,6 +50,16 @@ public sealed class UnnamedMachineTests
     }
 
     [Fact]
+    public void A_bare_host_and_port_is_offered_as_every_other_tool_reads_it()
+    {
+        // Found by review, lens 1 run 60: the docs tell a person to run `parley --broker 127.0.0.1:19100`, the CLI adds
+        // the scheme, and the surfaces dialled the text as typed, so the one row they offered could never answer.
+        using var directory = BrokerDirectory.FromManifest(NoManifestHere, new FallbackBroker("127.0.0.1:19100"));
+
+        Assert.Equal("http://127.0.0.1:19100", Assert.Single(directory.Projects).Endpoint);
+    }
+
+    [Fact]
     public void The_offered_project_is_reachable_by_the_name_the_page_links_to()
     {
         // The list renders a link built from the name, and every page below reads the name back

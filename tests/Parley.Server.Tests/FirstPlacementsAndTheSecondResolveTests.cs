@@ -272,7 +272,17 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
             {
             }
         }, Ct);
-        await Task.Delay(300, Ct);
+
+        // Polled, never a fixed wait: on a slow runner the fetch had not resolved within 300 ms, so its first resolve
+        // waited on the store the test then occupied, and it never reached the hold.
+        var parked = Stopwatch.StartNew();
+
+        while (!broker.Runtime.Files.IsWaitingToRead("pricing", name) && parked.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            await Task.Delay(25, Ct);
+        }
+
+        Assert.True(broker.Runtime.Files.IsWaitingToRead("pricing", name), "the fetch never reached the turn");
 
         // The store is busy when the hold is taken, so the second resolve waits for it; the agent gives up meanwhile.
         var release = new TaskCompletionSource();

@@ -151,6 +151,26 @@ public sealed class FileToolTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_placed_under_a_long_name_is_fetched_under_that_name()
+    {
+        // Found by review, lens 1 run 60: the temporary file was the name plus 43 characters, so a legal placed name of
+        // more than about 211 could not be fetched under itself, and the refusal named a file the agent never chose.
+        await using var fixture = new ServerFixture(T0);
+        var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
+        var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
+        var name = new string('n', 230) + ".md";
+
+        await File.WriteAllTextAsync(Path.Combine(BillingRepository, name), PeerWords, Ct);
+        _ = await billing.FilePlaceAsync(name, conversationId: "pricing", cancellationToken: Ct);
+        Directory.CreateDirectory(Path.Combine(OrdersRepository, "docs"));
+
+        var fetched = await orders.FileFetchAsync(name, "docs", conversationId: "pricing", cancellationToken: Ct);
+
+        Assert.Equal("written", fetched["outcome"]?.GetValue<string>());
+        Assert.Equal(PeerWords, await File.ReadAllTextAsync(Path.Combine(OrdersRepository, "docs", name), Ct));
+    }
+
+    [Fact]
     public async Task A_file_that_arrives_at_the_path_while_a_fetch_streams_is_never_written_over_unasked()
     {
         // Found by review, lens 1 run 59: whether the path was free was asked when the header came, and the move at the
@@ -165,7 +185,7 @@ public sealed class FileToolTests : IDisposable
         var target = Path.Combine(OrdersRepository, "x.md");
         var fetching = orders.FileFetchAsync("big.md", "x.md", conversationId: "pricing", cancellationToken: Ct);
 
-        while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".x.md.*.fetching").Length == 0)
+        while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".parley-*.fetching").Length == 0)
         {
             await Task.Delay(1, Ct);
         }
@@ -177,7 +197,7 @@ public sealed class FileToolTests : IDisposable
 
         Assert.Equal("exists", answer["refused"]!.GetValue<string>());
         Assert.Equal("MY OWN WORK", await File.ReadAllTextAsync(target, Ct));
-        Assert.Empty(Directory.GetFiles(OrdersRepository, ".x.md.*.fetching"));
+        Assert.Empty(Directory.GetFiles(OrdersRepository, ".parley-*.fetching"));
     }
 
     [Fact]

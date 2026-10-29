@@ -185,8 +185,7 @@ public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
         await StartItemAsync(person, Billing, "rm1-1");
 
         driving.Row(asking.Choices, Revising.RemoveAnyway);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var id = Assert.Single(await Client.RoadmapsAsync(Ct)).Id;
         var item1 = (await Client.RoadmapAsync(id, Ct))!.Items.Single(i => i.Number == 1);

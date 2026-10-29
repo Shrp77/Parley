@@ -276,8 +276,7 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Single(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
 
         driving.Row(asking.Choices, Proposing.Decline);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Empty(await Client.ProposalsAsync(ProposalState.Waiting, cancellationToken: Ct));
         Assert.Empty(await Client.RoadmapsAsync(Ct));
@@ -337,8 +336,7 @@ public sealed class ProposingTests : IAsyncDisposable
         Assert.Equal(Proposing.NewRoadmap, choosing.Choices.Source!.ToList()[0]?.ToString());
 
         driving.Row(choosing.Choices, "Revise roadmap #1");
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var roadmaps = await Client.RoadmapsAsync(Ct);
 

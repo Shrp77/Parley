@@ -74,8 +74,7 @@ public sealed class FilesPlacingTests : IAsyncDisposable
         Assert.Contains("path on this machine", driving.Text(), StringComparison.Ordinal);
 
         form.Fill(0, path);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains("Placed notes.md in pricing", shell.Said, StringComparison.Ordinal);
 
@@ -104,8 +103,7 @@ public sealed class FilesPlacingTests : IAsyncDisposable
 
         form.Fill(0, "\"" + path + "\"");
         form.Fill(1, "final.md");
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains("Placed final.md in pricing", shell.Said, StringComparison.Ordinal);
         Assert.NotNull(await PlacedAsync("final.md"));
@@ -135,8 +133,7 @@ public sealed class FilesPlacingTests : IAsyncDisposable
         var screen = driving.Text();
         Assert.True(screen.Contains("There is no file at that path.", StringComparison.Ordinal), screen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("Nothing was placed.", shell.Said);
         Assert.Equal(1, await _files.CountAsync());
@@ -161,8 +158,7 @@ public sealed class FilesPlacingTests : IAsyncDisposable
         var form = (FormDialog)driving.Find(FilesPlacing.Title + " in pricing");
 
         form.Fill(0, path);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.StartsWith("Not placed:", shell.Said, StringComparison.Ordinal);
         Assert.Equal(AgentName.Create(Billing), (await PlacedAsync("notes.md")).PlacedBy);

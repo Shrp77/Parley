@@ -1,4 +1,5 @@
-﻿using Grpc.Net.Client;
+﻿using Terminal.Gui.Input;
+using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -144,12 +145,10 @@ public sealed class OpeningTests : IAsyncDisposable
         //
         // So the equivalence is still asserted, and both sides are now required to be a real
         // transcript before they are compared.
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         driving.Tab();
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var byKey = shell.Transcript.Written;
 
@@ -198,8 +197,7 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.Settled;
 
         gate.Arm();
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
         Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the project read never reached the broker");
 
         Assert.True(shell.Conversations.OpenSelected());
@@ -235,8 +233,7 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.RefreshAsync(ct);
         await shell.Settled;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
         await Task.Delay(500, ct);
         Assert.True(shell.Conversations.OpenSelected());
         await shell.Settled;
