@@ -70,7 +70,11 @@ else if (Model.Proposal is { } proposal)
                 @{ var revising = Model.Target == revises.Id.ToString(System.Globalization.CultureInfo.InvariantCulture); }
                 <label><input type="radio" name="Target" value="new" checked="@(revising ? null : "checked")" /> A new roadmap</label>
                 <label><input type="radio" name="Target" value="@revises.Id" checked="@(revising ? "checked" : null)" /> A revision of <em>@revises.Title</em></label>
-                <input type="hidden" name="Revision" value="@revises.Revision" />
+                <input type="hidden" name="Revision" value="@(Model.Revision ?? revises.Revision)" />
+                @if (Model.Superseding is { Length: > 0 } superseding)
+                {
+                    <p class="composer-note">@superseding</p>
+                }
             </fieldset>
         }
 

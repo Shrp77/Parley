@@ -8,10 +8,9 @@ namespace Parley.Server.Tests;
 /// That an agent's inbox stays collectable after a revision supersedes many of its proposals, and tells each once.
 /// </summary>
 /// <remarks>
-/// <b>Found by review, round 19.</b> A notice carried its proposal's whole title, which has no bound, and a collection
-/// drains fifty at once and marks them delivered before the reply is sent: fifty long titles exceeded what a reply may
-/// carry, so the collection failed, and everything it had taken, another agent's Request among them, was never shown.
-/// A notice's title is now cut as a heading's is.
+/// A notice's title is cut as a heading's is: a notice carries its proposal's title, which has no bound, and a
+/// collection carries fifty at once, so fifty whole titles would exceed what a reply may carry, no collection could be
+/// delivered, and another agent's Request behind them would never be shown.
 /// </remarks>
 public sealed class RoadmapNoticesStayCollectableTests
 {

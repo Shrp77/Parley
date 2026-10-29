@@ -45,8 +45,15 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     public string? Target { get; set; }
 
     /// <summary>The revision of the roadmap to revise that the page showed, so a revision never replaces items saved since.</summary>
+    /// <remarks>
+    /// It travels with the form and is kept across a page drawn again, as an edit's is: drawn from the roadmap as each
+    /// read finds it, a warning's second submit would carry a revision the person never saw.
+    /// </remarks>
     [BindProperty, FromForm]
     public int? Revision { get; set; }
+
+    /// <summary>What a revision also does to the other proposals waiting to revise the same roadmap; empty when nothing.</summary>
+    public string Superseding { get; private set; } = string.Empty;
 
     /// <summary>Set by the second submit, after the page described the open work a revision removes.</summary>
     [BindProperty, FromForm]
@@ -128,6 +135,19 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             Problem = "The roadmap you chose to revise is no longer the one this proposal matches, so nothing was confirmed. "
                 + "Choose again.";
             Target = null;
+
+            return Page();
+        }
+
+        // The roadmap moved since the page showed it: nothing is confirmed, and the page is shown again as it now reads,
+        // so the revision is chosen against what the person sees.
+        if (target is not null && Revision is { } shown && Match!.Revision != shown)
+        {
+            Problem = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Roadmap #{Match.Number} has changed since this page showed it, so nothing was confirmed. It is at revision "
+                + $"{Match.Revision}; read what it now holds and choose again.");
+            Revision = Match.Revision;
 
             return Page();
         }
@@ -221,5 +241,10 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         }
 
         Match = ProposalText.Matching(Proposal, roadmaps);
+
+        if (Match is not null)
+        {
+            Superseding = ProposalText.Superseding(Proposal, Match, await WaitingProposals.ListAsync(broker, token).ConfigureAwait(false));
+        }
     }
 }

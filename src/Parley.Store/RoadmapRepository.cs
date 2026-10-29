@@ -265,7 +265,10 @@ public sealed class RoadmapRepository(SqliteConnection connection)
     /// <param name="nowUtc">The current instant.</param>
     /// <param name="transaction">A transaction to write within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <param name="expectedRevision">For a revision, the revision the person was shown; refused when it has moved.</param>
+    /// <param name="expectedRevision">
+    /// For a revision, the revision of the roadmap the person was shown: required with a target, and refused when the
+    /// roadmap is no longer at it, as an edit is.
+    /// </param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// <para>
@@ -379,7 +382,12 @@ public sealed class RoadmapRepository(SqliteConnection connection)
             }
 
             // As an edit is: a revision chosen against one revision never replaces items saved since.
-            if (expectedRevision is { } expected && existing.Revision != expected)
+            if (expectedRevision is not { } expected)
+            {
+                return Refused("A revision must name the revision of the roadmap it was chosen against, so nothing was confirmed.");
+            }
+
+            if (existing.Revision != expected)
             {
                 return Refused(
                     $"The roadmap has changed since you chose to revise it: it is at revision {existing.Revision} and " +

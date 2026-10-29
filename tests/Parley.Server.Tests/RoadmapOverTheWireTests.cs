@@ -77,7 +77,7 @@ public sealed class RoadmapOverTheWireTests
         var unnamed = await operators.ConfirmProposalAsync(
             new Wire.ConfirmProposalRequest { Id = revision, Content = Plan(), TargetRoadmap = roadmap }, cancellationToken: Ct);
         Assert.False(unnamed.Done);
-        Assert.Contains("names the revision", unnamed.Problem, StringComparison.Ordinal);
+        Assert.Contains("must name the revision", unnamed.Problem, StringComparison.Ordinal);
 
         // Edited on another surface since revision 1 was shown: refused, and the edit stays.
         var edited = await operators.EditRoadmapAsync(

@@ -683,13 +683,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
         long? target = request.TargetRoadmap == 0 ? null : request.TargetRoadmap;
 
-        // A revision names the revision it was chosen against, so it never replaces items saved since (SPEC.md §10.2).
-        if (target is not null && request.TargetRevision <= 0)
-        {
-            return Conversions.Out(new RoadmapChange(false, "A revision names the revision of the roadmap it was chosen against."));
-        }
-
-        int? revision = target is null ? null : request.TargetRevision;
+        // Zero on the wire is none named, which the store refuses for a revision (SPEC.md §10.2).
+        int? revision = target is null || request.TargetRevision <= 0 ? null : request.TargetRevision;
 
         var change = await Console(
             (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct, revision), context)

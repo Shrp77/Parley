@@ -162,6 +162,31 @@ public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
         Assert.Contains("replaces every item", flat, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task The_revise_choice_says_it_also_settles_the_other_proposals_waiting_to_revise_that_roadmap()
+    {
+        // Round 58: a revision supersedes every other waiting proposal hinting at the roadmap, which are shown nowhere
+        // after, and the choice did not say so.
+        using var driving = Driving.Open(width: 140, height: 40);
+        using var directory = Directory();
+        using var shell = await OpenAsync(driving, directory);
+
+        var made = await Repository.GetProposalAsync(await ProposeAsync("Billing export"), Ct);
+        Assert.True((await Repository.ConfirmAsync(made!.Id, made.Content, null, T0, cancellationToken: Ct)).Done);
+        await ProposeAsync("One way", target: "Billing export");
+        await ProposeAsync("Another way", target: "billing export");
+
+        await shell.Global().Single(a => a.Label == Proposing.Title).Run();
+        await shell.Settled;
+        Assert.True(shell.Roadmaps.OpenSelected());
+        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.C.WithAlt, () => shell.Settled);
+
+        var choosing = (ChoiceDialog)driving.Find(Proposing.Title);
+
+        Assert.Contains("It also settles 1 other proposal waiting to revise it, as superseded", choosing.Described, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(140, 40)]
     [InlineData(80, 24)]

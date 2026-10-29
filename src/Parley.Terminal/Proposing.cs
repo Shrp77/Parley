@@ -403,12 +403,18 @@ internal static class Proposing
         var number = "#" + match.Number.ToString(CultureInfo.InvariantCulture);
         var matched = Safe.Text(AgentWords.Shortened(match.Title));
         var revise = $"Revise roadmap {number}";
+
+        // What a revision also decides: the other proposals waiting to revise it go too, and are shown nowhere after.
+        var waiting = await WaitingProposals.ListAsync(client, cancellationToken).ConfigureAwait(false);
+        var superseding = ProposalText.Superseding(proposal, match, waiting);
+
         var choosing = Prompting.Choose(
             Title,
             $"This proposal's title matches roadmap {number}, '{matched}', which has "
             + match.LiveItems.ToString(CultureInfo.InvariantCulture) + (match.LiveItems == 1 ? " item" : " items")
             + ". A revision replaces every item that roadmap has with these; the items it had are removed, and their "
-            + "conversations stay. A new roadmap leaves it alone.",
+            + "conversations stay. " + (superseding.Length > 0 ? superseding + " " : string.Empty)
+            + "A new roadmap leaves it alone.",
             [NewRoadmap, revise]);
 
         var open = Prompting.Open(app, choosing);

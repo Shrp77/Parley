@@ -307,7 +307,8 @@ public sealed class RoadmapStoreTests : IDisposable
             Content("Billing export", Item("Only item", Billing)),
             created.RoadmapId,
             Now,
-            cancellationToken: Ct);
+            cancellationToken: Ct,
+            expectedRevision: (await Repository.GetAsync(created.RoadmapId!.Value, Ct))!.Revision);
 
         Assert.True(revision.Done, revision.Problem);
         Assert.Equal(2, revision.Revision);
@@ -349,7 +350,7 @@ public sealed class RoadmapStoreTests : IDisposable
         var renaming = await ProposedAsync("Billing export", Orders, target: "Launch");
 
         var revised = await Repository.ConfirmAsync(
-            renaming, Content("Billing export", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+            renaming, Content("Billing export", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
 
         Assert.True(revised.Done, revised.Problem);
         Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atOne, Ct))!.State);
@@ -371,7 +372,7 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.Equal("CAFÉ MENU", "Café menu", ignoreCase: true);
 
         var revised = await Repository.ConfirmAsync(
-            reviser, Content("Café menu", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+            reviser, Content("Café menu", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
 
         Assert.True(revised.Done, revised.Problem);
         Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(shouting, Ct))!.State);
@@ -395,7 +396,7 @@ public sealed class RoadmapStoreTests : IDisposable
 
         var before = GC.GetTotalAllocatedBytes(precise: true);
         var revised = await Repository.ConfirmAsync(
-            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
         var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
 
         Assert.True(revised.Done, revised.Problem);
@@ -421,7 +422,7 @@ public sealed class RoadmapStoreTests : IDisposable
             """);
 
         var revised = await Repository.ConfirmAsync(
-            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct);
+            reviser, Content("Launch", Item("Only item", Billing)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
 
         Assert.True(revised.Done, revised.Problem);
         Assert.Equal(0L, _store.Count("SELECT count(*) FROM roadmap_proposals WHERE state = 'waiting';"));
@@ -442,7 +443,7 @@ public sealed class RoadmapStoreTests : IDisposable
         Assert.True(renamed.Done, renamed.Problem);
 
         var revised = await Repository.ConfirmAsync(
-            reviser, Content("Ship", Item("Only item", Billing), Item("Another", Orders)), one.RoadmapId, Now, cancellationToken: Ct);
+            reviser, Content("Ship", Item("Only item", Billing), Item("Another", Orders)), one.RoadmapId, Now, cancellationToken: Ct, expectedRevision: (await Repository.GetAsync(one.RoadmapId!.Value, Ct))!.Revision);
         Assert.True(revised.Done, revised.Problem);
 
         Assert.Equal(ProposalState.Superseded, (await Repository.GetProposalAsync(atNew, Ct))!.State);

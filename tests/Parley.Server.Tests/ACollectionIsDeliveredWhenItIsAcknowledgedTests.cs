@@ -100,6 +100,30 @@ public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
     }
 
     [Fact]
+    public async Task A_roadmap_notice_in_a_collection_never_acknowledged_is_told_again()
+    {
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
+        await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
+
+        var content = new Wire.RoadmapContent { Title = "Billing export" };
+        content.Items.Add(new Wire.RoadmapItemDraft { Text = "Add CSV export", IntendedAgent = Billing });
+        var proposed = await orders.Client.ProposeRoadmapAsync(
+            new Wire.ProposeRoadmapRequest { Agent = Orders, Content = content }, cancellationToken: Ct);
+        Assert.True(proposed.ProposalId > 0, proposed.Problem);
+        _ = await broker.ConnectAsOperator().DeclineProposalAsync(
+            new Wire.ProposalRequest { Id = proposed.ProposalId }, cancellationToken: Ct);
+
+        var lost = await CollectWithoutAcknowledgingAsync(orders);
+        var again = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+        var after = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
+
+        Assert.Equal(proposed.ProposalId, Assert.Single(lost.RoadmapNotices).ProposalId);
+        Assert.Equal(proposed.ProposalId, Assert.Single(again.RoadmapNotices).ProposalId);
+        Assert.Empty(after.RoadmapNotices);
+    }
+
+    [Fact]
     public async Task A_collection_cancelled_at_any_point_loses_no_result()
     {
         // Given up after a few milliseconds, so the cancel lands somewhere different in each round: before the reply or

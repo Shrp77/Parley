@@ -164,6 +164,39 @@ public static class ProposalText
         (items.Count == 1 ? "item " : "items ")
         + string.Join(", ", items.Select(n => n.ToString(CultureInfo.InvariantCulture)));
 
+    /// <summary>What confirming a proposal as a revision of a roadmap also does to the other proposals waiting on it.</summary>
+    /// <param name="proposal">The proposal being confirmed.</param>
+    /// <param name="roadmap">The roadmap it would revise.</param>
+    /// <param name="waiting">The proposals awaiting a decision, or <see langword="null"/> when they could not be read.</param>
+    /// <returns>The sentence, or an empty string when no other proposal waits on it.</returns>
+    /// <remarks>
+    /// A revision supersedes every other waiting proposal whose hint names the roadmap (SPEC.md §5.7), and a superseded
+    /// proposal is shown nowhere after, so the door says so before the person chooses. Unread is not none: it then says
+    /// that any such proposal goes too.
+    /// </remarks>
+    public static string Superseding(RoadmapProposal proposal, RoadmapSummary roadmap, IReadOnlyList<RoadmapProposal>? waiting)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(roadmap);
+
+        if (waiting is null)
+        {
+            return "Any other proposal waiting to revise it is settled too, as superseded, and its proposer told.";
+        }
+
+        var others = waiting.Count(p =>
+            p.Id != proposal.Id && string.Equals(p.TargetTitle, roadmap.Title, StringComparison.OrdinalIgnoreCase));
+
+        return others switch
+        {
+            0 => string.Empty,
+            1 => "It also settles 1 other proposal waiting to revise it, as superseded, and its proposer is told.",
+            _ => string.Create(
+                CultureInfo.InvariantCulture,
+                $"It also settles {others} other proposals waiting to revise it, as superseded, and their proposers are told."),
+        };
+    }
+
     /// <summary>The roadmap a proposal's title hint matches, if any.</summary>
     /// <param name="proposal">The proposal.</param>
     /// <param name="roadmaps">The project's roadmaps.</param>

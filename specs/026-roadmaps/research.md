@@ -74,7 +74,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 ## R10. The decision to confirm is a single operation that carries the final content
 
-**Decision**: `ConfirmProposal(proposal, content, target)` takes the person's final text, order, agents and dependencies and writes the roadmap (or a revision of the named roadmap) and each item's reserved conversation name in one transaction. There is no "confirm unchanged" operation; unchanged is the same call with the proposal's own content.
+**Decision**: `ConfirmProposal(proposal, content, target, target revision)` takes the person's final text, order, agents and dependencies and writes the roadmap (or a revision of the named roadmap) and each item's reserved conversation name in one transaction. There is no "confirm unchanged" operation; unchanged is the same call with the proposal's own content.
 **Rationale**: provenance (`proposed`, `edited`) is a comparison done by the broker of the final content against the stored proposal, as 020's `Chosen` does for the ownership line. A flag the surface sets would be right every time somebody remembered to set it.
 **Concurrency**: confirming one of two proposals against one roadmap as a revision of it marks the other `superseded` in the same transaction (spec edge case).
 

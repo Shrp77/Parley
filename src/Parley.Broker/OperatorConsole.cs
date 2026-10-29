@@ -340,7 +340,9 @@ public sealed class OperatorConsole
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <param name="targetRevision">The revision of that roadmap the person was shown.</param>
+    /// <param name="targetRevision">
+    /// The revision of that roadmap the person was shown: required with a target, and refused when it has moved.
+    /// </param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// Where a roadmap comes to exist. Only this and <see cref="EditRoadmapAsync"/> write one, and both are a
