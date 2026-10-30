@@ -29,3 +29,6 @@ independent faults at once.
 - **Nothing times out.** Work that stops is flagged to the person; a conversation ends by consensus or by a person.
 - **The person may be the agent a roadmap item is for; Parley may not.** Starting a person's own item ticks nobody.
 - The lows triaged in the ledger's 2026-10-29 entry as moot or by design stay that way.
+- **Work a session collected and left unanswered is given back when that session ends only by feature 027.** Today it
+  comes back only when no other session of the agent is attached (on main since #27). SPEC §6 promises more, and
+  `specs/027-session-owned-delivery/` is the fix; until it lands this is known, not a finding (owner, 2026-10-30).
