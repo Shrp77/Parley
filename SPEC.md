@@ -3341,7 +3341,9 @@ waits for a natural restart, when throwing away what the agent has learned would
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
 waiting: the turn is recorded as timed out, the exchange is unharmed — still owed, still open — and
-the reply that eventually arrives is discarded rather than read as the answer to the next turn.
+the reply that eventually arrives is discarded rather than read as the answer to the next turn. Until it
+arrives nothing more is said to the agent, so a later turn that runs out of time waiting for it has delivered
+nothing; if mail is still uncollected when such a turn ends, the broker asks for another turn.
 
 **Starting is the node's business, and the broker never learns how.** A launch command is local
 configuration on the machine it applies to, and it stays there. The broker asks a node to start one

@@ -1030,6 +1030,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
                 ct),
             cancellationToken).ConfigureAwait(false);
 
+        // **A turn that ran out of time with mail still uncollected asks again** (lens 1 run 103). The node says nothing
+        // while a reply is still owed to a turn that gave up, so such a turn spends the wake for the mail that arrived
+        // meanwhile; once the agent finished, it sat idle with that mail and nothing coming. Mail only: work it already
+        // collected is its own to finish, and a wedged agent costs one more turn per timeout, each shown timed out.
+        if (ended.TimedOut
+            && await UseConnectionAsync(
+                (connection, _, ct) => new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct),
+                cancellationToken).ConfigureAwait(false) > 0)
+        {
+            _ = RequestAttentionForMail(agent, "a turn ran out of time with mail still waiting");
+        }
+
         return true;
     }
 
