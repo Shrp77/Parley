@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// every agent's work would have one session's arrival act on colleagues' work, with the damage scaling with how
 /// many were working and invisible to all of them.
 /// </remarks>
+[Integration]
 public sealed class ManyAgentsTests : IDisposable
 {
     private const int Repositories = 22;

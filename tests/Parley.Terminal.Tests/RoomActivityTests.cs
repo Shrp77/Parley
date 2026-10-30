@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// every name pushed even that off the edge of the column. The owner chose marks in front of each name, with a legend.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoomActivityTests
 {
     private static readonly AgentName Asker = AgentName.Create("orders@here");

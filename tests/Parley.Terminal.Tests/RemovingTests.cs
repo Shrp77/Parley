@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// The project's broker is on a port nothing answers on, so the command's wait for it to stop is
 /// skipped and what is exercised is the surface's own confirmation and the command's deleting.
 /// </remarks>
+[Integration]
 public sealed class RemovingTests : IDisposable
 {
     private readonly string _directory =

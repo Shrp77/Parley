@@ -10,6 +10,7 @@ namespace Parley.Mcp.Tests;
 /// alternate data stream each resolve differently from an ordinary path, and a check written against ordinary paths
 /// could pass every other test here and still let one of them through.
 /// </remarks>
+[Integration]
 public sealed class WindowsRepositoryPathTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 14, 9, 0, 0, TimeSpan.Zero);

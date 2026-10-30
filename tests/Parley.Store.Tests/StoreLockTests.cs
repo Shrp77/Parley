@@ -22,6 +22,7 @@ namespace Parley.Store.Tests;
 /// open file rather than the process, so two opens in one process conflict exactly as two processes do.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StoreLockTests : IDisposable
 {
     private readonly string _directory =

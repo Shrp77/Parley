@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// purpose (§9.4) — into the broker's log, where nothing prunes them. And a line break in them would forge a line of the log,
 /// which a peer can steer, since a peer's payload shapes what a model says.
 /// </remarks>
+[Integration]
 public sealed class AFailedTurnLogsNoWordsTests : IDisposable
 {
     private const string Secret = "the invoice total is 4411";

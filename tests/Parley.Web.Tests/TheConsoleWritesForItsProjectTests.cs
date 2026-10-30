@@ -23,6 +23,7 @@ namespace Parley.Web.Tests;
 /// can reach it. <see cref="OwnershipConsole"/> exists for this one gap.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TheConsoleWritesForItsProjectTests
 {
     private static string Agent() => $"orders@{MachineName.Current}";

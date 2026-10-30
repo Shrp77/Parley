@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// somebody is reading to decide, and there is no other check between that description and the act.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InjectionTests
 {
     /// <summary>An escape sequence that clears the screen, which is the loudest of the family.</summary>

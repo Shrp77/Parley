@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// racing threads.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WakeDuringCollectionTests
 {
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(250);

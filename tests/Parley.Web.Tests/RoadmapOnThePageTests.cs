@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// on either: send anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapOnThePageTests
 {
     private static readonly Uri IndexUri = new($"/Roadmaps?project={RoadmapConsole.Project}", UriKind.Relative);

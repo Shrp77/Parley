@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// the options': a deployment that kept text for ninety days still lost it at thirty, every hour, while a person's prune
 /// said ninety.
 /// </remarks>
+[Integration]
 public sealed class TheHourlyPassKeepsTheConfiguredPolicyTests : IDisposable
 {
     private static readonly RetentionPolicy Configured = new(TimeSpan.FromHours(1000), TimeSpan.FromHours(2160));

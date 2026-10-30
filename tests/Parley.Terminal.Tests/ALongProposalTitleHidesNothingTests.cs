@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// <b>Found by review, round 17.</b> Nothing bounds a title, and the heading was as tall as its title, so about 3,000
 /// characters pushed the proposer and every item off the dialog while Confirm stayed on it.
 /// </remarks>
+[Integration]
 public sealed class ALongProposalTitleHidesNothingTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

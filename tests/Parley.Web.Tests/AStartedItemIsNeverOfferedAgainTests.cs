@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// from the messages it read, so done work came back with the item's words in the box and its agent ticked, one press
 /// of Send from being asked again. The terminal reads the broker's fact about the item, and so does the page now.
 /// </remarks>
+[Integration]
 public sealed class AStartedItemIsNeverOfferedAgainTests
 {
     [Fact]

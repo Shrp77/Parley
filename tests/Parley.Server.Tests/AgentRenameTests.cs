@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// misread: a different repository presenting it, a name taken by somebody else, a session still attached under the
 /// old name, the same checkout on another machine.
 /// </remarks>
+[Integration]
 public sealed class AgentRenameTests
 {
     private const string Id = "9f2c1a77-3b41-4e0e-8a6f-7c4b2d9e5011";

@@ -15,6 +15,7 @@ namespace Parley.Web.Tests;
 /// did the same for any folder holding such a link, checking each child for <c>.git</c>. The host is TEST-NET, which
 /// never routes, so a lookup that slipped through shows as the 21-second SMB wait.
 /// </remarks>
+[Integration]
 public sealed class NoLinkLeadsALookupOffThisMachineTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-links-" + Guid.NewGuid().ToString("N"));

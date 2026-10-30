@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// of work back is not fixed when it is sent. These pin the consequences of that, and two properties easy to
 /// lose: a second window must not be handed what the first is working on, and a detach must not end anything.
 /// </remarks>
+[Integration]
 public sealed class AttachEdgeTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// The folder above is the discriminator: a deleted repository is worth a judgement, a drive briefly unmounted is not,
 /// and one unavailable volume must not retire every agent on it at once.
 /// </remarks>
+[Integration]
 public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
 {
     private readonly string _root =

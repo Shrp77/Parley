@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// run, so the child genuinely fails to bind — which is the condition, not a simulation of it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WebUiContainmentTests
 {
     [Fact]

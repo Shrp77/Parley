@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// The dialog once said only "Nothing is deleted", while closing made the text prunable at the next hourly pass. Closing
 /// no longer shortens the idle period, and the dialog says so.
 /// </remarks>
+[Integration]
 public sealed class ClosingSaysHowLongTextIsKeptTests
 {
     [Fact]

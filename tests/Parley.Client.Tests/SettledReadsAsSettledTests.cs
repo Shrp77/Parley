@@ -13,6 +13,7 @@ namespace Parley.Client.Tests;
 /// can see what it decided, beside its reply, without trusting the model to mention it — so every case here has a reply
 /// whose words say nothing about settling.
 /// </remarks>
+[Unit]
 public sealed class SettledReadsAsSettledTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

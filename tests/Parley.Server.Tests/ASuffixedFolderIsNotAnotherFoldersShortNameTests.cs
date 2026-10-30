@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// conversation's file, and a destroy deleted or marked a person's own folder. A name whose path reaches anything is
 /// now taken, and a folder is deleted or marked only under its own long name. The other cases held.
 /// </remarks>
+[Integration]
 public sealed class ASuffixedFolderIsNotAnotherFoldersShortNameTests : IDisposable
 {
     private const string Inventory = "inventory@alpha";

@@ -20,6 +20,7 @@ namespace Parley.Mcp.Tests;
 /// needs an interpreter; these still run where there is none.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingHookTests
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";

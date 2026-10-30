@@ -11,6 +11,7 @@ namespace Parley.Web.Tests;
 /// item. A page that exported every item's conversation would be fine at five items and slow at fifty, which is the
 /// difference this counts. Item conversations load in their own frames, only when an item is opened.
 /// </remarks>
+[Integration]
 public sealed class RoadmapCallCountTests
 {
     private static RoadmapConsole Confirmed(int items)

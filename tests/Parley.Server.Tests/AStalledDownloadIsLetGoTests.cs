@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// download that makes no progress for <see cref="FileLocationStore.StallAfter"/> is now ended; a replacement no
 /// longer waits out a hold over everything at all. One still taking frames is never ended.
 /// </remarks>
+[Integration]
 public sealed class AStalledDownloadIsLetGoTests
 {
     private const string Orders = "orders@alpha";

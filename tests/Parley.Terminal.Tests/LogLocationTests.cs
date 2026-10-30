@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 /// old log was still beside the old store: the view would have followed a broker that stopped
 /// writing hours earlier and called it live.
 /// </remarks>
+[Integration]
 public sealed class LogLocationTests
 {
     private static readonly ProjectSettings Alpha = new(

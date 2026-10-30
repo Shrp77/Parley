@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// <c>StopEveryoneAsync</c> would never stop it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneCheckoutOneProcessTests : IDisposable
 {
     private readonly string _root =

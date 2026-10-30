@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// path leaves it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwiceTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

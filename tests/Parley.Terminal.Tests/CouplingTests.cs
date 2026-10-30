@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// what to draw — which is also why every region's <c>Show</c> takes data rather than a client.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CouplingTests
 {
     private static readonly string[] Regions =

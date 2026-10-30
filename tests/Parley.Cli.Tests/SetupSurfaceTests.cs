@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// file rather than a number that quietly moves.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SetupSurfaceTests
 {
     private static readonly Assembly Setup = typeof(Enrolment).Assembly;

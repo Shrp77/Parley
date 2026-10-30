@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// what it does rather than why it exists is one nobody can safely delete later.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ScriptParityTests
 {
     private static string Windows => RepositoryFile.Read("install.ps1");

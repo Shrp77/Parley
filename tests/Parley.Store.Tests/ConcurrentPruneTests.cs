@@ -22,6 +22,7 @@ namespace Parley.Store.Tests;
 /// migrator.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrentPruneTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// instead, which is what the rest of this repository does.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SetupSurfaceJustifiedTests
 {
     private static readonly string Root =

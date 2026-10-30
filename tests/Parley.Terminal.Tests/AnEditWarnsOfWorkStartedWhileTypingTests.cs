@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// while the person typed was removed with no warning; starting an item moves no revision. The edit reads the roadmap
 /// again first (<c>Revising.StillCoveredAsync</c>). The going-ahead, stale, leave and unreadable cases held.
 /// </remarks>
+[Integration]
 public sealed class AnEditWarnsOfWorkStartedWhileTypingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

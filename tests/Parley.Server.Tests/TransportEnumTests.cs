@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// the failure it caught would be the failure of somebody to update it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TransportEnumTests
 {
     /// <summary>Every domain enum that has a counterpart on the wire, paired with it.</summary>

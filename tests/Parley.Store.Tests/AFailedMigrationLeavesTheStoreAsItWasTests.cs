@@ -11,6 +11,7 @@ namespace Parley.Store.Tests;
 /// Probed in review round 36: the rebuild has dropped the old table and made temporary tables by the time it fails,
 /// so this holds that all of it is undone and nothing is left on the connection to trouble the next attempt.
 /// </remarks>
+[Integration]
 public sealed class AFailedMigrationLeavesTheStoreAsItWasTests : IDisposable
 {
     private const string Schema =

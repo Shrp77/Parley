@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// happened to try.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ActionsKeyTests
 {
     [Fact]

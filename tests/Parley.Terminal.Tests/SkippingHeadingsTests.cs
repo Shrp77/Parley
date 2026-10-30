@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// navigation this surface has.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SkippingHeadingsTests
 {
     private static AgentRecord Agent(

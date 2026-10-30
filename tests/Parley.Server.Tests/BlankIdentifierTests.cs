@@ -23,6 +23,7 @@ namespace Parley.Server.Tests;
 /// context for an internal error.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BlankIdentifierTests
 {
     public static TheoryData<string> Blank => ["", "   ", "\t"];

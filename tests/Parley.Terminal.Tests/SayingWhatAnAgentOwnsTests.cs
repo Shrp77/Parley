@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// the deployment changed when it did not.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SayingWhatAnAgentOwnsTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

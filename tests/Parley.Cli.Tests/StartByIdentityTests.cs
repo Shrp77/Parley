@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// agent attaches. The name no longer resolves; the identifier still does, and an identifier this machine does not hold
 /// falls back to the name rather than failing.
 /// </remarks>
+[Integration]
 public sealed class StartByIdentityTests : IDisposable
 {
     private readonly string _root =

@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// cases held: a proposal decided elsewhere is not decided again, a supersede of many leaves none counted, and a
 /// double click on Edit opens one form.
 /// </remarks>
+[Integration]
 public sealed class ProposalsChangeUnderneathTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

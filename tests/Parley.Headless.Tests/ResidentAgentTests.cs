@@ -18,6 +18,7 @@ namespace Parley.Headless.Tests;
 /// stays in step when a turn is abandoned, and that closing standard input stops it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResidentAgentTests : IDisposable
 {
     private readonly string _workspace =

@@ -29,6 +29,7 @@ namespace Parley.Server.Tests;
 /// mapping between the two spellings has to be exact for that protection to mean anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WireMatchesTheDocumentTests
 {
     private static string Root()

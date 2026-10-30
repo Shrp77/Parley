@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// column-zero rule and in the destroy dialog quoting a manifest raw.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwelveTests : IDisposable
 {
     private readonly string _root =

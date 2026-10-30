@@ -22,6 +22,7 @@ namespace Parley.Client.Tests;
 /// all. An agent can be attached, running, and idle with mail waiting.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeenAndCollectedTests
 {
     private static Message Notice(string to, DateTimeOffset? delivered = null) =>

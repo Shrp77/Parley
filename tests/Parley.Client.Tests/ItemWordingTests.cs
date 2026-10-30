@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// The words a roadmap and its items are told in.
 /// </summary>
+[Unit]
 public sealed class ItemWordingTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@host");

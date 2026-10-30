@@ -18,6 +18,7 @@ namespace Parley.Broker.Tests;
 /// conversation — the facilitator steering work, which principle 2.11 forbids. Watched to fail without the filter.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ParleyChoosesNoConversationTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);

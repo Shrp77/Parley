@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// Kept from review round 23, where both held: a slow but steady reader gets every byte, and one that stops is told the
 /// download was ended (DeadlineExceeded), not that the broker is down, after its hold was let go.
 /// </remarks>
+[Integration]
 public sealed class ASteadyDownloadIsNotEndedTests
 {
     private const string Orders = "orders@alpha";

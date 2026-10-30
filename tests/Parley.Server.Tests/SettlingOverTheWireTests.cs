@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// and what the person's surface then sees — because a row nobody can read through the protocol is not evidence the
 /// protocol records anything.
 /// </remarks>
+[Integration]
 public sealed class SettlingOverTheWireTests
 {
     private const string Conversation = "invoice-export";

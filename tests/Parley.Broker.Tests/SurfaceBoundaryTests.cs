@@ -21,6 +21,7 @@ namespace Parley.Broker.Tests;
 /// <see cref="Broker"/> is where the connection already is.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceBoundaryTests
 {
     /// <summary>

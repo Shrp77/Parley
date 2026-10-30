@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// So this one presses keys and nothing else.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NavigatingTests
 {
     private static BrokerDirectory Directory() =>

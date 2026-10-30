@@ -8,6 +8,7 @@ namespace Parley.Client.Tests;
 /// That an agent open outside Parley is said to be, on the room and on the agents list, and is never shown working or
 /// stopped on what a node said of a different process (SPEC.md §11.7).
 /// </summary>
+[Unit]
 public sealed class OpenOutsideTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@box");

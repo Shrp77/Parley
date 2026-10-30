@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// written on refusal, and that is checked by comparing what is on disk before and after.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AddingTests : IAsyncDisposable
 {
     private readonly string _root =

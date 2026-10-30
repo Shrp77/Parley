@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// The owner's report of 2026-10-08: a long reply was lost to one stray Escape. Each test presses the key, because the
 /// property is what the key does and not what a method does.
 /// </remarks>
+[Integration]
 public sealed class EscapeWithAWrittenLineTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

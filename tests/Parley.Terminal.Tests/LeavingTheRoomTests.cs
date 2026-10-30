@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// same way fails here rather than on somebody's screen.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LeavingTheRoomTests
 {
     private static BrokerDirectory Directory() =>

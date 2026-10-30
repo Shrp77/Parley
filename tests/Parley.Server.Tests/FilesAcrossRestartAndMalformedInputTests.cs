@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// Each holds a property that would otherwise be held only by reading the code.
 /// </remarks>
+[Integration]
 public sealed class FilesAcrossRestartAndMalformedInputTests
 {
     private const string Orders = "orders@alpha";

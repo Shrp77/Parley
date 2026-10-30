@@ -40,4 +40,10 @@
     <Compile Include="$(MSBuildThisFileDirectory)..\BrokerInboxDraining.cs" Link="BrokerInboxDraining.cs" />
   </ItemGroup>
 
+  <!-- Every test class says whether it is a unit or an integration test (TestCategories.cs, scripts/test.ps1). -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\TestCategories.cs" Link="TestCategories.cs" />
+    <Using Include="Parley.Testing" />
+  </ItemGroup>
+
 </Project>

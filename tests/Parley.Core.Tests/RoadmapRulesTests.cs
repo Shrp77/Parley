@@ -9,6 +9,7 @@ namespace Parley.Core.Tests;
 /// The probes here are the malicious cases rather than the pleasant ones: a name that is not legal, a
 /// dependency that points forward, text that breaks a line. A rule is worth what its refusal is worth.
 /// </remarks>
+[Unit]
 public sealed class RoadmapRulesTests
 {
     private static RoadmapItemDraft Item(string text, params int[] needs) =>

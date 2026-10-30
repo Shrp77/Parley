@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// removed with no word, for a revision and for an edit; starting an item moves no revision, so the expected revision
 /// did not catch it. Going ahead now reads the roadmap again (as the web does) and changes nothing if more is open.
 /// </remarks>
+[Integration]
 public sealed class ARevisionWarnedOfOpenWorkTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

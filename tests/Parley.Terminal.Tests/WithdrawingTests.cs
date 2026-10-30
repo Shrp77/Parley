@@ -31,6 +31,7 @@ namespace Parley.Terminal.Tests;
 /// broker that refuses: every one must leave the registry and both files exactly as they were.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WithdrawingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -14,6 +14,7 @@ namespace Parley.Cli.Tests;
 /// stopped for good. Driven through the real serve loop and
 /// <see cref="ServeCommand.Rereader"/>, the function the program itself uses.
 /// </remarks>
+[Integration]
 public sealed class AHalfEditedProjectKeepsServingTests : IDisposable
 {
     private readonly string _root =

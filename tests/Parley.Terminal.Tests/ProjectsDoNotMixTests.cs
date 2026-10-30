@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// Conversation identifiers are per project, and <c>rm1-1</c> exists in every project with a roadmap, so anything keyed by an
 /// identifier alone, or drawn from a read without asking which project is on screen, can cross between them.
 /// </remarks>
+[Integration]
 public sealed class ProjectsDoNotMixTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

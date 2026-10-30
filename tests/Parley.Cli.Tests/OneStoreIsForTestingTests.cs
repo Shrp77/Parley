@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// broker and a set of repositories to reach.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneStoreIsForTestingTests
 {
     public static TheoryData<string> Printing => ["src/Parley.Setup/EnrollCommand.cs", "src/Parley.Cli/ServeCommand.cs", "src/Parley.Cli/AutostartCommand.cs"];

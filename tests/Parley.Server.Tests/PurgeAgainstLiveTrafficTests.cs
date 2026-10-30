@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// Kept from review round 16, where both held. A purge records each conversation it destroys, so a Request into one is
 /// refused afterwards as into a destroyed conversation, and the purge runs inside the broker's write gate.
 /// </remarks>
+[Integration]
 public sealed class PurgeAgainstLiveTrafficTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

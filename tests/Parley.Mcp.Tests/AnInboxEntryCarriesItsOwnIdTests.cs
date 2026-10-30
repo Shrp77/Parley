@@ -10,6 +10,7 @@ namespace Parley.Mcp.Tests;
 /// which every message on an exchange shares: a Result carries the id its request returned, so an agent following the
 /// words would drop every Result as a duplicate.
 /// </remarks>
+[Integration]
 public sealed class AnInboxEntryCarriesItsOwnIdTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

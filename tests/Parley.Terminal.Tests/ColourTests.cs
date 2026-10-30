@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// appears to have come from the surface itself.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ColourTests
 {
     [Theory]

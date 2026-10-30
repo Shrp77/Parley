@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// renamed or replaced, and every guess needed a timing window in which an agent could end up holding the person's
 /// file. Without one, a file enters only by placement, and bytes changed by hand are refused rather than taken in.
 /// </remarks>
+[Integration]
 public sealed class APlacedFileIsNeverChangedTests
 {
     private const string Orders = "orders@alpha";

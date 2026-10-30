@@ -16,6 +16,7 @@ namespace Parley.Web.Tests;
 /// Each test posts the form a person would, as multipart with the page's own token, and reads the page that comes back
 /// — the words a person reads, not a field of the model.
 /// </remarks>
+[Integration]
 public sealed class PlacingOnThePageTests : IDisposable
 {
     private const string Page = "/Projects/Files?project=" + FilesConsole.Project;

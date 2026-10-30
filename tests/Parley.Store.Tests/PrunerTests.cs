@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// piece of finished work there is.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PrunerTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

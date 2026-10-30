@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// its Result. Nothing here touches a <c>Broker</c> or a <c>SqliteConnection</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationOverTheWireTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);

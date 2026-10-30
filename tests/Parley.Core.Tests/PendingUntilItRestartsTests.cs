@@ -25,6 +25,7 @@ namespace Parley.Core.Tests;
 /// surfaces, and R5 exists because they reach none.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class PendingUntilItRestartsTests
 {
     private static AgentRecord Agent(string? owns, string? accepted) =>

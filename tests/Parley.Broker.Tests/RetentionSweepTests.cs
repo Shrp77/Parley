@@ -19,6 +19,7 @@ namespace Parley.Broker.Tests;
 /// its own cadence, and that a policy which cannot do its job is refused where the broker is built.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RetentionSweepTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

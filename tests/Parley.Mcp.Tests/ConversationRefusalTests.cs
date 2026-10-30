@@ -10,6 +10,7 @@ namespace Parley.Mcp.Tests;
 /// one: the conversation exists without it, or its name is taken (a destroyed conversation, or one reserved for a
 /// roadmap item). What it reads is what it acts on, so the sentence has to be true.
 /// </remarks>
+[Integration]
 public sealed class ConversationRefusalTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 24, 9, 0, 0, TimeSpan.Zero);

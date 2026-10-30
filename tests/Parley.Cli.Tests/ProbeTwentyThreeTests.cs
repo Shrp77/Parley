@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// part of it adopted into the entry this blesses.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyThreeTests : IDisposable
 {
     private readonly string _root =

@@ -14,6 +14,7 @@ namespace Parley.Client.Tests;
 /// collection delivered as it hands it over. Recorded only at the end, a later collection that failed (a page reloaded
 /// mid-drain is enough) dropped what the earlier ones had handed over: the terminal then said the person owed no result.
 /// </remarks>
+[Integration]
 public sealed class ASeatKeepsWhatAnEarlierCollectionHandedOverTests
 {
     private static readonly ProjectSettings Alpha =

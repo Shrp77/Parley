@@ -9,6 +9,7 @@ namespace Parley.Web.Tests;
 /// <b>Found by review, lens 3 run 67.</b> The step said the new name appears on "this project's agents" and linked to
 /// the Conversations page, so a person following it never saw the name and was told to suspect the session.
 /// </remarks>
+[Integration]
 public sealed class RegisterLeadsToTheAgentsTests
 {
     [Fact]

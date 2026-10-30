@@ -20,6 +20,7 @@ namespace Parley.Client.Tests.Views;
 /// this assembly out.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceGrowthTests
 {
     private static IEnumerable<Type> PublicTypes() =>

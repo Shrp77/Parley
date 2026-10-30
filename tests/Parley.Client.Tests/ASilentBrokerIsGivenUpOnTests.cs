@@ -15,6 +15,7 @@ namespace Parley.Client.Tests;
 /// Every call has a deadline, because the terminal runs its work one item at a time and one wedged broker would
 /// otherwise stop every send, open and toggle in every project. Driven against a listener that accepts and says nothing.
 /// </remarks>
+[Integration]
 public sealed class ASilentBrokerIsGivenUpOnTests
 {
     [Fact]

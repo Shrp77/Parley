@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// of a region this change did not touch.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoomTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@test");

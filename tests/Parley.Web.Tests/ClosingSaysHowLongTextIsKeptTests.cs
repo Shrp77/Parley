@@ -10,6 +10,7 @@ namespace Parley.Web.Tests;
 /// Closing no longer shortens the idle period, and a person closing a conversation is told how long they have to read it
 /// back.
 /// </remarks>
+[Integration]
 public sealed class ClosingSaysHowLongTextIsKeptTests
 {
     [Fact]

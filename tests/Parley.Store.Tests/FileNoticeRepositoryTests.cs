@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// kept collecting notices would be the one place its retirement did not reach.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileNoticeRepositoryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

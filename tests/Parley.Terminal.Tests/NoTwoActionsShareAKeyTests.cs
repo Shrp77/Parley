@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// neither would miss. Found by the owner asking where enrolment had gone and a letter being chosen for it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NoTwoActionsShareAKeyTests
 {
     [Fact]

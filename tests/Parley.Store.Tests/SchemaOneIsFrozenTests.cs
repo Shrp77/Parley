@@ -23,6 +23,7 @@ namespace Parley.Store.Tests;
 /// be corrected without moving this.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed partial class SchemaOneIsFrozenTests
 {
     /// <summary>The SHA-256 of what migration 001 creates, as <see cref="Shape"/> lists it.</summary>

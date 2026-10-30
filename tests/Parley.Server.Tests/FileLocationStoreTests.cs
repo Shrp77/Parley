@@ -18,6 +18,7 @@ namespace Parley.Server.Tests;
 /// fake.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileLocationStoreTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-location-" + Guid.NewGuid().ToString("N"));

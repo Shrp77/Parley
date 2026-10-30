@@ -12,6 +12,7 @@ namespace Parley.Cli.Tests;
 /// Every name here is somebody else's text on its way to a terminal, so one case places a name built to move the cursor
 /// and checks it arrives as a single row.
 /// </remarks>
+[Integration]
 public sealed class FilesListCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

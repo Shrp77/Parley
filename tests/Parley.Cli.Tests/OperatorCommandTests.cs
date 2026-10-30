@@ -12,6 +12,7 @@ namespace Parley.Cli.Tests;
 /// These drive the command rather than the process, so what is pinned is what it does and what
 /// it says. The entry point keeps only argument shape and exit codes.
 /// </remarks>
+[Integration]
 public sealed class OperatorCommandTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

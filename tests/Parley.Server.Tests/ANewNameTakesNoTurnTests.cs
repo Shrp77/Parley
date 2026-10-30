@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// Kept from review round 25, where each held: two placements of one new name, a new name landing inside a destroy or
 /// a prune, and the person's file refused to an agent before any turn and removed for the person.
 /// </remarks>
+[Integration]
 public sealed class ANewNameTakesNoTurnTests
 {
     private const string Orders = "orders@alpha";

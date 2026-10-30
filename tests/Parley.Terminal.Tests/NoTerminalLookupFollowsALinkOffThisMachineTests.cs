@@ -16,6 +16,7 @@ namespace Parley.Terminal.Tests;
 /// permissions hide its target as no link. TEST-NET hosts never route, so a lookup that slipped through shows as the
 /// SMB wait; each test has its own, because Windows remembers a host it failed to reach.
 /// </remarks>
+[Integration]
 public sealed class NoTerminalLookupFollowsALinkOffThisMachineTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-terminal-links-" + Guid.NewGuid().ToString("N"));

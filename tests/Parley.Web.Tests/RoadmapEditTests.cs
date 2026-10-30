@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// the revision the form was opened at.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapEditTests
 {
     private static Uri EditUri() =>

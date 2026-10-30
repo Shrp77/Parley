@@ -5,6 +5,7 @@ using Xunit;
 namespace Parley.Client.Tests;
 
 /// <summary>That a prune says under which policy it ran, and never promises the age cap spares uncollected mail.</summary>
+[Unit]
 public sealed class RetentionWordsTests
 {
     [Fact]

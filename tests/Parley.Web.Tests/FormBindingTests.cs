@@ -22,6 +22,7 @@ namespace Parley.Web.Tests;
 /// carry and the form sends again.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FormBindingTests
 {
     private static IEnumerable<Type> Pages() =>

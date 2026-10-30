@@ -10,6 +10,7 @@ namespace Parley.Store.Tests;
 /// A live store holds work in flight and is upgraded in place; the copy is what a person restores if an upgrade has to
 /// be undone. A new store, or one already current, is not copied, so a copy appears only when there is something to keep.
 /// </remarks>
+[Integration]
 public sealed class MigrationBackupTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 27, 9, 30, 0, TimeSpan.Zero);

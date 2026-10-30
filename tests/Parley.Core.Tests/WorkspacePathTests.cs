@@ -10,6 +10,7 @@ namespace Parley.Core.Tests;
 /// each looked like a different bug: one repository refused its own name, and two repositories
 /// admitted under one.
 /// </remarks>
+[Unit]
 public sealed class WorkspacePathTests
 {
     [Theory]

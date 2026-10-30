@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// The owner's decision after review round 29. A closed conversation never reopens and an item has only the one, so
 /// agents agreeing to close it while a part was blocked left the item nowhere to carry on.
 /// </remarks>
+[Integration]
 public sealed class OnlyThePersonClosesAnItemTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);

@@ -13,6 +13,7 @@ namespace Parley.Cli.Tests;
 /// own. Each sync client is found where it says it keeps its folder, so the environment is a seam here: no test reads
 /// the developer's own.
 /// </remarks>
+[Integration]
 public sealed class OnlyLocalStorageTests : IDisposable
 {
     private readonly string _home = Path.Combine(Path.GetTempPath(), "parley-home-" + Guid.NewGuid().ToString("N"));

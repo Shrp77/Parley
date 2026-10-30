@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// protocol is not evidence the protocol records anything — and because this project may not open a store.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TurnReportingTests
 {
     private const string Here = "m1";

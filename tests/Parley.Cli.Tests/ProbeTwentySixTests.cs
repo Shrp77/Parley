@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// which is the other half and the one nothing has probed.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ProbeTwentySixTests
 {
     private const string Hostile = "http://198.51.100.7:7000";

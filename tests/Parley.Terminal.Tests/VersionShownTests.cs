@@ -13,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// which build was drawing it. On a wide terminal the status line says it; on a narrow one, where the status line keeps
 /// only the focus and <c>?</c>, the actions menu does.
 /// </remarks>
+[Integration]
 public sealed class VersionShownTests
 {
     [Fact]

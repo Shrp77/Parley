@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// the person has configured, and this program is a guest in it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyFourTests : IDisposable
 {
     private readonly string _root =

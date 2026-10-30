@@ -17,6 +17,7 @@ namespace Parley.Client.Tests;
 /// if one ever arrives: nothing, rather than recording it as a message the person owes an answer to.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatFileNoticeTests
 {
     private static readonly ProjectSettings Alpha =

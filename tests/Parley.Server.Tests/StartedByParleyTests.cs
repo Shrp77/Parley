@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// in an editor must not read as running, a wake on it must not ask the node for a turn it could not give and mark one
 /// as coming, and its turn standing must not borrow whatever the node last said of that name.
 /// </remarks>
+[Integration]
 public sealed class StartedByParleyTests
 {
     private const string Here = "m1";

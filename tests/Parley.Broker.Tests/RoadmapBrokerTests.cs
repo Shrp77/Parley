@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// Driven through the two real types, <see cref="Broker"/> for the agent and <see cref="OperatorConsole"/> for the
 /// person, in the order the protocol runs them. The refusals are the point: each was watched to fail first.
 /// </remarks>
+[Integration]
 public sealed class RoadmapBrokerTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

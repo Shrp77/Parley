@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// deleted, a quarantine directory that was a link was moved through, and a put-back that failed too left a file in
 /// quarantine with no problem.
 /// </remarks>
+[Integration]
 public sealed class NothingIsReachedThroughALinkedFolderTests : IDisposable
 {
     private const string Orders = "orders@alpha";

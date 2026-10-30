@@ -21,6 +21,7 @@ namespace Parley.Client.Tests;
 /// reading.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrencyTests
 {
     /// <summary>How many threads ask at once.</summary>

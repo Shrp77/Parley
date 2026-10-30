@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// than a tidiness note.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ContainmentTests
 {
     [Fact]

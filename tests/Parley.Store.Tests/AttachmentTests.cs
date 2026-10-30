@@ -32,6 +32,7 @@ namespace Parley.Store.Tests;
 /// these were dropped for being about a timestamp when one of them was about arithmetic.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AttachmentTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

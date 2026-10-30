@@ -12,6 +12,7 @@ namespace Parley.Store.Tests;
 /// A notice's <c>sha256_now</c> now says a file was tampered with. A change notice left from before would be read as
 /// that, telling an agent a file it changed through an old build was tampered with, so the migration deletes them.
 /// </remarks>
+[Integration]
 public sealed class MigrationThreeTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 28, 9, 0, 0, TimeSpan.Zero);

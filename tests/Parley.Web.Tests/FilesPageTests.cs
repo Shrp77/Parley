@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// Every refusal is checked by what the broker was asked and what was launched, which must be nothing — a page that
 /// said "Nothing was removed." having asked for a removal is the failure that matters.
 /// </remarks>
+[Integration]
 public sealed class FilesPageTests : IDisposable
 {
     private const string Page = "/Projects/Files?project=" + FilesConsole.Project;

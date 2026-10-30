@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// command that exists.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForwardingTests
 {
     [Fact]

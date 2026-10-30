@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// setup, which is when <c>parley</c> is typed most.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StartsWithoutWaitingTests
 {
     [Fact]

@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// can count the same from the exchanges: every member carries the group. Over a real socket, because a number nobody
 /// can read through the protocol is not evidence the protocol reports it.
 /// </remarks>
+[Integration]
 public sealed class RoleRequestProgressTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// <c>SurfaceTests</c> holds the call to <see cref="FilesRemoving"/> and its door to that file's text; this drives the
 /// door, and checks what is left in the location rather than what was said.
 /// </remarks>
+[Integration]
 public sealed class FilesRemovingTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();

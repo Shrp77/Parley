@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// the roadmap by number; that a long ownership line hid what retiring and purging do; and that an answer padded with
 /// blank lines hid words Accept records.
 /// </remarks>
+[Integration]
 public sealed class ALongAgentTitleHidesNothingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

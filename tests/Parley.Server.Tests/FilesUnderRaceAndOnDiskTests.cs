@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// <remarks>
 /// Each holds a property no other test reaches, so a change that breaks one of them says so.
 /// </remarks>
+[Integration]
 public sealed class FilesUnderRaceAndOnDiskTests
 {
     private const string Orders = "orders@alpha";

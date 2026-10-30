@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// refused at the adapter's message size, so every message in it, a third agent's included, was marked collected and
 /// never seen: one agent could empty another's inbox by writing to it.
 /// </remarks>
+[Integration]
 public sealed class AFloodNeverLosesAnotherAgentsMessagesTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

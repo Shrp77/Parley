@@ -6,6 +6,7 @@ namespace Parley.Mcp.Tests;
 /// That an agent collecting an answer to its request to a role is told how many agents it reached and how many have
 /// answered (SPEC.md §5.5), and that an answer to a request for one agent says nothing of the kind.
 /// </summary>
+[Integration]
 public sealed class RoleRequestProgressToolTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

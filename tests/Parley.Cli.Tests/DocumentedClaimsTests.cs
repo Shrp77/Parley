@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// wrong. These claims are checked rather than read.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DocumentedClaimsTests : IDisposable
 {
     private readonly string _root =

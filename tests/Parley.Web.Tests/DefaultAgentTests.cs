@@ -4,6 +4,7 @@ using Wire = Parley.Transport;
 namespace Parley.Web.Tests;
 
 /// <summary>That the project has a settings page offering the agents, and that a new conversation is marked so the page can tick the default.</summary>
+[Integration]
 public sealed class DefaultAgentTests
 {
     private static TranscriptConsole Project()

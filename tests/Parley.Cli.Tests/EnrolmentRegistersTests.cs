@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// is the sequence and not the arithmetic.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentRegistersTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;

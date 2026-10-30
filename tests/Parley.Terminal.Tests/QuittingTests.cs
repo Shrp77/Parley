@@ -35,6 +35,7 @@ namespace Parley.Terminal.Tests;
 /// both the fixed case and the broken one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class QuittingTests
 {
     private static BrokerDirectory Directory() =>

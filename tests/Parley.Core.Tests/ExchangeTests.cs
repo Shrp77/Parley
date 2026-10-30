@@ -2,6 +2,7 @@ using Xunit;
 
 namespace Parley.Core.Tests;
 
+[Unit]
 public sealed class ExchangeTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

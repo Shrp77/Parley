@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// the agent joined in between was purged and its folder left on disk with no row naming it, neither deleted nor
 /// counted.
 /// </remarks>
+[Integration]
 public sealed class ARemovalTakesOnlyWhatItRemovedTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

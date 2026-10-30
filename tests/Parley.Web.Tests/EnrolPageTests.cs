@@ -4,6 +4,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>That agents can be registered from the console, that nothing is written before it is confirmed, and that a refusal says why.</summary>
+[Integration]
 public sealed class EnrolPageTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-enrol-" + Guid.NewGuid().ToString("N"));

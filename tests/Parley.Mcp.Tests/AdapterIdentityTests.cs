@@ -12,6 +12,7 @@ namespace Parley.Mcp.Tests;
 /// It is read from the repository's own launch configuration, never from the environment, so no variable can name an
 /// identity that the file does not hold.
 /// </remarks>
+[Integration]
 public sealed class AdapterIdentityTests : IDisposable
 {
     private readonly string _root =

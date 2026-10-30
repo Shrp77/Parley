@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// for good, and the next destroy or purge, and everything behind it, waited for ever. A failed resolve now lets the
 /// hold go. The other cases held.
 /// </remarks>
+[Integration]
 public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
 {
     private readonly string _base = Directory.CreateTempSubdirectory("parley-r22-").FullName;

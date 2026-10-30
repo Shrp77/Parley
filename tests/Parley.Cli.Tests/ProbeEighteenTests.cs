@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// always was; what each one defends is unchanged.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeEighteenTests : IDisposable
 {
     private const string Escape = "";

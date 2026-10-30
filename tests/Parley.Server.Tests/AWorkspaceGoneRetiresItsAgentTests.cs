@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// registry went on describing a repository that was not there, its node trying to start it whenever it was asked for.
 /// The node looks, because the broker never reads an agent's disk.
 /// </remarks>
+[Integration]
 public sealed class AWorkspaceGoneRetiresItsAgentTests
 {
     private const string Here = "m1";

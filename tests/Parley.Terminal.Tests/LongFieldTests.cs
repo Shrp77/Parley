@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// that away everywhere to fix it in three places.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LongFieldTests
 {
     private static FormDialog Form() =>

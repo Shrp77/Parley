@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// folder open, a person's file browser, or a program meaning harm, editing a file so its changes spread to every agent
 /// that fetches it. The link cases hold that a sweep deletes a link as a link and never what it reaches.
 /// </remarks>
+[Integration]
 public sealed class TheSweepPutsTheLocationRightTests : IDisposable
 {
     private const string Orders = "orders@alpha";

@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// <c>Lists</c> records why: <i>a key tested only in the negative is a key nobody has pressed.</i>
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CompletingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// unable to tell a rule that was removed from one nobody ever wrote.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectManifestTests : IDisposable
 {
     private readonly string _root =

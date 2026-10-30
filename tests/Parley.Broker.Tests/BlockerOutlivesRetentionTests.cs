@@ -15,6 +15,7 @@ namespace Parley.Broker.Tests;
 /// "closed" once the conversation's messages went (then minutes after a close; since closing stopped shortening the idle
 /// period, once it has passed).
 /// </remarks>
+[Integration]
 public sealed class BlockerOutlivesRetentionTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

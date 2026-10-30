@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// again each took the file's turn and ended downloads. They are kept, because a turn still holds new downloads back
 /// while it waits.
 /// </remarks>
+[Integration]
 public sealed class AChangeWaitsForADownloadStillMovingTests
 {
     private const string Orders = "orders@alpha";

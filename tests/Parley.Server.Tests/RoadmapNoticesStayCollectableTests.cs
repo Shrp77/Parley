@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// collection carries fifty at once, so fifty whole titles would exceed what a reply may carry, no collection could be
 /// delivered, and another agent's Request behind them would never be shown.
 /// </remarks>
+[Integration]
 public sealed class RoadmapNoticesStayCollectableTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

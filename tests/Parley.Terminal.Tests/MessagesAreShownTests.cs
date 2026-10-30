@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// the screen. So these read the screen.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessagesAreShownTests
 {
     [Fact]

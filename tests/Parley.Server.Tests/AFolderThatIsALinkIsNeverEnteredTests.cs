@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// whatever the junction led to, and a placement wrote its file there, outside the location. Windows only: the
 /// junction is made with mklink.
 /// </remarks>
+[Integration]
 public sealed class AFolderThatIsALinkIsNeverEnteredTests
 {
     private const string Orders = "orders@alpha";

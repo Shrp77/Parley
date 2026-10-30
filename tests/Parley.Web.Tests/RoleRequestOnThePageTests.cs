@@ -7,6 +7,7 @@ namespace Parley.Web.Tests;
 /// That the conversation page says how many of the agents a Request to a role reached have answered (SPEC.md §5.5).
 /// </summary>
 /// <remarks>Lens 3 run 86 found the page's line held by nothing; the terminal's came through the shared layout.</remarks>
+[Integration]
 public sealed class RoleRequestOnThePageTests
 {
     [Fact]

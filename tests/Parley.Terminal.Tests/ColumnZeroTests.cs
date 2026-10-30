@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// its sender's — which is precisely the crutch the rule exists so as not to need.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ColumnZeroTests
 {
     /// <summary>A line shaped exactly like one this surface writes.</summary>

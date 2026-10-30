@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// <c>list --yes</c> would succeed and <c>prune --yes</c> would ask anyway. The tool's own rule is that a flag accepted and ignored
 /// is worse than one refused, because whoever typed it believes it did something.
 /// </remarks>
+[Integration]
 public sealed class FilesCommandUsageTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();

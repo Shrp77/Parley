@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// Every refusal is checked by what the broker was asked, which must be nothing: a page that said nothing was dismissed
 /// having asked for a dismissal is the failure that matters.
 /// </remarks>
+[Integration]
 public sealed class FileProblemsPageTests : IDisposable
 {
     private const string Page = "/Projects/FileProblems?project=" + FilesConsole.Project;

@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// field that is stored but not returned would satisfy every storage test while changing nothing
 /// an agent can act on.
 /// </remarks>
+[Integration]
 public sealed class OwnershipRoutingTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);

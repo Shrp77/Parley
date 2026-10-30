@@ -21,6 +21,7 @@ namespace Parley.Mcp.Tests;
 /// nobody would notice.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileToolTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 14, 9, 0, 0, TimeSpan.Zero);

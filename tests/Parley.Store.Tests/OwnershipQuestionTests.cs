@@ -12,6 +12,7 @@ namespace Parley.Store.Tests;
 /// asking code made would be right until any of those happened; the partial unique index is right regardless.
 /// Each case here must fail with its rule removed.
 /// </remarks>
+[Integration]
 public sealed class OwnershipQuestionTests : IDisposable
 {
     private readonly FacilitatorStore _store = new();

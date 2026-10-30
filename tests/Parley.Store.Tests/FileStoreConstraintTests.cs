@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// every refusal test, so the neighbouring legal row is what shows the refusal is the rule and not an accident.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileStoreConstraintTests : IDisposable
 {
     private const string Stamp = "2026-09-14T00:00:00.0000000Z";

@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// next key takes the stream back.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatLifetimeTests
 {
     private static readonly ProjectSettings Alpha =

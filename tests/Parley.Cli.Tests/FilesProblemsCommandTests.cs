@@ -11,6 +11,7 @@ namespace Parley.Cli.Tests;
 /// The problem is made the way a real one is: a placed file's bytes are changed on disk and the location is swept. Every
 /// path printed is somebody else's text, so one case raises a problem whose path is built to move the cursor.
 /// </remarks>
+[Integration]
 public sealed class FilesProblemsCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

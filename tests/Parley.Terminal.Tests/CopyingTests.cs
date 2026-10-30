@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// annotation; this surface has the indent instead, so the readable form is also the safe one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CopyingTests
 {
     private static BrokerDirectory Directory() =>

@@ -8,6 +8,7 @@ namespace Parley.Terminal.Tests;
 /// Removing every file from the terminal: described, kept by default, and done only with the project's name typed
 /// back.
 /// </summary>
+[Integration]
 public sealed class FilesPruningTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();

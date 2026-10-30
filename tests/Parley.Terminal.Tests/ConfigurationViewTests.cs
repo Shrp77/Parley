@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// would still say it was reading, and one that treated a dead broker as no settings would show an empty list.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConfigurationViewTests
 {
     private static BrokerDirectory Directory() =>

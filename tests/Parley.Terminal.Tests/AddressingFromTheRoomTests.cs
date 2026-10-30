@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// covered headless in <c>Parley.Client.Tests</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AddressingFromTheRoomTests
 {
     [Fact]

@@ -1,0 +1,63 @@
+name: nightly
+
+# Every test, unit and integration, on Windows and Linux. Pushes run only the unit tests (build.yml), so this is where
+# the integration tests run: every night against main, and on a pull request before it merges (the merge gate in
+# review/README.md asks for this run green on the commit that merges).
+#
+# A schedule only ever runs on the default branch. On a pull request, the label full-tests starts the run, and every
+# push while it is on runs it again:
+#   gh pr edit <number> --add-label full-tests
+# A workflow can be started by hand only once it is on the default branch; from then on this also works:
+#   gh workflow run nightly.yml --ref <branch>
+on:
+  schedule:
+    # 07:00 UTC: early morning on the US east coast, after the day's pushes.
+    - cron: '0 7 * * *'
+  pull_request:
+    branches: [main]
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: all tests
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-tests')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      # PARLEY_HEARTBEAT makes every broker a server test starts log a line a second, so a failure seen only on a runner
+      # says what its broker was doing.
+      - name: Test
+        shell: pwsh
+        env:
+          PARLEY_HEARTBEAT: '1'
+        run: ./scripts/test.ps1 -Category All -Configuration Release -Source ci -AllResults -MetricsDirectory artifacts/test-metrics
+
+      # Kept whether the tests passed or not: a failure is what the metrics are for.
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-metrics-${{ matrix.os }}
+          path: artifacts/test-metrics
+          retention-days: 90

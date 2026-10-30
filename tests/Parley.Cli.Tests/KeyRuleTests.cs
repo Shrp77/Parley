@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// deprecated console flag.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class KeyRuleTests
 {
     private static readonly string Root =

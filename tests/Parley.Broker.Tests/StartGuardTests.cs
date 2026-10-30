@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// collected by a session that has gone is still stamped as collected. An operation deciding against either is
 /// deciding against evidence a start invalidates, so every one of them is refused rather than answered from it.
 /// </remarks>
+[Integration]
 public sealed class StartGuardTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

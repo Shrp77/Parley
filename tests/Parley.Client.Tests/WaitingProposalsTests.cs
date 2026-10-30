@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// Counting what is proposed beside what else is in a project, and never showing unknown as none (SPEC.md §5.7).
 /// </summary>
+[Unit]
 public sealed class WaitingProposalsTests
 {
     [Theory]

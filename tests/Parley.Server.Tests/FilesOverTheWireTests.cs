@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// the location on disk where the person would look.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FilesOverTheWireTests
 {
     private const string Orders = "orders@alpha";

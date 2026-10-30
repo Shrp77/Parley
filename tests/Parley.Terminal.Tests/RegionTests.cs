@@ -33,6 +33,7 @@ namespace Parley.Terminal.Tests;
 /// appearing is the proof that no step asked.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RegionTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

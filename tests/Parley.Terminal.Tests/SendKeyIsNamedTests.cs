@@ -10,6 +10,7 @@ namespace Parley.Terminal.Tests;
 /// "Alt+" and that character. The character drew as nothing and the row ended there — "Send what you wrote" and the
 /// Shift+Enter line after it never reached the screen — and the half that did said Alt, which sends nothing.
 /// </remarks>
+[Integration]
 public sealed class SendKeyIsNamedTests
 {
     [Fact]

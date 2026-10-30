@@ -10,6 +10,7 @@ namespace Parley.Web.Tests;
 /// The page once promised that nothing not yet collected is removed, which the age cap contradicts, and its result named
 /// only counts, so a deletion under numbers nobody realised were in force went unseen.
 /// </remarks>
+[Integration]
 public sealed class PruneSaysItsPolicyTests
 {
     private static string PrunePath => $"/Projects/Act?project={TranscriptConsole.Project}&action=prune&subject={TranscriptConsole.Project}";

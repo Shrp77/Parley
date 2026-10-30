@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// when it is read.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PermissionRefusedFlagTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

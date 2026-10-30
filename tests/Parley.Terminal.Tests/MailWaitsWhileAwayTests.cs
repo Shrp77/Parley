@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// seat is the broker's and its mail waits regardless; the count is asked for without a stream, so asking does not make
 /// the person present.
 /// </remarks>
+[Integration]
 public sealed class MailWaitsWhileAwayTests
 {
     [Fact]

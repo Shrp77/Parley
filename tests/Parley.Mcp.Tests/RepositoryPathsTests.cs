@@ -10,6 +10,7 @@ namespace Parley.Mcp.Tests;
 /// check looked at a missing `docs` while the write went through the real `docs ` link to a folder outside the
 /// repository (review, lens 2 run 80).
 /// </remarks>
+[Integration]
 public sealed class RepositoryPathsTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("parley-repo-").FullName;

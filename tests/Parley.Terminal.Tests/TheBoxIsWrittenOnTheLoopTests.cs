@@ -22,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
+[Integration]
 public sealed class TheBoxIsWrittenOnTheLoopTests
 {
     private const string Next = " and then something else";

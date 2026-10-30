@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// in a folder, and holds that it is drawn inert and indented under the surface's own words.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FilesProblemsTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

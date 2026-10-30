@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// one sender kept every other sender's Requests, and every Result, out of every collection; and closure polls, listed
 /// with no bound, could make a collection too large to arrive after its messages were stamped delivered.
 /// </remarks>
+[Integration]
 public sealed class AFloodHoldsNobodyElseBackTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

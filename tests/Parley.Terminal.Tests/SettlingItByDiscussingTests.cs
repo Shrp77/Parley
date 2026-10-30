@@ -32,6 +32,7 @@ namespace Parley.Terminal.Tests;
 /// <c>@ordthe build is greeners@test</c> under a test that stopped at the screen and passed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SettlingItByDiscussingTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

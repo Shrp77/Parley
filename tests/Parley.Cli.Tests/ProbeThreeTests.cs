@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// thing being written.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeThreeTests : IAsyncDisposable
 {
     private readonly string _root =

@@ -12,6 +12,7 @@ namespace Parley.Store.Tests;
 /// destroyed, as a destroy does, so a finished item read as never started and was offered as next; and a destroy let the
 /// cascade take a conversation's ownership questions without naming them (SPEC.md §14: the operator is told per table).
 /// </remarks>
+[Integration]
 public sealed class WhatPurgeAndDestroyLeaveTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

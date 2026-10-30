@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// person's view of that conversation, shown as where it came from, and a conversation that did not exist came back as a
 /// foreign key's text, which said which conversations exist.
 /// </remarks>
+[Integration]
 public sealed class AProposalComesFromItsProposersConversationTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

@@ -15,6 +15,7 @@ namespace Parley.Mcp.Tests;
 /// be added and write its join in between, and the leave landing after it read every agent on the machine as stranded
 /// until the node next rejoined. Found by review, lens 1 run 85: wrong in over a thousand of three thousand rounds.
 /// </remarks>
+[Integration]
 public sealed class ANodeThatRejoinsAtOnceStaysConnectedTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@probe");

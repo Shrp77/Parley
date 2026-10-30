@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// it leaves behind: handles held by a path read on every draw, the launch command in a line the
 /// node prints to a log, and whether the two project files say what the move claims they say.
 /// </remarks>
+[Integration]
 public sealed class ProbeThreeTests
 {
     /// <summary>Lens 1: reading on every draw leaves nothing held.</summary>

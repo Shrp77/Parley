@@ -27,6 +27,7 @@ namespace Parley.Store.Tests;
 /// document names, because those carry constraints.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SchemaConformanceTests : IDisposable
 {
     private readonly SqliteConnection _fromSpec = new("Data Source=:memory:");

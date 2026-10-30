@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// call site for a <c>Safe.Text</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LogInjectionTests : IDisposable
 {
     private readonly LogFile _log = new("inject");

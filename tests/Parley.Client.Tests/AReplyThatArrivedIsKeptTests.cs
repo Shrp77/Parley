@@ -11,6 +11,7 @@ namespace Parley.Client.Tests;
 /// The broker may already have recorded it delivered, so dropping the reply could lose it for good; keeping it can at
 /// worst show it twice, when the broker had not recorded it and hands it over again. Delivery is at least once.
 /// </remarks>
+[Integration]
 public sealed class AReplyThatArrivedIsKeptTests
 {
     [Fact]

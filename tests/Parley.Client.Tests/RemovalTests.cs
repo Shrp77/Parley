@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// What an edit that removes items would leave in flight (SPEC.md §5.7), the derivation both surfaces warn from.
 /// </summary>
+[Unit]
 public sealed class RemovalTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@test");

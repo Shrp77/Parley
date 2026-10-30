@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// answering nothing to naming where the answer is kept. This is the rest of that change.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ServedProjectsTests : IDisposable
 {
     private readonly string _root =

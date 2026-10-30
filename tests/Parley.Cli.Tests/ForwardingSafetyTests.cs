@@ -30,6 +30,7 @@ namespace Parley.Cli.Tests;
 /// than the wrapper.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForwardingSafetyTests
 {
     [Fact]

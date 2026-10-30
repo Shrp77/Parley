@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// irreversible act, summarised by the thing that asked for it.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class BrokersWordsTests
 {
     [Fact]

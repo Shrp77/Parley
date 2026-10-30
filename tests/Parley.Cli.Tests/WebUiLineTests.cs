@@ -17,6 +17,7 @@ namespace Parley.Cli.Tests;
 /// recurring defect is one rule with two implementations that agree until one of them is edited.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WebUiLineTests
 {
     private const string Loopback = "http://127.0.0.1:5280";

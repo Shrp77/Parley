@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// think the screen has not updated, and a region that ignored a repeat would prove them right.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OpeningTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

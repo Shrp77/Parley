@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// started by then is given up (<see cref="Prompting.OnTheLoop"/>).
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
+[Integration]
 public sealed class ADialogTheLoopReachesLateNeverOpensTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

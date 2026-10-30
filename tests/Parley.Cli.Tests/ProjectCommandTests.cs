@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// afterwards and that the output says so.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectCommandTests : IDisposable
 {
     private readonly string _directory =

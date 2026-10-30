@@ -12,6 +12,7 @@ namespace Parley.Terminal.Tests;
 /// out as two rows, and the other six were drawn off the bottom of the label. The add
 /// confirmation names two file paths on lines of their own, so it is exactly that shape.
 /// </remarks>
+[Integration]
 public sealed class DescriptionFitTests
 {
     [Fact]

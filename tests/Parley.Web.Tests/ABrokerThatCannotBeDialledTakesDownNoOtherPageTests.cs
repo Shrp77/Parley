@@ -18,6 +18,7 @@ namespace Parley.Web.Tests;
 /// guard that turns a broker that cannot be reached into "could not say", so an endpoint the manifest accepts but gRPC
 /// cannot dial answered every page with a 500.
 /// </remarks>
+[Integration]
 public sealed class ABrokerThatCannotBeDialledTakesDownNoOtherPageTests
 {
     [Theory]

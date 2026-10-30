@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// records anything.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapOverTheWireTests
 {
     private const string Person = "human-user@test";

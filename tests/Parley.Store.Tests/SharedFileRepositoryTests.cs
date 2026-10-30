@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// connection cannot race itself, and a test that simulated the loser would test the simulation.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SharedFileRepositoryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

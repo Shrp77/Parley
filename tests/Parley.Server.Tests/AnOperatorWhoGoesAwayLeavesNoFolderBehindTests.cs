@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// store's turn three times so the operation's commit is through and its next step is waiting when the call is
 /// cancelled.
 /// </remarks>
+[Integration]
 public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 {
     private const string Orders = "orders@alpha";

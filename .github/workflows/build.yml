@@ -17,10 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # All three platforms on every push: three processes hold sockets open to
-        # each other, and sockets, keep-alives and graceful shutdown are exactly
-        # where the platforms differ. Linux also covers path handling, line
-        # endings, case sensitivity and the SQLite build.
+        # All three platforms on every push, for the unit tests' path handling, line
+        # endings and case sensitivity. The socket and process tests, where the
+        # platforms differ most, are integration tests and run in nightly.yml.
         os: [windows-latest, ubuntu-latest, macos-latest]
 
     steps:
@@ -40,13 +39,23 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
-      # PARLEY_HEARTBEAT makes every broker a server test starts log a line a second and every connection. A test
-      # project's console output is printed here only when the project fails, so a failure seen only on a runner says
-      # what its broker was doing: starved, stopped, or which side closed a connection.
+      # Only the unit tests on a push: they run in seconds. The integration tests run nightly and, by hand, before a
+      # pull request merges (nightly.yml; review/README.md). PARLEY_HEARTBEAT makes every broker a test starts log a line
+      # a second, so a failure seen only on a runner says what its broker was doing.
       - name: Test
+        shell: pwsh
         env:
           PARLEY_HEARTBEAT: '1'
-        run: dotnet test --no-build --configuration Release --verbosity normal
+        run: ./scripts/test.ps1 -Category Unit -Configuration Release -Source ci -AllResults -MetricsDirectory artifacts/test-metrics
+
+      # Kept whether the tests passed or not: a failure is what the metrics are for (scripts/pull-test-metrics.ps1).
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-metrics-${{ matrix.os }}
+          path: artifacts/test-metrics
+          retention-days: 90
 
   dependencies:
     name: dependency health

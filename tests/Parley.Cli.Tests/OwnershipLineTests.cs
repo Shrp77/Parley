@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// the tempting implementation writes something.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwnershipLineTests : IDisposable
 {
     private readonly string _root =

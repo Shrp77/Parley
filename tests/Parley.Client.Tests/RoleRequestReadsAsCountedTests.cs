@@ -12,6 +12,7 @@ namespace Parley.Client.Tests;
 /// Counted from how each member closed: complete and blocked are answers, a member the person closed is not, and an
 /// open one is still waited on. A Result whose words retention pruned still counts, because nothing reads the words.
 /// </remarks>
+[Unit]
 public sealed class RoleRequestReadsAsCountedTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 29, 12, 0, 0, TimeSpan.Zero);

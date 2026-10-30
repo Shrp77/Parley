@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// file held without sharing, so only there does the purge leave the folder for the start to finish; elsewhere the
 /// purge deletes it at once and the test still holds.
 /// </remarks>
+[Integration]
 public sealed class AFolderADeleteCouldNotRemoveGoesAtTheNextStartTests
 {
     private const string Inventory = "inventory@alpha";

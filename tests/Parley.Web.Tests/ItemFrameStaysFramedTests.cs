@@ -5,6 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Web.Tests;
 
 /// <summary>What a browser asks for from inside a roadmap item's frame: a send there stays in the frame.</summary>
+[Integration]
 public sealed class ItemFrameStaysFramedTests
 {
     private static readonly Uri Framed =

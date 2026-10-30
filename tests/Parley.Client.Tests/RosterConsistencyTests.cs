@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// the two that exist now.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RosterConsistencyTests
 {
     [Fact]

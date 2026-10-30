@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// <i>receiver</i> must not show the receiver the requester's words as its own. The delimiters hold; the label must too,
 /// and a peer's text presented as the agent's own is exactly the provenance §13 exists to keep straight.
 /// </remarks>
+[Integration]
 public sealed class ClosedNoticeProvenanceTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// in another conversation unasked. Slow (the waits run out), and alone (<see cref="OwnsTheMarshal"/>).
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
+[Integration]
 public sealed class GivenUpWorkLeavesNoFalseRecordTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

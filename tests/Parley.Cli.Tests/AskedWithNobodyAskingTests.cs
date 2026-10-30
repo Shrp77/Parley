@@ -25,6 +25,7 @@ namespace Parley.Cli.Tests;
 /// survive, only their whitespace changes, and the length recorded is the agent's own message.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
 {
     private const string Project = "alpha";

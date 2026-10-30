@@ -18,6 +18,7 @@ namespace Parley.Client.Tests;
 /// which names are usable, and the one that disagreed would be the one letting something through.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ConversationNameTests
 {
     [Theory]

@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// of claim that is true until a fifth case is added to the four.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneEntryPerProjectTests : IDisposable
 {
     private readonly string _root =

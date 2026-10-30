@@ -23,6 +23,7 @@ namespace Parley.WebUi.Tests;
 /// running from the wrong assembly is what reproduces it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WebUiHostTests
 {
     [Fact]

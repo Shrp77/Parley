@@ -16,6 +16,7 @@ namespace Parley.Terminal.Tests;
 /// is the failure §14 keeps a record to prevent, and the record is no use if the screen does not
 /// read it.
 /// </remarks>
+[Integration]
 public sealed class DestroyedTranscriptTests
 {
     private static BrokerDirectory Directory() =>

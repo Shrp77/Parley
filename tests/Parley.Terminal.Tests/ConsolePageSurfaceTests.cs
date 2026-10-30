@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// URL contract: a reader seeing it assumes the page answers to it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConsolePageSurfaceTests
 {
     private static string Root()

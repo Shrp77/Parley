@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// column somewhere else.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class MigrationDiscoveryTests
 {
     /// <summary>How many migrations this build is expected to carry.</summary>

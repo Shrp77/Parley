@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// and placed again was quarantined; an acknowledgement deleted a newer notice about the same file; an ask landing as a
 /// run ended started nothing; and a sweep stopped part way moved a file to quarantine and recorded nothing.
 /// </remarks>
+[Integration]
 public sealed class TheSweepAndTheHoldsLoseNothingTests
 {
     private const string Orders = "orders@test";

@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// Kept from review round 18, where it held, after the proposal view's heading stopped taking the focus: Tab reaches
 /// both readers and every button but never the heading, and each choice is taken once from every focus.
 /// </remarks>
+[Integration]
 public sealed class RoadmapViewsByKeyboardTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

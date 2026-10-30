@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// console being broken rather than the link being wrong.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DeepLinkTests
 {
     private static string Pages()

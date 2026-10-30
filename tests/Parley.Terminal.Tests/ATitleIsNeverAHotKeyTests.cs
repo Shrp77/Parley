@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// the same letter, and a title changed off the loop while a draw formatted the old one threw in the toolkit, ending
 /// the terminal, in about one draw in twenty-five.
 /// </remarks>
+[Integration]
 public sealed class ATitleIsNeverAHotKeyTests
 {
     private static ConversationExport WithItem(string title) =>

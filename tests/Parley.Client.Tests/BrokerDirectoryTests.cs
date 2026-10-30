@@ -8,6 +8,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// The console's multi-project handling: one project's failure is that project's failure.
 /// </summary>
+[Integration]
 public sealed class BrokerDirectoryTests
 {
     private static ProjectSettings Project(string name, string endpoint) =>

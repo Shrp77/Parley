@@ -10,6 +10,7 @@ namespace Parley.Web.Tests;
 /// spinner was the only sign anything was happening. The page asks a run what each repository is doing, so a run has to
 /// show every repository from the start and show it finished only when it is.
 /// </remarks>
+[Integration]
 public sealed class EnrolmentRunsTests
 {
     [Fact]

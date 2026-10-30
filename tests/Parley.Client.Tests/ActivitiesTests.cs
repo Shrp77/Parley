@@ -12,6 +12,7 @@ namespace Parley.Client.Tests;
 /// for hours after a refused command ended its turn silently. A turn
 /// that ended with work still owed reads as stopped, with what it was refused.
 /// </remarks>
+[Integration]
 public sealed class ActivitiesTests
 {
     private static readonly AgentName Asker = AgentName.Create("orders@here");

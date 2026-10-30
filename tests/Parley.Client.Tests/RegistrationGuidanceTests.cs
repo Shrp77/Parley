@@ -20,6 +20,7 @@ namespace Parley.Client.Tests;
 /// missing from a roster it was never in.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RegistrationGuidanceTests
 {
     private static string Page =>

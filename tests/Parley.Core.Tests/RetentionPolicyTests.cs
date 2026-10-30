@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// retention is the one setting whose mistakes cannot be undone. These pin that the names and
 /// the parsing are shared, which is the whole reason it is not in either host.
 /// </remarks>
+[Unit]
 public sealed class RetentionPolicyTests
 {
     private static Func<string, string?> Environment(params (string Name, string Value)[] set) =>

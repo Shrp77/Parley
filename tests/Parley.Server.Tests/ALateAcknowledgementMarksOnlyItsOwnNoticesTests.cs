@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// collection held across a purge of its agent, acknowledged after another agent's proposal was declined, marked that
 /// agent's new notice, under the reused id, delivered, so it was never told.
 /// </remarks>
+[Integration]
 public sealed class ALateAcknowledgementMarksOnlyItsOwnNoticesTests
 {
     private const string Orders = "orders@alpha";

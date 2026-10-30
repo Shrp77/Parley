@@ -13,6 +13,7 @@ namespace Parley.Client.Tests;
 /// broker can really return, and a state that could not be read is held to never reading as not started.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ItemStatesTests
 {
     private static readonly AgentName Person = AgentName.Create("human-user@test");

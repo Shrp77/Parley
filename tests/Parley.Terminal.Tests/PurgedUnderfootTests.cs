@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// one nothing was said in, and the line in the box opened a new conversation under the same identifier with the agents
 /// left. A destroy keeps the identifier taken for exactly that reason (SPEC.md §14), and a purge now records it as one.
 /// </remarks>
+[Integration]
 public sealed class PurgedUnderfootTests : IDisposable
 {
     private const string Conversation = "release-notes";

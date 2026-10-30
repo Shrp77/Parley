@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// Asked for after a Windows CI run where a fresh broker reset a connection and nothing said why. The heartbeat is what
 /// such a run is read with, so it is held to saying what it claims.
 /// </remarks>
+[Integration]
 public sealed class BrokerDiagnosticsTests
 {
     private static readonly System.Text.RegularExpressions.Regex Beat = new(@" heartbeat \d+: ");

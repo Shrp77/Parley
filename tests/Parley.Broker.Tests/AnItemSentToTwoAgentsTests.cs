@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// ending blocked and then orders completing read as done, and the item that needs it became next. It is read per
 /// agent now, and asking the blocked agent again and completing clears it.
 /// </remarks>
+[Integration]
 public sealed class AnItemSentToTwoAgentsTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

@@ -15,6 +15,7 @@ namespace Parley.Cli.Tests;
 /// <b>Found by review, round 37.</b> Only the start that ran the migration knew its copy, so one whose listen or
 /// later preparation failed left a copy holding every conversation's text that no later start named or removed.
 /// </remarks>
+[Integration]
 public sealed class ACopyTakenBeforeAnUpgradeIsNeverKeptTests : IDisposable
 {
     private readonly string _root =

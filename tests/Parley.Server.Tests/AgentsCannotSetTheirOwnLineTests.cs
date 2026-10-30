@@ -29,6 +29,7 @@ namespace Parley.Server.Tests;
 /// hands every agent the ability to declare its own scope.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AgentsCannotSetTheirOwnLineTests
 {
     /// <summary>What a method or message must not be called on the agent's side.</summary>

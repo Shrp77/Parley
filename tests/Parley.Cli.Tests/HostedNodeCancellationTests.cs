@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// quit.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class HostedNodeCancellationTests : IDisposable
 {
     private readonly string _directory =

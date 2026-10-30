@@ -14,6 +14,7 @@ namespace Parley.Web.Tests;
 /// would show up as a confirmation nobody asked for.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProposalsOnThePageTests
 {
     private static readonly Uri IndexUri = new($"/Roadmaps?project={RoadmapConsole.Project}", UriKind.Relative);

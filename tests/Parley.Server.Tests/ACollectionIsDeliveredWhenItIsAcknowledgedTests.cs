@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// during the inbox tool among them, lost every message it had been handed: a probe lost 720 of 2,700 Results, and none
 /// came back. Each case here is a way a reply can fail to reach its caller.
 /// </remarks>
+[Integration]
 public sealed class ACollectionIsDeliveredWhenItIsAcknowledgedTests
 {
     private const string Orders = "orders@test";

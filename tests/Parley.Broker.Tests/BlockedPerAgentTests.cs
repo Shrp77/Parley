@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// around, read the item blocked; and the blocker named was the newest anywhere, one since cleared. Only the person's
 /// requests count now, and the blocker is one a counted exchange gave.
 /// </remarks>
+[Integration]
 public sealed class BlockedPerAgentTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

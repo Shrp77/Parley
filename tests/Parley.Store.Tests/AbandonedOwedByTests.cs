@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// the cases that make the predicate subtle are the same cases, and they are kept.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AbandonedOwedByTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

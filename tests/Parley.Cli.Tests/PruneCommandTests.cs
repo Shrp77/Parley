@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// real broker process reads its own policy from its own environment and applies that, never the
 /// asker's.
 /// </remarks>
+[Integration]
 public sealed class PruneCommandTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

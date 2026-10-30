@@ -5,6 +5,7 @@ namespace Parley.Web.Tests;
 
 /// <summary>The embedded layout's click script sends a link without a target to the whole window, so the conversation
 /// page's own in-page links must name one, or a tick clicked in the roadmap's frame takes the person off the roadmap.</summary>
+[Integration]
 public sealed class FragmentLinksStayInTheFrameTests
 {
     [Fact]

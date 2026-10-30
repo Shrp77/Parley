@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// breath (CLAUDE.md, "Dialogs open on the thread that draws"); so the list is told to accept and the test waits.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FilesPlacingTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// deleted a newer file placed under the name meanwhile; and a folder that could not be read had every file recorded
 /// gone for good, out of every list and every count.
 /// </remarks>
+[Integration]
 public sealed class AFileIsGoneOnlyWhenItIsMissingTests
 {
     private const string Orders = "orders@alpha";

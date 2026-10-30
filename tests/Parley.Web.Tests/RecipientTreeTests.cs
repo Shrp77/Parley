@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// bottom bar. The filter itself is script and is checked in a browser; what is pinned here is that the page carries
 /// what the script reads.
 /// </remarks>
+[Integration]
 public sealed class RecipientTreeTests
 {
     private static readonly Uri PageUri = new(

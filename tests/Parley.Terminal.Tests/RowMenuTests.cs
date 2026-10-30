@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// these rows once the seat code went.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RowMenuTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

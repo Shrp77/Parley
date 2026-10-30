@@ -31,6 +31,7 @@ namespace Parley.Terminal.Tests;
 /// starting the others, which is the same destructive reach this file is about, one file along.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WithdrawalReachTests : IDisposable
 {
     private readonly string _root =

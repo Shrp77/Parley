@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// <b>Read off the drawn rows and driven by keys</b>, over a real socket. Each fails against 0.40.1, which showed one row
 /// per agent reading "waiting for your reply", pointing at one question picked by the order the broker listed them.
 /// </remarks>
+[Integration]
 public sealed class WaitingOnYouListTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

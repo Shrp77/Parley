@@ -12,6 +12,7 @@ namespace Parley.Cli.Tests;
 /// <remarks>
 /// A broker logged to the console, and a broker started hidden at logon has none, so what it logged went nowhere.
 /// </remarks>
+[Integration]
 public sealed class ServeLogsWhatTheBrokerSaysTests : IDisposable
 {
     private readonly string _root =

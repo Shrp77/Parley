@@ -27,6 +27,7 @@ namespace Parley.Mcp.Tests;
 /// fail a suite about Parley — the source-level checks still run there.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingHookRunTests : IAsyncDisposable
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";

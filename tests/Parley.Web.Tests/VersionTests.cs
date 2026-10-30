@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// would remove the view at the moment it is most needed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class VersionTests
 {
     [Fact]

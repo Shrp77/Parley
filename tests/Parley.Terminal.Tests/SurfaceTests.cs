@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// inspect — the question is whether the call is written, and the source is where that is written.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceTests
 {
     /// <summary>What contracts/operations.md keeps off this surface.</summary>

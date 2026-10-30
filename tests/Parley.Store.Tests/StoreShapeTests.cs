@@ -11,6 +11,7 @@ namespace Parley.Store.Tests;
 /// the migrations it was given, not what it holds, so a store changed by hand reads as current. Each of these fails
 /// against comparing the numbers.
 /// </remarks>
+[Integration]
 public sealed class StoreShapeTests
 {
     [Fact]

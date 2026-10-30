@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// given up let the words of one conversation reach another. Slow, and alone (<see cref="OwnsTheMarshal"/>).
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
+[Integration]
 public sealed class WrittenElsewhereGuardTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

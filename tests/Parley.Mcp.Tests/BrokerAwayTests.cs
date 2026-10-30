@@ -18,6 +18,7 @@ namespace Parley.Mcp.Tests;
 /// silent abandonment. "An error occurred invoking 'parley_request'" is exactly that refusal.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BrokerAwayTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 4, 1, 9, 0, 0, TimeSpan.Zero);

@@ -11,6 +11,7 @@ namespace Parley.Cli.Tests;
 /// Each case reads back what the broker lists afterwards, because a command that said "Placed" over a placement the
 /// broker refused is the failure that matters.
 /// </remarks>
+[Integration]
 public sealed class FilesPlaceCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;

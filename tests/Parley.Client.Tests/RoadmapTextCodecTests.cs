@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// A roadmap as editable text, and back (SPEC.md §5.7).
 /// </summary>
+[Unit]
 public sealed class RoadmapTextCodecTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@host");

@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// page could forge the delivery record, tell senders their message was picked up, and take mail away from the
 /// terminal's bell.
 /// </remarks>
+[Integration]
 public sealed class NothingAnotherSiteStartsReachesAPageTests
 {
     [Theory]

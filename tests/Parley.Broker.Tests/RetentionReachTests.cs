@@ -18,6 +18,7 @@ namespace Parley.Broker.Tests;
 /// These are about what a sequence of legal operations composes to, which reading the query answers none of.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RetentionReachTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

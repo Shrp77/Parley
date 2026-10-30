@@ -20,6 +20,7 @@ namespace Parley.Core.Tests;
 /// is invisible to a reader and to a diff.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class SharedFileNameTests
 {
     [Theory]

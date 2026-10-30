@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// a destroy whose folder a viewer held open served the destroyed file. A first placement now takes a turn the hold
 /// waits for or out, and a download resolves its file again once it holds it. The other cases held.
 /// </remarks>
+[Integration]
 public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
 {
     private const string Orders = "orders@alpha";

@@ -14,6 +14,7 @@ namespace Parley.Store.Tests;
 /// one ends with its connection and would prove nothing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RoadmapSurvivesARestartTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

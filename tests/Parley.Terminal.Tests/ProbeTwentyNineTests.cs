@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// omits something leaves somebody uncertain, while one that asserts the opposite settles it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyNineTests : IAsyncDisposable
 {
     private readonly string _root =

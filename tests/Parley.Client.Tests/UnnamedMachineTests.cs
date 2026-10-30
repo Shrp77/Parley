@@ -25,6 +25,7 @@ namespace Parley.Client.Tests;
 /// from.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class UnnamedMachineTests
 {
     /// <summary>A root this machine has never created.</summary>

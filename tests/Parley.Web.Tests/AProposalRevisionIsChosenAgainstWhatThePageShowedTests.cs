@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// nothing and says so before any warning, and a hint that now matches another roadmap drops the kept revision on every
 /// path that draws the page again, so a revision the person never saw is never sent.
 /// </remarks>
+[Integration]
 public sealed class AProposalRevisionIsChosenAgainstWhatThePageShowedTests
 {
     private const string Text = "title: Billing export\n1. One";

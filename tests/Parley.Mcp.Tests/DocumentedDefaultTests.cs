@@ -24,6 +24,7 @@ namespace Parley.Mcp.Tests;
 /// and a phrase that no longer appears at all fails just as loudly.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DocumentedDefaultTests
 {
     [Fact]

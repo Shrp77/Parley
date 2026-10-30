@@ -15,6 +15,7 @@ namespace Parley.Web.Tests;
 /// folder existed: a 21-second SMB attempt to a host the agent chose, carrying the person's sign-in. The address is
 /// TEST-NET, which never routes, so a lookup that slipped through shows as a long wait rather than reaching anybody.
 /// </remarks>
+[Integration]
 public sealed class NoPathIsLookedUpOnAnotherMachineTests
 {
     private const string Share = @"\\192.0.2.1\share\repo";

@@ -14,6 +14,7 @@ namespace Parley.Broker.Tests;
 /// the highest gave the next proposal that id, and a person declining or confirming what was on screen decided another
 /// agent's plan, crediting it with the first one's words. Migration 002 makes the id one that is never used twice.
 /// </remarks>
+[Integration]
 public sealed class APurgedProposalsIdGoesToNoOtherTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

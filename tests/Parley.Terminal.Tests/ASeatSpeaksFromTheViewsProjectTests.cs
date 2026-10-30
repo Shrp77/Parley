@@ -28,6 +28,7 @@ namespace Parley.Terminal.Tests;
 /// told somebody they were seated nowhere while two Results waited for the name whose seat they held.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ASeatSpeaksFromTheViewsProjectTests
 {
     [Fact]

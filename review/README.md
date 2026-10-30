@@ -1,7 +1,7 @@
 # The review gate
 
-A pull request merges when three lenses each pass three times in a row on the same shipped code, and CI is green on
-the commit that merges. A commit that changes only tests, CI, docs or plugin prose keeps the counts (see below). This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
+A pull request merges when three lenses each pass three times in a row on the same shipped code, and the full test run
+(the `nightly` workflow, which the `full-tests` label starts on a pull request) is green on the commit that merges. A commit that changes only tests, CI, docs or plugin prose keeps the counts (see below). This folder holds the rules for that gate. CLAUDE.md points here instead of carrying them.
 
 | File | What it covers |
 |---|---|
@@ -34,6 +34,23 @@ it, and what the owner has already settled.
 - Run the lenses after the last edit, not alongside it.
 - **CI must have run against `HEAD`.** `gh pr checks --watch` can return the previous run, so compare the run's commit
   with `git rev-parse HEAD`.
+
+## Which tests run when
+
+Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`; a test in each project fails if a class has
+neither). A unit test touches one module in memory: no file, no database (an in-memory one included), no socket, no
+process and no UI. Everything else is integration, even two modules together.
+
+- **Between review rounds and before each commit, run the unit tests**: `pwsh scripts/test.ps1` (seconds). Add
+  `-Category All` when a change could only show in an integration test, such as a race or a process boundary.
+- **A push runs the unit tests** on Windows, Linux and macOS (`build.yml`).
+- **The `nightly` workflow runs everything** on Windows and Linux, every night against `main`, and on a pull request
+  while it carries the `full-tests` label (`gh pr edit <number> --add-label full-tests`; each push reruns it). The
+  merge needs that run green on the commit that merges. Once the workflow is on `main` it can also be started by hand:
+  `gh workflow run nightly.yml --ref <branch>`.
+
+Every run records its results in the git-ignored `.test-metrics/` (`runs.jsonl` per run, `tests.jsonl` per test that did
+not pass); `pwsh scripts/pull-test-metrics.ps1` copies CI's runs in beside the local ones.
 
 ## The ledger
 

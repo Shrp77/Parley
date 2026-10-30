@@ -26,6 +26,7 @@ namespace Parley.Cli.Tests;
 /// person's line then overwrites, so a slow runner can make this pass for the wrong reason but never fail for one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class APersonsLineOutlastsThePassTests : IAsyncDisposable
 {
     private const string Project = "alpha";

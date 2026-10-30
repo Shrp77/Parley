@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// by project and conversation name, which is all a restarted terminal has to go on.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RememberedAddressingTests
 {
     private static readonly AgentName Orders = Seated.Orders;

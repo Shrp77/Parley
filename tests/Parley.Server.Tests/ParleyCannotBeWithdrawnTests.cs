@@ -18,6 +18,7 @@ namespace Parley.Server.Tests;
 /// with no accepted line. Each case was watched to pass through with the guard removed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ParleyCannotBeWithdrawnTests
 {
     public static TheoryData<string> Operations => ["retire", "reinstate", "purge", "start", "record"];

@@ -14,6 +14,7 @@ namespace Parley.Server.Tests;
 /// turn, so a link to a large tree stalled every agent's call. Windows only: the links and the denial are made with
 /// mklink and icacls.
 /// </remarks>
+[Integration]
 public sealed class TheNotListedCountWalksTheDiskSafelyTests
 {
     private const string Orders = "orders@alpha";

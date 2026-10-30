@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// so ordering is a property rather than a race that usually goes the right way.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OrderingTests
 {
     [Fact]

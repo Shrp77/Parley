@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// file into another conversation's folder, listed there as the person's. A write now goes only into the folder
 /// itself. The file and junction cases held.
 /// </remarks>
+[Integration]
 public sealed class RecordedFolderNeverMadeTests : IDisposable
 {
     private const string Inventory = "inventory@alpha";

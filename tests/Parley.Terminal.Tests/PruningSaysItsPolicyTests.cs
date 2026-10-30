@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// The dialog once promised that nothing not yet collected is removed, which the age cap contradicts, and its result named
 /// only counts.
 /// </remarks>
+[Integration]
 public sealed class PruningSaysItsPolicyTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

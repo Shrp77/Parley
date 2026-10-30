@@ -15,6 +15,7 @@ namespace Parley.Broker.Tests;
 /// exchange, so an agent's own onward request left open at the close made a done item closed for good. Both count
 /// only the person's requests now.
 /// </remarks>
+[Integration]
 public sealed class AnAbandonedSubRequestTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 6, 9, 0, 0, TimeSpan.Zero);

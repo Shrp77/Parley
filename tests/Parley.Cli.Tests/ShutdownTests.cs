@@ -31,6 +31,7 @@ namespace Parley.Cli.Tests;
 /// console group, and a test host does not have one to spare.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ShutdownTests
 {
     private static string Program => RepositoryFile.Read("src/Parley.Cli/Program.cs");

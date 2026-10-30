@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// (<see cref="OwnsTheMarshal"/>).
 /// </remarks>
 [Collection(nameof(OwnsTheMarshal))]
+[Integration]
 public sealed class AnItemsWordsStayWordsWhenTheLoopIsLateTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

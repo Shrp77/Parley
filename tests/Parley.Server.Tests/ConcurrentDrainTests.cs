@@ -25,6 +25,7 @@ namespace Parley.Server.Tests;
 /// ordinariness costs something.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConcurrentDrainTests
 {
     private const int Attempts = 15;

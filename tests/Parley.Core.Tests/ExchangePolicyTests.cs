@@ -13,6 +13,7 @@ namespace Parley.Core.Tests;
 /// two to the same bounds, because a check that is merely close to the constraint it mirrors is
 /// worse than none: it rejects things storage would have accepted.
 /// </remarks>
+[Unit]
 public sealed class ExchangePolicyTests
 {
     [Fact]

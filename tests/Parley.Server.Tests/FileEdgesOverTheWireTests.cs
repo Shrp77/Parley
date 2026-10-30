@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// said, because a refusal that left a file behind is the failure worth finding.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileEdgesOverTheWireTests
 {
     private const string Orders = "orders@alpha";

@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// anticipated. What nothing had checked is what the reader does *afterwards*, which is a different
 /// question from whether the broker is allowed to do it.
 /// </remarks>
+[Integration]
 public sealed class LogRotationTests : IDisposable
 {
     private readonly LogFile _log = new("rotate");

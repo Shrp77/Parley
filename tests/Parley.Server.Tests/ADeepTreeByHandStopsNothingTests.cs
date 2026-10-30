@@ -15,6 +15,7 @@ namespace Parley.Server.Tests;
 /// destroy after its rows had committed, leaving the folder on disk with no mark for a start to find. Windows only:
 /// its paths reach 32,767 characters, where Linux and macOS stop a tree far shallower than the stack.
 /// </remarks>
+[Integration]
 public sealed class ADeepTreeByHandStopsNothingTests : IDisposable
 {
     private const string Orders = "orders@alpha";

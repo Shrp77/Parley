@@ -466,3 +466,6 @@ REVIEW-LEDGER.md
 # repository is public. The real one lives in %APPDATA%\Parley.
 node.json
 .claude/screenshots/
+
+# Test results, by category, from scripts/test.ps1 (review/README.md)
+.test-metrics/

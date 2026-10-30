@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// repository as its working directory, and two of them is two models editing one checkout.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwoProjectsTests : IAsyncDisposable
 {
     private readonly string _root =

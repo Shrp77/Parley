@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// cap of zero counted as reached, and a single-item Result counted as mixed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ClarifyReportTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

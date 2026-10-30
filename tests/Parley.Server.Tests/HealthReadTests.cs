@@ -16,6 +16,7 @@ namespace Parley.Server.Tests;
 /// have been tried.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class HealthReadTests
 {
     [Fact]

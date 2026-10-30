@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// both versions, so what is migrated is what a live store would hold.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MigrationTwoTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 27, 9, 0, 0, TimeSpan.Zero);

@@ -19,6 +19,7 @@ namespace Parley.Spec.Tests;
 /// permanent.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SpecSchemaTests : IDisposable
 {
     private readonly SqliteConnection _connection;

@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// edited by hand, which is the ordinary state of this file rather than an attack.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class LaunchEntriesTests
 {
     private static JsonObject Servers(string json) =>

@@ -11,6 +11,7 @@ namespace Parley.Server.Tests;
 /// and each fetch reports. A mark per file let only the first report through, so the others were told the fetch went
 /// unrecorded and no notice would follow, though it was recorded.
 /// </remarks>
+[Integration]
 public sealed class EachFetchOfOneFileIsReportedTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

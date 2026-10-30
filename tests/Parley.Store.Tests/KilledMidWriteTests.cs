@@ -11,6 +11,7 @@ namespace Parley.Store.Tests;
 /// Kept from review round 18, where both held. The database and its write-ahead log are copied while the write is open,
 /// with the cache made small so the write has spilled into the log, which is what a broker killed mid-write leaves.
 /// </remarks>
+[Integration]
 public sealed class KilledMidWriteTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

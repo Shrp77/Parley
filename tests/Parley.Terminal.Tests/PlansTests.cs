@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// </para>
 /// <para>Over a real socket, because what is asserted is what the broker holds after the person acted.</para>
 /// </remarks>
+[Integration]
 public sealed class PlansTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

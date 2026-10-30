@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// promise keeps having.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EveryKeyIsOfferedTests
 {
     /// <summary>

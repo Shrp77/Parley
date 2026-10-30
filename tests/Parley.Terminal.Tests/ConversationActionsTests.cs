@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// about description and deliberate act, not about ceremony.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationActionsTests
 {
     private static BrokerDirectory Directory() =>

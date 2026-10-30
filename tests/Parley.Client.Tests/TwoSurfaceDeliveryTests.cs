@@ -23,6 +23,7 @@ namespace Parley.Client.Tests;
 /// whether answering from one window leaves the other showing a debt that is already paid.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TwoSurfaceDeliveryTests
 {
     private static readonly ProjectSettings Alpha =

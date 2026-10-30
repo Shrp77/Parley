@@ -20,6 +20,7 @@ namespace Parley.Client.Tests.Views;
 /// reader gets.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ReadabilityTests
 {
     private static Message Message(

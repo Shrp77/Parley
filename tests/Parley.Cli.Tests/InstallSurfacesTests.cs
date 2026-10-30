@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// half — that it is <b>not</b> consulted where it must not be.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InstallSurfacesTests
 {
     private static string Windows => RepositoryFile.Read("install.ps1");

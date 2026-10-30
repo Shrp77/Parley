@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// every assertion is about what the person did to the list.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProposingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

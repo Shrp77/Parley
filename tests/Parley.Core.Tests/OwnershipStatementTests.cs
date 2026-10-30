@@ -11,6 +11,7 @@ namespace Parley.Core.Tests;
 /// once per peer, every listing — and an injection surface, since it is rendered into a list the
 /// reader is meant to trust.
 /// </remarks>
+[Unit]
 public sealed class OwnershipStatementTests
 {
     [Fact]

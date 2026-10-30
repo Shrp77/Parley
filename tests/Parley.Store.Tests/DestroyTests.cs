@@ -24,6 +24,7 @@ namespace Parley.Store.Tests;
 /// the conversation identifier takes the wrong rows.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DestroyTests : IDisposable
 {
     private readonly SqliteConnection _connection;

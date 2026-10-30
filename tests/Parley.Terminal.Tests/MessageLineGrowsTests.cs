@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// and in the menu like every other action here.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessageLineGrowsTests
 {
     /// <summary>A screen the size of somebody's terminal rather than the harness's default.</summary>

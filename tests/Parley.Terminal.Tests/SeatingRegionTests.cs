@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// The refusal of a name an agent holds lives in storage now: the seat's adapter is refused under any other role.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatingRegionTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

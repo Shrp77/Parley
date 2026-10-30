@@ -16,6 +16,7 @@ namespace Parley.Cli.Tests;
 /// the room said <i>working</i> for nearly three hours. The node had measured the turn and told nobody. These drive the
 /// node's own reporter against a loopback broker and read the result back through the operator's registry.
 /// </remarks>
+[Integration]
 public sealed class NodeReportsTurnsTests
 {
     private const string Machine = "m1";

@@ -2,6 +2,7 @@ using Xunit;
 
 namespace Parley.Core.Tests;
 
+[Unit]
 public sealed class TrustEnvelopeTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@test");

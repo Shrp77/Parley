@@ -10,6 +10,7 @@ namespace Parley.Server.Tests;
 /// Kept from review round 17, where both held: the broker's gate decides them in order, so a proposal is superseded
 /// exactly when it was made before the revision, and its proposer is told once.
 /// </remarks>
+[Integration]
 public sealed class ProposalsRacingAConfirmTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

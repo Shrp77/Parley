@@ -18,6 +18,7 @@ namespace Parley.Terminal.Tests;
 /// The application's own keyboard event is what feeds it now: it is raised for every key before any view sees one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TypingIsBeingHereTests
 {
     [Fact]
