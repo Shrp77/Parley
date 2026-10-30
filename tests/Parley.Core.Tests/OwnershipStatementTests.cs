@@ -27,6 +27,16 @@ public sealed class OwnershipStatementTests
         Assert.Contains($"at position {position}", error, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_person_accepting_a_line_naming_an_environment_variable_is_refused()
+    {
+        // Lens 3 run 112: the broker applies this when it records a person's line, on every surface.
+        var problem = new OwnershipAcceptance("Invoicing. ${GITHUB_TOKEN}", OwnershipSource.Composed, null, null).Problem();
+
+        Assert.NotNull(problem);
+        Assert.Contains("launch configuration", problem, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("Orders priced in $ and {braces}; not tax.")]
     [InlineData("Costs over $5 and the {pricing} table")]

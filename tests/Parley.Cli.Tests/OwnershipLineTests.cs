@@ -143,6 +143,20 @@ public sealed class OwnershipLineTests : IDisposable
     }
 
     [Fact]
+    public async Task A_line_naming_an_environment_variable_is_refused_and_nothing_is_written()
+    {
+        // Lens 3 run 112: every route a person takes reaches the file through here, so this guard holds them all.
+        Launch();
+
+        var wrong = await OwnershipLine.WriteAsync(
+            Workspace, null, Here(), "Invoicing. ${GITHUB_TOKEN}", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(wrong);
+        Assert.Contains("launch configuration", wrong, StringComparison.Ordinal);
+        Assert.Null(Owns());
+    }
+
+    [Fact]
     public async Task An_agent_on_another_machine_is_refused_by_name()
     {
         // `research.md` R3: a launch configuration is a file on the agent's machine and neither

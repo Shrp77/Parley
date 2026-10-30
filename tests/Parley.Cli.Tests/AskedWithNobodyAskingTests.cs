@@ -195,6 +195,9 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
             (await new Wire.Operators.OperatorsClient(_channel).FacilitationAsync(new Wire.Empty(), cancellationToken: Ct)).Questions);
 
         Assert.Equal(Wire.QuestionState.Waiting, waiting.State);
+
+        // The pass's own words, so its guard is held apart from the writer's, which says the same after them.
+        Assert.StartsWith("it cannot be a line as written", waiting.WaitingBecause, StringComparison.Ordinal);
         Assert.Contains("launch configuration", waiting.WaitingBecause, StringComparison.Ordinal);
     }
 

@@ -64,16 +64,32 @@ public sealed class MigrationTwoTests : IDisposable
         Assert.Equal([2], read.Content.Items[2].Needs);
     }
 
-    [Fact]
-    public async Task An_id_a_notice_or_a_roadmap_still_names_is_never_given_again()
+    [Theory]
+    [InlineData("a roadmap")]
+    [InlineData("a notice")]
+    public async Task An_id_a_notice_or_a_roadmap_still_names_is_never_given_again(string namer)
     {
+        // One namer at a time (lens 3 run 112): with both naming the id, either term in the seed covered for the other.
         var first = await ProposeAsync(Orders, "First");
         var second = await ProposeAsync(Billing, "Second");
 
-        var proposal = await Roadmaps.GetProposalAsync(second, Ct);
-        await Roadmaps.ConfirmAsync(second, proposal!.Content, null, Now, cancellationToken: Ct);
+        if (namer == "a roadmap")
+        {
+            var proposal = await Roadmaps.GetProposalAsync(second, Ct);
+            await Roadmaps.ConfirmAsync(second, proposal!.Content, null, Now, cancellationToken: Ct);
+            Execute("DELETE FROM roadmap_notices;");
+        }
+        else
+        {
+            await Roadmaps.DeclineAsync(second, Now, cancellationToken: Ct);
+            Assert.Equal(0L, Count("SELECT count(*) FROM roadmaps;"));
+        }
 
-        // Both proposals gone, as retention or a purge leaves them: the roadmap still names the second.
+        Assert.Equal(1L, Count(namer == "a roadmap"
+            ? "SELECT count(*) FROM roadmaps;"
+            : "SELECT count(*) FROM roadmap_notices;"));
+
+        // Both proposals gone, as retention or a purge leaves them: only the namer still names the second.
         Execute("DELETE FROM roadmap_proposals;");
 
         SchemaMigrator.Migrate(_connection);
