@@ -48,6 +48,46 @@ public sealed class ColumnZeroTests
         }
     }
 
+    [Theory]
+    [InlineData("LS-ESCAPE")]
+    [InlineData("PS-ESCAPE")]
+    [InlineData("NEL-ESCAPE")]
+    [InlineData("FF-ESCAPE")]
+    public void A_line_break_dotnet_knows_and_the_wrap_did_not_cannot_put_a_header_at_column_zero(string escape)
+    {
+        // Reading split a payload only on CR and LF, and the region then broke lines with ReplaceLineEndings, which also
+        // breaks at NEL, form feed, U+2028 and U+2029: the text after one began a row with no indent (lens 2 run 81).
+        // Each arrives as a JSON escape, which the broker accepts.
+        var region = Region($"{{\"ask\":\"short{Escapes[escape]}{Forged}\"}}");
+
+        Assert.DoesNotContain(
+            Drawn.Rows(region.List).Where(AtColumnZero),
+            row => row.Contains("billing@here", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0x2028)]
+    [InlineData(0x2029)]
+    [InlineData(0x0085)]
+    [InlineData(0x000C)]
+    public void A_value_drawn_on_one_row_keeps_no_character_that_breaks_a_line(int code)
+    {
+        // U+2028 and U+2029 are not control characters, so char.IsControl alone let them through (lens 2 run 81).
+        var drawn = Safe.Text("a" + (char)code + "b");
+
+        Assert.Equal(3, drawn.Length);
+        Assert.Equal((char)0xFFFD, drawn[1]);
+    }
+
+    // JSON escapes, spelled from char codes so no editor turns them into the characters themselves.
+    private static readonly Dictionary<string, string> Escapes = new()
+    {
+        ["LS-ESCAPE"] = (char)92 + "u2028",
+        ["PS-ESCAPE"] = (char)92 + "u2029",
+        ["NEL-ESCAPE"] = (char)92 + "u0085",
+        ["FF-ESCAPE"] = (char)92 + "f",
+    };
+
     [Fact]
     public void Every_row_at_column_zero_is_a_header_this_surface_wrote()
     {

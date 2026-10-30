@@ -437,6 +437,11 @@ internal static class Conversions
             Envelope = a.Envelope
         }));
 
+        if (delivered.RoleRequest is { } role)
+        {
+            wire.RoleRequest = new Wire.RoleRequestProgress { Asked = role.Asked, Answered = role.Answered };
+        }
+
         return wire;
     }
 

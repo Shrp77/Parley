@@ -216,6 +216,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public string SettledBy(Message message) =>
         Reading.Settled(message, Whole) is { Count: > 0 } settled ? Reading.SettledLine(settled) : string.Empty;
 
+    /// <summary>Where a Request to a role stands, beneath its first Request (SPEC.md §5.5).</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The sentence, or empty for any other message.</returns>
+    public string RoleRequestOf(Message message) => Reading.RoleRequest(message, Whole) ?? string.Empty;
+
     /// <summary>The conversation as one export, for the derivations that read messages and exchanges together.</summary>
     private ConversationExport Whole => _whole ??= new ConversationExport([.. Messages], [.. Exchanges.Values], null);
 

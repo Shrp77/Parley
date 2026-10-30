@@ -523,6 +523,15 @@ message DeliveredMessage {
   // Only beside a person's Request the receiving agent had asked back about: what the person has said to it in that
   // conversation since it last spoke on the exchange, oldest first, at most 5, each in its own envelope (section 5.6).
   repeated AnswerSince since = 5;
+
+  // Only on a Result answering one member of a Request to a role, delivered to the agent that sent it: how many
+  // agents the Request reached and how many have answered so far, counted when this Result is delivered (section 5.5).
+  RoleRequestProgress role_request = 6;
+}
+
+message RoleRequestProgress {
+  int32 asked = 1;
+  int32 answered = 2;               // members closed by a Result, complete or blocked
 }
 
 message AnswerSince {
@@ -996,6 +1005,7 @@ message ExchangeSnapshot {
   string closed_utc = 4;              // empty while it is open
   ExchangeOutcome outcome = 5;        // UNSPECIFIED while it is open
   int64 settled_by = 6;               // 0 unless the outcome is SETTLED (section 5.6)
+  string request_group = 7;           // set only for a member of a Request to a role (section 5.5)
 }
 
 message ImplementsReply {

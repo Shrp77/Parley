@@ -330,7 +330,16 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             return $"Not recorded: {wrong}";
         }
 
-        return await DescribeOwnership(broker.RecordOwnershipAsync(agent, acceptance, token)).ConfigureAwait(false);
+        var record = await broker.RecordOwnershipAsync(agent, acceptance, token).ConfigureAwait(false);
+
+        if (record.Recorded)
+        {
+            _ = await OwnershipLine
+                .AfterRecordedAsync(known.Workspace, project.Name.Value, agent, acceptance.Statement, token)
+                .ConfigureAwait(false);
+        }
+
+        return await DescribeOwnership(Task.FromResult(record)).ConfigureAwait(false);
     }
 
     /// <summary>Accepts an agent's waiting answer to Parley, as it wrote it or as a person edited it.</summary>

@@ -37,6 +37,28 @@ public static class OwnershipLine
     /// </remarks>
     private static readonly UTF8Encoding Marked = new(encoderShouldEmitUTF8Identifier: true);
 
+    /// <summary>Writes a person's line again once the broker has recorded it.</summary>
+    /// <param name="workspace">The repository holding the agent.</param>
+    /// <param name="project">The project the entry belongs to, or null for the unnamed key.</param>
+    /// <param name="agent">The agent the entry must name.</param>
+    /// <param name="statement">The line the broker just recorded as the person's.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>Null when it was written, or why it was not.</returns>
+    /// <remarks>
+    /// A surface writes the file, then records. The serve pass can write the agent's own words over the file in
+    /// between and accept them automatically; the person's record then replaces that record, and the next start would
+    /// have carried the words the person overruled (review, lens 1 run 79). Written again after the record, the file
+    /// holds the person's line; a pass that writes after this finds the question settled, fails its accept, and puts
+    /// the accepted line back itself.
+    /// </remarks>
+    public static Task<string?> AfterRecordedAsync(
+        string? workspace,
+        string? project,
+        AgentName agent,
+        string statement,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(workspace, project, agent, statement, cancellationToken);
+
     /// <summary>Records the line in a repository's launch configuration.</summary>
     /// <param name="workspace">The repository holding the agent.</param>
     /// <param name="project">The project the entry belongs to, or null for the unnamed key.</param>

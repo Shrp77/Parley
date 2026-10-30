@@ -55,7 +55,10 @@ internal static class Safe
         {
             // Tab is kept: it is laid out rather than obeyed, and log lines are full of them.
             // A newline is not, because a single value drawn on one row must not become two.
-            made.Append(character == '\t' || !char.IsControl(character) ? character : Replacement);
+            // U+2028 and U+2029 are not control characters, but .NET and some terminals break a line at them.
+            made.Append(character == '\t' || !(char.IsControl(character) || character == (char)0x2028 || character == (char)0x2029)
+                ? character
+                : Replacement);
         }
 
         return made.ToString();

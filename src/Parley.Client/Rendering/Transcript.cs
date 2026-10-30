@@ -93,6 +93,11 @@ public static class Transcript
                 written.Append("  ").AppendLine(Reading.SettledLine(settled));
             }
 
+            if (Reading.RoleRequest(message, whole) is { } role)
+            {
+                written.Append("  ").AppendLine(role);
+            }
+
             var absent = Visibility.Describe(message, participants);
 
             if (absent.Length > 0)

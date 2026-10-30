@@ -40,7 +40,7 @@ Check a change against each; a new page or a new path lookup must keep all of th
   On Windows a link is read from its own reparse data, never .NET's `LinkTarget` text: only a symbolic link flagged
   relative is relative, an absolute target is followed only as `\??\X:\…` or walked through as a bare local-disk
   `\??\Volume{GUID}\` (from its drive letter when it has one), and every other absolute target (UNC, GLOBALROOT, a
-  volume path with folders, a device) and every other kind of reparse point is refused. Any part of the walked path, or of a target or `subst` folder, that ends in a dot or a space is refused, and so
+  volume path with folders, a device) and every other kind of reparse point is refused. Any part of the walked path, or of a target or `subst` folder, that ends in a dot or any whitespace is refused, and so
   is an absolute target with `.`, `..` or an empty part, because Windows reads such a part as stored while a Win32
   path would tidy it. Every surface that looks up a path an agent can influence goes through it: the web Enrol page
   and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, and the ownership

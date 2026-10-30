@@ -721,6 +721,13 @@ internal static class Ownership
             return;
         }
 
+        if (outcome.Value!.Recorded)
+        {
+            _ = await OwnershipLine
+                .AfterRecordedAsync(workspace, project, agent, acceptance.Statement, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await done(Said(outcome.Value!)).ConfigureAwait(false);
 
         // **Offered only when it would change something.** A line that already agrees with what peers

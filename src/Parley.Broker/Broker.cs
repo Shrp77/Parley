@@ -1186,6 +1186,12 @@ public sealed class Broker
             since = await SinceAsync(agent, message, talk, cancellationToken).ConfigureAwait(false);
         }
 
+        // **Beside a Result answering a Request to a role, where that Request stands** (SPEC.md §5.5): how many it reached
+        // and how many have answered, so the agent that sent it knows whether to wait for more.
+        var roleRequest = request is not null
+            ? await _exchanges.GetRoleProgressAsync(message.ExchangeId, cancellationToken).ConfigureAwait(false)
+            : null;
+
         var one = new DeliveredMessage(
             message,
             TrustEnvelope.Wrap(
@@ -1197,7 +1203,8 @@ public sealed class Broker
                 request),
             settleable,
             leftOut,
-            since);
+            since,
+            roleRequest);
 
         return (one, one.Envelope.Length
                      + (one.Settleable?.Sum(q => q.Asked.Length) ?? 0)

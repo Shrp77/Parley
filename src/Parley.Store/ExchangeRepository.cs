@@ -590,7 +590,7 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             new CommandDefinition(
                 """
                 SELECT id AS Id, state AS State, opened_utc AS OpenedUtc, closed_utc AS ClosedUtc,
-                       outcome AS Outcome, settled_by AS SettledBy
+                       outcome AS Outcome, settled_by AS SettledBy, request_group AS RequestGroup
                   FROM exchanges
                  WHERE conversation_id = @Conversation
                  ORDER BY id;
@@ -604,7 +604,31 @@ public sealed class ExchangeRepository(SqliteConnection connection)
             ExchangeRow.ParseTimestamp(r.OpenedUtc),
             r.ClosedUtc is null ? null : ExchangeRow.ParseTimestamp(r.ClosedUtc),
             OutcomeTokens.ParseExchange(r.Outcome),
-            r.SettledBy))];
+            r.SettledBy,
+            r.RequestGroup))];
+    }
+
+    /// <summary>Where the Request to a role an exchange belongs to stands (SPEC.md §5.5).</summary>
+    /// <param name="exchangeId">One member's exchange.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many members it has and how many a Result closed, or null when the exchange is no role's member.</returns>
+    /// <remarks>Answered is read from how each member closed, so retention pruning a Result's words keeps it counted.</remarks>
+    public async Task<RoleRequestProgress?> GetRoleProgressAsync(long exchangeId, CancellationToken cancellationToken = default)
+    {
+        var row = await _connection.QuerySingleOrDefaultAsync<ProgressRow>(
+            new CommandDefinition(
+                """
+                SELECT COUNT(*) AS Asked,
+                       COUNT(CASE WHEN member.outcome IN ('complete', 'blocked') THEN 1 END) AS Answered
+                  FROM exchanges AS this
+                  JOIN exchanges AS member ON member.request_group = this.request_group
+                 WHERE this.id = @Exchange AND this.request_group IS NOT NULL
+                HAVING COUNT(*) > 0;
+                """,
+                new { Exchange = exchangeId },
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return row is null ? null : new RoleRequestProgress((int)row.Asked, (int)row.Answered);
     }
 
     /// <summary>
@@ -675,5 +699,14 @@ public sealed class ExchangeRepository(SqliteConnection connection)
         public string? Outcome { get; init; }
 
         public long? SettledBy { get; init; }
+
+        public string? RequestGroup { get; init; }
+    }
+
+    private sealed class ProgressRow
+    {
+        public long Asked { get; init; }
+
+        public long Answered { get; init; }
     }
 }
