@@ -354,8 +354,8 @@ is about to reach and the time, such as `parley.db.before-schema-2-20261027T0930
 store is served, every such copy of it is removed and the output says the store was upgraded.
 
 An upgrade from a build before schema 4 also rewrites the store once, before upgrading it, to clear the text of
-conversations that were destroyed, purged or pruned but still sat in the file. It needs free space for about two
-more copies of the store: the copy above and the rewrite. Without it the start fails and the store is left as it
+conversations that were destroyed, purged or pruned but still sat in the file. It needs free space for about three
+more copies of the store: the copy above, and the rewrite's temporary copy and log. Without it the start fails and the store is left as it
 was.
 
 The copy is there for the minutes between the old build stopping and the new one serving. A copy

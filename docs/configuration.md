@@ -63,8 +63,10 @@ None needs administrator rights. `parley autostart status` says whether it is se
 `parley autostart remove` undoes it without stopping a broker that is already running. The
 install script runs `autostart install` for you.
 
-The one process also runs this machine's node in every project and starts the web console on
-`127.0.0.1:5280`. `--web-ui <url>` moves the console and `--no-web-ui` leaves it out. If the
+The process the entry starts also runs this machine's node in every project and starts the web console
+on `127.0.0.1:5280`. `autostart install --web-ui <url>` moves the console and `autostart install
+--no-web-ui` leaves it out. A `parley serve` you start yourself runs neither unless given `--with-node`
+and `--with-web-ui`. If the
 console cannot start, because the address is taken or the tool is not installed, the broker says
 so and keeps serving.
 
@@ -197,7 +199,7 @@ alone, an exchange between two repositories needs a person at both ends. A **nod
 
 **What a node is.** A node is the part of a machine that starts agents. How to start a repository
 belongs to the machine it is on, so it lives in `node.json` on that machine and never reaches the
-broker. There is one for the whole machine, in the same folder as your projects. `PARLEY_NODE_CONFIG`
+broker. There is one for the whole machine, at the deployment root (`<root>/node.json`), beside the `projects` folder. `PARLEY_NODE_CONFIG`
 or `--node-config` names a different file. The broker holds no launch command at all, which keeps
 the trusted surface small as a deployment spreads across machines.
 

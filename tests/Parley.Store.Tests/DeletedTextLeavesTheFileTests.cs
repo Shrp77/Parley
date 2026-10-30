@@ -115,13 +115,13 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
 
         Assert.True(Holds(_path), "an old build's delete left nothing behind, so this test proves nothing");
 
-        using (var connection = ParleyDatabase.Open(_path))
-        {
-            Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(connection));
-            Checkpoint(connection);
-        }
+        // Read while the connection is still open and with no checkpoint of the test's own: the rewrite lands in the
+        // log, and the store keeps its old pages until the wipe's own checkpoint (lens 3 run 109).
+        using var upgraded = ParleyDatabase.Open(_path);
+        Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(upgraded));
 
         Assert.False(Holds(_path), "text deleted before the upgrade is still in the store's file");
+        Assert.False(Holds(_path + "-wal"), "text deleted before the upgrade is still in the write-ahead log");
     }
 
     [Fact]
