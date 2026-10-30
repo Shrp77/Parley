@@ -62,6 +62,24 @@ public sealed class NodesService : Wire.Nodes.NodesBase
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Answered with whether it retired anybody rather than refused when it does not check out, as a launch report is:
+    /// the node says what it did in its own output either way (SPEC.md §14).
+    /// </remarks>
+    public override async Task<Wire.WorkspaceGoneReply> ReportWorkspaceGone(
+        Wire.WorkspaceGoneReport request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var retired = AgentName.TryCreate(request.Agent, out var agent)
+            && await _runtime.WorkspaceGoneAsync(Machine(request.Machine), agent, context.CancellationToken)
+                .ConfigureAwait(false);
+
+        return new Wire.WorkspaceGoneReply { Retired = retired };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// <b>Ignored rather than refused when it does not check out</b> (SPEC.md §11.6): an agent on another machine, a node
     /// not joined, an agent this broker does not know, a time that does not parse. A node never fails a turn over a
     /// report, so a refusal would tell it nothing it could act on — and nothing is stored either way.

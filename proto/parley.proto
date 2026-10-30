@@ -596,6 +596,20 @@ service Nodes {
   // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
   // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
+
+  // An agent this node was asked to start has no workspace, and the folder above it is still there (section 14). The
+  // broker retires it. Ignored unless the agent is on this node's machine and the node is joined; never the person or
+  // Parley, whom no node starts.
+  rpc ReportWorkspaceGone(WorkspaceGoneReport) returns (WorkspaceGoneReply);
+}
+
+message WorkspaceGoneReport {
+  string machine = 1;
+  string agent = 2;
+}
+
+message WorkspaceGoneReply {
+  bool retired = 1;   // false when the report was ignored or the agent was already retired
 }
 
 message LaunchReport {

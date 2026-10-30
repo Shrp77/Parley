@@ -1,4 +1,4 @@
-﻿﻿# Parley Protocol Specification
+﻿# Parley Protocol Specification
 
 **Version:** 0.9
 **Status:** Unstable. Breaking changes expected before 1.0.
@@ -1179,15 +1179,14 @@ or tells it where the work has to go instead.
 
 ## 8. Rules of engagement
 
-These belong in the adapter's tool descriptions and in whatever a runner hands an agent at the
-start of a turn, not only in documentation — a model reads tool descriptions on every call and
+These belong in the adapter's tool descriptions, not only in documentation — a model reads tool descriptions on every call and
 reads documentation approximately never. **They exist to get work done** (principle 2.1): a rule
 here that an agent could read as a reason to stop doing requested work is a defect in the rule.
 
 **Where a rule can stop being a rule, it has.** Principle 2.4 says anything the protocol can
 enforce mechanically should not be left to the model's good judgement, and §11.4 says advisory
-rules decay worst on headless agents, which receive them as a prompt rather than as tool
-descriptions re-read on every call. So the list is annotated with what actually holds each one,
+rules decay worst on headless agents, whose one long-lived session reads the same tool
+descriptions less freshly over many turns. So the list is annotated with what actually holds each one,
 and four of the ten are held by storage, the API or the broker rather than requested, and two more
 in part.
 
@@ -3893,9 +3892,9 @@ connections, and both are things some process knows for certain rather than infe
 
 | reported as | node connected | agent connected | what it means |
 |---|---|---|---|
-| `running` | yes | yes | the agent is up; route to it now |
+| `running` | — | yes | the agent is up; route to it now |
 | `startable` | yes | no | nobody has it open; the node can start it when needed |
-| `stranded` | no | — | the machine is unreachable; nothing can start it |
+| `stranded` | no | no | nobody has it open and the machine's node is gone; nothing can start it |
 | `retired` | — | — | a person's word; stored, and outranks the rest |
 | `here` | — | yes | the person seat only: a surface is open and in use |
 | `away` | — | no | the person seat only: nobody is at a screen; the seat is still there and still asked |
@@ -3954,14 +3953,17 @@ than argued away. A missing directory is frequently temporary — a re-clone, a 
 unmounted drive — and a repository that comes back needs `reinstate`, and will not recover on its
 own. What it buys is a registry that stops describing repositories that are not there, and a
 supervisor that stops trying to start them once per pass for ever. A missing directory is an
-observation the broker can make by looking, which is what distinguishes it from silence.
+observation, which is what distinguishes it from silence — but one only the agent's node can make,
+because the broker never reads an agent's disk, which may be on a machine it is not on. So the node
+looks when it is asked to start the agent, and reports what it found (`Nodes.ReportWorkspaceGone`);
+the broker retires the agent only on the word of the node joined for that agent's machine.
 
 **The directory above it decides whether that observation means anything.** `Directory.Exists` is
 false for a repository somebody deleted and for a drive that is briefly unmounted, and only the
 first is a judgement worth making. Absent the discriminator, one unavailable volume would retire
-every agent on it in a single pass, each needing a person to reinstate it. So the broker retires
-only when the workspace is gone *and its parent is still there*; when both are missing it concludes
-nothing and tries again.
+every agent on it in a single pass, each needing a person to reinstate it. So the node reports, and
+the broker retires, only when the workspace is gone *and its parent is still there*; when both are
+missing the node concludes nothing, says so in its own output, and tries again when next asked.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
 agent and the reason — an expired credential, a command that will not run — in its own output, which

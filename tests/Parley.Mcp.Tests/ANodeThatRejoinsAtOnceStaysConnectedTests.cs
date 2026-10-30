@@ -83,6 +83,57 @@ public sealed class ANodeThatRejoinsAtOnceStaysConnectedTests
         Assert.True(wrong == 0, $"the machine read as gone after {wrong} of {Rounds} rejoins while its node was joined");
     }
 
+    [Fact]
+    public async Task A_rejoin_cancelled_after_the_old_leave_stood_aside_leaves_the_machine_read_as_gone()
+    {
+        // Lens 1 run 86: the old release's leave runs while the rejoin holds the machine, and stands aside for it; the
+        // rejoin is then cancelled before its own write (the node stopped mid-rejoin). The order is fixed with two holds
+        // on the gate, which serves waiters in turn.
+        var token = TestContext.Current.CancellationToken;
+
+        await using var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, TimeProvider.System);
+        _ = await runtime.UseConnectionAsync(
+            async (connection, _, ct) => await new AgentRepository(connection).UpsertAsync(
+                new AgentRecord(Orders, "mcp", AgentTier.Pull, null, null, null, false, AgentStatus.Active),
+                ct),
+            token);
+
+        var old = await JoinAsync(runtime, token);
+        Assert.Equal(AgentPresence.Startable, await PresenceAsync(runtime, token));
+
+        var firstHold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondHold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var holdingFirst = runtime.UseConnectionAsync(async (_, _, _) => { await firstHold.Task; return true; }, token);
+        var leaving = old.DisposeAsync().AsTask();
+        var holdingSecond = runtime.UseConnectionAsync(
+            async (_, _, _) =>
+            {
+                secondHeld.SetResult();
+                await secondHold.Task;
+                return true;
+            },
+            token);
+
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var rejoining = JoinAsync(runtime, stopping.Token);
+
+        // The old leave runs with the rejoin holding the machine, then the second hold takes the gate.
+        firstHold.SetResult();
+        await secondHeld.Task;
+
+        // The node stops before the rejoin's write.
+        await stopping.CancelAsync();
+        secondHold.SetResult();
+
+        _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => rejoining);
+        await Task.WhenAll(holdingFirst, leaving, holdingSecond);
+
+        Assert.Empty(runtime.Nodes);
+        Assert.Equal(AgentPresence.Stranded, await PresenceAsync(runtime, token));
+    }
+
     private static Task<JoinedNode> JoinAsync(BrokerRuntime runtime, CancellationToken token) =>
         runtime.JoinNodeAsync(
             new NodeRecord("probe", null, null, null, null, true, DateTimeOffset.UtcNow),

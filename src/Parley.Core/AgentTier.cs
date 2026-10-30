@@ -2,7 +2,7 @@
 
 // SPEC.md §11.1 and §14. Here rather than in the store, beside ExchangeState and
 // ConversationState, because these are protocol vocabulary rather than a shape the
-// database happens to have: a tier says how an agent learns of its mail, and a status
+// database happens to have: a tier says where an agent's messages arrive, and a status
 // decides whether it is reachable at all. The store persists them; it does not define them.
 
 /// <summary>

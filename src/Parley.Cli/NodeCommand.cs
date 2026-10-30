@@ -625,6 +625,16 @@ public static class NodeCommand
                 return;
             }
 
+            // **A workspace that is gone retires its agent, and only when the folder above it is still there** (SPEC.md
+            // §14): a deleted repository is worth a judgement, a drive briefly unmounted is not, and one unavailable volume
+            // must not retire every agent on it at once. The node looks because the broker never reads this disk.
+            if (catalogue.WorkspaceFor(identity) is { } catalogued && !Directory.Exists(catalogued))
+            {
+                await WorkspaceGoneAsync(agent, catalogued, output, reporter).ConfigureAwait(false);
+
+                return;
+            }
+
             try
             {
                 var invocation = InvocationCommand.Parse(command);
@@ -656,6 +666,36 @@ public static class NodeCommand
         {
             _ = Residency.Release();
         }
+    }
+
+    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when the folder above is there.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="workspace">Its catalogued workspace, which does not exist.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="reporter">The broker's ear, or null when there is none.</param>
+    /// <returns>A task that completes when it is said.</returns>
+    private static async Task WorkspaceGoneAsync(AgentName agent, string workspace, TextWriter output, TurnReporter? reporter)
+    {
+        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace)));
+
+        if (parent is null || !Directory.Exists(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} and the folder above it are both missing, "
+                + "so nothing is concluded (a drive may be unmounted); it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        var retired = reporter is null ? null : await reporter.WorkspaceGoneAsync(agent).ConfigureAwait(false);
+
+        await output.WriteLineAsync(
+            retired == true
+                ? $"  {agent.Value}: not started — its workspace {workspace} is gone, so the broker retired it. Reinstate "
+                  + "it in the terminal once the repository is back."
+                : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
+            .ConfigureAwait(false);
     }
 
     /// <summary>Serialises every change to who lives in the resident table.</summary>

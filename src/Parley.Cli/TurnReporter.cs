@@ -124,6 +124,35 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         return new Dictionary<string, string> { [Parley.Core.LaunchToken.Variable] = token };
     }
 
+    /// <summary>Tells the broker an agent's workspace is gone and the folder above it is still there (SPEC.md §14).</summary>
+    /// <param name="agent">The agent it was asked to start.</param>
+    /// <returns>Whether the broker retired it, or null when it could not be told.</returns>
+    internal async Task<bool?> WorkspaceGoneAsync(Parley.Core.AgentName agent)
+    {
+#pragma warning disable CA1031 // A report that cannot be sent is noted, as every report from a node is.
+        try
+        {
+            var reply = await nodes.ReportWorkspaceGoneAsync(
+                    new Wire.WorkspaceGoneReport { Machine = machine, Agent = agent.Value },
+                    deadline: DateTime.UtcNow.Add(Patience))
+                .ConfigureAwait(false);
+
+            return reply.Retired;
+        }
+        catch (Exception failure)
+        {
+            var why = failure is RpcException rpc
+                ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
+                : failure.Message;
+
+            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker its workspace is gone — {why}")
+                .ConfigureAwait(false);
+
+            return null;
+        }
+#pragma warning restore CA1031
+    }
+
     /// <summary>Runs a turn through a reporter when there is one, and plainly when there is not.</summary>
     /// <param name="reporter">The reporter, or null.</param>
     /// <param name="resident">The agent, whose name is reported.</param>

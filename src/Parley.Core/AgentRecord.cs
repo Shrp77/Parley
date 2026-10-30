@@ -26,7 +26,8 @@ namespace Parley.Core;
 /// </param>
 /// <param name="SessionRef">
 /// An adapter-specific handle for resuming a previous session, or <see langword="null"/> if
-/// none exists yet. Mutable: reassigned whenever the agent is spawned or resumed.
+/// none exists. No adapter sends one today, so it is always null; the column is kept for one that
+/// can resume (SPEC.md §14).
 /// </param>
 /// <param name="AdapterConfig">
 /// Whatever the named adapter needs to invoke this agent — a model identifier, an endpoint, a

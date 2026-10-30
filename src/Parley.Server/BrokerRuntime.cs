@@ -835,6 +835,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
         catch
         {
             _ = _nodes.TryRemove(new KeyValuePair<string, JoinedNode>(node.Machine, joined));
+
+            // Whether this join's own write ran or not, and whether a release before it skipped its leave because this
+            // join held the machine. Not cancellable: the cancellation is usually what failed the join.
+            try
+            {
+                await LeaveIfUnheldAsync(node.Machine, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The broker is stopping, and a starting broker clears every connected flag.
+            }
+
             throw;
         }
 
@@ -1027,6 +1039,38 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public DateTimeOffset? TurnRunningSince(AgentName agent) =>
         _turns.TryGetValue(agent, out var running) ? running.Started : null;
 
+    /// <summary>Retires an agent whose node found its workspace gone and the folder above it still there (SPEC.md §14).</summary>
+    /// <param name="machine">The reporting node's machine.</param>
+    /// <param name="agent">The agent it was asked to start.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>Whether the agent was retired by this report.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>The node looks and the broker decides</b>: the broker never reads an agent's disk, which may be on a machine
+    /// it is not on, so the observation comes from the one process that can make it. The parent-folder check is the
+    /// node's too, so an unmounted drive retires nobody.
+    /// </para>
+    /// <para>
+    /// Only from the node joined for the agent's machine, and never for the person or Parley, whom no node starts — the
+    /// checks a launch report meets. A hostile client on the loopback port could claim a node and retire that machine's
+    /// agents; that is §16's concession, and a person reinstates them.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> WorkspaceGoneAsync(string machine, AgentName agent, CancellationToken cancellationToken = default)
+    {
+        if (PersonSeat.Is(agent)
+            || Facilitation.Is(agent)
+            || !_nodes.ContainsKey(machine)
+            || !string.Equals(agent.Machine, machine, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return await UseConnectionAsync(
+            async (connection, _, ct) => await new AgentRepository(connection).RetireAsync(agent, ct).ConfigureAwait(false) > 0,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Records that a node is about to start an agent with a token in its environment (SPEC.md §11.7).</summary>
     /// <param name="machine">The reporting node's machine.</param>
     /// <param name="agent">The agent it is starting.</param>
@@ -1146,23 +1190,38 @@ public sealed class BrokerRuntime : IAsyncDisposable
             _ = _turns.TryRemove(turn);
         }
 
+        await LeaveIfUnheldAsync(joined.Machine, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Records a machine's node as gone, unless a node holds the machine now.</summary>
+    /// <param name="machine">The machine.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>A task that completes when it is decided and, if so, written.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Not if a newer node holds the machine.</b> A node that rejoins at once (its catalogue changed) can be added and
+    /// write its join between a release's removal and its leave, and a leave landing after it would read the live node as
+    /// gone until it next rejoined. Decided under the gate the join's write takes, so whichever write runs second sees the
+    /// other.
+    /// </para>
+    /// <para>
+    /// <b>And written again by a join that fails</b>, because a release that found the failing join holding the machine
+    /// left the leave to it: without this, the machine would read as connected with no node behind it.
+    /// </para>
+    /// </remarks>
+    private async Task LeaveIfUnheldAsync(string machine, CancellationToken cancellationToken) =>
         _ = await UseConnectionAsync(
             async (connection, now, ct) =>
             {
-                // **Not if a newer node holds the machine.** A node that rejoins at once (its catalogue changed) can be
-                // added and write its join between this release's removal and this write, and a leave landing after it
-                // would read the live node as gone until it next rejoined. Decided under the gate the join's write takes,
-                // so whichever write runs second sees the other.
-                if (!_nodes.ContainsKey(joined.Machine))
+                if (!_nodes.ContainsKey(machine))
                 {
-                    await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
+                    await new NodeRepository(connection).LeaveAsync(machine, now, ct)
                         .ConfigureAwait(false);
                 }
 
                 return true;
             },
             cancellationToken).ConfigureAwait(false);
-    }
 
     /// <summary>
     /// Asks an agent's machine to see to it: a start if it is not running, a turn if it is.
