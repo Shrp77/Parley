@@ -175,6 +175,54 @@ public sealed class ResidentAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task A_cancelled_turns_reply_that_takes_long_is_still_waited_for_and_never_read_as_the_next_ones()
+    {
+        // Lens 1 run 102: the next turn waited five quiet seconds for the cancelled turn's reply, then gave up on it and
+        // wrote its own prompt, so it read that reply as its own and every turn after stayed one behind. Each reply here
+        // carries its prompt's number as its cost.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 8));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(2));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        // Too short to see the first reply out: it ends timed out with nothing said, rather than say something now.
+        var waited = await agent.TakeTurnAsync("second", TimeSpan.FromSeconds(1), Ct);
+        Assert.True(waited.TimedOut, waited.Describe());
+
+        var third = await agent.TakeTurnAsync("third", Patience, Ct);
+        var fourth = await agent.TakeTurnAsync("fourth", Patience, Ct);
+
+        Assert.True(third.Completed, third.Describe());
+        Assert.Equal(2.0, third.CostUsd);
+        Assert.Equal(3.0, fourth.CostUsd);
+    }
+
+    [Fact]
+    public async Task The_next_turn_waits_out_a_cancelled_turns_reply_however_quiet_the_agent_is()
+    {
+        // Lens 1 run 102: five quiet seconds were taken as the reply never coming. Here the reply takes eight.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 8));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(1));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        var second = await agent.TakeTurnAsync("second", Patience, Ct);
+
+        Assert.True(second.Completed, second.Describe());
+        Assert.Equal(2.0, second.CostUsd);
+    }
+
+    [Fact]
     public async Task Closing_standard_input_stops_it()
     {
         // How an agent is told to quit, and the reason a fleet can stop politely at all.

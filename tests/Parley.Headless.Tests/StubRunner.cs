@@ -95,6 +95,48 @@ internal static class StubRunner
             ["while ($null -ne ($line = [Console]::In.ReadLine())) { }"],
             ["while IFS= read -r line; do :; done"]);
 
+    /// <summary>
+    /// Writes a stub that answers each prompt after a delay with a result whose cost is the prompt's number, and returns
+    /// its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="delaySeconds">How long to think before answering.</param>
+    /// <returns>The template.</returns>
+    /// <remarks>
+    /// The cost is the one number a turn's outcome carries from the reply, so it says which prompt a turn's reply
+    /// answered: a turn that read the reply to the one before it shows that one's number.
+    /// </remarks>
+    internal static string Numbering(string directory, int delaySeconds)
+    {
+        var seconds = delaySeconds.ToString(CultureInfo.InvariantCulture);
+        const string Before = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":";
+        const string After = ",\"session_id\":\"stub-session\",\"permission_denials\":[]}";
+
+        var windows = new List<string>
+        {
+            Emit(Init),
+            "$n = 0",
+            "while ($null -ne ($line = [Console]::In.ReadLine())) {",
+            "  $n++",
+            "  Start-Sleep -Seconds " + seconds,
+            "  [Console]::Out.WriteLine('" + Before + "' + $n + '" + After + "'); [Console]::Out.Flush()",
+            "}",
+        };
+
+        var unix = new List<string>
+        {
+            Print(Init),
+            "n=0",
+            "while IFS= read -r line; do",
+            "  n=$((n+1))",
+            "  sleep " + seconds,
+            "  printf '%s%s%s\n' '" + Before + "' \"$n\" '" + After + "'",
+            "done",
+        };
+
+        return Write(directory, windows, unix);
+    }
+
     /// <summary>Emits one line from PowerShell and flushes it.</summary>
     /// <param name="json">The line.</param>
     /// <returns>The statement.</returns>
