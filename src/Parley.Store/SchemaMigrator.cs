@@ -47,16 +47,22 @@ public static class SchemaMigrator
     /// Idempotent and safe to call on every start-up. Migrations already recorded in
     /// <c>user_version</c> are skipped.
     /// </remarks>
+    public static int Migrate(SqliteConnection connection) => Migrate(connection, Wipe);
+
+    /// <summary>Brings a database up to date, wiping it first with <paramref name="wipe"/> when it is due one.</summary>
+    /// <param name="connection">The connection to migrate.</param>
+    /// <param name="wipe">The wipe, which a test replaces with one that fails.</param>
+    /// <returns>The number of migrations applied.</returns>
     [SuppressMessage(
         "Security",
         "CA2100:Review SQL queries for security vulnerabilities",
         Justification =
-            "Neither statement can carry user input. The migration body is read from an " +
+            "No statement here can carry user input. The wipe is a constant of this class (or a test's), the migration body is read from an " +
             "embedded resource compiled into this assembly, and the user_version value is an " +
             "int parsed from that resource's file name. PRAGMA does not accept parameters, so " +
             "interpolation is the only option for the version bump. Every other statement in " +
             "this assembly is parameterised, and CA2100 remains an error to keep it that way.")]
-    public static int Migrate(SqliteConnection connection)
+    internal static int Migrate(SqliteConnection connection, string wipe)
     {
         ArgumentNullException.ThrowIfNull(connection);
 
@@ -81,6 +87,19 @@ public static class SchemaMigrator
                 "It was written by a newer version and will not be opened, because this build " +
                 "cannot know what changed. Install the newer Parley; an older one still starting " +
                 "after an install is the usual cause. See `Upgrading` in docs/operating.md.");
+        }
+
+        // **Text deleted before deletes were secure is wiped once** (lens 2 run 96): a store that held work before
+        // migration 004 kept the bytes of every conversation destroyed, purged or pruned until something overwrote
+        // them. VACUUM rewrites the file from its live rows and cannot run inside a transaction. It runs before the
+        // migrations, so one that fails (a nearly full disk) leaves the store as it was, at its old schema, and the next
+        // start tries again; after them, a failure left a store upgraded, reported as not, and never wiped (lens 3 run
+        // 107). A new store has nothing deleted to wipe.
+        if (current is > 0 and < SecureDeleteSince)
+        {
+            using var wiping = connection.CreateCommand();
+            wiping.CommandText = wipe;
+            wiping.ExecuteNonQuery();
         }
 
         var applied = 0;
@@ -130,19 +149,11 @@ public static class SchemaMigrator
             applied++;
         }
 
-        // **Text deleted before deletes were secure is wiped once** (lens 2 run 96): a store that held work before
-        // migration 004 kept the bytes of every conversation destroyed, purged or pruned until something overwrote
-        // them. VACUUM rewrites the file from its live rows and cannot run inside a transaction, so it follows the
-        // migrations; a new store has nothing deleted to wipe.
-        if (current is > 0 and < SecureDeleteSince && GetUserVersion(connection) >= SecureDeleteSince)
-        {
-            using var wipe = connection.CreateCommand();
-            wipe.CommandText = "VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
-            wipe.ExecuteNonQuery();
-        }
-
         return applied;
     }
+
+    /// <summary>The statement that wipes a store of text deleted before deletes were secure.</summary>
+    private const string Wipe = "VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
 
     /// <summary>The first schema whose stores have only ever deleted securely, so older ones are wiped once on upgrade.</summary>
     private const int SecureDeleteSince = 4;
@@ -155,7 +166,7 @@ public static class SchemaMigrator
     /// <remarks>
     /// <para>
     /// These are per-connection settings, not per-database, so every connection the broker
-    /// opens must be configured. <see cref="Migrate"/> does this for the connection it is
+    /// opens must be configured. <see cref="Migrate(SqliteConnection)"/> does this for the connection it is
     /// given; other connections are the caller's responsibility.
     /// </para>
     /// <list type="bullet">
@@ -220,7 +231,7 @@ public static class SchemaMigrator
     /// </summary>
     /// <remarks>
     /// Read from the embedded migrations rather than written down, so it cannot disagree with
-    /// what <see cref="Migrate"/> would actually apply. It exists because a reader needs to know
+    /// what <see cref="Migrate(SqliteConnection)"/> would actually apply. It exists because a reader needs to know
     /// whether a database is older than the code reading it: the operator's tool never migrates,
     /// so without this a report against a database one migration behind fails on a missing table
     /// with a stack trace, instead of saying which of the two is out of date.

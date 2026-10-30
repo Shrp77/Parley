@@ -113,6 +113,27 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
         Assert.False(Holds(_path), "text deleted before the upgrade is still in the store's file");
     }
 
+    [Fact]
+    public void A_wipe_that_fails_leaves_the_store_at_its_old_schema_to_be_wiped_next_time()
+    {
+        // Lens 3 run 107: after the migrations, a failed wipe left the store upgraded, reported as not, and never wiped.
+        using (var connection = new SqliteConnection($"Data Source={_path};Pooling=False"))
+        {
+            connection.Open();
+            SchemaMigrator.Configure(connection);
+            RunUpTo(connection, 3);
+        }
+
+        using (var connection = ParleyDatabase.Open(_path))
+        {
+            _ = Assert.ThrowsAny<SqliteException>(() =>
+                SchemaMigrator.Migrate(connection, "VACUUM; SELECT * FROM zz_no_such_table;"));
+
+            Assert.Equal(3, SchemaMigrator.GetUserVersion(connection));
+            Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(connection));
+        }
+    }
+
     private static void RunUpTo(SqliteConnection connection, int version)
     {
         var assembly = typeof(SchemaMigrator).Assembly;

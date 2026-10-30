@@ -248,7 +248,7 @@ a deployment did. None of it changes anything.
   length, the worst case and the average. No refused text is kept, only its length. If somebody
   wants the cap raised, this is what the argument should be made from.
 - **Clarifications** show how deep clarification goes and how often an exchange reached its limit.
-  By default there is no cap. Where a deployment has set one, read it beside the numbers, because a
+  There is no cap, and nothing sets one. Should one ever be set, read it beside the numbers, because a
   cap hides its own evidence: depths pile up at whatever limit was in force.
 
 ## Reporting back

@@ -353,6 +353,11 @@ starts it, keeping every row. Before it does, it copies the store beside itself,
 is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`. Once the upgraded
 store is served, every such copy of it is removed and the output says the store was upgraded.
 
+An upgrade from a build before schema 4 also rewrites the store once, before upgrading it, to clear the text of
+conversations that were destroyed, purged or pruned but still sat in the file. It needs free space for about two
+more copies of the store: the copy above and the rewrite. Without it the start fails and the store is left as it
+was.
+
 The copy is there for the minutes between the old build stopping and the new one serving. A copy
 still there means the upgraded store has not been served since it was taken. A start that fails
 after taking one names it, and says which of these happened:
