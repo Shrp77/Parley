@@ -41,7 +41,7 @@
 #                                install exactly these tools and leave every other one alone.
 #                                --only parley-terminal replaces the terminal and does not stop
 #                                the broker, because the broker's binary is not among the files
-#                                being unlinked. SPEC.md section 12 says the node stopping tells
+#                                being unlinked. SPEC.md section 11.1 says the node stopping tells
 #                                every agent it started to quit, and the process is what held
 #                                everything that agent had learned.
 #   ./install.sh --force         end whatever is holding the tools, rather than refusing
@@ -604,7 +604,7 @@ note "nothing is holding the tool store"
 # stop. But it only has to stop for its own binary.
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
-# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 12
+# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 11.1
 # has the node telling every agent it started to quit, and each of those processes is what held
 # everything that agent had learned. Restarting a broker to change a terminal spends all of it.
 replacing_broker=0
@@ -618,7 +618,7 @@ done
 if [ "$replacing_broker" = "1" ]; then
     # **What stopping it will interrupt, said before it is stopped.**
     #
-    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
     # is what held everything each of them had learned. A Request already drained into an agent's
     # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
     # owed with nothing running to answer it; nothing times out, so it waits and is flagged.

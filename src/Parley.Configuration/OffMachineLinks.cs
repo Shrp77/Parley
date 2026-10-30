@@ -31,11 +31,23 @@ public static class OffMachineLinks
 
     private static readonly char[] Separators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 
+    private static readonly char[] TypingBlanks = [' ', '\t', '\r', '\n'];
+
     /// <summary>Whether a path, or any link along it, leads off this machine.</summary>
     /// <param name="path">The path as written.</param>
     /// <returns><see langword="true"/> when it must not be looked up.</returns>
     public static bool LeadsOffThisMachine(string? path) =>
-        path is not null && Leads(path.Trim(), 0, 0, out _);
+        path is not null && Leads(Typed(path), 0, 0, out _);
+
+    /// <summary>A path as a person typed it, with only the blanks typing adds taken off its ends.</summary>
+    /// <param name="path">The path as written.</param>
+    /// <returns>The path without leading or trailing spaces, tabs or line breaks.</returns>
+    /// <remarks>
+    /// Never <see cref="string.Trim()"/>, which takes every Unicode space: a folder named `billing` and an ideographic
+    /// space was judged as plain `billing`, missing or a decoy, while enrolment wrote through the real name into
+    /// OneDrive (review, lens 2 run 80). What this leaves, the walk refuses.
+    /// </remarks>
+    internal static string Typed(string path) => path.Trim(TypingBlanks);
 
     /// <summary>Where a path leads once every link along it is followed, unless it leads off this machine.</summary>
     /// <param name="path">The path as written.</param>
@@ -45,7 +57,7 @@ public static class OffMachineLinks
     /// What a folder is on is decided by where it really is: a junction from <c>C:\code</c> into a synced folder reads
     /// as local and is synced all the same (review, lens 1 run 69).
     /// </remarks>
-    internal static bool LeadsOffThisMachine(string path, out string reached) => Leads(path.Trim(), 0, 0, out reached);
+    internal static bool LeadsOffThisMachine(string path, out string reached) => Leads(Typed(path), 0, 0, out reached);
 
     // What a drive letter is, decided from the name Windows keeps for it and never by asking the drive: asking a letter
     // defined as `\??\GLOBALROOT\Device\Mup\host\share` what kind of drive it is opens the share (review, lens 2 run 75).
@@ -121,7 +133,9 @@ public static class OffMachineLinks
                 continue;
             }
 
-            if (part[^1] is '.' or ' ')
+            // Any whitespace, not only a space: Windows keeps U+3000 or U+00A0 at the end of a name, and .NET's Trim and
+            // a person's eye both drop it (review, lens 2 run 80).
+            if (part[^1] == '.' || char.IsWhiteSpace(part[^1]))
             {
                 return false;
             }

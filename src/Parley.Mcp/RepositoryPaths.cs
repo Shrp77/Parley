@@ -69,6 +69,17 @@ public static class RepositoryPaths
                    "ask the agent that owns another repository to do anything there.";
         }
 
+        // A part ending in a space or a dot survives GetFullPath in the middle of a path, but asking it alone asks the
+        // name without it, so the link check below looked at a missing `docs` while the write went through the real
+        // `docs ` link (review, lens 2 run 80). Windows keeps any such part as written, so it is refused.
+        if (OperatingSystem.IsWindows()
+            && full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
+                .Any(part => part[^1] == '.' || char.IsWhiteSpace(part[^1])))
+        {
+            return $"'{candidate}' has a folder whose name ends in a space or a dot, which Windows reads differently " +
+                   "from how it is written, so it is refused.";
+        }
+
         for (var at = full; at.Length > root.Length; at = Path.GetDirectoryName(at)!)
         {
             FileSystemInfo entry = Directory.Exists(at) ? new DirectoryInfo(at) : new FileInfo(at);

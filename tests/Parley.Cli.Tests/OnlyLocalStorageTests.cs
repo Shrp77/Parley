@@ -505,6 +505,29 @@ public sealed class OnlyLocalStorageTests : IDisposable
         Assert.NotNull(LocalStorage.Problem(through, Environment()));
     }
 
+    [Theory]
+    [InlineData("billing\u3000")]
+    [InlineData("billing\u00A0")]
+    [InlineData("billing\u2028")]
+    public void A_folder_whose_name_ends_in_a_unicode_space_is_refused(string name)
+    {
+        // Trim took the ideographic space off, so `billing\u3000` -> OneDrive was judged as a missing plain `billing`,
+        // and enrolment wrote .mcp.json and CLAUDE.md into OneDrive (lens 2 run 80).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+        var synced = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "billing")).FullName;
+        Directory.CreateDirectory(Path.Combine(_home, "repos"));
+        var workspace = Path.Combine(_home, "repos", name);
+
+        if (!TrySymbolicLink(workspace, synced))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        Assert.True(Directory.Exists(workspace));
+        Assert.NotNull(LocalStorage.Problem(workspace, Environment()));
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git")));
+    }
+
     [Fact]
     public void A_junction_to_a_name_with_a_trailing_dot_is_refused_whatever_stands_beside_it()
     {

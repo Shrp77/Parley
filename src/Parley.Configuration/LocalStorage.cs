@@ -35,7 +35,7 @@ public static class LocalStorage
 
         read ??= Environment.GetEnvironmentVariable;
 
-        if (LocalPath.IsOffThisMachine(path.Trim()))
+        if (LocalPath.IsOffThisMachine(OffMachineLinks.Typed(path)))
         {
             return Said(path, Unfollowed);
         }
@@ -44,7 +44,7 @@ public static class LocalStorage
 
         try
         {
-            full = Path.GetFullPath(path.Trim());
+            full = Path.GetFullPath(OffMachineLinks.Typed(path));
         }
         catch (Exception unusable) when (unusable is ArgumentException or NotSupportedException or PathTooLongException)
         {

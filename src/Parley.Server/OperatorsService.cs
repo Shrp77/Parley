@@ -233,19 +233,22 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             request.ProposedLength > 0 ? request.ProposedLength : null,
             string.IsNullOrEmpty(request.ConversationId) ? null : request.ConversationId);
 
-        var record = await Console(
-            (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
-            context).ConfigureAwait(false);
-
         // A person's line answers whatever Parley was still waiting on for this agent, so the question settles and its
         // conversation closes. Left alone it would stay waiting beside a line that already answers it, and the agent
-        // could never be asked again.
-        if (record.Recorded)
-        {
-            _ = await _runtime.UseFacilitatorAsync(
-                (facilitator, parley, now, ct) => facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct),
-                context.CancellationToken).ConfigureAwait(false);
-        }
+        // could never be asked again. Both happen in one unit of work, so no automatic accept runs between them.
+        var record = await _runtime.UseConsoleWithFacilitatorAsync(
+            async (console, facilitator, parley, now, ct) =>
+            {
+                var recorded = await console.RecordOwnershipAsync(agent, acceptance, now, ct).ConfigureAwait(false);
+
+                if (recorded.Recorded)
+                {
+                    _ = await facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct).ConfigureAwait(false);
+                }
+
+                return recorded;
+            },
+            context.CancellationToken).ConfigureAwait(false);
 
         return new Wire.RecordOwnershipReply
         {

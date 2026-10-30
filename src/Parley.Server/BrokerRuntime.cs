@@ -1595,6 +1595,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Runs an operator operation and the facilitator's part in it as one unit of work, alone.</summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="work">The work, given the console, the facilitator, its name in this store and the instant.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned.</returns>
+    /// <remarks>
+    /// A person's ownership line and the settling of Parley's question it answers were two units, and the serve pass's
+    /// automatic accept could run between them: the question still read as answered, so the agent's words were written
+    /// over the person's line as automatic while the person was told theirs was recorded (review, lens 1 run 78).
+    /// </remarks>
+    public Task<T> UseConsoleWithFacilitatorAsync<T>(
+        Func<Parley.Broker.OperatorConsole, Parley.Broker.Facilitator, AgentName, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+
+        return UseConnectionAsync(
+            (connection, now, ct) => work(
+                new Parley.Broker.OperatorConsole(connection),
+                new Parley.Broker.Facilitator(connection, _options),
+                Facilitator,
+                now,
+                ct),
+            cancellationToken);
+    }
+
     /// <summary>Makes an answer the agent's line, once its launch configuration has been written.</summary>
     /// <param name="answer">The answer.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
