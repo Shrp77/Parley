@@ -97,6 +97,8 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
     [Fact]
     public async Task A_workspace_gone_under_a_folder_still_there_retires_the_agent_and_starts_nothing()
     {
+        Assert.SkipUnless(NodeCommand.OnTheHomeVolume(_root), "This machine's temporary folder is not on the home disk.");
+
         var workspace = Path.Combine(_root, "checkout");
         var (catalogue, identity) = await CatalogueAsync(workspace);
         Directory.Delete(workspace, recursive: true);
@@ -273,12 +275,56 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
 
             var said = await StartAsync(catalogue, identity, reporter: null);
 
-            Assert.Contains("root of a drive", said, StringComparison.Ordinal);
+            Assert.Contains("nothing is concluded", said, StringComparison.Ordinal);
             Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
         }
         finally
         {
             DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, definition);
+        }
+    }
+
+    [Fact]
+    public async Task A_workspace_missing_from_a_folder_of_the_same_name_on_another_disk_concludes_nothing()
+    {
+        // Lens 1 run 89: another disk took the letter and has a Projects folder of its own, in use. Only the home-disk rule
+        // tells it from the disk the repository is still on.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+
+        var diskA = Path.Combine(_root, "diskA");
+        var diskB = Path.Combine(_root, "diskB");
+        _ = Directory.CreateDirectory(Path.Combine(diskA, "Projects", "inventory"));
+        _ = Directory.CreateDirectory(Path.Combine(diskB, "Projects", "notes"));
+        var letter = Enumerable.Range('K', 'Y' - 'K' + 1).Select(c => (char)c)
+            .Where(c => c is not 'M' and not 'R' and not 'V')
+            .Select(c => $"{c}:")
+            .First(l => QueryDosDevice(l, new char[65536], 65536) == 0
+                && System.Runtime.InteropServices.Marshal.GetLastPInvokeError() == 2);
+        var first = $@"\??\{diskA}";
+        var second = $@"\??\{diskB}";
+        Assert.True(DefineDosDevice(RawTargetPath, letter, first));
+        var defined = first;
+
+        try
+        {
+            var (catalogue, identity) = await CatalogueAsync($@"{letter}\Projects\orders");
+            Assert.True(DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, first));
+            defined = null;
+            Assert.True(DefineDosDevice(RawTargetPath, letter, second));
+            defined = second;
+
+            var said = await StartAsync(catalogue, identity, reporter: null);
+
+            Assert.Contains("home folder", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+            Assert.True(Directory.Exists(Path.Combine(diskA, "Projects", "orders")), "the repository is still on its own disk");
+        }
+        finally
+        {
+            if (defined is not null)
+            {
+                DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, defined);
+            }
         }
     }
 
@@ -296,7 +342,7 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
     private static extern uint QueryDosDevice(string deviceName, char[] targetPath, uint length);
 
     [Fact]
-    public async Task An_empty_workspace_in_the_catalogue_is_a_failed_start_not_a_stopped_node()
+    public async Task An_empty_workspace_in_the_catalogue_concludes_nothing_and_does_not_stop_the_node()
     {
         // Lens 1 run 88: a hand-edited "workspace": "" reached Path.GetFullPath("") and threw out of the node's loop, which
         // stopped every agent on the machine.

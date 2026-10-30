@@ -124,7 +124,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         return new Dictionary<string, string> { [Parley.Core.LaunchToken.Variable] = token };
     }
 
-    /// <summary>Tells the broker an agent's workspace is gone and the folder above it is still there, in use, at no drive's or mount's root and reached through no link (SPEC.md §14).</summary>
+    /// <summary>Tells the broker an agent's workspace is gone, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (SPEC.md §14).</summary>
     /// <param name="agent">The agent it was asked to start.</param>
     /// <returns>Whether the broker retired it, or null when it could not be told.</returns>
     internal async Task<bool?> WorkspaceGoneAsync(Parley.Core.AgentName agent)

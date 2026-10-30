@@ -1039,7 +1039,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public DateTimeOffset? TurnRunningSince(AgentName agent) =>
         _turns.TryGetValue(agent, out var running) ? running.Started : null;
 
-    /// <summary>Retires an agent whose node found its workspace gone and the folder above it still there (SPEC.md §14).</summary>
+    /// <summary>Retires an agent whose node found its workspace gone where that can be told (SPEC.md §14): on the home disk, beside a folder in use.</summary>
     /// <param name="machine">The reporting node's machine.</param>
     /// <param name="agent">The agent it was asked to start.</param>
     /// <param name="cancellationToken">Cancels the write.</param>

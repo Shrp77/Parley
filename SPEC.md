@@ -3567,7 +3567,9 @@ directory on disk, which three of the five responder kinds in §11.2 are not.
 
 An adapter therefore **declares what it needs**: for each parameter, a name, whether it
 is required, and whether it is a secret. Registration collects exactly that. The broker
-learns nothing about any vendor, and a new adapter needs no schema change.
+learns nothing about any vendor, and a new adapter needs no schema change. **Not built yet**:
+no adapter declares a parameter and registration collects none; `adapter_config` is stored as
+sent, and nothing sends it.
 
 `config` is free-form because it carries no invariant. Credentials are the opposite case,
 which is why they are not in it: in the design they are references in the launch environment,
@@ -3972,9 +3974,12 @@ gone — so a workspace whose path runs through a link concludes nothing either.
 holds nothing else: an unmounted volume leaves its mount folder behind, empty, and a mount point is no link,
 so a repository that was the only thing in its folder is left for a person to retire. On macOS a volume's
 root sits directly in `/Volumes`, which is always there, so a workspace there concludes nothing either. More
-generally a workspace at the root of a drive or of a mount (`E:\orders`, `/media/<user>/<disk>`, `/mnt/<disk>`)
-concludes nothing: whatever volume answers there now may be another disk that took the letter or the folder, and its
-being there and in use says nothing about the repository. A repository deleted from a drive's root is left for a
+generally, **only the disk that holds the person's home folder counts**: on any other disk a different volume can
+answer at the same path — a removable drive swapped for another that took its letter, a disk with the same label, a
+backup laid out the same way — and a folder there that exists and is in use says nothing about whether it is the same
+disk. The home disk cannot be swapped while the node runs, though the folders its desktop mounts removable disks in
+(`/media/<user>`, `/run/media/<user>`, `/mnt`) can hold whichever disk is plugged in, so a workspace directly in one of
+them, or at the root of a drive, concludes nothing either. A repository missing from anywhere else is left for a
 person to retire.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
@@ -4231,7 +4236,7 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   exposed to anything else.
 
   **The reach is wider than an agent's mail.** A broker serves the agent operations of §10.1, the operator operations of §10.2 and the
-  node operations of §12 on one address: they are separate services on the wire, and that
+  node operations of §4.0 and §14 on one address: they are separate services on the wire, and that
   separation is a structural guard against an *adapter* binding the wrong one (§10.2), not a
   boundary anything on a network has to cross. So whatever can reach the port can also export
   every conversation in the deployment, retire and purge agents, destroy conversations and ask a node

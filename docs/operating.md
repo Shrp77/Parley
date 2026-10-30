@@ -155,10 +155,10 @@ waiting names them, and says what they will see, before asking. Retiring can be 
 same place. Purging cannot.
 
 **An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
-finds its folder deleted, while the folder above it is still there and in use, it starts nothing and
-the broker retires the agent; the node's output says so. Put the repository back and reinstate the agent.
-A folder that is merely unreachable (an unmounted drive, a link to a disk that is off, a repository at a drive's root
-that another disk may have taken) retires nothing.
+finds its folder deleted, on the disk that holds your home folder, while the folder above it is still there
+and in use, it starts nothing and the broker retires the agent; the node's output says so. Put the repository
+back and reinstate the agent. A repository on any other disk is never retired this way, because another disk can
+answer at the same path; nor is one that is merely unreachable (an unmounted drive, a link to a disk that is off).
 
 **Destructive actions all work this way:** a description, keeping offered first, and a deliberate
 act such as typing a name. Destroying a conversation works the same way, with the conversation's

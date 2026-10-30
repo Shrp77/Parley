@@ -670,7 +670,7 @@ public static class NodeCommand
         }
     }
 
-    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when the folder above it is still there, in use, at no drive's or mount's root and reached through no link.</summary>
+    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="workspace">Its catalogued workspace, which does not exist.</param>
     /// <param name="output">Where to report.</param>
@@ -715,15 +715,17 @@ public static class NodeCommand
             return;
         }
 
-        // **Never at the root of a volume** (the owner's call, 2026-10-30): the workspace is itself a volume's root, or sits
-        // in a drive's root, so the folder above belongs to whatever volume answers there now, which may be another disk
-        // that took the letter or the mount folder (lens 1 run 88, lens 2 run 90). A repository deleted from a drive's root
-        // is left for a person to retire.
-        if (AtAVolumeRoot(parent))
+        // **Only on the disk that holds the person's home folder, and never at the root of a volume** (the owner's calls,
+        // 2026-10-30). Elsewhere another disk can answer at the same path — a swapped removable drive, a disk with the same
+        // label, a backup laid out the same way — and a folder that is there and in use says nothing about whether it is
+        // the same disk (lens 1 run 89). The home disk cannot be swapped while the node runs, but its mount folders can
+        // hold whichever disk is plugged in (lens 1 run 88). A repository missing from anywhere else is left for a person.
+        if (!MayRetireUnder(parent))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} is missing at the root of a drive or mount, where "
-                + "a different disk may be answering, so nothing is concluded; it is tried again when next asked for.")
+                $"  {agent.Value}: not started — its workspace {workspace} is missing from a disk other than the one holding "
+                + "your home folder, or from where removable disks are mounted, so a different disk may be answering and "
+                + "nothing is concluded; it is tried again when next asked for.")
                 .ConfigureAwait(false);
 
             return;
@@ -762,6 +764,97 @@ public static class NodeCommand
                 : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
             .ConfigureAwait(false);
     }
+
+    /// <summary>Whether a missing workspace directly in this folder may retire its agent, as far as disks go.</summary>
+    /// <param name="folder">The folder above the workspace, which exists.</param>
+    /// <returns>True only on the home volume, and not at a volume's root or in a folder removable disks are mounted in.</returns>
+    internal static bool MayRetireUnder(string folder) => OnTheHomeVolume(folder) && !AtAVolumeRoot(folder);
+
+    /// <summary>Whether a folder that is there is on the volume holding the person's home folder.</summary>
+    /// <param name="folder">A full path to a folder that exists.</param>
+    /// <returns>True when it is; false when it is not, or when that cannot be told.</returns>
+    /// <remarks>
+    /// Windows compares drive roots with the profile's. Linux finds each path's mount point in the process's mount table, so
+    /// a disk mounted anywhere is told from the one under the home folder. macOS puts every other disk in <c>/Volumes</c>.
+    /// </remarks>
+    internal static bool OnTheHomeVolume(string folder)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (string.IsNullOrEmpty(home))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return string.Equals(
+                Path.GetPathRoot(Path.GetFullPath(folder)),
+                Path.GetPathRoot(Path.GetFullPath(home)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return !IsUnder(folder, "/Volumes") && !IsUnder(home, "/Volumes");
+        }
+
+        string[] mounts;
+
+        try
+        {
+            mounts = File.ReadAllLines("/proc/self/mountinfo");
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return MountPointOf(folder, mounts) is { } here
+               && string.Equals(here, MountPointOf(home, mounts), StringComparison.Ordinal);
+    }
+
+    /// <summary>The mount point a path lies under, from the lines of a Linux mount table.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="mountInfo">The lines of <c>/proc/self/mountinfo</c>.</param>
+    /// <returns>The longest mount point the path lies under, or null when none is listed.</returns>
+    /// <remarks>The fifth field is the mount point, with a space, tab, newline or backslash written as an octal escape.</remarks>
+    internal static string? MountPointOf(string path, IEnumerable<string> mountInfo)
+    {
+        string? best = null;
+
+        foreach (var line in mountInfo)
+        {
+            var fields = line.Split(' ');
+
+            if (fields.Length < 5)
+            {
+                continue;
+            }
+
+            var point = Unescape(fields[4]);
+
+            if (IsUnder(path, point) && (best is null || point.Length > best.Length))
+            {
+                best = point;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool IsUnder(string path, string point) =>
+        point == "/"
+        || string.Equals(path, point, StringComparison.Ordinal)
+        || path.StartsWith(point.TrimEnd('/') + "/", StringComparison.Ordinal);
+
+    private static string Unescape(string field) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            field,
+            @"\\([0-7]{3})",
+            match => ((char)Convert.ToInt32(match.Groups[1].Value, 8)).ToString(),
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
 
     /// <summary>Whether a folder is a drive's root, or a folder removable volumes are mounted directly in.</summary>
     /// <param name="folder">The folder above a workspace, as a full path.</param>
