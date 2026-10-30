@@ -64,6 +64,19 @@ public sealed class AnOwnershipAnswerIsDecidedAndAskedOnceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_blocked_answer_handed_to_the_next_pass_is_still_blocked()
+    {
+        // Lens 3 run 103: read as not blocked, an answer left by a stopped pass would be accepted automatically.
+        var asked = await _facilitator.AskAsync(_parley, Orders, T0, Ct);
+        Assert.True((await _agents.ResultAsync(
+            asked.Exchange!.Value, Orders, "some-model-9",
+            Requests.Result((PayloadShape.WholeRequest, "blocked:missing_information")), T0, Ct)).Succeeded);
+
+        Assert.True(Assert.Single(await _facilitator.ReadBackAsync(_parley, T0, Ct)).Blocked);
+        Assert.True(Assert.Single(await _facilitator.ReadBackAsync(_parley, T0.AddMinutes(1), Ct)).Blocked);
+    }
+
+    [Fact]
     public async Task Destroying_the_questions_conversation_does_not_make_the_sweep_ask_again()
     {
         var asked = await _facilitator.AskAsync(_parley, Orders, T0, Ct);

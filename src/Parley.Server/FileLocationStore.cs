@@ -148,6 +148,14 @@ public sealed class FileLocationStore : IDisposable
         OwnFolder(Root);
         OwnFolder(Incoming);
 
+        // The quarantine sits beside the root, so the root does not cover it: an older broker's is tightened here too. One
+        // that does not exist yet is made on the first move into it.
+        if (Path.Exists(Quarantine))
+        {
+            MakeReal(Quarantine);
+            OwnFolder(Quarantine);
+        }
+
         if (Directory.Exists(Incoming))
         {
             foreach (var leftover in Directory.EnumerateFiles(Incoming))
@@ -164,7 +172,8 @@ public sealed class FileLocationStore : IDisposable
     /// <remarks>
     /// The store beside it is the owner's alone (<c>ParleyDatabase</c>), and the shared files are the same agents' hand-offs,
     /// so they are kept the same way: a home folder another local account can list must not hand it the files (lens 2 run
-    /// 93). A root nobody else can enter covers every folder and file inside it, those of an older broker included. Windows
+    /// 93). A root nobody else can enter covers every folder and file inside it, those of an older broker included; the
+    /// quarantine, beside it, is tightened on its own. Windows
     /// keeps the folder's inherited ACL, as the store does.
     /// </remarks>
     private static void OwnFolder(string folder)

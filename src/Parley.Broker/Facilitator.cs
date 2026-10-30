@@ -143,7 +143,10 @@ public sealed class Facilitator(SqliteConnection connection, BrokerOptions optio
     /// <param name="facilitator">The facilitator's name in this store.</param>
     /// <param name="nowUtc">When.</param>
     /// <param name="cancellationToken">Cancels the work.</param>
-    /// <returns>The answers that arrived since the last read, each now recorded as answered and waiting on a decision.</returns>
+    /// <returns>
+    /// The answers that arrived since the last read, and any an earlier pass recorded and never decided, each recorded as
+    /// answered and waiting on a decision.
+    /// </returns>
     /// <remarks>
     /// <para>
     /// <b>An answer is the agent's Result</b>, read from the exchange the facilitator opened and from nowhere else, so an

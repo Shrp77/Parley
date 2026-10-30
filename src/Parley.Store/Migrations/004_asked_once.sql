@@ -12,15 +12,18 @@ UPDATE agents
  WHERE EXISTS (SELECT 1 FROM ownership_questions q WHERE q.agent = agents.name);
 
 -- A store whose ownership conversation was destroyed before this migration kept only the tombstone. An agent named
--- in one whose identifier is its own role's question (owns-<role>-<stamp>) is taken to have been asked then.
+-- in one whose identifier is its own role's question (owns-<role>-<stamp>), and that Parley took part in, is taken to
+-- have been asked then. An agent may name a conversation owns-anything itself, but cannot draw Parley into it.
 UPDATE agents
    SET asked_utc = (SELECT min(d.destroyed_utc) FROM destroyed_conversations d
                      WHERE d.id GLOB 'owns-' || agents.role || '-[0-9]*'
-                       AND instr(', ' || d.participants || ',', ', ' || agents.name || ',') > 0)
+                       AND instr(', ' || d.participants || ',', ', ' || agents.name || ',') > 0
+                       AND instr(', ' || d.participants || ',', ', parley-facilitator@') > 0)
  WHERE asked_utc IS NULL
    AND EXISTS (SELECT 1 FROM destroyed_conversations d
                 WHERE d.id GLOB 'owns-' || agents.role || '-[0-9]*'
-                  AND instr(', ' || d.participants || ',', ', ' || agents.name || ',') > 0);
+                  AND instr(', ' || d.participants || ',', ', ' || agents.name || ',') > 0
+                  AND instr(', ' || d.participants || ',', ', parley-facilitator@') > 0);
 
 -- Marked by storage, in the write that asks, so no route that asks can forget to.
 CREATE TRIGGER tr_asking_marks_the_agent

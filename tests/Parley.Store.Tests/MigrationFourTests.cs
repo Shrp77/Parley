@@ -46,7 +46,9 @@ public sealed class MigrationFourTests : IDisposable
             SELECT 'orders@test', 'owns-orders-20261028-090000', id, 'asked', '2026-10-28T09:00:00.0000000Z' FROM exchanges;
             INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants) VALUES
               ('owns-billing-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'billing@test, parley-facilitator@test'),
-              ('owns-orders-20261028-080000', '2026-10-28T10:00:00.0000000Z', 2, 'inventory@test, orders@test, parley-facilitator@test');
+              ('owns-orders-20261028-080000', '2026-10-28T10:00:00.0000000Z', 2, 'inventory@test, orders@test, parley-facilitator@test'),
+              -- Named by orders itself, so Parley was never in it.
+              ('owns-shipping-20261028-090000', '2026-10-28T10:00:00.0000000Z', 1, 'orders@test, shipping@test');
             """);
 
         Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(_connection));

@@ -48,11 +48,16 @@ public sealed class SharedFilesAreTheOwnersAloneTests : IDisposable
         _ = Directory.CreateDirectory(_root);
         File.SetUnixFileMode(_root, File.GetUnixFileMode(_root) | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
 
+        // And its quarantine, which sits beside the root rather than in it (lens 3 run 103).
+        _ = Directory.CreateDirectory(_root + "-quarantine");
+        File.SetUnixFileMode(_root + "-quarantine", File.GetUnixFileMode(_root + "-quarantine") | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
         using var location = new FileLocationStore(_root, _root + "-incoming");
         location.Prepare();
 
         Assert.Equal((UnixFileMode)0, File.GetUnixFileMode(_root) & GroupOrOther);
         Assert.Equal((UnixFileMode)0, File.GetUnixFileMode(_root + "-incoming") & GroupOrOther);
+        Assert.Equal((UnixFileMode)0, File.GetUnixFileMode(_root + "-quarantine") & GroupOrOther);
 
         await using (var staged = location.Stage())
         {
