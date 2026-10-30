@@ -200,6 +200,22 @@ public static class ParleyDatabase
         return copy;
     }
 
+    /// <summary>Copies the write-ahead log into the store and empties it, so what a delete overwrote is gone from both.</summary>
+    /// <param name="connection">An open connection to the store, outside any transaction.</param>
+    /// <remarks>
+    /// <b>Called after destroy, purge and a retention pass</b> (lens 2 run 97). An overwrite lands in the log first; the
+    /// store keeps the old page, and the log the frames that wrote the text, until a checkpoint, which SQLite runs by
+    /// itself only after about a thousand pages. On a quiet project that is days, and a copy of the store taken right
+    /// after a person removed something gave it back. A checkpoint another connection holds back finishes later, as
+    /// SQLite's own would; the broker has one.
+    /// </remarks>
+    internal static void Flush(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        command.ExecuteNonQuery();
+    }
+
     /// <summary>
     /// Opens a configured, migrated, private in-memory database.
     /// </summary>

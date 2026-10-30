@@ -1156,6 +1156,23 @@ public sealed class AgentRepository(SqliteConnection connection)
         SqliteTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
+        var outcome = await RemoveAsync(name, nowUtc, transaction, cancellationToken).ConfigureAwait(false);
+
+        // Once committed: within a caller's transaction there is nothing in the file yet to flush.
+        if (transaction is null)
+        {
+            ParleyDatabase.Flush(_connection);
+        }
+
+        return outcome;
+    }
+
+    private async Task<PurgeOutcome> RemoveAsync(
+        AgentName name,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
         using var scope = WriteScope.Begin(_connection, transaction);
 
         var registered = await _connection.ExecuteScalarAsync<long>(

@@ -1015,6 +1015,24 @@ public sealed class ConversationRepository(SqliteConnection connection)
     {
         ArgumentException.ThrowIfNullOrEmpty(conversationId);
 
+        var outcome = await RazeAsync(conversationId, nowUtc, transaction, cancellationToken).ConfigureAwait(false);
+
+        // Once committed: within a caller's transaction there is nothing in the file yet to flush.
+        if (transaction is null)
+        {
+            ParleyDatabase.Flush(_connection);
+        }
+
+        return outcome;
+    }
+
+    private async Task<DestroyOutcome> RazeAsync(
+        string conversationId,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction,
+        CancellationToken cancellationToken)
+    {
+
         using var scope = WriteScope.Begin(_connection, transaction);
 
         var exists = await _connection.ExecuteScalarAsync<long>(

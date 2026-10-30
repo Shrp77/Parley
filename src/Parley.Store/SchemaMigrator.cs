@@ -198,13 +198,8 @@ public static class SchemaMigrator
     /// <description>
     /// <c>secure_delete = ON</c> — overwrites what a delete removes. SQLite otherwise leaves the bytes in the file
     /// until a later write lands on them, so a copy of the store would still hold the text of conversations destroy,
-    /// purge and retention removed (SPEC.md §14).
-    /// </description>
-    /// </item>
-    /// <item>
-    /// <description>
-    /// <c>journal_size_limit = 0</c> — shrinks the write-ahead log back once a checkpoint has copied it into the
-    /// store, so frames of deleted text are not left past its end.
+    /// purge and retention removed (SPEC.md §14). The overwrite lands in the write-ahead log, so each of those acts
+    /// also empties the log into the store when it returns (<c>ParleyDatabase.Flush</c>).
     /// </description>
     /// </item>
     /// </list>
@@ -221,7 +216,6 @@ public static class SchemaMigrator
             PRAGMA foreign_keys = ON;
             PRAGMA busy_timeout = 5000;
             PRAGMA secure_delete = ON;
-            PRAGMA journal_size_limit = 0;
             """;
         command.ExecuteNonQuery();
     }

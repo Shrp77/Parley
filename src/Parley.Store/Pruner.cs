@@ -255,16 +255,19 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
-        using var proposals = WriteScope.Begin(_connection, ambient: null);
+        using (var proposals = WriteScope.Begin(_connection, ambient: null))
+        {
+            await _connection.ExecuteAsync(
+                new CommandDefinition(
+                    DeleteDecidedProposals,
+                    parameters,
+                    proposals.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                DeleteDecidedProposals,
-                parameters,
-                proposals.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            proposals.Complete();
+        }
 
-        proposals.Complete();
+        ParleyDatabase.Flush(_connection);
 
         return new PruneResult(removed, held, contended, capped, policy);
     }

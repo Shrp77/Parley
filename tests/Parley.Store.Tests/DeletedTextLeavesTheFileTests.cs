@@ -7,13 +7,20 @@ using Xunit;
 namespace Parley.Store.Tests;
 
 /// <summary>
-/// That what destroy removes is gone from the store's file too, and that an upgraded store's earlier leftovers are wiped
-/// once (SPEC.md §14, §9.2).
+/// That what destroy, purge and retention remove is gone from the store's file and its log as soon as they return, and
+/// that an upgraded store's earlier leftovers are wiped once (SPEC.md §14, §9.1).
 /// </summary>
 /// <remarks>
-/// Found by review, lens 2 run 96. SQLite leaves a deleted row's bytes in the file until a later write lands on them, so a
-/// copy of the store (a backup, or one sent for diagnosis) still held the text of conversations destroyed, purged or
-/// pruned.
+/// <para>
+/// Found by review, lens 2 runs 96 and 97. SQLite leaves a deleted row's bytes in the file until a later write lands on
+/// them, so a copy of the store (a backup, or one sent for diagnosis) still held the text of conversations destroyed,
+/// purged or pruned. Overwriting deletes was not enough alone: the overwrite lands in the log, and until a checkpoint the
+/// store keeps the old page and the log the frames that first wrote the text.
+/// </para>
+/// <para>
+/// <b>No act here is followed by a checkpoint of the test's own</b>, because the broker runs none: what the file holds
+/// when the call returns is what a copy taken then would hold.
+/// </para>
 /// </remarks>
 [Integration]
 public sealed class DeletedTextLeavesTheFileTests : IDisposable
@@ -21,6 +28,8 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
     private const string Marker = "zebra-quartz-ledger-7731";
 
     private static readonly DateTimeOffset T0 = new(2026, 10, 30, 9, 0, 0, TimeSpan.Zero);
+    private static readonly AgentName Orders = AgentName.Create("orders@test");
+    private static readonly AgentName Billing = AgentName.Create("billing@test");
 
     private readonly string _path = Path.Combine(Path.GetTempPath(), "parley-wipe-" + Guid.NewGuid().ToString("N") + ".db");
 
@@ -42,45 +51,47 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
     }
 
     [Fact]
-    public async Task A_destroyed_conversations_text_is_not_left_in_the_file()
+    public async Task A_destroyed_conversations_text_is_gone_from_the_file_when_destroy_returns()
     {
-        using (var connection = ParleyDatabase.OpenAndMigrate(_path))
-        {
-            Work.Register(connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"));
-            _ = await Work.OpenAsync(
-                connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"), T0,
-                Work.Request("is " + Marker + " gross or net?"), cancellationToken: Ct);
-            Checkpoint(connection);
-            Assert.True(Holds(_path), "the marker never reached the file, so this test proves nothing");
+        using var connection = await WithTheMarkerAsync(checkpointed: true);
 
-            Assert.Equal(
-                DestroyVerdict.Gone,
-                (await new ConversationRepository(connection).DestroyAsync(Work.Conversation, T0.AddMinutes(1), cancellationToken: Ct)).Verdict);
-            Checkpoint(connection);
-        }
+        Assert.Equal(
+            DestroyVerdict.Gone,
+            (await new ConversationRepository(connection).DestroyAsync(Work.Conversation, T0.AddMinutes(1), cancellationToken: Ct)).Verdict);
 
-        Assert.False(Holds(_path), "the destroyed text is still in the store's file");
-        Assert.False(Holds(_path + "-wal"), "the destroyed text is still in the write-ahead log");
+        AssertGone();
     }
 
     [Fact]
-    public async Task The_write_ahead_log_does_not_keep_destroyed_text_past_its_end()
+    public async Task Text_still_in_the_log_is_gone_from_it_when_destroy_returns()
     {
-        // The checkpoints SQLite runs by itself are passive and leave the log at full length; the next write starts it
-        // again from the front, so without a size limit the frames that held the text stay past the new end.
-        using var connection = ParleyDatabase.OpenAndMigrate(_path);
-        Work.Register(connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"));
-        _ = await Work.OpenAsync(
-            connection, AgentName.Create("orders@test"), AgentName.Create("billing@test"), T0,
-            Work.Request("is " + Marker + " gross or net?"), cancellationToken: Ct);
+        using var connection = await WithTheMarkerAsync(checkpointed: false);
         Assert.True(Holds(_path + "-wal"), "the marker never reached the log, so this test proves nothing");
 
         _ = await new ConversationRepository(connection).DestroyAsync(Work.Conversation, T0.AddMinutes(1), cancellationToken: Ct);
-        connection.Execute("PRAGMA wal_checkpoint(PASSIVE);");
-        connection.Execute("UPDATE agents SET changed_utc = '2026-10-30T09:02:00.0000000Z' WHERE name = 'orders@test';");
-        connection.Execute("PRAGMA wal_checkpoint(PASSIVE);");
 
-        Assert.False(Holds(_path + "-wal"), "the destroyed text is still in the write-ahead log");
+        AssertGone();
+    }
+
+    [Fact]
+    public async Task A_purged_agents_text_is_gone_from_the_file_when_purge_returns()
+    {
+        using var connection = await WithTheMarkerAsync(checkpointed: true);
+
+        Assert.Equal(PurgeVerdict.Gone, (await new AgentRepository(connection).PurgeAsync(Billing, T0.AddMinutes(1), cancellationToken: Ct)).Verdict);
+
+        AssertGone();
+    }
+
+    [Fact]
+    public async Task Pruned_text_is_gone_from_the_file_when_the_retention_pass_returns()
+    {
+        using var connection = await WithTheMarkerAsync(checkpointed: true, closed: true);
+
+        var pruned = await new Pruner(connection).PruneAsync(new RetentionPolicy(TimeSpan.FromDays(1), TimeSpan.FromDays(2)), T0.AddDays(30), Ct);
+        Assert.True(pruned.Removed > 0, "nothing was pruned, so this test proves nothing");
+
+        AssertGone();
     }
 
     [Fact]
@@ -132,6 +143,35 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
             Assert.Equal(3, SchemaMigrator.GetUserVersion(connection));
             Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(connection));
         }
+    }
+
+    /// <summary>A store holding one Request whose text is the marker, in the store's file or still only in its log.</summary>
+    private async Task<SqliteConnection> WithTheMarkerAsync(bool checkpointed, bool closed = false)
+    {
+        var connection = ParleyDatabase.OpenAndMigrate(_path);
+        Work.Register(connection, Orders, Billing);
+
+        var (exchange, _) = await Work.OpenAsync(
+            connection, Orders, Billing, T0, Work.Request("is " + Marker + " gross or net?"), cancellationToken: Ct);
+
+        if (closed)
+        {
+            _ = await Work.CloseAsync(connection, exchange, T0.AddMinutes(1), cancellationToken: Ct);
+        }
+
+        if (checkpointed)
+        {
+            Checkpoint(connection);
+            Assert.True(Holds(_path), "the marker never reached the file, so this test proves nothing");
+        }
+
+        return connection;
+    }
+
+    private void AssertGone()
+    {
+        Assert.False(Holds(_path), "the removed text is still in the store's file");
+        Assert.False(Holds(_path + "-wal"), "the removed text is still in the write-ahead log");
     }
 
     private static void RunUpTo(SqliteConnection connection, int version)
