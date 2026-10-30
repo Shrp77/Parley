@@ -1285,6 +1285,10 @@ The factory also restricts the database file to the owning user on Unix. It hold
 text of every request and result exchanged between participants, which is a running record of
 the work a project has done across its repositories.
 
+Every connection overwrites what a delete removes and shrinks the write-ahead log back after a checkpoint, so text
+that destroy, purge or retention removes does not stay in the file for a copy of it to give back (§14). A store
+upgraded from a schema before 4 is rewritten once, after its migrations, to clear what earlier builds left behind.
+
 ### 9.2 Schema
 
 **A store is upgraded, never replaced.** The schema version is SQLite's `user_version`. Version 1

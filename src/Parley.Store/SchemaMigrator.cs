@@ -130,8 +130,22 @@ public static class SchemaMigrator
             applied++;
         }
 
+        // **Text deleted before deletes were secure is wiped once** (lens 2 run 96): a store that held work before
+        // migration 004 kept the bytes of every conversation destroyed, purged or pruned until something overwrote
+        // them. VACUUM rewrites the file from its live rows and cannot run inside a transaction, so it follows the
+        // migrations; a new store has nothing deleted to wipe.
+        if (current is > 0 and < SecureDeleteSince && GetUserVersion(connection) >= SecureDeleteSince)
+        {
+            using var wipe = connection.CreateCommand();
+            wipe.CommandText = "VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
+            wipe.ExecuteNonQuery();
+        }
+
         return applied;
     }
+
+    /// <summary>The first schema whose stores have only ever deleted securely, so older ones are wiped once on upgrade.</summary>
+    private const int SecureDeleteSince = 4;
 
     /// <summary>
     /// Applies the connection-level settings the broker's correctness depends on.
@@ -169,6 +183,19 @@ public static class SchemaMigrator
     /// connection holds the write lock.
     /// </description>
     /// </item>
+    /// <item>
+    /// <description>
+    /// <c>secure_delete = ON</c> — overwrites what a delete removes. SQLite otherwise leaves the bytes in the file
+    /// until a later write lands on them, so a copy of the store would still hold the text of conversations destroy,
+    /// purge and retention removed (SPEC.md §14).
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// <c>journal_size_limit = 0</c> — shrinks the write-ahead log back once a checkpoint has copied it into the
+    /// store, so frames of deleted text are not left past its end.
+    /// </description>
+    /// </item>
     /// </list>
     /// </remarks>
     public static void Configure(SqliteConnection connection)
@@ -182,6 +209,8 @@ public static class SchemaMigrator
             PRAGMA synchronous = NORMAL;
             PRAGMA foreign_keys = ON;
             PRAGMA busy_timeout = 5000;
+            PRAGMA secure_delete = ON;
+            PRAGMA journal_size_limit = 0;
             """;
         command.ExecuteNonQuery();
     }
