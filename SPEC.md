@@ -155,8 +155,9 @@ language they are written in.
 | **Proposal** | A roadmap an agent has put forward, apart from messages: it opens no exchange and is owed no answer, and it is nothing until a person confirms it. |
 | **Item conversation** | The conversation that belongs to one roadmap item. Its name is reserved when the roadmap is confirmed, and it comes to exist when work on the item starts. |
 
-Agent names match `^[a-z][a-z0-9-]{0,31}$`. They are **logical names, not repository
-paths and not session identifiers** — this separation is what makes recovery and
+Agent names are `role@machine` (§4.1.1): the role matches `^[a-z][a-z0-9-]{0,31}$`, the machine
+`^[a-z0-9][a-z0-9.-]{0,63}$`. They are **logical names, not repository paths and not session
+identifiers** — this separation is what makes recovery and
 lazy spawning work.
 
 ## 4. Architecture
@@ -182,8 +183,9 @@ lazy spawning work.
 ```
 
 **Broker.** One process. Owns the registry, all exchange state, admission control, cycle
-detection, deadline reaping, and the store. Holds no conversation context of its own.
-Long-lived: a Windows Service, systemd unit, or launchd agent.
+detection, the flags of §6, and the store. Holds no conversation context of its own.
+Long-lived: started at logon by a scheduled task on Windows, a systemd user unit, or a launchd
+agent.
 
 **It is the only process that opens the database.** Everything else reaches it over the
 transport, and that is not a preference. SQLite in WAL mode requires coherent shared memory
@@ -597,7 +599,7 @@ missing field.
 
 **A receiver that needs the scope, the reason, or anything else** sends a Clarify (§5.2) and the
 turn goes back; it may also send other agents Requests of its own in the same conversation. That is
-the protocol working as people do, and it is the reason §5.2 is uncapped by default.
+the protocol working as people do, and it is the reason §5.2 is uncapped.
 
 **A Request is answered whole.** The Result closes the exchange with one outcome (§5.3), because
 there is one thing to answer.
@@ -985,7 +987,7 @@ Invariants:
 facts that call for different things from the person running the deployment, so the broker
 tracks both:
 
-| Stage | Runs from | Flagged after (default) | Means |
+| Stage | Runs from | Flagged after | Means |
 |---|---|---|---|
 | Not collected | the Request being written | 15 minutes | Nobody has picked it up: the receiver never started, its machine is off, or it died on the way. |
 | Collected, no Result | the receiver collecting it | 4 hours without a message from the receiver in the conversation | It was picked up and is being worked on — or the receiver has stalled. |
@@ -1611,11 +1613,11 @@ CREATE TABLE exchanges (
                              OR (length(request_group) BETWEEN 1 AND 64
                                  AND request_group NOT GLOB '*[^a-zA-Z0-9._-]*')),
   clarify_depth       INTEGER NOT NULL DEFAULT 0,
-  -- 2147483647 means the cap is off, which is the default (§5.2); zero means no clarification
-  -- at all. Anything else is a cap a deployment set, bounded so a value written by mistake picks
-  -- a poor cap rather than silently switching the rule off.
+  -- 2147483647 means the cap is off, which is what the broker stamps (§5.2); zero means no
+  -- clarification at all. Anything else is a cap, bounded so a value written by mistake picks a
+  -- poor cap rather than silently switching the rule off.
   clarify_depth_cap   INTEGER NOT NULL DEFAULT 2147483647,
-  -- At 50 the request cap is off, which is the default (§7.1). Below it the trigger holds it.
+  -- At 50 the request cap is off, which is what the broker stamps (§7.1). Below it the trigger holds it.
   open_pair_cap       INTEGER NOT NULL DEFAULT 50
                       CHECK (open_pair_cap BETWEEN 1 AND 50),
   -- The two thresholds of §6, stamped at admission so a deployment changing its settings does
@@ -3101,7 +3103,7 @@ other could.
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
-| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap was reached where one is set. The evidence §17 question 4 asks for. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached and the caps in force (none while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
@@ -3849,9 +3851,9 @@ which is stronger than checking that it did not. The window is therefore a schem
 configuration: changing it changes the meaning of every bucket already stored, so it should cost a
 migration.
 
-The window is **60 seconds** by default. It is a starting estimate: it is meant to absorb transport
+The window is **60 seconds**. It is a starting estimate: it is meant to absorb transport
 retries, not to police a participant repeating itself minutes later, and it should be tuned against real
-traffic rather than argued about in advance.
+traffic in a later build rather than argued about in advance.
 
 Deduplication guards *delivery*, not intent, and the two need different scopes. A repeated Request is
 refused by the distinctness rule in §7.1, which shares this section's content hash but applies it for as
@@ -4177,7 +4179,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 - **Refusals by reason** → each means something different and they should not be pooled.
   Conversation-assignment refusals mean an adapter is offering an agent what §5.0 forbids; distinctness
   refusals (§7.1) mean agents are forgetting what they already sent, which is a context problem in the
-  sender; cap refusals, where a deployment set a cap, mean a participant is being over-asked.
+  sender; cap refusals, which cannot occur while every exchange is stamped uncapped, would mean a
+  participant is being over-asked.
 
 ## 16. Non-goals
 
@@ -4263,7 +4266,7 @@ decided is removed and its number is not reused, so the list has gaps.
    is owed a reply (principle 2.7), so the least-bounded path into an agent's context is also a path
    into its work.
 
-   **The request cap is off by default, deliberately.** §7.1's per-pair cap is a cost control with an
+   **There is no request cap, deliberately.** §7.1's per-pair cap is a cost control with an
    arbitrary number, and it ends work before its participants have finished, which principle 2.8
    counts as the larger harm. What stands against volume is §13.1's deduplication, which catches a
    byte-identical repeat and nothing else; §7.1's distinctness rule, which refuses a Request identical
