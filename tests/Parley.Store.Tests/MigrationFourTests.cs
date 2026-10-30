@@ -30,7 +30,8 @@ public sealed class MigrationFourTests : IDisposable
             AgentName.Create("billing@test"),
             AgentName.Create("inventory@test"),
             AgentName.Create("shipping@test"),
-            AgentName.Create("api@test"));
+            AgentName.Create("api@test"),
+            AgentName.Create("tax@test"));
         _connection.Execute(
             """
             INSERT INTO agents (name, adapter, tier, status) VALUES ('parley-facilitator@test', 'parley-facilitator', 'pull', 'active');
@@ -58,14 +59,16 @@ public sealed class MigrationFourTests : IDisposable
               -- Named by orders itself, so Parley was never in it.
               ('owns-shipping-20261028-090000', '2026-10-28T10:00:00.0000000Z', 1, 'orders@test, shipping@test'),
               -- Another role's question, one whose name starts api-2; api was never asked.
-              ('owns-api-2-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'api@test, parley-facilitator@test');
+              ('owns-api-2-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'api@test, parley-facilitator@test'),
+              -- A question whose name was taken, so a number was added (lens 3 run 104).
+              ('owns-tax-20261028-090000-2', '2026-10-28T11:00:00.0000000Z', 2, 'parley-facilitator@test, tax@test');
             """);
 
         Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(_connection));
 
         Assert.Empty(StoreShape.Problems(_connection));
         Assert.Equal(
-            ["billing@test 2026-10-28T10:00:00.0000000Z", "orders@test 2026-10-28T09:00:00.0000000Z"],
+            ["billing@test 2026-10-28T10:00:00.0000000Z", "orders@test 2026-10-28T09:00:00.0000000Z", "tax@test 2026-10-28T11:00:00.0000000Z"],
             _connection.Query<string>(
                 "SELECT name || ' ' || asked_utc FROM agents WHERE asked_utc IS NOT NULL ORDER BY name;").ToList());
         Assert.Equal(
