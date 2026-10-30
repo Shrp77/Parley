@@ -39,7 +39,7 @@ it, and what the owner has already settled.
 
 Every test class is `[Unit]` or `[Integration]` (`tests/TestCategories.cs`; a test in each project fails if a class has
 neither). A unit test touches one module in memory: no file, no database (an in-memory one included), no socket, no
-process and no UI. Everything else is integration, even two modules together.
+process, no clock it does not own, no environment it does not inject, and no UI. Everything else is integration, even two modules together.
 
 - **Between review rounds and before each commit, run the unit tests**: `pwsh scripts/test.ps1` (seconds). Add
   `-Category All` when a change could only show in an integration test, such as a race or a process boundary.
@@ -49,8 +49,8 @@ process and no UI. Everything else is integration, even two modules together.
   merge needs that run green on the commit that merges. Once the workflow is on `main` it can also be started by hand:
   `gh workflow run nightly.yml --ref <branch>`.
 
-Every run records its results in the git-ignored `.test-metrics/` (`runs.jsonl` per run, `tests.jsonl` per test that did
-not pass); `pwsh scripts/pull-test-metrics.ps1` copies CI's runs in beside the local ones.
+Every run records its results in the git-ignored `.test-metrics/` (`runs.jsonl` per run; `tests.jsonl` per test that did
+not pass, and per test on CI, which passes `-AllResults`); `pwsh scripts/pull-test-metrics.ps1` copies CI's runs in beside the local ones.
 
 ## The ledger
 

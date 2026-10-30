@@ -122,6 +122,54 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
     }
 
     [Fact]
+    public async Task A_workspace_reached_through_a_link_whose_far_side_is_gone_concludes_nothing()
+    {
+        // Lens 2 run 89: the folder above is a link to a second disk, and the disk is gone. The link itself is still there,
+        // so the parent check alone would retire every agent on that disk at once.
+        var volume = Path.Combine(_root, "other-volume");
+        _ = Directory.CreateDirectory(volume);
+        var repos = Path.Combine(_root, "repos");
+
+        try
+        {
+            Directory.CreateSymbolicLink(repos, volume);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let a test create a directory link.");
+        }
+
+        var (catalogue, identity) = await CatalogueAsync(Path.Combine(repos, "checkout"));
+        Directory.Delete(volume, recursive: true);
+        Assert.True(Directory.Exists(repos) || new DirectoryInfo(repos).LinkTarget is not null, "the link should outlive its target");
+
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.Contains("runs through a link", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
+
+        // The link alone, never recursively: its far side is gone, but a link is removed as itself.
+        Directory.Delete(repos);
+    }
+
+    [Fact]
+    public async Task A_workspace_missing_from_a_folder_that_holds_nothing_else_concludes_nothing()
+    {
+        // Lens 1 run 87: an unmounted Linux volume leaves its mount folder behind, empty, and a mount point is no link.
+        var mount = Path.Combine(_root, "mnt-vol");
+        var (catalogue, identity) = await CatalogueAsync(Path.Combine(mount, "checkout"));
+        Directory.Delete(Path.Combine(mount, "checkout"), recursive: true);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(mount));
+
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.Contains("holds nothing else", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
+    }
+
+    [Fact]
     public async Task A_workspace_and_the_folder_above_both_missing_conclude_nothing()
     {
         var parent = Path.Combine(_root, "volume");

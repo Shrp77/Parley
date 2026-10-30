@@ -1931,8 +1931,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 Wire.RequestRejection.ReceiverNotRegistered =>
                     "Nothing is registered under that name. Call parley_agents to find who owns this work.",
                 Wire.RequestRejection.ReceiverRetired =>
-                    "The person running the deployment retired that agent. Call parley_agents to find who owns " +
-                    "this work now.",
+                    "That agent is retired: the person running the deployment retired it, or its repository was " +
+                    "found gone. Call parley_agents to find who owns this work now.",
                 Wire.RequestRejection.ReceiverIsTheFacilitator =>
                     "That is Parley, which asks agents questions and does no work itself. Call parley_agents to " +
                     "find who owns this work.",

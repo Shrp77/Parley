@@ -24,7 +24,11 @@ permissions:
 jobs:
   test:
     name: all tests
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-tests')
+    # On a pull request only while full-tests is on, and of label events only the one adding full-tests itself.
+    if: >-
+      github.event_name != 'pull_request'
+      || (contains(github.event.pull_request.labels.*.name, 'full-tests')
+          && (github.event.action != 'labeled' || github.event.label.name == 'full-tests'))
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

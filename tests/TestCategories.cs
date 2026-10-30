@@ -8,7 +8,8 @@ namespace Parley.Testing;
 /// <remarks>
 /// <para>
 /// <b>The bar is strict, and that is the point.</b> A unit test touches no file, no database (an in-memory SQLite database
-/// included), no socket, no process, no clock it does not own and no UI, and exercises one module. Anything else is
+/// included), no socket, no process, no clock it does not own, no environment it does not inject and no UI, and exercises
+/// one module. Anything else is
 /// <see cref="IntegrationAttribute"/>, even a test of two modules together.
 /// </para>
 /// <para>

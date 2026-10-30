@@ -3916,8 +3916,8 @@ internal sealed class Shell : Window
     /// need one keystroke per agent.
     /// </para>
     /// <para>
-    /// Retired agents are left out, as they are from a broadcast: an operator retired them, and
-    /// starting them would be this screen undoing that quietly.
+    /// Retired agents are left out, as they are from a broadcast: a person retired them, or their node found their
+    /// workspace gone, and starting them would be this screen undoing that quietly.
     /// </para>
     /// </remarks>
     internal IReadOnlyList<AgentName> NeverRegistered() =>

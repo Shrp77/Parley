@@ -34,7 +34,7 @@ public enum FlagKind
     /// <summary>Picked up, and nothing from the owing participant for longer than the threshold.</summary>
     NoProgress = 1,
 
-    /// <summary>Owed by an agent a person retired, so nobody is going to do it (§14).</summary>
+    /// <summary>Owed by a retired agent, so nobody is going to do it (§14).</summary>
     Retired = 2,
 
     /// <summary>

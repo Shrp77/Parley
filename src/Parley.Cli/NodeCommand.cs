@@ -676,13 +676,40 @@ public static class NodeCommand
     /// <returns>A task that completes when it is said.</returns>
     private static async Task WorkspaceGoneAsync(AgentName agent, string workspace, TextWriter output, TurnReporter? reporter)
     {
-        var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace)));
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+        var parent = Path.GetDirectoryName(full);
 
         if (parent is null || !Directory.Exists(parent))
         {
             await output.WriteLineAsync(
                 $"  {agent.Value}: not started — its workspace {workspace} and the folder above it are both missing, "
                 + "so nothing is concluded (a drive may be unmounted); it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (ThroughALink(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing, and its path runs through a link, "
+                + "whose far side may be a drive not mounted, so nothing is concluded; it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // **The folder above must be one somebody is using, not one a volume left behind.** An unmounted Linux volume leaves
+        // its mount folder in place and empty, and a mount point is no link, so an empty parent concludes nothing (lens 1
+        // run 87); a repository that was the only thing in its folder is then left for a person to retire. A macOS volume's
+        // root sits directly in /Volumes, which is always there.
+        if (HoldsNothing(parent)
+            || (OperatingSystem.IsMacOS() && string.Equals(parent, "/Volumes", StringComparison.Ordinal)))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing and the folder above it holds "
+                + "nothing else, as a volume not mounted leaves it, so nothing is concluded; it is tried again when next "
+                + "asked for.")
                 .ConfigureAwait(false);
 
             return;
@@ -696,6 +723,55 @@ public static class NodeCommand
                   + "it in the terminal once the repository is back."
                 : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a folder holds nothing, or cannot be listed.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <returns>True when it is empty or unreadable; either way it is no evidence a repository was deleted from it.</returns>
+    private static bool HoldsNothing(string folder)
+    {
+        try
+        {
+            return !Directory.EnumerateFileSystemEntries(folder).Any();
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Whether any part of a path that is there, from its root down, is a link: a junction or a symbolic link.</summary>
+    /// <param name="path">A full path.</param>
+    /// <returns>True when a link is on the way, including the path itself as a link whose target is gone.</returns>
+    /// <remarks>
+    /// <b>A link outlives what it leads to.</b> A folder above the workspace that is a junction to a second disk still exists
+    /// when that disk is gone, so the parent check alone would retire every agent on the disk at once (found by review,
+    /// lens 2 run 89), and a workspace that is itself a link to an unmounted drive reads as missing beside a parent that is
+    /// there. Either way the path says nothing about whether the repository was deleted, so nothing is concluded from it.
+    /// </remarks>
+    private static bool ThroughALink(string path)
+    {
+        var root = Path.GetPathRoot(path) ?? string.Empty;
+        var at = root;
+
+        foreach (var part in path[root.Length..].Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            at = Path.Combine(at, part);
+            var entry = new DirectoryInfo(at);
+
+            if (entry.LinkTarget is not null)
+            {
+                return true;
+            }
+
+            if (!entry.Exists)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Serialises every change to who lives in the resident table.</summary>

@@ -21,7 +21,7 @@ namespace Parley.Cli.Tests;
 /// blank, or eight repositories enrolled and the ninth silently skipped.
 /// </para>
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class EnrollmentPlanTests
 {
     private const string Workspace = "/srv/checkouts/orders";

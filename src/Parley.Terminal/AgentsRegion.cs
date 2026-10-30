@@ -421,7 +421,7 @@ internal sealed class AgentsRegion : FrameView
     /// </para>
     /// <para>
     /// The remaining groups are ordered by how much they ask of the reader: what is running, what
-    /// could be, what will not be, and what an operator withdrew. Alphabetical within a group,
+    /// could be, what will not be, and what is retired. Alphabetical within a group,
     /// because the order of two agents in the same state carries no information and a stable order
     /// is what lets an eye return to where it was.
     /// </para>

@@ -3895,7 +3895,7 @@ connections, and both are things some process knows for certain rather than infe
 | `running` | — | yes | the agent is up; route to it now |
 | `startable` | yes | no | nobody has it open; the node can start it when needed |
 | `stranded` | no | no | nobody has it open and the machine's node is gone; nothing can start it |
-| `retired` | — | — | a person's word; stored, and outranks the rest |
+| `retired` | — | — | a person's word, or a node's that the workspace is gone; stored, and outranks the rest |
 | `here` | — | yes | the person seat only: a surface is open and in use |
 | `away` | — | no | the person seat only: nobody is at a screen; the seat is still there and still asked |
 
@@ -3946,7 +3946,7 @@ down precisely so that the missing part of the work is flagged rather than silen
 
 **Only retirement gates routing.** A person saying an agent is finished is the one statement about
 reachability that is a judgement rather than an observation, and the only one durable enough to
-route on.
+route on; the one other way in is the observation below, a workspace its node found gone.
 
 **The broker may retire an agent whose workspace is gone**, and the cost of that is recorded rather
 than argued away. A missing directory is frequently temporary — a re-clone, a moved worktree, an
@@ -3963,7 +3963,11 @@ false for a repository somebody deleted and for a drive that is briefly unmounte
 first is a judgement worth making. Absent the discriminator, one unavailable volume would retire
 every agent on it in a single pass, each needing a person to reinstate it. So the node reports, and
 the broker retires, only when the workspace is gone *and its parent is still there*; when both are
-missing the node concludes nothing, says so in its own output, and tries again when next asked.
+missing the node concludes nothing, says so in its own output, and tries again when next asked. A link
+outlives what it leads to — a folder that is a junction to a second disk is still there when the disk is
+gone — so a workspace whose path runs through a link concludes nothing either. Nor does one whose parent
+holds nothing else: an unmounted volume leaves its mount folder behind, empty, and a mount point is no link,
+so a repository that was the only thing in its folder is left for a person to retire.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
 agent and the reason — an expired credential, a command that will not run — in its own output, which
@@ -4006,8 +4010,8 @@ requester, told the agent was retired, finds another way to get the work done (p
 attaches, and so registers, again every time it starts, so retirement undone by an attach would be
 undone on the next start and every start after it. An operator who retires an agent and finds it
 live again the following morning has been given a control that does not hold. `reinstate(agent)` is
-therefore the counterpart to `retire`, and the two are symmetric: a judgement is entered and
-withdrawn by a person, not by an agent attaching again.
+therefore the counterpart to `retire`: whoever entered a retirement — a person, or a node that found the
+workspace gone — it is withdrawn by a person, not by an agent attaching again.
 
 **Retiring does not delete.** The schema does not permit it and should not: `exchanges` and
 `messages` both reference `agents(name)`, and §9.4 keeps exchange rows after pruning the message text

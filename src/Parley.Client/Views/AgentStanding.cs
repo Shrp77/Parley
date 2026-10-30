@@ -9,7 +9,7 @@ namespace Parley.Client.Views;
 /// <param name="Running">Whether the broker holds an open connection for it right now.</param>
 /// <param name="EverRun">Whether anything has ever registered under this name.</param>
 /// <param name="StartableHere">Whether this project's catalogue permits starting it.</param>
-/// <param name="Retired">Whether an operator has withdrawn it.</param>
+/// <param name="Retired">Whether it is retired, by a person or because its workspace was found gone.</param>
 /// <param name="Tier">Its tier, or a mark when only the catalogue knows it.</param>
 /// <param name="Owns">What it says it is for, or that it has said nothing.</param>
 /// <param name="Workspace">Where it runs, as the registry or the catalogue records it.</param>
@@ -65,7 +65,7 @@ public static class Standing
     /// <summary>Running only as a process Parley did not start, so Parley cannot give it turns (SPEC.md §11.7).</summary>
     public const string Outside = "open outside Parley, so Parley cannot give it turns";
 
-    /// <summary>An operator has withdrawn it.</summary>
+    /// <summary>It is retired, by a person or because its workspace was found gone.</summary>
     public const string Retired = "retired";
 
     /// <summary>It is attached to the broker now.</summary>
@@ -198,7 +198,7 @@ public static class Standing
     }
 
     /// <summary>The phrase for one agent.</summary>
-    /// <param name="retired">Whether an operator withdrew it.</param>
+    /// <param name="retired">Whether it is retired.</param>
     /// <param name="running">Whether it is attached now.</param>
     /// <param name="presence">What the broker observes about it.</param>
     /// <param name="startable">Whether this project's catalogue names its role.</param>

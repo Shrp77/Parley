@@ -62,6 +62,20 @@ public sealed class AWorkspaceGoneRetiresItsAgentTests
         Assert.Equal(Wire.AgentStatus.Active, await StatusAsync(broker));
     }
 
+    [Theory]
+    [InlineData("human-user@test")]
+    [InlineData("parley-facilitator@test")]
+    public async Task A_report_for_the_person_or_Parley_retires_nobody_and_is_answered(string seat)
+    {
+        // Their names end in the project's, which a node could join under; no node starts either, so neither is ever
+        // retired on a node's word, and the report is answered rather than failed by storage refusing it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, "test", ["human-user", "parley-facilitator"], Ct);
+
+        Assert.False(await ReportAsync(node, seat, machine: "test"));
+        Assert.Equal(Wire.AgentStatus.Active, await StatusAsync(broker, seat));
+    }
+
     [Fact]
     public async Task A_report_for_a_machine_with_no_node_joined_retires_nobody()
     {

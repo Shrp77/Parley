@@ -152,8 +152,8 @@ catch (BrokerUnreachableException ex)
 }
 catch (AgentRetiredException ex)
 {
-    // Separated from the failures below because it is not a fault. An operator withdrew this
-    // agent, and the launch configuration still names it — which is the same shape of problem
+    // Separated from the failures below because it is not a fault. This agent was retired (by a
+    // person, or by its node finding its workspace gone), and the launch configuration still names it — which is the same shape of problem
     // as a missing variable and gets the same exit code, so a supervisor can tell "configured
     // wrong" from "the machine is broken" without reading the message.
     await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
