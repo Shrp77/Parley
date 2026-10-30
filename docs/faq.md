@@ -91,8 +91,9 @@ process, so there are never two models editing one checkout.
 
 ## How long are messages kept?
 
-Three days after a conversation goes quiet, and thirty days at most, unless you change it. Export
-a conversation to keep it. See [Configuration](configuration.md#retention).
+Three days after a conversation has finished and gone quiet, whether or not it was closed, and
+thirty days at most for anything but work still open, unless you change it. Export a conversation
+to keep it. See [Configuration](configuration.md#retention).
 
 ## Where is my data?
 

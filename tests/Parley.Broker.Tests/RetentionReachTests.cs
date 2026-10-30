@@ -81,19 +81,24 @@ public sealed class RetentionReachTests : IDisposable
     }
 
     [Fact]
-    public async Task Participants_agreeing_they_are_finished_releases_only_their_own_conversation()
+    public async Task Participants_agreeing_they_are_finished_release_nothing_before_the_idle_period()
     {
-        // Closing short-circuits the idle period, which is the participants' call to make about their own work —
-        // and it reaches no further. Another conversation between the same pair is untouched.
+        // Agents conclude by consensus with nobody present, so concluding does not hasten pruning: the person can still
+        // read the conversation back, and its idle period is the same as a conversation nobody concluded.
         await Discuss(Orders, Billing, "pricing", T0);
-        await Discuss(Orders, Billing, "unrelated", T0.AddMinutes(5), "who owns the ladder?");
+        await Discuss(Orders, Billing, "unrelated", T0.AddDays(2), "who owns the ladder?");
 
         var orders = new Broker(_connection, BrokerOptions.Default);
-        await orders.StartAsync(Orders, T0.AddMinutes(10), Ct);
+        await orders.StartAsync(Orders, T0.AddDays(2).AddMinutes(10), Ct);
 
-        Assert.True((await orders.ConcludeAsync("pricing", Orders, true, T0.AddMinutes(15), Ct)).Concluded);
+        Assert.True((await orders.ConcludeAsync("pricing", Orders, true, T0.AddDays(2).AddMinutes(15), Ct)).Concluded);
 
-        Assert.Equal(2, (await orders.TickAsync(T0.AddMinutes(16), Ct)).Retention.Removed);
+        Assert.Equal(0, (await orders.TickAsync(T0.AddDays(2).AddMinutes(16), Ct)).Retention.Removed);
+
+        var later = new Broker(_connection, BrokerOptions.Default);
+        await later.StartAsync(Orders, T0.AddDays(3).AddMinutes(30), Ct);
+
+        Assert.Equal(2, (await later.TickAsync(T0.AddDays(3).AddMinutes(30), Ct)).Retention.Removed);
 
         var messages = new MessageRepository(_connection);
         Assert.Empty(await messages.GetConversationAsync("pricing", Ct));

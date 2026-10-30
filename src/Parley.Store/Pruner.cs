@@ -57,15 +57,11 @@ public sealed class Pruner(SqliteConnection connection)
 
                      -- The idle rule: every exchange in the conversation closed, and nothing added
                      -- for the idle period. NOT EXISTS rather than NOT IN, because NOT IN over a
-                     -- subquery that ever produced a NULL would silently stop retention.
+                     -- subquery that ever produced a NULL would silently stop retention. A closed
+                     -- conversation waits out the period too: agents close one by consensus with no
+                     -- person present, and the person must still be able to read it back.
                      OR (NOT EXISTS (SELECT 1 FROM unfinished u WHERE u.grp = g.grp)
-                         AND (
-                               -- Closure short-circuits the idle period: somebody has said the
-                               -- work is over, which is better evidence than silence.
-                               EXISTS (SELECT 1 FROM conversations c
-                                        WHERE c.id = g.grp AND c.state = 'CLOSED')
-                               OR a.last_activity <= @NowSeconds - @IdleSeconds
-                             ))
+                         AND a.last_activity <= @NowSeconds - @IdleSeconds)
                    ) AS spent
 
               FROM grouped g

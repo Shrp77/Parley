@@ -189,7 +189,8 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
     /// <remarks>
     /// <b>Parley never drains an inbox</b>, because nothing attaches as it: it reads its questions' exchanges directly.
     /// Without this every answer sent to it would say "not collected yet" in every transcript for ever, which reads as
-    /// a fault, and retention never removes a message nobody collected — so they would also never go.
+    /// a fault, and retention keeps a message nobody collected until the age cap — so they would also outlive their
+    /// conversation by weeks.
     /// </remarks>
     public async Task CollectedAsync(
         long exchangeId,

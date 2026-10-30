@@ -101,6 +101,13 @@ public static class RetentionPolicyEnvironment
                 $"{name} is '{configured}', which is not a positive whole number of hours.");
         }
 
+        // Refused here, naming the variable, rather than overflowing TimeSpan with a message that names neither.
+        if (hours > TimeSpan.MaxValue.TotalHours / 2)
+        {
+            throw new InvalidOperationException(
+                $"{name} is '{configured}', which is more hours than a retention period can hold.");
+        }
+
         return TimeSpan.FromHours(hours);
     }
 }

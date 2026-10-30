@@ -178,6 +178,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _connection = connection;
         _ownsConnection = ownsConnection;
         _storeLock = storeLock;
+
+        // One policy for both prunes: the hourly pass reads the options' and a person's prune reads Retention, and
+        // the two once differed, so a configured policy reached only the prune a person started.
+        options = options with { Retention = retention };
         _options = options;
         Clock = clock;
         Retention = retention;
@@ -426,7 +430,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </summary>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
-    /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="retention">What to prune to, or <see langword="null"/> for the policy in <paramref name="options"/>.</param>
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
@@ -453,7 +457,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         try
         {
             return new BrokerRuntime(
-                project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+                project ?? TestProject, connection, options, clock, retention ?? options.Retention,
                 FilesAt(filesRoot));
         }
         catch
@@ -520,7 +524,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="connection">An open, already-migrated connection. Not disposed by this.</param>
     /// <param name="options">Lifecycle configuration.</param>
     /// <param name="clock">The clock.</param>
-    /// <param name="retention">What to prune to, or <see langword="null"/> for the default.</param>
+    /// <param name="retention">What to prune to, or <see langword="null"/> for the policy in <paramref name="options"/>.</param>
     /// <param name="filesRoot">
     /// Where placed files go, or <see langword="null"/> for a temporary directory deleted when the runtime is.
     /// </param>
@@ -552,7 +556,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(clock);
 
         return new BrokerRuntime(
-            project ?? TestProject, connection, options, clock, retention ?? RetentionPolicy.Default,
+            project ?? TestProject, connection, options, clock, retention ?? options.Retention,
             FilesAt(filesRoot), ownsConnection: false);
     }
 

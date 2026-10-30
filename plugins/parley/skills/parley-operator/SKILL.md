@@ -218,6 +218,7 @@ useful. Start it when the person asks.
 Pruning brings the next retention pass forward. It does not set the policy. The broker applies it on every
 retention pass, using `PARLEY_RETENTION_IDLE_HOURS` and `PARLEY_RETENTION_MAX_AGE_HOURS` from the
 environment the broker was started with: three days idle and thirty days maximum age if unset.
+A conversation that was closed waits out the same idle period as one that went quiet.
 
 **It removes text permanently.** If a discussion is worth keeping, the person should save it first
 (Alt+c in the terminal, or Export, then Export TXT, in the web UI). That copy is a file they own,

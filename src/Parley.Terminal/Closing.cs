@@ -138,7 +138,9 @@ internal static class Closing
 
              It is closed now, whatever its participants have voted. Every request still open in it is closed
              with a result saying a person closed it, and each participant holding that work is told. A new
-             request naming it is refused. Nothing is deleted.
+             request naming it is refused.
+
+             {Parley.Client.Rendering.RetentionWords.WhatClosingKeeps}
              """);
     }
 

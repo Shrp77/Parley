@@ -14,6 +14,19 @@ public sealed class RetentionWordsTests
             "Policy applied: a conversation quiet for 3 days is pruned, and nothing but open work is kept past 30 days.",
             RetentionWords.Applied(RetentionPolicy.Default));
         Assert.Contains("quiet for 1 hour is", RetentionWords.Applied(new RetentionPolicy(TimeSpan.FromHours(1), TimeSpan.FromHours(1))), StringComparison.Ordinal);
+
+        // Whole days from two days up; a single day, or days and hours, are said in hours.
+        Assert.Contains("quiet for 24 hours is", RetentionWords.Applied(new RetentionPolicy(TimeSpan.FromHours(24), TimeSpan.FromHours(48))), StringComparison.Ordinal);
+        Assert.Contains("kept past 2 days.", RetentionWords.Applied(new RetentionPolicy(TimeSpan.FromHours(24), TimeSpan.FromHours(48))), StringComparison.Ordinal);
+        Assert.Contains("kept past 50 hours.", RetentionWords.Applied(new RetentionPolicy(TimeSpan.FromHours(12), TimeSpan.FromHours(50))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void What_closing_keeps_names_the_idle_period_and_export()
+    {
+        // SPEC.md §9.4: closing does not shorten the idle period. The terminal's dialog once said only that nothing is deleted.
+        Assert.Contains("quiet for the retention idle period", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
+        Assert.Contains("export it to keep a copy", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
     }
 
     [Fact]

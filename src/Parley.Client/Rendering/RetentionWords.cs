@@ -20,6 +20,15 @@ public static class RetentionWords
         "Nothing on an open exchange is removed. A message not yet collected, and the request a result not yet collected "
         + "carries back, are kept until they pass the age cap, and then removed with the rest.";
 
+    /// <summary>What closing a conversation does to its text, said before the person confirms it.</summary>
+    /// <remarks>
+    /// Closing does not shorten the idle period (SPEC.md §9.4), and a person expecting to read a conversation back is
+    /// told how long they have and how to keep it.
+    /// </remarks>
+    public const string WhatClosingKeeps =
+        "Nothing is deleted now. Its text is kept until the conversation has been quiet for the retention idle period, "
+        + "three days unless the broker is set otherwise; export it to keep a copy.";
+
     /// <summary>The policy a prune applied, as one sentence.</summary>
     /// <param name="policy">The policy.</param>
     /// <returns>The sentence.</returns>

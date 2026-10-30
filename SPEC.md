@@ -2787,10 +2787,10 @@ deployment that never closes flagged work keeps its text, and is shown that it h
 **The idle rule.** Once every exchange in a conversation is closed and nothing has been added to it
 for the configured idle period, the line of work is over and its messages are prunable.
 
-**Closure short-circuits the idle period.** A conversation closed by consensus or by the person
-(§5.0) is prunable from the moment it closes, without waiting out the idle window: somebody has said
-the work is over, which is better evidence than silence and arrives sooner. The idle rule remains
-for everything else.
+**Closure does not shorten the idle period.** A conversation closed by consensus or by the person
+(§5.0) waits out the same idle window as one that fell silent. Agents close a conversation by
+consensus with no person present, and the person must still be able to read back what was said and
+export it before it goes.
 
 **The age cap.** Nothing but the text of an open exchange outlives the configured maximum age,
 whatever the idle rule concludes: a message nobody collected, and the Request an uncollected Result

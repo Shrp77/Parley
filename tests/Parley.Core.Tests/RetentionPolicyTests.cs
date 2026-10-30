@@ -108,6 +108,7 @@ public sealed class RetentionPolicyTests
     [InlineData("-4")]
     [InlineData("2.5")]
     [InlineData("72 hours")]
+    [InlineData("2147483647")]
     public void An_unreadable_value_is_refused_rather_than_ignored(string configured)
     {
         // Falling back silently would leave an operator with a log being pruned on numbers they

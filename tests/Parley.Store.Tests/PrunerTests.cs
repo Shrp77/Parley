@@ -156,16 +156,18 @@ public sealed class PrunerTests : IDisposable
     }
 
     [Fact]
-    public async Task Closing_a_conversation_does_not_wait_out_the_idle_period()
+    public async Task Closing_a_conversation_waits_out_the_idle_period()
     {
         var (exchange, _) = await Request(T0);
         await Settle(exchange, T0.AddMinutes(5));
 
-        // Well inside the idle period, and gone anyway: somebody has said the work is over, which is better
-        // evidence than silence and arrives sooner.
+        // Agents close a conversation by consensus with nobody present, so a closed one is kept as long as a quiet one:
+        // the person can still read it back and export it.
         Assert.True(await _conversations.ForceConcludeAsync("pricing", null, T0.AddMinutes(10), cancellationToken: Ct));
 
-        Assert.Equal(2, (await Prune(T0.AddMinutes(20))).Removed);
+        Assert.Equal(0, (await Prune(T0.AddMinutes(20))).Removed);
+        Assert.Equal(0, (await Prune(T0.AddDays(3))).Removed);
+        Assert.Equal(2, (await Prune(T0.AddDays(3).AddMinutes(6))).Removed);
     }
 
     // ---- the floor ----
@@ -196,7 +198,8 @@ public sealed class PrunerTests : IDisposable
         Assert.True(await _conversations.ForceConcludeAsync("pricing", "nobody is working on this", T0.AddDays(60), cancellationToken: Ct));
         await DeliverEverything();
 
-        var result = await Prune(T0.AddDays(61));
+        // Once the closed Results have been quiet for the idle period, which closing does not shorten.
+        var result = await Prune(T0.AddDays(64));
 
         Assert.Equal(0, result.HeldByFloor);
         Assert.Equal(0, await MessageCount());

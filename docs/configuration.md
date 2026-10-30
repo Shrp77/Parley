@@ -297,7 +297,8 @@ so left unbounded it would become the shared context store Parley exists to avoi
 So it forgets by default:
 
 - a discussion whose exchanges have all closed is removed once it has been quiet for
-  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset),
+  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset); closing it, by its agents or by you, does not
+  shorten that,
 - and nothing but open work outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
 
 The retention pass runs once an hour. A prune from the terminal or the web console runs it now and

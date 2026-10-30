@@ -115,7 +115,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "forceconclude" => ($"Conversation '{Subject}' will be closed now, whatever its participants "
                               + "have voted. Every request still open in it is closed with a result saying "
-                              + "a person closed it, and each participant holding that work is told.", false),
+                              + "a person closed it, and each participant holding that work is told. "
+                              + Parley.Client.Rendering.RetentionWords.WhatClosingKeeps, false),
 
             // The project-level form, which follows `prune` in taking its subject from whatever made the
             // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
