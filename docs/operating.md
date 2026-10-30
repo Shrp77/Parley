@@ -154,6 +154,11 @@ Retiring and purging each ask you to type the agent's own name. A purge that wou
 waiting names them, and says what they will see, before asking. Retiring can be undone from the
 same place. Purging cannot.
 
+**An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
+finds its folder deleted, while the folder above it is still there and in use, it starts nothing and
+the broker retires the agent; the node's output says so. Put the repository back and reinstate the agent.
+A folder that is merely unreachable (an unmounted drive, a link to a disk that is off) retires nothing.
+
 **Destructive actions all work this way:** a description, keeping offered first, and a deliberate
 act such as typing a name. Destroying a conversation works the same way, with the conversation's
 identifier typed back.

@@ -145,12 +145,46 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
 
         var said = await StartAsync(catalogue, identity, reporter: null);
 
-        Assert.Contains("runs through a link", said, StringComparison.Ordinal);
+        // Which check says so differs by platform: Windows still sees the dangling link as a folder, so the link check does;
+        // Unix reads it as missing, so the parent check does (lens 3 run 97). Either way nothing is concluded.
+        Assert.Contains("nothing is concluded", said, StringComparison.Ordinal);
         Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
         Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
 
         // The link alone, never recursively: its far side is gone, but a link is removed as itself.
         Directory.Delete(repos);
+    }
+
+    [Fact]
+    public async Task A_workspace_that_is_itself_a_link_to_something_gone_is_never_reported_gone()
+    {
+        // The workspace is a link to a drive that is not mounted, beside other things in a folder that is there: Unix reads
+        // it as missing and the parent as in use, so only the link check stands between it and a retire. Windows reads a
+        // dangling directory link as present, so the workspace is not missing there and the node tries to start it.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows reads a dangling directory link as a folder that is there.");
+
+        var volume = Path.Combine(_root, "usb");
+        var workspace = Path.Combine(_root, "orders");
+        _ = Directory.CreateDirectory(Path.Combine(volume, "orders"));
+
+        try
+        {
+            Directory.CreateSymbolicLink(workspace, Path.Combine(volume, "orders"));
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let a test create a directory link.");
+        }
+
+        var (catalogue, identity) = await CatalogueAsync(workspace);
+        Directory.Delete(volume, recursive: true);
+
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+        Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
+
+        Directory.Delete(workspace);
     }
 
     [Fact]

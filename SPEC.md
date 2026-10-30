@@ -979,8 +979,8 @@ Invariants:
 - Only the party named in `owed_by` may send a Clarify or a Result. The other party may send
   further Requests — into the same conversation (§5.0) — but may not Clarify or send a Result
   out of turn.
-- At most `max_open_per_pair` `OPEN` exchanges from one participant to another, counted
-  directionally. The broker stamps it unbounded. See §7.1.
+- At most `open_pair_cap` `OPEN` exchanges from one participant to another, counted
+  directionally. The broker stamps it 50, the top of its band, which storage reads as off. See §7.1.
 - An `OPEN` exchange has no deadline and no reaper. What it has is a record of where it
   stands, which the broker keeps current and shows the person running the deployment.
 
@@ -1071,7 +1071,7 @@ The key is an identity, not a lock. Under §4.2 nothing blocks, so serialising a
 nothing and cost a great deal: a participant with one Request outstanding to another could not
 ask it anything else for as long as the work took, which can be hours.
 
-**There is no request cap.** The broker stamps each exchange with `max_open_per_pair = 50`, the
+**There is no request cap.** The broker stamps each exchange with `open_pair_cap = 50`, the
 ceiling of the band storage accepts, at which neither trigger in §9.2 fires. A cap set without
 evidence refuses work at a number nobody measured, which is the arbitrary limit principle 2.8 rules
 out. The storage-level enforcement of §9.3 is kept, counting directionally, so that a bound evidence
@@ -1169,7 +1169,10 @@ the sender can act on immediately:
 | Conversation not assignable (§5.0) | The conversations the sender may name, so it sends into the right one. |
 | Conversation closed (§5.0) | That the conversation is closed and by whom, so the sender starts new work rather than reviving a settled line. |
 | Request cap reached (§7.1) | The open exchanges it already holds with that participant, so it can see what it is waiting on and whether this Request is among them. |
-| Receiver retired (§14) | That the receiver is gone for good, so the sender finds who now owns that work. |
+| Receiver retired (§14) | That the receiver is retired — by a person, or because its workspace was found gone — so the sender finds who now owns that work. |
+| Sender retired (§14) | That the sender may not open new work. |
+| Receiver not registered | That nothing is registered under that name, so the sender looks it up in the roster. |
+| Receiver is the facilitator | That Parley asks questions and does no work, so the sender finds who owns the work. |
 | Duplicate of an open Request | The exchange already carrying it. |
 | Role with no registered agents (§5.5) | That nothing answers to that role, which is almost always a misspelling. |
 | No ask (§5.1) | What the Request lacks. |
@@ -3967,7 +3970,8 @@ missing the node concludes nothing, says so in its own output, and tries again w
 outlives what it leads to — a folder that is a junction to a second disk is still there when the disk is
 gone — so a workspace whose path runs through a link concludes nothing either. Nor does one whose parent
 holds nothing else: an unmounted volume leaves its mount folder behind, empty, and a mount point is no link,
-so a repository that was the only thing in its folder is left for a person to retire.
+so a repository that was the only thing in its folder is left for a person to retire. On macOS a volume's
+root sits directly in `/Volumes`, which is always there, so a workspace there concludes nothing either.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
 agent and the reason — an expired credential, a command that will not run — in its own output, which
