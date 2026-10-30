@@ -10,9 +10,10 @@ namespace Parley.Broker.Tests;
 /// An item's blocker, and its reworded mark, after retention has removed its conversation's messages.
 /// </summary>
 /// <remarks>
-/// <b>Found by review, round 28.</b> Retention removes messages and keeps exchange rows and result items (§9.4), and a
-/// closed conversation's messages are released at once. The blocker and the reworded mark were read through messages,
-/// so the default tick turned "closed while blocked" into "closed" minutes after the close.
+/// <b>Found by review, round 28.</b> Retention removes messages and keeps exchange rows and result items (§9.4). The
+/// blocker and the reworded mark were read through messages, so the default tick turned "closed while blocked" into
+/// "closed" once the conversation's messages went (then minutes after a close; since closing stopped shortening the idle
+/// period, once it has passed).
 /// </remarks>
 public sealed class BlockerOutlivesRetentionTests : IDisposable
 {
@@ -106,7 +107,7 @@ public sealed class BlockerOutlivesRetentionTests : IDisposable
     }
 
     [Fact]
-    public async Task A_closed_item_read_by_everyone_keeps_its_blocker_minutes_after_the_close()
+    public async Task A_closed_item_read_by_everyone_keeps_its_blocker_once_the_default_tick_prunes_it()
     {
         var roadmap = await RoadmapAsync();
 
@@ -122,13 +123,14 @@ public sealed class BlockerOutlivesRetentionTests : IDisposable
         Assert.True(await _console.ForceConcludeAsync("rm1-1", null, T0.AddMinutes(5), Ct));
         Assert.Equal("permission", (await FactsAsync(roadmap)).Blocker);
 
-        // The default policy, the broker's own tick, two minutes later: a closed conversation is released at once.
-        var tick = await _broker.TickAsync(T0.AddMinutes(7), Ct);
+        // The default policy, the broker's own tick, once the conversation has been quiet for the idle period.
+        var tick = await _broker.TickAsync(T0.AddDays(3).AddMinutes(10), Ct);
+        Assert.True(tick.Retention.Removed > 0, $"the tick removed nothing, so the blocker was never tested: {tick.Retention}");
 
         var after = await FactsAsync(roadmap);
         Assert.True(
             after.Blocker == "permission",
-            $"two minutes after the close, the default retention tick dropped the blocker ({tick.Retention}): {after}");
+            $"once its messages were pruned, the default retention tick dropped the blocker ({tick.Retention}): {after}");
     }
 
     [Fact]

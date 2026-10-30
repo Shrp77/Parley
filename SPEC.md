@@ -33,7 +33,7 @@ do work there, ask it for what they need to know, and hand parts of a job on to 
 request is carried to an outcome: done, or blocked by something the participants have tried
 and failed to resolve between them. Each agent changes only its own repository. What crosses
 between them is messages — requests, clarifications and results — and files
-an agent places in its project's file location for others to fetch onto disk in their own
+an agent or the person places in its project's file location for others to fetch onto disk in their own
 repositories. Never session history, and never one agent's context poured into another's: a
 file's contents are not delivered into any model's context.
 
@@ -54,8 +54,8 @@ language they are written in.
    everything the sender knows. A file is not an exception: its bytes go to disk in the
    fetching agent's repository and never into a model's context, and what crosses about a file
    — its name, size and content hash, in lists and notices — is bounded like any other text.
-3. **The protocol is the product; the transport is an implementation detail.** Named
-   pipes may be replaced by sockets, HTTP, or a vendor-native mechanism. The message
+3. **The protocol is the product; the transport is an implementation detail.** Today's
+   gRPC over a loopback socket may be replaced by HTTP, pipes, or a vendor-native mechanism. The message
    discipline, exchange state machine, and rules of engagement are what carry value.
 4. **Structure over etiquette.** Anything the protocol can enforce mechanically
    should not be left to the model's good judgement.
@@ -2759,7 +2759,7 @@ Retention is nonetheless **configurable**, because the operator uses in §10.2 a
 isolation guarantee does not depend on the log being short. Two rules prune, and a floor overrides
 both.
 
-**The floor.** Regardless of configuration, the idle rule and closure never remove a message while it is:
+**The floor.** Regardless of configuration, the idle rule never removes a message while it is:
 
 - undelivered — it is somebody's inbox;
 - attached to an exchange that is open — it is work somebody still owes, and §6 may deliver it

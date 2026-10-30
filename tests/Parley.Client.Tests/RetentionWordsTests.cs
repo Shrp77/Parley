@@ -27,6 +27,10 @@ public sealed class RetentionWordsTests
         // SPEC.md §9.4: closing does not shorten the idle period. The terminal's dialog once said only that nothing is deleted.
         Assert.Contains("quiet for the retention idle period", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
         Assert.Contains("export it to keep a copy", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
+
+        // Closing ends the floor's hold on open work, so anything past the age cap goes at once (a Request from day 0
+        // closed at day 40 goes at the next pass); the sentence says so rather than promising the idle period.
+        Assert.Contains("older than the age cap goes at the next retention pass", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
     }
 
     [Fact]

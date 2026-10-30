@@ -23,11 +23,13 @@ public static class RetentionWords
     /// <summary>What closing a conversation does to its text, said before the person confirms it.</summary>
     /// <remarks>
     /// Closing does not shorten the idle period (SPEC.md §9.4), and a person expecting to read a conversation back is
-    /// told how long they have and how to keep it.
+    /// told how long they have and how to keep it. Closing does end the floor's hold on open work, so text already past
+    /// the age cap is said to go at the next pass.
     /// </remarks>
     public const string WhatClosingKeeps =
         "Nothing is deleted now. Its text is kept until the conversation has been quiet for the retention idle period, "
-        + "three days unless the broker is set otherwise; export it to keep a copy.";
+        + "three days unless the broker is set otherwise, and anything already older than the age cap goes at the next "
+        + "retention pass; export it to keep a copy.";
 
     /// <summary>The policy a prune applied, as one sentence.</summary>
     /// <param name="policy">The policy.</param>

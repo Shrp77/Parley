@@ -954,7 +954,7 @@ public sealed class Broker
     /// </para>
     /// <para>
     /// What is left: polls whose last decline lapsed, and
-    /// retention on its own schedule, last because closing a conversation makes its messages prunable.
+    /// retention on its own schedule.
     /// </para>
     /// </remarks>
     public async Task<TickResult> TickAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken = default)

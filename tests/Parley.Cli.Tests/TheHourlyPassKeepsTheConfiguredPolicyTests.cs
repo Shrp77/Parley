@@ -2,6 +2,7 @@ using Parley.Broker;
 using Parley.Configuration;
 using Parley.Core;
 using Parley.Server;
+using Parley.Store;
 using Xunit;
 
 namespace Parley.Cli.Tests;
@@ -58,6 +59,20 @@ public sealed class TheHourlyPassKeepsTheConfiguredPolicyTests : IDisposable
         var options = BrokerOptions.Default with { Retention = Configured };
 
         await using var runtime = BrokerRuntime.OpenInMemory(options, TimeProvider.System);
+
+        var tick = await runtime.TickAsync(Ct);
+
+        Assert.Equal(Configured, tick.Retention.Applied);
+        Assert.Equal(Configured, runtime.Retention);
+    }
+
+    [Fact]
+    public async Task A_runtime_over_a_connection_given_no_policy_prunes_under_the_one_its_options_name()
+    {
+        var options = BrokerOptions.Default with { Retention = Configured };
+        using var connection = ParleyDatabase.OpenInMemory();
+
+        await using var runtime = BrokerRuntime.Over(connection, options, TimeProvider.System);
 
         var tick = await runtime.TickAsync(Ct);
 
