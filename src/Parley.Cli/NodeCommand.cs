@@ -625,9 +625,10 @@ public static class NodeCommand
                 return;
             }
 
-            // **A workspace that is gone retires its agent, and only when the folder above it is still there** (SPEC.md
-            // §14): a deleted repository is worth a judgement, a drive briefly unmounted is not, and one unavailable volume
-            // must not retire every agent on it at once. The node looks because the broker never reads this disk.
+            // **A workspace that is gone retires its agent, only where that can be told from a disk absent or replaced**
+            // (SPEC.md §14; WorkspaceGoneAsync): a deleted repository is worth a judgement, a drive briefly unmounted or swapped
+            // is not, and one unavailable volume must not retire every agent on it at once. The node looks because the broker
+            // never reads this disk.
             if (catalogue.WorkspaceFor(identity) is { } catalogued
                 && !string.IsNullOrWhiteSpace(catalogued)
                 && !Directory.Exists(catalogued))
@@ -723,9 +724,10 @@ public static class NodeCommand
         if (!MayRetireUnder(parent))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} is missing from a disk other than the one holding "
-                + "your home folder, or from where removable disks are mounted, so a different disk may be answering and "
-                + "nothing is concluded; it is tried again when next asked for.")
+                $"  {agent.Value}: not started — its workspace {workspace} is missing where a disk that is absent or replaced "
+                + "cannot be told from a deletion (a disk other than your home folder's, a drive's root, a folder removable "
+                + "disks are mounted in, or a mount table that cannot be read), so nothing is concluded; it is tried again "
+                + "when next asked for.")
                 .ConfigureAwait(false);
 
             return;
@@ -796,7 +798,28 @@ public static class NodeCommand
 
         if (OperatingSystem.IsMacOS())
         {
-            return !IsUnder(folder, "/Volumes") && !IsUnder(home, "/Volumes");
+            // Disks ignore case unless formatted otherwise, so /volumes is /Volumes; and a disk can be mounted at any folder,
+            // so the mounted volumes are asked for their roots rather than /Volumes taken as the only place (lens 2 run 92).
+            if (IsUnder(folder, "/Volumes", StringComparison.OrdinalIgnoreCase)
+                || IsUnder(home, "/Volumes", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string[] roots;
+
+            try
+            {
+                roots = [.. DriveInfo.GetDrives().Select(drive => drive.RootDirectory.FullName)];
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            return LongestUnder(folder, roots, StringComparison.OrdinalIgnoreCase) is { } mounted
+                   && string.Equals(
+                       mounted, LongestUnder(home, roots, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase);
         }
 
         string[] mounts;
@@ -819,22 +842,24 @@ public static class NodeCommand
     /// <param name="mountInfo">The lines of <c>/proc/self/mountinfo</c>.</param>
     /// <returns>The longest mount point the path lies under, or null when none is listed.</returns>
     /// <remarks>The fifth field is the mount point, with a space, tab, newline or backslash written as an octal escape.</remarks>
-    internal static string? MountPointOf(string path, IEnumerable<string> mountInfo)
+    internal static string? MountPointOf(string path, IEnumerable<string> mountInfo) =>
+        LongestUnder(
+            path,
+            mountInfo.Select(line => line.Split(' ')).Where(fields => fields.Length >= 5).Select(fields => Unescape(fields[4])),
+            StringComparison.Ordinal);
+
+    /// <summary>The longest of some mount points that a path lies under.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="points">Mount points.</param>
+    /// <param name="comparison">How names compare: ignoring case where the disks do.</param>
+    /// <returns>The longest point the path lies under, or null when none.</returns>
+    internal static string? LongestUnder(string path, IEnumerable<string> points, StringComparison comparison)
     {
         string? best = null;
 
-        foreach (var line in mountInfo)
+        foreach (var point in points)
         {
-            var fields = line.Split(' ');
-
-            if (fields.Length < 5)
-            {
-                continue;
-            }
-
-            var point = Unescape(fields[4]);
-
-            if (IsUnder(path, point) && (best is null || point.Length > best.Length))
+            if (IsUnder(path, point, comparison) && (best is null || point.Length > best.Length))
             {
                 best = point;
             }
@@ -843,10 +868,10 @@ public static class NodeCommand
         return best;
     }
 
-    private static bool IsUnder(string path, string point) =>
+    private static bool IsUnder(string path, string point, StringComparison comparison = StringComparison.Ordinal) =>
         point == "/"
-        || string.Equals(path, point, StringComparison.Ordinal)
-        || path.StartsWith(point.TrimEnd('/') + "/", StringComparison.Ordinal);
+        || string.Equals(path, point.TrimEnd('/'), comparison)
+        || path.StartsWith(point.TrimEnd('/') + "/", comparison);
 
     private static string Unescape(string field) =>
         System.Text.RegularExpressions.Regex.Replace(
@@ -875,8 +900,9 @@ public static class NodeCommand
         var unix = trimmed.Replace(Path.DirectorySeparatorChar, '/');
         var above = unix.LastIndexOf('/') is var cut and > 0 ? unix[..cut] : null;
 
-        return unix is "/Volumes" or "/mnt" or "/media" or "/run/media"
-               || above is "/media" or "/run/media";
+        // Ignoring case: a macOS disk does, and on Linux a folder these names only fail safe.
+        return new[] { "/Volumes", "/mnt", "/media", "/run/media" }.Contains(unix, StringComparer.OrdinalIgnoreCase)
+               || new[] { "/media", "/run/media" }.Contains(above, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>Whether a folder holds nothing, or cannot be listed.</summary>

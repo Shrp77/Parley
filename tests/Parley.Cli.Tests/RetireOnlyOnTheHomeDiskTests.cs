@@ -15,6 +15,8 @@ public sealed class RetireOnlyOnTheHomeDiskTests
 {
     private static readonly string[] MountInfo =
     [
+        // A child listed before its parent, so the longest match and the last listed one differ (lens 3 run 101).
+        "50 30 8:65 / /home/someone/data rw,relatime shared:11 - ext4 /dev/sde1 rw",
         "22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw",
         "30 22 8:17 / /home rw,relatime shared:2 - ext4 /dev/sdb1 rw",
         "41 22 8:33 / /media/someone/My\\040Disk rw,nosuid shared:9 - vfat /dev/sdc1 rw",
@@ -23,6 +25,7 @@ public sealed class RetireOnlyOnTheHomeDiskTests
 
     [Theory]
     [InlineData("/home/someone/src/orders", "/home")]
+    [InlineData("/home/someone/data/orders", "/home/someone/data")]
     [InlineData("/home", "/home")]
     [InlineData("/homework/orders", "/")]
     [InlineData("/media/someone/My Disk/src", "/media/someone/My Disk")]
@@ -31,6 +34,20 @@ public sealed class RetireOnlyOnTheHomeDiskTests
     public void A_paths_mount_point_is_the_longest_listed_mount_it_lies_under(string path, string expected)
     {
         Assert.Equal(expected, NodeCommand.MountPointOf(path, MountInfo));
+    }
+
+    [Theory]
+    [InlineData("/Users/someone/src/orders", "/")]
+    [InlineData("/volumes/usb/src/orders", "/Volumes/usb")]
+    [InlineData("/Users/someone/Work/orders", "/Users/someone/Work")]
+    [InlineData("/users/SOMEONE/work/orders", "/Users/someone/Work")]
+    public void On_macOS_a_path_is_matched_to_its_volume_ignoring_case_and_wherever_it_is_mounted(string path, string expected)
+    {
+        // Lens 2 run 92: APFS ignores case, so a workspace typed /volumes/... is on the disk at /Volumes/...; and a disk
+        // mounted at a folder the person chose (~/Work) is its own volume, not the home disk.
+        string[] roots = ["/", "/System/Volumes/Data", "/Volumes/usb", "/Users/someone/Work"];
+
+        Assert.Equal(expected, NodeCommand.LongestUnder(path, roots, StringComparison.OrdinalIgnoreCase));
     }
 }
 

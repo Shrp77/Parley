@@ -25,6 +25,7 @@ public sealed class NoRetireAtAVolumeRootTests
 
     [Theory]
     [InlineData("/Volumes", true)]
+    [InlineData("/volumes", true)]
     [InlineData("/mnt", true)]
     [InlineData("/media", true)]
     [InlineData("/media/someone", true)]

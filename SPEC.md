@@ -289,7 +289,7 @@ transport endpoint:
 **Where that layout lives is a property of the machine, not of the protocol.** It is one
 root per user, at the platform's conventional configuration location, holding one folder
 per project. A different root may be named, for a test rig or a second account, and is then
-the whole of what is read; nothing names a store or a port outside a project's folder. Nothing in it is ever read by a broker, sent over the transport, or stored:
+the whole of what is read; nothing names a store outside a project's folder, and the root's `ports.json` only records which port each project holds. Nothing in it is ever read by a broker, sent over the transport, or stored:
 it exists so that a person, and the tools a person runs, can say *which deployment* they
 mean without repeating paths and without inferring any of them from a working directory.
 
@@ -3138,8 +3138,8 @@ other could.
 | `dismiss_file_problem(id)` | Dismiss a problem the person has seen, saying whether a waiting one was dismissed. Deletes nothing on disk. |
 | `roadmaps()` | The project's roadmaps: identifier, title, revision, and how many live items each has and how many have conversations. The list a person reaches roadmaps from. |
 | `roadmap(id)` | One roadmap whole: its items in order, with each one's text, intended agent, needs and reserved conversation name, removed ones marked, and for each live item the facts the broker holds (§5.7): whether its conversation exists, how many exchanges are open, whether every open request was collected, how many closed exchanges ended complete and how many of the person's requests were closed with no Result, how many agents' latest answer on the person's requests was blocked and the blocker one of those named, who closed the conversation, whether it was destroyed, whether its text was edited after its first request was sent, and the identifiers of its open exchanges, so a surface can join them to `waiting()`. **It returns facts and never states**: a surface derives *not started*, *in progress*, *blocked* and the rest from these, `waiting()` and `registry()`, so a view costs three reads however many items there are. |
-| `proposals(state?, headings?)` | The proposals agents have made, waiting ones by default: the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
-| `proposal_count(state?)` | How many proposals are in a state, waiting ones by default, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
+| `proposals(state?, headings?)` | The proposals agents have made, in the state named or every state when none is (the surfaces name `waiting`): the proposer, where it came from, the title hint it would revise, every item in full, and its size. Asked for **headings**, only the newest 200 come, each with its title and title hint cut to 200 characters, its item count and no items, so a list costs the same whatever an agent wrote and however often it proposed. Waiting ones are work waiting on the person (§6). |
+| `proposal_count(state?)` | How many proposals are in the state named, or in every state when none is, reading none of them: what a surface shows on every refresh, since nothing bounds how many an agent makes. |
 | `proposal(id)` | One proposal whole, in whatever state it is, or nothing when there is none by that identifier. What a surface reads when the person opens a proposal from a list of headings. |
 | `confirm_proposal(id, content, target, target_revision)` | Turn a proposal into a roadmap, or a revision of one the person names, with the person's final content: the title and every item, in order, with intended agents and needs. Validates it whole (§5.7). Records whether it was confirmed as proposed or edited, by comparing the final content with the stored proposal, never from a flag the caller sets. In one transaction it writes the roadmap or revision, reserves each item's conversation name, for a revision supersedes any other waiting proposal whose title hint names the roadmap revised, and tells each proposer. A revision names the revision of the roadmap the person was shown, and is refused when the roadmap has moved past it, as an edit is, so it never replaces items another surface saved meanwhile. |
 | `decline_proposal(id)` | Decline a waiting proposal. Nothing is persisted; the proposer is told it was declined. |
@@ -3190,7 +3190,7 @@ trimmed. No word changes, which is why `automatic` is still a truthful statement
 the agent's. Anything that would change a word is a person's decision, and is recorded as `edited`.
 
 **After an agent's first line is accepted automatically, its node restarts it once it is idle** —
-no open exchange it owes work on and no turn in progress — so peers read the line. It is the fourth
+no open exchange it owes work on and no turn in progress — so peers read the line. It is the third
 thing that may end a resident agent (§11.1). Later changes to a line wait for the agent's next start
 on its own.
 
