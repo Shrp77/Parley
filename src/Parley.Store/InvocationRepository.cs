@@ -84,8 +84,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// A retired agent is excluded by the status filter for the same reason §14 refuses to route
-    /// to one: retirement is a person's judgement that the agent will not come back, and a
-    /// process started against it would overrule that.
+    /// to one: retirement says the agent is not to be routed to (a person's judgement, or its node's finding that the
+    /// workspace is gone), and a process started against it would overrule that.
     /// </para>
     /// <para>
     /// Liveness is deliberately not among them — see <see cref="InvocationCandidate"/>. It is

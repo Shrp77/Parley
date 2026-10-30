@@ -628,7 +628,9 @@ public static class NodeCommand
             // **A workspace that is gone retires its agent, and only when the folder above it is still there** (SPEC.md
             // §14): a deleted repository is worth a judgement, a drive briefly unmounted is not, and one unavailable volume
             // must not retire every agent on it at once. The node looks because the broker never reads this disk.
-            if (catalogue.WorkspaceFor(identity) is { } catalogued && !Directory.Exists(catalogued))
+            if (catalogue.WorkspaceFor(identity) is { } catalogued
+                && !string.IsNullOrWhiteSpace(catalogued)
+                && !Directory.Exists(catalogued))
             {
                 await WorkspaceGoneAsync(agent, catalogued, output, reporter).ConfigureAwait(false);
 
@@ -668,7 +670,7 @@ public static class NodeCommand
         }
     }
 
-    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when the folder above is there.</summary>
+    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when the folder above it is still there, in use, at no drive's or mount's root and reached through no link.</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="workspace">Its catalogued workspace, which does not exist.</param>
     /// <param name="output">Where to report.</param>
@@ -676,7 +678,21 @@ public static class NodeCommand
     /// <returns>A task that completes when it is said.</returns>
     private static async Task WorkspaceGoneAsync(AgentName agent, string workspace, TextWriter output, TurnReporter? reporter)
     {
-        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+        string full;
+
+        try
+        {
+            full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+        }
+        catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace '{workspace}' is not a path this machine can read, so "
+                + "nothing is concluded.").ConfigureAwait(false);
+
+            return;
+        }
+
         var parent = Path.GetDirectoryName(full);
 
         if (parent is null || !Directory.Exists(parent))
@@ -699,18 +715,40 @@ public static class NodeCommand
             return;
         }
 
+        // **Never at the root of a volume** (the owner's call, 2026-10-30): the workspace is itself a volume's root, or sits
+        // in a drive's root, so the folder above belongs to whatever volume answers there now, which may be another disk
+        // that took the letter or the mount folder (lens 1 run 88, lens 2 run 90). A repository deleted from a drive's root
+        // is left for a person to retire.
+        if (AtAVolumeRoot(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing at the root of a drive or mount, where "
+                + "a different disk may be answering, so nothing is concluded; it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
         // **The folder above must be one somebody is using, not one a volume left behind.** An unmounted Linux volume leaves
         // its mount folder in place and empty, and a mount point is no link, so an empty parent concludes nothing (lens 1
-        // run 87); a repository that was the only thing in its folder is then left for a person to retire. A macOS volume's
-        // root sits directly in /Volumes, which is always there.
-        if (HoldsNothing(parent)
-            || (OperatingSystem.IsMacOS() && string.Equals(parent, "/Volumes", StringComparison.Ordinal)))
+        // run 87); a repository that was the only thing in its folder is then left for a person to retire.
+        if (HoldsNothing(parent))
         {
             await output.WriteLineAsync(
                 $"  {agent.Value}: not started — its workspace {workspace} is missing and the folder above it holds "
                 + "nothing else, as a volume not mounted leaves it, so nothing is concluded; it is tried again when next "
                 + "asked for.")
                 .ConfigureAwait(false);
+
+            return;
+        }
+
+        // Looked at once more: a volume that came back while the checks ran shows its workspace again (lens 1 run 88).
+        if (Directory.Exists(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} came back while it was being looked at; it is "
+                + "started when next asked for.").ConfigureAwait(false);
 
             return;
         }
@@ -723,6 +761,29 @@ public static class NodeCommand
                   + "it in the terminal once the repository is back."
                 : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a folder is a drive's root, or a folder removable volumes are mounted directly in.</summary>
+    /// <param name="folder">The folder above a workspace, as a full path.</param>
+    /// <returns>True when a workspace directly in it may be a volume's root, or sit on a volume another disk can replace.</returns>
+    /// <remarks>
+    /// A drive's root (<c>E:\</c>, <c>/</c>, a share's root); <c>/Volumes</c> on macOS; <c>/mnt</c>, <c>/media</c>, and a
+    /// user's folder in <c>/media</c> or <c>/run/media</c>, where a desktop mounts each removable disk under its label.
+    /// </remarks>
+    internal static bool AtAVolumeRoot(string folder)
+    {
+        var trimmed = Path.TrimEndingDirectorySeparator(folder);
+
+        if (string.Equals(trimmed, Path.TrimEndingDirectorySeparator(Path.GetPathRoot(folder) ?? string.Empty), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var unix = trimmed.Replace(Path.DirectorySeparatorChar, '/');
+        var above = unix.LastIndexOf('/') is var cut and > 0 ? unix[..cut] : null;
+
+        return unix is "/Volumes" or "/mnt" or "/media" or "/run/media"
+               || above is "/media" or "/run/media";
     }
 
     /// <summary>Whether a folder holds nothing, or cannot be listed.</summary>

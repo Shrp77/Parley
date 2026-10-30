@@ -145,14 +145,60 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
 
         var said = await StartAsync(catalogue, identity, reporter: null);
 
-        // Which check says so differs by platform: Windows still sees the dangling link as a folder, so the link check does;
-        // Unix reads it as missing, so the parent check does (lens 3 run 97). Either way nothing is concluded.
+        // Which check says so differs by platform: Windows still sees the dangling link as a folder that cannot be listed,
+        // so it holds nothing; Unix reads it as missing, so the folder above is missing (lens 3 runs 97 and 98). Either way
+        // nothing is concluded. The link check itself is held by the test after this one.
         Assert.Contains("nothing is concluded", said, StringComparison.Ordinal);
         Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
         Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
 
-        // The link alone, never recursively: its far side is gone, but a link is removed as itself.
-        Directory.Delete(repos);
+        RemoveLink(repos);
+    }
+
+    [Fact]
+    public async Task A_workspace_missing_beyond_a_link_to_a_folder_in_use_concludes_nothing()
+    {
+        // The folder above is a link to a folder that is there and holds other things: every other check passes, so only
+        // the link check stands between it and a retire, on every platform.
+        var volume = Path.Combine(_root, "other-volume");
+        _ = Directory.CreateDirectory(Path.Combine(volume, "billing"));
+        var repos = Path.Combine(_root, "repos");
+
+        try
+        {
+            Directory.CreateSymbolicLink(repos, volume);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let a test create a directory link.");
+        }
+
+        var (catalogue, identity) = await CatalogueAsync(Path.Combine(repos, "checkout"));
+        Directory.Delete(Path.Combine(volume, "checkout"), recursive: true);
+
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.Contains("runs through a link", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+
+        RemoveLink(repos);
+    }
+
+    /// <summary>Removes a directory link as itself, never what it leads to.</summary>
+    /// <remarks>
+    /// On Unix a link whose far side is gone reads as missing to <see cref="Directory.Delete(string)"/>, which then throws
+    /// (lens 3 run 98); a file removal unlinks it there. Windows removes a directory link as a directory.
+    /// </remarks>
+    private static void RemoveLink(string link)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.Delete(link);
+        }
+        else
+        {
+            File.Delete(link);
+        }
     }
 
     [Fact]
@@ -184,7 +230,7 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
         Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
         Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
 
-        Directory.Delete(workspace);
+        RemoveLink(workspace);
     }
 
     [Fact]
@@ -201,6 +247,69 @@ public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable
         Assert.Contains("holds nothing else", said, StringComparison.Ordinal);
         Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
         Assert.False(File.Exists(Evidence), "something was launched for a workspace that is gone");
+    }
+
+    [Fact]
+    public async Task A_workspace_missing_from_a_drives_root_concludes_nothing_though_the_drive_holds_other_things()
+    {
+        // Lens 2 run 90: another disk took the removable drive's letter, so the root is there and holds things, and nothing
+        // on the path is a link. A drive letter onto a folder plays the disk; the owner's mapped letters are never used.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "drive letters");
+
+        var disk = Path.Combine(_root, "disk");
+        _ = Directory.CreateDirectory(Path.Combine(disk, "photos"));
+        var letter = Enumerable.Range('K', 'Y' - 'K' + 1).Select(c => (char)c)
+            .Where(c => c is not 'M' and not 'R' and not 'V')
+            .Select(c => $"{c}:")
+            .First(l => QueryDosDevice(l, new char[65536], 65536) == 0
+                && System.Runtime.InteropServices.Marshal.GetLastPInvokeError() == 2);
+        var definition = $@"\??\{disk}";
+        Assert.True(DefineDosDevice(RawTargetPath, letter, definition));
+
+        try
+        {
+            var (catalogue, identity) = await CatalogueAsync($@"{letter}\orders");
+            Directory.Delete(Path.Combine(disk, "orders"), recursive: true);
+
+            var said = await StartAsync(catalogue, identity, reporter: null);
+
+            Assert.Contains("root of a drive", said, StringComparison.Ordinal);
+            Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
+        }
+        finally
+        {
+            DefineDosDevice(RawTargetPath | RemoveDefinition | ExactMatchOnRemove, letter, definition);
+        }
+    }
+
+    private const uint RawTargetPath = 0x1;
+    private const uint RemoveDefinition = 0x2;
+    private const uint ExactMatchOnRemove = 0x4;
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "DefineDosDeviceW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool DefineDosDevice(uint flags, string deviceName, string targetPath);
+
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(System.Runtime.InteropServices.DllImportSearchPath.System32)]
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", EntryPoint = "QueryDosDeviceW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint QueryDosDevice(string deviceName, char[] targetPath, uint length);
+
+    [Fact]
+    public async Task An_empty_workspace_in_the_catalogue_is_a_failed_start_not_a_stopped_node()
+    {
+        // Lens 1 run 88: a hand-edited "workspace": "" reached Path.GetFullPath("") and threw out of the node's loop, which
+        // stopped every agent on the machine.
+        var (catalogue, identity) = await CatalogueAsync(Path.Combine(_root, "checkout"));
+        var path = Path.Combine(_root, NodeCatalogue.DefaultFileName);
+        var text = await File.ReadAllTextAsync(path, Ct);
+        var workspaceJson = System.Text.Json.JsonSerializer.Serialize(Path.Combine(_root, "checkout"));
+        await File.WriteAllTextAsync(path, text.Replace(workspaceJson, "\"\"", StringComparison.Ordinal), Ct);
+        catalogue = NodeCatalogue.ReadFrom(path);
+
+        var said = await StartAsync(catalogue, identity, reporter: null);
+
+        Assert.DoesNotContain("is gone", said, StringComparison.Ordinal);
     }
 
     [Fact]

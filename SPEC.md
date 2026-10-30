@@ -3971,7 +3971,11 @@ outlives what it leads to — a folder that is a junction to a second disk is st
 gone — so a workspace whose path runs through a link concludes nothing either. Nor does one whose parent
 holds nothing else: an unmounted volume leaves its mount folder behind, empty, and a mount point is no link,
 so a repository that was the only thing in its folder is left for a person to retire. On macOS a volume's
-root sits directly in `/Volumes`, which is always there, so a workspace there concludes nothing either.
+root sits directly in `/Volumes`, which is always there, so a workspace there concludes nothing either. More
+generally a workspace at the root of a drive or of a mount (`E:\orders`, `/media/<user>/<disk>`, `/mnt/<disk>`)
+concludes nothing: whatever volume answers there now may be another disk that took the letter or the folder, and its
+being there and in use says nothing about the repository. A repository deleted from a drive's root is left for a
+person to retire.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
 agent and the reason — an expired credential, a command that will not run — in its own output, which
@@ -4182,7 +4186,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 - **Clarification depth distribution** → Requests written badly, or a boundary under-specified. With no
   cap (§5.2) the distribution is uncensored, so it is also the evidence a cap would be set from, should
   one ever be needed.
-- **Exchanges per promoted decision** → how much work produces durable output (rule 8.6).
+- **Exchanges per promoted decision** → how much work produces durable output (rule 8.6). **Not collected
+  yet**: nothing records that a decision was promoted.
 - **`outcome` breakdown by `responder_model`** → adapter tier quality. **Exclude `parley:broker`.** It
   writes only `closed`, on a person's instruction, and counting those among real responders would make
   every model look worse in proportion to how often a person ended work early.
@@ -4197,7 +4202,8 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   Conversation-assignment refusals mean an adapter is offering an agent what §5.0 forbids; distinctness
   refusals (§7.1) mean agents are forgetting what they already sent, which is a context problem in the
   sender; cap refusals, which cannot occur while every exchange is stamped uncapped, would mean a
-  participant is being over-asked.
+  participant is being over-asked. **Not collected yet**: a refusal goes back to its sender and is not
+  kept; only refusals of an oversized message are counted (`refusals()`).
 
 ## 16. Non-goals
 

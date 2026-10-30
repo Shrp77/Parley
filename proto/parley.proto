@@ -597,8 +597,8 @@ service Nodes {
   // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
 
-  // An agent this node was asked to start has no workspace, and the folder above it is still there (section 14). The
-  // broker retires it. Ignored unless the agent is on this node's machine and the node is joined; never the person or
+  // An agent this node was asked to start has no workspace, and the folder above it is still there, in use, at no drive's or mount's root and reached through no link (section 14).
+  // The broker retires it. Ignored unless the agent is on this node's machine and the node is joined; never the person or
   // Parley, whom no node starts.
   rpc ReportWorkspaceGone(WorkspaceGoneReport) returns (WorkspaceGoneReply);
 }

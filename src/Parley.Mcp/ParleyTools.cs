@@ -1923,7 +1923,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             ["why"] = outcome.Rejection switch
             {
                 Wire.RequestRejection.Saturated =>
-                    "You already have as many requests open with that agent as this deployment allows. One of " +
+                    "You already have as many requests open with that agent as the broker accepts. One of " +
                     "them may cover this; see open_exchanges.",
                 Wire.RequestRejection.Duplicate =>
                     "You already sent that agent this exact request and it is still open. Its Result is " +

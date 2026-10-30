@@ -367,7 +367,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// Lists what one agent may learn about the others, per SPEC.md §10.1's <c>agents()</c>.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>Every registered agent except those an operator has retired.</returns>
+    /// <returns>Every registered agent except those retired.</returns>
     /// <remarks>
     /// <para>
     /// Projects rather than filters, and the columns it does not select are the reason it exists
@@ -418,7 +418,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     }
 
     /// <summary>
-    /// Reports whether an operator has retired an agent.
+    /// Reports whether an agent is retired.
     /// </summary>
     /// <param name="agent">The agent.</param>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
@@ -971,7 +971,7 @@ public sealed class AgentRepository(SqliteConnection connection)
     /// after is the one where it did not get to run anything.
     /// </para>
     /// <para>
-    /// It does not touch <c>status</c>. Retirement is a person's judgement and a broker
+    /// It does not touch <c>status</c>. Retirement is a person's judgement (or a node's finding) and a broker
     /// restarting is not evidence about it.
     /// </para>
     /// </remarks>

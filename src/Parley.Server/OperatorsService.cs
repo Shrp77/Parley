@@ -167,7 +167,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// the launched adapter registers the one agent it attaches, by §12.3's ordinary route.
     /// </para>
     /// <para>
-    /// A retired agent is not started: retirement is a person's decision that nothing is routed to it, and
+    /// A retired agent is not started: retirement — a person's, or a node's on finding the workspace gone — means nothing is routed to it, and
     /// <c>reinstate</c> is the route that undoes it. An agent the registry does not hold is started, because
     /// nothing about it has been retired.
     /// </para>
