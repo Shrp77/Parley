@@ -32,5 +32,9 @@ Low: a wrong word that misleads nobody, a stale citation, a comment out of place
   recorded and shown nowhere.
 - **Credential references are not built yet.** SPEC §12 and the docs say so; building `env:` and `file:` is a later
   feature.
+- **No deployment setting for the resume policy, the request and clarification caps or the flag thresholds.**
+  SPEC states the fixed behaviour (a restart wakes nobody; nothing is capped; 15 minutes and 4 hours). The code's
+  internal resume option, which nothing configures, is not a finding.
+- **A start failure is written to the node's own output**; the broker is not told and `agents()` does not show it.
 - The review rules live in this folder, not in CLAUDE.md.
 - The lows triaged in the ledger's 2026-10-29 entry as moot or by design stay that way.

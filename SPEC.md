@@ -625,12 +625,10 @@ waiting on the first: one edge flips instead of two pointing at each other, and 
 reading the conversation sees one exchange going back and forth rather than two tangled into a
 loop (§7.2).
 
-**Depth is not capped unless a deployment caps it.** Clarification is how two participants
-converge, and a limit that stops them converging before they have is the arbitrary cut-off
-principle 2.8 rules out. A deployment may set a cap as operator policy (§7.1 describes how
-policy is stamped on an exchange). Where one is set and reached, the next clarification is
-refused and the receiver sends a Result with what it has — `blocked`, naming what it still
-needs, where that is the truth (§5.3). Nothing closes the exchange on the receiver's behalf.
+**Depth is not capped.** Clarification is how two participants converge, and a limit that stops
+them converging before they have is the arbitrary cut-off principle 2.8 rules out. Each exchange is
+stamped with a depth bound at admission (§7.1), and the broker stamps it unbounded. Nothing closes
+the exchange on the receiver's behalf.
 
 **Depth increments only when the receiver sends.** The requester's reply supplies what was
 asked for; it does not open a round.
@@ -978,7 +976,7 @@ Invariants:
   further Requests — into the same conversation (§5.0) — but may not Clarify or send a Result
   out of turn.
 - At most `max_open_per_pair` `OPEN` exchanges from one participant to another, counted
-  directionally, where a deployment sets a cap. Unbounded by default. See §7.1.
+  directionally. The broker stamps it unbounded. See §7.1.
 - An `OPEN` exchange has no deadline and no reaper. What it has is a record of where it
   stands, which the broker keeps current and shows the person running the deployment.
 
@@ -1027,13 +1025,14 @@ with nobody told. Each silent participant is woken at most once for each poll, w
 afterwards: a participant repeating or alternating its own vote cannot spend another's turns. A new
 poll — which only a new Request can bring about — may ask again.
 
-The thresholds are operator policy, stamped on the exchange when it is admitted (§7.1), so
-changing a deployment's settings does not re-flag work already in flight.
+The thresholds are fixed — fifteen minutes uncollected, four hours collected with no Result — and
+stamped on the exchange when it is admitted (§7.1), so a later build that changes them does not
+re-flag work already in flight.
 
 A single threshold would be wrong in both directions at once: one short enough to show a dead
 agent quickly would flag every agent doing real work, and one long enough to let real work
-finish would hide a vanished agent for hours. Splitting on collection is what lets each be set
-for the case it describes.
+finish would hide a vanished agent for hours. Splitting on collection is what lets each fit the
+case it describes.
 
 **A receiver that restarts does not lose what it owes.** An exchange collected by a session
 that ended before sending its Result is delivered again the next time the receiver collects,
@@ -1068,29 +1067,19 @@ The key is an identity, not a lock. Under §4.2 nothing blocks, so serialising a
 nothing and cost a great deal: a participant with one Request outstanding to another could not
 ask it anything else for as long as the work took, which can be hours.
 
-**The request cap is off unless a deployment sets one.** A participant may hold at most
-`max_open_per_pair` open exchanges *to* a given participant, counted directionally; beyond that a
-Request is refused. **The default is unbounded**, spelled as the ceiling of the band storage
-accepts — at `max_open_per_pair = 50` neither trigger in §9.2 fires. A cap set without evidence
-refuses work at a number nobody measured, which is the arbitrary limit principle 2.8 rules out.
-A deployment that observes a real flood sets one from that observation, and the storage-level
-enforcement of §9.3 is kept for that case, because a bound re-introduced as broker code is a
-bound a broker bug can route around.
+**There is no request cap.** The broker stamps each exchange with `max_open_per_pair = 50`, the
+ceiling of the band storage accepts, at which neither trigger in §9.2 fires. A cap set without
+evidence refuses work at a number nobody measured, which is the arbitrary limit principle 2.8 rules
+out. The storage-level enforcement of §9.3 is kept, counting directionally, so that a bound evidence
+ever calls for is one a broker bug cannot route around.
 
-Where a deployment does set one, counting directionally keeps the two flows independent, so a
-busy `orders → billing` cannot exhaust what `billing → orders` may open.
+**An agent never selects the terms of its exchanges.** A control the controlled party chooses is not
+a control, so admission takes a resolved set of terms — the thresholds of §6, the depth bound of §5.2
+and the request bound above — never the name of one. There is deliberately no parameter through which
+a policy name could travel inward.
 
-**Policy is the operator's, and an agent never selects it.** The request cap, the clarification
-cap of §5.2 and the flagging thresholds of §6 are deployment settings. A control the controlled
-party chooses is not a control, so admission takes a **resolved** set of terms, never the name
-of one. A deployment may map agents to different policies — an agent whose work runs a full
-end-to-end suite needs a longer threshold before it is flagged than one answering from a
-contracts directory — but that mapping is manifest configuration, resolved before any
-agent-facing path is reached. There is deliberately no parameter through which a policy name
-could travel inward.
-
-Every value is stamped on the exchange at admission and never read from configuration again,
-so an operator changing a number does not reach back into work already in flight.
+Every value is stamped on the exchange at admission and read from there, so a later build that
+changes a number does not reach back into work already in flight.
 
 **Distinctness.** A Request whose content matches one already open between the same two
 participants is refused, and the refusal returns the exchange already carrying it.
@@ -1195,7 +1184,8 @@ here that an agent could read as a reason to stop doing requested work is a defe
 enforce mechanically should not be left to the model's good judgement, and §11.4 says advisory
 rules decay worst on headless agents, which receive them as a prompt rather than as tool
 descriptions re-read on every call. So the list is annotated with what actually holds each one,
-and five of the ten are held by storage, the API or the broker rather than requested.
+and four of the ten are held by storage, the API or the broker rather than requested, and two more
+in part.
 
 | | Rule | Held by |
 |---|---|---|
@@ -1236,11 +1226,10 @@ and five of the ten are held by storage, the API or the broker rather than reque
    on what they show, and §17 question 16 carries the record. It does not move because one
    message did not fit.
 
-   **It bounds one message, not an exchange.** With the clarification cap off by default (§5.2),
-   an exchange that goes back and forth fifty times can carry fifty messages of this size in each
-   direction, and nothing but the participants converging stops it. That is the intended trade:
-   principle 2.8 rules out cutting a line of work off before it is finished. A deployment that
-   observes exchanges running away sets a clarification cap from that observation.
+   **It bounds one message, not an exchange.** With clarification uncapped (§5.2), an exchange that
+   goes back and forth fifty times can carry fifty messages of this size in each direction, and
+   nothing but the participants converging stops it. That is the intended trade: principle 2.8 rules
+   out cutting a line of work off before it is finished.
 5. **Report outcomes truthfully.** `done` only when the work asked for is finished in your
    repository. `answered` only from what your repository holds. `acknowledged` only when
    the Request genuinely needs nothing more from you. `blocked` only after rule 10, naming the
@@ -1736,7 +1725,7 @@ CREATE TABLE conversation_cycles (
   recorded_utc    TEXT    NOT NULL
 ) STRICT;
 
--- The request cap (§7.1), where a deployment sets one. At 50 it is off and this does not fire.
+-- The request bound (§7.1). The broker stamps 50, at which it is off and this does not fire.
 -- A trigger because a cap of n needs a count of other rows, which a CHECK cannot make.
 CREATE TRIGGER tr_open_pair_cap BEFORE INSERT ON exchanges
 WHEN NEW.state = 'OPEN' AND NEW.open_pair_cap < 50
@@ -2672,9 +2661,9 @@ that needed it; an enumeration written as prose has already decayed.
 - **The request cap is itself bounded.** The cap is supplied per row, so the trigger is only as
   strong as the value the broker writes into it, and the column is range-checked so the worst a
   broker bug can do is pick a poor value inside a sane band. The top of the band means off, which
-  is the default (§7.1). `clarify_depth_cap` has the same shape, with one value beyond the band —
+  is what the broker stamps (§7.1). `clarify_depth_cap` has the same shape, with one value beyond the band —
   the largest integer — meaning off, because zero already means no clarification at all.
-- **The request cap (§7.1), where a deployment sets one.** A `BEFORE INSERT` trigger, because a
+- **The request bound (§7.1), kept for a cap evidence may call for.** A `BEFORE INSERT` trigger, because a
   cap of *n* cannot be written as a `CHECK`: reaching it requires counting other rows. A trigger
   constrains only the statements it is written against, and the only route into `OPEN` is an
   insert — which `tr_closed_exchange_stays_closed` keeps true.
@@ -3551,8 +3540,8 @@ Rationale:
 Because the manifest holds only references, it is safe to commit.
 
 **Expiry needs no special handling, and it is visible rather than inferred.** When an
-agent's own authentication lapses, the node's attempt to start it fails, and the node says so
-— naming the agent and the failure. Nothing has to conclude anything from silence, so an expired
+agent's own authentication lapses, the node's attempt to start it fails, and the node says so in
+its own output — naming the agent and the failure. Nothing has to conclude anything from silence, so an expired
 credential and a switched-off laptop are never reported identically. The operator
 re-authenticates out of band and the next start succeeds. No credential machinery is involved.
 
@@ -3803,8 +3792,7 @@ Additional controls, annotated with what actually holds each one — the same di
 its rules, and for the same reason:
 
 - **Message size cap.** Held: rule 8.4's cap is a schema constraint, and it always applies. The request
-  cap of §7.1 and the clarification cap of §5.2 are held by storage wherever a deployment sets them;
-  both are off by default.
+  bound of §7.1 and the depth bound of §5.2 are held by storage; the broker stamps both off.
 - **Deduplication of byte-identical messages within a short window.** Held: §13.1, a unique index. It
   catches a repeat and nothing else — a single character's difference is a different message, which is
   the correct behaviour for a deduplicator and not a volume control.
@@ -3967,9 +3955,9 @@ only when the workspace is gone *and its parent is still there*; when both are m
 nothing and tries again.
 
 A start that fails for any other reason is reported rather than concluded from. The node names the
-agent and the reason — an expired credential, a command that will not run — and the broker records
-that starting failed, so `agents()` can show *why* an agent could not be started rather than a
-status that means five things. Work waiting on it is flagged like any other.
+agent and the reason — an expired credential, a command that will not run — in its own output, which
+is where a person looks for why an agent could not be started; the broker is not told, and
+`agents()` does not show it. Work waiting on the agent is flagged like any other.
 
 **What a restart wakes is the person's decision, not a protocol rule.** Two restarts that are
 byte-identical to the broker carry opposite intent, and the broker cannot tell them apart:
@@ -3980,32 +3968,13 @@ byte-identical to the broker carry opposite intent, and the broker cannot tell t
 - An unattended machine takes a forced update at the weekend. The operator expects to return to
   work that continued, and leaving it untouched wastes the whole window.
 
-Nothing in the restart itself distinguishes these, so the broker MUST NOT infer. Implementations
-MUST support a configured resume policy, and **it decides only whether agents are woken for work
-that was outstanding when the broker stopped — never whether that work survives**:
-
-| Policy | Behaviour on restart |
-|---|---|
-| `always` | Agents with outstanding work are woken, and collect it ahead of anything new (§6). |
-| `never` | Nobody is woken for it. The work stays open and is flagged on the ordinary schedule, and the person wakes agents or closes conversations. |
-| `ask` | The broker shows the person the outstanding work and wakes only for what they confirm. |
-
-`never` is the safe default for interactive use, and `always` for unattended use; implementations
-SHOULD make the choice explicit at configuration time rather than picking one silently. The durable
-way to stop work is to close its conversation, and a person who killed a process to stop two agents
-should be pointed at that.
-
-**The resume gate.** Beyond the policy, the broker MUST consult a **resume gate** before waking an
-agent for outstanding work, and MUST NOT wake it when the gate declines. The gate exists so that a
-person can express "resume, but not if it will cost me too much" without that condition being
-written into the protocol. A declined wake is not a closed exchange: the work stays open and flagged.
-
-The gate is deliberately defined by its contract, not its implementation: it is asked whether waking
-is permitted and answers yes or no. A budget guard that declines above some fraction of a token quota
-is the motivating implementation, but it is *an* implementation. The protocol does not name tokens,
-because usage means different things across the tiers it must serve — a metered API key, a
-subscription seat, and a local model whose marginal cost is zero are not comparable, and a percentage
-threshold is meaningless for the third.
+Nothing in the restart itself distinguishes these, so the broker MUST NOT infer, and **a restart
+wakes nobody for work that was outstanding when the broker stopped**. That decides only whether
+agents are woken, never whether the work survives: it stays open and is flagged on the ordinary
+schedule (§6), and the person wakes agents or closes conversations. Of the two readings above, this
+is the one that cannot spend what the person reached to stop. The durable way to stop work is to
+close its conversation, and a person who killed a process to stop two agents should be pointed at
+that.
 
 **Re-delivery is not re-sending.** Delivering outstanding work again marks the existing message
 undelivered rather than writing a new one. The log then records what was said, not how many times
@@ -4022,12 +3991,12 @@ the person, naming the conversation and the requester, because somebody asked fo
 nobody is going to do it. The person closes those exchanges or the conversations they sit in; the
 requester, told the agent was retired, finds another way to get the work done (principle 2.6).
 
-**Retirement is cleared only by an explicit operator action, never by registration.** The registry
-is reloaded from the manifest at every start-up, so retirement undone by re-registering would be
-undone on the next restart and every restart after it. An operator who retires an agent and finds it
+**Retirement is cleared only by an explicit operator action, never by registration.** An agent
+attaches, and so registers, again every time it starts, so retirement undone by an attach would be
+undone on the next start and every start after it. An operator who retires an agent and finds it
 live again the following morning has been given a control that does not hold. `reinstate(agent)` is
 therefore the counterpart to `retire`, and the two are symmetric: a judgement is entered and
-withdrawn by a person, not by a file being read again.
+withdrawn by a person, not by an agent attaching again.
 
 **Retiring does not delete.** The schema does not permit it and should not: `exchanges` and
 `messages` both reference `agents(name)`, and §9.4 keeps exchange rows after pruning the message text
@@ -4192,9 +4161,9 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
 - **Cycles recorded per conversation (§7.2)** → a loop that resolves is ordinary work; a loop that stalls
   is a knot.
 - **Clarification depth distribution** → Requests written badly, or a boundary under-specified. With no
-  cap by default (§5.2) the distribution is uncensored, so it is also the evidence a deployment would set
-  a cap from.
-- **Exchanges per promoted decision** → how much work produces durable output (rule 8.7).
+  cap (§5.2) the distribution is uncensored, so it is also the evidence a cap would be set from, should
+  one ever be needed.
+- **Exchanges per promoted decision** → how much work produces durable output (rule 8.6).
 - **`outcome` breakdown by `responder_model`** → adapter tier quality. **Exclude `parley:broker`.** It
   writes only `closed`, on a person's instruction, and counting those among real responders would make
   every model look worse in proportion to how often a person ended work early.
@@ -4317,8 +4286,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
    Everyone using a project is the one `human-user`, a deliberate choice for a protocol used by one
    person running many agents.
-4. What, if anything, bounds clarification? Clarifications are uncapped unless a deployment sets a
-   cap (§5.2), because an exchange cut off before its two sides converge leaves the work undone, which
+4. What, if anything, bounds clarification? Clarifications are uncapped (§5.2), because an exchange cut off before its two sides converge leaves the work undone, which
    principle 2.1 counts as the failure. A cap censors its own evidence: depths pile up at the cap
    whether the true need was one more or forty more, so no report over capped data can say what a cap
    should be.
@@ -4333,17 +4301,12 @@ decided is removed and its number is not reused, so the list has gaps.
      the shape an answer probably takes, and it waits for the distribution that would set the number.
 
    `clarifications()` in §10.2 reports the distribution, how often a cap in force was reached, and the
-   range of caps in force. **The cap on an exchange is the requester's** (§5.2), so a deployment that
-   sets one on some agents and not others produces a distribution shaped by the number being measured
-   — which is why the range is printed.
+   range of caps in force; with every exchange stamped uncapped, the last two report none, and they are
+   printed so that a cap, if one is ever introduced, is seen shaping the distribution it measures.
 5. Should a Request carry a deadline, so a requester can say when the work stops being useful? A
    deadline must not close anything — principle 2.8 lets nothing end work but its participants and the
    person — so what it could do is bring §6's flag forward and tell the receiver what the requester's
    clock is. Whether that is worth a field, or belongs in the ask as words, is open.
-6. Where does resume gate state live, and who reports the usage a budget gate reads?
-   The broker has no view of token consumption, so it would have to be
-   adapter-reported — which makes it a term in the adapter contract (§14) rather than
-   broker-local configuration.
 10. What should bound an agent's ownership line? An asker chooses a recipient from an `owns` line in
     the registry, returned by `agents()` beside the name (§10.1): a statement of what the agent owns
     and what it does not.
