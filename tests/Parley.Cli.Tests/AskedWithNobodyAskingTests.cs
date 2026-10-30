@@ -202,6 +202,63 @@ public sealed class AskedWithNobodyAskingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_blocked_answer_waits_for_a_person_and_nothing_is_written()
+    {
+        // Lens 3 run 114: no test built a blocked answer, so the pass's refusal of one was held by nothing.
+        var before = await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct);
+        var agents = new Wire.Agents.AgentsClient(_channel);
+
+        using var attached = agents.Attach(
+            new Wire.AttachRequest
+            {
+                Agent = Orders.Value,
+                Adapter = "test",
+                Tier = Wire.AgentTier.Pull,
+                Workspace = _workspace,
+                ProtocolVersion = ProtocolVersion.Current
+            },
+            cancellationToken: Ct);
+
+        Assert.True(await attached.ResponseStream.MoveNext(Ct));
+
+        var log = new StringWriter();
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        var question = Assert.Single(
+            (await agents.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders.Value }, cancellationToken: Ct)).Messages);
+
+        Assert.True((await agents.ResultAsync(
+            new Wire.ResultRequest
+            {
+                From = Orders.Value,
+                ExchangeId = question.Message.ExchangeId,
+                ResponderModel = "some-model-9",
+                PayloadJson = new JsonObject
+                {
+                    ["outcomes"] = new JsonArray(new JsonObject
+                    {
+                        ["id"] = PayloadShape.WholeRequest,
+                        ["outcome"] = "blocked",
+                        ["blocker"] = "missing_information",
+                        ["text"] = "Orders and their totals, once I know whether tax is ours."
+                    })
+                }.ToJsonString()
+            },
+            cancellationToken: Ct)).Ok);
+
+        await ServeCommand.FacilitateOnceAsync(_runtime, Project, log, Ct);
+
+        Assert.Equal(before, await File.ReadAllTextAsync(Path.Combine(_workspace, ".mcp.json"), Ct));
+
+        var waiting = Assert.Single(
+            (await new Wire.Operators.OperatorsClient(_channel).FacilitationAsync(new Wire.Empty(), cancellationToken: Ct)).Questions);
+
+        Assert.Equal(Wire.QuestionState.Waiting, waiting.State);
+
+        Assert.Contains("blocked", waiting.WaitingBecause, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task With_Auto_Accept_off_the_answer_waits_and_nothing_is_written()
     {
         // A probe of the loop itself: must fail against a pass that ignored the switch.

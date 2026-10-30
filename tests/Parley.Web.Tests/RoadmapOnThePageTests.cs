@@ -200,16 +200,22 @@ public sealed class RoadmapOnThePageTests
     {
         // A removed item's conversation still links here, and a link can name any number. The terminal falls back to the
         // next item; so must this page, rather than opening no row at all. Must fail against opening only the item asked.
-        using var console = Confirmed(
-            Item(1, "Add CSV export", "billing@test", started: false),
-            Item(2, "Call it from the report", "orders@test", started: false));
+        // Item 1 is under way, so the next is item 2 and not the first row (lens 3 run 114: with item 1 next, opening the
+        // first row passed).
+        var underWay = Item(1, "Add CSV export", "billing@test", started: true);
+        underWay.Facts.OpenExchanges = 1;
+        using var console = Confirmed(underWay, Item(2, "Call it from the report", "orders@test", started: false));
         using var client = console.CreateClient();
 
-        var roadmap = await client.GetStringAsync(
-            new Uri($"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&id=1&item=9", UriKind.Relative),
-            TestContext.Current.CancellationToken);
+        foreach (var asked in new[] { "&item=9", "" })
+        {
+            var roadmap = await client.GetStringAsync(
+                new Uri($"/Roadmaps/Roadmap?project={RoadmapConsole.Project}&id=1{asked}", UriKind.Relative),
+                TestContext.Current.CancellationToken);
 
-        Assert.Contains("id=\"item-1\" open=\"open\"", roadmap, StringComparison.Ordinal);
+            Assert.Contains("id=\"item-2\" open=\"open\"", roadmap, StringComparison.Ordinal);
+            Assert.DoesNotContain("id=\"item-1\" open=\"open\"", roadmap, StringComparison.Ordinal);
+        }
     }
 
     [Fact]

@@ -137,6 +137,16 @@ internal static class StubRunner
         return Write(directory, windows, unix);
     }
 
+    /// <summary>Writes a stub that reads one prompt, thinks, and exits without answering, and returns its template.</summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="delaySeconds">How long it lives after reading the prompt.</param>
+    /// <returns>The template.</returns>
+    internal static string DyingAfterOnePrompt(string directory, int delaySeconds) =>
+        Write(
+            directory,
+            [Emit(Init), "$null = [Console]::In.ReadLine()", "Start-Sleep -Seconds " + delaySeconds.ToString(CultureInfo.InvariantCulture)],
+            [Print(Init), "IFS= read -r line", "sleep " + delaySeconds.ToString(CultureInfo.InvariantCulture)]);
+
     /// <summary>Emits one line from PowerShell and flushes it.</summary>
     /// <param name="json">The line.</param>
     /// <returns>The statement.</returns>

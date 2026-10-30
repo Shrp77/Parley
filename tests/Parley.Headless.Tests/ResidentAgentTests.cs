@@ -223,6 +223,45 @@ public sealed class ResidentAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task An_agent_that_dies_while_a_reply_is_owed_reads_as_died_not_timed_out()
+    {
+        // Lens 3 run 114: the drain's end of stream was untested; read as still owed, a dead agent showed as timed out.
+        await using var agent = Start(StubRunner.DyingAfterOnePrompt(_workspace, delaySeconds: 3));
+
+        var abandoned = await agent.TakeTurnAsync("first", TimeSpan.FromMilliseconds(500), Ct);
+        Assert.True(abandoned.TimedOut, abandoned.Describe());
+
+        var next = await agent.TakeTurnAsync("second", Patience, Ct);
+
+        Assert.True(next.ProcessDied, next.Describe());
+        Assert.False(next.TimedOut, next.Describe());
+    }
+
+    [Fact]
+    public async Task A_caller_cancelling_while_an_owed_reply_drains_keeps_it_owed()
+    {
+        // Lens 3 run 114: zeroed on the caller's cancel, the next turn would read the owed reply as its own.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 6));
+
+        var abandoned = await agent.TakeTurnAsync("first", TimeSpan.FromMilliseconds(500), Ct);
+        Assert.True(abandoned.TimedOut, abandoned.Describe());
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(1));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("second", Patience, stopping.Token));
+        }
+
+        // Nothing was said in the cancelled drain, so this turn's prompt is the second the stub reads.
+        var third = await agent.TakeTurnAsync("third", Patience, Ct);
+
+        Assert.True(third.Completed, third.Describe());
+        Assert.Equal(2.0, third.CostUsd);
+    }
+
+    [Fact]
     public async Task Closing_standard_input_stops_it()
     {
         // How an agent is told to quit, and the reason a fleet can stop politely at all.
