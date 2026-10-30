@@ -313,6 +313,15 @@ public sealed class ResidentAgent : IAsyncDisposable
                     _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
                     PermissionDenials: 0, TimedOut: true, ProcessDied: false);
             }
+            catch (OperationCanceledException)
+            {
+                // The caller's, after the prompt was written: a node stopping while the process lives on, as a project
+                // restarted under `serve` does. The agent still answers, and that answer is owed to nobody either.
+                // Uncounted, it was read as the next turn's, and every turn after stayed one reply behind (lens 1 run 101).
+                Interlocked.Increment(ref _abandonedResults);
+
+                throw;
+            }
         }
         finally
         {
@@ -528,6 +537,12 @@ public sealed class ResidentAgent : IAsyncDisposable
                 {
                     Interlocked.Decrement(ref _abandonedResults);
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The caller's, not the budget's: the replies are still owed to nobody, so the count stands for the next
+                // turn to skip them.
+                throw;
             }
             catch (Exception ex) when (ex is OperationCanceledException or ChannelClosedException)
             {

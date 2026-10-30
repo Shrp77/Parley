@@ -145,6 +145,36 @@ public sealed class ResidentAgentTests : IDisposable
     }
 
     [Fact]
+    public async Task The_reply_to_a_turn_its_caller_cancelled_is_not_read_as_the_next_ones()
+    {
+        // Lens 1 run 101: a node stopping mid-turn while the process lives on, as a project restarted under `serve`
+        // does. Only a timeout was counted, so the cancelled turn's reply was read as the next turn's, and every turn
+        // after stayed one reply behind.
+        // Cancelled well after the prompt is written and before the stub answers it.
+        await using var agent = Start(StubRunner.Answering(_workspace, delaySeconds: 4));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(3));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        Assert.True(agent.IsAlive, "the cancelled turn took the agent with it");
+
+        var started = DateTime.UtcNow;
+        var second = await agent.TakeTurnAsync("second", Patience, Ct);
+        var elapsed = DateTime.UtcNow - started;
+
+        Assert.True(second.Completed, second.Describe());
+        Assert.True(
+            elapsed > TimeSpan.FromSeconds(2),
+            $"the second turn returned in {elapsed.TotalSeconds:0.0}s, which is the cancelled " +
+            "turn's reply being read as its own");
+    }
+
+    [Fact]
     public async Task Closing_standard_input_stops_it()
     {
         // How an agent is told to quit, and the reason a fleet can stop politely at all.
