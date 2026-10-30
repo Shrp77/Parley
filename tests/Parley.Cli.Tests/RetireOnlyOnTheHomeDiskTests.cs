@@ -49,14 +49,33 @@ public sealed class RetireOnlyOnTheHomeDiskTests
 
         Assert.Equal(expected, NodeCommand.LongestUnder(path, roots, StringComparison.OrdinalIgnoreCase));
     }
+
+    [Theory]
+    [InlineData("/Users/someone/src", true)]
+    [InlineData("/users/SOMEONE/src", true)]
+    [InlineData("/Volumes/usb/src", false)]
+    [InlineData("/volumes/usb/src", false)]
+    [InlineData("/volumes/stale/src", false)]
+    [InlineData("/Volumes/stale/src", false)]
+    [InlineData("/Users/someone/Work/src", false)]
+    [InlineData("/users/someone/WORK/src", false)]
+    public void The_macOS_rule_tells_the_home_volume_from_any_other_on_every_platform(string folder, bool expected)
+    {
+        // The macOS branch never runs in CI, which runs only unit tests on macOS (lens 3 run 102); the rule it applies does,
+        // here, with the mounted roots passed in: /Volumes ignoring case, and a disk mounted at a folder of the person's own.
+        string[] roots = ["/", "/System/Volumes/Data", "/Volumes/usb", "/Users/someone/Work"];
+
+        Assert.Equal(expected, NodeCommand.OnTheSameMacVolume(folder, "/Users/someone", roots));
+    }
 }
 
 /// <summary>
 /// That this machine's own home folder, mount table and disks are told apart as the rule needs (SPEC.md §14).
 /// </summary>
 /// <remarks>
-/// Integration rather than unit: these read the process's environment and, on Linux, its mount table. Each platform holds
-/// both directions, so a rule that called every disk the home disk fails here (lens 3 run 100).
+/// Integration rather than unit: these read the process's environment and, on Linux, its mount table. Linux and Windows hold
+/// both directions here; macOS's rule is held as a unit test, with its roots passed in, because CI runs only unit tests on
+/// macOS (lens 3 runs 100 and 102).
 /// </remarks>
 [Integration]
 public sealed class ThisMachinesHomeDiskTests

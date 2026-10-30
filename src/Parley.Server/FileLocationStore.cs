@@ -75,7 +75,7 @@ public sealed class FileLocationStore : IDisposable
         Quarantine = Path.GetFullPath(quarantine ?? Root + "-quarantine");
         _deleteOnDispose = deleteOnDispose;
         _createStaging = createStaging
-            ?? (path => new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, FileLimits.ChunkBytes));
+            ?? (path => new FileStream(path, StagingOptions()));
     }
 
     /// <summary>The location's absolute path.</summary>
@@ -145,6 +145,8 @@ public sealed class FileLocationStore : IDisposable
         // A root already a link when the broker starts is never entered: what it reaches is somebody else's.
         MakeReal(Root);
         MakeReal(Incoming);
+        OwnFolder(Root);
+        OwnFolder(Incoming);
 
         if (Directory.Exists(Incoming))
         {
@@ -155,6 +157,53 @@ public sealed class FileLocationStore : IDisposable
         }
 
         Directory.CreateDirectory(Incoming);
+    }
+
+    /// <summary>Makes a folder that only its owner can enter, on Unix, and tightens one that already exists.</summary>
+    /// <param name="folder">The location's root, its staging or its quarantine.</param>
+    /// <remarks>
+    /// The store beside it is the owner's alone (<c>ParleyDatabase</c>), and the shared files are the same agents' hand-offs,
+    /// so they are kept the same way: a home folder another local account can list must not hand it the files (lens 2 run
+    /// 93). A root nobody else can enter covers every folder and file inside it, those of an older broker included. Windows
+    /// keeps the folder's inherited ACL, as the store does.
+    /// </remarks>
+    private static void OwnFolder(string folder)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            _ = Directory.CreateDirectory(folder);
+
+            return;
+        }
+
+        const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+        _ = Directory.CreateDirectory(folder, ownerOnly);
+
+        // Never through a link: a mode set on one lands on whatever it leads to.
+        if (new DirectoryInfo(folder).LinkTarget is null)
+        {
+            File.SetUnixFileMode(folder, ownerOnly);
+        }
+    }
+
+    /// <summary>How a staged upload is created: new, written by this process alone, and on Unix readable by its owner alone.</summary>
+    /// <returns>The options.</returns>
+    private static FileStreamOptions StagingOptions()
+    {
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            BufferSize = FileLimits.ChunkBytes,
+        };
+
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        return options;
     }
 
     /// <summary>Where in the quarantine directory a placed file found at an instant goes.</summary>
@@ -212,6 +261,7 @@ public sealed class FileLocationStore : IDisposable
             throw new IOException($"The quarantine folder '{folder}' is a link, so nothing is moved into it.");
         }
 
+        OwnFolder(Quarantine);
         Directory.CreateDirectory(into);
 
         File.Move(AsWritten(FilePath(folder, name)), AsWritten(Path.Combine(into, Path.GetFileName(movedTo))), overwrite: false);

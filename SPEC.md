@@ -289,7 +289,7 @@ transport endpoint:
 **Where that layout lives is a property of the machine, not of the protocol.** It is one
 root per user, at the platform's conventional configuration location, holding one folder
 per project. A different root may be named, for a test rig or a second account, and is then
-the whole of what is read; nothing names a store outside a project's folder, and the root's `ports.json` only records which port each project holds. Nothing in it is ever read by a broker, sent over the transport, or stored:
+the whole of what is read; nothing names a store outside a project's folder, and the root's `ports.json` only records which port each project holds and the band a person set. Nothing in it is ever read by a broker, sent over the transport, or stored:
 it exists so that a person, and the tools a person runs, can say *which deployment* they
 mean without repeating paths and without inferring any of them from a working directory.
 
@@ -3979,7 +3979,7 @@ generally, **only the disk that holds the person's home folder counts**: on any 
 answer at the same path — a removable drive swapped for another that took its letter, a disk with the same label, a
 backup laid out the same way — and a folder there that exists and is in use says nothing about whether it is the same
 disk. The home disk cannot be swapped while the node runs, though the folders its desktop mounts removable disks in
-(`/media/<user>`, `/run/media/<user>`, `/mnt`) can hold whichever disk is plugged in, so a workspace directly in one of
+(`/media`, `/media/<user>`, `/run/media`, `/run/media/<user>`, `/mnt`) can hold whichever disk is plugged in, so a workspace directly in one of
 them, or at the root of a drive, concludes nothing either. A repository missing from anywhere else is left for a
 person to retire.
 
@@ -4297,11 +4297,11 @@ decided is removed and its number is not reused, so the list has gaps.
 
    **There is no request cap, deliberately.** §7.1's per-pair cap is a cost control with an
    arbitrary number, and it ends work before its participants have finished, which principle 2.8
-   counts as the larger harm. What stands against volume is §13.1's deduplication, which catches a
-   byte-identical repeat of a Clarify or a Result and nothing else (a Request opens a fresh exchange,
-   so it is never a repeat); §7.1's distinctness rule, which refuses a Request identical to one still
-   open; and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
-   recipient until it collects, but not the volume collected in that turn. Per-sender rate limits do
+   counts as the larger harm. What stands against volume is §7.1's distinctness rule, which refuses a
+   Request identical to one still open, and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
+   recipient until it collects, but not the volume collected in that turn. §13.1's deduplication is no
+   volume control: it stops a retried move being stored twice, keyed on the exchange's version within its
+   window, and an identical Clarify or Result sent later in the exchange is a new message. Per-sender rate limits do
    not exist, and §13 says so.
 
    **Terseness is a security control (principle 2.2), and there is no volume control at all.**
@@ -4453,8 +4453,8 @@ decided is removed and its number is not reused, so the list has gaps.
 
     The half that is not in hand is the machine. §4.1.1 names an agent `role@machine` and detects the
     machine rather than reading it from configuration, so a repository can register as
-    `billing@some-unexpected-host` and nothing in that agent's own view would show it. The adapter's
-    status report gives registration as a yes rather than a name, on the ground that printing the
+    `billing@some-unexpected-host` and nothing in that agent's own view would show it. The plugin's
+    `/parley:status` command gives registration as a yes rather than a name, on the ground that printing the
     configured name back would report what was asked for rather than what the broker recorded. That is
     the argument for putting the name on the acknowledgement rather than in the adapter: a name that
     arrives from the broker is the record, not the intent.

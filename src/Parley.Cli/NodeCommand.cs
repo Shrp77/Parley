@@ -726,8 +726,8 @@ public static class NodeCommand
             await output.WriteLineAsync(
                 $"  {agent.Value}: not started — its workspace {workspace} is missing where a disk that is absent or replaced "
                 + "cannot be told from a deletion (a disk other than your home folder's, a drive's root, a folder removable "
-                + "disks are mounted in, or a mount table that cannot be read), so nothing is concluded; it is tried again "
-                + "when next asked for.")
+                + "disks are mounted in, a mount table that cannot be read, or no home folder), so nothing is concluded; it is "
+                + "tried again when next asked for.")
                 .ConfigureAwait(false);
 
             return;
@@ -777,7 +777,8 @@ public static class NodeCommand
     /// <returns>True when it is; false when it is not, or when that cannot be told.</returns>
     /// <remarks>
     /// Windows compares drive roots with the profile's. Linux finds each path's mount point in the process's mount table, so
-    /// a disk mounted anywhere is told from the one under the home folder. macOS puts every other disk in <c>/Volumes</c>.
+    /// a disk mounted anywhere is told from the one under the home folder. macOS asks the mounted volumes for their roots
+    /// (<see cref="OnTheSameMacVolume"/>). A process with no home folder concludes nothing.
     /// </remarks>
     internal static bool OnTheHomeVolume(string folder)
     {
@@ -798,14 +799,6 @@ public static class NodeCommand
 
         if (OperatingSystem.IsMacOS())
         {
-            // Disks ignore case unless formatted otherwise, so /volumes is /Volumes; and a disk can be mounted at any folder,
-            // so the mounted volumes are asked for their roots rather than /Volumes taken as the only place (lens 2 run 92).
-            if (IsUnder(folder, "/Volumes", StringComparison.OrdinalIgnoreCase)
-                || IsUnder(home, "/Volumes", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
             string[] roots;
 
             try
@@ -817,9 +810,7 @@ public static class NodeCommand
                 return false;
             }
 
-            return LongestUnder(folder, roots, StringComparison.OrdinalIgnoreCase) is { } mounted
-                   && string.Equals(
-                       mounted, LongestUnder(home, roots, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase);
+            return OnTheSameMacVolume(folder, home, roots);
         }
 
         string[] mounts;
@@ -847,6 +838,32 @@ public static class NodeCommand
             path,
             mountInfo.Select(line => line.Split(' ')).Where(fields => fields.Length >= 5).Select(fields => Unescape(fields[4])),
             StringComparison.Ordinal);
+
+    /// <summary>The macOS rule: whether a folder is on the same mounted volume as the home folder.</summary>
+    /// <param name="folder">A full path.</param>
+    /// <param name="home">The home folder.</param>
+    /// <param name="roots">The roots of the mounted volumes.</param>
+    /// <returns>True when neither is in /Volumes and both lie under the same longest root.</returns>
+    /// <remarks>
+    /// Disks ignore case unless formatted otherwise, so /volumes is /Volumes; and a disk can be mounted at any folder, so the
+    /// mounted volumes are asked for their roots rather than /Volumes taken as the only place (lens 2 run 92). Its own
+    /// function, with its inputs passed in, so it runs as a unit test on every platform: CI runs only unit tests on macOS
+    /// (lens 3 run 102).
+    /// </remarks>
+    internal static bool OnTheSameMacVolume(string folder, string home, IEnumerable<string> roots)
+    {
+        if (IsUnder(folder, "/Volumes", StringComparison.OrdinalIgnoreCase)
+            || IsUnder(home, "/Volumes", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var listed = roots as IReadOnlyCollection<string> ?? [.. roots];
+
+        return LongestUnder(folder, listed, StringComparison.OrdinalIgnoreCase) is { } mounted
+               && string.Equals(
+                   mounted, LongestUnder(home, listed, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>The longest of some mount points that a path lies under.</summary>
     /// <param name="path">A full path.</param>

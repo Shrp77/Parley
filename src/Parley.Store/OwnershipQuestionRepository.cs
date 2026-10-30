@@ -64,6 +64,11 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
                    AND a.adapter NOT IN (@Facilitator, @Seat)
                    AND NOT EXISTS (SELECT 1 FROM agent_ownership_accepted o WHERE o.agent = a.name)
                    AND NOT EXISTS (SELECT 1 FROM ownership_questions q WHERE q.agent = a.name)
+                   -- A destroyed ownership conversation takes its question row with it, and having been asked at all
+                   -- still stops asking again (SPEC.md §10.2): the tombstone keeps the participants (lens 1 run 91).
+                   AND NOT EXISTS (SELECT 1 FROM destroyed_conversations d
+                                    WHERE d.id LIKE 'owns-%'
+                                      AND instr(', ' || d.participants || ',', ', ' || a.name || ',') > 0)
                  ORDER BY a.name;
                 """,
                 new { Attached = attached.ToArray(), Facilitator = Facilitation.Adapter, Seat = PersonSeat.Adapter },
@@ -177,6 +182,41 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
             AgentName.Create(r.OwedBy),
             r.LastType is null ? null : MessageIdentity.ParseType(r.LastType),
             r.LastPayload))];
+    }
+
+    /// <summary>The questions an agent answered that nothing has decided yet: neither accepted nor held for a person.</summary>
+    /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>One row per undecided answer, with what the agent last said on the exchange.</returns>
+    /// <remarks>
+    /// A pass records an answer before it decides it; a pass stopped in between (the project stopped, the broker killed)
+    /// left it answered for ever, with asking again and discarding both refused (lens 1 run 91). The next pass decides it.
+    /// </remarks>
+    public async Task<IReadOnlyList<UndecidedAnswer>> UndecidedAsync(
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _connection.QueryAsync<UndecidedRow>(
+            new CommandDefinition(
+                """
+                SELECT q.id               AS Id,
+                       q.agent            AS Agent,
+                       q.conversation_id  AS Conversation,
+                       q.answer           AS Answer,
+                       q.flattened        AS Flattened,
+                       (SELECT m.payload_json FROM messages m
+                         WHERE m.exchange_id = q.exchange_id AND m.from_agent = q.agent
+                           AND m.responder_model NOT LIKE 'parley:%'
+                         ORDER BY m.id DESC LIMIT 1) AS LastPayload
+                  FROM ownership_questions AS q
+                 WHERE q.state = 'answered'
+                 ORDER BY q.id;
+                """,
+                transaction: transaction,
+                cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        return [.. rows.Select(r => new UndecidedAnswer(
+            r.Id, AgentName.Create(r.Agent), r.Conversation, r.Answer ?? string.Empty, r.Flattened ?? string.Empty, r.LastPayload))];
     }
 
     /// <summary>Records that Parley has read what an agent sent it on a question's exchange.</summary>
@@ -553,6 +593,21 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
         _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
     };
 
+    private sealed class UndecidedRow
+    {
+        public long Id { get; init; }
+
+        public string Agent { get; init; } = "";
+
+        public string Conversation { get; init; } = "";
+
+        public string? Answer { get; init; }
+
+        public string? Flattened { get; init; }
+
+        public string? LastPayload { get; init; }
+    }
+
     private sealed class OpenQuestionRow
     {
         public long Id { get; init; }
@@ -606,6 +661,16 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
             SettledUtc is null ? null : ExchangeRow.ParseTimestamp(SettledUtc));
     }
 }
+
+/// <summary>An answer recorded and not yet decided (<see cref="OwnershipQuestionRepository.UndecidedAsync"/>).</summary>
+/// <param name="Id">The question.</param>
+/// <param name="Agent">Who answered.</param>
+/// <param name="Conversation">The question's conversation.</param>
+/// <param name="Answer">What the agent wrote.</param>
+/// <param name="Flattened">The same words on one line.</param>
+/// <param name="LastPayload">The agent's last message on the exchange, or null.</param>
+public sealed record UndecidedAnswer(
+    long Id, AgentName Agent, string Conversation, string Answer, string Flattened, string? LastPayload);
 
 /// <summary>A question still waiting on the agent or on a person's reply, and what the agent last said in it.</summary>
 /// <param name="Id">The question.</param>

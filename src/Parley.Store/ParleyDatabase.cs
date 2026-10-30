@@ -154,6 +154,21 @@ public static class ParleyDatabase
 
         try
         {
+            // Made owner-only before SQLite opens it, so no other account can hold it open from the moment SQLite would
+            // have created it until RestrictPermissions narrowed it (lens 2 run 93). SQLite takes an empty file as an empty
+            // database.
+            if (!OperatingSystem.IsWindows())
+            {
+                using var _ = new FileStream(
+                    copy,
+                    new FileStreamOptions
+                    {
+                        Mode = FileMode.CreateNew,
+                        Access = FileAccess.Write,
+                        UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                    });
+            }
+
             using var target = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = copy,
