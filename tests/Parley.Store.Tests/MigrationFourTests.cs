@@ -7,7 +7,8 @@ namespace Parley.Store.Tests;
 
 /// <summary>
 /// That migration 004 upgrades a schema 3 store in place and marks every agent Parley already asked what it owns,
-/// whether its question is still there or its conversation was destroyed (SPEC.md §9.2, §10.2).
+/// whether its question is still there or its conversation was destroyed, and every agent whose node was already asked to
+/// refresh it (SPEC.md §9.2, §10.2, §11.1).
 /// </summary>
 /// <remarks>
 /// Without the mark from the question rows, every agent already asked would be asked again after the upgrade; without
@@ -28,7 +29,8 @@ public sealed class MigrationFourTests : IDisposable
             AgentName.Create("orders@test"),
             AgentName.Create("billing@test"),
             AgentName.Create("inventory@test"),
-            AgentName.Create("shipping@test"));
+            AgentName.Create("shipping@test"),
+            AgentName.Create("api@test"));
         _connection.Execute(
             """
             INSERT INTO agents (name, adapter, tier, status) VALUES ('parley-facilitator@test', 'parley-facilitator', 'pull', 'active');
@@ -44,11 +46,19 @@ public sealed class MigrationFourTests : IDisposable
                     900000, 14400000, 'hash-1');
             INSERT INTO ownership_questions (agent, conversation_id, exchange_id, state, asked_utc)
             SELECT 'orders@test', 'owns-orders-20261028-090000', id, 'asked', '2026-10-28T09:00:00.0000000Z' FROM exchanges;
+            -- Its line was accepted automatically and its node refreshed it.
+            INSERT INTO agent_ownership_accepted (agent, statement, source, proposed_length, conversation_id, accepted_utc)
+            VALUES ('orders@test', 'orders', 'automatic', 6, 'owns-orders-20261028-090000', '2026-10-28T09:05:00.0000000Z');
+            UPDATE ownership_questions
+               SET state = 'accepted', answer = 'orders', flattened = 'orders',
+                   settled_utc = '2026-10-28T09:05:00.0000000Z', restart_sent = 1;
             INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants) VALUES
               ('owns-billing-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'billing@test, parley-facilitator@test'),
               ('owns-orders-20261028-080000', '2026-10-28T10:00:00.0000000Z', 2, 'inventory@test, orders@test, parley-facilitator@test'),
               -- Named by orders itself, so Parley was never in it.
-              ('owns-shipping-20261028-090000', '2026-10-28T10:00:00.0000000Z', 1, 'orders@test, shipping@test');
+              ('owns-shipping-20261028-090000', '2026-10-28T10:00:00.0000000Z', 1, 'orders@test, shipping@test'),
+              -- Another role's question, one whose name starts api-2; api was never asked.
+              ('owns-api-2-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'api@test, parley-facilitator@test');
             """);
 
         Assert.Equal(SchemaMigrator.LatestVersion - 3, SchemaMigrator.Migrate(_connection));
@@ -58,6 +68,10 @@ public sealed class MigrationFourTests : IDisposable
             ["billing@test 2026-10-28T10:00:00.0000000Z", "orders@test 2026-10-28T09:00:00.0000000Z"],
             _connection.Query<string>(
                 "SELECT name || ' ' || asked_utc FROM agents WHERE asked_utc IS NOT NULL ORDER BY name;").ToList());
+        Assert.Equal(
+            ["orders@test 2026-10-28T09:05:00.0000000Z"],
+            _connection.Query<string>(
+                "SELECT name || ' ' || refreshed_utc FROM agents WHERE refreshed_utc IS NOT NULL ORDER BY name;").ToList());
     }
 
     private static SqliteConnection SchemaThree()

@@ -454,8 +454,9 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
     /// <returns>The question and its agent, one per agent.</returns>
     /// <remarks>
     /// <para>
-    /// <b>First line only</b>: an agent that has ever had a refresh sent has one row saying so and is never listed
-    /// again, whatever happens to its line later (SPEC.md §11.1). Every later change waits for a natural restart,
+    /// <b>First line only</b>: an agent that has ever had a refresh sent is never listed again, whatever happens to its
+    /// line later (SPEC.md §11.1). Its own row says so, because destroying the question's conversation takes the
+    /// question that did. Every later change waits for a natural restart,
     /// because by then the process holds what the agent has learned.
     /// </para>
     /// <para>
@@ -477,6 +478,8 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
                    AND q.restart_sent = 0
                    AND q.id = (SELECT max(id) FROM ownership_questions WHERE agent = q.agent)
                    AND NOT EXISTS (SELECT 1 FROM ownership_questions r WHERE r.agent = q.agent AND r.restart_sent = 1)
+                   -- A destroy takes the question that said so; the agent's row keeps it (lens 1 run 93).
+                   AND NOT EXISTS (SELECT 1 FROM agents a WHERE a.name = q.agent AND a.refreshed_utc IS NOT NULL)
                  ORDER BY q.id;
                 """,
                 transaction: transaction,

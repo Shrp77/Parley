@@ -1405,6 +1405,9 @@ CREATE TABLE agents (
   -- keeps that and takes the question's row, and a purge removes it, so a repository attaching under a purged
   -- name is a new agent and is asked. Set by tr_asking_marks_the_agent.
   asked_utc       TEXT    CHECK (asked_utc IS NULL OR unixepoch(asked_utc) IS NOT NULL),
+  -- When its node was first asked to refresh it after a line accepted automatically (§11.1), kept here for the
+  -- same reason. Set by tr_refreshing_marks_the_agent.
+  refreshed_utc   TEXT    CHECK (refreshed_utc IS NULL OR unixepoch(refreshed_utc) IS NOT NULL),
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -2422,6 +2425,15 @@ BEGIN
   UPDATE agents SET asked_utc = NEW.asked_utc WHERE name = NEW.agent AND asked_utc IS NULL;
 END;
 
+-- Refreshed once, ever (§11.1), on the agent's row for the same reason: a destroy takes the question that said so.
+-- A sent refresh is on an accepted question, so it has a settled time.
+CREATE TRIGGER tr_refreshing_marks_the_agent
+AFTER UPDATE OF restart_sent ON ownership_questions
+WHEN NEW.restart_sent = 1
+BEGIN
+  UPDATE agents SET refreshed_utc = NEW.settled_utc WHERE name = NEW.agent AND refreshed_utc IS NULL;
+END;
+
 -- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
 -- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
 -- row reads as on.
@@ -2666,7 +2678,7 @@ that needed it; an enumeration written as prose has already decayed.
   acceptance nothing holds, or reopening an answer somebody discarded. `ux_one_refresh` sends a refresh at most
   once per agent, ever (§11.1). `tr_asking_marks_the_agent` records the first asking on the agent's row, which a
   destroyed question's conversation leaves and a purge takes, so Parley does not ask again by itself after a destroy
-  and does ask a new agent under a purged name.
+  and does ask a new agent under a purged name. `tr_refreshing_marks_the_agent` keeps the refresh the same way.
 - **An accepted line names the discussion it came from, and outlives it.** `tr_accepted_line_names_its_discussion`
   holds that every route but a composed line names its conversation. It is a trigger and not a CHECK because
   destroying that conversation clears the link rather than being refused by it.

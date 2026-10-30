@@ -132,6 +132,28 @@ public sealed class AnOwnershipAnswerIsDecidedAndAskedOnceTests : IDisposable
             _connection.ExecuteScalar<string>("SELECT asked_utc FROM agents WHERE name = 'orders@test';"));
     }
 
+    [Fact]
+    public async Task Destroying_the_questions_conversation_does_not_let_a_second_refresh_be_sent()
+    {
+        // Lens 1 run 93: the refresh was marked only on the question, which the destroy took.
+        var asked = await _facilitator.AskAsync(_parley, Orders, T0, Ct);
+        await Answer(asked.Exchange!.Value, "orders.");
+        Assert.True(await _facilitator.AcceptAutomaticallyAsync(_parley, Assert.Single(await _facilitator.ReadBackAsync(_parley, T0, Ct)), T0, Ct));
+        Assert.True(await _facilitator.RefreshSentAsync(Assert.Single(await _facilitator.RefreshDueAsync(Ct)).Question, Ct));
+
+        Assert.NotEqual(
+            DestroyOutcome.NoSuchConversation,
+            await new ConversationRepository(_connection).DestroyAsync(asked.Conversation!, T0.AddMinutes(1), cancellationToken: Ct));
+
+        Assert.True((await _facilitator.AskAgainAsync(_parley, Orders, T0.AddHours(1), Ct)).Done);
+        var again = await new OwnershipQuestionRepository(_connection).LiveAsync(Orders, cancellationToken: Ct);
+        await Answer(again!.Exchange, "orders and fulfilment.");
+        Assert.True(await _facilitator.AcceptAutomaticallyAsync(
+            _parley, Assert.Single(await _facilitator.ReadBackAsync(_parley, T0.AddHours(1), Ct)), T0.AddHours(1), Ct));
+
+        Assert.Empty(await _facilitator.RefreshDueAsync(Ct));
+    }
+
     private async Task Answer(long exchange, string text)
     {
         var payload = new JsonObject
