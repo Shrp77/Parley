@@ -31,7 +31,9 @@ public sealed class MigrationFourTests : IDisposable
             AgentName.Create("inventory@test"),
             AgentName.Create("shipping@test"),
             AgentName.Create("api@test"),
-            AgentName.Create("tax@test"));
+            AgentName.Create("tax@test"),
+            AgentName.Create("pricing@test"),
+            AgentName.Create("ledger@test"));
         _connection.Execute(
             """
             INSERT INTO agents (name, adapter, tier, status) VALUES ('parley-facilitator@test', 'parley-facilitator', 'pull', 'active');
@@ -52,7 +54,39 @@ public sealed class MigrationFourTests : IDisposable
             VALUES ('orders@test', 'orders', 'automatic', 6, 'owns-orders-20261028-090000', '2026-10-28T09:05:00.0000000Z');
             UPDATE ownership_questions
                SET state = 'accepted', answer = 'orders', flattened = 'orders',
-                   settled_utc = '2026-10-28T09:05:00.0000000Z', restart_sent = 1;
+                   settled_utc = '2026-10-28T09:05:00.0000000Z', restart_sent = 1
+             WHERE agent = 'orders@test';
+
+            -- Accepted automatically, its refresh still waiting for the agent to go idle; and one discarded. Neither was
+            -- refreshed (lens 3 run 110).
+            INSERT INTO conversations (id, state, opened_utc) VALUES
+              ('owns-pricing-20261028-090000', 'OPEN', '2026-10-28T09:00:00.0000000Z'),
+              ('owns-ledger-20261028-090000', 'OPEN', '2026-10-28T09:00:00.0000000Z');
+            INSERT INTO conversation_participants (conversation_id, agent, joined_utc) VALUES
+              ('owns-pricing-20261028-090000', 'parley-facilitator@test', '2026-10-28T09:00:00.0000000Z'),
+              ('owns-pricing-20261028-090000', 'pricing@test', '2026-10-28T09:00:00.0000000Z'),
+              ('owns-ledger-20261028-090000', 'parley-facilitator@test', '2026-10-28T09:00:00.0000000Z'),
+              ('owns-ledger-20261028-090000', 'ledger@test', '2026-10-28T09:00:00.0000000Z');
+            INSERT INTO exchanges
+                (pair_key, requester, receiver, owed_by, state, conversation_id, opened_utc,
+                 uncollected_flag_ms, stalled_flag_ms, request_hash)
+            VALUES ('parley-facilitator@test' || char(31) || 'pricing@test', 'parley-facilitator@test', 'pricing@test',
+                    'pricing@test', 'OPEN', 'owns-pricing-20261028-090000', '2026-10-28T09:00:00.0000000Z',
+                    900000, 14400000, 'hash-2'),
+                   ('ledger@test' || char(31) || 'parley-facilitator@test', 'parley-facilitator@test', 'ledger@test',
+                    'ledger@test', 'OPEN', 'owns-ledger-20261028-090000', '2026-10-28T09:00:00.0000000Z',
+                    900000, 14400000, 'hash-3');
+            INSERT INTO ownership_questions (agent, conversation_id, exchange_id, state, asked_utc)
+            SELECT receiver, conversation_id, id, 'asked', '2026-10-28T09:00:00.0000000Z'
+              FROM exchanges WHERE receiver IN ('pricing@test', 'ledger@test');
+            INSERT INTO agent_ownership_accepted (agent, statement, source, proposed_length, conversation_id, accepted_utc)
+            VALUES ('pricing@test', 'pricing', 'automatic', 7, 'owns-pricing-20261028-090000', '2026-10-28T09:05:00.0000000Z');
+            UPDATE ownership_questions
+               SET state = 'accepted', answer = 'pricing', flattened = 'pricing', settled_utc = '2026-10-28T09:05:00.0000000Z'
+             WHERE agent = 'pricing@test';
+            UPDATE ownership_questions
+               SET state = 'discarded', answer = 'ledger', flattened = 'ledger', settled_utc = '2026-10-28T09:05:00.0000000Z'
+             WHERE agent = 'ledger@test';
             INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants) VALUES
               ('owns-billing-20261028-090000', '2026-10-28T10:00:00.0000000Z', 2, 'billing@test, parley-facilitator@test'),
               ('owns-orders-20261028-080000', '2026-10-28T10:00:00.0000000Z', 2, 'inventory@test, orders@test, parley-facilitator@test'),
@@ -68,7 +102,11 @@ public sealed class MigrationFourTests : IDisposable
 
         Assert.Empty(StoreShape.Problems(_connection));
         Assert.Equal(
-            ["billing@test 2026-10-28T10:00:00.0000000Z", "orders@test 2026-10-28T09:00:00.0000000Z", "tax@test 2026-10-28T11:00:00.0000000Z"],
+            [
+                "billing@test 2026-10-28T10:00:00.0000000Z", "ledger@test 2026-10-28T09:00:00.0000000Z",
+                "orders@test 2026-10-28T09:00:00.0000000Z", "pricing@test 2026-10-28T09:00:00.0000000Z",
+                "tax@test 2026-10-28T11:00:00.0000000Z",
+            ],
             _connection.Query<string>(
                 "SELECT name || ' ' || asked_utc FROM agents WHERE asked_utc IS NOT NULL ORDER BY name;").ToList());
         Assert.Equal(
