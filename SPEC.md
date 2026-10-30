@@ -2859,7 +2859,9 @@ disk and the facts about them are in §9.2's tables: a file of a hundred megabyt
 the log and every backup, and the person running the deployment opens the folder in their own file
 browser. A placement in progress is written to a staging directory beside the location, never inside
 it, and a file appears in its folder only once it has been received whole — so an interrupted upload
-leaves the name free.
+leaves the name free. On Unix the location, its staging directory and its quarantine directory are the owning user's
+alone, as the store is (§9.1), and so is every file placed or quarantined in them: the files are the same agents'
+hand-offs.
 
 **A folder is named for its conversation, once.** The identifier when that is a usable folder name,
 otherwise the identifier followed by `~2`, `~3` and so on: for a reserved device name on Windows, an
