@@ -21,7 +21,8 @@ namespace Parley.Configuration;
 /// <b>On Windows a drive letter is judged by its name.</b> Each letter the walk lands on is read with QueryDosDevice,
 /// never asked what kind of drive it is, because asking can open a share: a local disk volume is walked, a
 /// <c>subst</c> letter is walked as the folder it stands for, a letter that is not defined holds nothing to read, and
-/// any other letter is refused. A mount point is walked through only when its volume is a local disk.
+/// any other letter is refused. A mount point is followed only when its volume is a local disk: from that disk's drive
+/// letter when it has one, so the walk ends where the folder really is, and walked through as a folder when it has none.
 /// </para>
 /// </remarks>
 public static class OffMachineLinks
@@ -111,7 +112,7 @@ public static class OffMachineLinks
 
             if (part.Length == 0)
             {
-                // Only a trailing separator, or the one after the drive's colon, leaves an empty part.
+                // Only a trailing separator (as in `C:\`) leaves an empty part.
                 if (absolute && i != parts.Length - 1)
                 {
                     return false;
@@ -378,6 +379,15 @@ public static class OffMachineLinks
         if (OperatingSystem.IsWindows())
         {
             if (full.IndexOf(':', 2) >= 0)
+            {
+                return true;
+            }
+
+            // GetFullPath keeps a part ending in a space or a dot when it is not the last, but asking that part's
+            // attributes makes it the last, where Win32 drops the space: `code \x` asked plain `code`, missing or a
+            // decoy, and then went through the real `code ` link to a share or into OneDrive (lens 2 run 79). No name
+            // Win32 makes ends so, so such a part is refused wherever it stands.
+            if (!ReadsAsWritten(full, absolute: true))
             {
                 return true;
             }

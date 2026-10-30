@@ -79,7 +79,7 @@ public sealed class ProbeThreeTests
     /// documented purpose: the first caller to honour that doc writes the result to a log that
     /// outlives the process and is read by whoever can read the file, and a launch command is the
     /// one thing in this file worth not putting there. It is a full command line, and CLAUDE.md's
-    /// standing constraint has credentials passed as <c>env:</c> and <c>file:</c> references
+    /// standing constraint has credentials passed (once anything takes one) as <c>env:</c> and <c>file:</c> references
     /// precisely so they can be named in configuration without being values — a reference printed
     /// to a log is still a map to the value.
     /// </para>

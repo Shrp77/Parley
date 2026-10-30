@@ -86,8 +86,8 @@ works over SSH, and the web console can be reached through a tunnel too.
 ## Can two projects share a repository?
 
 Yes. A repository can take part in as many projects as you like, with one entry per project in its
-`.mcp.json`. It can be started unattended by only one of them, because two would be two models
-editing one checkout.
+`.mcp.json`. Either project can start it unattended, and two asking at once still start one
+process, so there are never two models editing one checkout.
 
 ## How long are messages kept?
 

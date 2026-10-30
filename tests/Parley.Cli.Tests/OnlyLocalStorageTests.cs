@@ -481,6 +481,63 @@ public sealed class OnlyLocalStorageTests : IDisposable
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle device, uint code, byte[] input, uint inputSize, byte[]? output, uint outputSize, out uint returned, IntPtr overlapped);
 
+    [Theory]
+    [InlineData("code ")]
+    [InlineData("code. ")]
+    [InlineData("code  ")]
+    public void A_path_through_a_part_ending_in_a_space_is_refused(string name)
+    {
+        // `repo\code \orders`: asking `code ` alone asks plain `code`, which is missing, and the next step went through
+        // the real `code ` link into OneDrive (lens 2 run 79).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+        var work = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "work", "orders")).Parent!.FullName;
+        Directory.CreateDirectory(Path.Combine(_home, "repo"));
+
+        if (!TrySymbolicLink(@"\\?\" + Path.Combine(_home, "repo", name), work))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        var through = Path.Combine(_home, "repo", name, "orders");
+
+        Assert.True(Directory.Exists(through));
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(through));
+        Assert.NotNull(LocalStorage.Problem(through, Environment()));
+    }
+
+    [Fact]
+    public void A_junction_to_a_name_with_a_trailing_dot_is_refused_whatever_stands_beside_it()
+    {
+        // A junction's target is absolute, `\??\…\code.`; tidied it named the plain `code` beside it while Windows
+        // followed `code.` into OneDrive (lens 2 run 78 with a junction; lens 3 run 82 found this branch untested).
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+        var work = Directory.CreateDirectory(Path.Combine(_home, "OneDrive", "work", "orders")).Parent!.FullName;
+        Directory.CreateDirectory(Path.Combine(_home, "repo", "code"));
+
+        if (!TrySymbolicLink(@"\\?\" + Path.Combine(_home, "repo", "code."), work))
+        {
+            Assert.Skip("symbolic links need Developer Mode here");
+        }
+
+        var junction = Directory.CreateDirectory(Path.Combine(_home, "repo", "j")).FullName;
+        SetMountPoint(junction, $@"\??\{Path.Combine(_home, "repo", "code.")}");
+
+        Assert.True(Directory.Exists(Path.Combine(junction, "orders")));
+        Assert.NotNull(LocalStorage.Problem(junction, Environment()));
+    }
+
+    [Fact]
+    public void A_junction_whose_target_climbs_with_dots_is_refused()
+    {
+        // `\??\…\code\..\code` is not tidied by the system that follows it, so the walk does not tidy it either.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Win32 path rules");
+        var code = Directory.CreateDirectory(Path.Combine(_home, "repo", "code")).FullName;
+        var junction = Directory.CreateDirectory(Path.Combine(_home, "repo", "j")).FullName;
+        SetMountPoint(junction, $@"\??\{code}\..\code");
+
+        Assert.True(OffMachineLinks.LeadsOffThisMachine(junction));
+    }
+
     [Fact]
     public void A_subst_letter_for_a_name_with_a_trailing_dot_is_refused()
     {

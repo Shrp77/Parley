@@ -63,7 +63,8 @@ public sealed class RegistrationGuidanceTests
     public void No_page_in_the_console_renders_a_resolved_credential()
     {
         // Credentials are references and never values -- env:, keychain:, file: -- and the broker
-        // resolves them at invocation without persisting or logging them. A console that printed
+        // will resolve them at invocation without persisting or logging them (not built yet, SPEC
+        // §12; this holds the console to the rule before anything takes one). A console that printed
         // a resolved one would undo that in the one place it is most likely to be screenshotted.
         var pages = Directory.GetFiles(
             RepositoryPath("src/Parley.Web/Pages"), "*.cshtml", SearchOption.AllDirectories);
