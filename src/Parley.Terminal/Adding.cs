@@ -134,7 +134,7 @@ internal static class Adding
     /// </para>
     /// </remarks>
     internal static string? OwnsProblem(string owns) =>
-        OwnershipStatement.IsValid((owns ?? string.Empty).Trim(), out var error) ? null : error;
+        OwnershipStatement.IsLaunchable((owns ?? string.Empty).Trim(), out var error) ? null : error;
 
     /// <summary>What would be written, in the order it would be written.</summary>
     /// <param name="workspace">The repository.</param>

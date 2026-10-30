@@ -294,7 +294,7 @@ internal static class OwnershipReview
             Title,
             Detail(agent, question, editing: true),
             line,
-            problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
+            problem: typed => OwnershipStatement.IsLaunchable(typed, out var wrong) ? null : wrong);
 
         var open = Prompting.Open(app, typing);
 

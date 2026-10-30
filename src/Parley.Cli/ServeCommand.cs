@@ -1128,7 +1128,7 @@ public static class ServeCommand
             return "the agent's answer was empty.";
         }
 
-        if (!OwnershipStatement.IsValid(answer.Line, out var wrong))
+        if (!OwnershipStatement.IsLaunchable(answer.Line, out var wrong))
         {
             return $"it cannot be a line as written: {wrong}";
         }

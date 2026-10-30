@@ -159,6 +159,44 @@ public static class OwnershipStatement
         return true;
     }
 
+    /// <summary>Whether a statement may be recorded and written into an agent's launch configuration.</summary>
+    /// <param name="statement">The candidate, or <see langword="null"/> for none.</param>
+    /// <param name="error">What is wrong with it, or <see langword="null"/> if nothing is.</param>
+    /// <returns><see langword="true"/> if it may become the agent's line.</returns>
+    /// <remarks>
+    /// <b>Everything <see cref="IsValid"/> refuses, and <c>${</c> as well</b> (lens 2 run 101). A line is written into
+    /// the agent's <c>.mcp.json</c> as <c>PARLEY_OWNS</c>, and Claude Code reads <c>${NAME}</c> there as an environment
+    /// variable when it starts the adapter, which reports the result on attach. So an answer naming a variable put
+    /// that variable's value, a token included, into the roster every agent reads, with no person in the loop under
+    /// Auto Accept. The syntax has no escape, so the sequence is refused rather than written differently.
+    /// </remarks>
+    public static bool IsLaunchable(string? statement, out string? error)
+    {
+        if (!IsValid(statement, out error))
+        {
+            return false;
+        }
+
+        var at = statement?.IndexOf(Expansion, StringComparison.Ordinal) ?? -1;
+
+        if (at < 0)
+        {
+            return true;
+        }
+
+        var position = statement![..at].EnumerateRunes().Count() + 1;
+
+        error = "it contains '" + Expansion + "' at position " + position.ToString(CultureInfo.InvariantCulture) +
+            ". The line is written into the agent's launch configuration, where '" + Expansion + "NAME}' is replaced " +
+            "by the value of the variable NAME and the result is shown to every agent, so write it without '" +
+            Expansion + "'.";
+
+        return false;
+    }
+
+    /// <summary>What a launch configuration reads as the start of an environment variable.</summary>
+    private const string Expansion = "${";
+
     /// <summary>
     /// An answer as a line: every run of whitespace, line breaks included, becomes one space, and the ends are
     /// trimmed (SPEC.md §10.2).

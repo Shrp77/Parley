@@ -530,7 +530,7 @@ internal static class Ownership
             AcceptTitle,
             Reviewed(agent, live, proposal, Roster.Neighbours(roster, agent)),
             proposal.Statement,
-            problem: typed => OwnershipStatement.IsValid(typed, out var wrong) ? null : wrong);
+            problem: typed => OwnershipStatement.IsLaunchable(typed, out var wrong) ? null : wrong);
 
         var open = Prompting.Open(app, typing);
 

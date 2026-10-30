@@ -14,6 +14,26 @@ namespace Parley.Core.Tests;
 [Unit]
 public sealed class OwnershipStatementTests
 {
+    [Theory]
+    [InlineData("Orders and their totals. ${GITHUB_TOKEN}", 26)]
+    [InlineData("${HOME}", 1)]
+    [InlineData("orders ${X:-y}", 8)]
+    public void A_line_naming_an_environment_variable_cannot_go_into_a_launch_configuration(string statement, int position)
+    {
+        // Lens 2 run 101: Claude Code expands ${NAME} in .mcp.json, so the value would be reported as the line and shown
+        // to every agent. Still a valid statement otherwise: the rule is the launch file's, not the roster's.
+        Assert.True(OwnershipStatement.IsValid(statement, out _));
+        Assert.False(OwnershipStatement.IsLaunchable(statement, out var error));
+        Assert.Contains($"at position {position}", error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("Orders priced in $ and {braces}; not tax.")]
+    [InlineData("Costs over $5 and the {pricing} table")]
+    [InlineData("a } then ${")]
+    public void Dollar_signs_and_braces_apart_are_launchable_and_together_are_not(string statement) =>
+        Assert.Equal(!statement.Contains("${", StringComparison.Ordinal), OwnershipStatement.IsLaunchable(statement, out _));
+
     [Fact]
     public void An_ordinary_statement_is_accepted()
     {

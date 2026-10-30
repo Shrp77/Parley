@@ -4406,6 +4406,10 @@ decided is removed and its number is not reused, so the list has gaps.
     - **The words are the agent's own.** Only whitespace is collapsed, an answer that breaks the
       character class waits for a person whatever the switch says, and an agent on another machine
       always waits, because nothing here may write a file there.
+    - **A line never names an environment variable.** It is written into the agent's launch
+      configuration, where `${NAME}` is replaced by the value of `NAME` when the agent starts, and the
+      result is what every agent reads. So a line holding `${` is refused on every route, a person's
+      included, and an answer holding it waits for a person.
 
     A project that wants every line affirmed turns the switch off, and nothing then reaches a launch
     configuration without a person's recorded act.

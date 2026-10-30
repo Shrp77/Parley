@@ -287,7 +287,7 @@ public static class EnrollmentPlan
             // characters, U+2028, the bidirectional overrides and the tag block are all refused
             // too, because a roster entry that can break its own line can imitate the ones
             // around it.
-            if (owns.Length > 0 && !OwnershipStatement.IsValid(owns, out var wrong))
+            if (owns.Length > 0 && !OwnershipStatement.IsLaunchable(owns, out var wrong))
             {
                 problems.Add($"{where}: owns {wrong}");
             }

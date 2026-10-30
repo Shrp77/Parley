@@ -411,7 +411,7 @@ internal sealed class ResponsibilityDialog : Dialog
         var text = _field.Text;
         var problem = string.Empty;
 
-        if (text.Trim().Length > 0 && !OwnershipStatement.IsValid(text, out var wrong))
+        if (text.Trim().Length > 0 && !OwnershipStatement.IsLaunchable(text, out var wrong))
         {
             problem = wrong ?? string.Empty;
         }

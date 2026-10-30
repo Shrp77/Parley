@@ -83,7 +83,7 @@ public static class OwnershipLine
             return elsewhere;
         }
 
-        if (statement is not null && !OwnershipStatement.IsValid(statement, out var wrong))
+        if (statement is not null && !OwnershipStatement.IsLaunchable(statement, out var wrong))
         {
             return wrong;
         }
