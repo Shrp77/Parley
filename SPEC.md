@@ -1,4 +1,4 @@
-﻿# Parley Protocol Specification
+﻿﻿# Parley Protocol Specification
 
 **Version:** 0.9
 **Status:** Unstable. Breaking changes expected before 1.0.
@@ -3216,9 +3216,9 @@ not by vendor.
 | **Pull-only** | Native tool calls | Collect on demand | Agent sends and receives, but a message reaches it only when it calls `inbox()`. |
 | **Headless** | Native tool calls | A supervisor gives the agent a turn | The agent is resident: started once, kept alive, and told only that it has mail. |
 
-An adapter declares its tier at registration. The broker degrades gracefully: a Request to a
-Pull-only agent is queued rather than pushed; a Request to a Headless agent waits until a
-supervisor next gives that agent a turn.
+An adapter declares its tier at registration, and nothing routes on it: every message waits in
+the store until its receiver collects it, so a Request to a Pull-only agent waits for its next
+`inbox()`, and a Request to a Headless agent for the turn a supervisor next gives it.
 
 **Being told there is mail is not delivery.** A Pull-only adapter may learn that traffic is
 waiting by any means its host offers — an editor integration that runs between tool calls, a
@@ -3303,7 +3303,7 @@ waits for a natural restart, when throwing away what the agent has learned would
 
 A turn that runs past the node's patience is **not** one of them. The process holds everything the
 agent has learned, and discarding that because a single turn ran long is a far worse trade than
-waiting: the turn is recorded as abandoned, the exchange is unharmed — still owed, still open — and
+waiting: the turn is recorded as timed out, the exchange is unharmed — still owed, still open — and
 the reply that eventually arrives is discarded rather than read as the answer to the next turn.
 
 **Starting is the node's business, and the broker never learns how.** A launch command is local
@@ -3396,8 +3396,10 @@ capped, so an unbounded identity is an unbounded header.
 
 ### 11.4 Rule enforcement degrades by tier
 
-§8 lives in tool descriptions, which Full and Pull-only agents re-read on every call. Headless agents
-receive the rules at the start of a turn instead — weaker, and prone to decay over long runs. This is
+§8 lives in tool descriptions, which Full and Pull-only agents re-read on every call. A Headless
+agent runs the same adapter and sees the same descriptions, but a resident process carries one
+session across many turns, so what it read is older by the time it acts — weaker, and prone to
+decay over long runs. This is
 an accepted limitation. Measure it through the `blocked` rate, the `sources` Results name, and
 clarification depth, in §15.
 

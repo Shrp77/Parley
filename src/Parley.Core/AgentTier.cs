@@ -2,15 +2,16 @@
 
 // SPEC.md §11.1 and §14. Here rather than in the store, beside ExchangeState and
 // ConversationState, because these are protocol vocabulary rather than a shape the
-// database happens to have: a tier decides how the broker routes, and a status decides
-// whether it routes at all. The store persists them; it does not define them.
+// database happens to have: a tier says how an agent learns of its mail, and a status
+// decides whether it is reachable at all. The store persists them; it does not define them.
 
 /// <summary>
 /// How an agent attaches to the broker, classified by capability rather than by vendor.
 /// </summary>
 /// <remarks>
-/// The broker degrades gracefully across tiers: a question to a pull-only agent is queued
-/// rather than pushed, and a question to a headless agent triggers an invocation.
+/// Nothing routes on it. Every message waits in the store until its receiver collects it, so a
+/// question to a pull-only agent waits for its next collection, and one to a headless agent
+/// for the turn its node next gives it.
 /// </remarks>
 public enum AgentTier
 {

@@ -1149,8 +1149,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _ = await UseConnectionAsync(
             async (connection, now, ct) =>
             {
-                await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
-                    .ConfigureAwait(false);
+                // **Not if a newer node holds the machine.** A node that rejoins at once (its catalogue changed) can be
+                // added and write its join between this release's removal and this write, and a leave landing after it
+                // would read the live node as gone until it next rejoined. Decided under the gate the join's write takes,
+                // so whichever write runs second sees the other.
+                if (!_nodes.ContainsKey(joined.Machine))
+                {
+                    await new NodeRepository(connection).LeaveAsync(joined.Machine, now, ct)
+                        .ConfigureAwait(false);
+                }
+
                 return true;
             },
             cancellationToken).ConfigureAwait(false);

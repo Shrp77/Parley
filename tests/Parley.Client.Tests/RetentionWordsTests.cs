@@ -28,9 +28,10 @@ public sealed class RetentionWordsTests
         Assert.Contains("quiet for the retention idle period", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
         Assert.Contains("export it to keep a copy", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
 
-        // Closing ends the floor's hold on open work, so anything past the age cap goes at once (a Request from day 0
-        // closed at day 40 goes at the next pass); the sentence says so rather than promising the idle period.
-        Assert.Contains("older than the age cap goes at the next retention pass", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
+        // Closing ends the floor's hold on open work, so text past the age cap can go before the idle period ends. Not at
+        // a promised pass: an old Request stays until the closed notice it carries back is collected.
+        Assert.Contains("older than the age cap can go sooner, as early as the next retention pass", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
+        Assert.DoesNotContain("goes at the next", RetentionWords.WhatClosingKeeps, StringComparison.Ordinal);
     }
 
     [Fact]
