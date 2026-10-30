@@ -40,6 +40,21 @@ public sealed class RoleRequestReadsAsCountedTests
     }
 
     [Fact]
+    public void The_text_export_says_it_beneath_the_request_too()
+    {
+        // The export is a person's record taken away (lens 3 run 86 found its line held by nothing).
+        var export = Export(
+            new ExchangeSnapshot(10, ExchangeState.Closed, T0, T0, ExchangeOutcome.Complete, null, "g"),
+            new ExchangeSnapshot(11, ExchangeState.Open, T0, null, null, null, "g"),
+            new ExchangeSnapshot(12, ExchangeState.Open, T0, null, null, null, "g"),
+            new ExchangeSnapshot(13, ExchangeState.Open, T0, null, null, null, "g"));
+
+        var written = Transcript.Write("c-1", "alpha", export.Messages, export.Exchanges);
+
+        Assert.Contains(Reading.RoleRequestLine("infra", 4, 1), written, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_request_to_one_agent_says_nothing()
     {
         var export = Export(new ExchangeSnapshot(10, ExchangeState.Closed, T0, T0, ExchangeOutcome.Complete));

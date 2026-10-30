@@ -49,6 +49,41 @@ public sealed class RoleRequestProgressTests
     }
 
     [Fact]
+    public async Task The_agents_asked_are_never_told_how_many_others_were()
+    {
+        // SPEC.md §5.5, "The receivers do not know": when the person closes the conversation, each member collects the
+        // broker's closed Result too, and it must carry no count (lens 3 run 86 found this held by nothing).
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var docs = await AttachedClient.AttachAsync(broker, "docs@alpha", "C:/repo-docs", Ct);
+        await using var alpha = await AttachedClient.AttachAsync(broker, "infra@alpha", "C:/repo-infra", Ct);
+        await using var beta = await AttachedClient.AttachAsync(broker, "infra@beta", "C:/repo-infra", Ct);
+
+        var sent = await docs.Client.RequestAsync(Requests.Open(docs.Name, "infra", "what does this machine believe about DNS"), cancellationToken: Ct);
+        var conversation = sent.Outcomes[0].ConversationId;
+
+        // What each member was asked carries nothing of the group either.
+        foreach (var member in (AttachedClient[])[alpha, beta])
+        {
+            var asked = Assert.Single((await member.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = member.Name }, cancellationToken: Ct)).Messages);
+            Assert.Null(asked.RoleRequest);
+        }
+
+        Assert.True((await alpha.Client.ResultAsync(
+            Requests.Result(alpha.Name, sent.Outcomes.Single(o => o.Receiver == alpha.Name).ExchangeId), cancellationToken: Ct)).Ok);
+
+        Assert.True((await broker.ConnectAsOperator().ForceConcludeAsync(
+            new Wire.ForceConcludeRequest { ConversationId = conversation, Reason = "settled on a call" }, cancellationToken: Ct)).Changed);
+
+        // beta had not answered, so the close reaches it as a closed Result; it says nothing of how many were asked.
+        var closed = Assert.Single((await beta.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = beta.Name }, cancellationToken: Ct)).Messages);
+        Assert.Equal(Wire.MessageType.Result, closed.Message.Type);
+        Assert.Null(closed.RoleRequest);
+
+        var requester = (await docs.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = docs.Name }, cancellationToken: Ct)).Messages;
+        Assert.Contains(requester, m => m.RoleRequest is { Asked: 2 });
+    }
+
+    [Fact]
     public async Task A_result_to_a_request_for_one_agent_carries_no_count()
     {
         await using var broker = await LoopbackBroker.StartAsync(Ct);

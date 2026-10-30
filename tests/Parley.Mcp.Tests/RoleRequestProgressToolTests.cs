@@ -34,6 +34,29 @@ public sealed class RoleRequestProgressToolTests
     }
 
     [Fact]
+    public async Task A_blocked_answer_counts_as_an_answer()
+    {
+        // SPEC.md §5.5: an answer is an exchange a Result closed, complete or blocked (lens 3 run 86: the store's count of
+        // blocked was held by nothing).
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+        var (_, docs) = await fixture.LaunchAsync("docs@test", ct);
+        var (_, alpha) = await fixture.LaunchAsync("infra@alpha", ct);
+        _ = await fixture.LaunchAsync("infra@beta", ct);
+
+        var sent = await docs.RequestAsync("infra", "What does this machine believe about DNS?", cancellationToken: ct);
+        var toAlpha = sent["sent"]!.AsArray().Single(s => s!["agent"]!.GetValue<string>() == "infra@alpha")!["exchange_id"]!.GetValue<long>();
+
+        _ = await alpha.InboxAsync(cancellationToken: ct);
+        var blocked = await alpha.ResultAsync(toAlpha, "blocked", "I cannot read the resolver's settings.", blocker: "permission", cancellationToken: ct);
+        Assert.True(blocked["ok"]!.GetValue<bool>(), blocked.ToJsonString());
+
+        var answer = Assert.Single((await docs.InboxAsync(cancellationToken: ct))["messages"]!.AsArray())!;
+
+        Assert.Equal(1, answer["your_request_to_the_role"]!["answered"]!.GetValue<int>());
+    }
+
+    [Fact]
     public async Task An_answer_to_a_request_for_one_agent_says_nothing_of_a_role()
     {
         var ct = TestContext.Current.CancellationToken;
