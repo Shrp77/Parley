@@ -396,7 +396,7 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
         CancellationToken cancellationToken = default) =>
         await SettleAsync(agent, "discarded", nowUtc, transaction, cancellationToken).ConfigureAwait(false);
 
-    /// <summary>The latest question for every agent ever asked.</summary>
+    /// <summary>The latest question on record for every agent; one whose question's conversation was destroyed has none.</summary>
     /// <param name="transaction">A transaction to read within, or <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>One per agent, in name order.</returns>

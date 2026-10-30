@@ -136,8 +136,8 @@ public sealed class FileLocationStore : IDisposable
     }
 
     /// <summary>
-    /// Makes sure the location and the staging directory exist as directories of the broker's own, and empties the staging
-    /// directory.
+    /// Makes sure the location and the staging directory exist as directories of the broker's own, tightens a quarantine
+    /// directory an older broker left, and empties the staging directory.
     /// </summary>
     /// <remarks>Called when a broker starts: nothing staged by a previous one can still be finished.</remarks>
     public void Prepare()
@@ -149,8 +149,9 @@ public sealed class FileLocationStore : IDisposable
         OwnFolder(Incoming);
 
         // The quarantine sits beside the root, so the root does not cover it: an older broker's is tightened here too. One
-        // that does not exist yet is made on the first move into it.
-        if (Path.Exists(Quarantine))
+        // that does not exist yet is made on the first move into it, and anything else there is left for that move to refuse
+        // rather than stopping the broker from starting.
+        if (Directory.Exists(Quarantine))
         {
             MakeReal(Quarantine);
             OwnFolder(Quarantine);
