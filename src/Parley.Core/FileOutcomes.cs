@@ -169,7 +169,10 @@ public sealed record FileRefusal(
 /// <param name="ConversationId">The conversation.</param>
 /// <param name="Name">The name placed, which characters outside the set may have changed from the one asked for.</param>
 /// <param name="SizeBytes">How many bytes were placed.</param>
-/// <param name="Sha256">The broker's hash of them, or <see langword="null"/> when refused.</param>
+/// <param name="Sha256">
+/// The broker's hash of them; on a refusal because the name holds other content, the hash of the file already there;
+/// otherwise <see langword="null"/> when refused.
+/// </param>
 /// <param name="Detail">The rule in words, on a refusal.</param>
 public sealed record PersonPlacement(
     PlaceOutcome? Outcome,

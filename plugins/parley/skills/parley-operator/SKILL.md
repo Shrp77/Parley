@@ -223,9 +223,10 @@ environment the broker was started with: three days idle and thirty days maximum
 (Alt+c in the terminal, or Export, then Export TXT, in the web UI). That copy is a file they own,
 and it is the only one that outlives the policy.
 
-A floor bounds it the other way, and is not configurable. Nothing deletes a message nobody has
-collected yet, anything on an exchange that is still open, the request a result nobody has
-collected yet carries back, or the recent rows deduplication still reads.
+A floor bounds it the other way, and is not configurable. Nothing on an exchange that is still
+open is deleted on a schedule. A message nobody has collected yet, and the request a result nobody
+has collected yet carries back, are kept until they pass the age cap (thirty days unless the broker
+is set otherwise), and then removed with the rest. Pruning says which numbers it applied.
 
 ## The health reports
 

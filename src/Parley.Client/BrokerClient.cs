@@ -399,7 +399,14 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     {
         var reply = await _operators.PruneAsync(new Wire.Empty(), cancellationToken: cancellationToken);
 
-        return new PruneResult(reply.Removed, reply.HeldByFloor, reply.Contended, reply.Capped);
+        return new PruneResult(
+            reply.Removed,
+            reply.HeldByFloor,
+            reply.Contended,
+            reply.Capped,
+            reply.IdleSeconds > 0 && reply.MaxAgeSeconds > 0
+                ? new RetentionPolicy(TimeSpan.FromSeconds(reply.IdleSeconds), TimeSpan.FromSeconds(reply.MaxAgeSeconds))
+                : null);
     }
 
     /// <inheritdoc/>

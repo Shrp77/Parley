@@ -169,8 +169,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
 
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
                       + "retention pass. Message text past the policy is deleted permanently: export a conversation "
-                      + "first if it is worth keeping. Nothing on an open exchange, and nothing not yet "
-                      + "collected, is removed.", true),
+                      + "first if it is worth keeping. " + Parley.Client.Rendering.RetentionWords.WhatItKeeps, true),
 
             _ => ("This is not something the console does.", false)
         };
@@ -495,7 +494,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             said += $" {pruned.HeldByFloor} more were old enough and were kept, because they are on open work, not yet collected, or the request a result not yet collected carries back.";
         }
 
-        return pruned.Capped ? said + " It stopped at its own limit with more still to remove; run it again." : said;
+        said = pruned.Capped ? said + " It stopped at its own limit with more still to remove; run it again." : said;
+
+        return pruned.Applied is { } policy ? said + " " + Parley.Client.Rendering.RetentionWords.Applied(policy) : said;
     }
 
     private static async Task<string> DescribePurge(Task<PurgeOutcome> action)

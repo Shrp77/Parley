@@ -224,6 +224,9 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
             Assert.Equal(0, unconfigured.Removed);
             Assert.Equal(2, await MessageCount(path));
+
+            // And it says which numbers it applied (SPEC.md §9.4): the defaults, here.
+            Assert.Equal(RetentionPolicy.Default, unconfigured.Applied);
         }
 
         using (var strict = BrokerProcess.Start(
@@ -235,6 +238,7 @@ public sealed class PruneCommandTests : IAsyncDisposable
 
             Assert.Equal(2, configured.Removed);
             Assert.Equal(0, await MessageCount(path));
+            Assert.Equal(new RetentionPolicy(TimeSpan.FromHours(1), TimeSpan.FromHours(1)), configured.Applied);
         }
     }
 

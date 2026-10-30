@@ -24,7 +24,7 @@ public sealed class ExchangePolicyTests
     [Fact]
     public void The_default_bounds_open_requests_not_at_all()
     {
-        // SPEC.md §7.1: the cap is off unless a deployment asks for one. Asserted on the
+        // SPEC.md §7.1: there is no request cap; the broker stamps it off. Asserted on the
         // property rather than on the number, because what a caller needs to know is whether a
         // bound applies — and the number the sentinel happens to be is storage's business.
         Assert.False(ExchangePolicy.Default.BoundsRequests);

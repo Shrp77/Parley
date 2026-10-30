@@ -270,7 +270,7 @@ public sealed class Pruner(SqliteConnection connection)
 
         proposals.Complete();
 
-        return new PruneResult(removed, held, contended, capped);
+        return new PruneResult(removed, held, contended, capped, policy);
     }
 
     /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>

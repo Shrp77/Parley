@@ -29,8 +29,8 @@ public sealed record BrokerOptions(
 
     /// <summary>The options when a deployment configures none.</summary>
     /// <remarks>
-    /// <see cref="ResumePolicy.Never"/>, the safe default for interactive use (§14): the surprising outcome
-    /// is work resuming that somebody stopped on purpose.
+    /// <see cref="ResumePolicy.Never"/>, as SPEC.md §14 says a restart behaves: the surprising outcome is work resuming
+    /// that somebody stopped on purpose. Nothing configures another.
     /// </remarks>
     public static BrokerOptions Default { get; } = new(
         Core.ExchangePolicy.Default,

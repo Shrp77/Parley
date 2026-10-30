@@ -738,8 +738,10 @@ again for what it left.
   has gone, a launch that fails — would otherwise silence waking for that agent for good. Expiry
   ends the asking, not the Request: the Request stays open and owed.
 
-**A byte-identical Request inside the deduplication window (§13.1) is not stored twice.** The
-sender is handed the exchange already carrying it.
+**A Request identical to one still open between the same two participants is refused** (§7.1's
+distinctness), and the sender is handed the exchange already carrying it. Once that exchange has
+closed, asking again is new work: a Request opens a fresh exchange, so §13.1's deduplication, keyed
+on the exchange, never suppresses one.
 
 ### 5.5 Requesting a role
 
@@ -2757,7 +2759,7 @@ Retention is nonetheless **configurable**, because the operator uses in §10.2 a
 isolation guarantee does not depend on the log being short. Two rules prune, and a floor overrides
 both.
 
-**The floor.** Regardless of configuration, a message is never removed while it is:
+**The floor.** Regardless of configuration, the idle rule and closure never remove a message while it is:
 
 - undelivered — it is somebody's inbox;
 - attached to an exchange that is open — it is work somebody still owes, and §6 may deliver it
@@ -2768,7 +2770,8 @@ both.
   moved on.
 
 An operator configuring aggressive retention must not be able to break deduplication, or delete
-the text of work still owed, as a side effect. The floor is what makes the dial safe to turn.
+the text of work still owed, as a side effect. The floor is what makes the dial safe to turn. Only
+the open-exchange clause holds against the age cap below; the other three end at it.
 
 **The four clauses are bounded differently, and one of them is bounded by a person.** The
 deduplication clause expires on a fixed window measured in seconds. The undelivered clause has no
@@ -2789,8 +2792,10 @@ for the configured idle period, the line of work is over and its messages are pr
 the work is over, which is better evidence than silence and arrives sooner. The idle rule remains
 for everything else.
 
-**The age cap.** Nothing the floor does not hold outlives the configured maximum age, whatever the
-idle rule concludes. This bounds a conversation that never falls silent long enough to trip it.
+**The age cap.** Nothing but the text of an open exchange outlives the configured maximum age,
+whatever the idle rule concludes: a message nobody collected, and the Request an uncollected Result
+carries back, go with the rest once they are past it. This bounds a conversation that never falls
+silent long enough to trip it, and an agent that never attaches.
 
 **Nothing is exempt.** There is no retain-forever flag, because the log is a channel and a
 permanent corner of it would be the store §16 says this is not. A person who wants to keep a
@@ -3101,9 +3106,9 @@ other could.
 | `implements()` | Which protocol version this broker speaks. First, and asked before anything else: without it a client cannot tell a broker of the wrong version from one that is switched off, and those two want different words in front of a person. It also says **which build is serving** and **how the store it serves differs from the shape that build expects**, because two things the protocol number cannot say are whether the programs on a machine are from one release and whether a store made by an earlier build has what has been added since. Both may be empty, and empty means *not said* and never *fine*; a surface warns about a build whose major and minor differ from its own, and about any difference in the store's shape. |
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
-| `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass. |
+| `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass, and report what it removed, what the floor kept, and the idle period and age cap it applied. |
 | `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
-| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached and the caps in force (none while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
+| `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached, and the lowest and highest cap in force (the unbounded value while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
 | `flags()` | Report the open work that needs the person (§6): Requests not collected past their uncollected threshold, exchanges whose owing participant has sent nothing past their stalled threshold, exchanges whose owing agent's last turn ended with tool calls refused for want of permission (§11.6) — at once, not after a threshold — work held by a retired agent, participants a closure poll is waiting on once nothing else is (§5.0), whose flags name a conversation and carry no exchange, and the cycles recorded at admission (§7.2). Derived when read, so work that moves is simply absent from the next read. Nothing in the protocol times out, so this is how stalled work reaches anybody. |
@@ -4269,8 +4274,9 @@ decided is removed and its number is not reused, so the list has gaps.
    **There is no request cap, deliberately.** §7.1's per-pair cap is a cost control with an
    arbitrary number, and it ends work before its participants have finished, which principle 2.8
    counts as the larger harm. What stands against volume is §13.1's deduplication, which catches a
-   byte-identical repeat and nothing else; §7.1's distinctness rule, which refuses a Request identical
-   to one still open; and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
+   byte-identical repeat of a Clarify or a Result and nothing else (a Request opens a fresh exchange,
+   so it is never a repeat); §7.1's distinctness rule, which refuses a Request identical to one still
+   open; and wake coalescing (§5.4), which bounds the *turns* a burst causes to one per
    recipient until it collects, but not the volume collected in that turn. Per-sender rate limits do
    not exist, and §13 says so.
 
@@ -4304,8 +4310,9 @@ decided is removed and its number is not reused, so the list has gaps.
      the shape an answer probably takes, and it waits for the distribution that would set the number.
 
    `clarifications()` in §10.2 reports the distribution, how often a cap in force was reached, and the
-   range of caps in force; with every exchange stamped uncapped, the last two report none, and they are
-   printed so that a cap, if one is ever introduced, is seen shaping the distribution it measures.
+   range of caps in force; with every exchange stamped uncapped, the count is zero and the range is the
+   unbounded value. The surfaces show the distribution and the count, not the range, until a cap exists
+   for it to describe.
 5. Should a Request carry a deadline, so a requester can say when the work stops being useful? A
    deadline must not close anything — principle 2.8 lets nothing end work but its participants and the
    person — so what it could do is bring §6's flag forward and tell the receiver what the requester's

@@ -32,7 +32,7 @@ public sealed class DocumentedDefaultTests
         Assert.False(ExchangePolicy.Default.BoundsClarifications);
 
         Assert.Contains(
-            "Depth is not capped unless a deployment caps it",
+            "**Depth is not capped.**",
             RepositoryFile.Read("SPEC.md"),
             StringComparison.Ordinal);
     }

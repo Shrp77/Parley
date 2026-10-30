@@ -890,7 +890,7 @@ public static class ServeCommand
         }
     }
 
-    /// <summary>Runs the broker's tick, its flags and retention pass (SPEC.md §6, §9.4), until the broker stops.</summary>
+    /// <summary>Runs the broker's tick (closing polls, and the retention pass when it is due, SPEC.md §5.0, §9.4) until the broker stops.</summary>
     /// <param name="runtime">The broker state.</param>
     /// <param name="output">Where to report a failure worth seeing.</param>
     /// <param name="cancellationToken">Stops the sweep.</param>

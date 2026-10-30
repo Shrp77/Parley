@@ -61,8 +61,8 @@ internal static class Pruning
              {Safe.Text(name)}
 
              Its broker applies its retention policy now rather than at its next retention pass. Message text past the
-             policy is deleted permanently: export a conversation first if it is worth keeping. Nothing on an
-             open exchange, and nothing not yet collected, is removed.
+             policy is deleted permanently: export a conversation first if it is worth keeping.
+             {Parley.Client.Rendering.RetentionWords.WhatItKeeps}
              """;
 
         var choosing = Prompting.Choose(Title, described, [Keep, Prune]);
@@ -130,6 +130,11 @@ internal static class Pruning
         if (pruned.Capped)
         {
             said += " It stopped at its own limit with more still to remove; run it again.";
+        }
+
+        if (pruned.Applied is { } policy)
+        {
+            said += " " + Parley.Client.Rendering.RetentionWords.Applied(policy);
         }
 
         await done(said).ConfigureAwait(false);

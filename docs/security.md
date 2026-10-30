@@ -132,8 +132,8 @@ launcher says so and exits. A store is served only from this machine's own disks
 above: SQLite in WAL mode needs coherent shared memory, so a store on a share is corrupted, not just
 slow.
 
-Retention removes old messages on a schedule, with a floor that can never delete a message nobody
-has collected, anything on an open exchange, or the rows deduplication still reads. See
+Retention removes old messages on a schedule. Only text on an open exchange is never removed on a
+schedule; a message nobody collected is kept until it passes the age cap, and then removed. See
 [Configuration](configuration.md#retention). Export is how you keep a conversation.
 
 Before a new build upgrades a store, the broker copies it beside itself. The copy holds every

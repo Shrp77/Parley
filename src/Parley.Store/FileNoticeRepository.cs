@@ -10,8 +10,9 @@ namespace Parley.Store;
 /// <remarks>
 /// <para>
 /// <b>A notice is raised in the transaction that removes the file</b>, by <see cref="SharedFileRepository"/> or a
-/// destroy or purge, and collected in the transaction that drains an inbox. Nothing here wakes anything: a notice
-/// waits for whenever the agent next looks.
+/// destroy or purge. It is read when an inbox is collected and deleted only when that collection is acknowledged, so a
+/// collection that never arrives loses nothing. Nothing here wakes anything: a notice waits for whenever the agent next
+/// looks.
 /// </para>
 /// <para>
 /// <b>A file's going is noticed, and why</b>: gone, or tampered with, when something other than Parley changed its
@@ -307,7 +308,7 @@ public sealed class FileNoticeRepository(SqliteConnection connection)
     /// <param name="excluding">Keys of notices a collection in flight holds, which no other collection hands over.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>
-    /// At most <see cref="FileLimits.NoticesPerCollection"/> notices, oldest change first, how many are left besides them
+    /// At most <see cref="FileLimits.NoticesPerCollection"/> notices, oldest first, how many are left besides them
     /// and the held ones, and the keys <see cref="DeleteAsync"/> takes once the agent has them.
     /// </returns>
     /// <remarks>

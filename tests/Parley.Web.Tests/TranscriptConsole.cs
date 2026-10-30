@@ -156,6 +156,12 @@ public sealed class ScriptedExport : HttpMessageHandler
                 "/parley.v1.Operators/DescribeRegistry" => Rows(),
                 "/parley.v1.Operators/DescribeWaiting" => Waiting(),
                 "/parley.v1.Operators/ListConversations" => Conversations(),
+                "/parley.v1.Operators/Prune" => new Wire.PruneReply
+                {
+                    Removed = 2,
+                    IdleSeconds = (long)TimeSpan.FromDays(3).TotalSeconds,
+                    MaxAgeSeconds = (long)TimeSpan.FromDays(30).TotalSeconds
+                },
                 _ => null
             };
         }

@@ -850,7 +850,9 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Removed = result.Removed,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
-            Capped = result.Capped
+            Capped = result.Capped,
+            IdleSeconds = (long)(result.Applied?.IdlePeriod.TotalSeconds ?? 0),
+            MaxAgeSeconds = (long)(result.Applied?.MaximumAge.TotalSeconds ?? 0)
         };
     }
 

@@ -298,12 +298,15 @@ So it forgets by default:
 
 - a discussion whose exchanges have all closed is removed once it has been quiet for
   `PARLEY_RETENTION_IDLE_HOURS` (three days if unset),
-- and nothing outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+- and nothing but open work outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+
+The retention pass runs once an hour. A prune from the terminal or the web console runs it now and
+says which idle period and age cap it applied.
 
 ```
 PARLEY_RETENTION_IDLE_HOURS=72
 PARLEY_RETENTION_MAX_AGE_HOURS=720
-PARLEY_TICK_SECONDS=5                 # how often flags are raised and retention runs
+PARLEY_TICK_SECONDS=5                 # the broker's tick: closing polls, Parley's passes, new projects
 ```
 
 **Set these in the broker's environment**, meaning the process that runs `parley serve`. Not in
@@ -311,9 +314,12 @@ your shell, and not on the agents' servers. The broker is the only process that 
 them anywhere else and the broker quietly keeps the default. Pruning from the terminal only brings
 the next retention pass forward, under the same policy.
 
-A floor bounds the other direction and is not configurable. Tightening retention can never delete
-a message nobody has collected, anything on an exchange that is still open, the request a
-not-yet-collected result carries back, or the recent rows that deduplication still reads.
+A floor bounds the other direction and is not configurable. The idle rule never deletes a message
+nobody has collected, anything on an exchange that is still open, the request a not-yet-collected
+result carries back, or the recent rows that deduplication still reads. The age cap is stricter:
+only text on an exchange that is still open outlives it. A message nobody collected goes once it is
+older than the cap, so lowering `PARLEY_RETENTION_MAX_AGE_HOURS` can delete mail an agent never
+picked up.
 
 To keep a conversation beyond the policy, export it. The export is a file you own.
 

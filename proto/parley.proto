@@ -1123,6 +1123,8 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
+  int64 idle_seconds = 5;       // the policy applied (section 9.4): a quiet conversation's idle period
+  int64 max_age_seconds = 6;    // and the age cap past which nothing but open work is kept
 }
 
 // ===========================================================================================

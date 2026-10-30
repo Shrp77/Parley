@@ -1168,7 +1168,8 @@ internal sealed class FileWork(BrokerRuntime runtime)
     // A file whose bytes on disk are not what was placed (SPEC.md §9.5).
     private const string TamperedSentence =
         "The file was tampered with on the broker's machine: its bytes no longer match what was placed, so it is no "
-        + "longer reliable and nothing was written. The broker is setting it aside; ask its placer to place it again.";
+        + "longer reliable and nothing was written. The broker is setting it aside; ask its placer to place it again "
+        + "under a new name.";
 
     private static FileRejection Rejection(SharedFileNameProblem problem) =>
         problem == SharedFileNameProblem.ExtensionNotAllowed ? FileRejection.ExtensionNotAllowed : FileRejection.BadName;
