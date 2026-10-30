@@ -65,10 +65,9 @@ public sealed class OwnershipQuestionRepository(SqliteConnection connection)
                    AND NOT EXISTS (SELECT 1 FROM agent_ownership_accepted o WHERE o.agent = a.name)
                    AND NOT EXISTS (SELECT 1 FROM ownership_questions q WHERE q.agent = a.name)
                    -- A destroyed ownership conversation takes its question row with it, and having been asked at all
-                   -- still stops asking again (SPEC.md §10.2): the tombstone keeps the participants (lens 1 run 91).
-                   AND NOT EXISTS (SELECT 1 FROM destroyed_conversations d
-                                    WHERE d.id LIKE 'owns-%'
-                                      AND instr(', ' || d.participants || ',', ', ' || a.name || ',') > 0)
+                   -- still stops asking again (SPEC.md §10.2). The mark is on the agent's row, which a destroy keeps
+                   -- and a purge removes, so a repository attaching under a purged name is asked.
+                   AND a.asked_utc IS NULL
                  ORDER BY a.name;
                 """,
                 new { Attached = attached.ToArray(), Facilitator = Facilitation.Adapter, Seat = PersonSeat.Adapter },

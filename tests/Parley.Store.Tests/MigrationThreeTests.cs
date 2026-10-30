@@ -33,9 +33,9 @@ public sealed class MigrationThreeTests : IDisposable
             + $"('orders@test', 'pricing', 'A.MD', 'a.md', '{ContentHash.Of("v0"u8).Value}', '{ContentHash.Of("v1"u8).Value}', 2, '{stamp}'), "
             + $"('billing@test', 'pricing', 'B.MD', 'b.md', '{ContentHash.Of("v0"u8).Value}', NULL, NULL, '{stamp}');");
 
-        Assert.Equal(1, SchemaMigrator.Migrate(_connection));
+        Assert.Equal(SchemaMigrator.LatestVersion - 2, SchemaMigrator.Migrate(_connection));
 
-        Assert.Equal(3, SchemaMigrator.GetUserVersion(_connection));
+        Assert.Equal(SchemaMigrator.LatestVersion, SchemaMigrator.GetUserVersion(_connection));
         Assert.Empty(StoreShape.Problems(_connection));
         Assert.Equal(["billing@test"], Query("SELECT agent FROM file_notices;"));
 

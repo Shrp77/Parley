@@ -1401,6 +1401,10 @@ CREATE TABLE agents (
   -- Two values, because there are only two judgements a person makes about a registration:
   -- it stands, or it is finished. Reachability is observed rather than stored -- see §14.
   status          TEXT    NOT NULL CHECK (status IN ('active', 'retired')),
+  -- When Parley first asked this agent what it is responsible for (§10.2). On the agent's row because a destroy
+  -- keeps that and takes the question's row, and a purge removes it, so a repository attaching under a purged
+  -- name is a new agent and is asked. Set by tr_asking_marks_the_agent.
+  asked_utc       TEXT    CHECK (asked_utc IS NULL OR unixepoch(asked_utc) IS NOT NULL),
 
   CHECK (adapter_config IS NULL
          OR (json_valid(adapter_config) AND length(adapter_config) <= 4000)),
@@ -2410,6 +2414,14 @@ BEGIN
   SELECT RAISE(ABORT, 'a settled question stays settled');
 END;
 
+-- Having been asked at all stops Parley asking again (§10.2). Marked in the write that asks, so no route that asks
+-- can forget to, and never moved by a later asking.
+CREATE TRIGGER tr_asking_marks_the_agent
+AFTER INSERT ON ownership_questions
+BEGIN
+  UPDATE agents SET asked_utc = NEW.asked_utc WHERE name = NEW.agent AND asked_utc IS NULL;
+END;
+
 -- The project's Auto Accept switch (§10.2). One row, in the project's own store, because the store is
 -- the one thing both surfaces reach and the broker reads without a second file to watch. A store with no
 -- row reads as on.
@@ -2652,7 +2664,9 @@ that needed it; an enumeration written as prose has already decayed.
   `owns-` conversation itself has asked nobody anything — and refuses a seat or Parley as the one asked.
   `tr_question_accepted_only_with_a_line` and `tr_settled_question_stays_settled` keep a question from claiming an
   acceptance nothing holds, or reopening an answer somebody discarded. `ux_one_refresh` sends a refresh at most
-  once per agent, ever (§11.1).
+  once per agent, ever (§11.1). `tr_asking_marks_the_agent` records the first asking on the agent's row, which a
+  destroyed question's conversation leaves and a purge takes, so Parley does not ask again by itself after a destroy
+  and does ask a new agent under a purged name.
 - **An accepted line names the discussion it came from, and outlives it.** `tr_accepted_line_names_its_discussion`
   holds that every route but a composed line names its conversation. It is a trigger and not a CHECK because
   destroying that conversation clears the link rather than being refused by it.
@@ -4510,7 +4524,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.9** and the storage schema version is **3**.
+The protocol version is **0.9** and the storage schema version is **4**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

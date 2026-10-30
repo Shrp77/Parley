@@ -76,6 +76,49 @@ public sealed class AnOwnershipAnswerIsDecidedAndAskedOnceTests : IDisposable
         Assert.Empty(await _facilitator.AskDueAsync(_parley, [Orders.Value], T0.AddMinutes(2), Ct));
     }
 
+    [Fact]
+    public async Task A_repository_attaching_under_a_purged_name_is_a_new_agent_and_is_asked()
+    {
+        // Lens 1 run 92: the purge left a tombstone naming the agent, and reading tombstones as "asked" never asked
+        // the new one.
+        _ = await _facilitator.AskAsync(_parley, Orders, T0, Ct);
+        Assert.Equal(PurgeVerdict.Gone, (await new AgentRepository(_connection).PurgeAsync(Orders, T0.AddMinutes(1), cancellationToken: Ct)).Verdict);
+
+        _connection.Execute("INSERT INTO agents (name, adapter, tier, status) VALUES ('orders@test', 'claude-code', 'full', 'active');");
+
+        Assert.Single(await _facilitator.AskDueAsync(_parley, [Orders.Value], T0.AddMinutes(2), Ct));
+    }
+
+    [Fact]
+    public async Task An_agent_named_in_a_destroyed_conversation_it_was_never_asked_in_is_still_asked()
+    {
+        // Lens 1 run 92: an agent drawn into another agent's owns- conversation is in its tombstone, and was never asked.
+        _connection.Execute(
+            """
+            INSERT INTO agents (name, adapter, tier, status) VALUES ('inventory@test', 'claude-code', 'full', 'active');
+            INSERT INTO destroyed_conversations (id, destroyed_utc, messages, participants)
+            VALUES ('owns-orders-20260928-120000', '2026-09-28T12:00:00.0000000Z', 3,
+                    'inventory@test, orders@test, parley-facilitator@test');
+            """);
+
+        Assert.Single(await _facilitator.AskDueAsync(_parley, ["inventory@test"], T0, Ct));
+    }
+
+    [Fact]
+    public async Task The_first_asking_is_marked_on_the_agents_row_and_a_later_one_does_not_move_it()
+    {
+        var asked = await _facilitator.AskAsync(_parley, Orders, T0, Ct);
+        await Answer(asked.Exchange!.Value, "orders.");
+        _ = await _facilitator.ReadBackAsync(_parley, T0, Ct);
+        _ = await new OwnershipQuestionRepository(_connection).DiscardAsync(Orders, T0, cancellationToken: Ct);
+        _ = await _facilitator.AskAgainAsync(_parley, Orders, T0.AddHours(1), Ct);
+
+        Assert.Equal(2L, _connection.ExecuteScalar<long>("SELECT count(*) FROM ownership_questions WHERE agent = 'orders@test';"));
+        Assert.Equal(
+            ExchangeRow.FormatTimestamp(T0),
+            _connection.ExecuteScalar<string>("SELECT asked_utc FROM agents WHERE name = 'orders@test';"));
+    }
+
     private async Task Answer(long exchange, string text)
     {
         var payload = new JsonObject
