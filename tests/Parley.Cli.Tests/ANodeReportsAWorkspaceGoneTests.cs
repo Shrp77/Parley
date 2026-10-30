@@ -11,12 +11,13 @@ using Wire = Parley.Transport;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That a node asked to start an agent whose workspace is gone starts nothing, and has the broker retire it only when the
-/// folder above is still there (SPEC.md §14).
+/// That a node asked to start an agent whose workspace is gone starts nothing, and has the broker retire it only where a
+/// deletion can be told from a disk that is absent or replaced: on the home disk, beside a folder in use, through no link
+/// (SPEC.md §14).
 /// </summary>
 /// <remarks>
-/// The folder above is the discriminator: a deleted repository is worth a judgement, a drive briefly unmounted is not,
-/// and one unavailable volume must not retire every agent on it at once.
+/// A deleted repository is worth a judgement; a drive briefly unmounted, or another disk answering at the same path, is
+/// not, and one unavailable volume must not retire every agent on it at once.
 /// </remarks>
 [Integration]
 public sealed class ANodeReportsAWorkspaceGoneTests : IDisposable

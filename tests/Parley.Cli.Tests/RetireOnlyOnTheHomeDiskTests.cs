@@ -32,7 +32,18 @@ public sealed class RetireOnlyOnTheHomeDiskTests
     {
         Assert.Equal(expected, NodeCommand.MountPointOf(path, MountInfo));
     }
+}
 
+/// <summary>
+/// That this machine's own home folder, mount table and disks are told apart as the rule needs (SPEC.md §14).
+/// </summary>
+/// <remarks>
+/// Integration rather than unit: these read the process's environment and, on Linux, its mount table. Each platform holds
+/// both directions, so a rule that called every disk the home disk fails here (lens 3 run 100).
+/// </remarks>
+[Integration]
+public sealed class ThisMachinesHomeDiskTests
+{
     [Fact]
     public void The_home_folder_and_a_folder_inside_it_are_on_the_home_volume()
     {
@@ -42,6 +53,25 @@ public sealed class RetireOnlyOnTheHomeDiskTests
         Assert.True(NodeCommand.OnTheHomeVolume(home));
         Assert.True(NodeCommand.OnTheHomeVolume(Path.Combine(home, "src", "orders")));
         Assert.True(NodeCommand.MayRetireUnder(Path.Combine(home, "src")));
+    }
+
+    [Theory]
+    [InlineData("/proc")]
+    [InlineData("/sys")]
+    public void A_separate_mount_is_not_the_home_disk_on_Linux(string folder)
+    {
+        // Each is its own mount on every Linux system, and nobody's home folder is under one.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "Linux mount table.");
+
+        Assert.False(NodeCommand.OnTheHomeVolume(folder));
+    }
+
+    [Fact]
+    public void Another_disk_in_Volumes_is_not_the_home_disk_on_macOS()
+    {
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "macOS volumes.");
+
+        Assert.False(NodeCommand.OnTheHomeVolume("/Volumes/Backup"));
     }
 
     [Theory]

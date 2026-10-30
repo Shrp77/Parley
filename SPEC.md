@@ -299,7 +299,8 @@ Naming a project is therefore the whole of creating one: there is no path for a 
 supply and none for them to get wrong.
 
 **A machine's deployment is the set of folders under its root.** Nothing outside a project
-names its store or its port.
+names its store; the root's `ports.json` records the port each project holds, as the allocator's
+ledger, and each project's own file is what its broker binds.
 
 **Only this machine's own disks.** The root, and every repository enrolled from it, is refused on a
 synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual
