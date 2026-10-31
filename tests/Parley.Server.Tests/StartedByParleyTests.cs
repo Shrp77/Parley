@@ -139,6 +139,44 @@ public sealed class StartedByParleyTests
         Assert.Equal(!elsewhere, (await RowAsync(broker)).OpenOutside);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_found_by_identity_is_checked_against_the_holders_folder(bool fromTheHoldersFolder)
+    {
+        // Lens 3 run 123: the cases above report under the holder's own name, so they could not tell the holder's folder
+        // from the reported name's. Here the node knows the agent by the name it launched it under, orders, since renamed
+        // billing. From another folder (a moved checkout), the token must not reach billing although orders holds no row.
+        // From billing's own folder it must, although orders is now another agent's, registered from elsewhere.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing", "orders"], Ct, reportsTurns: true);
+        var folder = Path.Combine(Path.GetTempPath(), "checkout-billing");
+        var held = Parley.Core.AgentIdentity.Mint().ToString();
+
+        await LaunchAsync(node, "t-1");
+        await using var agent = await AttachedClient.AttachAsync(
+            broker, Agent, folder, Ct, launchToken: "t-1", identity: held);
+
+        await using var orders = fromTheHoldersFolder
+            ? await AttachedClient.AttachAsync(
+                broker, "orders@m1", Path.Combine(Path.GetTempPath(), "checkout-orders"), Ct,
+                identity: Parley.Core.AgentIdentity.Mint().ToString())
+            : null;
+
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport
+            {
+                Machine = Here,
+                Agent = "orders@m1",
+                Token = "t-2",
+                Identity = held,
+                Workspace = fromTheHoldersFolder ? folder : Path.Combine(Path.GetTempPath(), "checkout-moved"),
+            },
+            cancellationToken: Ct);
+
+        Assert.Equal(fromTheHoldersFolder, (await RowAsync(broker)).OpenOutside);
+    }
+
     [Fact]
     public async Task A_token_from_a_launch_the_node_has_since_replaced_is_outside()
     {
