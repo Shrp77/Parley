@@ -50,10 +50,13 @@ public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_launch_reported_while_the_broker_is_held_past_the_deadline_is_filed_once_it_is_free(bool restarted)
+    [InlineData("once")]
+    [InlineData("restarted")]
+    [InlineData("reannounced")]
+    public async Task A_launch_reported_while_the_broker_is_held_past_the_deadline_is_filed_once_it_is_free(string how)
     {
+        var restarted = how != "once";
+
         var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
         await File.WriteAllTextAsync(cataloguePath, "{ \"agents\": {} }", Ct);
 
@@ -73,6 +76,7 @@ public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
             // Registered with its identity, so the report goes through the read that waits on the gate.
             var identity = AgentIdentity.Mint();
             var workspace = Path.Combine(_root, "billing");
+            _ = Directory.CreateDirectory(workspace);
             using (var first = AttachAsync(channel, identity, workspace, token: null))
             {
                 Assert.True(await first.ResponseStream.MoveNext(Ct));
@@ -98,7 +102,21 @@ public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
 
             var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel), NodeCatalogue.Machine, TextWriter.Null);
 
-            if (restarted)
+            if (how == "reannounced")
+            {
+                // Lens 3 run 130: the case above hands the retry its own check. Here a rejoin's re-announce of a real
+                // process asks the node's own (TurnReporter.Current), and the process ends while the report waits.
+                await using var old = ResidentAgent.Start(
+                    Billing, InvocationCommand.Parse(StandingAgent.Command), workspace, TimeProvider.System,
+                    new Dictionary<string, string> { [LaunchToken.Variable] = "before-the-restart" });
+                var announcing = reporter.ReannounceAsync([(identity, old, "billing")]);
+
+                await Task.Delay(TimeSpan.FromSeconds(3), Ct);
+                await old.DisposeAsync();
+                await reporter.ReportRunningAsync(identity, "billing", "launched-during-the-hold", workspace, () => true);
+                await announcing;
+            }
+            else if (restarted)
             {
                 // Lens 2 run 119: the process a rejoin re-announced is replaced while the report waits, and the new one
                 // is reported too. Tried again after that, the old token was filed last and the new process read as
