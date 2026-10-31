@@ -194,8 +194,13 @@ public static class NodeCommand
                                     .ConfigureAwait(false);
 
                                 // Before any command: a broker that restarted must know these are Parley's when they
-                                // reattach (SPEC.md §11.7).
-                                await new TurnReporter(nodes, request.Machine, output).ReannounceAsync(residents.Values)
+                                // reattach (SPEC.md §11.7). Only what this project's catalogue starts: the table is the
+                                // machine's, shared by every project this process hosts, and another project's agent
+                                // under the same name would put its token here in place of this one's (lens 2 run 107).
+                                var startable = catalogue.StartableIn(project).ToHashSet();
+
+                                await new TurnReporter(nodes, request.Machine, output)
+                                    .ReannounceAsync(residents.Where(pair => startable.Contains(pair.Key)).Select(pair => pair.Value))
                                     .ConfigureAwait(false);
                                 break;
 

@@ -13,18 +13,27 @@ using Wire = Parley.Transport;
 namespace Parley.Cli.Tests;
 
 /// <summary>
-/// That a node joining a broker tells it the launch token of every agent it still runs, so a broker that restarted knows
-/// those processes are Parley's when they reattach (SPEC.md §11.7).
+/// That a node joining a broker tells it the launch token of every agent it still runs for that project, so a broker
+/// that restarted knows those processes are Parley's when they reattach (SPEC.md §11.7).
 /// </summary>
 /// <remarks>
+/// <para>
 /// Found by review, lens 1 run 104. A broker keeps launches in memory, so after a restart every process its node had
 /// started reattached as open outside Parley: no wake reached it and a person's start was refused, until it was killed.
 /// Through the node's own loop, so the call on joining is what is held, not only the report.
+/// </para>
+/// <para>
+/// <b>Only this project's agents</b> (lens 2 run 107). The table of running agents is the machine's, shared by every
+/// project one process hosts, and another project's agent may carry the same name from another checkout; reported
+/// here, its token took the place of this project's, which then read as open outside.
+/// </para>
 /// </remarks>
 [Integration]
 public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
 {
-    private const string Token = "before-the-restart";
+    private const string Project = "beta";
+    private const string Ours = "before-the-restart";
+    private const string Theirs = "from-another-project";
 
     private static readonly AgentName Billing = AgentName.Create("billing@" + NodeCatalogue.Machine);
 
@@ -60,38 +69,66 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
     [InlineData(false)]
     public async Task A_process_started_before_the_broker_restarted_is_Parleys_once_its_node_rejoins(bool nodeRejoins)
     {
+        // Two identities, ordered as the shared table lists them: the other project's goes last, so that reporting it
+        // here would leave its token in place of this project's whatever order a table keeps.
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+        var order = new ConcurrentDictionary<AgentIdentity, int> { [AgentIdentity.Mint()] = 0, [AgentIdentity.Mint()] = 0 };
+        var identity = order.Keys.First();
+        var elsewhere = order.Keys.Last();
         var workspace = Path.Combine(_root, "checkout");
         _ = Directory.CreateDirectory(workspace);
 
-        var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
-        await File.WriteAllTextAsync(cataloguePath, """{ "agents": {} }""", Ct);
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace, ".mcp.json"),
+            $$"""
+            {
+              "mcpServers": {
+                "parley-{{Project}}": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "billing", "PARLEY_PROJECT": "{{Project}}" } }
+              },
+              "parleyAgentId": "{{identity}}"
+            }
+            """,
+            Ct);
 
-        // The process the node started before the restart, with the token it was given then.
-        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
-        await using var resident = ResidentAgent.Start(
-            Billing,
-            InvocationCommand.Parse(StandingAgent.Command),
-            workspace,
-            TimeProvider.System,
-            new Dictionary<string, string> { [LaunchToken.Variable] = Token });
-        residents[AgentIdentity.Mint()] = resident;
-        Assert.True(resident.IsAlive, "the agent never started, so this probe measured nothing");
+        var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
+        await File.WriteAllTextAsync(
+            cataloguePath,
+            $$"""
+            {
+              "agents": {
+                "{{identity}}": {
+                  "command": {{System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command)}},
+                  "workspace": {{System.Text.Json.JsonSerializer.Serialize(workspace)}}
+                }
+              }
+            }
+            """,
+            Ct);
+
+        // The machine's table: this project's process, and another project's under the same name from another checkout,
+        // each with the token it was started with.
+        await using var resident = Start(workspace, Ours);
+        await using var other = Start(workspace, Theirs);
+        residents[identity] = resident;
+        residents[elsewhere] = other;
+        Assert.Equal(elsewhere, residents.Keys.Last());
+        Assert.True(resident.IsAlive && other.IsAlive, "the agents never started, so this probe measured nothing");
 
         using var channel = GrpcChannel.ForAddress(_broker.Address);
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct);
 
         var node = nodeRejoins
-            ? NodeCommand.RunAsync(channel, _broker.Address, cataloguePath, TextWriter.Null, null, residents, stopping.Token)
+            ? NodeCommand.RunAsync(channel, _broker.Address, cataloguePath, TextWriter.Null, Project, residents, stopping.Token)
             : Task.FromResult(0);
 
         try
         {
-            // The resident's adapter reattaching with the token in its environment, until the node has rejoined.
+            // This project's adapter reattaching with its token, until the node has rejoined.
             var outside = true;
 
             for (var tries = 0; tries < 50 && outside; tries++)
             {
-                outside = await ReattachReadsOutsideAsync(channel);
+                outside = await ReattachReadsOutsideAsync(channel, Ours);
 
                 if (outside)
                 {
@@ -100,6 +137,9 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             }
 
             Assert.Equal(!nodeRejoins, outside);
+
+            // And the other project's token is not this project's.
+            Assert.True(await ReattachReadsOutsideAsync(channel, Theirs), "another project's process passed for this one's");
         }
         finally
         {
@@ -116,7 +156,15 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
         }
     }
 
-    private async Task<bool> ReattachReadsOutsideAsync(GrpcChannel channel)
+    private static ResidentAgent Start(string workspace, string token) =>
+        ResidentAgent.Start(
+            Billing,
+            InvocationCommand.Parse(StandingAgent.Command),
+            workspace,
+            TimeProvider.System,
+            new Dictionary<string, string> { [LaunchToken.Variable] = token });
+
+    private async Task<bool> ReattachReadsOutsideAsync(GrpcChannel channel, string token)
     {
         using var attached = new Wire.Agents.AgentsClient(channel).Attach(
             new Wire.AttachRequest
@@ -124,7 +172,7 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
                 Agent = Billing.Value,
                 Adapter = "test",
                 Tier = Wire.AgentTier.Pull,
-                LaunchToken = Token,
+                LaunchToken = token,
                 ProtocolVersion = ProtocolVersion.Current,
             },
             cancellationToken: Ct);
