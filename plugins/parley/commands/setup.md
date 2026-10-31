@@ -6,7 +6,8 @@ disable-model-invocation: true
 # Set this repository up as a Parley agent
 
 Parley lets an agent in this repository request work of an agent in another repository, or
-something it knows, and receive the result, without either seeing or editing the other's files.
+something it knows, and receive the result. Parley gives neither a way to see or edit the other's
+files; what each can touch on disk is up to its own client's permissions.
 Getting there takes three things: the tools on PATH, this repository enrolled in a project, and a
 note telling this agent that a peer exists. `parley enroll` does the middle one. Nothing here is
 written by hand.

@@ -4333,10 +4333,11 @@ Cheap to collect, disproportionately useful, and all of it for the person runnin
   Files travel the same confined path, and who may remove one rests on the same claimed
   identity: anything able to reach the broker as an agent can remove that agent's files (§9.5).
 
-- **Not a way to change another repository.** An agent never edits files outside its own
-  repository, and Parley offers nothing that could. Work reaches a repository through the
-  agent that owns it (principle 2.5), which keeps every change in the hands of the agent that
-  understands the code being changed.
+- **Not a way to change another repository.** Parley offers an agent nothing that could edit
+  files outside its own repository; what else it can touch is decided by its client's own
+  permissions, which Parley does not change. Work reaches a repository through the agent that
+  owns it (principle 2.5), which keeps every change in the hands of the agent that understands
+  the code being changed.
 - **Not a shared context store.** No agent can read the log: §10.1 exposes no history or
   search operation, so there is no shared memory to poison. A conversation groups every
   exchange in one line of work so that the person running the deployment can read it whole
