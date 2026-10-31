@@ -1,4 +1,5 @@
-﻿using Grpc.Net.Client;
+﻿using Terminal.Gui.Input;
+using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
 using Parley.Cli.Tests;
 using Parley.Client;
@@ -22,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// think the screen has not updated, and a region that ignored a repeat would prove them right.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OpeningTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -144,12 +146,10 @@ public sealed class OpeningTests : IAsyncDisposable
         //
         // So the equivalence is still asserted, and both sides are now required to be a real
         // transcript before they are compared.
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         driving.Tab();
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         var byKey = shell.Transcript.Written;
 
@@ -164,6 +164,97 @@ public sealed class OpeningTests : IAsyncDisposable
         await shell.Settled;
 
         Assert.Equal(byKey, shell.Transcript.Written);
+    }
+
+    /// <summary>A shell whose broker holds the next <c>Roadmaps</c> call once armed, as a slow broker would.</summary>
+    private (Shell Shell, BrokerDirectory Directory, HoldOne Gate) SlowShell()
+    {
+        var gate = new HoldOne("/Roadmaps");
+        var directory = new BrokerDirectory(
+            [new ProjectSettings(ProjectName.Create("alpha"), string.Empty, _broker.Address, null)],
+            _ => GrpcChannel.ForAddress(_broker.Address, new GrpcChannelOptions { HttpHandler = gate }));
+
+        return (new Shell(directory) { MailEvery = null, FollowEvery = null }, directory, gate);
+    }
+
+    [Fact]
+    public async Task A_project_read_that_returns_late_does_not_clear_a_conversation_opened_after_it()
+    {
+        // Enter on a project starts its read off the work queue. On a slow broker the person can open a conversation
+        // before that read returns. Must fail against the read clearing the transcript when it lands, which left the
+        // conversation on screen and empty, and following it stopped. This was the intermittent failure above.
+        var ct = TestContext.Current.CancellationToken;
+
+        await SeedAsync("only", "about the totals");
+
+        var (made, directory, gate) = SlowShell();
+        using var shell = made;
+        using var held = directory;
+        using var hold = gate;
+        using var driving = Driving.Open();
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        gate.Arm();
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the project read never reached the broker");
+
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+        Assert.Equal("only", shell.Transcript.Open);
+
+        gate.Release();
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+
+        // The read lands after its reply: give the rest of it, the draws that follow, a moment to run.
+        await Task.Delay(500, ct);
+
+        Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
+        Assert.Equal("only", shell.Transcript.Open);
+        Assert.Contains("about the totals", shell.Transcript.Written, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_late_read_from_leaving_a_conversation_does_not_clear_the_next_one_opened()
+    {
+        // The same with Escape: leaving reads the project off the queue, and the person goes straight back in.
+        var ct = TestContext.Current.CancellationToken;
+
+        await SeedAsync("only", "about the totals");
+
+        var (made, directory, gate) = SlowShell();
+        using var shell = made;
+        using var held = directory;
+        using var hold = gate;
+        using var driving = Driving.Open();
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
+        await Task.Delay(500, ct);
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+        Assert.Equal("only", shell.Transcript.Open);
+
+        gate.Arm();
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
+        Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "the back read never reached the broker");
+
+        Assert.True(shell.Conversations.OpenSelected());
+        await shell.Settled;
+
+        gate.Release();
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+
+        // The read lands after its reply: give the rest of it, the draws that follow, a moment to run.
+        await Task.Delay(500, ct);
+
+        Assert.Equal(Parley.Client.Views.Viewing.Conversation, shell.Place.Viewing);
+        Assert.Equal("only", shell.Transcript.Open);
     }
 
     private async Task SeedAsync(string conversation, string said)

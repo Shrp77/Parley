@@ -20,6 +20,7 @@ namespace Parley.Store.Tests;
 /// window, which closed conversations over agents that were simply busy doing the work.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationClosingTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

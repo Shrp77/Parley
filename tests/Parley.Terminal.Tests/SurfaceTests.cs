@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// inspect — the question is whether the call is written, and the source is where that is written.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceTests
 {
     /// <summary>What contracts/operations.md keeps off this surface.</summary>
@@ -141,6 +142,8 @@ public sealed class SurfaceTests
     [InlineData("PruneAsync", "Pruning.cs", "Type the project's name")]
     [InlineData("RemoveFilesAsync", "FilesRemoving.cs", "whichever agent placed them")]
     [InlineData("PruneFilesAsync", "FilesPruning.cs", "Type the project's name")]
+    [InlineData("DeclineProposalAsync", "Proposing.cs", "Decline a proposed roadmap")]
+    [InlineData("EditRoadmapAsync", "Revising.cs", "Remove them and save")]
     public void The_remaining_operator_operations_happen_in_one_place_behind_their_door(
         string operation, string home, string door)
     {

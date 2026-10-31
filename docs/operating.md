@@ -15,7 +15,8 @@ person can do to a deployment is available in the terminal. The command line kee
 commands, listed [below](#the-command-line).
 
 The web console answers only loopback host names and the address it binds to, which protects it
-from DNS rebinding. It binds to loopback unless you give it an address.
+from DNS rebinding, and it refuses a request another site started, so a page you visit cannot act
+through it. It binds to loopback unless you give it an address.
 
 ## Your seat
 
@@ -64,10 +65,11 @@ address and any warnings. Inside a project:
 - **Inbox**: everything waiting on you, across projects.
 - **Roadmaps**: your confirmed roadmaps, and proposals waiting for you.
 - **Files**: what agents have placed, and who placed each.
-- **Health**: stopped agents, flagged work, turn costs and message sizes.
+- **Health**: flagged work (including a turn stopped on a refused permission), who is waiting on
+  whom, message sizes refused, clarifications, and what requests came to.
 - **Notifications**: a bell that tells you when something needs you.
-- **Settings**: rename the project, choose which agents are ticked by default in a new
-  conversation, and the other project-level actions.
+- **Settings**: choose which agents are ticked by default in a new conversation, and the other
+  project-level actions. Renaming a project is the terminal's; Settings says how.
 
 It follows a conversation as it happens. If you are at the very end of the page when a message
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
@@ -93,6 +95,9 @@ It has three views, one at a time:
 3. **A conversation**: the room, the transcript and the box you type into.
 
 Enter goes in and Escape comes back, landing on what you were looking at. `Ctrl+Q` leaves.
+Words you have not sent stay in the box until you open a different conversation, which starts with
+an empty box. Going to a project view and back keeps them; Escape asks before leaving them. If the
+screen was too busy to empty the box, Enter sends nothing and says so; press it again to send the words here.
 Tab moves between the panes of a view, the arrow keys move within one, and the mouse works too.
 Below eighty columns the panes of a view stack one above another instead of sitting side by side.
 
@@ -105,7 +110,7 @@ where each agent stands, in these words: *never run yet, can be started* means i
 startable and has not registered yet, and *not running, and only runs when somebody opens it* means
 nothing will start it for you.
 
-**Every action is Alt and a letter,** in dialogs too (for example `Alt+a` and `Alt+n` to tick all
+**Every action is Alt and a letter, or a function key** (F1, F3, F4, F5, F8; F10 opens the menus), in dialogs too (for example `Alt+a` and `Alt+n` to tick all
 or none, `Alt+c`, `Alt+e` and `Alt+d` on a proposed roadmap). A plain letter is never an action, so
 typing can never set one off by accident. Press `Alt+?` for a list of everything the current view can do, `F10` opens the menu
 bar, and `F8` opens the web console on whatever is in front of you. In a conversation, `Alt+c`
@@ -149,6 +154,12 @@ Retiring and purging each ask you to type the agent's own name. A purge that wou
 waiting names them, and says what they will see, before asking. Retiring can be undone from the
 same place. Purging cannot.
 
+**An agent whose repository is gone is retired for you.** When a node is asked to start an agent and
+finds its folder deleted, on the disk that holds your home folder, while the folder above it is still there
+and in use, it starts nothing and the broker retires the agent; the node's output says so. Put the repository
+back and reinstate the agent. A repository on any other disk is never retired this way, because another disk can
+answer at the same path; nor is one that is merely unreachable (an unmounted drive, a link to a disk that is off).
+
 **Destructive actions all work this way:** a description, keeping offered first, and a deliberate
 act such as typing a name. Destroying a conversation works the same way, with the conversation's
 identifier typed back.
@@ -174,25 +185,83 @@ can reword, reorder, add or remove items, and then confirm it or decline it. Con
 revise an existing roadmap or create a new one. Nothing is a roadmap until you confirm.
 
 Each item gets a conversation of its own, named from the roadmap and the item number, such as
-`rm1-3`. **Starting an item sends nothing.** It opens that conversation with the item's words in
-the box and the agents you want ticked, and you press Send. The roadmap shows where each item
-stands, worked out from its conversation: not started, in progress, waiting on an agent, waiting
-on you, blocked (and why), done, or closed. It also says which item is next. Nobody sets a state
-by hand. To change what an item says, edit the roadmap. To resolve a blocked item, send the agent
-a further request in its conversation.
+`rm1-3`, or the next free name after it, such as `rm1-3-2`, when an agent took that name first.
+**Starting an item sends nothing.** It opens that conversation with the item's words in the box
+and the agent the item is for ticked, or nobody when the item is yours or names nobody. Tick anyone else in the project you want it to reach, and
+send it. The words are sent as words, even ones that look like a command. The roadmap shows
+where each item stands, worked out from its conversation: not started, in progress, waiting on an
+agent, waiting on you, blocked (and why), done, or closed. It also says which item is next. Nobody
+sets a state by hand. To change what an item says, edit the roadmap. To resolve a blocked item,
+send the agent a further request in its conversation. While that request is open the item reads
+as waiting on that agent until it collects the request, then in progress, and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
+`done`, `answered` or `acknowledged`.
+**Only you close an item's conversation.** The agents in it cannot agree to close it, so a blocked
+item waits for you: answer the blocker with a new request, or close the conversation. An item whose
+conversation is closed reads closed, not blocked, because nobody can ask in it again; if a part was
+blocked it says so, with the blocker.
+
+An item's conversation is marked with its item in every conversation list, and leads back to its
+roadmap: Alt+o in the terminal, the link under its name on the web. Removing an item leaves its
+conversation where it is, marked *formerly*. A proposal confirmed as a revision replaces the
+roadmap's items with its own, except a line you gave `| item: n`, which keeps that item and its conversation; the rest
+are removed. It also settles the other proposals waiting to revise that roadmap, and the choice says so, with how many when it could
+read them all. If a removed item's work is still open, you are told so
+before anything is saved, because the agent holding it is not told.
 
 ## Files
 
-Placed files live in a folder beside the broker's store, with one folder per conversation. You can
-read and change them there. An edit is the file's new content, and every agent that fetched it is
-told. A rename keeps who placed it. A deletion is the file gone.
+Placed files live in a folder beside the broker's store, with one folder per conversation. A file
+is placed, read and removed, and never changed: to send a new version, place it under a new name.
+Files are hand-offs. An agent fetches one into its own repository, and whoever placed it removes it
+once nobody needs it.
 
-The terminal and the console both list the files, with who placed how much. You can open a file in
-its editor, open its folder, remove files, or remove every file. Removing every file asks you to
+You place a file of your own from the terminal or the console, into a conversation, the way an agent
+does; `parley files place` does the same from the command line. Placing is the only way a file gets
+in. Nothing else may change the folder, and Parley puts it right when something does.
+
+**The sweep.** The broker checks the whole file location when it starts, and again whenever a
+list, fetch, removal or placement finds something wrong. This check is the sweep. It does three
+things:
+
+- A placed file whose bytes changed on disk is moved to the quarantine folder, and every agent that
+  fetched it, and the agent that placed it, is told it was changed. A fetch of a changed file is
+  refused, so no agent ever receives the changed bytes.
+- A placed file that is gone from disk is recorded as gone, and every agent that fetched it, and the
+  agent that placed it, is told.
+- Everything else in the location is deleted: a file copied in by hand, a folder you made there, a
+  link, and a folder whose conversation no longer exists. A link is deleted as a link; what it
+  points to is not touched.
+
+So do not keep anything of your own in the file location. The list counts files that nothing
+placed, so you can see they are there before the next sweep deletes them. A folder that a destroy or
+a purge could not delete, because a file in it was open, goes at the next sweep too.
+
+Do not move the file location, its staging folder or the quarantine folder behind a link. A broker
+that finds one removes the link, leaves what it points to alone, and makes the folder again; every
+file placed in a location that was a link is then recorded gone.
+
+**The quarantine folder** is `<store>.files-quarantine`, beside the file location on the broker's
+machine. It is yours. Parley moves changed files into it and never reads, serves or deletes
+anything there; look at what is there, and delete it when you are done. It goes only when the
+project's store does. A store restored from a backup older than its file location loses, at its
+first sweep, the files of every conversation newer than the backup, because the store no longer
+names them.
+
+**File problems.** Each file moved to quarantine, and each entry the sweep could not read, move or
+delete (usually because another program held it open), is a file problem. The terminal shows how many are
+waiting on the status line and on the project's row, and F5 lists them. The web console shows a
+banner at the top of its pages, and the count on each project's row. Each problem says what happened, its
+conversation and path, and, for a quarantined file, the hash placed, the hash found and where in the
+quarantine folder it went. Dismiss a problem once you have dealt with it. Dismissing deletes nothing
+on disk. `parley files problems` lists them, `--all` includes the dismissed ones, and
+`parley files dismiss <id>` dismisses one.
+
+The terminal and the console both list the files, with who placed how much. You can place a file,
+open a file to read it, open its folder, remove files, or remove every file. Removing every file asks you to
 type the project's name. Opening only happens on the broker's own machine, and only `.md` and
-`.txt` files are ever opened. A file goes when its placer removes it, when you remove it, or when
-its conversation is destroyed or an agent that took part is purged. Nothing removes a file on a
-timer.
+`.txt` files are ever opened. A file goes when its placer removes it, when you remove it, when
+its conversation is destroyed or an agent that took part is purged, or when a sweep finds it changed
+or gone. Nothing removes a file on a timer.
 
 ## The command line
 
@@ -210,7 +279,7 @@ parley enroll <folder>              find repositories, choose some, configure an
 parley registry                     every agent, what it owns, and its workspace
 parley open                         every conversation with an exchange still open
 parley waiting <agent|role>         how many messages and polls await an agent
-parley files list|remove|prune|open|folder
+parley files place|list|remove|prune|open|folder|problems|dismiss
 parley web-ui [<url>]               the web console
 parley terminal                     the terminal (the same as `parley` with no arguments)
 parley --help                       the same list
@@ -219,8 +288,29 @@ parley --help                       the same list
 Most of these are clients. They connect to the broker at `--broker`, or `PARLEY_BROKER`, which
 defaults to the local one. **None of them opens a store, and none can be pointed at one.** There
 is no option that names a database file, so a client cannot be aimed at the wrong one.
-`parley serve` and `parley up` run things instead. `prune` applies the policy the broker started
-with, which is the only policy in the deployment.
+`parley serve` and `parley up` run things instead. Pruning, in the terminal and the web console,
+applies the policy the broker started with, which is the only policy in the deployment.
+
+### The broker's log
+
+`parley serve --log <path>` writes everything the broker says to that file, and the autostart
+entry always passes one (`parley autostart install` prints where). Each line starts with the time, in
+UTC. Besides the broker's own messages, the log says:
+
+- when each project's broker starts listening, when it begins stopping and when it has stopped;
+- when the process is asked to stop, and by what: Ctrl+C, the console window being closed,
+  logoff or shutdown, or a signal on Linux and macOS;
+- an exception that ends the process, and one a background task raised that nothing handled;
+- that the process is exiting, with its exit code.
+
+A broker that is killed outright (Task Manager, `taskkill /F`, `kill -9`) cannot say anything, so
+a log that ends without "stopped" or "exiting" means it was killed or the machine lost power.
+
+**`--heartbeat`** adds a line a second from each broker and a line for every connection that opens
+and closes, with the web server's own account of resets. Use it when a broker stops answering and
+nothing says why. Each heartbeat gives the gap since the last one: a gap well over a second means
+the process was starved or paused. The heartbeat makes the log grow by about a line a second per
+project, so turn it off again when you are done.
 
 ## Upgrading
 
@@ -241,6 +331,62 @@ Parley until each editor restarts. That is the cost.
 
 When the protocol number moves, install on every machine running a broker or an agent, then
 restart the sessions that had Parley configured. See [Configuration](configuration.md#versions).
+
+**Never use `-Reset` (`--reset`) to upgrade.** It deletes every project's store, and a store holds
+the project's work. Any other install keeps the stores. A new build that changes a store's tables
+upgrades the store in place when the broker starts, and keeps every row.
+
+An install needs no copy of your own: the broker copies a store itself before it upgrades it, and
+removes the copy once the upgraded store is served (below). A store copied by hand, as the section
+after that asks, is copied with the broker stopped, since a copy taken while it writes may be
+incomplete. To stop the broker the autostart entry runs, end the `parley-broker` scheduled task on Windows
+(`Stop-ScheduledTask parley-broker`), or run `systemctl --user stop parley-broker.service` on Linux
+or `launchctl bootout gui/$(id -u)/parley-broker` on macOS. A `parley serve` you started yourself
+stops with Ctrl+C. The install starts the broker again. Without one, start it with
+`Start-ScheduledTask parley-broker`, `systemctl --user start parley-broker.service`, or
+`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/parley-broker.plist`.
+
+### When a store is upgraded
+
+A new build may change the store's schema. The broker upgrades each store in place the first time it
+starts it, keeping every row. Before it does, it copies the store beside itself, named for the schema it
+is about to reach and the time, such as `parley.db.before-schema-2-20261027T093000Z`. Once the upgraded
+store is served, every such copy of it is removed and the output says the store was upgraded.
+
+An upgrade from a build before schema 4 also rewrites the store once, before upgrading it, to clear the text of
+conversations that were destroyed, purged or pruned but still sat in the file. It needs free space for about three
+more copies of the store: the copy above, and the rewrite's temporary copy and log. Without it the start fails and the store is left as it
+was.
+
+The copy is there for the minutes between the old build stopping and the new one serving. A copy
+still there means the upgraded store has not been served since it was taken. A start that fails
+after taking one names it, and says which of these happened:
+
+- **"The store was not upgraded and is as it was."** The upgrade failed and was undone, so the store is as it was and
+  nothing needs restoring. Fix what the message names, or go back to the earlier build, and start
+  again. The next start takes a new copy; once one serves, all of them go.
+- **"The store was upgraded to schema N before this failed."** Something after the upgrade failed, such as the broker not being able
+  to listen (usually a port another program holds) or to prepare its files folder. The store is
+  upgraded and fine, and the earlier build will refuse it. Fix the cause and start again; the copy
+  goes once the store serves.
+
+Going back to the earlier build after an upgraded store has served is not supported: the earlier
+build refuses the store, and the copy is gone.
+
+### A store from another build
+
+The broker compares each store's tables, indexes and triggers with its own. When they differ it
+warns in the terminal, in the web console and on its own output. The store was made by a build
+other than this one, though it carries the same schema version. The broker still serves it, but a
+check the store lacks is not being made, and an operation that needs a table the store lacks fails.
+A store from before roadmaps, for one, cannot start a named conversation.
+
+Do not reset it, which loses its work. Stop the broker and copy the store first. Then either
+install the build that made it, or bring the store to this build's shape: create a fresh store
+with this build and copy every row across, and check the warning has gone before going on. The
+fresh store applies this build's checks to every row it is given, so some rows may be refused.
+Do not leave a refused row out: stop, keep the copy, and get help, since a row left out is work
+lost.
 
 ## Why the operator tools are separate from the agent's
 

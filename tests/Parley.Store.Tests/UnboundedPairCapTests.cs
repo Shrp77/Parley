@@ -28,6 +28,7 @@ namespace Parley.Store.Tests;
 /// pragma cannot be turned off. <c>006_unbounded_pair_cap.sql</c> carries the probe output.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class UnboundedPairCapTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

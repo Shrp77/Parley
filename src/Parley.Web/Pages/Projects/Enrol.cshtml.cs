@@ -44,7 +44,7 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
     public string? Folder { get; set; }
 
     /// <summary>The repositories ticked in a folder's list.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public List<string> Chosen { get; set; } = [];
 
     /// <summary>The project, once found.</summary>
@@ -86,6 +86,11 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
             return RedirectToPage("/Index", new { tab = "agents" });
         }
 
+        if (OffThisMachine())
+        {
+            return Page();
+        }
+
         if (FolderMode)
         {
             Entries = Directory.Exists(Folder!.Trim()) ? EnrollCommand.Find(Folder.Trim()) : [];
@@ -118,6 +123,11 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         if (!Prepare())
         {
             return RedirectToPage("/Index", new { tab = "agents" });
+        }
+
+        if (OffThisMachine())
+        {
+            return Page();
         }
 
         List<EnrollmentEntry> wanted;
@@ -261,6 +271,37 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
         return Page();
     }
 
+    // Before any lookup, because the lookup is what reaches the network: a link in an agent's message can carry either
+    // field, and a GET would otherwise ask another machine about it with the person's credentials. The workspace's .git
+    // and .mcp.json are read next, so a link there is refused too (OffMachineLinks).
+    private bool OffThisMachine()
+    {
+        var workspace = Workspace?.Trim();
+
+        if (!OffMachineLinks.LeadsOffThisMachine(Folder)
+            && !OffMachineLinks.LeadsOffThisMachine(workspace)
+            && !(workspace is { Length: > 0 }
+                && (OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".git"))
+                    || OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json")))))
+        {
+            // Then the owner's rule, said before the plan says it: only this machine's own disks.
+            if ((LocalStorage.Problem(Folder) ?? LocalStorage.Problem(workspace)) is not { } notLocal)
+            {
+                return false;
+            }
+
+            Problems = [notLocal];
+            Entries = [];
+
+            return true;
+        }
+
+        Problems = [LocalPath.OffThisMachine];
+        Entries = [];
+
+        return true;
+    }
+
     /// <summary>Finds the project and the catalogue file; false when the project is not one this machine knows.</summary>
     private bool Prepare()
     {
@@ -276,8 +317,9 @@ public sealed class EnrolModel(BrokerDirectory directory, EnrolmentRuns runs) : 
 
         Catalogue = resolved.Value is { Length: > 0 } named
             ? named
-            : manifest is { Length: > 0 } && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } where
-                ? Path.Combine(where, NodeCatalogue.DefaultFileName)
+            : manifest is { Length: > 0 }
+                // In the root itself, as `ProjectResolution.BesideTheManifest` puts it: the manifest path is the root.
+                ? Path.Combine(Path.GetFullPath(manifest), NodeCatalogue.DefaultFileName)
                 : NodeCatalogue.DefaultFileName;
 
         Role = string.IsNullOrWhiteSpace(Role) ? Role : EnrollmentPlan.CorrectName(Role);

@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// column somewhere else.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class MigrationDiscoveryTests
 {
     /// <summary>How many migrations this build is expected to carry.</summary>
@@ -28,13 +29,14 @@ public sealed class MigrationDiscoveryTests
     /// and a migration that appears without anybody deciding it should is what this catches.
     /// </para>
     /// <para>
-    /// <b>There is one migration.</b> <c>001_initial.sql</c> holds the whole schema, on the one ground
-    /// that permits it: nothing has been released and no store outside a test process holds anything
-    /// worth keeping. The header of that file carries the argument and what it cost. **The next
-    /// change to the schema is a migration**, and this number moving to 2 is how that is noticed.
+    /// <b>There are four migrations.</b> <c>001_initial.sql</c> holds the whole of schema 1, which live
+    /// stores hold and which is never edited (<c>SchemaOneIsFrozenTests</c>); <c>002</c> rebuilds the
+    /// proposals table so an id is never used twice, and judges an item's opening by its exchanges.
+    /// <c>003</c> adds file problems and <c>004</c> marks when an agent was first asked what it owns and first refreshed.
+    /// **The next change to the schema is migration 005**, and this number moving to 5 is how that is noticed.
     /// </para>
     /// </remarks>
-    private const int Expected = 1;
+    private const int Expected = 4;
 
     [Fact]
     public void Every_migration_in_the_folder_is_embedded_and_reachable()

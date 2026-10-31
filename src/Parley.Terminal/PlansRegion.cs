@@ -34,6 +34,7 @@ internal sealed class PlansRegion : FrameView
     /// <summary>Creates the pane.</summary>
     internal PlansRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));

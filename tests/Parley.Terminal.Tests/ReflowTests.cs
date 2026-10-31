@@ -15,6 +15,7 @@ namespace Parley.Terminal.Tests;
 /// lose it silently.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReflowTests
 {
     private const string Said = "orders@test asked billing@test whether the totals include tax";

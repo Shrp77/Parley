@@ -21,6 +21,7 @@ namespace Parley.Server.Tests;
 /// <c>parley-facilitator@&lt;this machine&gt;</c> on a machine the broker had recorded for it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PersonSeatExistsTests : IDisposable
 {
     private static readonly ProjectName Alpha = ProjectName.Create("alpha");

@@ -12,7 +12,7 @@ This page explains the ideas. [Getting started](getting-started.md) does it for 
 | **Adapter** | What connects an agent to the broker. `parley-mcp` is the adapter for Claude Code and other MCP clients. |
 | **Node** | The part of a machine that can start agents when work is waiting for them. |
 | **Person** | You. You have a seat in every project. |
-| **Facilitator** | A participant the broker provides in every project. It asks agents what they own, and does nothing else. |
+| **Facilitator** | A participant the broker provides in every project. It asks agents what they own, relays a reply you wrote, and agrees when its own conversation is done. Nothing else. |
 | **Web console and terminal** | The two ways you watch a deployment and take part in it. |
 
 ## Messages
@@ -73,7 +73,8 @@ address or a command to Parley.
 adapter starts. No tool takes a "from" argument, so no tool call can change who is speaking.
 
 **Peers, not a hierarchy.** No agent has authority over another. You hold the operator
-operations. The facilitator may ask a question and relay what you wrote, nothing more.
+operations. The facilitator may ask a question, relay what you wrote, and agree that its own conversation
+is done, nothing more.
 
 **Durable.** Exchanges live in SQLite. Agents are known by name, not by session, so a restart
 loses nothing. An agent that comes back is handed the work it had collected again.
@@ -84,8 +85,9 @@ A request to an agent that has no session open waits. If the agent's machine has
 listed as startable, the node starts it, and the message is there when it arrives. Starting is
 always a response to something waiting. An idle agent is never started to invent work.
 
-An agent that was started by a node carries a one-time launch token. One that connects without it
-was opened some other way, such as by you in an editor. Parley does not start a second copy beside
+An agent that was started by a node carries a launch token, good until the node starts it again, so
+it is still known as Parley's when it reconnects. One that connects without it, or with one from an
+earlier launch, was opened some other way, such as by you in an editor. Parley does not start a second copy beside
 it. A message to it waits until somebody there takes a turn.
 
 ## What an agent can do
@@ -96,10 +98,10 @@ An agent has eleven tools. There is no tool for saying who it is.
 |---|---|
 | `parley_request` | Ask another agent to do work, or for information |
 | `parley_clarify` | Ask the requester a question, or answer one |
-| `parley_result` | Report what each item came to, and close the exchange |
+| `parley_result` | Report what the request came to, and close the exchange |
 | `parley_inbox` | Collect what is waiting, work you owe first |
 | `parley_agents` | List the agents, what each owns, and whether it is running |
-| `parley_conclude` | Say whether you are finished with a conversation |
+| `parley_conclude` | Say whether you are finished with a conversation (a roadmap item's is closed only by you) |
 | `parley_propose_roadmap` | Propose a list of work for you to confirm |
 | `parley_file_place` | Put a `.md` or `.txt` file where other agents can fetch it |
 | `parley_file_fetch` | Write a placed file into your own repository, checked against its hash |
@@ -121,8 +123,10 @@ inventory  Stock levels and reservations. Does not decide whether an order may b
 ```
 
 The line says what an agent owns and what it does not. The exclusion is what stops a peer asking
-the wrong agent. No tool an agent has can set the line. Only an agent's launch setting, or you,
-can. See [Configuration](configuration.md#the-ownership-line).
+the wrong agent. No tool an agent has writes the line directly. Parley asks the agent once it
+attaches, and its answer becomes the line: automatically while Auto Accept is on (the default), or
+once you accept it. You can review, edit or replace any line. See
+[Configuration](configuration.md#the-ownership-line).
 
 ## Files
 
@@ -130,15 +134,16 @@ Some things are too big or too exact for a message: a schema, a price list, a ge
 An agent can **place** a `.md` or `.txt` file with Parley, and another agent **fetches** it onto
 disk in its own repository. The contents go from disk to disk and never into anyone's context.
 Code travels as `Name.cs.txt`, so nothing that runs can be opened by accident. A file is checked
-against its SHA-256 hash when it is fetched. Only the agent that placed a file can replace or
-remove it.
+against its SHA-256 hash when it is fetched. A placed file is never changed: a new version goes
+under a new name. Only the agent that placed a file, or you, can remove it, and you can place files too.
 
 ## Roadmaps
 
 A roadmap is an ordered list of work, and it belongs to you. An agent can **propose** one, as a
 title and a short list of items. Nothing is a roadmap until you confirm it, and you can reword,
-reorder, add or remove items first. No agent can read, change or mark done a roadmap. When you
-start an item, the console sends the agent a normal request from your seat, one item at a time.
+reorder, add or remove items first. No agent can read, change or mark done a roadmap. Starting an
+item opens its conversation with the item's words in the box. Nothing is sent until you send it,
+and then it is a normal request from your seat, one item at a time.
 
 Where an item stands (not started, in progress, waiting, blocked, done or closed) is worked out
 from its conversation. Nobody sets it by hand.
@@ -149,15 +154,15 @@ An adapter connects a participant to the broker, and participants differ in how 
 
 - **Full**: can call tools and can be pushed into a running turn.
 - **Pull-only**: can call tools, and collects mail on demand.
-- **Headless**: the broker invokes the participant with a one-shot prompt.
+- **Headless**: a node on the participant's machine starts it and keeps it running, and it is
+  told only that it has mail. The broker never learns how it was started.
 
-The headless kind means a responder does not have to be an agent at all. A plain model call, a
-local model, or a script that searches a contracts folder can take part. Anything that accepts a
-bounded request and returns text will do.
+A headless participant uses the same tools as any other. What makes it headless is that nobody is
+at its keyboard: when mail arrives, the node gives it a turn.
 
 Most agents need no credential from Parley, because the command-line tool behind them signs in
-on its own. Where the broker itself needs a secret, the registry holds a reference such as `env:`
-or `file:`, never the value, so the file is safe to commit.
+on its own. Nothing in Parley takes a credential yet. When an agent that needs one is supported,
+its launch settings will hold a reference such as `env:` or `file:`, never the value.
 
 ## Next
 

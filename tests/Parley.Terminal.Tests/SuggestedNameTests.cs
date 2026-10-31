@@ -10,6 +10,7 @@ namespace Parley.Terminal.Tests;
 /// rule refuses would be a form that fails on its default. It said `top-` until the gate over the rename found the old
 /// name still being written into conversations.
 /// </remarks>
+[Unit]
 public sealed class SuggestedNameTests
 {
     [Fact]

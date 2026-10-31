@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// That the shell reads it again on its own is checked against a real broker elsewhere.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FollowingTests
 {
     private const string Conversation = "release-notes";

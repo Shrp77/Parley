@@ -163,7 +163,7 @@ public sealed class AgentsModel(BrokerDirectory directory) : PageModel
     /// No typed name: nothing is destroyed and one click reverses it, so a confirmation here
     /// would be a dialog in front of a light switch.
     /// </remarks>
-    public async Task<IActionResult> OnPostArchiveAsync(string id, bool archived)
+    public async Task<IActionResult> OnPostArchiveAsync([FromForm] string id, [FromForm] bool archived)
     {
         var project = directory.Find(Project);
 

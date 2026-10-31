@@ -5,6 +5,7 @@ namespace Parley.Core.Tests;
 /// <summary>
 /// When two builds of Parley can be used together.
 /// </summary>
+[Unit]
 public sealed class CompatibilityTests
 {
     [Theory]

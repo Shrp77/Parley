@@ -21,6 +21,7 @@ namespace Parley.Client.Tests;
 /// is why the last of these is a test about the directory rather than about a page.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RosterTests
 {
     private static AgentRecord Agent(

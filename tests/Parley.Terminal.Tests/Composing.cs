@@ -1,4 +1,6 @@
 
+using Terminal.Gui.Input;
+
 namespace Parley.Terminal.Tests;
 
 /// <summary>
@@ -38,9 +40,10 @@ internal static class Composing
         var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
 
         driving.Row(picking.Choices, peer);
-        driving.Enter();
 
-        await settled().ConfigureAwait(false);
+        // Drawn after the work, never before: Enter opens the naming form from the pool (CLAUDE.md, "Dialogs open on the
+        // thread that draws").
+        await driving.PressThenSettleAsync(Key.Enter, settled).ConfigureAwait(false);
 
         return (FormDialog)driving.Find(title);
     }
@@ -63,9 +66,7 @@ internal static class Composing
         var picking = (ChoiceDialog)driving.Find(Participation.WhichPeer);
 
         driving.Row(picking.Choices, peer);
-        driving.Enter();
-
-        await shell.Settled.ConfigureAwait(false);
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled).ConfigureAwait(false);
 
         var naming = (FormDialog)driving.Find(Participation.NameTitle);
 

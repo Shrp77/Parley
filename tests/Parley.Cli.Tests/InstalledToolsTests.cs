@@ -5,6 +5,7 @@ namespace Parley.Cli.Tests;
 /// <summary>
 /// Reading what the other Parley programs say they are.
 /// </summary>
+[Unit]
 public sealed class InstalledToolsTests
 {
     [Theory]

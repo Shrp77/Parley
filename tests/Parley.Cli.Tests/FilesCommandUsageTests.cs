@@ -10,6 +10,7 @@ namespace Parley.Cli.Tests;
 /// <c>list --yes</c> would succeed and <c>prune --yes</c> would ask anyway. The tool's own rule is that a flag accepted and ignored
 /// is worse than one refused, because whoever typed it believes it did something.
 /// </remarks>
+[Integration]
 public sealed class FilesCommandUsageTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();
@@ -40,6 +41,20 @@ public sealed class FilesCommandUsageTests : IAsyncDisposable
             ["files", "prune", "--full"],
             ["files", "remove", "notes.md", "--full"],
             ["files", "remove", "notes.md", "--yes-remove-every-file"],
+            ["files", "place", "notes.md"],
+            ["files", "place", "--conversation", "pricing"],
+            ["files", "place", "a.md", "b.md", "--conversation", "pricing"],
+            ["files", "place", "notes.md", "--conversation", "pricing", "--yes"],
+            ["files", "list", "--name", "notes.md"],
+            ["files", "list", "--all"],
+            ["files", "problems", "notes.md"],
+            ["files", "problems", "--yes"],
+            ["files", "problems", "--conversation", "pricing"],
+            ["files", "dismiss"],
+            ["files", "dismiss", "1", "2"],
+            ["files", "dismiss", "1", "--all"],
+            ["files", "dismiss", "one"],
+            ["files", "prune", "--all"],
         ];
 
         var accepted = new List<string>();

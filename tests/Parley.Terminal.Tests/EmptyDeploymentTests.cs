@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// while being a different fact from an empty one.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EmptyDeploymentTests
 {
     [Fact]

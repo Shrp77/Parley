@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// That a flag owed by the person reads as their own to-do, and one owed by an agent reads as it always did (SPEC.md §6).
 /// </summary>
+[Unit]
 public sealed class FlagWordingTests
 {
     private static readonly AgentName Person = PersonSeat.On(ProjectName.Create("alpha"));

@@ -33,6 +33,7 @@ internal sealed class RoadmapsRegion : FrameView
     /// <summary>Creates the pane.</summary>
     internal RoadmapsRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));

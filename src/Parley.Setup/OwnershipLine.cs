@@ -12,7 +12,7 @@ namespace Parley.Setup;
 /// <para>
 /// <b>This is the only thing that makes an accepted line reach anybody.</b> The registry's
 /// <c>owns</c> is filled from the launch environment when an agent attaches (SPEC.md §12.3) and no
-/// operation writes it, so a line a person agreed to is a record and nothing else until it is in the
+/// operation writes it, so an accepted line (by Auto Accept or by a person) is a record and nothing else until it is in the
 /// file the agent's server is started with. <c>record_ownership</c> stores the decision; this puts it
 /// where the decision takes effect.
 /// </para>
@@ -36,6 +36,28 @@ public static class OwnershipLine
     /// reason nothing explains.
     /// </remarks>
     private static readonly UTF8Encoding Marked = new(encoderShouldEmitUTF8Identifier: true);
+
+    /// <summary>Writes a person's line again once the broker has recorded it.</summary>
+    /// <param name="workspace">The repository holding the agent.</param>
+    /// <param name="project">The project the entry belongs to, or null for the unnamed key.</param>
+    /// <param name="agent">The agent the entry must name.</param>
+    /// <param name="statement">The line the broker just recorded as the person's.</param>
+    /// <param name="cancellationToken">Stops the write.</param>
+    /// <returns>Null when it was written, or why it was not.</returns>
+    /// <remarks>
+    /// A surface writes the file, then records. The serve pass can write the agent's own words over the file in
+    /// between and accept them automatically; the person's record then replaces that record, and the next start would
+    /// have carried the words the person overruled (review, lens 1 run 79). Written again after the record, the file
+    /// holds the person's line; a pass that writes after this finds the question settled, fails its accept, and puts
+    /// the accepted line back itself.
+    /// </remarks>
+    public static Task<string?> AfterRecordedAsync(
+        string? workspace,
+        string? project,
+        AgentName agent,
+        string statement,
+        CancellationToken cancellationToken = default) =>
+        WriteAsync(workspace, project, agent, statement, cancellationToken);
 
     /// <summary>Records the line in a repository's launch configuration.</summary>
     /// <param name="workspace">The repository holding the agent.</param>
@@ -61,9 +83,19 @@ public static class OwnershipLine
             return elsewhere;
         }
 
-        if (statement is not null && !OwnershipStatement.IsValid(statement, out var wrong))
+        if (statement is not null && !OwnershipStatement.IsLaunchable(statement, out var wrong))
         {
             return wrong;
+        }
+
+        // The workspace is what the agent's adapter reported on attach, so it is never looked up when it, its .mcp.json
+        // or a link along either leads off this machine: Auto Accept would otherwise offer the person's sign-in to a
+        // host with no click at all (review, lens 2 run 71).
+        if (OffMachineLinks.LeadsOffThisMachine(workspace)
+            || (!string.IsNullOrWhiteSpace(workspace) && OffMachineLinks.LeadsOffThisMachine(Path.Combine(workspace, ".mcp.json"))))
+        {
+            return $"the registry says '{agent.Value}' runs in {workspace}, which is not a folder on this machine. " +
+                   "Nothing has been written.";
         }
 
         if (string.IsNullOrWhiteSpace(workspace) || !Directory.Exists(workspace))

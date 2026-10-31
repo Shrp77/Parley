@@ -37,6 +37,7 @@ namespace Parley.Cli.Tests;
 /// is that the decisions are the ones described.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AutostartSaysWhatIsTrueTests
 {
     private static string Source => RepositoryFile.Read("src/Parley.Cli/AutostartCommand.cs");

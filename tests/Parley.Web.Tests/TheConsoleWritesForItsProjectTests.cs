@@ -23,6 +23,7 @@ namespace Parley.Web.Tests;
 /// can reach it. <see cref="OwnershipConsole"/> exists for this one gap.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TheConsoleWritesForItsProjectTests
 {
     private static string Agent() => $"orders@{MachineName.Current}";
@@ -81,6 +82,44 @@ public sealed class TheConsoleWritesForItsProjectTests
 
             Assert.Contains("PARLEY_OWNS", written, StringComparison.Ordinal);
             Assert.Contains("not the ledger", written, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_line_overwritten_while_it_is_recorded_is_written_again_once_recorded()
+    {
+        // The serve pass can write the agent's own words over the file between this page's write and its record, and
+        // accept them; the person's record then wins in the store, so the file must be put right too, or the agent's
+        // next start carries the words the person overruled (review, lens 1 run 79).
+        var workspace = Repository($"parley-{OwnershipConsole.Project}", "orders");
+
+        try
+        {
+            using var console = new OwnershipConsole();
+            console.Broker.Agent = Agent();
+            console.Broker.Workspace = workspace;
+            console.Broker.DuringRecord = () => Parley.Setup.OwnershipLine.WriteAsync(
+                workspace, OwnershipConsole.Project, AgentName.Create(Agent()), "Orders, and tax.").GetAwaiter().GetResult();
+
+            using var client = console.CreateClient();
+
+            using var response = await PostAsync(
+                client,
+                $"/Projects/Act?project={OwnershipConsole.Project}&action=ownership&subject={Agent()}",
+                new() { ["Text"] = "Orders only." });
+
+            var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+            Assert.DoesNotContain("Not recorded", body, StringComparison.Ordinal);
+
+            var written = await File.ReadAllTextAsync(
+                Path.Combine(workspace, ".mcp.json"), TestContext.Current.CancellationToken);
+
+            Assert.Contains("Orders only.", written, StringComparison.Ordinal);
+            Assert.DoesNotContain("Orders, and tax.", written, StringComparison.Ordinal);
         }
         finally
         {

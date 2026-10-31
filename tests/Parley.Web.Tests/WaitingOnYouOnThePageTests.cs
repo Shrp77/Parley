@@ -12,6 +12,7 @@ namespace Parley.Web.Tests;
 /// The page and the room read one derivation, <see cref="WaitingOnYou"/>; these hold the page to drawing it, with links
 /// that land on something and with the agent's words escaped.
 /// </remarks>
+[Integration]
 public sealed class WaitingOnYouOnThePageTests
 {
     private const string Orders = "orders@test";

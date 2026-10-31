@@ -55,13 +55,23 @@ internal sealed class NodeStub : IAsyncDisposable
 
         var stream = nodes.Join(request, cancellationToken: cancellationToken);
 
-        // The acknowledgement is always first, per the contract. Awaited here so a test that joins
-        // and immediately asks for a start is not racing the registration behind it.
-        if (!await stream.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false)
-            || stream.ResponseStream.Current.CommandCase
-                != Wire.NodeCommand.CommandOneofCase.Joined)
+        try
         {
-            throw new InvalidOperationException("the broker did not acknowledge the join");
+            // The acknowledgement is always first, per the contract. Awaited here so a test that joins
+            // and immediately asks for a start is not racing the registration behind it.
+            if (!await stream.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false)
+                || stream.ResponseStream.Current.CommandCase
+                    != Wire.NodeCommand.CommandOneofCase.Joined)
+            {
+                throw new InvalidOperationException("the broker did not acknowledge the join");
+            }
+        }
+        catch
+        {
+            // A refused join is retried by some tests, so what it opened is closed here rather than left behind.
+            stream.Dispose();
+            channel.Dispose();
+            throw;
         }
 
         return new NodeStub(channel, stream);

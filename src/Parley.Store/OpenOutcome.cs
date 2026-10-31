@@ -15,7 +15,7 @@ public enum RequestRejection
     /// <summary>No refusal; the exchange was opened.</summary>
     None = 0,
 
-    /// <summary>A request cap the deployment set has been reached with this receiver.</summary>
+    /// <summary>The cap on open requests to this receiver has been reached; with the cap stamped off (SPEC.md §7.1) it is not.</summary>
     /// <remarks>See <see cref="OpenOutcome.Outstanding"/> for what the sender already holds open with it.</remarks>
     Saturated,
 
@@ -30,10 +30,10 @@ public enum RequestRejection
     /// </remarks>
     ReceiverNotRegistered,
 
-    /// <summary>A person retired the receiver, so the work has to go to whoever owns it now (§14).</summary>
+    /// <summary>The receiver is retired, by a person or because its workspace was found gone, so the work has to go to whoever owns it now (§14).</summary>
     ReceiverRetired,
 
-    /// <summary>A person retired the sender, which may not open new work.</summary>
+    /// <summary>The sender is retired, and may not open new work.</summary>
     SenderRetired,
 
     /// <summary>The conversation is closed, and says by whom.</summary>

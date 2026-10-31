@@ -55,11 +55,75 @@ internal sealed class LoopbackBroker : IAsyncDisposable
         var runtime = BrokerRuntime.OpenInMemory(BrokerOptions.Default, clock);
 
         var server = await ParleyServer
-            .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken)
+            .StartAsync(runtime, "http://127.0.0.1:0", cancellationToken, Diagnostics())
             .ConfigureAwait(false);
 
         return new LoopbackBroker(server, clock);
     }
+
+    /// <summary>
+    /// A heartbeat and connection lines on the console when <c>PARLEY_HEARTBEAT</c> is <c>1</c>, as CI sets it, and
+    /// otherwise nothing new.
+    /// </summary>
+    /// <remarks>
+    /// <b>For a failure seen only on a CI runner.</b> A test project's console output is printed in the CI log when the
+    /// project fails, so a test that fails there says what its broker was doing: whether it was starved, and which side
+    /// closed a connection. Each line names its test, because tests run side by side and their lines interleave. Read
+    /// here, at the top of the harness, and never by the broker.
+    /// </remarks>
+    private static ServerDiagnostics? Diagnostics()
+    {
+        if (Environment.GetEnvironmentVariable("PARLEY_HEARTBEAT") != "1")
+        {
+            return null;
+        }
+
+        _ = ProcessBeat.Value;
+
+        return new ServerDiagnostics(
+            Console.Out, Heartbeat: true, Label: $"[{Xunit.TestContext.Current.Test?.TestDisplayName ?? "no test"}]");
+    }
+
+    /// <summary>One heartbeat for the whole test process, started by the first broker that asks for diagnostics.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Most test brokers live under a second</b>, so each broker's own beat rarely fires. What a reset needs read
+    /// beside it is what the process was doing at that moment, so this beats once a second for as long as the tests run.
+    /// </para>
+    /// <para>
+    /// <b>On a thread of its own, measuring the pool.</b> It keeps beating when the thread pool is starved, and each beat
+    /// says how long a work item queued at the last beat waited to start: a starved pool shows as that delay, where a
+    /// beat on the pool would only arrive late, or not at all.
+    /// </para>
+    /// </remarks>
+    private static readonly Lazy<Thread> ProcessBeat = new(() =>
+    {
+        var thread = new Thread(() =>
+        {
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            var poolDelay = -1L;
+
+            for (var beat = 1L; ; beat++)
+            {
+                var queued = started.ElapsedMilliseconds;
+                _ = ThreadPool.UnsafeQueueUserWorkItem(_ => Volatile.Write(ref poolDelay, started.ElapsedMilliseconds - queued), null);
+
+                Thread.Sleep(1000);
+
+                Console.Out.WriteLine(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"{DateTimeOffset.UtcNow:yyyy-MM-ddTHH:mm:ss.fffZ} info process heartbeat {beat}: pool delay {Interlocked.Exchange(ref poolDelay, -1)} ms, {ThreadPool.ThreadCount} threads, {ThreadPool.PendingWorkItemCount} queued, collections {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, {Environment.WorkingSet / (1024 * 1024)} MB"));
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "process heartbeat",
+        };
+
+        thread.Start();
+
+        return thread;
+    });
 
     /// <summary>
     /// Waits for the broker to notice that an agent's stream has ended.

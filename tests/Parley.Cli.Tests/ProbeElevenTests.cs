@@ -23,6 +23,7 @@ namespace Parley.Cli.Tests;
 /// agent that answers in a roster nothing on the machine admits to.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeElevenTests : IAsyncDisposable
 {
     private readonly string _root =

@@ -37,7 +37,8 @@ Parley lets the agents talk to each other directly, and puts a few firm rules ar
 - The owner does the work in its own repository. Nobody edits anybody else's files.
 - Only short messages cross. No session history, no pasted code bases.
 - Every request gets an answer. A request ends as done, answered, acknowledged, or blocked
-  with the blocker named.
+  with the blocker named, or closed by you. A question to you that a later request answers is
+  closed as settled.
 - You can read all of it, and take part.
 
 ## Who it is for
@@ -61,8 +62,8 @@ If you work in one repository, you do not need Parley.
 - **Not where decisions live.** When a conversation reaches a decision, the agent that owns the
   repository writes it down there, as a contract, a decision record or code. Parley carries the
   talk. The repository keeps the result.
-- **Not a file archive.** Files placed with Parley keep only their current content, so that
-  they can cross between repositories.
+- **Not a file archive.** A file placed with Parley is there only to cross between repositories:
+  it is never changed, a new version is a new name, and it goes when it is removed.
 - **Not safe on a hostile network.** It is built for loopback and for tunnels you trust. See
   [Security](security.md).
 

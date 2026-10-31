@@ -21,7 +21,7 @@ else
         <h2>Auto Accept is @(Model.AutoAccept ? "on" : "off")</h2>
         <p>
             @(Model.AutoAccept
-                ? "Parley asks every agent what it owns, and its answer becomes its line with no person reading it, unless it cannot be one."
+                ? "Parley asks every agent what it owns, and its answer becomes its line with no person reading it, unless it cannot be one or the agent is on another machine."
                 : "Parley asks every agent what it owns, and every answer waits here for a person.")
             <a href="/Projects/Act?project=@Model.Project&amp;action=autoaccept&amp;subject=@(Model.AutoAccept ? "off" : "on")">Turn it @(Model.AutoAccept ? "off" : "on")</a>
         </p>

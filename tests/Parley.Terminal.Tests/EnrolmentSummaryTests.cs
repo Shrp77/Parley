@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// Agents column as it changes, and do not mess up the screen with a status message at the bottom.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrolmentSummaryTests
 {
     private static EnrolmentOutcome Outcome(string[] registered, string[] late)

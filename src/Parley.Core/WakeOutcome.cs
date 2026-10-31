@@ -45,8 +45,8 @@ public enum WakeOutcome
     /// <remarks>
     /// The coalescing bound, seen from the sender's side. It is not a failure and not a delay: the
     /// turn already coming will collect this message along with everything else pending, because
-    /// draining an inbox collects all of it. One turn for sixty messages is the correct
-    /// number rather than a rationed one.
+    /// a turn collects until nothing is waiting, and a collection that leaves some asks again (SPEC.md §5.4).
+    /// One turn for sixty messages is the correct number rather than a rationed one.
     /// </remarks>
     AlreadyComing = 2,
 

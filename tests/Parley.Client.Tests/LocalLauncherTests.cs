@@ -19,6 +19,7 @@ namespace Parley.Client.Tests;
 /// the path does not exist must launch nothing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LocalLauncherTests : IDisposable
 {
     private const string Here = "this-machine";

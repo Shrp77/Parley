@@ -106,7 +106,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     public DateTimeOffset AsOf { get; private set; }
 
     /// <summary>Who the operator is writing to.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public IList<string> Targets { get; set; } = [];
 
     /// <summary>Whether to write to everybody in this conversation instead of a chosen few.</summary>
@@ -116,15 +116,15 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// conversations rather than from inside one. The two surfaces are not disagreeing: each offers
     /// everybody in the thing it is looking at.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public bool Everyone { get; set; }
 
     /// <summary>What the operator wrote.</summary>
     /// <remarks>
-    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is only
-    /// ever what the person typed.
+    /// Bound on a POST only, so a link carrying <c>Says=</c> opens an empty box: what is in the box is what the person
+    /// typed, or the words of the roadmap item the broker's reservation names, never anything a link supplied.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Says { get; set; }
 
     /// <summary>The exchange this is an answer to, when the person chose to reply to an agent's question.</summary>
@@ -132,7 +132,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// Chosen by the person, never inferred (SPEC.md 5.6): the button is on the question being answered. Without it the
     /// words are a new Request, as everything else a person writes is.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public long? ReplyTo { get; set; }
 
     /// <summary>Whether a message is an agent's question back to the person that is still waiting on them.</summary>
@@ -144,14 +144,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         && Exchanges.TryGetValue(message.ExchangeId, out var snapshot)
         && snapshot.State == ExchangeState.Open
         && Messages.Last(m => m.ExchangeId == message.ExchangeId).Id == message.Id;
-
-    /// <summary>Words a link suggests, shown as the box's hint and never put in it.</summary>
-    /// <remarks>
-    /// A roadmap item opens its conversation with its own text as the hint, so the person sees what the item is and
-    /// writes their own words. A hint is not something they have said: the box stays empty until they type.
-    /// </remarks>
-    [BindProperty(SupportsGet = true)]
-    public string? Hint { get; set; }
 
     /// <summary>The agents a link ticked for the person, so they can untick before sending.</summary>
     /// <remarks>Only a head start on <see cref="Targets"/>: it is read on a GET and nothing is addressed until Send.</remarks>
@@ -223,6 +215,11 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     /// <returns>The sentence, or empty when it settled nothing.</returns>
     public string SettledBy(Message message) =>
         Reading.Settled(message, Whole) is { Count: > 0 } settled ? Reading.SettledLine(settled) : string.Empty;
+
+    /// <summary>Where a Request to a role stands, beneath its first Request (SPEC.md §5.5).</summary>
+    /// <param name="message">The message.</param>
+    /// <returns>The sentence, or empty for any other message.</returns>
+    public string RoleRequestOf(Message message) => Reading.RoleRequest(message, Whole) ?? string.Empty;
 
     /// <summary>The conversation as one export, for the derivations that read messages and exchanges together.</summary>
     private ConversationExport Whole => _whole ??= new ConversationExport([.. Messages], [.. Exchanges.Values], null);
@@ -418,6 +415,10 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return RedirectToPage("/Index");
         }
 
+        // **The page this returns ticks what the person sent to**, never what the link it was opened from named: the form
+        // posts back to that link, and `With=` there would otherwise tick an agent the person had not chosen.
+        With = [.. Targets];
+
         // **Everybody, resolved here rather than by checking boxes in a browser.** The alternative
         // is script that ticks them, which would make the one composer that sends to several
         // agents stop working without script.
@@ -500,11 +501,9 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         var voice = new SeatVoice(directory.AgentsFor(project), hold.Seat);
 
-        // **The first words on a roadmap item say what it is about.** The agent was never in the roadmap and cannot see it,
-        // so a bare "go ahead" on rm1-3 means nothing to it. Only when the conversation is new and was read cleanly: a
-        // conversation that already has messages has given the agent its context, and a failed read must not be taken
-        // for an empty conversation.
-        var said = await OpeningAsync(project, Id, Says).ConfigureAwait(false);
+        // Sent as written. An item's words reach the agent because they were in the box when its conversation opened,
+        // where the person could change them, never as text added here that the person cannot see or shorten.
+        var said = Says;
 
         foreach (var target in Targets)
         {
@@ -545,30 +544,6 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
     private void Tell(string project, string who, string outcome) =>
         notices.Add(project, Id, who, outcome, outcome.StartsWith("Sent.", StringComparison.Ordinal));
 
-    /// <summary>The person's words, led by the roadmap item they are about when this opens the work on it.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words to send.</returns>
-    private async Task<string> OpeningAsync(ProjectSettings project, string id, string words)
-    {
-        await ReadAsync(project, id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, id).ConfigureAwait(false);
-
-        return Problem is null && Messages.Count == 0 && ItemTitle is { Length: > 0 } item
-            ? Lead(item, RoadmapTitle, words)
-            : words;
-    }
-
-    /// <summary>The first words of a message that opens the work on a roadmap item.</summary>
-    /// <param name="item">The item's words.</param>
-    /// <param name="roadmap">The roadmap's title.</param>
-    /// <param name="words">What the person typed.</param>
-    /// <returns>The words led by what they are about.</returns>
-    /// <remarks>Plain text, because a payload is inert data and the agent reads it as the person's own line.</remarks>
-    public static string Lead(string item, string? roadmap, string words) =>
-        $"This is about \"{item}\" in the roadmap \"{roadmap}\": {words}";
-
     /// <summary>Says the project could not be read, rather than producing an empty export.</summary>
     /// <param name="problem">What the read reported.</param>
     /// <returns>A refusal carrying the reason.</returns>
@@ -593,52 +568,80 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         Seat = seats.Held(project.Name.Value);
 
         await ReadAsync(project, Id).ConfigureAwait(false);
-        await ReadItemTitleAsync(project, Id).ConfigureAwait(false);
+        await ReadItemTitleAsync(project).ConfigureAwait(false);
+
+        // **An item not yet started opens with its words in the box** (SPEC.md §5.7), as the terminal does, for the person
+        // to change and send. Only while the broker says the item has not started, the read was clean, and the box holds
+        // nothing the person typed: words a refused send kept are theirs and stay. Only when the page is opened, never
+        // after a send, so a box the person emptied is not filled again behind them.
+        if (HttpMethods.IsGet(Request.Method) && Says is null && Problem is null && Destroyed is null && _itemNotStarted
+            && Item is { Removed: false })
+        {
+            Says = ItemTitle;
+
+            // **The item's own agent is ticked, and no other**, whatever a link asks, as in the terminal. A link an agent
+            // wrote in a message is live on this page, and `With=` naming another agent would hand that agent the item's
+            // words on one press of Send. Ticking nobody instead would let the page's own default choose.
+            With = ItemAgent is { } agent && !PersonSeat.Is(agent) ? [agent.Value] : [];
+        }
 
         return Page();
     }
 
-    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <summary>The broker's record that this conversation is a roadmap item's, or <see langword="null"/>.</summary>
     /// <remarks>
-    /// So a person who is inside <c>rm1-3</c> is told what rm1-3 is. Taken from the roadmap by the conversation name the
-    /// item carries, never parsed out of a message.
+    /// From the reservation the export carries, never from the conversation's name or a message (SPEC.md §5.7), so an
+    /// agent cannot make a conversation look like an item's. A removed item's conversation keeps it, marked removed.
     /// </remarks>
+    public RoadmapItemRef? Item { get; private set; }
+
+    /// <summary>The words of the roadmap item this conversation is the work on, or <see langword="null"/>.</summary>
+    /// <remarks>So a person who is inside <c>rm1-3</c> is told what rm1-3 is.</remarks>
     public string? ItemTitle { get; private set; }
 
     /// <summary>The title of the roadmap that item is in, or <see langword="null"/>.</summary>
     public string? RoadmapTitle { get; private set; }
 
-    /// <summary>Finds the roadmap item whose conversation this is, when its name is a roadmap item's.</summary>
-    /// <param name="project">The project.</param>
-    /// <param name="id">The conversation.</param>
-    /// <returns>When it has been looked for. A broker that cannot answer leaves the title out and costs nothing else.</returns>
-    private async Task ReadItemTitleAsync(ProjectSettings project, string id)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(
-            id, @"\Arm(\d+)-\d+\z", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>Where the roadmap this conversation's item belongs to is, opened on that item; null for an ordinary one.</summary>
+    /// <remarks>Null for a removed item's conversation too, which belongs to no item (SPEC.md §5.7), as in the terminal.</remarks>
+    public string? RoadmapPath => Item is { Removed: false } item
+        ? string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"/Roadmaps/Roadmap?project={Uri.EscapeDataString(Project ?? string.Empty)}&id={item.RoadmapId}&item={item.ItemNumber}#item-{item.ItemNumber}")
+        : null;
 
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out var number))
+    /// <summary>Reads the words of the item this conversation's reservation names.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>When it has been looked for. A broker that cannot answer leaves the words out and costs nothing else.</returns>
+    /// <remarks>Read after <see cref="ReadAsync"/>, whose export says whether the conversation is an item's at all.</remarks>
+    private async Task ReadItemTitleAsync(ProjectSettings project)
+    {
+        if (Item is not { } item)
         {
             return;
         }
 
+        RoadmapTitle = item.Title;
+
         var broker = new BrokerClient(directory.ClientFor(project));
 
         var found = await BrokerDirectory.ReadAsync(async () =>
-        {
-            var list = await broker.RoadmapsAsync(HttpContext.RequestAborted).ConfigureAwait(false);
-            var which = list.FirstOrDefault(r => r.Number == number);
+            await broker.RoadmapAsync(item.RoadmapId, HttpContext.RequestAborted).ConfigureAwait(false)).ConfigureAwait(false);
 
-            return which is null
-                ? null
-                : await broker.RoadmapAsync(which.Id, HttpContext.RequestAborted).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+        var reserved = found.Value?.Items.FirstOrDefault(i => i.Number == item.ItemNumber);
 
-        RoadmapTitle = found.Value?.Title;
-        ItemTitle = found.Value?.Items
-            .FirstOrDefault(i => !i.Removed && string.Equals(i.ConversationName, id, StringComparison.Ordinal))?.Text;
+        ItemTitle = reserved?.Text;
+        ItemAgent = reserved?.IntendedAgent;
+        _itemNotStarted = reserved is { Facts: { ConversationExists: false } };
     }
+
+    // **Started is the broker's fact about the item, never this page's messages**, as in the terminal: retention removes
+    // a finished conversation's messages and keeps its exchanges, so counting messages would offer done work as a new
+    // start, one press of Send from being asked again. A roadmap read that failed says nothing, so nothing is filled.
+    private bool _itemNotStarted;
+
+    /// <summary>The agent the roadmap item this conversation is the work on is for, or <see langword="null"/>.</summary>
+    public AgentName? ItemAgent { get; private set; }
 
     /// <summary>Reads the conversation and its participants' standing, for the page or for a follow.</summary>
     /// <param name="project">The project it belongs to.</param>
@@ -653,6 +656,7 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
 
         Messages = read.Value?.Messages ?? [];
         Destroyed = read.Value?.Destroyed;
+        Item = read.Value?.Item;
         Participants = Visibility.Participants(Messages);
         Exchanges = Snapshots(read.Value?.Exchanges ?? []);
         Problem = read.Problem;

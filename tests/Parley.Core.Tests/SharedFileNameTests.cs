@@ -20,6 +20,7 @@ namespace Parley.Core.Tests;
 /// is invisible to a reader and to a diff.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class SharedFileNameTests
 {
     [Theory]
@@ -213,6 +214,18 @@ public sealed class SharedFileNameTests
         Assert.Contains("will be named 'a_b.md'", said, StringComparison.Ordinal);
         Assert.Contains("('A_B.md')", said, StringComparison.Ordinal);
         Assert.DoesNotContain("\n", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_not_listed_sentence_says_nothing_placed_them_and_how_a_file_is_shared()
+    {
+        // Files enter the location only by placement (SPEC.md §9.5), so a file in a folder that nothing placed is counted
+        // whatever its name, and the person is told how to share one.
+        var said = SharedFileListing.NotListedSentenceFor(1)!;
+
+        Assert.Contains("nothing placed them", said, StringComparison.Ordinal);
+        Assert.Contains("Place a file through Parley", said, StringComparison.Ordinal);
+        Assert.Null(SharedFileListing.NotListedSentenceFor(0));
     }
 
     [Fact]

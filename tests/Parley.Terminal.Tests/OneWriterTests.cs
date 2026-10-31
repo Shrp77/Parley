@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// looking, rather than by trusting a review.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OneWriterTests
 {
     /// <summary>A source file without its comment lines.</summary>

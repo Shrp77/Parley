@@ -16,6 +16,7 @@ namespace Parley.Broker.Tests;
 /// automatic — or, if they had asked again, settled the new question with no answer and failed at the constraint.
 /// Interleaved by calling the real operations in the order the race produces.
 /// </remarks>
+[Integration]
 public sealed class APersonDecidingDuringAPassWinsTests : IDisposable
 {
     private static readonly DateTimeOffset T0 = new(2026, 9, 28, 12, 0, 0, TimeSpan.Zero);

@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// later declines to re-point.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class IllustrationsAgreeTests
 {
     private static readonly string Root =

@@ -20,6 +20,7 @@ namespace Parley.Client.Tests;
 /// the fixture.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BroadcastReportTests
 {
     private static string Say(

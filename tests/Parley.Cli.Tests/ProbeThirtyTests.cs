@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// decides whether that claim can ever be false.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeThirtyTests : IDisposable
 {
     private readonly string _root =

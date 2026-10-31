@@ -152,7 +152,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             (console, now, ct) => console.DestroyConversationAsync(conversationId, now, ct),
             context).ConfigureAwait(false);
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder], context).ConfigureAwait(false);
+        await DeleteFoldersWhoseRowsWentAsync(files, folder is null ? [] : [folder]).ConfigureAwait(false);
 
         var reply = new Wire.DestroyReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -167,7 +167,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     /// the launched adapter registers the one agent it attaches, by §12.3's ordinary route.
     /// </para>
     /// <para>
-    /// A retired agent is not started: retirement is a person's decision that nothing is routed to it, and
+    /// A retired agent is not started: retirement — a person's, or a node's on finding the workspace gone — means nothing is routed to it, and
     /// <c>reinstate</c> is the route that undoes it. An agent the registry does not hold is started, because
     /// nothing about it has been retired.
     /// </para>
@@ -233,19 +233,22 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             request.ProposedLength > 0 ? request.ProposedLength : null,
             string.IsNullOrEmpty(request.ConversationId) ? null : request.ConversationId);
 
-        var record = await Console(
-            (console, now, ct) => console.RecordOwnershipAsync(agent, acceptance, now, ct),
-            context).ConfigureAwait(false);
-
         // A person's line answers whatever Parley was still waiting on for this agent, so the question settles and its
         // conversation closes. Left alone it would stay waiting beside a line that already answers it, and the agent
-        // could never be asked again.
-        if (record.Recorded)
-        {
-            _ = await _runtime.UseFacilitatorAsync(
-                (facilitator, parley, now, ct) => facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct),
-                context.CancellationToken).ConfigureAwait(false);
-        }
+        // could never be asked again. Both happen in one unit of work, so no automatic accept runs between them.
+        var record = await _runtime.UseConsoleWithFacilitatorAsync(
+            async (console, facilitator, parley, now, ct) =>
+            {
+                var recorded = await console.RecordOwnershipAsync(agent, acceptance, now, ct).ConfigureAwait(false);
+
+                if (recorded.Recorded)
+                {
+                    _ = await facilitator.SettledByPersonAsync(parley, agent, now, cancellationToken: ct).ConfigureAwait(false);
+                }
+
+                return recorded;
+            },
+            context.CancellationToken).ConfigureAwait(false);
 
         return new Wire.RecordOwnershipReply
         {
@@ -371,14 +374,18 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         using var held = await files.HoldEverythingAsync(context.CancellationToken).ConfigureAwait(false);
 
-        var folders = await _runtime.UseConnectionAsync(
-            (connection, _, ct) => new Parley.Store.SharedFileRepository(connection)
-                .GetFoldersPurgingWouldDeleteAsync(agent, cancellationToken: ct),
-            context.CancellationToken).ConfigureAwait(false);
+        // **Every recorded folder, before and after**, rather than the ones the purge would delete, read before it: a
+        // Request joining the agent to a conversation that has files can land between the read and the purge, and that
+        // conversation's folder was then left on disk with no row naming it, until whatever next swept the location.
+        var before = await RecordedFoldersAsync(context.CancellationToken).ConfigureAwait(false);
 
         var outcome = await Console((console, _, ct) => console.PurgeAsync(agent, ct), context).ConfigureAwait(false);
 
-        await DeleteFoldersWhoseRowsWentAsync(files, folders, context).ConfigureAwait(false);
+        // Not cancelled from here: the rows have gone, so their folders go whatever the caller does.
+        var after = await RecordedFoldersAsync(CancellationToken.None).ConfigureAwait(false);
+        var folders = before.Except(after, StringComparer.Ordinal).ToList();
+
+        await DeleteFoldersWhoseRowsWentAsync(files, folders).ConfigureAwait(false);
 
         var reply = new Wire.PurgeReply { Verdict = Conversions.Out(outcome.Verdict) };
         reply.Destroyed.AddRange(outcome.Destroyed.Select(t => new Wire.PurgeToll { Table = t.Table, Rows = t.Rows }));
@@ -580,7 +587,8 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             OpenedUtc = e.OpenedUtc.ToString("O", CultureInfo.InvariantCulture),
             ClosedUtc = e.ClosedUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
             Outcome = Conversions.Out(e.Outcome),
-            SettledBy = e.SettledBy ?? 0
+            SettledBy = e.SettledBy ?? 0,
+            RequestGroup = e.RequestGroup ?? string.Empty
         }));
 
         return reply;
@@ -626,13 +634,47 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
         var state = Conversions.In(request.State);
 
-        var listed = await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context)
-            .ConfigureAwait(false);
+        // As headings when asked, since a list is read on every refresh and roadmap text has no bound (SPEC.md §10.2
+        // `proposals`).
+        var listed = request.Headings
+            ? await Console((console, _, ct) => console.ListProposalHeadingsAsync(state, ct), context).ConfigureAwait(false)
+            : await Console((console, _, ct) => console.ListProposalsAsync(state, ct), context).ConfigureAwait(false);
 
         var reply = new Wire.ProposalsReply();
         reply.Proposals.AddRange(listed.Select(Conversions.Out));
 
         return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalsReply> Proposal(Wire.ProposalRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        // One proposal whole, in whatever state, or none: what a surface reads when the person opens one (§10.2 `proposal`).
+        var one = await Console((console, _, ct) => console.GetProposalAsync(request.Id, ct), context).ConfigureAwait(false);
+
+        var reply = new Wire.ProposalsReply();
+
+        if (one is not null)
+        {
+            reply.Proposals.Add(Conversions.Out(one));
+        }
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.ProposalCountReply> ProposalCount(Wire.ProposalsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var state = Conversions.In(request.State);
+        var count = await Console((console, _, ct) => console.CountProposalsAsync(state, ct), context).ConfigureAwait(false);
+
+        return new Wire.ProposalCountReply { Count = count };
     }
 
     /// <inheritdoc/>
@@ -645,8 +687,11 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         var content = Conversions.In(request.Content ?? new Wire.RoadmapContent());
         long? target = request.TargetRoadmap == 0 ? null : request.TargetRoadmap;
 
+        // Zero on the wire is none named, which the store refuses for a revision (SPEC.md §10.2).
+        int? revision = target is null || request.TargetRevision <= 0 ? null : request.TargetRevision;
+
         var change = await Console(
-            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct), context)
+            (console, now, ct) => console.ConfirmProposalAsync(request.Id, content, target, now, ct, revision), context)
             .ConfigureAwait(false);
 
         return Conversions.Out(change);
@@ -805,8 +850,24 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
             Removed = result.Removed,
             HeldByFloor = result.HeldByFloor,
             Contended = result.Contended,
-            Capped = result.Capped
+            Capped = result.Capped,
+            IdleSeconds = (long)(result.Applied?.IdlePeriod.TotalSeconds ?? 0),
+            MaxAgeSeconds = (long)(result.Applied?.MaximumAge.TotalSeconds ?? 0)
         };
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// As the person, which is why this is here and not on <c>Agents</c>: an agent places only as itself (SPEC.md §10.2).
+    /// </remarks>
+    public override Task<Wire.PlaceFileReply> PlacePersonsFile(
+        IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(context);
+
+        return new FileWork(_runtime).PlaceAsPersonAsync(requestStream, context.CancellationToken);
     }
 
     /// <inheritdoc/>
@@ -847,16 +908,60 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
         return new FileWork(_runtime).DescribeAsync(request, context.CancellationToken);
     }
 
+    /// <inheritdoc/>
+    public override async Task<Wire.FileProblemsReply> ListFileProblems(
+        Wire.ListFileProblemsRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var problems = await _runtime.UseConnectionAsync(
+            (connection, _, ct) => new Parley.Store.FileProblemRepository(connection).ListAsync(request.IncludeDismissed, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        var reply = new Wire.FileProblemsReply { Machine = MachineName.Current, QuarantinePath = _runtime.Files.Quarantine };
+        reply.Problems.AddRange(problems.Select(Conversions.Out));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
+    public override async Task<Wire.DidItReply> DismissFileProblem(
+        Wire.DismissFileProblemRequest request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var dismissed = await _runtime.UseConnectionAsync(
+            (connection, now, ct) => new Parley.Store.FileProblemRepository(connection).DismissAsync(request.Id, now, ct),
+            context.CancellationToken).ConfigureAwait(false);
+
+        return new Wire.DidItReply { Changed = dismissed };
+    }
+
+    private Task<List<string>> RecordedFoldersAsync(CancellationToken cancellationToken) =>
+        _runtime.UseConnectionAsync(
+            async (connection, _, ct) => (await new Parley.Store.SharedFileRepository(connection)
+                    .GetFoldersAsync(cancellationToken: ct).ConfigureAwait(false))
+                .Select(f => f.Folder)
+                .ToList(),
+            cancellationToken);
+
     /// <summary>Deletes the folders on disk of conversations whose rows are gone.</summary>
     /// <param name="files">The file operations.</param>
     /// <param name="folders">The folders as they were recorded before the delete.</param>
-    /// <param name="context">The call.</param>
     /// <returns>A task that completes when they are deleted.</returns>
     /// <remarks>
+    /// <para>
     /// Checked against the store rather than assumed from the outcome, so a destroy or purge that deleted nothing —
     /// no such conversation, no such agent — can never take a folder that still belongs to one.
+    /// </para>
+    /// <para>
+    /// **Never cancelled**, because it runs after the rows have gone: a call given up then would leave the folders on
+    /// disk, deleted only by whatever next sweeps the location, though the operator was told their files went.
+    /// </para>
     /// </remarks>
-    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders, ServerCallContext context)
+    private async Task DeleteFoldersWhoseRowsWentAsync(FileWork files, IReadOnlyList<string> folders)
     {
         if (folders.Count == 0)
         {
@@ -879,7 +984,7 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
 
                 return orphaned;
             },
-            context.CancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
 
         files.DeleteFolders(gone);
     }

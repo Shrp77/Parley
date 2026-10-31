@@ -21,17 +21,21 @@ namespace Parley.Cli.Tests;
 /// instead, which is what the rest of this repository does.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SetupSurfaceJustifiedTests
 {
     private static readonly string Root =
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
-    /// <summary>The source of both tools, as one string.</summary>
+    /// <summary>The source of every tool that reaches Parley.Setup, as one string.</summary>
+    /// <remarks>
+    /// The web console is one: it creates projects and enrols repositories through it.
+    /// </remarks>
     private static string Tools()
     {
         var text = new List<string>();
 
-        foreach (var project in (string[])["Parley.Cli", "Parley.Terminal"])
+        foreach (var project in (string[])["Parley.Cli", "Parley.Terminal", "Parley.Web"])
         {
             foreach (var file in Directory.EnumerateFiles(
                 Path.Combine(Root, "src", project), "*.cs", SearchOption.AllDirectories))

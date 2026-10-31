@@ -20,6 +20,7 @@ namespace Parley.Mcp.Tests;
 /// adapter may not attach as the person (§12.3), and a surface is not what this suite tests.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SettlesToolTests
 {
     private const string Conversation = "invoice-export";

@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// perfect. These assert what a browser would receive.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FrameTests
 {
     private static string Layout =>

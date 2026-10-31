@@ -171,22 +171,25 @@ internal static class Responsibility
 
         var name = Safe.Text(agent.Name.Value);
 
+        // Every line here is unbounded and may be an agent's words, so each is shortened, and the answer is flattened:
+        // drawn whole, or with its blank lines, they would push what Save records off a page that cannot scroll. The field
+        // below holds the whole line.
         var peers = OwnershipStatement.Read(agent.Owns) is { } live
-            ? $"'{Safe.Text(live)}'"
+            ? $"'{Safe.Text(AgentWords.Shortened(live))}'"
             : "nothing -- this agent has no line yet";
 
         var accepted = agent.OwnsPending
-            ? $"{Environment.NewLine}Accepted, not yet read by peers: '{Safe.Text(agent.OwnsAccepted!)}' "
+            ? $"{Environment.NewLine}Accepted, not yet read by peers: '{Safe.Text(AgentWords.Shortened(agent.OwnsAccepted!))}' "
               + $"-- {Safe.Text(Provenance.Of(agent.OwnsSource))}."
             : string.Empty;
 
-        var said = question?.Answer is { Length: > 0 } answer
+        var said = question?.Flattened is { Length: > 0 } answer
             ? $"""
 
 
                {name} said this, at {When(question.AskedUtc)} local time. These are its words, not this screen's:
 
-               {Safe.Lines(answer)}
+               {Safe.Text(AgentWords.Shortened(answer))}
 
                Parley: {Safe.Text(Provenance.Of(question))}
                """
@@ -197,20 +200,21 @@ internal static class Responsibility
             : Environment.NewLine + Environment.NewLine + "What the others already say they own:" + Environment.NewLine
               + string.Join(
                   Environment.NewLine,
-                  neighbours.Take(Named).Select(peer => $"  {Safe.Text(peer.Name)}: {Safe.Text(peer.Owns)}"))
+                  neighbours.Take(Named).Select(peer => $"  {Safe.Text(peer.Name)}: {Safe.Text(AgentWords.Shortened(peer.Owns))}"))
               + (neighbours.Count > Named ? $"{Environment.NewLine}  and {neighbours.Count - Named} more." : string.Empty);
 
         var cannot = elsewhere is null
             ? string.Empty
             : $"{Environment.NewLine}{Environment.NewLine}{Safe.Text(elsewhere)} You can still ask it to refresh.";
 
+        // What Save and Refresh do first, then the lines: the page cannot scroll and cuts its tail.
         return $"""
                 {name}
 
-                Peers read: {peers}{accepted}{said}{others}
-
                 Change the line below and choose {Save}, or choose {Refresh} to have {name} say it again. Saving records
                 the words as yours unless you left the agent's own untouched, and takes effect when the agent next starts.{cannot}
+
+                Peers read: {peers}{accepted}{said}{others}
                 """;
     }
 
@@ -337,6 +341,7 @@ internal sealed class ResponsibilityDialog : Dialog
     /// <param name="canSave">Whether the line can be written from here at all.</param>
     internal ResponsibilityDialog(string description, string line, bool canSave)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = Responsibility.Title;
         Width = Dim.Percent(80);
         Height = Dim.Percent(80);
@@ -406,7 +411,7 @@ internal sealed class ResponsibilityDialog : Dialog
         var text = _field.Text;
         var problem = string.Empty;
 
-        if (text.Trim().Length > 0 && !OwnershipStatement.IsValid(text, out var wrong))
+        if (text.Trim().Length > 0 && !OwnershipStatement.IsLaunchable(text, out var wrong))
         {
             problem = wrong ?? string.Empty;
         }

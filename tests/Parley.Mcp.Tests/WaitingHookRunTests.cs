@@ -27,6 +27,7 @@ namespace Parley.Mcp.Tests;
 /// fail a suite about Parley — the source-level checks still run there.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WaitingHookRunTests : IAsyncDisposable
 {
     private const string Script = "plugins/parley/hooks/parley_waiting.py";
@@ -236,7 +237,7 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
     /// <summary>Builds a store holding one undelivered Request from a peer, and serves it.</summary>
     /// <param name="ct">Cancels the seeding.</param>
-    /// <param name="withFileNotice">Also leaves inventory one file change notice waiting, and no mail.</param>
+    /// <param name="withFileNotice">Also leaves inventory one file gone notice waiting, and no mail.</param>
     /// <remarks>
     /// A broker is started over the seeded file, because the hook asks rather than reads. That is
     /// heavier than opening a database in the test and it is the arrangement being checked: the
@@ -270,24 +271,19 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         if (withFileNotice)
         {
-            // Inventory fetched a file and billing then replaced it: one change notice waiting, and no mail at all.
+            // Inventory fetched a file and billing then removed it: one gone notice waiting, and no mail at all.
             var files = new SharedFileRepository(connection);
             var name = SharedFileName.Create("price-snapshot.md");
+            var bytes = System.Text.Encoding.UTF8.GetBytes("net of tax");
 
-            foreach (var (content, at) in new[] { ("net of tax", T0), ("gross of tax", T0.AddMinutes(1)) })
-            {
-                var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-
-                await files.PlaceAsync(
-                    "invoice-rounding", name, ContentHash.Of(bytes), bytes.Length, Billing, modifiedTicks: 1, at,
-                    takenOnDisk: _ => false, cancellationToken: ct);
-
-                if (at == T0)
-                {
-                    await new FileNoticeRepository(connection).RecordFetchAsync(
-                        Inventory, "invoice-rounding", name, ContentHash.Of(bytes), T0, cancellationToken: ct);
-                }
-            }
+            await files.PlaceAsync(
+                "invoice-rounding", name, ContentHash.Of(bytes), bytes.Length, Billing, modifiedTicks: 1, T0,
+                takenOnDisk: _ => false, cancellationToken: ct);
+            await new FileNoticeRepository(connection).RecordFetchAsync(
+                Inventory, "invoice-rounding", name, ContentHash.Of(bytes), T0, cancellationToken: ct);
+            _ = await files.RemoveAsync(
+                (await files.GetAsync("invoice-rounding", name, cancellationToken: ct))!, Billing, T0.AddMinutes(1),
+                cancellationToken: ct);
         }
 
         _connection = connection;
@@ -549,13 +545,13 @@ public sealed class WaitingHookRunTests : IAsyncDisposable
 
         var output = Run(hookEvent);
 
-        Assert.Contains("1 notice that a file you fetched has changed or gone", output, StringComparison.Ordinal);
+        Assert.Contains("1 notice that a file you fetched or placed has gone or was tampered with", output, StringComparison.Ordinal);
         Assert.DoesNotContain("price-snapshot", output, StringComparison.Ordinal);
         Assert.DoesNotContain("uncollected message", output, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task A_file_change_notice_alone_does_not_hold_a_turn_open()
+    public async Task A_file_gone_notice_alone_does_not_hold_a_turn_open()
     {
         // A notice wakes nothing (SPEC.md §9.5). Speaking at Stop continues the turn, which is a turn asked for.
         await SeedAsync(TestContext.Current.CancellationToken, withFileNotice: true);

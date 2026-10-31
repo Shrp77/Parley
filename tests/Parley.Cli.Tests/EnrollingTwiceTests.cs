@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// left to point one identity at two working directories.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class EnrollingTwiceTests : IDisposable
 {
     private readonly string _root =

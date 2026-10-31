@@ -12,6 +12,7 @@ namespace Parley.Server.Tests;
 /// closes was on both: the person read <c>stranded</c> in <c>parley registry</c> and in <c>parley_agents</c>, telling a
 /// peer an absent person could not be reached.
 /// </remarks>
+[Integration]
 public sealed class PersonIsHereOrAwayTests
 {
     private const string Person = "human-user@test";

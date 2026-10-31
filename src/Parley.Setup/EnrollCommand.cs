@@ -204,7 +204,9 @@ public static class EnrollCommand
     {
         ArgumentNullException.ThrowIfNull(root);
 
-        return Directory.Exists(root) ? Discover(root) : [];
+        // Never looked into when it, or a link along it, leads off this machine: the lookup alone would offer the
+        // person's sign-in there (OffMachineLinks).
+        return !OffMachineLinks.LeadsOffThisMachine(root) && Directory.Exists(root) ? Discover(root) : [];
     }
 
     /// <summary>Configures, catalogues and starts repositories a surface has already chosen.</summary>
@@ -273,9 +275,12 @@ public static class EnrollCommand
         {
             // A directory is a repository when git says so. Anything else under a folder of
             // checkouts is a build output, a scratch clone or somebody's notes, and enrolling it
-            // would put a name on the roster that no agent will ever answer to.
-            if (!Directory.Exists(Path.Combine(directory, ".git"))
-                && !File.Exists(Path.Combine(directory, ".git")))
+            // would put a name on the roster that no agent will ever answer to. A child, or its .git or
+            // .mcp.json, that is a link off this machine is passed over unread (OffMachineLinks).
+            if (OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".git"))
+                || OffMachineLinks.LeadsOffThisMachine(Path.Combine(directory, ".mcp.json"))
+                || (!Directory.Exists(Path.Combine(directory, ".git"))
+                    && !File.Exists(Path.Combine(directory, ".git"))))
             {
                 continue;
             }
@@ -1130,7 +1135,9 @@ public static class EnrollCommand
     /// its agent may never read — which is the failure the peers frame exists to prevent, wearing
     /// a different hat.
     /// </remarks>
-    private static string InstructionsFile(string workspace)
+    /// <param name="workspace">The repository.</param>
+    /// <returns>The file the peers frame goes into.</returns>
+    public static string InstructionsFile(string workspace)
     {
         foreach (var name in (string[])["CLAUDE.md", "AGENTS.md"])
         {

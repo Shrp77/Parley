@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Parley.Store.Tests;
 
+[Integration]
 public sealed class AgentRepositoryTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

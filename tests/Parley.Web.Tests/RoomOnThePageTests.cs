@@ -13,6 +13,7 @@ namespace Parley.Web.Tests;
 /// drawn rows are pinned by the terminal's tests and this pins the page: the others are listed, can be ticked as
 /// recipients, and a retired agent and the person's seat are not among them.
 /// </remarks>
+[Integration]
 public sealed class RoomOnThePageTests
 {
     private const string Orders = "orders@test";

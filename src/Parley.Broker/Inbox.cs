@@ -11,15 +11,25 @@ namespace Parley.Broker;
 /// envelope §13 requires it to be delivered inside.
 /// </param>
 /// <param name="ClosurePolls">
-/// Conversations this agent has been asked to conclude and has not yet answered.
+/// Conversations this agent has been asked to conclude and has not yet answered, the oldest 200.
 /// </param>
 /// <param name="FileNotices">
-/// Change notices about files this agent fetched (SPEC.md §9.5), at most a collection's worth, with a count of
-/// the rest; <see langword="null"/> where nothing collected them.
+/// Gone and tampered notices about files this agent fetched or placed (SPEC.md §9.5), at most a collection's worth,
+/// with a count of the rest; <see langword="null"/> where nothing collected them.
 /// </param>
 /// <param name="RoadmapNoticeBatch">
 /// What became of this agent's own roadmap proposals (SPEC.md §5.7), or <see langword="null"/> where nothing
 /// collected them.
+/// </param>
+/// <param name="MessagesWaiting">
+/// Messages still waiting after this collection, because a limit or the size one collection carries left them for
+/// the next (SPEC.md §10.1).
+/// </param>
+/// <param name="ClosurePollsNotListed">
+/// Closure polls outstanding beyond those this collection lists, which later ones list (SPEC.md §10.1).
+/// </param>
+/// <param name="RoadmapNoticesWaiting">
+/// Roadmap notices left for a later collection, besides those this one and any other in flight hold.
 /// </param>
 /// <remarks>
 /// <para>
@@ -29,15 +39,18 @@ namespace Parley.Broker;
 /// </para>
 /// <para>
 /// Two collections rather than one sequence of a common supertype, deliberately. A message is
-/// delivered once and stamped so it is not handed over again, while a poll stays outstanding until
-/// the participant answers it. Flattening them would put that difference behind a type test.
+/// delivered once and stamped, when the collection is acknowledged, so it is not handed over again, while a poll
+/// stays outstanding until the participant answers it. Flattening them would put that difference behind a type test.
 /// </para>
 /// </remarks>
 public sealed record Inbox(
     IReadOnlyList<DeliveredMessage> Messages,
     IReadOnlyList<ClosurePoll> ClosurePolls,
     FileNoticeBatch? FileNotices = null,
-    IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null)
+    IReadOnlyList<RoadmapNotice>? RoadmapNoticeBatch = null,
+    int MessagesWaiting = 0,
+    int ClosurePollsNotListed = 0,
+    int RoadmapNoticesWaiting = 0)
 {
     /// <summary>
     /// Gets what became of this agent's own roadmap proposals, collected with this inbox.
@@ -49,11 +62,12 @@ public sealed record Inbox(
     public IReadOnlyList<RoadmapNotice> RoadmapNotices => RoadmapNoticeBatch ?? [];
 
     /// <summary>
-    /// Gets the change notices this collection handed over, and how many are left for a later one.
+    /// Gets the gone notices this collection handed over, and how many are left for a later one.
     /// </summary>
     /// <remarks>
     /// A third collection for the reason polls are a second: a notice is not a message (SPEC.md §9.5). It is
-    /// deleted as it is handed over, like a message, but it owes nothing and wakes nothing, like a poll.
+    /// deleted once the collection is acknowledged, as a message is stamped, but it owes nothing and wakes nothing,
+    /// like a poll.
     /// </remarks>
     public FileNoticeBatch Notices => FileNotices ?? FileNoticeBatch.None;
 

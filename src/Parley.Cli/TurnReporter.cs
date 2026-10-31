@@ -95,8 +95,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <remarks>
     /// <b>Reported before the process starts</b>, so the broker knows the token when the adapter presents it; and, like a
     /// turn report, never allowed to stop the launch — a broker that did not hear it reads the agent as open outside
-    /// Parley, which is honest about what it knows. A fresh token each launch, so a process that outlived a restart, or
-    /// an editor started from a shell that inherited one, cannot pass for the new one.
+    /// Parley, which is honest about what it knows. A fresh token each launch, so a process left from an earlier launch of
+    /// the agent cannot pass for the new one.
     /// </remarks>
     internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent)
     {
@@ -124,14 +124,107 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         return new Dictionary<string, string> { [Parley.Core.LaunchToken.Variable] = token };
     }
 
+    /// <summary>Tells a broker this node has joined the launch token of every agent it still runs on this machine.</summary>
+    /// <param name="residents">The agents running here.</param>
+    /// <returns>A task that completes when each has been reported.</returns>
+    /// <remarks>
+    /// <b>A broker that restarted knows no launch</b> (SPEC.md §11.7): its tokens are in memory. Without this, every
+    /// process the node started before the restart read as open outside Parley on reattaching, and could be neither woken
+    /// nor started (lens 1 run 104). Like a launch report, a failed one stops nothing.
+    /// </remarks>
+    internal async Task ReannounceAsync(
+        IEnumerable<(Parley.Core.AgentIdentity Identity, Parley.Headless.ResidentAgent Resident, string Role)> residents)
+    {
+        foreach (var (identity, resident, role) in residents)
+        {
+            if (resident.IsAlive
+                && resident.IssuedToken is { Length: > 0 } token
+                && string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
+            {
+                await ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Tells this node's broker that a process it can start is running, under the name this project gives it.</summary>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="role">What this project calls it.</param>
+    /// <param name="token">The token the process was started with.</param>
+    /// <param name="workspace">The checkout's folder, which the broker holds the name to (lens 2 run 111).</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    /// <remarks>
+    /// One checkout is one process in every project that enrols it, and the project that started it is not the only one
+    /// that must know it is Parley's (lens 1 run 107). Like a launch report, a failed one stops nothing.
+    /// </remarks>
+    internal async Task ReportRunningAsync(
+        Parley.Core.AgentIdentity identity, string role, string token, string workspace)
+    {
+        if (!Parley.Core.AgentName.TryJoin(role, machine, out var named))
+        {
+            return;
+        }
+
+#pragma warning disable CA1031 // A report must never stop the node, whatever went wrong sending it.
+        try
+        {
+            _ = await nodes.ReportLaunchAsync(
+                    new Wire.LaunchReport
+                    {
+                        Machine = machine,
+                        Agent = named.Value,
+                        Token = token,
+                        Identity = identity.ToString(),
+                        Workspace = workspace,
+                    },
+                    deadline: DateTime.UtcNow.Add(Patience))
+                .ConfigureAwait(false);
+        }
+        catch (Exception failure)
+        {
+            await output.WriteLineAsync(
+                    $"  {named.Value}: could not tell the broker it is running it — {failure.Message}")
+                .ConfigureAwait(false);
+        }
+#pragma warning restore CA1031
+    }
+
+    /// <summary>Tells the broker an agent's workspace is gone, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (SPEC.md §14).</summary>
+    /// <param name="agent">The agent it was asked to start.</param>
+    /// <returns>Whether the broker retired it, or null when it could not be told.</returns>
+    internal async Task<bool?> WorkspaceGoneAsync(Parley.Core.AgentName agent)
+    {
+#pragma warning disable CA1031 // A report that cannot be sent is noted, as every report from a node is.
+        try
+        {
+            var reply = await nodes.ReportWorkspaceGoneAsync(
+                    new Wire.WorkspaceGoneReport { Machine = machine, Agent = agent.Value },
+                    deadline: DateTime.UtcNow.Add(Patience))
+                .ConfigureAwait(false);
+
+            return reply.Retired;
+        }
+        catch (Exception failure)
+        {
+            var why = failure is RpcException rpc
+                ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
+                : failure.Message;
+
+            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker its workspace is gone — {why}")
+                .ConfigureAwait(false);
+
+            return null;
+        }
+#pragma warning restore CA1031
+    }
+
     /// <summary>Runs a turn through a reporter when there is one, and plainly when there is not.</summary>
     /// <param name="reporter">The reporter, or null.</param>
-    /// <param name="resident">The agent, whose name is reported.</param>
+    /// <param name="asked">The name the asking project gave the agent, which the turn is reported under.</param>
     /// <param name="turn">The turn, handed what to call once it actually begins.</param>
     /// <returns>What the turn came to.</returns>
     internal static Task<TurnOutcome> Run(
-        TurnReporter? reporter, ResidentAgent resident, Func<Func<Task>, Task<TurnOutcome>> turn) =>
-        reporter is null ? turn(static () => Task.CompletedTask) : reporter.RunAsync(resident.Name, turn);
+        TurnReporter? reporter, Parley.Core.AgentName asked, Func<Func<Task>, Task<TurnOutcome>> turn) =>
+        reporter is null ? turn(static () => Task.CompletedTask) : reporter.RunAsync(asked, turn);
 
     private static string Stamp(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

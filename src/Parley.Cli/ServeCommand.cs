@@ -56,6 +56,11 @@ public static class ServeCommand
     /// Whether to ask the other Parley programs on this machine what release they are, and warn about any that is
     /// not the broker's. Off by default so a test's broker starts no processes.
     /// </param>
+    /// <param name="heartbeat">Whether each broker logs a line a second and every connection (<c>--heartbeat</c>).</param>
+    /// <param name="watchProcess">
+    /// Whether to log a crash, an unobserved exception, a signal to stop and the exit. Process-wide, so only the
+    /// process <c>parley serve</c> is turns it on.
+    /// </param>
     /// <param name="cancellationToken">Stops every broker.</param>
     /// <returns>The exit code.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
@@ -89,6 +94,8 @@ public static class ServeCommand
         Func<IReadOnlyList<string>, TextWriter, CancellationToken, Task<int>>? alongside = null,
         Func<IReadOnlyList<ProjectSettings>?>? reread = null,
         bool checkInstall = false,
+        bool heartbeat = false,
+        bool watchProcess = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(projects);
@@ -108,6 +115,9 @@ public static class ServeCommand
         // would be interleaved is the output an operator reads to find out which broker is unwell.
         output = TextWriter.Synchronized(output);
         error = TextWriter.Synchronized(error);
+
+        // Process-wide, so only for the process `parley serve` is: a test calling this in its own host leaves it off.
+        using var watch = watchProcess ? ProcessWatch.Start(output) : null;
 
         // Said once for the process rather than once per project: one build serves all of them,
         // and a line repeated per project would read as though it could differ. Before the first
@@ -133,6 +143,15 @@ public static class ServeCommand
         async Task<Start> StartAsync(ProjectSettings project)
         {
             BrokerRuntime runtime;
+
+            // Never a store on a synced cloud folder, a share or a virtual file system (the owner's rule, 2026-10-29): a sync
+            // client can copy it mid-write. Said and skipped, as an unopenable store is, so the other projects serve.
+            if (LocalStorage.Problem(Path.GetDirectoryName(Path.GetFullPath(project.Store))) is { } notLocal)
+            {
+                await error.WriteLineAsync($"{project.Name}: its store is not served. {notLocal}").ConfigureAwait(false);
+
+                return Start.Failed;
+            }
 
             try
             {
@@ -161,7 +180,13 @@ public static class ServeCommand
 
             try
             {
-                server = await ParleyServer.StartAsync(runtime, project.Endpoint, cancellationToken)
+                // **Its log is this process's**, so what the broker logs reaches --log; a broker started hidden has no
+                // console for it to go to otherwise.
+                server = await ParleyServer.StartAsync(
+                        runtime,
+                        project.Endpoint,
+                        cancellationToken,
+                        new ServerDiagnostics(output, heartbeat, project.Name.Value))
                     .ConfigureAwait(false);
             }
             catch (Exception exception)
@@ -177,7 +202,10 @@ public static class ServeCommand
                 }
 
                 await error.WriteLineAsync(
-                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}")
+                    $"{project.Name}: could not listen on {project.Endpoint}: {exception.Message}"
+                    + (runtime.MigrationBackup is { } kept
+                        ? $" The store was upgraded to schema {SchemaMigrator.LatestVersion} before this failed; a copy of it as it was before this start is at {kept}."
+                        : string.Empty))
                     .ConfigureAwait(false);
 
                 return Start.Failed;
@@ -194,16 +222,43 @@ public static class ServeCommand
                 $"{project.Name} on {string.Join(", ", server.Addresses)}, store at {project.Store}, schema {SchemaMigrator.LatestVersion}."))
                 .ConfigureAwait(false);
 
+            // **Every copy taken before an upgrade goes once the upgraded store is served** (SPEC.md §9.2): this start's,
+            // and any an earlier start left when its migration, its listen or the process failed. Each holds every
+            // conversation's text, which destroy, purge and retention exist to remove, so kept any longer it would be a
+            // corner of the store none of them reach.
+            var (removed, stayed) = RemoveCopies(project.Store);
+
+            if (runtime.MigrationBackup is not null)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: its store was upgraded to schema {SchemaMigrator.LatestVersion} and is serving.")
+                    .ConfigureAwait(false);
+            }
+
+            if (removed > 0)
+            {
+                await output.WriteLineAsync(
+                    $"{project.Name}: {(removed == 1 ? "1 copy" : $"{removed} copies")} of its store taken before an upgrade removed, now that it serves.")
+                    .ConfigureAwait(false);
+            }
+
+            foreach (var (path, why) in stayed)
+            {
+                await error.WriteLineAsync(
+                    $"{project.Name}: a copy of its store taken before an upgrade could not be removed ({why}). Delete "
+                    + $"{path}: it holds the text of every conversation as it was.").ConfigureAwait(false);
+            }
+
             // **A store that is not the shape this build expects is said here, where the broker's log is read**, and again
-            // to every surface that asks what this broker speaks. The schema number cannot say it while the schema is
-            // edited in place.
+            // to every surface that asks what this broker speaks. The schema number cannot say it for a store whose
+            // shape was changed by hand or by a build that edited a migration.
             if (runtime.StoreProblems.Count > 0)
             {
                 await output.WriteLineAsync(
                     $"{project.Name}: WARNING -- its store is not the shape this build expects: "
                     + string.Join("; ", runtime.StoreProblems.Take(5))
                     + (runtime.StoreProblems.Count > 5 ? $"; and {runtime.StoreProblems.Count - 5} more" : string.Empty)
-                    + ". It was made by another build. Reset the project's store, or add what is missing.")
+                    + ". It was made by another build. Do not reset it, which would lose its work: see `A store from another build` in docs/operating.md.")
                     .ConfigureAwait(false);
             }
 
@@ -265,8 +320,27 @@ public static class ServeCommand
                 // The sweep ending the way a cancelled sweep ends.
             }
 
-            await hosted.Server.DisposeAsync().ConfigureAwait(false);
-            hosted.Stopping.Dispose();
+            await ReleaseAsync(hosted).ConfigureAwait(false);
+        }
+
+        // **One broker failing to stop never keeps another running.** Each is stopped on its own, and a failure is said
+        // where the log is read; a broker left serving after its project was removed, or after the process was told to
+        // stop, would hold its port and its store's lock.
+        async Task ReleaseAsync(Hosted hosted)
+        {
+            try
+            {
+                await hosted.Server.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await error.WriteLineAsync(
+                    $"{hosted.Project.Name}: its broker did not stop cleanly: {exception.Message}").ConfigureAwait(false);
+            }
+            finally
+            {
+                hosted.Stopping.Dispose();
+            }
         }
 
         try
@@ -453,8 +527,7 @@ public static class ServeCommand
 
             foreach (var hosted in remaining)
             {
-                await hosted.Server.DisposeAsync().ConfigureAwait(false);
-                hosted.Stopping.Dispose();
+                await ReleaseAsync(hosted).ConfigureAwait(false);
             }
         }
 
@@ -728,6 +801,44 @@ public static class ServeCommand
     internal static bool OnlyThisMachine(string endpoint) =>
         BrokerEndpoint.OnlyThisMachine(endpoint);
 
+    /// <summary>Removes every copy of a store taken before an upgrade.</summary>
+    /// <param name="store">The store's file.</param>
+    /// <returns>How many went, and each that could not with why.</returns>
+    /// <remarks>
+    /// By name beside the store rather than by the one this start took: a start whose migration, listen or process
+    /// failed left its copy, and nothing else would ever name it. Only this store's: the name must begin with the
+    /// store's own file name and <see cref="StoreFiles.BeforeSchema"/>.
+    /// </remarks>
+    internal static (int Removed, List<(string Path, string Why)> Kept) RemoveCopies(string store)
+    {
+        var kept = new List<(string, string)>();
+        var removed = 0;
+        var directory = Path.GetDirectoryName(Path.GetFullPath(store));
+
+        if (directory is null || !Directory.Exists(directory))
+        {
+            return (0, kept);
+        }
+
+        var prefix = Path.GetFileName(store) + StoreFiles.BeforeSchema;
+
+        foreach (var path in Directory.EnumerateFiles(directory)
+                     .Where(path => Path.GetFileName(path).StartsWith(prefix, StringComparison.Ordinal)))
+        {
+            try
+            {
+                File.Delete(path);
+                removed++;
+            }
+            catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+            {
+                kept.Add((path, held.Message));
+            }
+        }
+
+        return (removed, kept);
+    }
+
     /// <summary>A sweep, as a task that reports nothing: it ends only when the process does.</summary>
     /// <param name="sweep">The sweep.</param>
     /// <returns>Zero once it has ended.</returns>
@@ -779,7 +890,7 @@ public static class ServeCommand
         }
     }
 
-    /// <summary>Runs the sweep of SPEC.md §6 until the broker stops.</summary>
+    /// <summary>Runs the broker's tick (closing polls, and the retention pass when it is due, SPEC.md §5.0, §9.4) until the broker stops.</summary>
     /// <param name="runtime">The broker state.</param>
     /// <param name="output">Where to report a failure worth seeing.</param>
     /// <param name="cancellationToken">Stops the sweep.</param>
@@ -813,7 +924,7 @@ public static class ServeCommand
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    await output.WriteLineAsync($"Sweep failed: {exception.Message}")
+                    await output.WriteLineAsync($"The tick failed: {exception.Message}")
                         .ConfigureAwait(false);
                 }
             }
@@ -1017,7 +1128,7 @@ public static class ServeCommand
             return "the agent's answer was empty.";
         }
 
-        if (!OwnershipStatement.IsValid(answer.Line, out var wrong))
+        if (!OwnershipStatement.IsLaunchable(answer.Line, out var wrong))
         {
             return $"it cannot be a line as written: {wrong}";
         }
@@ -1032,7 +1143,7 @@ public static class ServeCommand
             .ConfigureAwait(false);
     }
 
-    /// <summary>How often to sweep.</summary>
+    /// <summary>How often the broker ticks.</summary>
     /// <returns>The interval.</returns>
     /// <remarks>
     /// Bounded rather than trusted. A pass costs a handful of indexed queries, and a mistyped

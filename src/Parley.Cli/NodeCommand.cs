@@ -178,6 +178,9 @@ public static class NodeCommand
                     catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
                 var refused = false;
 
+                // This attempt's place on the board every node loop sharing the table can read (TellJoinedAsync).
+                var seat = new object();
+
                 try
                 {
                     using var stream = nodes.Join(request, cancellationToken: rejoining.Token);
@@ -191,6 +194,30 @@ public static class NodeCommand
                                 refusals = 0;
                                 await ReportJoinedAsync(
                                     command.Joined, catalogue, project, catalogueFile, endpoint, output)
+                                    .ConfigureAwait(false);
+
+                                // Before any command: a broker that restarted must know these are Parley's when they
+                                // reattach (SPEC.md §11.7). Only what this project's catalogue starts: the table is the
+                                // machine's, shared by every project this process hosts, and another project's agent
+                                // under the same name would put its token here in place of this one's (lens 2 run 107).
+                                //
+                                // **Under the name this project gives it** (lens 2 run 108): one checkout is one process
+                                // in every project that enrols it, under a name in each, and the process carries the
+                                // name of whichever started it.
+                                var named = catalogue.NamesIn(project);
+                                var joined = new TurnReporter(nodes, request.Machine, output);
+
+                                // And from now on told of every launch any loop sharing the table makes of what this
+                                // project starts (lens 1 run 107). **Seated before the table is read** (lens 1 run 109):
+                                // a launch puts its process in the table and then reads the board, so a launch between
+                                // this read and a later seat would reach neither. Both orders at once only report twice.
+                                Boards.GetOrCreateValue(residents).Join(seat, joined, named);
+
+                                await joined
+                                    .ReannounceAsync(residents
+                                        .Where(pair => named.ContainsKey(pair.Key))
+                                        .Select(pair => (pair.Key, pair.Value, named[pair.Key]))
+                                        .ToList())
                                     .ConfigureAwait(false);
                                 break;
 
@@ -244,6 +271,8 @@ public static class NodeCommand
                 }
                 finally
                 {
+                    Boards.GetOrCreateValue(residents).Leave(seat);
+
                     await watching.CancelAsync().ConfigureAwait(false);
                 }
 
@@ -598,8 +627,9 @@ public static class NodeCommand
                 if (existing.IsAlive)
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
-                    // one checkout stays one process when a second project asks for it under another name.
-                    DispatchTurn(existing, output, cancellationToken, reporter);
+                    // one checkout stays one process when a second project asks for it under another name; that
+                    // project already knows its token, from the launch or from joining since (TellJoinedAsync).
+                    DispatchTurn(existing, agent, output, cancellationToken, reporter);
                     return;
                 }
 
@@ -625,6 +655,19 @@ public static class NodeCommand
                 return;
             }
 
+            // **A workspace that is gone retires its agent, only where that can be told from a disk absent or replaced**
+            // (SPEC.md §14; WorkspaceGoneAsync): a deleted repository is worth a judgement, a drive briefly unmounted or swapped
+            // is not, and one unavailable volume must not retire every agent on it at once. The node looks because the broker
+            // never reads this disk.
+            if (catalogue.WorkspaceFor(identity) is { } catalogued
+                && !string.IsNullOrWhiteSpace(catalogued)
+                && !Directory.Exists(catalogued))
+            {
+                await WorkspaceGoneAsync(agent, catalogued, output, reporter).ConfigureAwait(false);
+
+                return;
+            }
+
             try
             {
                 var invocation = InvocationCommand.Parse(command);
@@ -635,6 +678,9 @@ public static class NodeCommand
                 var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
                 residents[identity] = resident;
 
+                // Every other project joined here that starts this checkout knows it as Parley's too.
+                await TellJoinedAsync(residents, identity, resident).ConfigureAwait(false);
+
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
                 // was running is an ordinary event; starting one because the process behind an attached
                 // session had gone is an anomaly worth a line, and `TurnAsync` already names the same state
@@ -644,7 +690,7 @@ public static class NodeCommand
                         ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
                         : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
 
-                DispatchTurn(resident, output, cancellationToken, reporter);
+                DispatchTurn(resident, agent, output, cancellationToken, reporter);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -656,6 +702,306 @@ public static class NodeCommand
         {
             _ = Residency.Release();
         }
+    }
+
+    /// <summary>Says an agent's workspace is missing, and asks the broker to retire it when it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link.</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="workspace">Its catalogued workspace, which does not exist.</param>
+    /// <param name="output">Where to report.</param>
+    /// <param name="reporter">The broker's ear, or null when there is none.</param>
+    /// <returns>A task that completes when it is said.</returns>
+    private static async Task WorkspaceGoneAsync(AgentName agent, string workspace, TextWriter output, TurnReporter? reporter)
+    {
+        string full;
+
+        try
+        {
+            full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(workspace));
+        }
+        catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace '{workspace}' is not a path this machine can read, so "
+                + "nothing is concluded.").ConfigureAwait(false);
+
+            return;
+        }
+
+        var parent = Path.GetDirectoryName(full);
+
+        if (parent is null || !Directory.Exists(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} and the folder above it are both missing, "
+                + "so nothing is concluded (a drive may be unmounted); it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        if (ThroughALink(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing, and its path runs through a link, "
+                + "whose far side may be a drive not mounted, so nothing is concluded; it is tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // **Only on the disk that holds the person's home folder, and never at the root of a volume** (the owner's calls,
+        // 2026-10-30). Elsewhere another disk can answer at the same path — a swapped removable drive, a disk with the same
+        // label, a backup laid out the same way — and a folder that is there and in use says nothing about whether it is
+        // the same disk (lens 1 run 89). The home disk cannot be swapped while the node runs, but its mount folders can
+        // hold whichever disk is plugged in (lens 1 run 88). A repository missing from anywhere else is left for a person.
+        if (!MayRetireUnder(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing where a disk that is absent or replaced "
+                + "cannot be told from a deletion (a disk other than your home folder's, a drive's root, a folder removable "
+                + "disks are mounted in, a mount table that cannot be read, or no home folder), so nothing is concluded; it is "
+                + "tried again when next asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // **The folder above must be one somebody is using, not one a volume left behind.** An unmounted Linux volume leaves
+        // its mount folder in place and empty, and a mount point is no link, so an empty parent concludes nothing (lens 1
+        // run 87); a repository that was the only thing in its folder is then left for a person to retire.
+        if (HoldsNothing(parent))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} is missing and the folder above it holds "
+                + "nothing else, as a volume not mounted leaves it, so nothing is concluded; it is tried again when next "
+                + "asked for.")
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // Looked at once more: a volume that came back while the checks ran shows its workspace again (lens 1 run 88).
+        if (Directory.Exists(full))
+        {
+            await output.WriteLineAsync(
+                $"  {agent.Value}: not started — its workspace {workspace} came back while it was being looked at; it is "
+                + "started when next asked for.").ConfigureAwait(false);
+
+            return;
+        }
+
+        var retired = reporter is null ? null : await reporter.WorkspaceGoneAsync(agent).ConfigureAwait(false);
+
+        await output.WriteLineAsync(
+            retired == true
+                ? $"  {agent.Value}: not started — its workspace {workspace} is gone, so the broker retired it. Reinstate "
+                  + "it in the terminal once the repository is back."
+                : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Whether a missing workspace directly in this folder may retire its agent, as far as disks go.</summary>
+    /// <param name="folder">The folder above the workspace, which exists.</param>
+    /// <returns>True only on the home volume, and not at a volume's root or in a folder removable disks are mounted in.</returns>
+    internal static bool MayRetireUnder(string folder) => OnTheHomeVolume(folder) && !AtAVolumeRoot(folder);
+
+    /// <summary>Whether a folder that is there is on the volume holding the person's home folder.</summary>
+    /// <param name="folder">A full path to a folder that exists.</param>
+    /// <returns>True when it is; false when it is not, or when that cannot be told.</returns>
+    /// <remarks>
+    /// Windows compares drive roots with the profile's. Linux finds each path's mount point in the process's mount table, so
+    /// a disk mounted anywhere is told from the one under the home folder. macOS asks the mounted volumes for their roots
+    /// (<see cref="OnTheSameMacVolume"/>). A process with no home folder concludes nothing.
+    /// </remarks>
+    internal static bool OnTheHomeVolume(string folder)
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (string.IsNullOrEmpty(home))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return string.Equals(
+                Path.GetPathRoot(Path.GetFullPath(folder)),
+                Path.GetPathRoot(Path.GetFullPath(home)),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            string[] roots;
+
+            try
+            {
+                roots = [.. DriveInfo.GetDrives().Select(drive => drive.RootDirectory.FullName)];
+            }
+            catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+            {
+                return false;
+            }
+
+            return OnTheSameMacVolume(folder, home, roots);
+        }
+
+        string[] mounts;
+
+        try
+        {
+            mounts = File.ReadAllLines("/proc/self/mountinfo");
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        return MountPointOf(folder, mounts) is { } here
+               && string.Equals(here, MountPointOf(home, mounts), StringComparison.Ordinal);
+    }
+
+    /// <summary>The mount point a path lies under, from the lines of a Linux mount table.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="mountInfo">The lines of <c>/proc/self/mountinfo</c>.</param>
+    /// <returns>The longest mount point the path lies under, or null when none is listed.</returns>
+    /// <remarks>The fifth field is the mount point, with a space, tab, newline or backslash written as an octal escape.</remarks>
+    internal static string? MountPointOf(string path, IEnumerable<string> mountInfo) =>
+        LongestUnder(
+            path,
+            mountInfo.Select(line => line.Split(' ')).Where(fields => fields.Length >= 5).Select(fields => Unescape(fields[4])),
+            StringComparison.Ordinal);
+
+    /// <summary>The macOS rule: whether a folder is on the same mounted volume as the home folder.</summary>
+    /// <param name="folder">A full path.</param>
+    /// <param name="home">The home folder.</param>
+    /// <param name="roots">The roots of the mounted volumes.</param>
+    /// <returns>True when neither is in /Volumes and both lie under the same longest root.</returns>
+    /// <remarks>
+    /// Disks ignore case unless formatted otherwise, so /volumes is /Volumes; and a disk can be mounted at any folder, so the
+    /// mounted volumes are asked for their roots rather than /Volumes taken as the only place (lens 2 run 92). Its own
+    /// function, with its inputs passed in, so it runs as a unit test on every platform: CI runs only unit tests on macOS
+    /// (lens 3 run 102).
+    /// </remarks>
+    internal static bool OnTheSameMacVolume(string folder, string home, IEnumerable<string> roots)
+    {
+        if (IsUnder(folder, "/Volumes", StringComparison.OrdinalIgnoreCase)
+            || IsUnder(home, "/Volumes", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var listed = roots as IReadOnlyCollection<string> ?? [.. roots];
+
+        return LongestUnder(folder, listed, StringComparison.OrdinalIgnoreCase) is { } mounted
+               && string.Equals(
+                   mounted, LongestUnder(home, listed, StringComparison.OrdinalIgnoreCase), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The longest of some mount points that a path lies under.</summary>
+    /// <param name="path">A full path.</param>
+    /// <param name="points">Mount points.</param>
+    /// <param name="comparison">How names compare: ignoring case where the disks do.</param>
+    /// <returns>The longest point the path lies under, or null when none.</returns>
+    internal static string? LongestUnder(string path, IEnumerable<string> points, StringComparison comparison)
+    {
+        string? best = null;
+
+        foreach (var point in points)
+        {
+            if (IsUnder(path, point, comparison) && (best is null || point.Length > best.Length))
+            {
+                best = point;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool IsUnder(string path, string point, StringComparison comparison = StringComparison.Ordinal) =>
+        point == "/"
+        || string.Equals(path, point.TrimEnd('/'), comparison)
+        || path.StartsWith(point.TrimEnd('/') + "/", comparison);
+
+    private static string Unescape(string field) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            field,
+            @"\\([0-7]{3})",
+            match => ((char)Convert.ToInt32(match.Groups[1].Value, 8)).ToString(),
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromSeconds(1));
+
+    /// <summary>Whether a folder is a drive's root, or a folder removable volumes are mounted directly in.</summary>
+    /// <param name="folder">The folder above a workspace, as a full path.</param>
+    /// <returns>True when a workspace directly in it may be a volume's root, or sit on a volume another disk can replace.</returns>
+    /// <remarks>
+    /// A drive's root (<c>E:\</c>, <c>/</c>, a share's root); <c>/Volumes</c> on macOS; <c>/mnt</c>, <c>/media</c>, and a
+    /// user's folder in <c>/media</c> or <c>/run/media</c>, where a desktop mounts each removable disk under its label.
+    /// </remarks>
+    internal static bool AtAVolumeRoot(string folder)
+    {
+        var trimmed = Path.TrimEndingDirectorySeparator(folder);
+
+        if (string.Equals(trimmed, Path.TrimEndingDirectorySeparator(Path.GetPathRoot(folder) ?? string.Empty), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var unix = trimmed.Replace(Path.DirectorySeparatorChar, '/');
+        var above = unix.LastIndexOf('/') is var cut and > 0 ? unix[..cut] : null;
+
+        // Ignoring case: a macOS disk does, and on Linux a folder these names only fail safe.
+        return new[] { "/Volumes", "/mnt", "/media", "/run/media" }.Contains(unix, StringComparer.OrdinalIgnoreCase)
+               || new[] { "/media", "/run/media" }.Contains(above, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whether a folder holds nothing, or cannot be listed.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <returns>True when it is empty or unreadable; either way it is no evidence a repository was deleted from it.</returns>
+    private static bool HoldsNothing(string folder)
+    {
+        try
+        {
+            return !Directory.EnumerateFileSystemEntries(folder).Any();
+        }
+        catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Whether any part of a path that is there, from its root down, is a link: a junction or a symbolic link.</summary>
+    /// <param name="path">A full path.</param>
+    /// <returns>True when a link is on the way, including the path itself as a link whose target is gone.</returns>
+    /// <remarks>
+    /// <b>A link outlives what it leads to.</b> A folder above the workspace that is a junction to a second disk still exists
+    /// when that disk is gone, so the parent check alone would retire every agent on the disk at once (found by review,
+    /// lens 2 run 89), and a workspace that is itself a link to an unmounted drive reads as missing beside a parent that is
+    /// there. Either way the path says nothing about whether the repository was deleted, so nothing is concluded from it.
+    /// </remarks>
+    private static bool ThroughALink(string path)
+    {
+        var root = Path.GetPathRoot(path) ?? string.Empty;
+        var at = root;
+
+        foreach (var part in path[root.Length..].Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            at = Path.Combine(at, part);
+            var entry = new DirectoryInfo(at);
+
+            if (entry.LinkTarget is not null)
+            {
+                return true;
+            }
+
+            if (!entry.Exists)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Serialises every change to who lives in the resident table.</summary>
@@ -755,11 +1101,15 @@ public static class NodeCommand
 
         // Reported like any other turn once it is actually given. Only the "not mine" case is
         // silent; a turn that fails is a turn the operator needs to hear about.
-        DispatchTurn(resident, output, cancellationToken, reporter);
+        DispatchTurn(resident, agent, output, cancellationToken, reporter);
     }
 
     /// <summary>Starts a turn without holding up the command stream.</summary>
     /// <param name="resident">The agent to give a turn.</param>
+    /// <param name="asked">
+    /// The name the asking project gave it, which the turn is reported under: one checkout is one process however many
+    /// projects ask for it, under a name in each (lens 2 run 108).
+    /// </param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
@@ -785,9 +1135,13 @@ public static class NodeCommand
     /// </para>
     /// </remarks>
     private static void DispatchTurn(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
-        _ = Observe(GiveTurnAsync(resident, output, cancellationToken, reporter));
+        _ = Observe(GiveTurnAsync(resident, asked, output, cancellationToken, reporter));
 
 #pragma warning disable CA1031 // Do not catch general exception types
         static async Task Observe(Task turn)
@@ -815,12 +1169,17 @@ public static class NodeCommand
 
     /// <summary>Gives a resident agent a turn.</summary>
     /// <param name="resident">The agent.</param>
+    /// <param name="asked">The name the asking project gave it, which the turn is reported under.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn ends.</returns>
     private static async Task GiveTurnAsync(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         try
         {
@@ -828,7 +1187,7 @@ public static class NodeCommand
             // it having ended — and see what it was refused.
             var outcome = await TurnReporter.Run(
                     reporter,
-                    resident,
+                    asked,
                     began => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, began, cancellationToken))
                 .ConfigureAwait(false);
 
@@ -993,6 +1352,10 @@ public static class NodeCommand
 
             residents[identity] = restarted;
 
+            // As at a start, and after it is in the table, as there (lens 1 run 109): every other project joined here that
+            // starts this checkout learns its new token, and one joining meanwhile finds it in the table.
+            await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
+
             await output.WriteLineAsync(
                 $"  {agent.Value}: restarted once its turn was over, so it reads its new ownership line.")
                 .ConfigureAwait(false);
@@ -1000,7 +1363,7 @@ public static class NodeCommand
             // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
             // queued on it and came back died, and the broker's wake stays claimed until a drain — so without this the
             // restarted agent would sit on mail nothing asks it to read.
-            DispatchTurn(restarted, output, cancellationToken, reporter);
+            DispatchTurn(restarted, agent, output, cancellationToken, reporter);
         }
         finally
         {
@@ -1075,6 +1438,56 @@ public static class NodeCommand
     /// </remarks>
     private static readonly ConditionalWeakTable<
         ConcurrentDictionary<AgentIdentity, ResidentAgent>, object> Shut = new();
+
+    /// <summary>The projects joined from each shared table, so a launch one makes reaches every one that starts it.</summary>
+    /// <remarks>
+    /// Kept beside the table, as <see cref="Shut"/> is: <c>serve</c> hosts a node loop per project over one table, and a
+    /// checkout enrolled in two is one process for both. Told only to the project that started it, its token left the
+    /// other reading it as open outside Parley until that project's node joined again (lens 1 run 107).
+    /// </remarks>
+    private static readonly ConditionalWeakTable<
+        ConcurrentDictionary<AgentIdentity, ResidentAgent>, LaunchBoard> Boards = new();
+
+    /// <summary>Tells every project joined from this table that starts a checkout that its process is running.</summary>
+    /// <param name="residents">The table.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="resident">Its process.</param>
+    /// <returns>A task that completes when each has been told, or could not be.</returns>
+    private static async Task TellJoinedAsync(
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, ResidentAgent resident)
+    {
+        if (resident.IssuedToken is not { Length: > 0 } token)
+        {
+            return;
+        }
+
+        foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+        {
+            await reporter.ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The node loops joined from one table, each with what its project calls the checkouts it starts.</summary>
+    private sealed class LaunchBoard
+    {
+        private readonly ConcurrentDictionary<object, (TurnReporter Reporter, IReadOnlyDictionary<AgentIdentity, string> Names)>
+            _joined = new();
+
+        /// <summary>Takes a seat for a joined loop, or brings its names up to date.</summary>
+        public void Join(object seat, TurnReporter reporter, IReadOnlyDictionary<AgentIdentity, string> names) =>
+            _joined[seat] = (reporter, names);
+
+        /// <summary>Gives a seat up, when its loop's stream ends.</summary>
+        public void Leave(object seat) => _ = _joined.TryRemove(seat, out _);
+
+        /// <summary>Every joined loop whose project starts a checkout, with that project's name for it.</summary>
+        public IReadOnlyList<(TurnReporter Reporter, string Role)> Starting(AgentIdentity identity) =>
+        [
+            .. _joined.Values
+                .Where(entry => entry.Names.ContainsKey(identity))
+                .Select(entry => (entry.Reporter, entry.Names[identity])),
+        ];
+    }
 
     /// <summary>What <see cref="Shut"/> records; its presence is the whole of the meaning.</summary>
     private static readonly object Sentinel = new();

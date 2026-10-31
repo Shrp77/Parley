@@ -91,6 +91,7 @@ internal sealed class LineRegion : FrameView
 
     internal LineRegion()
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = RegionTitle;
         CanFocus = true;
         SetScheme(Colours.Region(Colours.Conversations));
@@ -227,22 +228,72 @@ internal sealed class LineRegion : FrameView
 
     /// <summary>What is written but not sent. Named to avoid hiding the toolkit's own Text.</summary>
     /// <remarks>
+    /// <para>
     /// Read from the field rather than held beside it, so there is one copy of what somebody typed. Two would
     /// eventually disagree, and the one that is wrong would be the one that got sent.
+    /// </para>
+    /// <para>
+    /// <b>For the loop's own thread</b>, which key handlers and dialogs run on. Work off the loop reads with
+    /// <see cref="WrittenOnTheLoop"/> and changes it with <see cref="Rewrite"/>, because the toolkit's text view throws
+    /// when it is read or changed while the loop draws it or takes a key (TheBoxIsWrittenOnTheLoopTests). The setter
+    /// still goes through the loop, so a write from anywhere else is safe.
+    /// </para>
     /// </remarks>
     internal string Written
     {
         get => _field.Text;
 
-        set
-        {
-            _field.Text = value;
+        set => Prompting.OnTheLoop(() => Write(value));
+    }
 
-            // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
-            // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
-            // name, and the chip would no longer be written the way it was recorded.
-            _field.MoveEnd();
-        }
+    /// <summary>What is written, read on the thread that draws.</summary>
+    /// <returns>The box's text, or empty if the loop did not reach the read within the wait.</returns>
+    /// <remarks>
+    /// For work off the loop. Reading the text walks the toolkit's text model, which the loop changes as the person types,
+    /// so a read from the pool threw <c>Collection was modified</c> into the message line. Empty after the wait gives up,
+    /// so do not decide anything that cannot be undone on an empty answer.
+    /// </remarks>
+    internal string WrittenOnTheLoop()
+    {
+        var written = string.Empty;
+
+        Prompting.OnTheLoop(() => written = _field.Text);
+
+        return written;
+    }
+
+    /// <summary>Changes what is written, reading and writing it in one turn of the loop.</summary>
+    /// <param name="change">The new text from the text as it stands.</param>
+    /// <remarks>
+    /// For work off the loop. A read on the pool and a write on the loop would lose any key the person typed between the
+    /// two, because the loop takes input before it runs what was handed to it. Writes only when the text changes: a
+    /// driven test has no loop, so the write runs on the pool against the test's own draws (RefillRaceTests), and a box
+    /// already empty is the common case there.
+    /// </remarks>
+    internal void Rewrite(Func<string, string> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        Prompting.OnTheLoop(() =>
+        {
+            var now = _field.Text;
+            var next = change(now);
+
+            if (!string.Equals(now, next, StringComparison.Ordinal))
+            {
+                Write(next);
+            }
+        });
+    }
+
+    private void Write(string value)
+    {
+        _field.Text = value;
+
+        // **And the cursor goes to the end of it.** Setting the text leaves the cursor where it was, so a
+        // completion that grew `@ord` into `@orders@test` would leave the next thing typed inside the
+        // name, and the chip would no longer be written the way it was recorded.
+        _field.MoveEnd();
     }
 
     /// <summary>Whether the box has focus, so a printable key is somebody writing rather than an action.</summary>
@@ -363,8 +414,15 @@ internal sealed class LineRegion : FrameView
     /// because it is about what is written now and stops being true on the next keystroke, while the message line
     /// holds a record of what happened and is cleared only deliberately.
     /// </para>
+    /// <para>
+    /// <b>On the thread that draws.</b> Shown after a read, from the work queue, and measuring the region reads the
+    /// box's text, which threw while the person typed (TheBoxIsWrittenOnTheLoopTests).
+    /// </para>
     /// </remarks>
-    internal void Show(Draft? draft, bool seated, string? note = null)
+    internal void Show(Draft? draft, bool seated, string? note = null) =>
+        Prompting.OnTheLoop(() => ShowHere(draft, seated, note));
+
+    private void ShowHere(Draft? draft, bool seated, string? note)
     {
         var lines = new List<string>();
 

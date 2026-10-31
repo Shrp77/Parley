@@ -15,6 +15,7 @@ namespace Parley.Client.Tests;
 /// Every call has a deadline, because the terminal runs its work one item at a time and one wedged broker would
 /// otherwise stop every send, open and toggle in every project. Driven against a listener that accepts and says nothing.
 /// </remarks>
+[Integration]
 public sealed class ASilentBrokerIsGivenUpOnTests
 {
     [Fact]
@@ -43,7 +44,10 @@ public sealed class ASilentBrokerIsGivenUpOnTests
                     }
                 }
             }
-            catch (Exception ended) when (ended is OperationCanceledException or SocketException or ObjectDisposedException)
+            // Stopped as well as cancelled at the end, and the loop can come round to accept on a stopped listener, which
+            // says it is not listening (macOS CI, 2026-10-27).
+            catch (Exception ended) when (ended is OperationCanceledException or SocketException or ObjectDisposedException
+                                              or InvalidOperationException)
             {
             }
         }, ct);
@@ -79,8 +83,9 @@ public sealed class ASilentBrokerIsGivenUpOnTests
         // over the channel — fails here rather than in somebody's terminal.
         var source = File.ReadAllText(Path.Combine(Root(), "src", "Parley.Client", "BrokerDirectory.cs"));
 
-        Assert.Contains("new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
-        Assert.Contains("new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()))", source, StringComparison.Ordinal);
+        Assert.Contains("new Wire.Operators.OperatorsClient(Invoker(channel))", source, StringComparison.Ordinal);
+        Assert.Contains("new Wire.Agents.AgentsClient(Invoker(channel))", source, StringComparison.Ordinal);
+        Assert.Contains("return channel.Value.Intercept(new Patience());", source, StringComparison.Ordinal);
     }
 
     private static string Root()

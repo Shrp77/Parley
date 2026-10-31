@@ -5,6 +5,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// What a surface says is wrong with a project's deployment beyond whether its broker answers.
 /// </summary>
+[Unit]
 public sealed class ProjectHealthWarningsTests
 {
     [Fact]

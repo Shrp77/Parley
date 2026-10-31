@@ -31,6 +31,7 @@ namespace Parley.Cli.Tests;
 /// the table that is still running got there after the sweep passed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class StartRacingStopTests : IDisposable
 {
     private readonly string _root =

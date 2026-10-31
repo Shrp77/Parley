@@ -20,6 +20,7 @@ namespace Parley.Server.Tests;
 /// the location on disk where the person would look.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FilesOverTheWireTests
 {
     private const string Orders = "orders@alpha";
@@ -187,16 +188,16 @@ public sealed class FilesOverTheWireTests
         Assert.Equal("a:b.md", refused.RequestedName);
         Assert.Equal(
             "File 'a:b.md' has illegal characters and will be named 'a_b.md', which collides with an existing file with " +
-            "that name ('A_B.md'). Nothing was placed. Choose another name, or place it as 'a_b.md' to replace that file " +
-            "if it is yours.",
+            "that name ('A_B.md'). Nothing was placed. Choose another name: a placed file is never changed.",
             refused.Detail);
         Assert.Equal(kept.Sha256, (await FetchAsync(orders, "A_B.md", conversation: "pricing")).Header!.Sha256);
     }
 
     [Fact]
-    public async Task A_renamed_placement_colliding_with_the_callers_own_file_is_refused_and_the_safe_spelling_replaces_it()
+    public async Task A_renamed_placement_colliding_with_the_callers_own_file_is_refused_and_so_is_the_safe_spelling()
     {
-        // 'a:b.md' and 'a?b.md' are one safe spelling. Replacing silently would let either overwrite the other.
+        // 'a:b.md' and 'a?b.md' are one safe spelling. Replacing silently would let either overwrite the other, and a
+        // placed file is never changed, so the safe spelling with other content is refused too (SPEC.md §9.5).
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
@@ -208,8 +209,8 @@ public sealed class FilesOverTheWireTests
 
         var onPurpose = await PlaceAsync(billing, "a_b.md", Text("two"), conversation: "pricing");
 
-        Assert.Equal(Wire.PlaceOutcome.Replaced, onPurpose.Outcome);
-        Assert.Equal(first.Sha256, onPurpose.PreviousSha256);
+        Assert.Equal(Wire.FileRejection.NameHoldsOtherContent, onPurpose.Rejection);
+        Assert.Equal(first.Sha256, onPurpose.Sha256);
     }
 
     [Fact]
@@ -220,15 +221,56 @@ public sealed class FilesOverTheWireTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
         await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
+
+        // Any sweep already asked has run, so the person's file below is on disk when the placement looks.
+        await broker.Runtime.Sweeper.IdleAsync();
         await File.WriteAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), "the person's", Ct);
         await RequestAsync(billing, Orders, "pricing", "does this match yours?");
 
         var refused = await PlaceAsync(orders, "price list.md", Text("orders'"));
 
         Assert.Equal(Wire.FileRejection.SafeNameTaken, refused.Rejection);
-        Assert.Equal(
-            "the person's",
-            await File.ReadAllTextAsync(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"), Ct));
+        await NeverWrittenOverThenSweptAsync(broker, Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "price_list.md"));
+    }
+
+    // Never written over by the refused placement, and gone once the sweep the refusal started has run (SPEC.md §9.5).
+    private static async Task NeverWrittenOverThenSweptAsync(LoopbackBroker broker, string path)
+    {
+        // The sweep may delete it as this reads, which is gone, not written over. Read sharing delete, so the read neither
+        // stops the delete nor fails because one is under way; a file whose delete is pending refuses to open.
+        string? found;
+
+        try
+        {
+            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+
+            await using (stream.ConfigureAwait(false))
+            {
+                using var reader = new StreamReader(stream);
+                found = await reader.ReadToEndAsync(Ct);
+            }
+        }
+        catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException)
+        {
+            found = null;
+        }
+
+        Assert.True(found is null or "the person's", "the placement wrote over it");
+
+        await broker.Runtime.Sweeper.IdleAsync();
+
+        // The read above can hold the file just as the sweep deletes it: then it is left, raised as locked, and the next
+        // sweep takes it.
+        if (File.Exists(path))
+        {
+            var problems = (await broker.ConnectAsOperator()
+                .ListFileProblemsAsync(new Wire.ListFileProblemsRequest(), cancellationToken: Ct)).Problems;
+            Assert.Contains(problems, p => p.Kind == Wire.FileProblemKind.Locked && p.Path.EndsWith(Path.GetFileName(path), StringComparison.Ordinal));
+
+            await broker.Runtime.Sweeper.SweepAsync(Ct);
+        }
+
+        Assert.False(File.Exists(path), "the sweep left a file nothing placed");
     }
 
     [Fact]
@@ -240,6 +282,9 @@ public sealed class FilesOverTheWireTests
 
         await PlaceAsync(billing, "notes.md", Text("makes the folder"), conversation: "pricing");
 
+        // Any sweep already asked has run, so the person's file below is on disk when the placement looks.
+        await broker.Runtime.Sweeper.IdleAsync();
+
         var path = Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "Price_List.md");
         await File.WriteAllTextAsync(path, "the person's", Ct);
 
@@ -247,7 +292,7 @@ public sealed class FilesOverTheWireTests
 
         Assert.Equal(Wire.FileRejection.NamePlacedByAnother, refused.Rejection);
         Assert.Equal(string.Empty, refused.PlacedBy);
-        Assert.Equal("the person's", await File.ReadAllTextAsync(path, Ct));
+        await NeverWrittenOverThenSweptAsync(broker, path);
     }
 
     [Fact]
@@ -308,18 +353,23 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
-    public async Task Its_placer_replaces_it_and_identical_content_is_already_current()
+    public async Task A_placed_file_is_never_changed_and_identical_content_is_already_current()
     {
+        // A new version is a new name (SPEC.md §9.5): the placer's own name with other content is refused, and says so.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
 
         var first = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
-        var replaced = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
-        var again = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
+        var refused = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
+        var again = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
 
-        Assert.Equal(Wire.PlaceOutcome.Replaced, replaced.Outcome);
-        Assert.Equal(first.Sha256, replaced.PreviousSha256);
+        Assert.Equal(Wire.PlaceOutcome.HoldsOtherContent, refused.Outcome);
+        Assert.Equal(Wire.FileRejection.NameHoldsOtherContent, refused.Rejection);
+        Assert.Contains("new name", refused.Detail, StringComparison.Ordinal);
         Assert.Equal(Wire.PlaceOutcome.AlreadyCurrent, again.Outcome);
+        Assert.Equal(first.Sha256, again.Sha256);
+        Assert.Equal("net", await File.ReadAllTextAsync(
+            Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md"), Ct));
     }
 
     [Fact]
@@ -376,6 +426,11 @@ public sealed class FilesOverTheWireTests
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
 
         var first = await PlaceAsync(billing, "notes.md", Text("net"), conversation: "pricing");
+
+        // The name is free again once its file is removed, and placed with other content (SPEC.md §9.5).
+        _ = await billing.Client.RemoveOwnFilesAsync(
+            new Wire.RemoveFilesRequest { Agent = Billing, Files = { new Wire.FileRef { ConversationId = "pricing", Name = "notes.md" } } },
+            cancellationToken: Ct);
         var second = await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
 
         var refused = await FetchAsync(orders, "notes.md", expect: first.Sha256);
@@ -418,8 +473,10 @@ public sealed class FilesOverTheWireTests
     }
 
     [Fact]
-    public async Task An_agent_that_reported_a_fetch_finds_one_notice_when_the_file_changes_and_nothing_wakes()
+    public async Task A_file_deleted_by_hand_is_gone_at_the_next_list_with_one_notice_and_nothing_wakes()
     {
+        // No watcher (SPEC.md §9.5): a recorded file missing from disk is recorded gone by whatever next lists or
+        // fetches, as a removal is, and every agent that fetched it is told.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var billing = await AttachedClient.AttachAsync(broker, Billing, cancellationToken: Ct);
         await using var orders = await AttachedClient.AttachAsync(broker, Orders, cancellationToken: Ct);
@@ -428,8 +485,10 @@ public sealed class FilesOverTheWireTests
         await FetchAsync(orders, "notes.md");
         await ReportAsync(orders, placed);
 
-        await PlaceAsync(billing, "notes.md", Text("gross"), conversation: "pricing");
-        var latest = await PlaceAsync(billing, "notes.md", Text("gross, rounded"), conversation: "pricing");
+        File.Delete(Path.Combine(broker.Runtime.Files.FolderPath("pricing"), "notes.md"));
+
+        var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
+        Assert.Empty(listed.Files);
 
         var waiting = await orders.Client.WaitingAsync(new Wire.WaitingRequest { Agent = Orders }, cancellationToken: Ct);
         Assert.Equal(1, waiting.FileNoticesWaiting);
@@ -439,8 +498,6 @@ public sealed class FilesOverTheWireTests
 
         var notice = Assert.Single(inbox.FileNotices);
         Assert.Equal(placed.Sha256, notice.Sha256Had);
-        Assert.Equal(latest.Sha256, notice.Sha256Now);
-        Assert.False(notice.Gone);
         Assert.Equal(0, inbox.FileNoticesWaiting);
         Assert.Empty(inbox.Messages);
     }
@@ -463,7 +520,7 @@ public sealed class FilesOverTheWireTests
         Assert.Single(removed.Removed);
 
         var inbox = await orders.Client.DrainInboxAsync(new Wire.DrainInboxRequest { Agent = Orders }, cancellationToken: Ct);
-        Assert.True(Assert.Single(inbox.FileNotices).Gone);
+        Assert.Equal(placed.Sha256, Assert.Single(inbox.FileNotices).Sha256Had);
     }
 
     [Fact]

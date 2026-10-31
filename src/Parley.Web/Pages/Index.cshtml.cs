@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Parley.Configuration;
 using Parley.Core;
 using Parley.Client;
 using Parley.Client.Rendering;
@@ -14,7 +15,8 @@ namespace Parley.Web.Pages;
 /// <param name="Project">What the manifest says about it.</param>
 /// <param name="Health">What it speaks, or why it did not answer; null while it has not been asked.</param>
 /// <param name="Summary">What is in it; null while it has not been asked.</param>
-public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Health, ProjectSummary? Summary);
+/// <param name="FileProblems">How many file problems wait for the person; null when not asked or not known.</param>
+public sealed record ProjectRowState(ProjectSettings Project, ProjectHealth? Health, ProjectSummary? Summary, int? FileProblems = null);
 
 /// <summary>One agent as the grid draws it.</summary>
 /// <param name="Project">The project it is registered in.</param>
@@ -123,11 +125,11 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
     }
 
     /// <summary>The name typed in the create form.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? NewProject { get; set; }
 
     /// <summary>The description typed in the create form, or empty.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? NewDescription { get; set; }
 
     /// <summary>What creating a project said, when one was tried.</summary>
@@ -209,12 +211,17 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         // What agents have put forward for the person to decide. Unknown when the broker cannot say, which
         // is not the same as none.
-        var proposals = Parley.Client.Roadmaps.ProposalCount.WaitingAsync(broker, token);
+        var proposals = BrokerDirectory.ReadAsync(async () =>
+            await broker.ProposalCountAsync(ProposalState.Waiting, token).ConfigureAwait(false));
 
         var implemented = BrokerDirectory.ReadAsync(async () =>
             await broker.ImplementsAsync(token).ConfigureAwait(false));
 
-        await Task.WhenAll(registry, conversations, proposals, implemented).ConfigureAwait(false);
+        // What sweeps of the file location found, in the row because this page does not wait for the frame's banner
+        // (SPEC.md §9.5). Unknown by the same rule.
+        var problems = Parley.Client.Files.FileProblemSaid.WaitingAsync(broker, token);
+
+        await Task.WhenAll(registry, conversations, proposals, implemented, problems).ConfigureAwait(false);
 
         var agents = await registry.ConfigureAwait(false);
         var counted = await conversations.ConfigureAwait(false);
@@ -225,11 +232,11 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
             counted.Value?.Items.Count,
             counted.Value?.Items.Count(c => c.Archived) ?? 0,
             agents.Problem ?? counted.Problem,
-            await proposals.ConfigureAwait(false));
+            await proposals.ConfigureAwait(false) is { Reachable: true } waiting ? waiting.Value : null);
 
         var health = new ProjectHealth(said.Value?.Protocol, said.Problem, said.Value?.BrokerVersion, said.Value?.StoreProblems);
 
-        return Partial("_ProjectRow", new ProjectRowState(project, health, summary));
+        return Partial("_ProjectRow", new ProjectRowState(project, health, summary, await problems.ConfigureAwait(false)));
     }
 
     /// <summary>Takes the person's seats and counts what is waiting for them, for the page to show once it has loaded.</summary>
@@ -276,6 +283,13 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
 
         var wanted = path.Trim();
 
+        // Never looked up when it, or a link along it, leads off this machine: the lookup itself would offer the person's
+        // credentials there (OffMachineLinks).
+        if (OffMachineLinks.LeadsOffThisMachine(wanted))
+        {
+            return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = LocalPath.OffThisMachine });
+        }
+
         if (!Path.IsPathRooted(wanted) || !Directory.Exists(wanted))
         {
             return new JsonResult(new { path = wanted, parent = (string?)null, folders = Array.Empty<object>(), error = "There is no such folder." });
@@ -297,7 +311,9 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
                 {
                     name = Path.GetFileName(full),
                     full,
-                    repo = Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git")),
+                    // A child, or its .git, that is a link off this machine is listed and never looked into.
+                    repo = !OffMachineLinks.LeadsOffThisMachine(Path.Combine(full, ".git"))
+                        && (Directory.Exists(Path.Combine(full, ".git")) || System.IO.File.Exists(Path.Combine(full, ".git"))),
                 })
                 .OrderBy(folder => folder.name, StringComparer.OrdinalIgnoreCase)
                 .Take(Cap)

@@ -27,6 +27,7 @@ namespace Parley.Client.Tests;
 /// <c>Chip</c> at all before this one.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ChipProbe
 {
     private const string Spelling = "@orders@test";

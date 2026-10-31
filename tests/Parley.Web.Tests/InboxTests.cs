@@ -19,6 +19,7 @@ namespace Parley.Web.Tests;
 /// have made the deployment worse rather than merely unfinished.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class InboxTests
 {
     private static string Page =>

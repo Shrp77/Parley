@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// removed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AutostartConsoleTests
 {
     // The root, not a store: a project's store is derived from its name and no entry names one.

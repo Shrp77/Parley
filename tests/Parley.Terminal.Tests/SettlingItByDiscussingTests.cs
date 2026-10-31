@@ -32,6 +32,7 @@ namespace Parley.Terminal.Tests;
 /// <c>@ordthe build is greeners@test</c> under a test that stopped at the screen and passed.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SettlingItByDiscussingTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -278,6 +279,58 @@ public sealed class SettlingItByDiscussingTests : IDisposable
             new Wire.ExportRequest { ConversationId = discussion }, cancellationToken: Ct);
 
         Assert.NotEmpty(export.Messages);
+    }
+
+    [Fact]
+    public async Task A_line_overwritten_while_it_is_recorded_is_written_again_once_recorded()
+    {
+        // The serve pass can write the agent's own words over the file between the terminal's write and its record and
+        // accept them; the person's record then wins in the store, so the file must be put right too, or the agent's
+        // next start carries the words the person overruled (review, lens 1 run 79). The overwrite is made by the
+        // call itself, just before the record leaves.
+        using var connection = ParleyDatabase.OpenInMemory();
+        await new AgentRepository(connection).UpsertAsync(Registered(), Ct);
+        await using var broker = LoopbackOperator.Start(connection);
+        using var driving = Driving.Open();
+        using var channel = GrpcChannel.ForAddress(broker.Address);
+        var overwriting = new BeforeRecording(() => Parley.Setup.OwnershipLine.WriteAsync(
+            Workspace, null, Orders, "Orders, and tax.").GetAwaiter().GetResult());
+        var client = new BrokerClient(new Wire.Operators.OperatorsClient(
+            Grpc.Core.Interceptors.CallInvokerExtensions.Intercept(channel.CreateCallInvoker(), overwriting)));
+
+        await Ownership.AcceptAsync(
+            driving.App,
+            client,
+            Orders,
+            Workspace,
+            null,
+            new OwnershipAcceptance("Orders only.", OwnershipSource.Composed, null, null),
+            Ct,
+            _ => { },
+            _ => Task.CompletedTask);
+
+        Assert.True(overwriting.Ran);
+        Assert.Equal("Orders only.", Written());
+    }
+
+    /// <summary>Runs something just before a RecordOwnership call leaves, as the serve pass could.</summary>
+    private sealed class BeforeRecording(Action before) : Grpc.Core.Interceptors.Interceptor
+    {
+        public bool Ran { get; private set; }
+
+        public override Grpc.Core.AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
+            TRequest request,
+            Grpc.Core.Interceptors.ClientInterceptorContext<TRequest, TResponse> context,
+            AsyncUnaryCallContinuation<TRequest, TResponse> continuation)
+        {
+            if (context.Method.Name == "RecordOwnership")
+            {
+                before();
+                Ran = true;
+            }
+
+            return continuation(request, context);
+        }
     }
 
     private static BrokerDirectory Wired(LoopbackOperator broker) =>

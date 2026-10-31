@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// others' catalogue with it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectDestroyTests : IDisposable
 {
     private readonly string _directory =
@@ -77,6 +78,36 @@ public sealed class ProjectDestroyTests : IDisposable
 
         Assert.True(ProjectManifest.TryRead(Root, out var left, out _));
         Assert.Empty(left);
+    }
+
+    [Fact]
+    public async Task A_copy_taken_before_an_upgrade_goes_with_the_store()
+    {
+        // Round 36: a copy left by a failed upgrade holds every conversation's text, and the destroy says the conversations
+        // go with the store. Only copies of this store: a file that merely ends the same way stays.
+        var ct = TestContext.Current.CancellationToken;
+        var billing = Project("billing");
+
+        ProjectManifest.Write(Root, [billing]);
+        await File.WriteAllTextAsync(billing.Store, string.Empty, ct);
+        var copies = new[]
+        {
+            billing.Store + StoreFiles.BeforeSchema + "2-20261027T093000Z",
+            billing.Store + StoreFiles.BeforeSchema + "2-20261027T093000Z-2",
+        };
+        var unrelated = Path.Combine(Path.GetDirectoryName(billing.Store)!, "notes" + StoreFiles.BeforeSchema + "2");
+
+        foreach (var file in copies.Append(unrelated))
+        {
+            await File.WriteAllTextAsync(file, "every message the store held", ct);
+        }
+
+        var (code, output, error) = await RemoveAsync("billing", destroy: true);
+
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        Assert.All(copies, copy => Assert.False(File.Exists(copy), $"{copy} survived the destroy. Output: {output}"));
+        Assert.True(File.Exists(unrelated), "a file that is not a copy of this store was deleted");
     }
 
     [Fact]

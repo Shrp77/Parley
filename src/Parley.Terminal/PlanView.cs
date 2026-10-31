@@ -24,6 +24,10 @@ namespace Parley.Terminal;
 /// A list of one line per item, with the full text of the one under the cursor below it: an item is one line by the
 /// proposal's own rule, but a line can be longer than the room, and a list cuts what does not fit.
 /// </para>
+/// <para>
+/// <b>The cursor starts on the next item</b>, the one a person came to act on, or on the item whose conversation they came
+/// from. On a long roadmap the next item can be far down, so a key goes back to it from anywhere.
+/// </para>
 /// </remarks>
 internal sealed class PlanView : Dialog
 {
@@ -35,6 +39,12 @@ internal sealed class PlanView : Dialog
 
     /// <summary>The letter, with Alt, that edits the roadmap.</summary>
     internal const char EditKey = 'e';
+
+    /// <summary>Said on the button that goes to the next item; its key is Alt plus <see cref="NextKey"/>.</summary>
+    private const string NextLabel = "Next item (Alt+n)";
+
+    /// <summary>The letter, with Alt, that puts the cursor on the next item.</summary>
+    internal const char NextKey = 'n';
 
     /// <summary>Said on the button that leaves the view.</summary>
     internal const string CloseLabel = "Close (Esc)";
@@ -52,8 +62,10 @@ internal sealed class PlanView : Dialog
     /// <summary>Creates the view.</summary>
     /// <param name="roadmap">The roadmap.</param>
     /// <param name="standing">Where each of its items stands.</param>
-    internal PlanView(Roadmap roadmap, RoadmapStanding standing)
+    /// <param name="itemNumber">The item to start on, when reached from its conversation; otherwise the next item.</param>
+    internal PlanView(Roadmap roadmap, RoadmapStanding standing, int? itemNumber = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(roadmap);
         ArgumentNullException.ThrowIfNull(standing);
 
@@ -88,7 +100,7 @@ internal sealed class PlanView : Dialog
         };
 
         _items.SetSource(new System.Collections.ObjectModel.ObservableCollection<string>([.. Rows(standing)]));
-        _items.SelectedItem = standing.Items.Count > 0 ? 0 : null;
+        _items.SelectedItem = Starting(standing, itemNumber);
         _items.Accepting += (_, args) =>
         {
             args.Handled = true;
@@ -109,14 +121,16 @@ internal sealed class PlanView : Dialog
         hint.TextFormatter.WordWrap = true;
 
         var open = new Button { Title = OpenLabel, X = 1, Y = Pos.AnchorEnd(2) };
-        var edit = new Button { Title = EditLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
+        var next = new Button { Title = NextLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
+        var edit = new Button { Title = EditLabel, X = Pos.Right(next) + 1, Y = Pos.AnchorEnd(2) };
         var close = new Button { Title = CloseLabel, X = Pos.Right(edit) + 1, Y = Pos.AnchorEnd(2) };
 
         open.Accepting += (_, args) => { args.Handled = true; OpenSelected(); };
+        next.Accepting += (_, args) => { args.Handled = true; GoToNext(); };
         edit.Accepting += (_, args) => { args.Handled = true; Edit(); };
         close.Accepting += (_, args) => { args.Handled = true; Closed?.Invoke(this, EventArgs.Empty); };
 
-        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, edit, close);
+        Add(heading, itemsLabel, _items, detailHeading, _detail, hint, open, next, edit, close);
 
         ShowDetail();
     }
@@ -198,6 +212,13 @@ internal sealed class PlanView : Dialog
 
     private bool Choose(Key key)
     {
+        if (Shell.Typed(key, NextKey))
+        {
+            GoToNext();
+
+            return true;
+        }
+
         if (Shell.Typed(key, EditKey))
         {
             Edit();
@@ -213,6 +234,45 @@ internal sealed class PlanView : Dialog
         Closed?.Invoke(this, EventArgs.Empty);
 
         return true;
+    }
+
+    /// <summary>Where the cursor starts: the item asked for, else the next item, else the first.</summary>
+    /// <param name="standing">The derived standing.</param>
+    /// <param name="itemNumber">The item asked for, or null.</param>
+    /// <returns>The row, or null when there are no items.</returns>
+    private static int? Starting(RoadmapStanding standing, int? itemNumber)
+    {
+        if (standing.Items.Count == 0)
+        {
+            return null;
+        }
+
+        var asked = itemNumber is { } number ? Row(standing, state => state.Item.Number == number) : null;
+
+        return asked ?? Row(standing, state => state.IsNext) ?? 0;
+    }
+
+    private static int? Row(RoadmapStanding standing, Func<ItemState, bool> which)
+    {
+        for (var at = 0; at < standing.Items.Count; at++)
+        {
+            if (which(standing.Items[at]))
+            {
+                return at;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Puts the cursor on the next item, as Alt+n does; nothing moves when the roadmap names none.</summary>
+    private void GoToNext()
+    {
+        if (Row(_standing, state => state.IsNext) is { } at)
+        {
+            _items.SelectedItem = at;
+            ShowDetail();
+        }
     }
 
     /// <summary>Asks to change the roadmap, as Alt+e does.</summary>

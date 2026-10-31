@@ -12,6 +12,7 @@ namespace Parley.Cli.Tests;
 /// Every name here is somebody else's text on its way to a terminal, so one case places a name built to move the cursor
 /// and checks it arrives as a single row.
 /// </remarks>
+[Integration]
 public sealed class FilesListCommandTests : IAsyncDisposable
 {
     private const string Billing = FileLocationFixture.Billing;
@@ -58,7 +59,7 @@ public sealed class FilesListCommandTests : IAsyncDisposable
     {
         // Counted so a limit can be set from evidence, and shown to the person because they would set it.
         await _files.PlaceAsync(Billing, "notes.md", "net of tax", "pricing");
-        await _files.PlaceAsync(Billing, "notes.md", "gross of tax", "pricing");
+        await _files.PlaceAsync(Billing, "notes-v2.md", "gross of tax", "pricing");
 
         var (_, output, _) = await _files.RunAsync("list");
 

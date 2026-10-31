@@ -19,6 +19,7 @@ namespace Parley.Server.Tests;
 /// racing threads.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WakeDuringCollectionTests
 {
     private static readonly TimeSpan Settle = TimeSpan.FromMilliseconds(250);
@@ -41,11 +42,11 @@ public sealed class WakeDuringCollectionTests
 
         WakeOutcome? arriving = null;
 
-        await broker.Runtime.CollectAsync(
+        var (_, hold) = await broker.Runtime.CollectAsync(
             Orders,
-            async (b, now, ct) =>
+            async (b, _, ct) =>
             {
-                var drained = await b.DrainInboxAsync(Orders, now, null, ct);
+                var drained = await b.CollectInboxAsync(Orders, broker.Runtime.InboxHolds, null, ct);
 
                 // What a Request stored at this instant does next.
                 arriving = broker.Runtime.RequestAttentionForMail(Orders, "second");
@@ -53,6 +54,7 @@ public sealed class WakeDuringCollectionTests
                 return drained;
             },
             token);
+        broker.Runtime.InboxHolds.Release(hold);
 
         Assert.NotNull(arriving);
         Assert.NotEqual(WakeOutcome.AlreadyComing, arriving);

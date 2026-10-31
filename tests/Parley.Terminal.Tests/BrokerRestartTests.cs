@@ -35,6 +35,7 @@ namespace Parley.Terminal.Tests;
 /// terminal it is the end of the session, and every other project's view with it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BrokerRestartTests
 {
     private static readonly ProjectSettings Alpha =

@@ -25,6 +25,7 @@ namespace Parley.Terminal.Tests;
 /// the exchange, and does the peer get the answer.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ParticipationTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

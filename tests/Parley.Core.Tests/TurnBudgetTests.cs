@@ -5,6 +5,7 @@ namespace Parley.Core.Tests;
 /// <summary>
 /// The bound on one turn, which the node enforces and the broker states.
 /// </summary>
+[Unit]
 public sealed class TurnBudgetTests
 {
     [Fact]

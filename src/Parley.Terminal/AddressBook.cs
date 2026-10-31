@@ -15,7 +15,7 @@ namespace Parley.Terminal;
 /// of them.
 /// </para>
 /// <para>
-/// <b>Kept on this machine, beside the manifest, and nowhere else.</b> Who a person is writing to is a fact about their
+/// <b>Kept on this machine, in the deployment's root, and nowhere else.</b> Who a person is writing to is a fact about their
 /// screen rather than about the deployment: the broker records what was sent, never what was about to be. A file of the
 /// terminal's own keeps it out of the protocol and off every other surface, which is the size this deserves.
 /// </para>
@@ -31,21 +31,22 @@ namespace Parley.Terminal;
 /// </remarks>
 internal sealed class AddressBook(string? path)
 {
-    /// <summary>What the file is called, in the Parley folder beside the manifest.</summary>
+    /// <summary>What the file is called, in the deployment's root folder.</summary>
     internal const string FileName = "terminal-addressing.json";
 
     private readonly Lock _gate = new();
 
     private Dictionary<string, Dictionary<string, List<string>>>? _entries;
 
-    /// <summary>The file for a manifest, or <see langword="null"/> when there is no manifest to sit beside.</summary>
-    /// <param name="manifestPath">The manifest.</param>
+    /// <summary>The file for a deployment, or <see langword="null"/> when there is no deployment folder to keep it in.</summary>
+    /// <param name="root">The deployment's root folder, where its manifest lives.</param>
     /// <returns>The path.</returns>
-    internal static string? Beside(string? manifestPath) =>
-        manifestPath is { Length: > 0 } manifest
-        && Path.GetDirectoryName(Path.GetFullPath(manifest)) is { Length: > 0 } directory
-            ? Path.Combine(directory, FileName)
-            : null;
+    /// <remarks>
+    /// In the root itself, never its parent: the parent is whatever folder holds the deployment, a person's own folder
+    /// among others, and no removal of the deployment would take the file away (review, lens 3 run 66).
+    /// </remarks>
+    internal static string? In(string? root) =>
+        root is { Length: > 0 } folder ? Path.Combine(Path.GetFullPath(folder), FileName) : null;
 
     /// <summary>Who the line in a conversation was narrowed to, or <see langword="null"/> when it goes to everyone.</summary>
     /// <param name="project">The project.</param>

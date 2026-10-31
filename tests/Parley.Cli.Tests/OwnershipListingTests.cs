@@ -15,6 +15,7 @@ namespace Parley.Cli.Tests;
 /// client keeps for a server that is misbehaving, which nobody reads while nothing is wrong, and
 /// it would fire on every launch of every deployment that left the variable unset on purpose.
 /// </remarks>
+[Integration]
 public sealed class OwnershipListingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

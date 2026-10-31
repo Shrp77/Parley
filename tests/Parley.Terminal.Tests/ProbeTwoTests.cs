@@ -14,6 +14,7 @@ namespace Parley.Terminal.Tests;
 /// reader does while somebody is writing the file, whether an entry can be made to speak for a
 /// machine it is not on, and whether the move changed the surface rather than only its address.
 /// </remarks>
+[Integration]
 public sealed class ProbeTwoTests
 {
     /// <summary>

@@ -7,7 +7,8 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// Counting what is proposed beside what else is in a project, and never showing unknown as none (SPEC.md §5.7).
 /// </summary>
-public sealed class ProposalCountTests
+[Unit]
+public sealed class WaitingProposalsTests
 {
     [Theory]
     [InlineData(null, "")]
@@ -16,7 +17,7 @@ public sealed class ProposalCountTests
     [InlineData(3, "3 roadmaps proposed, for you to decide")]
     public void What_is_said_depends_on_a_count_that_may_not_be_known(int? waiting, string says)
     {
-        Assert.Equal(says, ProposalCount.Says(waiting));
+        Assert.Equal(says, WaitingProposals.Says(waiting));
     }
 
     [Fact]

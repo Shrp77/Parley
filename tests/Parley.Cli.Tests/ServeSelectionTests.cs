@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// being served and hosted from its entry instead, or the same machine would change catalogues at its next start.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ServeSelectionTests : IDisposable
 {
     private readonly string _directory =

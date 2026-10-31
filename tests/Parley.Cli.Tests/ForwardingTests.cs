@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// command that exists.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ForwardingTests
 {
     [Fact]
@@ -39,7 +40,11 @@ public sealed class ForwardingTests
         // The three facts somebody needs, and the one they must not be told.
         Assert.Contains("parley nothing", said, StringComparison.Ordinal);
         Assert.Contains("parley-nothing-provides-this", said, StringComparison.Ordinal);
-        Assert.Contains("dotnet tool install --global Parley.Nothing", said, StringComparison.Ordinal);
+        Assert.Contains("install.ps1 -Only parley-nothing-provides-this", said, StringComparison.Ordinal);
+        Assert.Contains("./install.sh --only parley-nothing-provides-this", said, StringComparison.Ordinal);
+
+        // Review, lens 3 run 72: nothing is published, so a package to fetch is advice that cannot work.
+        Assert.DoesNotContain("dotnet tool install", said, StringComparison.Ordinal);
         Assert.DoesNotContain("unknown command", said, StringComparison.OrdinalIgnoreCase);
     }
 

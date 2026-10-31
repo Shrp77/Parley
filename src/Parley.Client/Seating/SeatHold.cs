@@ -113,7 +113,7 @@ public sealed class SeatHold : IDisposable
     /// <summary>What has been handed to this person and not yet dealt with.</summary>
     /// <remarks>
     /// Newest last, the order a transcript reads in. Kept here rather than fetched per request
-    /// because a drain is not repeatable: it is what marks a message delivered, so what it
+    /// because a drain is not repeatable: once acknowledged it is what marks a message delivered, so what it
     /// returned is the only copy on the agent's own surface. A console restart loses it, and the
     /// text is still readable in the conversation the message belongs to — which is worth
     /// knowing, because the working window keeps running across the restart.

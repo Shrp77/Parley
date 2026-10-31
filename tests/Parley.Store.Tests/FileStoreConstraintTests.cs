@@ -18,6 +18,7 @@ namespace Parley.Store.Tests;
 /// every refusal test, so the neighbouring legal row is what shows the refusal is the rule and not an accident.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class FileStoreConstraintTests : IDisposable
 {
     private const string Stamp = "2026-09-14T00:00:00.0000000Z";
@@ -157,7 +158,7 @@ public sealed class FileStoreConstraintTests : IDisposable
     }
 
     [Fact]
-    public void A_replacement_and_a_rename_in_place_are_admitted_and_keep_the_placer()
+    public void Schema_ones_update_in_place_and_rename_are_still_admitted_and_keep_the_placer()
     {
         File("pricing", "NOTES.MD", "notes.md");
 

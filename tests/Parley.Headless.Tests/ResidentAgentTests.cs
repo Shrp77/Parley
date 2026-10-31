@@ -18,6 +18,7 @@ namespace Parley.Headless.Tests;
 /// stays in step when a turn is abandoned, and that closing standard input stops it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResidentAgentTests : IDisposable
 {
     private readonly string _workspace =
@@ -141,6 +142,123 @@ public sealed class ResidentAgentTests : IDisposable
             elapsed > TimeSpan.FromSeconds(2),
             $"the second turn returned in {elapsed.TotalSeconds:0.0}s, which is the abandoned " +
             "reply being read as its own");
+    }
+
+    [Fact]
+    public async Task The_reply_to_a_turn_its_caller_cancelled_is_not_read_as_the_next_ones()
+    {
+        // Lens 1 run 101: a node stopping mid-turn while the process lives on, as a project restarted under `serve`
+        // does. Only a timeout was counted, so the cancelled turn's reply was read as the next turn's, and every turn
+        // after stayed one reply behind.
+        // Cancelled well after the prompt is written and before the stub answers it.
+        await using var agent = Start(StubRunner.Answering(_workspace, delaySeconds: 4));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(3));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        Assert.True(agent.IsAlive, "the cancelled turn took the agent with it");
+
+        var started = DateTime.UtcNow;
+        var second = await agent.TakeTurnAsync("second", Patience, Ct);
+        var elapsed = DateTime.UtcNow - started;
+
+        Assert.True(second.Completed, second.Describe());
+        Assert.True(
+            elapsed > TimeSpan.FromSeconds(2),
+            $"the second turn returned in {elapsed.TotalSeconds:0.0}s, which is the cancelled " +
+            "turn's reply being read as its own");
+    }
+
+    [Fact]
+    public async Task A_cancelled_turns_reply_that_takes_long_is_still_waited_for_and_never_read_as_the_next_ones()
+    {
+        // Lens 1 run 102: the next turn waited five quiet seconds for the cancelled turn's reply, then gave up on it and
+        // wrote its own prompt, so it read that reply as its own and every turn after stayed one behind. Each reply here
+        // carries its prompt's number as its cost.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 8));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(2));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        // Too short to see the first reply out: it ends timed out with nothing said, rather than say something now.
+        var waited = await agent.TakeTurnAsync("second", TimeSpan.FromSeconds(1), Ct);
+        Assert.True(waited.TimedOut, waited.Describe());
+
+        var third = await agent.TakeTurnAsync("third", Patience, Ct);
+        var fourth = await agent.TakeTurnAsync("fourth", Patience, Ct);
+
+        Assert.True(third.Completed, third.Describe());
+        Assert.Equal(2.0, third.CostUsd);
+        Assert.Equal(3.0, fourth.CostUsd);
+    }
+
+    [Fact]
+    public async Task The_next_turn_waits_out_a_cancelled_turns_reply_however_quiet_the_agent_is()
+    {
+        // Lens 1 run 102: five quiet seconds were taken as the reply never coming. Here the reply takes eight.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 8));
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(1));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("first", Patience, stopping.Token));
+        }
+
+        var second = await agent.TakeTurnAsync("second", Patience, Ct);
+
+        Assert.True(second.Completed, second.Describe());
+        Assert.Equal(2.0, second.CostUsd);
+    }
+
+    [Fact]
+    public async Task An_agent_that_dies_while_a_reply_is_owed_reads_as_died_not_timed_out()
+    {
+        // Lens 3 run 114: the drain's end of stream was untested; read as still owed, a dead agent showed as timed out.
+        await using var agent = Start(StubRunner.DyingAfterOnePrompt(_workspace, delaySeconds: 3));
+
+        var abandoned = await agent.TakeTurnAsync("first", TimeSpan.FromMilliseconds(500), Ct);
+        Assert.True(abandoned.TimedOut, abandoned.Describe());
+
+        var next = await agent.TakeTurnAsync("second", Patience, Ct);
+
+        Assert.True(next.ProcessDied, next.Describe());
+        Assert.False(next.TimedOut, next.Describe());
+    }
+
+    [Fact]
+    public async Task A_caller_cancelling_while_an_owed_reply_drains_keeps_it_owed()
+    {
+        // Lens 3 run 114: zeroed on the caller's cancel, the next turn would read the owed reply as its own.
+        await using var agent = Start(StubRunner.Numbering(_workspace, delaySeconds: 6));
+
+        var abandoned = await agent.TakeTurnAsync("first", TimeSpan.FromMilliseconds(500), Ct);
+        Assert.True(abandoned.TimedOut, abandoned.Describe());
+
+        using (var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            stopping.CancelAfter(TimeSpan.FromSeconds(1));
+
+            _ = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => agent.TakeTurnAsync("second", Patience, stopping.Token));
+        }
+
+        // Nothing was said in the cancelled drain, so this turn's prompt is the second the stub reads.
+        var third = await agent.TakeTurnAsync("third", Patience, Ct);
+
+        Assert.True(third.Completed, third.Describe());
+        Assert.Equal(2.0, third.CostUsd);
     }
 
     [Fact]

@@ -21,6 +21,7 @@ namespace Parley.Web.Tests;
 /// disagreeing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SurfaceAgreementTests
 {
     private static string Root()

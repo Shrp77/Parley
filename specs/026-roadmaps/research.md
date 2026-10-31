@@ -22,19 +22,19 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 ## R4. Item state is derived in Parley.Client by one function
 
-**Decision**: `ItemStates.Of(roadmap, exports, edges, registry)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces and the CLI call it.
+**Decision**: `ItemStates.Of(roadmap, waiting, me)` returns per item: state, the agent holding it, the blocker if any, and the roadmap's next item. It is the only place state is computed and both surfaces call it.
 **Rationale**: `Activities` and `WaitingOnYou` already do this for rooms, from `ConversationExport`, `WaitingEdge` and `AgentRecord`. Two surfaces implementing it separately is how they would disagree about what a person has seen (CLAUDE.md, Parley.Client). Spec clarification 1 (no hand-set state) means there is nothing to store.
-**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, the latest Result outcome and blocker, and who closed the conversation. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, edges, registry)`.
+**Inputs (decided after analysis finding C1)**: `Roadmap` returns, for each item, the facts the broker already holds: whether its conversation exists, how many exchanges are open, whether the open request has been collected, how many agents' latest answer on the person's requests was blocked and the blocker one of those gave, and who closed the conversation. An agent's latest is the one that closed last. `ItemStates` combines those with `DescribeWaiting` and `DescribeRegistry`. No per-item `Export`, so a view costs three calls however long the roadmap. The signature is `ItemStates.Of(roadmap, waiting, me)`.
 **States** and how each is derived (all from the item's conversation, absent conversation meaning not started):
 - not started: no conversation exists;
 - in progress: an open exchange whose request the receiver collected;
 - waiting on an agent: an open exchange the agent has not yet collected, or the agent has asked another agent;
 - waiting on the person: a wait-for edge whose waited-on is the person;
-- blocked: the latest Result on the exchange is `blocked`; its blocker (`missing_information`, `conflict`, `permission`) is shown;
-- done: all exchanges closed and the last Result is `done` or `answered` or `acknowledged`;
-- closed by the person: conversation closed by a person without a done Result;
+- blocked: nothing is open, some agent's latest answer on the person's requests is `blocked`, and the conversation is open; beside open work, or once closed, the blocker is still named; the blocker that agent gave (`missing_information`, `conflict`, `permission`) is shown;
+- done: nothing open, at least one exchange ended with an agent's Result, none of the person's requests closed before its agent answered, and no agent's latest answer is `blocked` (`done`, `answered` and `acknowledged` all clear a part; a request the person closed first is no answer);
+- closed: the person closed the conversation (its participants cannot, §5.7), and the item is not done (a request ended before its agent answered, or a part was blocked, whose blocker is still shown);
 - could not be read: the read failed. **Never** shown as not started (FR-018).
-**Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting or blocked.
+**Next item**: the first item in order that is not started and whose dependencies are all done. If none, the roadmap says complete, or that what remains is waiting, blocked or closed, or needs an item that is.
 
 ## R4a. Dependencies are validated on final content
 
@@ -45,7 +45,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 **Decision**: the client asks `Roadmap` for the item's reserved conversation id, then calls `SeatVoice.RequestAsync(agent, text, conversationId)` exactly as the room's line does. The broker accepts the first message into a reserved conversation only from the person.
 **Rationale**: `SeatVoice.RequestAsync` already opens a Request in a named conversation as the person's seat through `Agents`, and `RequestEveryoneAsync` reuses the first conversation's id for the rest. A `StartItem` operator operation would have to speak as the seat from the operator service, which the design forbids ("no operator operation acts on the seat", CLAUDE.md).
-**Mechanism**: the reserved name is stored at confirmation in `roadmap_item_conversations` with no foreign key to `conversations`, which does not yet have the row. A trigger on `messages` refuses the first message into a reserved conversation unless its sender is the person. Without it, any agent could open `rm3-2` first and capture the item.
+**Mechanism**: the reserved name is stored at confirmation in `roadmap_item_conversations` with no foreign key to `conversations`, which does not yet have the row. A trigger on `messages` refuses a message into a reserved conversation from anybody but the person until the person has opened an exchange there (asked of exchanges since migration 002, because retention removes messages). Without it, any agent could open `rm3-2` first and capture the item.
 **Probe owed**: the trigger is written, then an agent is made to open the reserved name and must be refused before the guard is trusted (the review ledger's rule: probe, do not reason).
 
 ## R6. A conversation is recognised by the record, never by a prefix or a payload marker
@@ -56,7 +56,7 @@ Each decision names the code it rests on. Facts about the code come from a read 
 ## R7. Removing an item keeps its conversation
 
 **Decision**: items are never hard-deleted. A removed item carries `removed_rev`; its link row stays, so the conversation renders "formerly item N of <roadmap>". Spec clarification 2.
-**Consequence**: roadmap revisions are a counter on the roadmap and per-item `added_rev` and `removed_rev`. No history table is built; what changed is readable from those and from the conversations. An item's text edit overwrites the text and sets `edited_utc`; the words actually sent are in the message, so "text changed since" is a comparison, not a stored copy.
+**Consequence**: roadmap revisions are a counter on the roadmap and per-item `added_rev` and `removed_rev`. No history table is built; what changed is readable from those and from the conversations. An item's text edit overwrites the text and sets `edited_utc`. "Text changed since" is the broker's fact `text_edited_since_started`: the item's `edited_utc` against its first request's time, never a comparison of words (FR-014a).
 
 ## R8. The Room reads the registry, always
 
@@ -74,15 +74,15 @@ Each decision names the code it rests on. Facts about the code come from a read 
 
 ## R10. The decision to confirm is a single operation that carries the final content
 
-**Decision**: `ConfirmProposal(proposal, content, target)` takes the person's final text, order, agents and dependencies and writes the roadmap (or a revision of the named roadmap) and each item's reserved conversation name in one transaction. There is no "confirm unchanged" operation; unchanged is the same call with the proposal's own content.
+**Decision**: `ConfirmProposal(proposal, content, target, target revision)` takes the person's final text, order, agents and dependencies and writes the roadmap (or a revision of the named roadmap) and each item's reserved conversation name in one transaction. There is no "confirm unchanged" operation; unchanged is the same call with the proposal's own content.
 **Rationale**: provenance (`proposed`, `edited`) is a comparison done by the broker of the final content against the stored proposal, as 020's `Chosen` does for the ownership line. A flag the surface sets would be right every time somebody remembered to set it.
-**Concurrency**: confirming one of two proposals against one roadmap marks the other `superseded` in the same transaction (spec edge case).
+**Concurrency**: confirming one of two proposals against one roadmap as a revision of it marks the other `superseded` in the same transaction (spec edge case).
 
 ## R11. `EditRoadmap` exists because the person must be able to remove an item
 
 **Decision**: the person edits a confirmed roadmap through `EditRoadmap(roadmap, content)`, with the same shape as confirmation and the same revision rule. It is the only way an item is added, reworded, reordered or removed after confirmation, and is the answer to spec clarification 1's "edit the roadmap to remove it".
 **Rationale**: spec FR-009 and the edge case on dead items.
-**Door**: removing an item whose conversation has an open exchange is allowed (R7 keeps the conversation) but is described first on every surface; a typed-name confirmation is not required, because nothing is deleted. `SurfaceTests` is extended to hold the call in one file per surface.
+**Door**: removing an item whose conversation has an open exchange is allowed (R7 keeps the conversation) but is described first on every surface; a typed-name confirmation is not required, because nothing is deleted. `SurfaceTests` holds `EditRoadmap` and `DeclineProposal` each in one terminal file carrying its door; on the web each is its own page, held by `EveryActionHasADoorTests`.
 
 ## R12. Parley is not a proposer
 

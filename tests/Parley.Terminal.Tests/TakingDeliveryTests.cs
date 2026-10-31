@@ -13,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// 2026-10-08), so this holds that arrival does it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TakingDeliveryTests
 {
     private const string Conversation = "room";

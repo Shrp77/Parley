@@ -21,6 +21,7 @@ namespace Parley.Store.Tests;
 /// exists to prevent: an orphaned exchange and an open one carry the same messages.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ConversationListingTests : IDisposable
 {
     private readonly SqliteConnection _connection;

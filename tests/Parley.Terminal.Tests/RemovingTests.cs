@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli;
 using Parley.Client;
 using Parley.Configuration;
@@ -16,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// The project's broker is on a port nothing answers on, so the command's wait for it to stop is
 /// skipped and what is exercised is the surface's own confirmation and the command's deleting.
 /// </remarks>
+[Integration]
 public sealed class RemovingTests : IDisposable
 {
     private readonly string _directory =
@@ -56,8 +58,7 @@ public sealed class RemovingTests : IDisposable
 
         Assert.Equal(Removing.Keep, choosing.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));
@@ -78,8 +79,7 @@ public sealed class RemovingTests : IDisposable
         var choosing = (ChoiceDialog)driving.Find(Removing.Title);
 
         driving.Row(choosing.Choices, Removing.Forget);
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains("Nothing was deleted", shell.Said, StringComparison.Ordinal);
         Assert.True(File.Exists(alpha.Store));
@@ -180,8 +180,7 @@ public sealed class RemovingTests : IDisposable
 
         driving.Row(choosing.Choices, Removing.Destroy);
         driving.Enter();
-        driving.Escape();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Esc, () => shell.Settled);
 
         Assert.Equal(Removing.Kept, shell.Said);
         Assert.True(File.Exists(alpha.Store));

@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// the agent will actually do.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeFifteenTests : IDisposable
 {
     private readonly string _root =

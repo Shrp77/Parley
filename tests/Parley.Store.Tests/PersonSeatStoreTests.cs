@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// the person and the facilitator each given a machine named after the project.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class PersonSeatStoreTests : IDisposable
 {
     private static readonly ProjectName Alpha = ProjectName.Create("alpha");

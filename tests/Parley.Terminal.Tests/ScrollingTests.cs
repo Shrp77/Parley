@@ -29,6 +29,7 @@ namespace Parley.Terminal.Tests;
 /// cursor is. The viewport is what the toolkit itself indexes when it draws.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ScrollingTests
 {
     /// <summary>The owner's shape: every agent in the project, and the row that tells them all.</summary>

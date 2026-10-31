@@ -27,7 +27,7 @@
     broker is listening" -- a message that arrives in an editor, days later, rather than here.
 
 .PARAMETER Uninstall
-    Removes every tool in the table above and the autostart entry, and stops. -Surfaces is not
+    Removes every Parley tool this script installs and the autostart entry, and stops. -Surfaces is not
     consulted: an uninstall that left a surface behind would leave a tool nothing installs and
     nothing removes. The store and any .mcp.json are left
     alone -- they are the deployment, and somebody reinstalling a tool has not asked to lose
@@ -51,7 +51,7 @@
     -Only parley-terminal replaces the terminal and does not stop the broker, because
     the broker's binary is not among the files being unlinked.
 
-    That matters more than it sounds. SPEC.md section 12 says three things end a resident agent,
+    That matters more than it sounds. SPEC.md section 11.1 says three things end a resident agent,
     and the first is the node stopping and telling every agent it started to quit -- and the
     process is what held everything the agent had learned. Restarting a broker to change a
     terminal costs every agent's accumulated context on the machine.
@@ -663,7 +663,7 @@ Write-Note 'nothing is holding the tool store'
 # reports success -- so it has to stop. But it only has to stop for its own binary.
 #
 # **This is the whole point of the split, and it is one `if`.** A run that replaces only the
-# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 12
+# terminal unlinks a file the broker never opened, so there is nothing to stop: SPEC.md section 11.1
 # has the node telling every agent it started to quit, and each of those processes is what held
 # everything that agent had learned. Restarting a broker to change a terminal spends all of it.
 #
@@ -674,7 +674,7 @@ Write-Note 'nothing is holding the tool store'
 if ($replacingBroker) {
     # **What stopping it will interrupt, said before it is stopped.**
     #
-    # SPEC.md section 12: the node stopping tells every agent it started to quit, and the process
+    # SPEC.md section 11.1: the node stopping tells every agent it started to quit, and the process
     # is what held everything each of them had learned. A Request already drained into an agent's
     # inbox is marked delivered, and killing the agent that holds it leaves the exchange open and
     # owed with nothing running to answer it; nothing times out, so it waits and is flagged.
@@ -1002,27 +1002,31 @@ Write-Host ''
 Write-Host 'The broker is running, and starts again when you log in.' -ForegroundColor Green
 Write-Host ''
 
-# **What to do next is the terminal's flow:** make a project, then enrol agents into it from
-# inside it. Doing any of it needs the terminal, and on a machine without one there is no way at
-# all: the command line cannot name a project and the web UI cannot either, by the one-writer rule
-# its own naming page records. So a machine without the terminal is told outright rather than
-# handed steps it cannot follow.
+# **What to do next:** make a project, then enrol agents into it. The terminal does both, and so
+# does the web console (its project list creates one, a project's Agents tab registers agents), so a
+# machine with only the web UI is sent there rather than told to install a second tool. Only a
+# machine with neither is told it has nowhere to do it.
 if (Get-Command parley-terminal -ErrorAction SilentlyContinue) {
     Write-Host 'Next, run:  parley' -ForegroundColor White
 
     if ($named) {
-        Write-Host '  1. Open a project, or create a new one with c.' -ForegroundColor White
+        Write-Host '  1. Open a project, or create a new one with Alt+c.' -ForegroundColor White
     }
     else {
-        Write-Host '  1. Create a project with c. There is none yet, so nothing is being served.' -ForegroundColor White
+        Write-Host '  1. Create a project with Alt+c. There is none yet, so nothing is being served.' -ForegroundColor White
     }
 
-    Write-Host '  2. In the project, choose Agent > Enroll agents from folders (f).' -ForegroundColor White
+    Write-Host '  2. In the project, choose Agent > Enroll agents from folders (Alt+f).' -ForegroundColor White
     Write-Host '  3. Pick the folder that holds your repositories, tick the ones you want, press Enter.' -ForegroundColor White
 }
+elseif ($webUi) {
+    Write-Host "Next, open the web UI at $webUi" -ForegroundColor White
+    Write-Host '  1. Create or open a project.' -ForegroundColor White
+    Write-Host "  2. On the project's Agents tab, choose Register an agent, and give it a repository or a folder of them." -ForegroundColor White
+}
 else {
-    Write-Warning 'Projects and agents are set up in the terminal, and this machine has not installed it.'
-    Write-Host '  .\install.ps1 -Only parley-terminal               installs it without stopping the broker' -ForegroundColor White
+    Write-Warning 'Projects and agents are set up in the terminal or the web UI, and this machine has installed neither.'
+    Write-Host '  .\install.ps1 -Only parley-terminal               installs the terminal without stopping the broker' -ForegroundColor White
 }
 
 if ($webUi) {

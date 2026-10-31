@@ -174,6 +174,21 @@ internal sealed class Shell : Window
             return Task.CompletedTask;
         }
 
+        // **Words written in another conversation are not sent here unasked.** Arriving empties the box on the loop; a
+        // loop too late gave that up, and the box may still hold the words of the conversation left. They are kept, and
+        // are this conversation's from now on, so the next Enter sends them here.
+        var here = place.Name.Value + "/" + conversation;
+
+        // Null too: a first arrival whose emptying was given up recorded no owner. The mark on an item's words is kept, so
+        // they are still sent as words, never run as a command.
+        if (!string.Equals(_lineFor, here, StringComparison.Ordinal) && Line.Written.Length != 0)
+        {
+            _lineFor = here;
+            Said = WrittenElsewhere;
+
+            return Task.CompletedTask;
+        }
+
         if (Drafting is not { } draft)
         {
             // Who a line goes to is read from the conversation, and until that read lands there is no plan to
@@ -204,7 +219,18 @@ internal sealed class Shell : Window
         // **A command still in the box at Enter is one that nothing consumed.** Completing an agent takes the
         // command and its parameter out of the text, so the ordinary path never reaches here with one; what does
         // is somebody who typed it out by hand, and they are owed either the act or the reason.
-        if (Commands.Resolve(Line.Written) is { Command: { } command } written)
+        // **An item's words are text, never a command** (SPEC.md §5.7). They were an agent's, put in the box by starting
+        // the item; read as `/add inventory@test` they would choose who the person's line reaches. A command the person
+        // types themselves still runs.
+        var itemsWords = _itemWords is { Length: > 0 } words && Line.Written.StartsWith(words, StringComparison.Ordinal);
+
+        // Once the box no longer starts with the item's words, it holds the person's own.
+        if (!itemsWords)
+        {
+            _itemWords = null;
+        }
+
+        if (!itemsWords && Commands.Resolve(Line.Written) is { Command: { } command } written)
         {
             Said = Ran(command, written.Rest);
 
@@ -283,10 +309,14 @@ internal sealed class Shell : Window
                 return;
             }
 
-            // Only what was sent leaves the box: what was typed after Enter is the start of the next thought.
-            Line.Written = Line.Written.StartsWith(pressed, StringComparison.Ordinal)
-                ? Line.Written[pressed.Length..].TrimStart()
-                : Line.Written;
+            // Only what was sent leaves the box: what was typed after Enter is the start of the next thought, and is the
+            // person's own, so a command in it runs.
+            Line.Rewrite(now =>
+            {
+                _itemWords = null;
+
+                return now.StartsWith(pressed, StringComparison.Ordinal) ? now[pressed.Length..].TrimStart() : now;
+            });
 
             // The view's project, not the list's selection: the two are different accessors for one question, which is
             // this repository's most-repeated defect.
@@ -410,10 +440,11 @@ internal sealed class Shell : Window
     /// <returns>The note.</returns>
     /// <remarks>
     /// An identifier that did not resolve is text and is sent as written, so the only defence
-    /// against a typo is that it is visible before Enter rather than in somebody's inbox afterwards.
+    /// against a typo is that it is visible before Enter rather than in somebody's inbox afterwards. Read on the loop,
+    /// because a read redraws the preview from the work queue.
     /// </remarks>
     private string? Near() =>
-        Commands.Resolve(Line.Written).NearMiss is { } nearly
+        Commands.Resolve(Line.WrittenOnTheLoop()).NearMiss is { } nearly
             ? $"this is text, not a command — did you mean /{nearly}?"
             : null;
 
@@ -559,7 +590,9 @@ internal sealed class Shell : Window
     internal const char WholeKey = 'e';
 
     private readonly BrokerDirectory _directory;
-    private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill() };
+    // One row by design, and fixed at one: its text is set from pool threads (a count read off the loop redraws it),
+    // and a label sized to its text reads a cached size the setter clears, so a draw that met a write mid-layout threw.
+    private readonly Plain _status = new() { X = 0, Y = Pos.AnchorEnd(1), Width = Dim.Fill(), Height = 1 };
 
     /// <summary>The menu bar, on the top row, always visible.</summary>
     /// <remarks>
@@ -654,6 +687,7 @@ internal sealed class Shell : Window
 
     internal Shell(BrokerDirectory directory)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(directory);
 
         _directory = directory;
@@ -777,7 +811,7 @@ internal sealed class Shell : Window
         Conversations.Opened += (_, _) => Touched();
         Roadmaps.Opened += (_, _) => Touched();
         Plans.Opened += (_, _) => Touched();
-        Plans.Opened += (_, summary) => OpenPlan(summary);
+        Plans.Opened += (_, summary) => OpenPlan(summary.Id);
 
         // A proposal chosen in the list opens in its own view, the same one a conversation opens it in.
         Roadmaps.Opened += (_, proposal) => ReviewProposal(proposal);
@@ -1362,6 +1396,13 @@ internal sealed class Shell : Window
             mail += $"  {proposed} roadmap{(proposed == 1 ? string.Empty : "s")} proposed ({ProposalsKey})";
         }
 
+        // **File problems waiting, with the key that opens them**, for the same reason: a sweep found something only the
+        // person decides about (SPEC.md §9.5), and nothing else on the screen would say so.
+        if (FileProblems is > 0)
+        {
+            mail += $"  {Parley.Client.Files.FileProblemSaid.Says(FileProblems)} ({FileProblemsKey})";
+        }
+
         // Beside every rung that still names the ways out, not only the widest: on the projects view the actions alone are
         // wider than two hundred columns.
         _status.Text = Fits(
@@ -1525,6 +1566,8 @@ internal sealed class Shell : Window
 
                 if (chosen == Discard)
                 {
+                    // Thrown away as the question says, so the words cannot follow the person into the next conversation.
+                    Line.Written = string.Empty;
                     Queue(_ => GoAsync(_place.Back()));
                 }
             };
@@ -1574,6 +1617,15 @@ internal sealed class Shell : Window
         return Settled;
     }
 
+    /// <summary>The project and conversation the box was last opened in, or null before any.</summary>
+    private string? _lineFor;
+
+    /// <summary>The item's words the box was filled with in that conversation, or null when it was not.</summary>
+    private string? _itemWords;
+
+    /// <summary>The project the roadmap and proposal panes were last drawn for, or null before any.</summary>
+    private string? _panesFor;
+
     /// <summary>Moves to a view and lays it out.</summary>
     /// <param name="place">Where to go.</param>
     /// <returns>When the view is on screen.</returns>
@@ -1609,6 +1661,25 @@ internal sealed class Shell : Window
         // behind the item that asked for it and `Settled` would not include it.
         if (place.Viewing == Viewing.Conversation && place.Title is { } conversation && Current is { } project)
         {
+            // **A line belongs to the conversation it was written in.** Arriving at another, by whatever route the person
+            // left the first (Escape asks; F3 and the rest do not), carries nothing, so the next Enter cannot send words
+            // meant for one agent to another. Coming back to the same conversation keeps them.
+            // Keyed by project as well: `rm1-1` is a conversation in every project with a roadmap.
+            var lineFor = project.Name.Value + "/" + conversation;
+
+            if (!string.Equals(_lineFor, lineFor, StringComparison.Ordinal))
+            {
+                // Owned in the same turn of the loop that empties it: a loop too late gives the emptying up, and the box
+                // then still belongs to the conversation left, which Enter says rather than sends (SendLine).
+                Line.Rewrite(_ =>
+                {
+                    _lineFor = lineFor;
+                    _itemWords = null;
+
+                    return string.Empty;
+                });
+            }
+
             await OpenAsync(project, conversation, Reading).ConfigureAwait(false);
 
             // **Opening a conversation takes delivery**: reading a Request counts as having picked it up. Everything
@@ -1670,6 +1741,68 @@ internal sealed class Shell : Window
 
     /// <summary>The key that opens the roadmaps agents have proposed.</summary>
     internal static Key ProposalsKey => Key.F4;
+
+    /// <summary>The key that opens the file problems sweeps found.</summary>
+    /// <remarks>
+    /// F5 rather than F6, which the toolkit already takes for moving between groups of views.
+    /// </remarks>
+    internal static Key FileProblemsKey => Key.F5;
+
+    /// <summary>Opens the file problems of the project in view, or of the one selected in the list.</summary>
+    /// <returns>When the list has been queued.</returns>
+    /// <remarks>
+    /// Global rather than a pane's, for the reason the proposals are: a problem with the file location belongs to the
+    /// project, not to the agent or conversation under the cursor, and the person should reach it from wherever the
+    /// count on the status line is. What is said afterwards counts again, so a dismissal is reflected at once rather than
+    /// at the next poll.
+    /// </remarks>
+    private Task OpenFileProblems()
+    {
+        if (App is not { } app || (Current ?? Projects.Selected) is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var client = new BrokerClient(_directory.ClientFor(project));
+
+        _ = FilesProblems.OpenAsync(app, client, includeDismissed: false, Queue, async said =>
+        {
+            Said = said;
+
+            await CountFileProblemsAsync(project, CancellationToken.None).ConfigureAwait(false);
+        });
+
+        return Settled;
+    }
+
+    /// <summary>Reads how many file problems are waiting in a project, and shows it while that project is in view.</summary>
+    /// <param name="project">The project.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="arriving">Whether the person has just come to this project, when an unknown count shows nothing.</param>
+    /// <returns>When the count has been read and the line redrawn.</returns>
+    /// <remarks>
+    /// Unknown leaves what was shown, as the proposals do: a broker that did not answer has not said there are none. Not
+    /// when arriving from another project, whose count would otherwise be shown under this one's name.
+    /// </remarks>
+    private async Task CountFileProblemsAsync(ProjectSettings project, CancellationToken cancellationToken, bool arriving = false)
+    {
+        var waiting = await Parley.Client.Files.FileProblemSaid
+            .WaitingAsync(new BrokerClient(_directory.ClientFor(project)), cancellationToken)
+            .ConfigureAwait(false);
+
+        if ((waiting is null && !arriving)
+            || (Current ?? Projects.Selected) is not { } shown
+            || !string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (FileProblems != waiting)
+        {
+            FileProblems = waiting;
+            Relay();
+        }
+    }
 
     /// <summary>Opens the proposed roadmaps of the project in view, or of the one selected in the list.</summary>
     /// <returns>When the list has been queued.</returns>
@@ -1757,8 +1890,9 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Opens a confirmed roadmap in its own view.</summary>
-    /// <param name="summary">What was chosen.</param>
-    private void OpenPlan(RoadmapSummary summary)
+    /// <param name="roadmapId">Which roadmap.</param>
+    /// <param name="itemNumber">The item to put the cursor on, when reached from that item's conversation; otherwise the next.</param>
+    private void OpenPlan(long roadmapId, int? itemNumber = null)
     {
         if (App is not { } app || Current is not { } project)
         {
@@ -1771,7 +1905,7 @@ internal sealed class Shell : Window
         Queue(async token =>
         {
             var read = await BrokerDirectory.ReadAsync(async () =>
-                await client.RoadmapAsync(summary.Id, token).ConfigureAwait(false)).ConfigureAwait(false);
+                await client.RoadmapAsync(roadmapId, token).ConfigureAwait(false)).ConfigureAwait(false);
 
             if (read.Value is not { } roadmap)
             {
@@ -1785,7 +1919,7 @@ internal sealed class Shell : Window
             var waiting = await BrokerDirectory.ReadAsync(async () =>
                 await client.WaitingAsync(token).ConfigureAwait(false)).ConfigureAwait(false);
 
-            var view = new PlanView(roadmap, Parley.Client.Roadmaps.ItemStates.Of(roadmap, waiting.Value, me));
+            var view = new PlanView(roadmap, Parley.Client.Roadmaps.ItemStates.Of(roadmap, waiting.Value, me), itemNumber);
             var open = Prompting.Open(app, view);
 
             view.Closed += (_, _) => Prompting.Close(app, open);
@@ -1799,7 +1933,31 @@ internal sealed class Shell : Window
             view.ItemChosen += (_, item) =>
             {
                 Prompting.Close(app, open);
-                Queue(_ => OpenItemAsync(project, item, roadmap));
+
+                // **A line belongs to the conversation it was written in.** Going from one conversation to another item's
+                // with words in the box asks first, as leaving with Escape does, rather than carrying them there.
+                if (_place.Viewing == Viewing.Conversation
+                    && !string.Equals(_place.Conversation, item.ConversationName, StringComparison.Ordinal)
+                    && !string.IsNullOrWhiteSpace(Line.Written))
+                {
+                    var asking = Prompting.Choose(DiscardTitle, DiscardDescription, [KeepWriting, Discard]);
+                    var token = Prompting.Open(app, asking);
+
+                    asking.Done += (_, chosen) =>
+                    {
+                        Prompting.Close(app, token);
+
+                        if (chosen == Discard)
+                        {
+                            Line.Written = string.Empty;
+                            Queue(_ => OpenItemAsync(project, item));
+                        }
+                    };
+
+                    return;
+                }
+
+                Queue(_ => OpenItemAsync(project, item));
             };
         });
     }
@@ -1855,29 +2013,49 @@ internal sealed class Shell : Window
     /// <summary>Goes to an item's conversation, ready to start it when it has not been.</summary>
     /// <param name="project">The project.</param>
     /// <param name="item">The item.</param>
-    /// <param name="roadmap">The roadmap it belongs to; every agent it names is in the new conversation.</param>
     /// <returns>When the conversation is open and the box is focused.</returns>
     /// <remarks>
     /// <para>
     /// <b>Starting an item is the person's request and adds no operation</b> (SPEC.md §5.7). A conversation that does not
-    /// exist yet is opened the way a new one is: named, with its agents recorded as the people it is for, and the box
-    /// holding the item's text. Nothing is sent until the person sends it, so it is their words in the transcript.
+    /// exist yet is opened the way a new one is: named, and the box holding the item's text, unless the person already
+    /// wrote in it there. Nothing is sent until the person sends it, so it is their words in the transcript.
+    /// </para>
+    /// <para>
+    /// <b>Only the item's own agent is addressed</b>, never every agent the roadmap names: an item meant for one agent is
+    /// not that agent's neighbours' work. An item naming none addresses nobody, and the person chooses from the room,
+    /// which lists the whole project.
     /// </para>
     /// </remarks>
-    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item, Roadmap roadmap)
+    private async Task OpenItemAsync(ProjectSettings project, RoadmapItem item)
     {
         var started = item.Facts is { ConversationExists: true };
 
         if (!started)
         {
-            _pending = (project.Name.Value, item.ConversationName, [.. roadmap.Items.Select(i => i.IntendedAgent).OfType<AgentName>().Distinct()]);
+            // An item that is the person's own ticks nobody: they choose who, if anybody, it is sent to.
+            _pending = (project.Name.Value, item.ConversationName,
+                item.IntendedAgent is { } agent && !PersonSeat.Is(agent) ? [agent] : []);
         }
 
         await GoAsync(ViewPlace.Into(project.Name).Into(item.ConversationName)).ConfigureAwait(false);
 
+        // Going there emptied a box written elsewhere and kept one written here. An item not begun fills an empty box
+        // with its words; what the person wrote in this conversation, the item's words edited or not, stays.
         if (!started)
         {
-            Line.Written = item.Text;
+            // Marked as the item's words in the same turn of the loop that writes them: marked after, from here, a loop
+            // later than the wait would show the words unmarked, and Enter would run them as a command.
+            Line.Rewrite(now =>
+            {
+                if (!string.IsNullOrWhiteSpace(now))
+                {
+                    return now;
+                }
+
+                _itemWords = item.Text;
+
+                return item.Text;
+            });
         }
 
         Focus(Panes.ToList().IndexOf(Line));
@@ -1892,7 +2070,7 @@ internal sealed class Shell : Window
             return;
         }
 
-        Proposing.Review(
+        Proposing.Open(
             app,
             new BrokerClient(_directory.ClientFor(project)),
             proposal,
@@ -1911,6 +2089,25 @@ internal sealed class Shell : Window
     private Task OpenSelectedPlan()
     {
         _ = Plans.OpenSelected();
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>What the key that goes from an item's conversation to its roadmap is called.</summary>
+    internal const string ItemRoadmapTitle = "Open this item's roadmap";
+
+    /// <summary>The letter, with Alt, that goes from an item's conversation to its roadmap.</summary>
+    internal const char ItemRoadmapKey = 'o';
+
+    /// <summary>Opens the roadmap the open conversation's item belongs to, with the cursor on that item.</summary>
+    /// <returns>When the read has been queued.</returns>
+    /// <remarks>By the reservation the export carried, never by the conversation's name (SPEC.md §5.7).</remarks>
+    private Task OpenItemRoadmap()
+    {
+        if (Transcript.Item is { Removed: false } item)
+        {
+            OpenPlan(item.RoadmapId, item.ItemNumber);
+        }
 
         return Task.CompletedTask;
     }
@@ -2096,6 +2293,22 @@ internal sealed class Shell : Window
             }
             : Array.Empty<RegionAction>(),
 
+        // **What sweeps of the file location found, from wherever a project is in view**, beside the proposals for the
+        // same reason, and offered whether or not any are waiting so the dismissed ones can be read again.
+        .. _place.Viewing is not Viewing.Configuration
+           && (Current ?? Projects.Selected) is not null
+            ? new[]
+            {
+                new RegionAction(
+                    default,
+                    FilesProblems.Title,
+                    OpenFileProblems,
+                    Category: ActionCategory.Project,
+                    Chord: FileProblemsKey,
+                    Order: 95),
+            }
+            : Array.Empty<RegionAction>(),
+
         new RegionAction(
             ActionsKey, KeysTitle, Offer, Category: ActionCategory.Help, Order: 1),
 
@@ -2238,7 +2451,7 @@ internal sealed class Shell : Window
                 : Array.Empty<RegionAction>(),
         ],
 
-        // Enter on a proposal opens it. Named, since a key the surface takes and does not name is one nobody finds.
+        // Enter on a roadmap opens it. Named, since a key the surface takes and does not name is one nobody finds.
         PlansRegion =>
         [
             .. Plans.Selected is not null
@@ -2337,6 +2550,12 @@ internal sealed class Shell : Window
                         Fold,
                         Category: ActionCategory.View),
                 }
+                : Array.Empty<RegionAction>(),
+
+            // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
+            // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
+            .. Transcript.Item is { Removed: false }
+                ? new[] { new RegionAction(ItemRoadmapKey, ItemRoadmapTitle, OpenItemRoadmap) }
                 : Array.Empty<RegionAction>(),
 
             // **Recognised by the conversation's identifier and never by anything in a payload.**
@@ -2730,6 +2949,13 @@ internal sealed class Shell : Window
     /// </remarks>
     private const string NotReadYet =
         "This conversation is still being read, so nothing was sent. Press Enter again in a moment.";
+
+    /// <summary>Said when the box may still hold words written in another conversation.</summary>
+    /// <remarks>
+    /// "May": the box was not emptied on arrival because the loop was too late, and the person may have typed since.
+    /// </remarks>
+    internal const string WrittenElsewhere =
+        "These words may have been written in another conversation, so nothing was sent. Press Enter again to send them here.";
 
     /// <summary>Said when somebody joined or left since the preview was drawn, so the line would not go where it said.</summary>
     /// <remarks>Most often met on coming back from being away, when the preview was drawn before the person left.</remarks>
@@ -3353,6 +3579,14 @@ internal sealed class Shell : Window
     /// </remarks>
     internal int? Proposals { get; private set; }
 
+    /// <summary>How many file problems are waiting for this person in the project in view, or null when it is not known.</summary>
+    /// <remarks>
+    /// Read with the proposals, when a project is opened and on the mail's poll, and shown beside them: a file a sweep moved
+    /// to quarantine is the person's to decide about (SPEC.md §9.5), and only a count on the screen tells them it happened.
+    /// Unknown is never shown as none.
+    /// </remarks>
+    internal int? FileProblems { get; private set; }
+
     /// <summary>What is said when an open transcript could not be read again.</summary>
     /// <param name="problem">What the read reported, which is a broker's words and neutralised.</param>
     /// <returns>The sentence.</returns>
@@ -3421,7 +3655,7 @@ internal sealed class Shell : Window
             {
                 await Task.Delay(every, stop).ConfigureAwait(false);
 
-                if (!StillReading(conversationId))
+                if (!StillReading(project, conversationId))
                 {
                     return;
                 }
@@ -3441,9 +3675,10 @@ internal sealed class Shell : Window
     }
 
     /// <summary>Whether a conversation is still the one on screen.</summary>
+    /// <param name="project">The project the conversation is in.</param>
     /// <param name="conversationId">The conversation.</param>
-    /// <returns>Whether the view is a transcript and that transcript is this conversation.</returns>
-    private bool StillReading(string conversationId)
+    /// <returns>Whether the view is a transcript and that transcript is this conversation in this project.</returns>
+    private bool StillReading(ProjectSettings project, string conversationId)
     {
         Viewing viewing;
 
@@ -3452,8 +3687,11 @@ internal sealed class Shell : Window
             viewing = _place.Viewing;
         }
 
+        // The project as well: `c-1` and `rm1-1` are conversations in every project, and a late follow of one project's
+        // would otherwise draw in another's of the same id.
         return viewing == Viewing.Conversation
-            && string.Equals(Transcript.Open, conversationId, StringComparison.Ordinal);
+            && string.Equals(Transcript.Open, conversationId, StringComparison.Ordinal)
+            && string.Equals(Transcript.OpenIn, project.Name.Value, StringComparison.Ordinal);
     }
 
     /// <summary>Reads the open transcript once, and redraws it if it has changed.</summary>
@@ -3466,7 +3704,7 @@ internal sealed class Shell : Window
     {
         try
         {
-            if (!StillReading(conversationId))
+            if (!StillReading(project, conversationId))
             {
                 return;
             }
@@ -3490,7 +3728,7 @@ internal sealed class Shell : Window
                 // **The room as well, every time, and whether or not the transcript changed.** Somebody picking
                 // a request up changes nothing in the transcript but everything in the room's marks, and "working 3m"
                 // has to count.
-                if (StillReading(conversationId))
+                if (StillReading(project, conversationId))
                 {
                     await FillRoomAsync(project, conversationId, export, cancellationToken).ConfigureAwait(false);
                 }
@@ -3499,7 +3737,7 @@ internal sealed class Shell : Window
             }
 
             // Once per outage rather than once per tick, which would bury anything else said meanwhile.
-            if (_followFailed is null && StillReading(conversationId))
+            if (_followFailed is null && StillReading(project, conversationId))
             {
                 _followFailed = NotFollowing(read.Problem);
                 Said = _followFailed;
@@ -3607,16 +3845,32 @@ internal sealed class Shell : Window
                 return;
             }
 
+            // **Drawn only while the project read is still the one in view**, as `SelectAsync` draws: the person can move
+            // to another project while the poll is out, and its reply would list this project's roadmaps there.
+            bool StillOn(ProjectSettings read) =>
+                Current is { } now && string.Equals(now.Name.Value, read.Name.Value, StringComparison.Ordinal);
+
             if (Current is { } where
-                && await Parley.Client.Roadmaps.ProposalCount
+                && await Parley.Client.Roadmaps.WaitingProposals
                     .ListAsync(new BrokerClient(_directory.ClientFor(where)), cancellationToken)
                     .ConfigureAwait(false) is { } listed)
             {
-                ShowProposals(listed);
+                if (StillOn(where))
+                {
+                    ShowProposals(listed);
+                    _panesFor = where.Name.Value;
+                }
             }
             else
             {
                 Proposals = null;
+            }
+
+            // The file problems on the same poll: a sweep runs whenever an agent's fetch or placement finds the location
+            // changed, so a problem can be raised while the person sits in a conversation.
+            if (Current is { } counting)
+            {
+                await CountFileProblemsAsync(counting, cancellationToken).ConfigureAwait(false);
             }
 
             // The confirmed roadmaps on the same poll: one confirmed from the web console, or by a revision, would otherwise
@@ -3624,7 +3878,8 @@ internal sealed class Shell : Window
             if (Current is { } holding
                 && await BrokerDirectory.ReadAsync(async () =>
                     await new BrokerClient(_directory.ClientFor(holding)).RoadmapsAsync(cancellationToken).ConfigureAwait(false))
-                    .ConfigureAwait(false) is { Value: { } plans })
+                    .ConfigureAwait(false) is { Value: { } plans }
+                && StillOn(holding))
             {
                 ShowPlans(plans);
             }
@@ -3661,8 +3916,8 @@ internal sealed class Shell : Window
     /// need one keystroke per agent.
     /// </para>
     /// <para>
-    /// Retired agents are left out, as they are from a broadcast: an operator retired them, and
-    /// starting them would be this screen undoing that quietly.
+    /// Retired agents are left out, as they are from a broadcast: a person retired them, or their node found their
+    /// workspace gone, and starting them would be this screen undoing that quietly.
     /// </para>
     /// </remarks>
     internal IReadOnlyList<AgentName> NeverRegistered() =>
@@ -4265,26 +4520,63 @@ internal sealed class Shell : Window
                 .ConfigureAwait(false))
             .ConfigureAwait(false);
 
-        // Kept even when the read failed, so the count on screen is not quietly reset to zero by a
-        // broker that stopped answering: a surface saying "no archived conversations" because it
-        // could not ask is saying something it does not know.
-        if (conversations.Value is { } page)
-        {
-            _archivedOmitted = page.ArchivedOmitted;
-        }
+        // **A read draws only the project still in view.** Enter and Escape start this off the work queue, so on a slow
+        // broker it can return after the person has moved to another project, whose view would then list this one's
+        // conversations and agents, and act on them under the other project's name.
+        bool StillShown() => Current is { } shown && string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal);
+
+        // Unknown leaves what was shown only when it was this project's: arriving from another project with a read that
+        // failed empties the panes, so one project's roadmaps are never listed, and acted on, in another's view.
+        var arriving = !string.Equals(_panesFor, project.Name.Value, StringComparison.Ordinal);
 
         // What agents have proposed, with the rest of the project. Unknown leaves what was shown, rather than
         // emptying the pane because a broker did not answer.
-        if (await Parley.Client.Roadmaps.ProposalCount.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
+        if (await Parley.Client.Roadmaps.WaitingProposals.ListAsync(client, cancellationToken).ConfigureAwait(false) is { } waiting)
         {
-            ShowProposals(waiting);
+            if (StillShown())
+            {
+                ShowProposals(waiting);
+            }
         }
+        else if (arriving && StillShown())
+        {
+            ShowProposals([]);
+            Proposals = null;
+        }
+
+        // The file problems waiting, with the proposals and by the same rule.
+        await CountFileProblemsAsync(project, cancellationToken, arriving).ConfigureAwait(false);
 
         // The roadmaps already confirmed, listed above the conversations. Unknown leaves what was shown.
         if (await BrokerDirectory.ReadAsync(async () =>
                 await client.RoadmapsAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false) is { Value: { } confirmed })
         {
-            ShowPlans(confirmed);
+            if (StillShown())
+            {
+                ShowPlans(confirmed);
+            }
+        }
+        else if (arriving && StillShown())
+        {
+            ShowPlans([]);
+        }
+
+        if (StillShown())
+        {
+            _panesFor = project.Name.Value;
+        }
+
+        if (!StillShown())
+        {
+            return;
+        }
+
+        // Kept even when the read failed, so the count on screen is not quietly reset to zero by a
+        // broker that stopped answering: a surface saying "no archived conversations" because it
+        // could not ask is saying something it does not know. Set only for the project in view.
+        if (conversations.Value is { } page)
+        {
+            _archivedOmitted = page.ArchivedOmitted;
         }
 
         Agents.Show(registry.Value, Catalogue(), registry.Problem);
@@ -4295,7 +4587,14 @@ internal sealed class Shell : Window
             _archivedOmitted,
             _showArchived,
             ConversationsOf);
-        Transcript.Clear();
+
+        // **A project read never clears a conversation that is open.** Enter and Escape start this read off the work
+        // queue, so on a slow broker it can land after the person has opened a conversation; clearing then left the
+        // transcript empty with the conversation on screen, and following stopped, since it follows what is open.
+        if (_place.Viewing != Viewing.Conversation)
+        {
+            Transcript.Clear();
+        }
 
         // The person's seat, from the registry just read. No name is asked for: the broker provides it.
         await EnsureSeatAsync(project, registry.Value, cancellationToken).ConfigureAwait(false);
@@ -4834,6 +5133,9 @@ internal sealed class Shell : Window
 
         if (export is null)
         {
+            // The draft goes with the room: one left from the conversation before would address this one's line to
+            // that conversation's recipients, in whichever project it was.
+            Drafting = null;
             Room.Show([], [], Held is not null);
 
             return;
@@ -4905,7 +5207,7 @@ internal sealed class Shell : Window
 
         // Parley is never a recipient: it receives nobody's work, and a line addressed to it would be refused by the
         // broker (SPEC.md §10.1). It stays in the room column, named, because it is in the conversation.
-        Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.Written };
+        Drafting = new Draft([.. pairs.Where(pair => !Facilitation.Is(pair.Peer))]) { Text = Line.WrittenOnTheLoop() };
         _drafted = here;
         _draftedWith = hold;
 
@@ -5133,11 +5435,16 @@ internal sealed class Shell : Window
 
             // What agents have put forward for the person to decide, counted with the rest. Null when the broker
             // cannot say, which a row leaves out rather than showing as none.
-            var proposals = await Parley.Client.Roadmaps.ProposalCount.WaitingAsync(client, cancellationToken)
+            var counted = await BrokerDirectory.ReadAsync(async () =>
+                await client.ProposalCountAsync(ProposalState.Waiting, cancellationToken).ConfigureAwait(false))
                 .ConfigureAwait(false);
+            int? proposals = counted.Reachable ? counted.Value : null;
+
+            // The file problems waiting, by the same rule: null when the broker cannot say.
+            var problems = await Parley.Client.Files.FileProblemSaid.WaitingAsync(client, cancellationToken).ConfigureAwait(false);
 
             var figures = registry.Value is { } agents && conversations.Value is { } page
-                ? ProjectFigures.Of(agents, page, proposals)
+                ? ProjectFigures.Of(agents, page, proposals, problems)
                 : null;
 
             return (project.Name.Value, Health: health, Figures: figures);
@@ -5146,7 +5453,7 @@ internal sealed class Shell : Window
         var answers = await Task.WhenAll(asked).ConfigureAwait(false);
 
         // **A deployment whose parts are not from one release is said on the message line, once**: the version
-        // numbers do not move for a store edited in place, so nothing else would tell the person. Said again only
+        // numbers do not say a store's shape, so nothing else would tell the person. Said again only
         // when the words change, because this runs on every refresh.
         var warned = answers
             .SelectMany(a => a.Health.Warnings(BuildIdentity.Version).Select(w => $"{a.Value}: {w}"))

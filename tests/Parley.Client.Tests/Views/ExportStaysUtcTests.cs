@@ -21,6 +21,7 @@ namespace Parley.Client.Tests.Views;
 /// relative to whichever machine produced it.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class ExportStaysUtcTests
 {
     private static Message Message(int hourUtc) =>

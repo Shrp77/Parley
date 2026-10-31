@@ -23,6 +23,7 @@ namespace Parley.Terminal.Tests;
 /// Run both ways: never away is the control.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class BackFromAwayTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;

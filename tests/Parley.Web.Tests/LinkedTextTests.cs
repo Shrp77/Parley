@@ -3,6 +3,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>Which stretches of a message become links: web addresses only, and nothing is lost.</summary>
+[Unit]
 public sealed class LinkedTextTests
 {
     [Fact]

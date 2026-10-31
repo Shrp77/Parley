@@ -24,6 +24,7 @@ namespace Parley.Terminal.Tests;
 /// brokers here are several, and the assertion is on the clock.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class DeadBrokerTests : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;

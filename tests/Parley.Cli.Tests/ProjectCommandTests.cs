@@ -28,6 +28,7 @@ namespace Parley.Cli.Tests;
 /// afterwards and that the output says so.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectCommandTests : IDisposable
 {
     private readonly string _directory =
@@ -90,6 +91,32 @@ public sealed class ProjectCommandTests : IDisposable
         RunAsync(["add", name], new ProjectFields(description));
 
     // ---- add -------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("con")]
+    [InlineData("aux")]
+    [InlineData("nul")]
+    [InlineData("com1")]
+    [InlineData("lpt9")]
+    public async Task A_name_windows_keeps_for_a_device_is_refused_and_nothing_is_made(string name)
+    {
+        // Found by review, lens 2 run 66: a project's folder is named after it, and `nul` cannot be made while `con` makes
+        // a folder some tools cannot open.
+        var (code, _, error) = await AddAsync(name);
+
+        Assert.Equal(64, code);
+        Assert.Contains("keeps for a device", error, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(ProjectFolder.ProjectsIn(Root), name)));
+    }
+
+    [Theory]
+    [InlineData("console")]
+    [InlineData("com10")]
+    [InlineData("com-1")]
+    public void A_name_that_only_begins_like_a_device_is_not_one(string name)
+    {
+        Assert.False(ProjectName.IsDeviceName(name));
+    }
 
     [Fact]
     public async Task Adding_creates_the_layout_and_says_where_everything_went()

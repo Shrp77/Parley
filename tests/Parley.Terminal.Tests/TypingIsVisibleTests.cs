@@ -19,6 +19,7 @@ namespace Parley.Terminal.Tests;
 /// all. **A property the suite holds to and the screen never shows.** This file is the screen.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class TypingIsVisibleTests
 {
     [Fact]

@@ -20,6 +20,7 @@ namespace Parley.Terminal.Tests;
 /// releases. It is silent about the console, which nothing else puts back.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed partial class TerminalRestoredTests
 {
     [Fact]

@@ -17,6 +17,7 @@ namespace Parley.Server.Tests;
 /// not: an elapsed time that has gone negative is still less than the ceiling.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WakeClockTests
 {
     private static AgentName Orders => AgentName.Create("orders@alpha");

@@ -18,6 +18,7 @@ namespace Parley.Web.Tests;
 /// checked is the words the roster is handed, not the broker reads in front of them, which the terminal's tests drive.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ActivityOnTheWebTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@here");

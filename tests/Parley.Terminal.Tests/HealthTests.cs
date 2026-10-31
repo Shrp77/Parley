@@ -10,6 +10,7 @@ namespace Parley.Terminal.Tests;
 /// Nothing times out, so this is the place stalled work is seen and acted on. It has to say who holds the next
 /// move and where, and it has to be unforgeable: every name on it is somebody else's characters.
 /// </remarks>
+[Unit]
 public sealed class HealthTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

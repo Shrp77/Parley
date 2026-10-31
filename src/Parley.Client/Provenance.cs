@@ -34,12 +34,22 @@ public static class Provenance
         _ => "no line has been accepted"
     };
 
+    /// <summary>What is shown when no question from Parley is on record for an agent.</summary>
+    public const string NoQuestion =
+        "no question from Parley on record; it asks each agent once, when it first attaches, so use Ask again if its " +
+        "question's conversation was destroyed";
+
     /// <summary>Where a question from Parley stands, in words a person reads.</summary>
-    /// <param name="question">The agent's latest question, or <see langword="null"/> when it was never asked.</param>
+    /// <param name="question">The agent's latest question, or <see langword="null"/> when none is on record.</param>
     /// <returns>The words.</returns>
+    /// <remarks>
+    /// <b>No question on record promises no asking.</b> It is an agent never asked, which Parley asks when it attaches,
+    /// or one whose question's conversation was destroyed, which Parley never asks again by itself (SPEC.md §10.2). A
+    /// surface cannot tell the two apart, so the words say what is true of both (lens 3 run 104).
+    /// </remarks>
     public static string Of(OwnershipQuestion? question) => question?.State switch
     {
-        null => "Parley has not asked it yet",
+        null => NoQuestion,
         QuestionState.Asked => "Parley asked, and it has not answered",
         QuestionState.AskedBack => "it asked Parley something back, and a person needs to reply",
         QuestionState.Answered => "it answered, and Parley is deciding",

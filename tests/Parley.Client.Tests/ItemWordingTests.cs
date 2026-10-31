@@ -7,6 +7,7 @@ namespace Parley.Client.Tests;
 /// <summary>
 /// The words a roadmap and its items are told in.
 /// </summary>
+[Unit]
 public sealed class ItemWordingTests
 {
     private static readonly AgentName Billing = AgentName.Create("billing@host");
@@ -60,7 +61,16 @@ public sealed class ItemWordingTests
     {
         Assert.Equal("waiting on billing", ItemWording.Standing(State(ItemStanding.WaitingOnAgent, [Billing])));
         Assert.Equal("in progress with billing", ItemWording.Standing(State(ItemStanding.InProgress, [Billing])));
-        Assert.Equal("blocked: permission", ItemWording.Standing(State(ItemStanding.Blocked, blocker: "permission")));
+        Assert.Equal(
+            "blocked: permission — answer it with a new request, or close it",
+            ItemWording.Standing(State(ItemStanding.Blocked, blocker: "permission")));
+        Assert.Equal("closed while blocked: permission", ItemWording.Standing(State(ItemStanding.Closed, blocker: "permission")));
+        Assert.Equal(
+            "blocked: missing information — answer it with a new request, or close it",
+            ItemWording.Standing(State(ItemStanding.Blocked, blocker: "missing_information")));
+        Assert.Equal(
+            "in progress with billing; blocked: permission",
+            ItemWording.Standing(State(ItemStanding.InProgress, [Billing], blocker: "permission")));
     }
 
     [Fact]
@@ -74,6 +84,6 @@ public sealed class ItemWordingTests
     {
         Assert.Equal("Next: item 3.", ItemWording.Next(new RoadmapStanding([], NextKind.Item, 3, 0)));
         Assert.Equal("Every item is done.", ItemWording.Next(new RoadmapStanding([], NextKind.Complete, null, 0)));
-        Assert.Contains("waiting on something or blocked", ItemWording.Next(new RoadmapStanding([], NextKind.NothingReady, null, 0)), StringComparison.Ordinal);
+        Assert.Contains("waiting, blocked or closed, or needs an item that is", ItemWording.Next(new RoadmapStanding([], NextKind.NothingReady, null, 0)), StringComparison.Ordinal);
     }
 }

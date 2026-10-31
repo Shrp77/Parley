@@ -13,11 +13,11 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 ## 2. A list becomes a roadmap (story 1)
 
 1. As an agent, call `parley_propose_roadmap` with three items, one naming an intended agent and one depending on item 1.
-2. **Expect** nothing in any transcript; the project shows one proposal waiting on the person, on both surfaces and `parley roadmap proposals`.
+2. **Expect** nothing in any transcript; the project shows one proposal waiting on the person, on both surfaces.
 3. Reword item 2, remove item 3, confirm. **Expect** a roadmap with two items, origin `edited`, the proposer named, the proposal no longer waiting, a notice in the proposer's inbox saying confirmed.
 4. Propose again and decline. **Expect** no roadmap, a *declined* notice, and no wake of the agent.
 5. As an agent, try anything that changes the roadmap. **Expect** there is nothing to call; the structural test is the proof.
-6. Two proposals against one roadmap; confirm one. **Expect** the other reads superseded.
+6. Two proposals against one roadmap; confirm one as a revision of it. **Expect** the other reads superseded.
 
 ## 3. State and next (story 2)
 
@@ -27,11 +27,11 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 
 ## 4. Instruct and navigate (stories 3 and 4)
 
-1. From item 3 press the start key. **Expect** a choice of every project agent, nothing sent until chosen. Choose one, add a sentence, confirm.
+1. From item 3 press the start key. **Expect** its conversation opens with the item's words in the box and only the item's own agent ticked, and nothing is sent. Add a sentence and send.
 2. **Expect** a conversation `rm<n>-<m>` now exists, the agent holds a request with the item's text, the item reads in progress, the transcript shows the person's words.
-3. Start item 3 again. **Expect** it says it is already with that agent and sends nothing.
-4. From that conversation ask for its roadmap. **Expect** the roadmap opens on item 3. Ask from an ordinary conversation. **Expect** a sentence saying it belongs to none.
-5. As an agent, try to open `rm<n>-<m>` for an unstarted item. **Expect** refusal from storage.
+3. Start item 3 again. **Expect** the same conversation opens with what was said in it, and nothing is sent.
+4. From that conversation ask for its roadmap. **Expect** the roadmap opens on item 3. Open an ordinary conversation. **Expect** it names no item and offers no way to a roadmap.
+5. As an agent, try to open `rm<n>-<m>` for an unstarted item, by a request and by placing a file. **Expect** both refused, saying the conversation is not one the agent can start.
 6. Edit the roadmap and remove item 3. **Expect** its conversation remains, marked as formerly belonging to it.
 7. Start an item whose text is over 8,000 characters. **Expect** refusal naming the cap and nothing sent.
 8. Restart the broker. **Expect** roadmaps intact.

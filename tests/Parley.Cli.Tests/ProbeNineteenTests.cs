@@ -18,6 +18,7 @@ namespace Parley.Cli.Tests;
 /// enumerates them rather than sampling: every message either half can produce from a hostile file.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeNineteenTests : IDisposable
 {
     private const string Escape = "";

@@ -9,6 +9,7 @@
 
 <nav class="page-links" aria-label="This project">
     <a href="/Projects/Agents?project=@Model.Project">Back to @Model.Project</a>
+    <a href="/Projects/FileProblems?project=@Uri.EscapeDataString(Model.Project ?? string.Empty)">File problems</a>
     @if (!string.IsNullOrWhiteSpace(Model.Conversation))
     {
         <a href="/Projects/Files?project=@Model.Project">Every conversation's files</a>
@@ -83,9 +84,44 @@ else if (Model.Listing is { } listing)
         <button type="submit" class="quiet">Show</button>
     </form>
 
+    @* The only way the person's file gets in: one copied into a folder by hand is never listed, and the next sweep
+       deletes it. A placed file is never changed, so a new version goes under a new name. *@
+    <h2>Place a file</h2>
+    @if (Model.Placeable.Count == 0)
+    {
+        <p>This project has no conversation to place a file in yet. A file goes in a conversation that exists.</p>
+    }
+    else
+    {
+        <form method="post" asp-page-handler="Place" enctype="multipart/form-data" class="place">
+            <input type="hidden" name="project" value="@Model.Project" />
+            <input type="hidden" name="conversation" value="@Model.Conversation" />
+
+            <label for="upload">A .md or .txt file</label>
+            <input id="upload" name="upload" type="file" accept=".md,.txt,text/markdown,text/plain" required />
+
+            <label for="placeIn">In conversation</label>
+            <select id="placeIn" name="placeIn">
+                @foreach (var id in Model.Placeable)
+                {
+                    <option value="@id">@id</option>
+                }
+            </select>
+
+            <label for="placeAs">Under the name (empty: the file's own)</label>
+            <input id="placeAs" name="placeAs" autocomplete="off" />
+
+            <button type="submit">Place it</button>
+        </form>
+        <p class="notice">
+            It is placed as yours, and any agent in the project can fetch it. A name that already holds other content is
+            refused: a placed file is never changed, so a new version goes under a new name.
+        </p>
+    }
+
     @if (listing.Page.TotalFiles == 0)
     {
-        <p>No files have been placed in this project yet. Agents place files here to hand them to each other.</p>
+        <p>No files have been placed in this project yet. Agents, and you, place files here to hand them over.</p>
     }
     else
     {
@@ -102,7 +138,7 @@ else if (Model.Listing is { } listing)
                         <th scope="col">Size</th>
                         <th scope="col">sha256</th>
                         <th scope="col">Placed by</th>
-                        <th scope="col">Changed</th>
+                        <th scope="col">Placed</th>
                         <th scope="col"><span class="visually-hidden">Open</span></th>
                     </tr>
                 </thead>
@@ -116,7 +152,7 @@ else if (Model.Listing is { } listing)
                             <td>@FilesModel.Size(file.SizeBytes)</td>
                             <td title="@file.Sha256.Value"><code>@file.Sha256.Short</code></td>
                             <td>@(file.PlacedBy?.Value ?? "the person")</td>
-                            <td>@Parley.Client.Rendering.LocalTime.Write(file.ChangedUtc)</td>
+                            <td>@Parley.Client.Rendering.LocalTime.Write(file.PlacedUtc)</td>
                             <td>
                                 <button type="submit" asp-page-handler="Open"
                                         asp-route-project="@Model.Project"

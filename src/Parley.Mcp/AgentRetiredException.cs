@@ -3,7 +3,7 @@ using Parley.Core;
 namespace Parley.Mcp;
 
 /// <summary>
-/// Thrown when the agent a server was launched for has been retired by an operator.
+/// Thrown when the agent a server was launched for has been retired, by a person or by its node finding its workspace gone.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,7 +13,8 @@ namespace Parley.Mcp;
 /// it by matching on message text would work until somebody improved the wording.
 /// </para>
 /// <para>
-/// It is also the one start-up failure that a person deliberately caused. SPEC.md §14 makes
+/// It is also the one start-up failure that was decided rather than suffered: a person retired the agent, or its node
+/// found its workspace gone (a repository put back afterwards meets exactly this). SPEC.md §14 makes
 /// retirement clearable only by an explicit reinstatement — never by registration, and starting
 /// a server is the closest thing to registration there is — so the server has to stop rather
 /// than quietly work around the withdrawal it just discovered.
@@ -24,8 +25,9 @@ public sealed class AgentRetiredException : Exception
     /// <summary>Initialises the exception for a named agent.</summary>
     /// <param name="agent">The agent whose registration was withdrawn.</param>
     public AgentRetiredException(AgentName agent)
-        : base($"'{agent.Value}' has been retired by an operator and cannot attach. Retirement " +
-               "is cleared only by an explicit reinstatement, never by starting a server.") =>
+        : base($"'{agent.Value}' has been retired and cannot attach: a person retired it, or its node found its " +
+               "workspace gone. Retirement is cleared only by reinstating it (the terminal's agents list, Alt+i), " +
+               "never by starting a server.") =>
         Agent = agent.Value;
 
     /// <summary>

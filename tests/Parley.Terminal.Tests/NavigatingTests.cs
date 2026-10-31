@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Client.Views;
@@ -21,6 +22,7 @@ namespace Parley.Terminal.Tests;
 /// So this one presses keys and nothing else.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class NavigatingTests
 {
     private static BrokerDirectory Directory() =>
@@ -46,8 +48,7 @@ public sealed class NavigatingTests
 
         var chosen = shell.Projects.Selected?.Name.Value;
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal(Viewing.Project, shell.Place.Viewing);
         Assert.Equal(chosen, shell.Place.Project?.Value);
@@ -126,8 +127,7 @@ public sealed class NavigatingTests
         await shell.Settled;
 
         driving.Row(shell.Projects.List, "beta");
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("beta", shell.Place.Project?.Value);
     }
@@ -149,8 +149,7 @@ public sealed class NavigatingTests
         await shell.RefreshAsync(TestContext.Current.CancellationToken);
         await shell.Settled;
 
-        driving.Press(Shell.BrowserKey);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Shell.BrowserKey, () => shell.Settled);
 
         // Asked for, said out loud, and the surface still running -- which is the property, since
         // a headless machine is an ordinary place to run this and FR-014 requires the surface to
@@ -170,8 +169,7 @@ public sealed class NavigatingTests
         driving.Show(shell);
         await Walking.GoAsync(shell, Viewing.Conversation);
 
-        driving.Press(Shell.BrowserKey);
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Shell.BrowserKey, () => shell.Settled);
 
         // The address itself, not only the sentence about it. Reading the message alone would pass
         // against a surface that named the right conversation and handed the browser something

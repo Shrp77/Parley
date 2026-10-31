@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// the whole file. That is the shape worth attacking first.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeOneTests : IDisposable
 {
     private readonly string _root =

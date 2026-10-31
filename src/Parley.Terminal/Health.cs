@@ -30,6 +30,7 @@ internal sealed class Health : Dialog
 
     private Health(string project, IReadOnlyList<string> lines)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = "Health of " + Safe.Text(project);
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);

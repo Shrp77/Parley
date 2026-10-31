@@ -18,8 +18,8 @@ namespace Parley.Store;
 /// What was still waiting after this agent's most recent turn, if that turn changed nothing --
 /// and null if it made progress or has never run. A trigger that does not expire needs this.
 /// An owed exchange clears itself on §14's schedule whether or not the agent cooperates, but an
-/// uncollected message does not: §9.4's floor holds it against retention precisely so nothing
-/// is lost, so an agent that is started and does not collect is a candidate again on the next
+/// uncollected message does not: §9.4's floor holds it against the idle rule until the age cap,
+/// so an agent that is started and does not collect is a candidate again on the next
 /// pass, and every pass after that, each one a real session on somebody's account. Reported
 /// rather than filtered on, like liveness, because whether to spend again on an agent that
 /// spent and achieved nothing is the supervisor's judgement.
@@ -84,8 +84,8 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// </para>
     /// <para>
     /// A retired agent is excluded by the status filter for the same reason §14 refuses to route
-    /// to one: retirement is a person's judgement that the agent will not come back, and a
-    /// process started against it would overrule that.
+    /// to one: retirement says the agent is not to be routed to (a person's judgement, or its node's finding that the
+    /// workspace is gone), and a process started against it would overrule that.
     /// </para>
     /// <para>
     /// Liveness is deliberately not among them — see <see cref="InvocationCandidate"/>. It is

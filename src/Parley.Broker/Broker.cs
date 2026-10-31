@@ -81,6 +81,24 @@ public sealed class Broker
     /// <summary>The most roadmap notices one collection hands over; the rest wait for the next.</summary>
     private const int RoadmapNoticesPerCollection = 50;
 
+    /// <summary>
+    /// About how many characters of messages one collection hands over; what would pass it waits for the next.
+    /// </summary>
+    /// <remarks>
+    /// A collection too large to arrive is never delivered: the reply is refused at the adapter's message size, so it is
+    /// never acknowledged, and the next collection is the same size again. One agent sending another a few hundred long
+    /// Requests made that happen to everybody else's messages. Kept well under what an adapter's own output carries to a
+    /// model, and never fewer than one message, so a collection always moves.
+    /// </remarks>
+    private const int MessageCharactersPerCollection = 64_000;
+
+    /// <summary>The most closure polls one collection lists; the rest are listed by later ones.</summary>
+    /// <remarks>
+    /// One agent can open any number of conversations with another and propose each is finished. Unbounded, the polls
+    /// alone made a collection too large to arrive, and so never delivered.
+    /// </remarks>
+    private const int ClosurePollsPerCollection = 200;
+
     /// <summary>The longest responder identity storage accepts, per §11.3.</summary>
     private const int MaxResponderLength = 64;
 
@@ -718,6 +736,12 @@ public sealed class Broker
     /// Declining when nothing is being decided starts nothing: a conversation that is open already means
     /// somebody is not finished. And nothing closes a conversation for a participant's silence.
     /// </para>
+    /// <para>
+    /// <b>A live roadmap item's conversation is the person's to close</b> (§5.7), so agreeing to close one is refused
+    /// and starts no poll. A closed conversation never reopens and an item has only the one, so participants closing
+    /// it while a part was blocked would leave the item nowhere to carry on; the person instead answers the blocker
+    /// with a new request in it, or closes it.
+    /// </para>
     /// </remarks>
     public async Task<ClosureOutcome> ConcludeAsync(
         string conversationId,
@@ -755,6 +779,12 @@ public sealed class Broker
         if (conversation.State == ConversationState.Open && !finished)
         {
             return ClosureOutcome.Recorded(concluded: false);
+        }
+
+        if (finished && await _conversations.BelongsToALiveItemAsync(conversationId, scope.Transaction, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return ClosureOutcome.PersonCloses();
         }
 
         await _conversations.BeginPollAsync(conversationId, nowUtc, scope.Transaction, cancellationToken)
@@ -924,7 +954,7 @@ public sealed class Broker
     /// </para>
     /// <para>
     /// What is left: polls whose last decline lapsed, and
-    /// retention on its own schedule, last because closing a conversation makes its messages prunable.
+    /// retention on its own schedule.
     /// </para>
     /// </remarks>
     public async Task<TickResult> TickAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
@@ -947,13 +977,24 @@ public sealed class Broker
         return new TickResult(concluded, pruned);
     }
 
-    /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3).</summary>
+    /// <summary>Collects what is waiting for a participant, debts first (§4.2, §7.3), and holds it for the caller.</summary>
     /// <param name="agent">The participant collecting.</param>
-    /// <param name="nowUtc">The instant.</param>
-    /// <param name="limit">The most messages to return, or <see langword="null"/> for all.</param>
-    /// <param name="cancellationToken">Cancels the drain.</param>
-    /// <returns>The messages, each already wrapped in its envelope, and any closure poll outstanding.</returns>
+    /// <param name="holds">What collections in flight hold, which this one leaves out and adds its own hold to.</param>
+    /// <param name="limit">
+    /// The most messages to return besides the oldest that is not a debt, which comes as well (SPEC.md §7.3), or
+    /// <see langword="null"/> for as many as one collection carries.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the collection.</param>
+    /// <returns>
+    /// The messages, each already wrapped in its envelope, how many are still waiting, any closure poll outstanding, and
+    /// the hold <see cref="AcknowledgeInboxAsync"/> records once the caller has them.
+    /// </returns>
     /// <remarks>
+    /// <para>
+    /// <b>Nothing is recorded delivered here</b> (SPEC.md §6). A collection is delivered when the caller acknowledges
+    /// it, so one whose reply never arrives, cancelled by its caller or lost on the way, leaves everything waiting for the
+    /// next. The caller releases the hold when the call ends, acknowledged or not.
+    /// </para>
     /// <para>
     /// <b>Wrapped here and nowhere else</b> (§13), with a fresh token per message so a sender that saw one
     /// cannot close the next one's payload block.
@@ -962,100 +1003,212 @@ public sealed class Broker
     /// <b>A Result carries its Request back</b> (§4.2), because the requester's context will have moved
     /// on and an identifier alone means nothing to a model that no longer remembers sending it.
     /// </para>
-    /// <para>
-    /// Collecting a Request records it on the exchange, which is where §6's second stage begins. The
-    /// exchange is told before the message is stamped: a crash in between hands the Request over again,
-    /// where the other order would leave it flagged as uncollected while somebody worked on it.
-    /// </para>
     /// </remarks>
-    public async Task<Inbox> DrainInboxAsync(
+    public async Task<(Inbox Inbox, InboxHold Hold)> CollectInboxAsync(
         AgentName agent,
-        DateTimeOffset nowUtc,
+        InboxHolds holds,
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
         RequireStarted("collecting an inbox");
+        ArgumentNullException.ThrowIfNull(holds);
 
-        var pending = await _messages.GetPendingAsync(agent, limit, cancellationToken).ConfigureAwait(false);
+        var (heldMessages, heldFileNotices, heldRoadmapNotices) = holds.HeldFor(agent);
+        var pending = await _messages.GetPendingAsync(agent, limit, heldMessages, cancellationToken).ConfigureAwait(false);
+        var owed = await _messages.GetOwedExchangeIdsAsync(agent, cancellationToken).ConfigureAwait(false);
+        var handed = 0;
+
+        // **The oldest message that is not a debt rides along** (SPEC.md §7.3). Debts come first and a collection is
+        // bounded, so a steady stream of Requests held every Result, and every message on an exchange the caller does not
+        // owe, behind it for good. Room is kept for that one message, so a flood delays it by one collection at most.
+        // A caller's limit counts the others: one that cut the list before its debts ended still carries it.
+        var riding = pending.FirstOrDefault(m => !owed.Contains(m.ExchangeId));
+
+        if (riding is null && limit is not null
+            && await _messages.GetOldestNotOwedAsync(agent, heldMessages, cancellationToken).ConfigureAwait(false) is { } oldest)
+        {
+            riding = oldest;
+            pending = [.. pending, oldest];
+        }
+
         var delivered = new List<DeliveredMessage>(pending.Count);
+        var handedIds = new List<long>(pending.Count);
+        var requests = new List<long>();
+        (DeliveredMessage One, int Size)? kept = riding is null ? null : await BuildAsync(riding, agent, cancellationToken).ConfigureAwait(false);
+        var full = false;
 
         foreach (var message in pending)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (message.Type == MessageType.Request)
-            {
-                await RecordCollectionAsync(message.ExchangeId, nowUtc, cancellationToken).ConfigureAwait(false);
-            }
+            var rides = ReferenceEquals(message, riding);
 
-            if (!await _messages.MarkDeliveredAsync(message.Id, nowUtc, cancellationToken).ConfigureAwait(false))
+            if (full && !rides)
             {
-                // Delivered by a drain that raced this one; skipped rather than handed over twice.
                 continue;
             }
 
-            // Only to the agent that sent the Request. A person closing a conversation writes a closed Result to the
-            // receiver as well, and attaching the Request there would frame a peer's text as the agent's own (§13).
-            var request = message.Type == MessageType.Result
-                          && await _messages.GetRequestAsync(message.ExchangeId, cancellationToken: cancellationToken)
-                              .ConfigureAwait(false) is { } asked
-                          && asked.From == agent
-                ? asked.PayloadJson
-                : null;
+            var (one, size) = rides ? kept!.Value : await BuildAsync(message, agent, cancellationToken).ConfigureAwait(false);
 
-            // **Beside a Request from the person, the agent's own open questions to them** (SPEC.md §5.6), so it can say
-            // what the person's words settled without searching. Its own words, returned to it, and bounded (§13).
-            IReadOnlyList<SettleableQuestion>? settleable = null;
-            var leftOut = 0;
+            // **Built and measured before it is held**, so a message that would make the collection too large to arrive
+            // is left waiting for the next one rather than carried by a reply that cannot be delivered.
+            var room = rides || delivered.Count == 0 || handed + size + (kept is { Size: var reserved } ? reserved : 0)
+                       <= MessageCharactersPerCollection;
 
-            if (message.Type == MessageType.Request && PersonSeat.Is(message.From))
+            if (!room)
             {
-                var (questions, total) = await _exchanges.GetSettleableAsync(
-                    agent, message.From, message.ConversationId, Settling.MostListed, cancellationToken)
-                    .ConfigureAwait(false);
-
-                settleable = [.. questions.Select(q => q with { Asked = Settling.Cut(q.Asked) })];
-                leftOut = total - questions.Count;
+                // Past the bound: nothing more but the message riding along, which the bound kept room for.
+                full = true;
+                continue;
             }
 
-            // **And what the person has said since the agent asked back** (SPEC.md §5.6). A Request handed back to the
-            // agent is only the person's first words; the answer to its question went in another exchange, which a model
-            // whose context has moved on no longer sees. Each is wrapped like any participant's words (§13).
-            IReadOnlyList<AnswerSince>? since = null;
-
-            if (message.Type == MessageType.Request && PersonSeat.Is(message.From) && message.ConversationId is { Length: > 0 } talk)
+            if (message.Type == MessageType.Request)
             {
-                since = await SinceAsync(agent, message, talk, cancellationToken).ConfigureAwait(false);
+                requests.Add(message.ExchangeId);
             }
 
-            delivered.Add(new DeliveredMessage(
-                message,
-                TrustEnvelope.Wrap(
-                    message.From,
-                    message.ResponderModel,
-                    message.PayloadJson,
-                    TrustEnvelope.NewToken(),
-                    message.ConversationId,
-                    request),
-                settleable,
-                leftOut,
-                since));
+            if (rides)
+            {
+                kept = null;
+            }
+
+            handed += size;
+            delivered.Add(one);
+            handedIds.Add(message.Id);
         }
 
-        var polls = await _conversations.GetOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false);
+        var waiting = await _messages.CountPendingAsync(agent, [.. heldMessages, .. handedIds], cancellationToken)
+            .ConfigureAwait(false);
+        // Bounded like file notices, and nothing is lost by it: a poll stays outstanding until it is answered, so the rest
+        // are listed by later collections (SPEC.md §10.1).
+        var polls = await _conversations.GetOutstandingPollsAsync(agent, ClosurePollsPerCollection, cancellationToken)
+            .ConfigureAwait(false);
+        var pollsWaiting = polls.Count < ClosurePollsPerCollection
+            ? 0
+            : await _conversations.CountOutstandingPollsAsync(agent, cancellationToken).ConfigureAwait(false) - polls.Count;
 
         // Whatever the limit said about messages (SPEC.md §9.5): a limit meant for messages must not hold back the
         // notices, and the notices carry their own bound.
-        var notices = await new FileNoticeRepository(_connection).CollectAsync(agent, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        var (notices, noticeKeys) = await new FileNoticeRepository(_connection)
+            .PeekAsync(agent, heldFileNotices, cancellationToken).ConfigureAwait(false);
 
         // What became of the agent's own proposals. Never a reason to wake anything (SPEC.md §5.7): collected when
-        // the agent next looks, like a change notice for a file.
-        var proposals = await new RoadmapRepository(_connection)
-            .DrainNoticesAsync(agent, RoadmapNoticesPerCollection, nowUtc, cancellationToken: cancellationToken)
+        // the agent next looks, like a gone notice for a file.
+        var roadmaps = new RoadmapRepository(_connection);
+        var (proposals, proposalIds) = await roadmaps
+            .PeekNoticesAsync(agent, RoadmapNoticesPerCollection, heldRoadmapNotices, cancellationToken)
             .ConfigureAwait(false);
+        var proposalsWaiting = await roadmaps
+            .CountNoticesAsync(agent, [.. heldRoadmapNotices, .. proposalIds], cancellationToken).ConfigureAwait(false);
 
-        return new Inbox(delivered, polls, notices, proposals);
+        var hold = new InboxHold(agent, handedIds, requests, noticeKeys, proposalIds);
+        holds.Add(hold);
+
+        return (new Inbox(delivered, polls, notices, proposals, waiting, pollsWaiting, proposalsWaiting), hold);
+    }
+
+    /// <summary>Records a collection delivered once its caller says it has it (SPEC.md §6).</summary>
+    /// <param name="hold">The hold <see cref="CollectInboxAsync"/> returned.</param>
+    /// <param name="nowUtc">The instant.</param>
+    /// <param name="cancellationToken">Cancels the writes.</param>
+    /// <returns>A task that completes when everything the hold covers is recorded.</returns>
+    /// <remarks>
+    /// <para>
+    /// Collecting a Request records it on the exchange, which is where §6's second stage begins. The exchange is told
+    /// before the message is stamped: a crash in between hands the Request over again, where the other order would
+    /// leave it flagged as uncollected while somebody worked on it.
+    /// </para>
+    /// <para>
+    /// Each stamp is guarded on the message still waiting, so an acknowledgement that arrives twice records nothing
+    /// twice. Gone notices are deleted and roadmap notices marked only here, for the reason messages are.
+    /// </para>
+    /// </remarks>
+    public async Task AcknowledgeInboxAsync(InboxHold hold, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)
+    {
+        RequireStarted("acknowledging a collection");
+        ArgumentNullException.ThrowIfNull(hold);
+
+        foreach (var exchange in hold.Requests)
+        {
+            await RecordCollectionAsync(exchange, nowUtc, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var message in hold.Messages)
+        {
+            _ = await _messages.MarkDeliveredAsync(message, nowUtc, cancellationToken).ConfigureAwait(false);
+        }
+
+        await new FileNoticeRepository(_connection).DeleteAsync(hold.Agent, hold.FileNotices, cancellationToken)
+            .ConfigureAwait(false);
+        await new RoadmapRepository(_connection).MarkNoticesDeliveredAsync(hold.RoadmapNotices, nowUtc, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Wraps one waiting message as it is handed over, and measures it.</summary>
+    /// <param name="message">The message.</param>
+    /// <param name="agent">The participant collecting.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The message as delivered, and how many characters it carries toward a collection's bound.</returns>
+    private async Task<(DeliveredMessage One, int Size)> BuildAsync(
+        Message message, AgentName agent, CancellationToken cancellationToken)
+    {
+        // Only to the agent that sent the Request. A person closing a conversation writes a closed Result to the
+        // receiver as well, and attaching the Request there would frame a peer's text as the agent's own (§13).
+        var request = message.Type == MessageType.Result
+                      && await _messages.GetRequestAsync(message.ExchangeId, cancellationToken: cancellationToken)
+                          .ConfigureAwait(false) is { } asked
+                      && asked.From == agent
+            ? asked.PayloadJson
+            : null;
+
+        // **Beside a Request from the person, the agent's own open questions to them** (SPEC.md §5.6), so it can say
+        // what the person's words settled without searching. Its own words, returned to it, and bounded (§13).
+        IReadOnlyList<SettleableQuestion>? settleable = null;
+        var leftOut = 0;
+
+        if (message.Type == MessageType.Request && PersonSeat.Is(message.From))
+        {
+            var (questions, total) = await _exchanges.GetSettleableAsync(
+                agent, message.From, message.ConversationId, Settling.MostListed, cancellationToken)
+                .ConfigureAwait(false);
+
+            settleable = [.. questions.Select(q => q with { Asked = Settling.Cut(q.Asked) })];
+            leftOut = total - questions.Count;
+        }
+
+        // **And what the person has said since the agent asked back** (SPEC.md §5.6). A Request handed back to the
+        // agent is only the person's first words; the answer to its question went in another exchange, which a model
+        // whose context has moved on no longer sees. Each is wrapped like any participant's words (§13).
+        IReadOnlyList<AnswerSince>? since = null;
+
+        if (message.Type == MessageType.Request && PersonSeat.Is(message.From) && message.ConversationId is { Length: > 0 } talk)
+        {
+            since = await SinceAsync(agent, message, talk, cancellationToken).ConfigureAwait(false);
+        }
+
+        // **Beside a Result answering a Request to a role, where that Request stands** (SPEC.md §5.5): how many it reached
+        // and how many have answered, so the agent that sent it knows whether to wait for more.
+        var roleRequest = request is not null
+            ? await _exchanges.GetRoleProgressAsync(message.ExchangeId, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        var one = new DeliveredMessage(
+            message,
+            TrustEnvelope.Wrap(
+                message.From,
+                message.ResponderModel,
+                message.PayloadJson,
+                TrustEnvelope.NewToken(),
+                message.ConversationId,
+                request),
+            settleable,
+            leftOut,
+            since,
+            roleRequest);
+
+        return (one, one.Envelope.Length
+                     + (one.Settleable?.Sum(q => q.Asked.Length) ?? 0)
+                     + (one.Since?.Sum(a => a.Envelope.Length) ?? 0));
     }
 
     /// <summary>What the person said to an agent after it last spoke on the exchange a Request opened.</summary>

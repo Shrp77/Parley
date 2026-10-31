@@ -5,7 +5,7 @@ disable-model-invocation: true
 
 # Remove every file from Parley's file location
 
-Removes every file every agent placed, in every conversation of the project. Conversations, messages and agents are
+Removes every file placed in the project, the person's and every agent's, in every conversation. Conversations, messages and agents are
 untouched, and every agent that fetched a file is told it is gone. It cannot be undone. This is the only cleanup that
 removes everything, and nothing does it on a schedule.
 

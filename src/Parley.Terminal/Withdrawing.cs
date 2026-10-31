@@ -66,10 +66,11 @@ internal static class Withdrawing
     internal const string Reinstated =
         "No file was recreated: add it again for it to be startable.";
 
-    /// <summary>What purging does, in SPEC.md §14's own words rather than a paraphrase.</summary>
+    /// <summary>What purging does, in SPEC.md §14's words for whose parts go, and that the files go with it.</summary>
     internal const string Purging =
         "Purging deletes every conversation it took part in, including the halves belonging to "
-        + "peers who did nothing wrong, and cannot be undone.";
+        + "participants who did nothing wrong, and each one's folder of files, with anything copied into it by hand. "
+        + "It cannot be undone.";
 
     /// <summary>What retiring does.</summary>
     internal const string Retiring =
@@ -94,11 +95,12 @@ internal static class Withdrawing
         ArgumentNullException.ThrowIfNull(owed);
 
         // The row's values are already neutralised where they enter it; the adapter is read here
-        // and is the agent's own string, so it is neutralised here.
+        // and is the agent's own string, so it is neutralised here. The ownership line has no bound and can be the
+        // agent's own words, so it is shortened: drawn whole, a long one would push the rest off a dialog that cannot scroll.
         var said = $"{row.Name}{Environment.NewLine}"
             + $"  state      {row.State}{Environment.NewLine}"
             + $"  workspace  {row.Workspace}{Environment.NewLine}"
-            + $"  owns       {row.Owns}{Environment.NewLine}"
+            + $"  owns       {AgentWords.Shortened(row.Owns)}{Environment.NewLine}"
             + $"  adapter    {Safe.Text(agent?.Adapter ?? "not registered")}{Environment.NewLine}";
 
         return owed.Count == 0
@@ -164,11 +166,12 @@ internal static class Withdrawing
             return Task.CompletedTask;
         }
 
+        // What each choice does first, then the agent: the dialog cannot scroll and cuts its tail.
         var choosing = Prompting.Choose(
             Title,
-            Describe(agent, row, owed)
-            + Environment.NewLine + Environment.NewLine + Retiring
-            + Environment.NewLine + Purging,
+            Retiring
+            + Environment.NewLine + Purging
+            + Environment.NewLine + Environment.NewLine + Describe(agent, row, owed),
             Choices);
 
         var token = Prompting.Open(app, choosing);

@@ -17,6 +17,7 @@ namespace Parley.Terminal.Tests;
 /// covered headless in <c>Parley.Client.Tests</c>.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AddressingFromTheRoomTests
 {
     [Fact]
@@ -172,9 +173,7 @@ public sealed class AddressingFromTheRoomTests
 
         seated.Focus<RoomRegion>();
         seated.Row(shell.Room.List, Seated.Orders.Role);
-        seated.Session.Enter();
-
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.True(shell.Line.Editing, "Enter on an agent did not put the cursor in the box");
         Assert.Equal(before, shell.Drafting!.Recipients);
@@ -231,9 +230,7 @@ public sealed class AddressingFromTheRoomTests
         var listing = (ChoiceDialog)seated.Session.Find(RoomRegion.ListTitle(Seated.Orders.Value));
 
         seated.Session.Row(listing.Choices, "is the build green?");
-        seated.Session.Enter();
-
-        await shell.Settled;
+        await seated.Session.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains(Seated.Orders, shell.Drafting!.Recipients);
         Assert.IsType<TranscriptRegion>(shell.Panes[shell.FocusedRegion]);

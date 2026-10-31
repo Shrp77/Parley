@@ -13,6 +13,7 @@ namespace Parley.Mcp.Tests;
 /// was always valid — and a suite that only ever checks refusals will catch the first and none
 /// of the second.
 /// </remarks>
+[Integration]
 public sealed class RefusalIntegrityTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

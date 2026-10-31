@@ -3,6 +3,7 @@ using Xunit;
 namespace Parley.Web.Tests;
 
 /// <summary>That a project's Conversations page holds conversations and nothing that has a page of its own.</summary>
+[Integration]
 public sealed class ProjectPageLayoutTests
 {
     [Fact]

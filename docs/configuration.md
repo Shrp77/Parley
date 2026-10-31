@@ -63,8 +63,10 @@ None needs administrator rights. `parley autostart status` says whether it is se
 `parley autostart remove` undoes it without stopping a broker that is already running. The
 install script runs `autostart install` for you.
 
-The one process also runs this machine's node in every project and starts the web console on
-`127.0.0.1:5280`. `--web-ui <url>` moves the console and `--no-web-ui` leaves it out. If the
+The process the entry starts also runs this machine's node in every project and starts the web console
+on `127.0.0.1:5280`. `autostart install --web-ui <url>` moves the console and `autostart install
+--no-web-ui` leaves it out. A `parley serve` you start yourself runs neither unless given `--with-node`
+and `--with-web-ui`. If the
 console cannot start, because the address is taken or the tool is not installed, the broker says
 so and keeps serving.
 
@@ -76,8 +78,12 @@ at. A server that must answer with nobody signed in needs a real service, and th
 privileges.
 
 Nothing else may open the store. A store has one broker, and a second one says so and exits. The
-store must not be on a network share. SQLite in WAL mode needs shared memory that is coherent
-between every process touching it, so a store on a share is corrupted, not just slow.
+deployment's root, and so every store, must be on this machine's own disk: Parley refuses a synced
+cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system (a FUSE mount such as rclone or sshfs on Linux and macOS; on Windows, any drive that is not a
+local disk volume),
+and a folder reached through a link or a `subst` letter to one. SQLite in WAL mode needs shared memory that is coherent
+between every process touching it, and a sync client copies a store while it is being written. If
+the default root is in such a folder, set another with `--config` or `PARLEY_CONFIG`.
 
 ## The launch configuration
 
@@ -86,6 +92,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 ```jsonc
 {
+  "parleyAgentId": "6f1c…",                        // the repository's identity, written by enroll
   "mcpServers": {
     "parley-acme": {                                   // parley-<project>, or `parley` if no projects
       "command": "parley-mcp",
@@ -105,7 +112,7 @@ An agent's identity and settings come from its launch configuration. For Claude 
 
 | Setting | What it does |
 |---|---|
-| `PARLEY_AGENT` | The agent's role. This is its identity. No tool can change it. |
+| `PARLEY_AGENT` | The agent's role: the name a project shows. Its identity is `parleyAgentId`, so changing the role renames the agent ([how](launch-configuration.md)). No tool can change either. |
 | `PARLEY_PROJECT` | The project to connect to. Use this on a machine that serves several. |
 | `PARLEY_BROKER` | A broker address, instead of a project. If both are set, the address wins and the server says so. |
 | `PARLEY_OWNS` | The ownership line (see below). |
@@ -158,7 +165,8 @@ not, once. That costs the agent one turn, the first time only.
 **Auto Accept** is a project setting and is on by default. With it on, the answer becomes the
 line. Parley writes it into the launch configuration, records it as accepted automatically, and
 restarts the agent once it is idle so its peers see it. Nothing is restarted mid-turn. An answer
-that cannot be a line as written, or that comes from an agent on another machine, waits for you.
+that cannot be a line as written, that the agent said was blocked, or that comes from an agent on
+another machine, waits for you.
 Turn Auto Accept off, in **Configuration** (`F3`) or the Project menu, and every answer waits for
 you.
 
@@ -169,9 +177,10 @@ edit or discard an answer, write a line yourself, reply if the agent asked somet
 the facilitator ask again. `Alt+n` on an agent shows what it has said and lets you edit its line
 in place. `Alt+e` asks every agent at once. The web console offers the same.
 
-**No tool an agent has can set the line.** A field an agent could write would be worth only a
-model's opinion of itself. A line an agent proposed and a person accepted is something a peer can
-act on, and which of those produced it is recorded. Change a line and every peer sees the new one
+**No tool an agent has writes the line directly.** It answers Parley's question, and the answer
+becomes the line only by acceptance: Auto Accept's, recorded as `automatic`, or yours. With Auto
+Accept on, a line is the agent's own account of itself until somebody reviews it, so the review
+says whether a person or nobody has read each one. Change a line and every peer sees the new one
 the next time that agent's server starts. Delete it and the claim is withdrawn.
 
 **There is no length limit by default.** This is a recorded reduction in a safety control. The
@@ -191,7 +200,7 @@ alone, an exchange between two repositories needs a person at both ends. A **nod
 
 **What a node is.** A node is the part of a machine that starts agents. How to start a repository
 belongs to the machine it is on, so it lives in `node.json` on that machine and never reaches the
-broker. There is one for the whole machine, in the same folder as your projects. `PARLEY_NODE_CONFIG`
+broker. There is one for the whole machine, at the deployment root (`<root>/node.json`), beside the `projects` folder. `PARLEY_NODE_CONFIG`
 or `--node-config` names a different file. The broker holds no launch command at all, which keeps
 the trusted surface small as a deployment spreads across machines.
 
@@ -239,9 +248,10 @@ one: the receiver is started to do the work, a clarification hands the turn back
 requester is started in its turn.
 
 **It spends money while nobody is watching.** That is the feature and the risk in one sentence.
-Every turn is a real session on your account. `parley up` prints what each turn cost, and the
-broker keeps the same figures: count, duration, cost, and how often an agent ran and still owed
-exactly what it owed. That last figure is the shape a runaway takes before it looks like one.
+Every turn is a real session on your account. The broker records each turn: count, duration,
+cost, and how often an agent ran and still owed exactly what it owed, which is the shape a runaway
+takes before it looks like one. No screen shows those figures yet, so your provider's bill is
+where you see the cost; `parley up` prints a turn that failed.
 
 ## Reaching a broker from another machine
 
@@ -290,23 +300,30 @@ so left unbounded it would become the shared context store Parley exists to avoi
 So it forgets by default:
 
 - a discussion whose exchanges have all closed is removed once it has been quiet for
-  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset),
-- and nothing outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+  `PARLEY_RETENTION_IDLE_HOURS` (three days if unset); closing it, by its agents or by you, does not
+  shorten that,
+- and nothing but open work outlives `PARLEY_RETENTION_MAX_AGE_HOURS` (thirty days if unset).
+
+The retention pass runs once an hour. A prune from the terminal or the web console runs it now and
+says which idle period and age cap it applied.
 
 ```
 PARLEY_RETENTION_IDLE_HOURS=72
 PARLEY_RETENTION_MAX_AGE_HOURS=720
-PARLEY_TICK_SECONDS=5                 # how often deadlines are swept
+PARLEY_TICK_SECONDS=5                 # the broker's tick: closing polls, Parley's passes, new projects
 ```
 
 **Set these in the broker's environment**, meaning the process that runs `parley serve`. Not in
 your shell, and not on the agents' servers. The broker is the only process that reads them. Set
 them anywhere else and the broker quietly keeps the default. Pruning from the terminal only brings
-the next sweep forward, under the same policy.
+the next retention pass forward, under the same policy.
 
-A floor bounds the other direction and is not configurable. Tightening retention can never delete
-a message nobody has collected, anything on an exchange that is still open, the request a
-not-yet-collected result carries back, or the recent rows that deduplication still reads.
+A floor bounds the other direction and is not configurable. The idle rule never deletes a message
+nobody has collected, anything on an exchange that is still open, the request a not-yet-collected
+result carries back, or the recent rows that deduplication still reads. The age cap is stricter:
+only text on an exchange that is still open outlives it. A message nobody collected goes once it is
+older than the cap, so lowering `PARLEY_RETENTION_MAX_AGE_HOURS` can delete mail an agent never
+picked up.
 
 To keep a conversation beyond the policy, export it. The export is a file you own.
 
@@ -328,7 +345,7 @@ Three numbers answer different questions:
 
 | Number | Where | Moves when |
 |---|---|---|
-| Tool version | the `parley` and `parley-mcp` packages | anything ships |
+| Tool version | the `parley`, `parley-mcp`, `parley-terminal` and `parley-web-ui` packages | anything ships |
 | Protocol version | the top of [SPEC.md](../SPEC.md) | the wire contract changes |
 | Schema version | SQLite's `user_version` | the tables change |
 

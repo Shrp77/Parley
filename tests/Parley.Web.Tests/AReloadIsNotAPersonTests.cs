@@ -11,6 +11,7 @@ namespace Parley.Web.Tests;
 /// the person <c>here</c> for ever, where §14 says a tab nobody is looking at is not somebody at a desk. The reload now
 /// carries a marker, and a render carrying it keeps the seat's stream without counting as the person.
 /// </remarks>
+[Integration]
 public sealed class AReloadIsNotAPersonTests
 {
     [Fact]

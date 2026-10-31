@@ -20,6 +20,7 @@ namespace Parley.Broker.Tests;
 /// says, and the policy decides only whether an agent is started to do it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ResumeTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

@@ -27,6 +27,7 @@ namespace Parley.Terminal.Tests;
 /// the check that this surface shows it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WorktreeIsNotedOnScreenTests : IDisposable
 {
     private readonly string _root =

@@ -49,9 +49,12 @@ service Agents {
   rpc Conclude(ConcludeRequest) returns (ConcludeReply);
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsReply);
 
-  // Everything waiting, taken once, each message already inside the section 13 envelope. The only
-  // path a participant's words travel to a model.
-  rpc DrainInbox(DrainInboxRequest) returns (InboxReply);
+  // What is waiting, up to what one collection carries (section 10.1), each message already inside the section 13
+  // envelope. The only path a participant's words travel to a model. Two-way so delivery is acknowledged (section 6):
+  // the caller sends `collect`, reads the InboxReply, sends `acknowledge`, and the broker ends the call once what it
+  // handed over is recorded delivered. A call that ends without `acknowledge` records nothing, and the next collection
+  // hands it all over again.
+  rpc DrainInbox(stream DrainInboxFrame) returns (stream InboxReply);
 
   // How much is waiting, without taking any of it. For a caller that holds no stream -- an editor
   // hook that wants to say "work is waiting" before a turn. Marks nothing delivered.
@@ -63,16 +66,18 @@ service Agents {
 
   // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
   // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
-  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant.
+  // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant. A placed
+  // file is never changed: a name already holding other content is refused, and a new version takes a new name.
   rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
 
-  // Streams one whole content of a file: a header and then bytes, or a refusal instead of the header. While the
-  // call is open the stored file is held for reading and a replacement or removal waits. The adapter writes the
+  // Streams one whole file: a header and then bytes, or a refusal instead of the header. A refusal can also follow the
+  // bytes, when what was streamed does not hash to what was placed (FILE_REJECTION_TAMPERED); the adapter then writes
+  // nothing. While the call is open the stored file is held for reading and a removal waits. The adapter writes the
   // bytes to disk; nothing carries them into a model's context.
   rpc FetchFile(FetchFileRequest) returns (stream FetchFileFrame);
 
-  // Reports that a fetch was written and verified. Only then is it recorded, so change notices follow. A report of
-  // a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
+  // Reports that a fetch was written and verified. Only then is it recorded, so a gone notice follows if the file
+  // goes. A report of a fetch the broker did not stream to this agent, or of a hash it did not stream, is refused.
   rpc FetchedFile(FetchedFileRequest) returns (FetchedFileReply);
 
   // A page of the files in the location: names, sizes, hashes and placers, never contents.
@@ -123,7 +128,7 @@ message Attached {
 // notice carrying the words would be a second path for the same text with no envelope on it.
 message Notice {
   int32 messages_waiting = 1;
-  int32 closure_polls_waiting = 2;
+  int32 closure_polls_waiting = 2;  // every poll outstanding, listed or not
   int32 file_notices_waiting = 3;     // section 9.5: counted like the rest, and never waking anything
   int32 roadmap_notices_waiting = 4;  // section 5.7: what became of the agent's own proposals; wakes nothing
 }
@@ -248,30 +253,50 @@ message DrainInboxRequest {
   int32 limit = 2;
 }
 
+message DrainInboxFrame {
+  oneof frame {
+    DrainInboxRequest collect = 1;
+    InboxAcknowledgement acknowledge = 2;
+  }
+}
+
+// Sent once the caller holds the InboxReply. Carries nothing: it acknowledges the reply on its own call.
+message InboxAcknowledgement {}
+
 message InboxReply {
   repeated DeliveredMessage messages = 1;
   repeated ClosurePoll closure_polls = 2;
 
-  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest change first, whatever
+  // Section 9.5. Not messages: nothing is owed back. At most 200 in one collection, oldest first, whatever
   // `limit` says about messages; the rest wait for the agent's next collection and are counted here.
   repeated FileNotice file_notices = 3;
   int32 file_notices_waiting = 4;
 
   // Section 5.7. What became of this agent's own roadmap proposals, with its own title. Not messages: nothing is
-  // owed back and nothing is woken.
+  // owed back and nothing is woken. At most 50 in one collection; the rest are counted here.
   repeated RoadmapNotice roadmap_notices = 5;
   int32 roadmap_notices_waiting = 6;
+
+  // Section 10.1. Messages still waiting: a collection carries about 64,000 characters of messages and never fewer
+  // than one, or fewer when `limit` says so, and the rest wait for the next collection, counted here.
+  int32 messages_waiting = 7;
+
+  // Section 10.1. Closure polls beyond the 200 listed, oldest first; not the count of every poll outstanding, which
+  // `Notice.closure_polls_waiting` carries. A poll stays until it is answered, so later
+  // collections list these.
+  int32 closure_polls_not_listed = 8;
 }
 
-// That a file the agent fetched has changed or gone since. A name and two hashes, never the content.
+// That a file the agent fetched has gone since, or that one it fetched or placed went missing or was tampered with
+// (section 9.5). A name, the hash it had and when, never the content.
 message FileNotice {
   string conversation_id = 1;
   string name = 2;
-  string sha256_had = 3;              // what the agent fetched
-  string sha256_now = 4;              // empty when gone
-  int64 size_bytes = 5;               // 0 when gone
-  string changed_utc = 6;
-  bool gone = 7;
+  string sha256_had = 3;              // what the agent fetched, or placed
+  string gone_utc = 4;
+  // Empty when the file is only gone. Otherwise it was tampered with: the hash of the bytes found where it should have
+  // been, which something other than Parley wrote (section 9.5). The file is no longer reliable.
+  string sha256_found = 5;
 }
 
 // ===========================================================================================
@@ -296,12 +321,11 @@ message PlaceFileHeader {
 
 message PlaceFileReply {
   PlaceOutcome outcome = 1;
-  FileRejection rejection = 2;        // NONE when the file was placed, replaced or already current
+  FileRejection rejection = 2;        // NONE when the file was placed or already current
   string conversation_id = 3;
   string name = 4;
   int64 size_bytes = 5;
   string sha256 = 6;                  // the broker's, never the placer's
-  string previous_sha256 = 7;         // on REPLACED
   string placed_by = 8;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string assignable_conversations = 9;   // on CONVERSATION_NOT_ASSIGNABLE, as a Request's refusal carries
   int32 characters_left = 10;         // on DOES_NOT_FIT: the longest name the conversation's folder allows
@@ -320,7 +344,7 @@ message FetchFileFrame {
   oneof frame {
     SharedFileView header = 1;        // size, hash and placer of the content about to be streamed
     bytes chunk = 2;
-    FileRefusal refusal = 3;          // sent instead of a header
+    FileRefusal refusal = 3;          // sent instead of a header, or after the bytes when they were tampered with
   }
 }
 
@@ -335,7 +359,7 @@ message FileRefusal {
   string placed_by = 3;               // on NAME_PLACED_BY_ANOTHER; empty there means the person
   repeated string conversations = 4;  // on AMBIGUOUS_NAME: at most 200 holding the name
   int32 conversations_more = 5;       // how many more hold it than are listed
-  string sha256_now = 6;              // on CHANGED: the hash the location holds
+  string sha256_now = 6;              // on CHANGED: the hash the location holds; on TAMPERED: the hash of the bytes found
   string detail = 7;                  // the rule, in words
 }
 
@@ -365,7 +389,6 @@ message SharedFileView {
   string sha256 = 4;
   string placed_by = 5;               // empty: the person
   string placed_utc = 6;
-  string changed_utc = 7;
   string folder = 8;                  // the conversation's folder on disk
 }
 
@@ -376,7 +399,7 @@ message FilesReply {
   repeated FilePlacementCount placements = 4;     // Operators only
   string next_page_token = 5;                     // empty at the end
   int32 total_files = 6;                          // the files total_bytes counts
-  int32 files_not_listed = 7;                     // Operators only: files in the listed folders whose names break section 9.5's rules
+  int32 files_not_listed = 7;                     // Operators only: files in the listed folders that nothing placed (section 9.5)
 }
 
 message ConversationFilesTotal {
@@ -414,6 +437,42 @@ message FileLocationRequest {
   string name = 2;                    // empty: the folder
 }
 
+message ListFileProblemsRequest {
+  bool include_dismissed = 1;
+}
+
+message FileProblemsReply {
+  repeated FileProblemView problems = 1;  // those waiting first, each oldest first
+  string machine = 2;                     // the broker's machine name (section 4.1.1)
+  string quarantine_path = 3;             // absolute, on that machine
+}
+
+enum FileProblemKind {
+  FILE_PROBLEM_KIND_UNSPECIFIED = 0;
+  FILE_PROBLEM_KIND_QUARANTINED = 1;      // bytes no longer matched what was placed; moved to quarantine
+  FILE_PROBLEM_KIND_LOCKED = 2;           // the sweep could not read, move or delete it: another program held it, the
+                                          // broker may not, or the quarantine folder is a link
+}
+
+// The path is text nothing checked when the entry was put there by something other than Parley: shown as somebody
+// else's text.
+message FileProblemView {
+  int64 id = 1;
+  FileProblemKind kind = 2;
+  string conversation_id = 3;             // empty for an entry no conversation owns
+  string path = 4;                        // inside the location, '/' between its parts
+  string sha256_placed = 5;               // quarantined, and a tampered file the sweep could not move
+  string sha256_found = 6;                // the same
+  string moved_to = 7;                    // quarantined only: inside the quarantine directory
+  string detail = 8;
+  string raised_utc = 9;
+  string dismissed_utc = 10;              // empty while it waits
+}
+
+message DismissFileProblemRequest {
+  int64 id = 1;
+}
+
 message FileLocationReply {
   bool ok = 1;
   FileRefusal refusal = 2;            // when not ok
@@ -430,21 +489,24 @@ enum FileRejection {
   FILE_REJECTION_AMBIGUOUS_NAME = 5;
   FILE_REJECTION_CONVERSATION_NOT_ASSIGNABLE = 6;
   FILE_REJECTION_CONVERSATION_CLOSED = 7;
-  FILE_REJECTION_CHANGED = 8;
+  FILE_REJECTION_CHANGED = 8;             // not the content expected, or held for writing or unreadable; bytes changed
+                                          // on disk are TAMPERED
   FILE_REJECTION_NO_SPACE = 9;
   FILE_REJECTION_EXTENSION_NOT_ALLOWED = 10;
   FILE_REJECTION_NOT_FETCHED = 11;
   FILE_REJECTION_TOO_MANY_NAMES = 12;
   FILE_REJECTION_SAFE_NAME_TAKEN = 13;  // a renamed placement's safe spelling is already another file's name
+  FILE_REJECTION_NAME_HOLDS_OTHER_CONTENT = 14;  // a placed file is never changed: a new version takes a new name
+  FILE_REJECTION_TAMPERED = 15;  // something other than Parley changed the bytes on disk; no longer reliable
 }
 
 enum PlaceOutcome {
   PLACE_OUTCOME_UNSPECIFIED = 0;
   PLACE_OUTCOME_PLACED = 1;
-  PLACE_OUTCOME_REPLACED = 2;
   PLACE_OUTCOME_ALREADY_CURRENT = 3;
   PLACE_OUTCOME_PLACED_BY_ANOTHER = 4;
   PLACE_OUTCOME_DOES_NOT_FIT = 5;
+  PLACE_OUTCOME_HOLDS_OTHER_CONTENT = 6;
 }
 
 // A message and the envelope that marks it as a participant's words, per section 13. Built by the
@@ -461,6 +523,15 @@ message DeliveredMessage {
   // Only beside a person's Request the receiving agent had asked back about: what the person has said to it in that
   // conversation since it last spoke on the exchange, oldest first, at most 5, each in its own envelope (section 5.6).
   repeated AnswerSince since = 5;
+
+  // Only on a Result answering one member of a Request to a role, delivered to the agent that sent it: how many
+  // agents the Request reached and how many have answered so far, counted when this Result is delivered (section 5.5).
+  RoleRequestProgress role_request = 6;
+}
+
+message RoleRequestProgress {
+  int32 asked = 1;
+  int32 answered = 2;               // members closed by a Result, complete or blocked
 }
 
 message AnswerSince {
@@ -525,12 +596,28 @@ service Nodes {
   // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
   // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
+
+  // An agent this node was asked to start has no workspace, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (section 14).
+  // The broker retires it. Ignored unless the agent is on this node's machine and the node is joined; never the person or
+  // Parley, whom no node starts.
+  rpc ReportWorkspaceGone(WorkspaceGoneReport) returns (WorkspaceGoneReply);
+}
+
+message WorkspaceGoneReport {
+  string machine = 1;
+  string agent = 2;
+}
+
+message WorkspaceGoneReply {
+  bool retired = 1;   // false when the report was ignored or the agent was already retired
 }
 
 message LaunchReport {
   string machine = 1;
   string agent = 2;
   string token = 3;     // chosen by the node for this one launch
+  string identity = 4;  // the repository's identifier when the node knows it, so a rename since the launch still finds the agent; empty when not
+  string workspace = 5; // the checkout's folder when the node knows it, so a name registered from another is not given its token; empty when not
 }
 
 message JoinRequest {
@@ -699,6 +786,8 @@ service Operators {
   rpc Roadmaps(Empty) returns (RoadmapsReply);
   rpc Roadmap(RoadmapRequest) returns (RoadmapReply);
   rpc Proposals(ProposalsRequest) returns (ProposalsReply);
+  rpc ProposalCount(ProposalsRequest) returns (ProposalCountReply);
+  rpc Proposal(ProposalRequest) returns (ProposalsReply);
   rpc ConfirmProposal(ConfirmProposalRequest) returns (RoadmapChangeReply);
   rpc DeclineProposal(ProposalRequest) returns (RoadmapChangeReply);
   rpc EditRoadmap(EditRoadmapRequest) returns (RoadmapChangeReply);
@@ -706,12 +795,20 @@ service Operators {
   // Causes a launch and never a registration (section 12.3).
   rpc Start(StartRequest) returns (DidItReply);
 
-  // The file location (section 9.5). Removing any file and pruning them all are the person's, because they remove
-  // files other agents placed. Describing where a file is lets a surface on that machine open it in place.
+  // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
+  // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
+  // machine open it to read. The person's placement streams as an agent's does, its header naming no agent and
+  // naming a conversation that exists. Named apart from Agents.PlaceFile, as section 10.2 names it apart.
+  rpc PlacePersonsFile(stream PlaceFileFrame) returns (PlaceFileReply);
   rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);
   rpc DescribeFileLocation(FileLocationRequest) returns (FileLocationReply);
+
+  // What sweeps of the file location found and could not leave as it was (section 9.5): files moved to quarantine, and
+  // entries a sweep could not read, move or delete. Kept until the person dismisses each; dismissing deletes nothing on disk.
+  rpc ListFileProblems(ListFileProblemsRequest) returns (FileProblemsReply);
+  rpc DismissFileProblem(DismissFileProblemRequest) returns (DidItReply);
 }
 
 message Empty {}
@@ -924,6 +1021,7 @@ message ExchangeSnapshot {
   string closed_utc = 4;              // empty while it is open
   ExchangeOutcome outcome = 5;        // UNSPECIFIED while it is open
   int64 settled_by = 6;               // 0 unless the outcome is SETTLED (section 5.6)
+  string request_group = 7;           // set only for a member of a Request to a role (section 5.5)
 }
 
 message ImplementsReply {
@@ -1041,6 +1139,8 @@ message PruneReply {
   int32 held_by_floor = 2;
   int32 contended = 3;
   bool capped = 4;
+  int64 idle_seconds = 5;       // the policy applied (section 9.4): a quiet conversation's idle period
+  int64 max_age_seconds = 6;    // and the age cap past which nothing but open work is kept
 }
 
 // ===========================================================================================
@@ -1134,6 +1234,8 @@ enum ClosureError {
   CLOSURE_ERROR_UNSPECIFIED = 0;
   CLOSURE_ERROR_NONE = 1;
   CLOSURE_ERROR_NOT_A_PARTICIPANT = 2;
+  // The conversation is the work on a live roadmap item, which only the person closes (section 5.7).
+  CLOSURE_ERROR_PERSON_CLOSES = 3;
 }
 
 enum MessageType {
@@ -1249,7 +1351,7 @@ message RoadmapContent {
 message ProposeRoadmapRequest {
   string agent = 1;                   // the caller, as every Agents request names it
   RoadmapContent content = 2;
-  string conversation_id = 3;         // where it came from; empty when none
+  string conversation_id = 3;         // where it came from, one the caller took part in; empty when none
   string revises = 4;                 // the title of a roadmap it would change, a hint; empty when none
 }
 
@@ -1288,12 +1390,12 @@ message ItemFacts {
   int32 open_exchanges = 2;
   bool collected = 3;
   int32 complete_exchanges = 4;
-  int32 blocked_exchanges = 5;
-  int32 closed_exchanges = 6;
+  int32 blocked_exchanges = 5;        // how many agents' latest answer on the person's requests was blocked
+  int32 closed_exchanges = 6;         // how many of the person's requests were closed with no Result
   string blocker = 7;                 // empty when none
   string closed_by = 8;               // empty while the conversation is not closed
   bool destroyed = 9;
-  string first_sent_text = 10;        // empty when nothing was sent
+  bool text_edited_since_started = 10; // the item's text was edited after its first request was sent
   repeated int64 open_exchange_ids = 11;   // to join with the wait-for graph
 }
 
@@ -1325,6 +1427,7 @@ message RoadmapReply {
 
 message ProposalsRequest {
   ProposalState state = 1;            // UNSPECIFIED for every state
+  bool headings = 2;                  // the newest 200, title and target_title cut to a heading's length, item_count set, no items
 }
 
 message ProposalDetail {
@@ -1337,10 +1440,15 @@ message ProposalDetail {
   ProposalState state = 7;
   string created_utc = 8;
   string decided_utc = 9;             // empty while waiting
+  int32 item_count = 10;              // always set; the only count a heading carries, since its content has no items
 }
 
 message ProposalsReply {
-  repeated ProposalDetail proposals = 1;
+  repeated ProposalDetail proposals = 1;  // headings: the newest 200; otherwise every one whole; Proposal: at most one
+}
+
+message ProposalCountReply {
+  int32 count = 1;                    // how many proposals are in the state asked for; headings is ignored
 }
 
 message ProposalRequest {
@@ -1351,6 +1459,7 @@ message ConfirmProposalRequest {
   int64 id = 1;
   RoadmapContent content = 2;         // the person's final content, which may be the proposal's own
   int64 target_roadmap = 3;           // 0 for a new roadmap
+  int32 target_revision = 4;          // the target's revision the caller read; required with a target
 }
 
 message EditRoadmapRequest {

@@ -22,6 +22,7 @@ namespace Parley.Cli.Tests;
 /// calls is the ordinary way to reach it, and no manifest ever contains both rows.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeThirtyTwoTests : IDisposable
 {
     private readonly string _root =

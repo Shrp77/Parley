@@ -18,6 +18,7 @@ namespace Parley.Headless.Tests;
 /// <see cref="ResidentAgent.ShutdownWhenIdleAsync"/> that did not take the lock: the turn then comes back died.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RefreshWaitsForTheTurnTests : IDisposable
 {
     private readonly string _workspace =

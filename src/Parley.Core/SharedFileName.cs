@@ -62,7 +62,7 @@ public enum SharedFileNameProblem
 /// <para>
 /// <see cref="Safe"/> replaces each character outside the set with <c>_</c>, one for one, so a renamed
 /// placement is the same length as the name asked for. The broker renames; nothing else does. A name
-/// arriving anywhere else — a fetch, a removal, a file a person copied in by hand — is checked as it is,
+/// arriving anywhere else — a fetch, a removal, an opening — is checked as it is,
 /// because renaming a name somebody is looking <i>up</i> would find a different file from the one they
 /// meant.
 /// </para>
@@ -266,7 +266,7 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
     /// <remarks>
     /// Refused rather than replaced even when the caller placed the file already there: <c>a:b.md</c> and
     /// <c>a?b.md</c> are both <c>a_b.md</c>, and a placement that silently replaced one with the other would be a
-    /// rename nobody asked for. Placing again under the safe spelling replaces it on purpose. The name asked for is
+    /// rename nobody asked for, and a placed file is never changed in any case (SPEC.md §9.5). The name asked for is
     /// quoted with its control characters made visible, since it is the one thing in the sentence nothing checked.
     /// </remarks>
     public static string SafeNameTaken(string asked, string safe, string existing)
@@ -278,8 +278,8 @@ public sealed class SharedFileName : IEquatable<SharedFileName>
         var shown = new string(asked.Select(c => char.IsControl(c) ? '?' : c).ToArray());
 
         return $"File '{shown}' has illegal characters and will be named '{safe}', which collides with an existing " +
-               $"file with that name ('{existing}'). Nothing was placed. Choose another name, or place it as " +
-               $"'{safe}' to replace that file if it is yours.";
+               $"file with that name ('{existing}'). Nothing was placed. Choose another name: a placed file is " +
+               "never changed.";
     }
 
     /// <summary>The key a name is compared by: every letter in upper case.</summary>

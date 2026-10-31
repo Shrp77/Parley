@@ -24,11 +24,22 @@
     // costs the page its timeout; the page asks afterwards (`?handler=Presence`) and fills the badge in.
     var deferred = ViewData["Deferred"] is true;
 
+    // **File problems waiting, on every page** (SPEC.md §9.5): the project in view, or every project on a page about the
+    // whole deployment. Asked beside the seats so a broker that is down costs one wait, and not on a page that defers,
+    // for the reason the seats are not. Not on a page embedded in another, which drops the frame and the project's name
+    // with it: the page around it says the count already.
+    var problemsAbout = ViewData["Project"] as string ?? Context.Request.Query["project"].ToString();
+    var problemsCounting = deferred || Parley.Web.ConsoleHost.Embedded(Context)
+        ? Task.FromResult<IReadOnlyList<(string Project, int Waiting)>>([])
+        : Parley.Web.FileProblemBanner.CountAsync(Directory, problemsAbout, Context.RequestAborted);
+
     (int Waiting, bool Certain) waiting = deferred
         ? (0, false)
         : await PersonSeats.PresenceAsync(
             Seats, Directory, Context.RequestAborted,
             person: !Context.Request.Query.ContainsKey(PersonSeats.Reloaded));
+
+    var problems = await problemsCounting;
 
     var here = Seats.Seats();
 }
@@ -369,6 +380,16 @@
         }
 
         section { margin-bottom: 2rem; }
+
+        /* What a sweep found, on every page until it is dismissed. The words say it; the rule beside them only draws
+           the eye. */
+        .file-problems-banner {
+            margin: 0 0 1rem;
+            padding: 0.5rem 0.75rem;
+            border-left: 3px solid var(--alarm);
+            background: var(--card);
+            overflow-wrap: anywhere;
+        }
 
         table {
             width: 100%;
@@ -1615,11 +1636,25 @@
         </script>
     }
 </head>
-<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Context.Request.Query.ContainsKey("embed") ? "embed" : null)">
+<body class="@(ViewData["Grid"] is true ? "grid-page" : null) @(Parley.Web.ConsoleHost.Embedded(Context) ? "embed" : null)">
+    @if (Parley.Web.ConsoleHost.Embedded(Context))
+    {
+        @* Inside the roadmap's frame, a link to any other page of the console opens in the whole window: every other page
+           refuses to be framed, so followed in the frame it would draw nothing. A link that names its target is left
+           alone, so the page's own in-page links say `_self` (FragmentLinksStayInTheFrameTests). Forms still post in
+           the frame. *@
+        <script data-embed-links>
+            document.addEventListener("click", function (e) {
+                var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+
+                if (a && !a.target && !a.hasAttribute("download") && a.origin === window.location.origin) { a.target = "_top"; }
+            }, true);
+        </script>
+    }
     <script>
         try { if (localStorage.getItem("parley.nav") === "collapsed") { document.documentElement.setAttribute("data-nav", "collapsed"); } } catch (e) { }
     </script>
-    <a class="skip" href="#main">Skip to content</a>
+    <a class="skip" href="#main" target="_self">Skip to content</a>
     @{
         var path = Context.Request.Path.Value ?? "/";
         var agentsView = path == "/" && Context.Request.Query["tab"] == "agents";
@@ -1641,7 +1676,7 @@
                 ($"/Projects/Agents?project={q}", "Conversations", "chat_bubble", path is "/Projects/Agents" or "/Projects/Agent" || path.StartsWith("/Conversations", StringComparison.Ordinal)),
                 ($"/?tab=agents&project={q}", "Agents", "group", agentsView),
                 ($"/Roadmaps?project={q}", "Roadmaps", "map", path.StartsWith("/Roadmaps", StringComparison.Ordinal)),
-                ($"/Projects/Files?project={q}", "Files", "description", path == "/Projects/Files"),
+                ($"/Projects/Files?project={q}", "Files", "description", path is "/Projects/Files" or "/Projects/FileProblems"),
                 ($"/Projects/Health?project={q}", "Health", "monitor_heart", path == "/Projects/Health"),
                 ($"/Projects/Settings?project={q}", "Settings", "tune", path == "/Projects/Settings"),
             ];
@@ -1764,6 +1799,15 @@
         </nav>
     </header>
     <main id="main">
+
+        @* Said until the person dismisses each one, because only the person decides what becomes of a quarantined file.
+           The project's name is somebody's text and Razor encodes it like everything else. *@
+        @foreach (var (problemProject, problemCount) in problems)
+        {
+            <p class="file-problems-banner">
+                <a href="@Parley.Web.FileProblemBanner.Page?project=@Uri.EscapeDataString(problemProject)">@Parley.Client.Files.FileProblemSaid.Says(problemCount) in @problemProject. See them.</a>
+            </p>
+        }
 
         @if (ViewData["AsOf"] is string asOf && ViewData["Grid"] is not true)
         {

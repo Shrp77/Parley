@@ -92,6 +92,9 @@ cd Parley
 ./install.sh         # Linux and macOS
 ```
 
+On Linux and macOS the install leaves the terminal out unless you ask for it
+(`./install.sh --surfaces both`), and the web console does everything below.
+
 Then add your repositories. You can do this in the terminal or in the web console:
 
 1. Open the terminal with `parley`, or the web console at <http://127.0.0.1:5280>.
@@ -154,8 +157,8 @@ Parley is early. The specification is settling down, and the code is still movin
 - Authentication on the wire. [Security](docs/security.md) explains why that matters and what to do
   about it today.
 
-There will be a marketing site with more background, hosted on the HKGRP home site. It will say
-the same things with better photography.
+There will be a marketing site with more background. It will say the same things with better
+photography.
 
 Issues and discussion are welcome, especially on the open questions at the end of
 [SPEC.md](SPEC.md).

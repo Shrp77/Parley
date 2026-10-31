@@ -36,13 +36,13 @@ public sealed class AttachedAgent : IAsyncDisposable
         AgentName name,
         Parley.Broker.Broker broker,
         Parley.Broker.StartResult started,
-        bool startedByParley = false)
+        string? launchToken = null)
     {
         _runtime = runtime;
         Name = name;
         Broker = broker;
         Started = started;
-        StartedByParley = startedByParley;
+        LaunchToken = launchToken;
 
         // One slot, newest wins. See the remarks: a notice supersedes its predecessor entirely,
         // so a backlog of them carries no information a single current one does not.
@@ -58,9 +58,20 @@ public sealed class AttachedAgent : IAsyncDisposable
     /// <summary>Gets the agent this stream belongs to.</summary>
     public AgentName Name { get; }
 
+    /// <summary>The launch token this attachment presented, or <see langword="null"/> for none.</summary>
+    public string? LaunchToken { get; }
+
     /// <summary>Whether this is a process a node started, by the token it presented (SPEC.md §11.7).</summary>
-    /// <remarks>False is "open outside Parley": no node can give it a turn.</remarks>
-    public bool StartedByParley { get; }
+    /// <remarks>
+    /// <para>False is "open outside Parley": no node can give it a turn.</para>
+    /// <para>
+    /// <b>Read against the token the node last reported, not settled at attach</b> (lens 1 run 104). A token spent on its
+    /// first attach left the same process, reconnecting after a dropped stream or a broker restart, open outside Parley
+    /// for good: never woken, and refused a person's start. A token is good until the node starts the agent again with a
+    /// new one, so a process that outlived that launch still reads as outside.
+    /// </para>
+    /// </remarks>
+    public bool StartedByParley => _runtime.IsCurrentLaunch(Name, LaunchToken);
 
     /// <summary>Gets what the attach sequence of SPEC.md §14 did.</summary>
     public Parley.Broker.StartResult Started { get; }

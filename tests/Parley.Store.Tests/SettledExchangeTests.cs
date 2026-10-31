@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// <b>Each refusal was watched to fail</b> against the schema with its rule taken out, one rule at a time.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SettledExchangeTests : IDisposable
 {
     private static readonly ProjectName Test = ProjectName.Create("test");

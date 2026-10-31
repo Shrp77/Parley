@@ -26,6 +26,7 @@ namespace Parley.Terminal.Tests;
 /// <c>Lists</c> records why: <i>a key tested only in the negative is a key nobody has pressed.</i>
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CompletingTests : IAsyncDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");
@@ -477,9 +478,7 @@ public sealed class CompletingTests : IAsyncDisposable
         Assert.Contains("is the build green?", entry, StringComparison.Ordinal);
 
         driving.Row(listing.Choices, "is the build green?");
-        driving.Enter();
-
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         // **The cursor is on the message itself, not on the row used to scroll to it.** Reaching selects a
         // couple of rows earlier first, so the list scrolls those into view and the message sits below them

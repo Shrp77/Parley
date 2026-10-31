@@ -19,6 +19,7 @@ namespace Parley.Store.Tests;
 /// exactly the failure being guarded against.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ArchiveTests : IDisposable
 {
     private readonly SqliteConnection _connection;

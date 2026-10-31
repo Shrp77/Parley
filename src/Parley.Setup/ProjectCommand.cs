@@ -317,6 +317,24 @@ public static class ProjectCommand
             return Usage;
         }
 
+        // A project's store and file location live under the root, so the root must be this machine's own disk (the owner's
+        // rule, 2026-10-29): a sync client copying a store mid-write, or a share, is where a deployment's records go wrong.
+        if (LocalStorage.Problem(root) is { } notLocal)
+        {
+            await error.WriteLineAsync(notLocal).ConfigureAwait(false);
+
+            return Usage;
+        }
+
+        if (ProjectName.IsDeviceName(name.Value))
+        {
+            await error.WriteLineAsync(
+                $"'{name}' is a name Windows keeps for a device, so a project's folder cannot be called it. " +
+                "Choose another name.").ConfigureAwait(false);
+
+            return Usage;
+        }
+
         // A name is the whole of it: the store is derived from the name and the port is claimed, so
         // there is nothing left to get wrong.
         if (ProjectFolder.TryRead(root, name, out _, out _))
@@ -670,10 +688,36 @@ public static class ProjectCommand
             deleted.Add(path);
         }
 
+        // Every copy taken before an upgrade (SPEC.md §9.2). Each holds the text of every conversation up to its upgrade,
+        // and the destroy says the conversations go with the store. After the lock, like the store itself.
+        if (Path.GetDirectoryName(Path.GetFullPath(going.Store)) is { } beside && Directory.Exists(beside))
+        {
+            foreach (var path in Directory.EnumerateFiles(beside, Path.GetFileName(going.Store) + Parley.Core.StoreFiles.BeforeSchema + "*"))
+            {
+                if (ProjectManifest.IsTheManifest(path, manifestPath))
+                {
+                    continue;
+                }
+
+                if (!await TryDeleteAsync(path, cancellationToken).ConfigureAwait(false))
+                {
+                    await error.WriteLineAsync(
+                        $"Could not delete {path}: something still has it open. The entry is gone " +
+                        $"and {string.Join(", ", deleted)} {(deleted.Count == 1 ? "was" : "were")} " +
+                        "deleted; delete the rest yourself once nothing holds it.")
+                        .ConfigureAwait(false);
+
+                    return IoError;
+                }
+
+                deleted.Add(path);
+            }
+        }
+
         // The file location and its staging directory (SPEC.md §9.5), and only after the lock went: a
         // broker still serving would have kept the lock, and deleting files it may be streaming to an
         // agent would be the partial destruction the ordering above exists to prevent.
-        foreach (var suffix in new[] { Parley.Core.StoreFiles.Files, Parley.Core.StoreFiles.FilesIncoming })
+        foreach (var suffix in new[] { Parley.Core.StoreFiles.Files, Parley.Core.StoreFiles.FilesIncoming, Parley.Core.StoreFiles.FilesQuarantine })
         {
             var path = going.Store + suffix;
 

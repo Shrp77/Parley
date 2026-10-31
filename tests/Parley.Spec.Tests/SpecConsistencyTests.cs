@@ -7,6 +7,7 @@ namespace Parley.Spec.Tests;
 /// Checks SPEC.md against itself: references that resolve, tables that are not ragged, names
 /// that do not collide.
 /// </summary>
+[Integration]
 public sealed class SpecConsistencyTests
 {
     [Fact]

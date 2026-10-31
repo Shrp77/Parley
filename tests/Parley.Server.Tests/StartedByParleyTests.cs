@@ -13,6 +13,7 @@ namespace Parley.Server.Tests;
 /// in an editor must not read as running, a wake on it must not ask the node for a turn it could not give and mark one
 /// as coming, and its turn standing must not borrow whatever the node last said of that name.
 /// </remarks>
+[Integration]
 public sealed class StartedByParleyTests
 {
     private const string Here = "m1";
@@ -61,9 +62,10 @@ public sealed class StartedByParleyTests
     }
 
     [Fact]
-    public async Task A_token_is_spent_by_the_first_process_to_present_it()
+    public async Task A_process_reattaching_with_its_token_is_still_Parleys()
     {
-        // An editor started from a shell that inherited the variable must not pass for the process the node started.
+        // Lens 1 run 104: a token spent on its first attach left the same process, reconnecting after its stream
+        // dropped, open outside Parley for good: never woken, and refused a person's start.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
@@ -71,7 +73,80 @@ public sealed class StartedByParleyTests
         var first = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
         await first.DisposeAsync();
 
-        await using var second = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
+        await using var again = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
+
+        Assert.False((await RowAsync(broker)).OpenOutside);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_reported_under_a_name_since_renamed_finds_the_agent_by_its_identity(bool withIdentity)
+    {
+        // Lens 1 run 105: the node knows a process by the name it launched it under, and a person renamed the agent
+        // since. Re-reported after a broker restart under the old name, the token left the renamed process outside.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        var identity = Parley.Core.AgentIdentity.Mint().ToString();
+
+        // Registered under its new name, as the rename left it.
+        await (await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, identity: identity)).DisposeAsync();
+
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport
+            {
+                Machine = Here, Agent = "orders@m1", Token = "t-1", Identity = withIdentity ? identity : string.Empty,
+            },
+            cancellationToken: Ct);
+
+        await using var again = await AttachedClient.AttachAsync(
+            broker, Agent, cancellationToken: Ct, launchToken: "t-1", identity: identity);
+
+        Assert.Equal(!withIdentity, (await RowAsync(broker)).OpenOutside);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_reported_from_another_folder_takes_no_name_held_from_this_one(bool elsewhere)
+    {
+        // Lens 2 run 111: a second checkout whose launch key claims this agent's name, started by another project's
+        // node, was reported here under the name and took its token, leaving the real agent open outside Parley. The
+        // same folder under a new identity is a repository enrolled again, and does take it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        var folder = Path.Combine(Path.GetTempPath(), "checkout-billing");
+
+        await LaunchAsync(node, "t-1");
+        await using var agent = await AttachedClient.AttachAsync(
+            broker, Agent, folder, Ct, launchToken: "t-1", identity: Parley.Core.AgentIdentity.Mint().ToString());
+
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport
+            {
+                Machine = Here,
+                Agent = Agent,
+                Token = "t-2",
+                Identity = Parley.Core.AgentIdentity.Mint().ToString(),
+                Workspace = elsewhere ? Path.Combine(Path.GetTempPath(), "checkout-copy") : folder,
+            },
+            cancellationToken: Ct);
+
+        Assert.Equal(!elsewhere, (await RowAsync(broker)).OpenOutside);
+    }
+
+    [Fact]
+    public async Task A_token_from_a_launch_the_node_has_since_replaced_is_outside()
+    {
+        // A process that outlived its launch, or an editor started from a shell that inherited its token, must not pass
+        // for the process the node started since.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await LaunchAsync(node, "t-1");
+        await LaunchAsync(node, "t-2");
+
+        await using var old = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
 
         Assert.True((await RowAsync(broker)).OpenOutside);
     }

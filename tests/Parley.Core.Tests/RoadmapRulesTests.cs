@@ -9,6 +9,7 @@ namespace Parley.Core.Tests;
 /// The probes here are the malicious cases rather than the pleasant ones: a name that is not legal, a
 /// dependency that points forward, text that breaks a line. A rule is worth what its refusal is worth.
 /// </remarks>
+[Unit]
 public sealed class RoadmapRulesTests
 {
     private static RoadmapItemDraft Item(string text, params int[] needs) =>
@@ -53,25 +54,6 @@ public sealed class RoadmapRulesTests
     [InlineData(-1, 1)]
     public void A_name_is_never_made_for_a_number_that_is_not_one_or_more(int roadmap, int item) =>
         Assert.Throws<ArgumentOutOfRangeException>(() => ItemConversation.Name(roadmap, item));
-
-    [Theory]
-    [InlineData("rm3-2", true, 3, 2)]
-    [InlineData("rm03-2", false, 0, 0)]
-    [InlineData("rm3-02", false, 0, 0)]
-    [InlineData("rm3", false, 0, 0)]
-    [InlineData("rm-2", false, 0, 0)]
-    [InlineData("orders-1", false, 0, 0)]
-    [InlineData("rm3-2-extra", false, 0, 0)]
-    [InlineData(null, false, 0, 0)]
-    public void Only_the_exact_shape_this_class_makes_parses_back(
-        string? name, bool parses, int roadmap, int item)
-    {
-        // A shape and nothing more: parsing is not recognising. Only the broker's reservation says an
-        // identifier is an item's conversation.
-        Assert.Equal(parses, ItemConversation.TryParse(name, out var r, out var i));
-        Assert.Equal(roadmap, r);
-        Assert.Equal(item, i);
-    }
 
     [Fact]
     public void A_whole_roadmap_has_no_problem()

@@ -32,6 +32,7 @@ namespace Parley.Terminal.Tests;
 /// Corrected during lens 2 run 20, along with the enrolment that had been willing to write it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class CataloguePreservedTests : IDisposable
 {
     private readonly string _root =

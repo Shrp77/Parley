@@ -465,3 +465,7 @@ REVIEW-LEDGER.md
 # deployment fact -- absolute paths and the names of the repositories on one disk -- and this
 # repository is public. The real one lives in %APPDATA%\Parley.
 node.json
+.claude/screenshots/
+
+# Test results, by category, from scripts/test.ps1 (review/README.md)
+.test-metrics/

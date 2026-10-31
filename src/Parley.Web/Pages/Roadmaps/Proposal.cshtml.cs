@@ -37,12 +37,38 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
     public long Id { get; set; }
 
     /// <summary>The proposal as text, which the person edits.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>The roadmap to revise, or <c>new</c> for a roadmap of its own.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Target { get; set; }
+
+    /// <summary>The revision of the roadmap to revise that the page showed, so a revision never replaces items saved since.</summary>
+    /// <remarks>
+    /// It travels with the form and is kept across a page drawn again, as an edit's is: drawn from the roadmap as each
+    /// read finds it, a warning's second submit would carry a revision the person never saw.
+    /// </remarks>
+    [BindProperty, FromForm]
+    public int? Revision { get; set; }
+
+    /// <summary>The roadmap <see cref="Revision"/> is a revision of, so it is never taken for another roadmap's.</summary>
+    [BindProperty, FromForm]
+    public long? RevisionOf { get; set; }
+
+    /// <summary>What a revision also does to the other proposals waiting to revise the same roadmap; empty when nothing.</summary>
+    public string Superseding { get; private set; } = string.Empty;
+
+    /// <summary>Set by the second submit, after the page described the open work a revision removes.</summary>
+    [BindProperty, FromForm]
+    public bool ConfirmRemoval { get; set; }
+
+    /// <summary>The numbers of the items the warning described, which the second submit agrees to remove.</summary>
+    [BindProperty, FromForm]
+    public string? Removing { get; set; }
+
+    /// <summary>What confirming as a revision would leave in flight, said before it is confirmed; null when nothing is.</summary>
+    public string? Warning { get; private set; }
 
     /// <summary>The proposal being decided, once read.</summary>
     public RoadmapProposal? Proposal { get; private set; }
@@ -88,8 +114,35 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
 
         await ReadAsync().ConfigureAwait(false);
 
+        // A kept revision belongs to the roadmap it was shown for. When the hint now matches another, renamed meanwhile
+        // say, it is dropped on every path, and the page draws the one it now matches at the revision this read found.
+        if (RevisionOf != Match?.Id)
+        {
+            Revision = null;
+            RevisionOf = null;
+        }
+
         if (Proposal is null)
         {
+            return Page();
+        }
+
+        long? target = Match is not null && string.Equals(Target, Match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            ? Match.Id
+            : null;
+
+        // A revision the person chose is never confirmed as something else. When the roadmap it named no longer matches,
+        // renamed meanwhile say, nothing is confirmed and the page is shown again as it now reads. Checked before the text
+        // is read: a page drawn again for a problem in the text would otherwise offer a new roadmap in its place.
+        if (target is null && Target is { Length: > 0 } chosen && !string.Equals(chosen, "new", StringComparison.Ordinal))
+        {
+            Problem = "The roadmap you chose to revise is no longer the one this proposal matches, so nothing was confirmed. "
+                + "Choose again.";
+            Target = null;
+
+            // The revision kept was another roadmap's: the page shows the one it now matches, at the revision it reads.
+            Revision = null;
+
             return Page();
         }
 
@@ -102,13 +155,51 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             return Page();
         }
 
-        long? target = Match is not null && string.Equals(Target, Match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            ? Match.Id
-            : null;
+        // The roadmap moved since the page showed it: nothing is confirmed, and the page is shown again as it now reads,
+        // so the revision is chosen against what the person sees.
+        if (target is not null && Revision is { } shown && Match!.Revision != shown)
+        {
+            Problem = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Roadmap #{Match.Number} has changed since this page showed it, so nothing was confirmed. It is at revision "
+                + $"{Match.Revision}; open roadmap #{Match.Number} to read what it now holds, then choose again.");
+            Revision = Match.Revision;
+
+            return Page();
+        }
+
+        // A revision keeps only the items the person numbered, so it removes the rest the roadmap had. Open work it would
+        // remove is described first and confirmed only on a second, deliberate submit, as an edit's is (SPEC.md §5.7).
+        if (target is { } revising)
+        {
+            var current = await BrokerDirectory.ReadAsync(async () =>
+                await new BrokerClient(directory.ClientFor(project))
+                    .RoadmapAsync(revising, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ConfigureAwait(false);
+
+            if (!current.Reachable || current.Value is null)
+            {
+                Problem = current.Problem ?? "The roadmap it would revise could not be read, so nothing was confirmed.";
+
+                return Page();
+            }
+
+            var open = Removal.StillOpen(current.Value, content);
+
+            if (!Removal.Covers(open, ConfirmRemoval ? Removing : null))
+            {
+                Warning = Removal.Describe(open);
+                Removing = Removal.Numbers(open);
+
+                return Page();
+            }
+        }
 
         var outcome = await BrokerDirectory.ReadAsync(async () =>
             await new BrokerClient(directory.ClientFor(project))
-                .ConfirmProposalAsync(Proposal.Id, content, target, HttpContext.RequestAborted).ConfigureAwait(false))
+                .ConfirmProposalAsync(
+                    Proposal.Id, content, target, target is null ? null : Revision, HttpContext.RequestAborted)
+                .ConfigureAwait(false))
             .ConfigureAwait(false);
 
         if (!outcome.Reachable)
@@ -144,7 +235,7 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         var token = HttpContext.RequestAborted;
 
         var read = await BrokerDirectory.ReadAsync(async () =>
-            (await broker.ProposalsAsync(ProposalState.Waiting, token).ConfigureAwait(false),
+            (await broker.ProposalAsync(Id, token).ConfigureAwait(false),
              await broker.RoadmapsAsync(token).ConfigureAwait(false))).ConfigureAwait(false);
 
         if (!read.Reachable)
@@ -154,9 +245,9 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
             return;
         }
 
-        var (waiting, roadmaps) = read.Value;
+        var (proposal, roadmaps) = read.Value;
 
-        Proposal = waiting.FirstOrDefault(p => p.Id == Id);
+        Proposal = proposal is { State: ProposalState.Waiting } ? proposal : null;
 
         if (Proposal is null)
         {
@@ -166,5 +257,10 @@ public sealed class ProposalModel(BrokerDirectory directory) : PageModel
         }
 
         Match = ProposalText.Matching(Proposal, roadmaps);
+
+        if (Match is not null)
+        {
+            Superseding = ProposalText.Superseding(Proposal, Match, await WaitingProposals.ListAsync(broker, token).ConfigureAwait(false));
+        }
     }
 }

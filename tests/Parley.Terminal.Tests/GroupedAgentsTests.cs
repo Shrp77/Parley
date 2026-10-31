@@ -21,6 +21,7 @@ namespace Parley.Terminal.Tests;
 /// names have to be findable, and a heading must never be a thing the cursor can act on.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class GroupedAgentsTests
 {
     private static AgentRecord Agent(

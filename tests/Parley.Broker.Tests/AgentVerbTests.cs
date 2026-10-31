@@ -16,6 +16,7 @@ namespace Parley.Broker.Tests;
 /// the seam between them: a Request the schema refuses must leave no exchange, and a Result the schema
 /// refuses must leave the exchange open.
 /// </remarks>
+[Integration]
 public sealed class AgentVerbTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

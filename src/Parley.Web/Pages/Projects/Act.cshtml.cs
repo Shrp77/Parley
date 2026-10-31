@@ -45,7 +45,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// <remarks>
     /// What makes the ownership line theirs is that nothing pre-fills this box — see <c>Act.cshtml</c>.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>Why the person is closing a conversation, when they give a reason.</summary>
@@ -53,7 +53,7 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
     /// Told to every participant holding open work in it (§5.3). Optional, because a close with no reason
     /// is still a close each of them is told about, and refusing one would leave the work open instead.
     /// </remarks>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Reason { get; set; }
 
     /// <summary>What this action would do, in words, before it is done.</summary>
@@ -108,13 +108,15 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                       + "not started, and nothing can be asked of a machine whose node is not running.", false),
 
             "purge" => ($"'{Subject}' will be deleted, along with every conversation it was party "
-                      + "to — including its peers' side of those conversations. Its name becomes "
+                      + "to — including its peers' side of those conversations and each one's folder of files, "
+                      + "with anything copied into it by hand. Its name becomes "
                       + "free for another agent. This cannot be undone, and retiring it instead "
                       + "achieves everything except freeing the name.", true),
 
             "forceconclude" => ($"Conversation '{Subject}' will be closed now, whatever its participants "
                               + "have voted. Every request still open in it is closed with a result saying "
-                              + "a person closed it, and each participant holding that work is told.", false),
+                              + "a person closed it, and each participant holding that work is told. "
+                              + Parley.Client.Rendering.RetentionWords.WhatClosingKeeps, false),
 
             // The project-level form, which follows `prune` in taking its subject from whatever made the
             // link. Named as a cost rather than as a risk: nothing is destroyed and nothing is written,
@@ -167,9 +169,8 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
                           + "line it started with until it next starts.", false),
 
             "prune" => ($"The broker for '{Project}' applies its retention policy now rather than at its next "
-                      + "sweep. Message text past the policy is deleted permanently: export a conversation "
-                      + "first if it is worth keeping. Nothing on an open exchange, and nothing not yet "
-                      + "collected, is removed.", true),
+                      + "retention pass. Message text past the policy is deleted permanently: export a conversation "
+                      + "first if it is worth keeping. " + Parley.Client.Rendering.RetentionWords.WhatItKeeps, true),
 
             _ => ("This is not something the console does.", false)
         };
@@ -329,7 +330,16 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             return $"Not recorded: {wrong}";
         }
 
-        return await DescribeOwnership(broker.RecordOwnershipAsync(agent, acceptance, token)).ConfigureAwait(false);
+        var record = await broker.RecordOwnershipAsync(agent, acceptance, token).ConfigureAwait(false);
+
+        if (record.Recorded)
+        {
+            _ = await OwnershipLine
+                .AfterRecordedAsync(known.Workspace, project.Name.Value, agent, acceptance.Statement, token)
+                .ConfigureAwait(false);
+        }
+
+        return await DescribeOwnership(Task.FromResult(record)).ConfigureAwait(false);
     }
 
     /// <summary>Accepts an agent's waiting answer to Parley, as it wrote it or as a person edited it.</summary>
@@ -485,7 +495,9 @@ public sealed class ActModel(BrokerDirectory directory) : PageModel
             said += $" {pruned.HeldByFloor} more were old enough and were kept, because they are on open work, not yet collected, or the request a result not yet collected carries back.";
         }
 
-        return pruned.Capped ? said + " It stopped at its own limit with more still to remove; run it again." : said;
+        said = pruned.Capped ? said + " It stopped at its own limit with more still to remove; run it again." : said;
+
+        return pruned.Applied is { } policy ? said + " " + Parley.Client.Rendering.RetentionWords.Applied(policy) : said;
     }
 
     private static async Task<string> DescribePurge(Task<PurgeOutcome> action)

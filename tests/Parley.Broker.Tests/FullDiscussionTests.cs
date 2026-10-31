@@ -13,6 +13,7 @@ namespace Parley.Broker.Tests;
 /// it — request, collect, clarify, result, conclude — with an agent's session ending in the middle, because the
 /// parts have been correct individually while the joins between them were where defects lived.
 /// </remarks>
+[Integration]
 public sealed class FullDiscussionTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

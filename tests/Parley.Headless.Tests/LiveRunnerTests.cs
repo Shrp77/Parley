@@ -25,6 +25,7 @@ namespace Parley.Headless.Tests;
 /// after changing anything about the turn protocol.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class LiveRunnerTests : IDisposable
 {
     private const string Variable = "PARLEY_LIVE_RUNNER";

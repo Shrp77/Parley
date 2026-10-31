@@ -20,6 +20,10 @@ namespace Parley.Terminal;
 /// item's conversation stays, and nothing in flight is destroyed.
 /// </para>
 /// <para>
+/// <b>Removing an item whose work is still open is described first</b> (<see cref="Removal"/>), and saved only on a
+/// second, deliberate choice: the request stays open and its agent is not told, which deleting a line does not say.
+/// </para>
+/// <para>
 /// <b>A stale revision is said and applied to nothing.</b> The person is offered the roadmap read again; what they typed
 /// is not carried onto it, because it was written against items that may have moved.
 /// </para>
@@ -34,6 +38,9 @@ internal static class Revising
 
     /// <summary>Reads the roadmap again and opens it for editing.</summary>
     private const string Reload = "Read it again and edit that";
+
+    /// <summary>Saves an edit after being told it removes items whose work is still open.</summary>
+    internal const string RemoveAnyway = "Remove them and save";
 
     /// <summary>Said when the person leaves without saving.</summary>
     internal const string Left = "Left as it is. Nothing was changed.";
@@ -98,8 +105,99 @@ internal static class Revising
                 return;
             }
 
-            queue(t => SaveAsync(app, client, roadmap, content, queue, done, t));
+            var opened = Removal.StillOpen(roadmap, content);
+
+            if (Removal.Describe(opened) is not { } warning)
+            {
+                // Read again first: the roadmap was read when the form opened, and work started while the person typed
+                // would be removed with no warning.
+                queue(async t =>
+                {
+                    if (await StillCoveredAsync(client, roadmap.Id, content, Removal.Numbers(opened), "saved", done, t)
+                        .ConfigureAwait(false))
+                    {
+                        await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
+                    }
+                });
+
+                return;
+            }
+
+            // The item's words were proposed by an agent, so they are made safe to draw like any other text of theirs.
+            var choosing = Prompting.Choose(Title, Safe.Text(warning), [Leave, RemoveAnyway]);
+            var asking = Prompting.Open(app, choosing);
+            var shown = Removal.Numbers(opened);
+
+            choosing.Done += (_, chosen) =>
+            {
+                Prompting.Close(app, asking);
+
+                if (chosen == RemoveAnyway)
+                {
+                    queue(async t =>
+                    {
+                        if (await StillCoveredAsync(client, roadmap.Id, content, shown, "saved", done, t).ConfigureAwait(false))
+                        {
+                            await SaveAsync(app, client, roadmap, content, queue, done, t).ConfigureAwait(false);
+                        }
+                    });
+                }
+                else
+                {
+                    _ = done(Left);
+                }
+            };
         };
+    }
+
+    /// <summary>Said when work started on an item a change would remove after the person saw what it removes.</summary>
+    internal const string OpenedSince =
+        "Work started on an item this change removes while you were on it, so nothing was changed. Do it again to see what it removes.";
+
+    /// <summary>Reads the roadmap again and says whether the open work a change removes is still only what was shown.</summary>
+    /// <param name="client">The operator's client.</param>
+    /// <param name="roadmapId">The roadmap.</param>
+    /// <param name="content">What the change makes of it.</param>
+    /// <param name="shown">The items the person was told it removes, as <see cref="Removal.Numbers"/> wrote them.</param>
+    /// <param name="act">What the change is called in the sentence when it is not made: saved, or confirmed.</param>
+    /// <param name="done">Told what to say when it is not made.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Whether to go ahead.</returns>
+    /// <remarks>
+    /// A person reads a form or a warning for as long as they like, and starting an item moves no revision, so the
+    /// revision check cannot see work that began meanwhile; this read can. The web checks the same on every save.
+    /// </remarks>
+    internal static async Task<bool> StillCoveredAsync(
+        BrokerClient client,
+        long roadmapId,
+        RoadmapContent content,
+        string shown,
+        string act,
+        Func<string, Task> done,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(done);
+
+        var fresh = await BrokerDirectory.ReadAsync(
+            async () => await client.RoadmapAsync(roadmapId, cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+
+        if (!fresh.Reachable || fresh.Value is not { } now)
+        {
+            await done($"The roadmap could not be read, so nothing was {act}: {Safe.Text(fresh.Problem ?? "there is no such roadmap.")}")
+                .ConfigureAwait(false);
+
+            return false;
+        }
+
+        if (!Removal.Covers(Removal.StillOpen(now, content), shown))
+        {
+            await done(OpenedSince).ConfigureAwait(false);
+
+            return false;
+        }
+
+        return true;
     }
 
     private static async Task SaveAsync(

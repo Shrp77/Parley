@@ -19,6 +19,7 @@ namespace Parley.Headless.Tests;
 /// delay after the first; interleaved, the two complete together.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OverlappingTurnsTests : IDisposable
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);

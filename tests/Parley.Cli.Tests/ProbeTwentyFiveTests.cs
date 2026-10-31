@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// repository announce itself as an agent, is telling somebody the opposite of what happened.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProbeTwentyFiveTests : IDisposable
 {
     private readonly string _root =

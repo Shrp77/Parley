@@ -312,12 +312,37 @@ public sealed class OperatorConsole
         ProposalState? state, CancellationToken cancellationToken = default) =>
         _roadmaps.ListProposalsAsync(state, cancellationToken);
 
+    /// <summary>Reads the headings of the proposals agents have made, and none of their items (§10.2's <c>proposals</c>).</summary>
+    /// <param name="state">Which to read, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposals, newest first, as headings.</returns>
+    public Task<IReadOnlyList<RoadmapProposal>> ListProposalHeadingsAsync(
+        ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.ListProposalHeadingsAsync(state, cancellationToken);
+
+    /// <summary>Counts the proposals agents have made (§10.2's <c>proposal_count</c>).</summary>
+    /// <param name="state">Which to count, or <see langword="null"/> for every state.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>How many there are.</returns>
+    public Task<int> CountProposalsAsync(ProposalState? state, CancellationToken cancellationToken = default) =>
+        _roadmaps.CountProposalsAsync(state, cancellationToken);
+
+    /// <summary>Reads one proposal whole (§10.2's <c>proposal</c>).</summary>
+    /// <param name="id">The proposal.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The proposal, or <see langword="null"/>.</returns>
+    public Task<RoadmapProposal?> GetProposalAsync(long id, CancellationToken cancellationToken = default) =>
+        _roadmaps.GetProposalAsync(id, cancellationToken);
+
     /// <summary>Turns a proposal into a roadmap, or a revision of one (§10.2's <c>confirm_proposal</c>).</summary>
     /// <param name="id">The proposal.</param>
     /// <param name="content">The person's final content.</param>
     /// <param name="targetRoadmap">The roadmap it revises, or <see langword="null"/> for a new one.</param>
     /// <param name="nowUtc">The instant.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
+    /// <param name="targetRevision">
+    /// The revision of that roadmap the person was shown: required with a target, and refused when it has moved.
+    /// </param>
     /// <returns>What it came to.</returns>
     /// <remarks>
     /// Where a roadmap comes to exist. Only this and <see cref="EditRoadmapAsync"/> write one, and both are a
@@ -328,8 +353,10 @@ public sealed class OperatorConsole
         RoadmapContent content,
         long? targetRoadmap,
         DateTimeOffset nowUtc,
-        CancellationToken cancellationToken = default) =>
-        _roadmaps.ConfirmAsync(id, content, targetRoadmap, nowUtc, cancellationToken: cancellationToken);
+        CancellationToken cancellationToken = default,
+        int? targetRevision = null) =>
+        _roadmaps.ConfirmAsync(
+            id, content, targetRoadmap, nowUtc, cancellationToken: cancellationToken, expectedRevision: targetRevision);
 
     /// <summary>Declines a waiting proposal (§10.2's <c>decline_proposal</c>).</summary>
     /// <param name="id">The proposal.</param>

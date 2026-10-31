@@ -102,7 +102,10 @@ internal static class Prompting
     /// <summary>Opens a dialog and returns the session it is running in.</summary>
     /// <param name="app">The application to open it in.</param>
     /// <param name="dialog">The dialog.</param>
-    /// <returns>The session, to be ended when the dialog is done with, or null if it refused to open.</returns>
+    /// <returns>
+    /// The session, to be ended when the dialog is done with, or null if it refused to open or the loop did not reach it
+    /// in time (<see cref="OnTheLoop"/>), when it never opens.
+    /// </returns>
     internal static SessionToken? Open(IApplication app, View dialog)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -110,39 +113,82 @@ internal static class Prompting
 
         // **On the thread that draws, when there is a loop.** Most dialogs are opened after a read, from the work
         // queue's thread-pool thread, while the loop is drawing; the toolkit's draw is not safe to enter twice at
-        // once (it throws out of its line canvas). Invoke runs inline
-        // when this is already the loop's thread, so the waiting below only ever waits for the loop to get to it. The harness
-        // never sets this, because it never pumps a loop: work posted to one would not run.
-        if (Marshal is { } onTheLoop)
+        // once (it throws out of its line canvas).
+        SessionToken? opened = null;
+
+        OnTheLoop(() => opened = OpenHere(app, dialog));
+
+        return opened;
+    }
+
+    /// <summary>Runs something on the thread that draws when there is a loop, and where it is called when not.</summary>
+    /// <param name="act">What to run.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Done when this returns, or never.</b> Waits up to five seconds for the loop to start it, so a loop that has
+    /// ended cannot hold a pool thread for ever; one that has not started it by then never will, and one that has is
+    /// waited for to the end. Work that ran late, after its caller had gone on, was the defect each time: a dialog that
+    /// opened after its caller took it as not opened could never be closed, and an item's words filled after the caller
+    /// looked were sent as a command (ADialogTheLoopReachesLateNeverOpensTests, AnItemsWordsStayWordsWhenTheLoopIsLateTests).
+    /// </para>
+    /// <para>
+    /// Invoke runs inline when this is already the loop's thread, so the waiting only ever waits for the loop to get to
+    /// it. A driven test leaves <see cref="Marshal"/> unset, because it never pumps a loop and work posted to one would
+    /// not run; only a collection that runs alone stands a loop in.
+    /// </para>
+    /// </remarks>
+    internal static void OnTheLoop(Action act)
+    {
+        ArgumentNullException.ThrowIfNull(act);
+
+        if (Marshal is not { } onTheLoop)
         {
-            SessionToken? opened = null;
-            using var done = new ManualResetEventSlim();
+            act();
 
-            onTheLoop(() =>
-            {
-                try
-                {
-                    opened = OpenHere(app, dialog);
-                }
-                finally
-                {
-                    done.Set();
-                }
-            });
-
-            // Bounded, so a loop that has already ended cannot hold a pool thread for ever.
-            _ = done.Wait(TimeSpan.FromSeconds(5));
-
-            return opened;
+            return;
         }
 
-        return OpenHere(app, dialog);
+        using var done = new ManualResetEventSlim();
+        var state = Waiting;
+
+        onTheLoop(() =>
+        {
+            if (Interlocked.CompareExchange(ref state, Running, Waiting) != Waiting)
+            {
+                return;
+            }
+
+            try
+            {
+                act();
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+
+        if (done.Wait(TimeSpan.FromSeconds(5))
+            || Interlocked.CompareExchange(ref state, GivenUp, Waiting) == Waiting)
+        {
+            return;
+        }
+
+        // The loop began it as the wait ran out: it is finishing now, on the loop.
+        done.Wait();
     }
+
+    private const int Waiting = 0;
+
+    private const int Running = 1;
+
+    private const int GivenUp = 2;
 
     /// <summary>Runs something on the thread the toolkit draws on, or null to run it where it is called.</summary>
     /// <remarks>
-    /// Set once, by the program, to the loop's own <c>Invoke</c>; never by a test. Static because every dialog goes through
-    /// <see cref="Open"/> and a seam threaded through all of them would be a parameter on each.
+    /// Set once, by the program, to the loop's own <c>Invoke</c>; by a test only in a collection that runs alone
+    /// (<c>OwnsTheMarshal</c>). Static because every dialog goes through <see cref="Open"/> and every write to the
+    /// box through <see cref="OnTheLoop"/>, and a seam threaded through all of them would be a parameter on each.
     /// </remarks>
     internal static Action<Action>? Marshal { get; set; }
 
@@ -196,6 +242,7 @@ internal sealed class TextDialog : Dialog
         Func<string, string>? correct = null,
         string? corrected = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         _problem = problem;
         _correct = correct;
         _corrected = corrected ?? string.Empty;
@@ -349,6 +396,7 @@ internal sealed class ChoiceDialog : Dialog
 
     internal ChoiceDialog(string title, string description, IReadOnlyList<string> choices)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(choices);
 
         Title = title;
@@ -546,6 +594,7 @@ internal sealed class FormDialog : Dialog
 
     internal FormDialog(string title, IReadOnlyList<FormField> fields)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(fields);
 
         _fields = fields;

@@ -23,15 +23,18 @@ The plugin does not install the server. Until the first release you build the to
 | `/parley:setup-many` | Does the same for several repositories at once |
 | `/parley:write-peers` | Writes or refreshes the Peers section in the repository's standing instructions, from the live list of agents |
 | `/parley:status` | Reports whether Parley is working here: tools bound, agent registered, and the Peers section matching the live list |
-| `/parley:files-list`, `-remove`, `-prune`, `-open`, `-folder` | Manage the files agents have placed. A person has to type these; a model cannot run them |
-| `parley-operator` skill | Lets you ask for a roster, an export or a report in words instead of remembering command flags |
-| A hook | Tells you in one line when mail is waiting for an open session |
+| `/parley:files-place`, `-list`, `-remove`, `-prune`, `-open`, `-folder`, `-problems` | Place your own files, manage the files agents have placed, and see what Parley found changed in the file location. A person has to type these; a model cannot run them |
+| `parley-operator` skill | Lets you ask for a roster, what was said, or what is waiting in words instead of remembering command flags, and points you to the terminal for the rest |
+| A hook | Tells an open session when mail is waiting, and keeps it from going idle with mail uncollected |
 
 ## Setting up one repository
 
-`/parley:setup` asks what this repository is called and what it owns. It writes a launch
-configuration into the repository's `.mcp.json`, then asks you to restart the session, because
-that is when the Parley tools appear.
+`/parley:setup` writes a launch configuration into the repository's `.mcp.json`, then asks you to
+restart the session, because that is when the Parley tools appear. The agent's name comes from
+the repository's existing `PARLEY_AGENT` or, failing that, from its folder name; put the name you
+want into `.mcp.json` first if the folder's is wrong. Nobody writes what the agent owns: once it
+attaches, Parley asks the agent, and its answer becomes its ownership line (automatically, unless
+you turned Auto Accept off, in which case you accept it).
 
 In the session that comes back, run `/parley:write-peers`. It reads the live list of agents
 through the Parley tools and writes the Peers section. The order matters. The command reads the
@@ -59,13 +62,14 @@ Each repository describes itself in `.mcp.json`:
 
 ```jsonc
 {
+  "parleyAgentId": "6f1c…",                // the repository's identity, written once by setup
   "mcpServers": {
     "parley-acme": {
       "command": "parley-mcp",
       "env": {
-        "PARLEY_AGENT": "orders",
+        "PARLEY_AGENT": "orders",              // the name shown; changing it renames the agent
         "PARLEY_PROJECT": "acme",
-        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock."
+        "PARLEY_OWNS": "Carts, orders, line totals. No tax, no stock."  // written when its answer is accepted
       }
     }
   }
@@ -115,11 +119,15 @@ bound is not enough on its own. `/parley:write-peers` writes this section for yo
 The inbox is pull. An agent collects its mail when it calls `parley_inbox`, and it can only do
 that when its session takes a turn.
 
-**The hook.** The plugin runs a small hook when you interact with a repository, on session start,
-on each prompt, and after batches of tool calls. If mail is waiting, it says so in one line. It
+**The hook.** The plugin runs a small hook when you interact with a repository: on session start,
+on each prompt, after batches of tool calls, and when the agent is about to finish its turn. If
+mail is waiting, it says so in one line. When the agent is about to finish with mail uncollected,
+it asks it once to call `parley_inbox` first, so the session does not go idle carrying it; that
+costs one more model turn, once per turn. In a repository where the Parley server cannot start,
+collecting never succeeds, so that extra turn comes every time until the server is fixed. It
 reports counts only, never contents, so a message cannot reach the agent without the wrapping
 that marks it as data. It is silent when nothing is waiting, silent in repositories that are not
-Parley agents, and silent on any error, so it can never stop you working. That also means a hook
+Parley agents, and silent on any error. That also means a hook
 that never ran looks the same as a hook with nothing to say. The
 [plugin's own README](../plugins/parley/README.md) shows how to check it by hand.
 

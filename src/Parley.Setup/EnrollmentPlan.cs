@@ -238,6 +238,13 @@ public static class EnrollmentPlan
                 occupied[entry.Workspace] = i;
             }
 
+            // Only this machine's own disks: never a synced cloud folder, a network share or a virtual file system (the owner's
+            // rule, 2026-10-29). Every surface enrols through this plan, so the refusal is said once, here.
+            if (LocalStorage.Problem(entry.Workspace) is { } notLocal)
+            {
+                problems.Add($"{where}: {notLocal}");
+            }
+
             if (!IsWellFormedName(entry.Agent))
             {
                 problems.Add(
@@ -280,7 +287,7 @@ public static class EnrollmentPlan
             // characters, U+2028, the bidirectional overrides and the tag block are all refused
             // too, because a roster entry that can break its own line can imitate the ones
             // around it.
-            if (owns.Length > 0 && !OwnershipStatement.IsValid(owns, out var wrong))
+            if (owns.Length > 0 && !OwnershipStatement.IsLaunchable(owns, out var wrong))
             {
                 problems.Add($"{where}: owns {wrong}");
             }
@@ -525,10 +532,11 @@ public static class EnrollmentPlan
             // worse one than a sentence somebody meant.
             //
             // It says how to get one, because enrolment deliberately does not ask: the line is
-            // something the agent is asked for and a person accepts.
+            // something the agent is asked for once it attaches, and its answer is accepted for it
+            // (Auto Accept, the default) or by a person.
             notes.Add(
-                ".mcp.json: no owns line; peers will see only the name. Ask the agent what it owns "
-                + "from the terminal or the console, and accepting the answer writes it here.");
+                ".mcp.json: no owns line yet; peers will see only the name until it has one. Parley asks the agent "
+                + "what it owns once it registers, and its accepted answer is written here.");
         }
 
         string? instructionsOutput = null;

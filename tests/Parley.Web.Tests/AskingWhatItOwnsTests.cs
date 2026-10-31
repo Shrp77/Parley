@@ -24,6 +24,7 @@ namespace Parley.Web.Tests;
 /// somebody else's or report success having written nothing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class AskingWhatItOwnsTests
 {
     [Fact]

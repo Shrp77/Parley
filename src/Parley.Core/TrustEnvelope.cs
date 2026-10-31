@@ -17,8 +17,8 @@ namespace Parley.Core;
 /// </para>
 /// <para>
 /// It is a soft control: it depends on the receiving model honouring the framing. The structural
-/// controls beside it — the message cap and deduplication — bound how much can arrive without needing
-/// the model's cooperation.
+/// control beside it — the message cap — bounds how much one message can carry without needing the model's
+/// cooperation; deduplication only stops a retried move being stored twice, and is no volume control (§13.1).
 /// </para>
 /// <para>
 /// The broker renders this, never the sender. A participant permitted to label its own message would

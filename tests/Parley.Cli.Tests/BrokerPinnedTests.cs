@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// those tests a filesystem.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class BrokerPinnedTests
 {
     private static EnrollmentEntry Entry() =>

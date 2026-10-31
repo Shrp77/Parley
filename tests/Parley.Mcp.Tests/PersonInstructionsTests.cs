@@ -21,6 +21,7 @@ namespace Parley.Mcp.Tests;
 /// is exactly when the old sentence did its harm. Watched to fail against 0.35.x.
 /// </para>
 /// </remarks>
+[Unit]
 public sealed class PersonInstructionsTests
 {
     private static string ResultDescription() =>

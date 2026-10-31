@@ -27,6 +27,7 @@ namespace Parley.Cli.Tests;
 /// only shows up later, as a launch configuration that changes under a branch switch.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class WorktreeIsNotASecondAgentTests : IDisposable
 {
     private readonly string _root =

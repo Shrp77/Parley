@@ -37,12 +37,23 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
     public long Id { get; set; }
 
     /// <summary>The roadmap as text, which the person edits.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public string? Text { get; set; }
 
     /// <summary>The revision the form was opened at.</summary>
-    [BindProperty]
+    [BindProperty, FromForm]
     public int Revision { get; set; }
+
+    /// <summary>Set by the second submit, after the page described the open work the edit removes.</summary>
+    [BindProperty, FromForm]
+    public bool ConfirmRemoval { get; set; }
+
+    /// <summary>The numbers of the items the warning described, which the second submit agrees to remove.</summary>
+    [BindProperty, FromForm]
+    public string? Removing { get; set; }
+
+    /// <summary>What the edit would leave in flight, said before it is saved; null when nothing is.</summary>
+    public string? Warning { get; private set; }
 
     /// <summary>The roadmap, once read.</summary>
     public Roadmap? Roadmap { get; private set; }
@@ -108,6 +119,19 @@ public sealed class EditModel(BrokerDirectory directory) : PageModel
             Problem = "The roadmap changed after you opened it. Your text is kept; the roadmap as it is now is below.";
             CurrentText = TextOf(Roadmap);
             Revision = Roadmap.Revision;
+
+            return Page();
+        }
+
+        // Removing an item whose work is still open is described first and saved only on a second, deliberate submit:
+        // the request stays open and its agent is not told, which deleting a line does not say (SPEC.md §5.7). Going ahead
+        // covers the items that were described and no others, so an open item taken out after the warning is described too.
+        var open = Removal.StillOpen(Roadmap, content);
+
+        if (!Removal.Covers(open, ConfirmRemoval ? Removing : null))
+        {
+            Warning = Removal.Describe(open);
+            Removing = Removal.Numbers(open);
 
             return Page();
         }

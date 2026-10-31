@@ -8,13 +8,15 @@ namespace Parley.Store;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The number is the wrong witness.</b> Before the first release the schema is edited in place and stays at 1, so a
-/// store made by an earlier build reads as current and may lack what has been added since. What is compared here is the
+/// <b>The number is the wrong witness.</b> It records which migrations a store was given, not what it holds. A store
+/// changed by hand, or made by a build whose migration 001 differed from this one's, reads as current and may lack
+/// what this build relies on. Migration 001 is fixed (<c>SchemaOneIsFrozenTests</c>), so the second cannot recur.
+/// What is compared here is the
 /// thing itself: every table, index and trigger this build's schema creates, against what the file holds.
 /// </para>
 /// <para>
-/// <b>Reported and never repaired.</b> A store with a table missing needs a person to decide between adding it and
-/// starting again, and a broker that quietly altered a database it was asked to serve would be making that decision.
+/// <b>Reported and never repaired.</b> A store with a table missing needs a person to decide how to bring it to shape,
+/// and a broker that quietly altered a database it was asked to serve would be making that decision.
 /// Whitespace is ignored when comparing a definition, because SQLite keeps the text it was given and a checkout's line
 /// endings are not a difference in shape. Objects the file has and this build does not are not reported:
 /// they are harmless, and reporting them would only teach a person to ignore the list.

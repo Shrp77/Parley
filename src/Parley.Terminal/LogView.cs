@@ -36,9 +36,11 @@ internal sealed class LogView : Dialog
 
     private Task _watching = Task.CompletedTask;
     private bool _closed;
+    private IApplication? _drawing;
 
     internal LogView(string title)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = title;
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);
@@ -155,6 +157,11 @@ internal sealed class LogView : Dialog
 
             _stopping.Cancel();
             _stopping.Dispose();
+
+            if (_drawing is { } app)
+            {
+                app.LayoutAndDrawComplete -= Redrawn;
+            }
         }
 
         base.Dispose(disposing);
@@ -168,10 +175,12 @@ internal sealed class LogView : Dialog
     /// </summary>
     /// <param name="line">What the broker wrote.</param>
     /// <remarks>
-    /// <b>It does not touch the view, and that is the whole of it.</b> The follower runs off the
+    /// <b>It does not change the view, only asks for it to be drawn.</b> The follower runs off the
     /// main loop and the toolkit draws on it; a source collection mutated during a draw throws or
     /// is read half-written, and either way the failure lands in the draw rather than anywhere
-    /// near its cause. Lines are queued here and the selection is set only on the drawing thread.
+    /// near its cause. Lines are queued here and the selection is set only on the drawing thread. What it does
+    /// set is the flag that asks for that draw: without it a quiet screen drew nothing, and a line appeared only when
+    /// something else redrew the dialog.
     /// </remarks>
     internal void Append(string line)
     {
@@ -179,14 +188,44 @@ internal sealed class LogView : Dialog
         {
             _pending.Add(line);
         }
+
+        SetNeedsDraw();
     }
 
     /// <inheritdoc/>
-    protected override bool OnDrawingContent(DrawContext? context)
+    /// <remarks>
+    /// Drained here, before the list draws, rather than with the dialog's content, which the toolkit draws after its
+    /// subviews: there the list showed each line one draw late.
+    /// </remarks>
+    protected override bool OnClearingViewport()
     {
         Drain();
 
-        return base.OnDrawingContent(context);
+        // Watched from the first draw, on the loop: the application is known by then.
+        if (_drawing is null && App is { } app)
+        {
+            _drawing = app;
+            app.LayoutAndDrawComplete += Redrawn;
+        }
+
+        return base.OnClearingViewport();
+    }
+
+    // A line that arrived while a draw was under way had its mark cleared by the end of that draw, which clears every
+    // view it drew, so it waited for some other reason to draw. Asked again here, on the loop and after those clears.
+    private void Redrawn(object? sender, EventArgs e)
+    {
+        bool waiting;
+
+        lock (_pending)
+        {
+            waiting = _pending.Count > 0;
+        }
+
+        if (waiting)
+        {
+            SetNeedsDraw();
+        }
     }
 
     /// <summary>Moves whatever the follower has read into the view, on the drawing thread.</summary>

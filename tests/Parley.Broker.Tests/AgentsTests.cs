@@ -12,6 +12,7 @@ namespace Parley.Broker.Tests;
 /// <c>agents()</c> is the only operation that tells a participant anything about another, which makes what it
 /// withholds as much the subject as what it returns.
 /// </remarks>
+[Integration]
 public sealed class AgentsTests : IDisposable
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

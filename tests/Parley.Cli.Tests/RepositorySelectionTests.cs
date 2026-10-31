@@ -19,6 +19,7 @@ namespace Parley.Cli.Tests;
 /// the keyboard, which defeats the point of the screen existing.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class RepositorySelectionTests
 {
     private static RepositorySelection Three(params bool[] selected) =>

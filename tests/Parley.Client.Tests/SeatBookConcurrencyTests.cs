@@ -24,6 +24,7 @@ namespace Parley.Client.Tests;
 /// sees it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class SeatBookConcurrencyTests
 {
     private static readonly ProjectSettings Alpha =

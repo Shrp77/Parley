@@ -57,7 +57,7 @@ public sealed record OwnershipAcceptance(
                    "existing line stays as it is.";
         }
 
-        if (!OwnershipStatement.IsValid(Statement, out var wrong))
+        if (!OwnershipStatement.IsLaunchable(Statement, out var wrong))
         {
             return wrong;
         }

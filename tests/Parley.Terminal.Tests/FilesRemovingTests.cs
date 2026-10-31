@@ -1,3 +1,4 @@
+using Terminal.Gui.Input;
 using Parley.Cli.Tests;
 using Xunit;
 
@@ -10,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// <c>SurfaceTests</c> holds the call to <see cref="FilesRemoving"/> and its door to that file's text; this drives the
 /// door, and checks what is left in the location rather than what was said.
 /// </remarks>
+[Integration]
 public sealed class FilesRemovingTests : IAsyncDisposable
 {
     private readonly FileLocationFixture _files = new();
@@ -43,8 +45,7 @@ public sealed class FilesRemovingTests : IAsyncDisposable
         Assert.Contains("cannot be undone", removing.Described, StringComparison.Ordinal);
         Assert.Equal("Keep them", removing.Chosen);
 
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Equal("Nothing was removed.", shell.Said);
         Assert.Equal(1, await _files.CountAsync());
@@ -61,8 +62,7 @@ public sealed class FilesRemovingTests : IAsyncDisposable
         var removing = await OpenRemovalAsync(driving, shell);
 
         driving.Row(removing.Choices, "Remove them");
-        driving.Enter();
-        await shell.Settled;
+        await driving.PressThenSettleAsync(Key.Enter, () => shell.Settled);
 
         Assert.Contains("Removed 1 file(s), freeing 10 B.", shell.Said, StringComparison.Ordinal);
         Assert.Equal(0, await _files.CountAsync());

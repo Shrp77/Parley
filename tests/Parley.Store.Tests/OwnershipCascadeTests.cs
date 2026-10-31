@@ -20,6 +20,7 @@ namespace Parley.Store.Tests;
 /// with it.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwnershipCascadeTests : IDisposable
 {
     private readonly FacilitatorStore _store = new();

@@ -11,6 +11,7 @@ namespace Parley.Terminal.Tests;
 /// pairwise messages (SPEC.md §5.0) carrying one sentence, so who spoke to whom and in what order is buried
 /// under its own content on exactly the conversations where that shape matters most.
 /// </remarks>
+[Integration]
 public sealed class FoldingTests
 {
     [Fact]

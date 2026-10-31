@@ -34,6 +34,7 @@ internal sealed class Saying : Dialog
 
     private Saying(string said, int width)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         Title = Heading;
         Width = Dim.Percent(90);
         Height = Dim.Percent(80);

@@ -10,6 +10,7 @@ namespace Parley.Store.Tests;
 /// The read the operator registry makes on every refresh of a conversation, so a surface can tell an agent that stopped
 /// with a refused permission from one still working. Most recent by when it was recorded, which is when it ended.
 /// </remarks>
+[Integration]
 public sealed class LatestTurnTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@here");

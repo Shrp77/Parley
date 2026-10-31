@@ -80,6 +80,10 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <summary>Gets who this agent is, as the registry names it.</summary>
     public AgentName Name { get; }
 
+    /// <summary>The launch token this process was started with, or <see langword="null"/> for none (SPEC.md §11.7).</summary>
+    /// <remarks>Kept so a node rejoining a broker can tell it again which processes it started.</remarks>
+    public string? IssuedToken { get; private init; }
+
     /// <summary>Gets the directory the agent runs in.</summary>
     public string Workspace { get; }
 
@@ -193,7 +197,12 @@ public sealed class ResidentAgent : IAsyncDisposable
                 ex);
         }
 
-        return new ResidentAgent(name, workspace, process, clock);
+        return new ResidentAgent(name, workspace, process, clock)
+        {
+            IssuedToken = environment is not null && environment.TryGetValue(Parley.Core.LaunchToken.Variable, out var token)
+                ? token
+                : null,
+        };
     }
 
     /// <summary>
@@ -255,7 +264,19 @@ public sealed class ResidentAgent : IAsyncDisposable
                 return Died(started);
             }
 
-            await DiscardAbandonedResultsAsync(cancellationToken).ConfigureAwait(false);
+            // **Nothing is said while a reply is still owed to nobody** (lens 1 run 102): the agent is working on a prompt
+            // a turn gave up on, and a prompt written now would be answered by that reply. So the turn waits for it, for
+            // as long as the turn itself may take, and ends timed out with nothing said if it does not come.
+            switch (await DiscardAbandonedResultsAsync(timeout, cancellationToken).ConfigureAwait(false))
+            {
+                case Drained.Died:
+                    return Died(started);
+                case Drained.StillOwed:
+                    return new TurnOutcome(
+                        Completed: false, IsError: false, StopReason: null,
+                        _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
+                        PermissionDenials: 0, TimedOut: true, ProcessDied: false);
+            }
 
             var message = new JsonObject
             {
@@ -312,6 +333,15 @@ public sealed class ResidentAgent : IAsyncDisposable
                     Completed: false, IsError: false, StopReason: null,
                     _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
                     PermissionDenials: 0, TimedOut: true, ProcessDied: false);
+            }
+            catch (OperationCanceledException)
+            {
+                // The caller's, after the prompt was written: a node stopping while the process lives on, as a project
+                // restarted under `serve` does. The agent still answers, and that answer is owed to nobody either.
+                // Uncounted, it was read as the next turn's, and every turn after stayed one reply behind (lens 1 run 101).
+                Interlocked.Increment(ref _abandonedResults);
+
+                throw;
             }
         }
         finally
@@ -392,7 +422,7 @@ public sealed class ResidentAgent : IAsyncDisposable
 
     /// <summary>
     /// Waits until no turn is in progress, then tells the agent to quit while still holding the turn, so none can begin
-    /// between the two (SPEC.md §11.1's fourth way a resident ends).
+    /// between the two (SPEC.md §11.1's third way a resident ends, the refresh).
     /// </summary>
     /// <param name="grace">How long to allow it to exit once told, before killing it.</param>
     /// <param name="cancellationToken">Cancels the wait for the turn, which leaves the agent running.</param>
@@ -502,25 +532,44 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
     }
 
-    /// <summary>Discards results owed to turns that already gave up waiting.</summary>
-    /// <param name="cancellationToken">Cancels the drain.</param>
-    /// <returns>A task that completes when the stream is back in step.</returns>
-    /// <remarks>
-    /// Bounded by a short wait rather than run to completion. An abandoned result that never
-    /// arrives — because the agent wedged rather than merely ran long — must not stop the next
-    /// turn from being attempted; the worst case is one turn reading a stale reply, which the
-    /// outcome will show as a result that answers nothing.
-    /// </remarks>
-    private async Task DiscardAbandonedResultsAsync(CancellationToken cancellationToken)
+    /// <summary>How draining the results owed to nobody ended.</summary>
+    private enum Drained
     {
-        while (Volatile.Read(ref _abandonedResults) > 0)
-        {
-            using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            budget.CancelAfter(TimeSpan.FromSeconds(5));
+        /// <summary>None is owed: the agent's next reply is the next turn's.</summary>
+        InStep,
 
-            try
+        /// <summary>One is still owed when the turn's own time ran out: the agent is still working on it.</summary>
+        StillOwed,
+
+        /// <summary>The agent's output ended: it is gone.</summary>
+        Died,
+    }
+
+    /// <summary>Discards results owed to turns that already gave up waiting.</summary>
+    /// <param name="timeout">How long the turn waiting on them may take.</param>
+    /// <param name="cancellationToken">Cancels the drain.</param>
+    /// <returns>Whether the stream is back in step, still owed a reply, or ended.</returns>
+    /// <remarks>
+    /// <b>Never given up while the agent lives.</b> The count is what keeps every later turn from reading the reply
+    /// before its own; set to zero while a reply was still coming, every turn after stayed one reply behind for good
+    /// (lens 1 run 102). An agent that has wedged rather than run long is the turn timeout's to show, turn after turn,
+    /// and the node's to restart; reading its stale replies as answers would hide it.
+    /// </remarks>
+    private async Task<Drained> DiscardAbandonedResultsAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _abandonedResults) == 0)
+        {
+            return Drained.InStep;
+        }
+
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+
+        try
+        {
+            while (Volatile.Read(ref _abandonedResults) > 0)
             {
-                var evt = await _events.Reader.ReadAsync(budget.Token).ConfigureAwait(false);
+                var evt = await _events.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
 
                 Observe(evt);
 
@@ -529,14 +578,16 @@ public sealed class ResidentAgent : IAsyncDisposable
                     Interlocked.Decrement(ref _abandonedResults);
                 }
             }
-            catch (Exception ex) when (ex is OperationCanceledException or ChannelClosedException)
-            {
-                // Nothing more is coming in the time allowed. Give up on the bookkeeping rather
-                // than on the turn.
-                Volatile.Write(ref _abandonedResults, 0);
 
-                return;
-            }
+            return Drained.InStep;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return Drained.StillOwed;
+        }
+        catch (ChannelClosedException)
+        {
+            return Drained.Died;
         }
     }
 

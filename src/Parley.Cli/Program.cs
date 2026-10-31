@@ -36,12 +36,14 @@ const string Help = """
 
       parley serve [--log <path>] [--with-node]        run the broker: the one process that
                    [--with-web-ui [--web-ui <url>]]     opens the stores, and what everything
-                                                       else connects to. It serves every project
+                   [--heartbeat]                       else connects to. It serves every project
                                                        on this machine, each on the port that
                                                        project was given. --with-node also runs
                                                        this machine's node in it, and
                                                        --with-web-ui starts the web UI beside it.
-                                                       --project serves one alone, for testing
+                                                       --project serves one alone, for testing.
+                                                       --heartbeat logs a line a second from
+                                                       each broker, and every connection
 
       parley                                           a deployment from this terminal: the
                                                        projects, who is in each, and their
@@ -94,15 +96,22 @@ const string Help = """
                                                        start them; --describe changes nothing
 
       parley registry                                  every registered agent, with its workspace
-      parley files list [--conversation <id>]          the files agents placed: name, size, sha256,
+      parley files list [--conversation <id>]          the files placed: name, size, sha256,
                         [--full]                       who placed each, totals and placements
+      parley files place <path> --conversation <id>    place a .md or .txt file from this machine
+                        [--name <name>]                in a conversation, as the person
       parley files remove <name>... [--conversation <id>]  remove files whoever placed them;
                         [--yes]                        describes them and asks first
       parley files prune [--yes-remove-every-file]     REMOVE every file; asks for the project's name
-      parley files open <name>... [--conversation <id>]  open files in their editor on this
+      parley files open <name>... [--conversation <id>]  open files to read on this
                                                        machine, or say which machine holds them
       parley files folder [--conversation <id>]        open a conversation's folder, or the whole
                                                        location, or say which machine holds it
+      parley files problems [--all]                    what sweeps of the location found: files
+                                                       changed on disk and moved to quarantine,
+                                                       and entries it could not read, move or delete
+      parley files dismiss <id>                        take a problem off the list; deletes
+                                                       nothing on disk
       parley open                                      every conversation with an exchange
                                                        still open, and who is in it. What a
                                                        broker restart would interrupt
@@ -145,8 +154,9 @@ const string Help = """
     list`; --config or PARLEY_CONFIG names a different one, for a test rig or a second account.
     Explicit flags and environment variables still win over a project.
 
-    Every command except `serve`, `autostart` and `project` connects to a broker, at
-    --broker or PARLEY_BROKER, and defaults to the local one. Nothing works until a broker is
+    Every command except `serve`, `autostart`, `project`, `use`, `enroll`, `terminal` and `web-ui` connects to a
+    broker, at --broker or PARLEY_BROKER, and defaults to the local one; `enroll` asks each project's own broker,
+    and only when it writes. Nothing works until a broker is
     running: `parley autostart install` starts one at every logon, serving every project named.
 
     serve opens its projects' stores — and it is the only command that touches a file. There is no
@@ -228,7 +238,8 @@ if (!forwarding && arguments.Exists(a => a is "--version" or "-v"))
     return 0;
 }
 
-var selectAllRepositories = TakeFlag("--all");
+// `files problems --all` is that command's own, so it is left for `parley files` to read, as its other options are.
+var selectAllRepositories = !(arguments.Count > 0 && arguments[0] == "files") && TakeFlag("--all");
 var selectNoRepositories = TakeFlag("--none");
 
 // **`enroll --describe` reports what would be configured and changes nothing.** Taken centrally with
@@ -243,6 +254,10 @@ var logPath = TakeOption("--log", null);
 // **Let go of the console window a logon entry would otherwise put on somebody's desktop.** Read by
 // `serve`, which detaches, and by `autostart install`, which writes it into the entry it registers.
 var hidden = TakeFlag("--hidden");
+
+// **A line a second from each broker `serve` hosts, and one for every connection**, for finding out why one stopped
+// answering. Off unless asked for.
+var heartbeat = TakeFlag("--heartbeat");
 var webUiOn = TakeOption("--web-ui", null);
 var noWebUi = TakeFlag("--no-web-ui");
 var withFiles = TakeFlag("--with-files");
@@ -316,8 +331,10 @@ if (arguments.Count == 0)
         // of them this one. The rule is right: `"parley"` is a launch key, and a fourth meaning for
         // it should be a decision somebody makes in that list rather than a spelling that drifts in
         // here. The sentence reads better this way in any case.
+        // The raw command line, as `parley terminal` forwards it: nothing is left here only because the options were
+        // taken above, and `--broker` and `--config` are the terminal's to read (review, lens 3 run 67).
         var opened = await Forwarding.RunAsync(
-            "parley-terminal", "Parley.Terminal", "The terminal", [], Console.Error).ConfigureAwait(false);
+            "parley-terminal", "Parley.Terminal", "The terminal", args, Console.Error).ConfigureAwait(false);
 
         if (opened != Unavailable)
         {
@@ -372,7 +389,7 @@ if (hostWebUi && verb != "serve")
 if (withFiles && verb != "waiting")
 {
     await Console.Error.WriteLineAsync(
-        $"--with-files is only for `parley waiting`, where it adds the file change notices waiting as a third count. "
+        $"--with-files is only for `parley waiting`, where it adds the file gone notices waiting as a third count. "
         + $"`parley {verb}` has no count to add it to.").ConfigureAwait(false);
 
     return Usage;
@@ -461,8 +478,8 @@ if (Moved.Contains(verb, StringComparer.Ordinal))
         $"'{verb}' is not a command here. Reading and changing a deployment happens in the "
         + "terminal, which shows the lists it works on:"
         + $"{Environment.NewLine}{Environment.NewLine}    parley{Environment.NewLine}"
-        + $"{Environment.NewLine}A machine with no terminal reaches the web UI over an SSH tunnel; "
-        + "the README has the recipe.").ConfigureAwait(false);
+        + $"{Environment.NewLine}The web console does the same, at {WebUiAddress.Loopback} on this machine; "
+        + "from another machine, forward its port over SSH.").ConfigureAwait(false);
 
     // EX_USAGE, so a script detects it rather than reading an empty success.
     return Usage;
@@ -773,7 +790,11 @@ if (verb == "serve" && rest.Length == 0)
                 start.Environment[ProjectManifest.PathVariable] = manifestPath;
 
                 // Only when there is a broker. A machine serving a manifest that names no project yet has none, and
-                // the web UI then reads the manifest and says how to name the first one.
+                // the web UI then reads the manifest and says how to name the first one. Never this process's
+                // PARLEY_BROKER: the web UI reads it as `--broker`, and here it names somebody else's host, so a
+                // console beside a broker with no project would offer that one as this machine.
+                start.Environment.Remove(BrokerEndpoint.Variable);
+
                 if (addresses.Count > 0)
                 {
                     start.ArgumentList.Add("--broker");
@@ -807,7 +828,7 @@ if (verb == "serve" && rest.Length == 0)
                 ? $"   Web UI:   {webUiAddress}{Environment.NewLine}"
                     + "   Open that one in a browser."
                 : $"   Web UI:   did not start ({whyNot}){Environment.NewLine}"
-                    + $"   The broker is still serving. Install it: dotnet tool install --global Parley.WebUi";
+                    + $"   The broker is still serving. {Forwarding.InstallHint("parley-web-ui")}";
 
             var body =
                 opening + Environment.NewLine
@@ -948,6 +969,8 @@ if (verb == "serve" && rest.Length == 0)
             hostWebUi ? HostingWebUi : null,
             watching ? rereadManifest : null,
             checkInstall: true,
+            heartbeat: heartbeat,
+            watchProcess: true,
             cancellationToken: token);
         }).ConfigureAwait(false);
     }
@@ -1183,7 +1206,7 @@ try
 
         // **What is in flight, for the one caller that has to know before it stops a broker.**
         // §12 says the node stopping tells every agent it started to quit, and a Request already
-        // drained into an agent's inbox is marked delivered -- so killing the agent that holds it
+        // drained into an agent's inbox and acknowledged is marked delivered -- so killing the agent that holds it
         // leaves the exchange open and owed with nothing running to do the work, flagged as
         // collected and left (§6) against an agent that was killed rather than one that ignored
         // anything.

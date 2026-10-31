@@ -74,6 +74,7 @@ internal static class ManifestIsolation
 /// takes its check. A guard in one file and its test in another is how one of them comes to be
 /// removed alone.
 /// </remarks>
+[Integration]
 public sealed class ManifestIsolationTests
 {
     [Fact]

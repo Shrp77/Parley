@@ -8,8 +8,8 @@ namespace Parley.Client.Roadmaps;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One description for the terminal's dialog, the command line's listing and the web page's summary, so that a person who
-/// reads a proposal in one place has read what they would in another. The words of the proposal are the agent's, so a
+/// One description of a proposal: the terminal's dialog draws all of it, and the web page's list takes its row and its
+/// match against a roadmap from here, so the two never word a proposal differently. The words of the proposal are the agent's, so a
 /// surface draws them as an agent's words are drawn everywhere: escaped, on a line of their own, never as something the
 /// surface itself said.
 /// </para>
@@ -23,20 +23,22 @@ public static class ProposalText
     {
         ArgumentNullException.ThrowIfNull(proposal);
 
-        var count = proposal.Content.Items.Count;
+        var count = proposal.ItemCount ?? proposal.Content.Items.Count;
 
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{proposal.Content.Title} — {proposal.Proposer.Role}, {count} item{(count == 1 ? string.Empty : "s")}");
     }
 
-    /// <summary>What heads a proposal: its title, who put it forward and from where.</summary>
+    /// <summary>What heads a proposal: who put it forward and from where, its title, and what it says it would change.</summary>
     /// <param name="proposal">The proposal.</param>
     /// <param name="sameTitle">The title of a live roadmap that matches the one it says it would change, if there is one.</param>
     /// <returns>The lines, which are an agent's words and are not safe to draw as they are.</returns>
     /// <remarks>
     /// Separate from the items and from the agents because a surface that shows them apart — the terminal draws the
-    /// items on the left and who is named on the right — needs each block on its own.
+    /// items on the left and who is named on the right — needs each block on its own. Who proposed it comes first, so a
+    /// long title cannot push it out of view, and the title next, because it is what a confirm records; the roadmap it
+    /// says it would change is last and quoted short, so it cannot push the title out of a heading of a few rows.
     /// </remarks>
     public static string Header(RoadmapProposal proposal, string? sameTitle = null)
     {
@@ -44,17 +46,18 @@ public static class ProposalText
 
         var lines = new List<string>
         {
-            proposal.Content.Title,
             $"Proposed by {proposal.Proposer.Value}" + (proposal.SourceConversation is { Length: > 0 } source
                 ? $", from the conversation {source}."
                 : "."),
         };
 
+        lines.Add(proposal.Content.Title);
+
         if (proposal.TargetTitle is { Length: > 0 } target)
         {
             lines.Add(sameTitle is null
-                ? $"It says it would change a roadmap called '{target}'; there is none by that name."
-                : $"It says it would change the roadmap '{sameTitle}'. You choose whether it does.");
+                ? $"It says it would change a roadmap called '{AgentWords.Shortened(target)}'; there is none by that name."
+                : $"It says it would change the roadmap '{AgentWords.Shortened(sameTitle)}'. You choose whether it does.");
         }
 
         return string.Join('\n', lines);
@@ -160,6 +163,57 @@ public static class ProposalText
     private static string Numbers(IReadOnlyList<int> items) =>
         (items.Count == 1 ? "item " : "items ")
         + string.Join(", ", items.Select(n => n.ToString(CultureInfo.InvariantCulture)));
+
+    /// <summary>What a revision does to the roadmap's items, said wherever a person chooses one.</summary>
+    /// <remarks>
+    /// One sentence for both surfaces, so neither tells the person less: the store keeps a live item a line names by number
+    /// (<c>| item: n</c>), and removes the rest.
+    /// </remarks>
+    public const string RevisionReplaces =
+        "A revision replaces every item that roadmap has with these. A line carrying | item: n, where n is one of its live "
+        + "items, keeps that item and its conversation; every other item it had is removed, and its conversation stays. "
+        + "A new roadmap leaves it alone.";
+
+    /// <summary>What confirming a proposal as a revision of a roadmap also does to the other proposals waiting on it.</summary>
+    /// <param name="proposal">The proposal being confirmed.</param>
+    /// <param name="roadmap">The roadmap it would revise.</param>
+    /// <param name="waiting">The headings of the proposals awaiting a decision, or <see langword="null"/> when unread.</param>
+    /// <returns>The sentence, or an empty string when no other proposal waits on it.</returns>
+    /// <remarks>
+    /// A revision supersedes every other waiting proposal whose whole hint names the roadmap, ignoring case (SPEC.md
+    /// §5.7), and a superseded proposal is shown nowhere after, so the door says so before the person chooses. The
+    /// headings are the newest <see cref="RoadmapProposal.HeadingLimit"/> with hints cut to
+    /// <see cref="RoadmapProposal.HeadingLength"/>, so a number is given only when they are certainly all of them. When
+    /// they were not read, or the title is at least as long as a cut hint (a longer hint cut could then equal it), the
+    /// sentence says any such proposal goes. When the list is full it says at least how many, or any when it counted
+    /// none. Otherwise it gives the number. Unread is not none, and neither is a count that could be short or long.
+    /// </remarks>
+    public static string Superseding(RoadmapProposal proposal, RoadmapSummary roadmap, IReadOnlyList<RoadmapProposal>? waiting)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(roadmap);
+
+        const string Any = "A revision also settles any other proposal waiting to revise this roadmap, as superseded, and tells its proposer.";
+
+        if (waiting is null || roadmap.Title.Length >= RoadmapProposal.HeadingLength)
+        {
+            return Any;
+        }
+
+        var others = waiting.Count(p =>
+            p.Id != proposal.Id && string.Equals(p.TargetTitle, roadmap.Title, StringComparison.OrdinalIgnoreCase));
+        var atLeast = waiting.Count >= RoadmapProposal.HeadingLimit;
+
+        if (others == 0)
+        {
+            return atLeast ? Any : string.Empty;
+        }
+
+        return "A revision also settles " + (atLeast ? "at least " : string.Empty)
+            + others.ToString(CultureInfo.InvariantCulture) + (others == 1 ? " other proposal" : " other proposals")
+            + " waiting to revise this roadmap, as superseded, and tells "
+            + (others == 1 && !atLeast ? "its proposer." : "their proposers.");
+    }
 
     /// <summary>The roadmap a proposal's title hint matches, if any.</summary>
     /// <param name="proposal">The proposal.</param>

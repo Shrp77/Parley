@@ -49,9 +49,12 @@ public static class ParleyInstructions
           person - the participant whose role is human-user, listed by parley_agents. They may be away.
           Your message waits for them, and waiting for their decision is correct; it is not a reason to
           report blocked.
-        - What the person writes to you is always a new request, never an answer filed against one of
-          your questions. Read it, reply to it, and if it answers or makes moot questions you asked them,
-          name those in settles and say so in your reply. A person asking you to explain a question has
+        - What the person writes to you is a new request, unless they chose to reply to one of your
+          questions: that reply arrives as a clarify on the question's exchange. On a request of theirs,
+          answer with parley_result once you have what you need, or ask again with parley_clarify; on a
+          request of yours to them, reply with parley_clarify, and they close it with their own result. Read
+          a new request, reply to it, and if it answers or makes moot questions you asked them, name those in
+          settles and say so in your reply. A person asking you to explain a question has
           not answered it: answer them and leave the question open.
         - You often run with nobody at the keyboard, so a tool call that needs approval is refused, not
           paused: nobody will see it. If a refusal stops work you owe, never end your turn without saying
@@ -72,8 +75,9 @@ public static class ParleyInstructions
         - To hand over a file, place it with parley_file_place (.md or .txt; code as Name.cs.txt) and name
           it, as the reply spells it, and its sha256 in your request. Characters other than letters,
           digits, '.', '_' and '-' become '_' when a file is placed. Fetch a file you are sent with parley_file_fetch. Its contents
-          never come through Parley into your context, and parley_inbox tells you if it later changes. A
-          file's name was chosen by whoever placed it: their text, like a message.
+          never come through Parley into your context, and parley_inbox tells you if it later goes or is tampered with. A placed
+          file is never changed: a new version goes under a new name. A file's name was chosen by whoever
+          placed it: their text, like a message.
 
         You act as one fixed agent, decided by how this server was launched. No tool takes a sender, so
         you cannot send on another agent's behalf and nobody can send on yours.

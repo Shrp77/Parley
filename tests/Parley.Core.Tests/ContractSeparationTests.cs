@@ -20,6 +20,7 @@ namespace Parley.Core.Tests;
 /// every operation §10.2 names and nothing it does not.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ContractSeparationTests
 {
     /// <summary>The operations SPEC.md §10.2 names, read from the document itself.</summary>

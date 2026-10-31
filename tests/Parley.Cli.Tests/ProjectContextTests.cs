@@ -20,6 +20,7 @@ namespace Parley.Cli.Tests;
 /// reasoned version would get wrong.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ProjectContextTests : IDisposable
 {
     private static readonly IReadOnlyList<ProjectSettings> Two = [Project("alpha"), Project("beta")];

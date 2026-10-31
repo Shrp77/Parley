@@ -211,7 +211,7 @@ public sealed class BrokerDirectory : IDisposable
 
         if (projects.Count == 0 && fallback is { Endpoint.Length: > 0 } offer)
         {
-            return new Snapshot([Unnamed(offer.Endpoint)], problem, stamp);
+            return new Snapshot([Unnamed(Dialable(offer.Endpoint))], problem, stamp);
         }
 
         // The projects that read, and what was left out beside them: one bad folder costs that project, not the screen.
@@ -236,6 +236,21 @@ public sealed class BrokerDirectory : IDisposable
     private sealed record Snapshot(
         IReadOnlyList<ProjectSettings> Projects, string? Problem, string Stamp);
 
+    // An offered broker is read as every other tool reads `--broker` and PARLEY_BROKER: a bare host and port is given the
+    // scheme, which is what people type and what the docs show (review, lens 1 run 60). One that is not an address at all
+    // is kept as written, so the row says why it cannot be reached.
+    private static string Dialable(string endpoint)
+    {
+        try
+        {
+            return BrokerEndpoint.Read(name => name == BrokerEndpoint.Variable ? endpoint : null);
+        }
+        catch (InvalidOperationException)
+        {
+            return endpoint;
+        }
+    }
+
     private static ProjectSettings Unnamed(string endpoint) =>
         new(ProjectName.Create("this-machine"),
             string.Empty,
@@ -251,10 +266,17 @@ public sealed class BrokerDirectory : IDisposable
     /// a broker that is down is down, waiting longer does not find it, and the default ten seconds
     /// sits in front of a page the operator is waiting on. It also keeps an unreachable
     /// project reported within five seconds reachable by arithmetic rather than by hope.
+    /// <para>
+    /// <b>No limit on what a reply may carry.</b> Roadmap text has no bound, so a few large proposals from one agent made
+    /// the waiting list larger than gRPC's default 4 MB, and the person could then neither read nor decline any proposal.
+    /// What a person reads is what the broker already stored, each piece of it within the broker's own limit on what it
+    /// receives, so the person is never shut out of their own deployment by what an agent wrote.
+    /// </para>
     /// </remarks>
     public static GrpcChannel Connect(string endpoint) =>
         GrpcChannel.ForAddress(endpoint, new GrpcChannelOptions
         {
+            MaxReceiveMessageSize = null,
             HttpHandler = new SocketsHttpHandler
             {
                 ConnectTimeout = TimeSpan.FromSeconds(2),
@@ -306,7 +328,7 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Operators.OperatorsClient(channel.Value.Intercept(new Patience()));
+        return new Wire.Operators.OperatorsClient(Invoker(channel));
     }
 
     /// <summary>Opens an agent client for one project, for the seat a person holds there.</summary>
@@ -341,7 +363,22 @@ public sealed class BrokerDirectory : IDisposable
             endpoint => new Lazy<GrpcChannel>(
                 () => _connect(endpoint), LazyThreadSafetyMode.ExecutionAndPublication));
 
-        return new Wire.Agents.AgentsClient(channel.Value.Intercept(new Patience()));
+        return new Wire.Agents.AgentsClient(Invoker(channel));
+    }
+
+    // A project's channel with every call's deadline (Patience). An endpoint gRPC cannot dial throws as the channel opens;
+    // the client is then given calls that fail as unavailable, so making a client never throws and every guard around a
+    // call contains it.
+    private static CallInvoker Invoker(Lazy<GrpcChannel> channel)
+    {
+        try
+        {
+            return channel.Value.Intercept(new Patience());
+        }
+        catch (Exception unusable) when (unusable is UriFormatException or InvalidOperationException)
+        {
+            return new UnusableEndpoint(unusable.Message);
+        }
     }
 
     /// <summary>Runs one read against one project, containing a failure to that project.</summary>
@@ -363,6 +400,12 @@ public sealed class BrokerDirectory : IDisposable
         {
             return ProjectRead<T>.Read(await read().ConfigureAwait(false));
         }
+        catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable
+            && failure.Status.Detail.StartsWith(UnusableEndpoint.Said, StringComparison.Ordinal))
+        {
+            // An endpoint gRPC cannot dial as written: said as what it is, since no broker behind it will ever answer.
+            return ProjectRead<T>.Unreachable(failure.Status.Detail);
+        }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
             return ProjectRead<T>.Unreachable(
@@ -375,16 +418,12 @@ public sealed class BrokerDirectory : IDisposable
         }
         catch (Exception failure) when (failure is UriFormatException or InvalidOperationException)
         {
-            // Opening the channel, not making the call. An endpoint the manifest accepted and a
-            // URL Grpc can dial are not the same set -- "localhost:5301" with no scheme is the
-            // usual way to find that out -- and this throws where the connection is first
-            // attempted, which is inside here rather than at startup.
-            //
-            // Contained for the same reason as the rest: without it, one unusable endpoint takes
-            // down the page for every project beside it, which is precisely the coupling this
-            // method exists to prevent.
-            return ProjectRead<T>.Unreachable(
-                $"This project's endpoint cannot be reached as written: {failure.Message}");
+            // A channel opened by a read that did not go through a directory's client, which turns this into a call
+            // that fails as unavailable (UnusableEndpoint). Contained for the same reason as the rest: one unusable
+            // endpoint must not take down the page for every project beside it. Said without naming the endpoint: an
+            // InvalidOperationException can come from elsewhere in the read, and blaming the endpoint would send the
+            // person to correct an address that is fine.
+            return ProjectRead<T>.Unreachable($"This project could not be read: {failure.Message}");
         }
     }
 

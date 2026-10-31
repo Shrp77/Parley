@@ -36,7 +36,8 @@ each reader owes the rules below.
 
 `parleyAgentId` sits beside `mcpServers`, not inside an entry. It belongs to the repository, so a
 repository that answers in two projects has one identity and two entries. It is minted the first time
-the repository is enrolled and kept after that. The per-machine catalogue (`node.json`) is keyed by
+the repository is enrolled and kept after that, until the last of its entries is withdrawn: a
+repository enrolled again after that is a new agent. The per-machine catalogue (`node.json`) is keyed by
 it.
 
 **The identity is what an agent is. The name is only what a project shows for it.** The agent's
@@ -81,6 +82,7 @@ A path containing `}` or `$` is written plainly, because the expansion has no es
 | `PARLEY_OWNS` | What the agent is responsible for. |
 | `PARLEY_WORKSPACE` | The directory the agent works in. Unset means unknown. |
 | `PARLEY_RESPONDER` | The model named on each message. Defaults to `unknown-model`. |
+| `PARLEY_MACHINE` | The machine half of the agent's name. Unset means this machine's own name. |
 
 An agent a node starts also carries `PARLEY_LAUNCH_TOKEN`. It is not written to the file.
 
@@ -105,8 +107,8 @@ For each repository, enrolling:
    section already there is never rewritten.
 
 The whole set is checked before anything is written. Two repositories with one name, two names
-over one folder, a folder that is not there, and a name the registry would refuse all stop the
-run with nothing changed.
+over one folder, a folder that is not there, a folder not on this machine's own disks, and a name
+the registry would refuse all stop the run with nothing changed.
 
 ## What every reader owes
 
@@ -134,6 +136,7 @@ Each refusal names its cause, because each sends a person somewhere different.
 | The key and the variable disagree | `'parley-alpha' names project 'alpha' and its environment names 'beta'. Make them agree before enrolling.` |
 | Two repositories, one name | `agent 'inventory' is also used by agents[0]. Two repositories sharing a name means either may collect the other's mail` |
 | Two names, one folder | `workspace is also claimed by agents[0]. One directory cannot be two agents: the second launch configuration would overwrite the first` |
+| Not on this machine's own disks | `agents[0]: /home/you/Dropbox/orders is on Dropbox. Parley keeps its work only on this machine's own disks: move it to a local folder.` |
 | Withdrawal, several entries, no project named | `left alone, it answers in 'alpha', 'beta' — name which one to withdraw from` |
 | Withdrawal, the entry belongs to another agent | `left alone, its 'parley-alpha' entry is 'stock' rather than 'inventory'` |
 | Withdrawal, the entry is pinned to a broker address | `left alone, its 'parley' entry is pinned to the broker at '127.0.0.1:51707', which this cannot match to project 'alpha'` |

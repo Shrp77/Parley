@@ -57,15 +57,11 @@ public sealed class Pruner(SqliteConnection connection)
 
                      -- The idle rule: every exchange in the conversation closed, and nothing added
                      -- for the idle period. NOT EXISTS rather than NOT IN, because NOT IN over a
-                     -- subquery that ever produced a NULL would silently stop retention.
+                     -- subquery that ever produced a NULL would silently stop retention. A closed
+                     -- conversation waits out the period too: agents close one by consensus with no
+                     -- person present, and the person must still be able to read it back.
                      OR (NOT EXISTS (SELECT 1 FROM unfinished u WHERE u.grp = g.grp)
-                         AND (
-                               -- Closure short-circuits the idle period: somebody has said the
-                               -- work is over, which is better evidence than silence.
-                               EXISTS (SELECT 1 FROM conversations c
-                                        WHERE c.id = g.grp AND c.state = 'CLOSED')
-                               OR a.last_activity <= @NowSeconds - @IdleSeconds
-                             ))
+                         AND a.last_activity <= @NowSeconds - @IdleSeconds)
                    ) AS spent
 
               FROM grouped g
@@ -103,7 +99,7 @@ public sealed class Pruner(SqliteConnection connection)
     /// A bound on a first drain rather than on ordinary work: removing two hundred thousand messages in
     /// one pass made a concurrent writer wait 2.3 seconds against a five-second busy timeout. At ten
     /// thousand the worst wait measured 200 milliseconds, and the remainder is not lost — retention is
-    /// not a deadline, and the next sweep continues where this one stopped.
+    /// not a deadline, and the next retention pass continues where this one stopped.
     /// </remarks>
     private const int MaxRemovalsPerPass = 10_000;
 
@@ -239,7 +235,7 @@ public sealed class Pruner(SqliteConnection connection)
             var batch = prunable.GetRange(offset, Math.Min(DeleteBatch, prunable.Count - offset));
 
             // One transaction per batch, so the lock is held for a few primary-key deletes at a time.
-            // Pruning is idempotent, so a pass interrupted halfway leaves what the next sweep would find.
+            // Pruning is idempotent, so a pass interrupted halfway leaves what the next pass would find.
             using var scope = WriteScope.Begin(_connection, ambient: null);
 
             var went = await _connection.ExecuteAsync(
@@ -259,18 +255,21 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
-        using var proposals = WriteScope.Begin(_connection, ambient: null);
+        using (var proposals = WriteScope.Begin(_connection, ambient: null))
+        {
+            await _connection.ExecuteAsync(
+                new CommandDefinition(
+                    DeleteDecidedProposals,
+                    parameters,
+                    proposals.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
 
-        await _connection.ExecuteAsync(
-            new CommandDefinition(
-                DeleteDecidedProposals,
-                parameters,
-                proposals.Transaction,
-                cancellationToken: cancellationToken)).ConfigureAwait(false);
+            proposals.Complete();
+        }
 
-        proposals.Complete();
+        ParleyDatabase.Flush(_connection);
 
-        return new PruneResult(removed, held, contended, capped);
+        return new PruneResult(removed, held, contended, capped, policy);
     }
 
     /// <summary>Binds a batch of identifiers alongside the windows the floor is re-checked on.</summary>
@@ -286,7 +285,7 @@ public sealed class Pruner(SqliteConnection connection)
     };
 
     /// <summary>The instants and durations the statements are evaluated against.</summary>
-    /// <param name="NowSeconds">The instant of the sweep, as a Unix timestamp.</param>
+    /// <param name="NowSeconds">The instant of the pass, as a Unix timestamp.</param>
     /// <param name="DeduplicationSeconds">The window of §13.1.</param>
     /// <param name="IdleSeconds">The idle period of §9.4.</param>
     /// <param name="MaximumAgeSeconds">The age cap of §9.4.</param>

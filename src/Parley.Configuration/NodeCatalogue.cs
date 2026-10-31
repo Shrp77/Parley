@@ -349,6 +349,25 @@ public sealed class NodeCatalogue
             unread);
     }
 
+    /// <summary>What a project calls each catalogued checkout it can start, by identity.</summary>
+    /// <param name="project">The project.</param>
+    /// <returns>The role each startable identity answers to in that project.</returns>
+    /// <remarks>
+    /// One checkout may be enrolled in several projects under a different name in each, and its process carries the name
+    /// of whichever started it; what a project's node reports about it uses this project's (SPEC.md §11.7).
+    /// </remarks>
+    public IReadOnlyDictionary<AgentIdentity, string> NamesIn(string? project) =>
+        Workspaces()
+            .Where(workspace => workspace.Problem is null)
+            .Select(workspace => (
+                workspace.Identity,
+                Name: workspace.Memberships.FirstOrDefault(m => project is not null && string.Equals(m.Project, project, StringComparison.Ordinal))?.Name
+                    ?? workspace.Memberships.FirstOrDefault(m => m.Project is null)?.Name
+                    ?? (project is null ? workspace.Memberships.FirstOrDefault()?.Name : null)))
+            .Where(entry => entry.Name is not null)
+            .GroupBy(entry => entry.Identity)
+            .ToDictionary(group => group.Key, group => group.First().Name!);
+
     /// <summary>The identities of the checkouts that answer in a project, whatever they are called there now.</summary>
     /// <param name="project">The project, or null for any.</param>
     /// <returns>One identity per readable workspace with a membership in the project.</returns>

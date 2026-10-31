@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// that forbade the words would delete the paragraph a person needs.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class ReadmeTruthTests
 {
     private static readonly string Root = Path.GetFullPath(Path.Combine(

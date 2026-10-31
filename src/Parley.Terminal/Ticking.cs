@@ -81,6 +81,7 @@ internal sealed class TickDialog : Dialog
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
     internal TickDialog(string title, string description, IReadOnlyList<Tickable> items)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(description);
 

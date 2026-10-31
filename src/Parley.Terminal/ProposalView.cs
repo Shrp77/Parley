@@ -63,6 +63,9 @@ internal sealed class ProposalView : Dialog
     /// <summary>How wide the column of agents is.</summary>
     private const int AgentsWidth = 30;
 
+    /// <summary>The most rows the heading takes; the rest of it scrolls.</summary>
+    private const int MostHeadingRows = 4;
+
     private readonly string _header;
     private readonly View _items;
     private readonly View _agents;
@@ -72,6 +75,7 @@ internal sealed class ProposalView : Dialog
     /// <param name="sameTitle">The title of the live roadmap it says it would change, when there is one.</param>
     internal ProposalView(RoadmapProposal proposal, string? sameTitle = null)
     {
+        HotKeySpecifier = Plain.NoHotKey;
         ArgumentNullException.ThrowIfNull(proposal);
 
         Title = Proposing.Title;
@@ -80,20 +84,20 @@ internal sealed class ProposalView : Dialog
 
         _header = Safe.Lines(ProposalText.Header(proposal, sameTitle));
 
-        var heading = new Plain
-        {
-            Text = _header,
-            X = 1,
-            Y = 0,
-            Width = Dim.Fill(2),
-            Height = Prompting.Rows(_header) + 1,
-        };
+        // **At most a few rows, and it scrolls.** A title has no bound, and a heading as tall as its title pushed who
+        // proposed it and every item off the dialog while Confirm stayed on it: the person would confirm what they could
+        // not see. Who proposed it is the heading's first line, so a long title cannot push that out either. It never has
+        // the focus, so the keys that scroll the roadmap cannot scroll that line away; the mouse scrolls the rest.
+        var heading = Entry.Reader(_header);
+        heading.CanFocus = false;
+        heading.X = 1;
+        heading.Y = 0;
+        heading.Width = Dim.Fill(2);
+        heading.Height = Math.Min(Prompting.Rows(_header) + 1, MostHeadingRows);
 
-        heading.TextFormatter.WordWrap = true;
-
-        // **Headings above the paragraphs, and no borders on them.** Bordered frames draw through the toolkit's line
-        // canvas, which a dialog opened from the queue's thread while the loop draws can corrupt. The dialogs here
-        // have one border, their own.
+        // **Headings above the paragraphs, and no borders on them.** A bordered frame draws through the toolkit's line
+        // canvas, which the driven suite never exercises because it never pumps the loop. The dialogs here have one
+        // border, their own.
         var itemsHeading = new Plain { Text = "The roadmap", X = 1, Y = Pos.Bottom(heading), Width = Dim.Fill(AgentsWidth + 3), Height = 1 };
 
         // The roadmap takes everything the heading, the hint and the buttons leave.

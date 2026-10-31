@@ -21,6 +21,7 @@ namespace Parley.Mcp.Tests;
 /// sentence about saying less, the same as every other thing an agent can get wrong.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class MessageCapTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);

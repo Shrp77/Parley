@@ -10,6 +10,7 @@ namespace Parley.Mcp.Tests;
 /// server that runs before anything can report a problem through the protocol. A mistake here
 /// does not surface as a wrong answer; it surfaces as a server the client says nothing about.
 /// </remarks>
+[Unit]
 public sealed class ServerOptionsTests
 {
     private static Func<string, string?> Env(params (string Name, string Value)[] set)

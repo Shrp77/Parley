@@ -21,6 +21,7 @@ namespace Parley.Cli.Tests;
 /// the tempting implementation writes something.
 /// </para>
 /// </remarks>
+[Integration]
 public sealed class OwnershipLineTests : IDisposable
 {
     private readonly string _root =
@@ -139,6 +140,20 @@ public sealed class OwnershipLineTests : IDisposable
         Assert.NotNull(wrong);
         Assert.Contains("billing", wrong, StringComparison.Ordinal);
         Assert.Equal(before, await File.ReadAllBytesAsync(LaunchFile, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_line_naming_an_environment_variable_is_refused_and_nothing_is_written()
+    {
+        // Lens 3 run 112: every route a person takes reaches the file through here, so this guard holds them all.
+        Launch();
+
+        var wrong = await OwnershipLine.WriteAsync(
+            Workspace, null, Here(), "Invoicing. ${GITHUB_TOKEN}", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(wrong);
+        Assert.Contains("launch configuration", wrong, StringComparison.Ordinal);
+        Assert.Null(Owns());
     }
 
     [Fact]
