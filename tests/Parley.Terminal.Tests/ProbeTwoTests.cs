@@ -181,7 +181,8 @@ public sealed class ProbeTwoTests
         // back out of the repositories (`Workspaces`, `TryResolve`, `Announceable`), and a key that is
         // not an identity is reported rather than swallowed (`Unreadable`).
         // `StartableIn` is what a node announces beside the names: the identities it can start, so an agent whose
-        // repository was renamed is still found by what it is.
+        // repository was renamed is still found by what it is. `NamesIn` is what each of them is called in one
+        // project, because one checkout is one process in every project that enrols it and each reports it under its own.
         Assert.Equal(
             [
                 "Announceable",
@@ -190,6 +191,7 @@ public sealed class ProbeTwoTests
                 "Empty",
                 "Identities",
                 "Machine",
+                "NamesIn",
                 "PathVariable",
                 "ReadFrom",
                 "StartableIn",

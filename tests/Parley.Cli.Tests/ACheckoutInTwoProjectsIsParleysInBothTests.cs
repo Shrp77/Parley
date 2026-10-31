@@ -280,6 +280,112 @@ public sealed class ACheckoutInTwoProjectsIsParleysInBothTests : IAsyncDisposabl
         }
     }
 
+    [Fact]
+    public async Task A_launch_reaches_no_project_that_does_not_enrol_the_checkout()
+    {
+        // Lens 3 run 120: the board's filter by project was held by no test. A checkout only alpha enrols, told to beta
+        // under any name beta knows, put its token on beta's own billing, a different checkout, as the re-announce once
+        // did (lens 2 run 107). Beta's billing has no recorded folder, so the folder check (lens 2 run 111) cannot
+        // stand in for the filter.
+        var alphaOnly = Path.Combine(_root, "alpha-only");
+        var betasOwn = Path.Combine(_root, "betas-own");
+        _ = Directory.CreateDirectory(alphaOnly);
+        _ = Directory.CreateDirectory(betasOwn);
+        var started = AgentIdentity.Mint();
+        var other = AgentIdentity.Mint();
+
+        await File.WriteAllTextAsync(
+            Path.Combine(alphaOnly, ".mcp.json"),
+            "{ \"mcpServers\": { \"parley-alpha\": { \"command\": \"parley-mcp\", \"env\": { \"PARLEY_AGENT\": \"billing\", "
+            + "\"PARLEY_PROJECT\": \"alpha\" } } }, \"parleyAgentId\": \"" + started + "\" }",
+            Ct);
+        await File.WriteAllTextAsync(
+            Path.Combine(betasOwn, ".mcp.json"),
+            "{ \"mcpServers\": { \"parley-beta\": { \"command\": \"parley-mcp\", \"env\": { \"PARLEY_AGENT\": \"billing\", "
+            + "\"PARLEY_PROJECT\": \"beta\" } } }, \"parleyAgentId\": \"" + other + "\" }",
+            Ct);
+
+        var command = System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command);
+        var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
+        await File.WriteAllTextAsync(
+            cataloguePath,
+            "{ \"agents\": { \"" + started + "\": { \"command\": " + command + ", \"workspace\": "
+            + System.Text.Json.JsonSerializer.Serialize(alphaOnly) + " }, \"" + other + "\": { \"command\": " + command
+            + ", \"workspace\": " + System.Text.Json.JsonSerializer.Serialize(betasOwn) + " } } }",
+            Ct);
+
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+        using var alphaChannel = GrpcChannel.ForAddress(_alpha.Address);
+        using var betaChannel = GrpcChannel.ForAddress(_beta.Address);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+
+        var alphaNode = NodeCommand.RunAsync(alphaChannel, _alpha.Address, cataloguePath, TextWriter.Null, "alpha", residents, stopping.Token);
+        var betaNode = NodeCommand.RunAsync(betaChannel, _beta.Address, cataloguePath, TextWriter.Null, "beta", residents, stopping.Token);
+
+        try
+        {
+            for (var tries = 0; tries < 50 && !(_alpha.Runtime.Nodes.Contains(NodeCatalogue.Machine) && _beta.Runtime.Nodes.Contains(NodeCatalogue.Machine)); tries++)
+            {
+                await Task.Delay(100, Ct);
+            }
+
+            // Beta's billing, attached as the process beta's node started.
+            var betasBilling = AgentName.Create("billing@" + NodeCatalogue.Machine);
+            Assert.True(_beta.Runtime.LaunchReported(NodeCatalogue.Machine, betasBilling, "betas-own"));
+            using var attached = new Wire.Agents.AgentsClient(betaChannel).Attach(
+                new Wire.AttachRequest
+                {
+                    Agent = betasBilling.Value,
+                    Adapter = "test",
+                    Tier = Wire.AgentTier.Pull,
+                    LaunchToken = "betas-own",
+                    ProtocolVersion = ProtocolVersion.Current,
+                },
+                cancellationToken: Ct);
+            Assert.True(await attached.ResponseStream.MoveNext(Ct));
+            Assert.False(await OpenOutsideAsync(_beta, betasBilling));
+
+            ResidentAgent? launched = null;
+
+            for (var tries = 0; tries < 50 && launched is null; tries++)
+            {
+                _ = _alpha.Runtime.RequestAttention(InAlpha, "a test asks alpha to start it");
+                await Task.Delay(200, Ct);
+                launched = residents.TryGetValue(started, out var now) && now.IsAlive ? now : null;
+            }
+
+            Assert.NotNull(launched);
+
+            for (var tries = 0; tries < 10; tries++)
+            {
+                await Task.Delay(200, Ct);
+                Assert.False(await OpenOutsideAsync(_beta, betasBilling), "alpha's launch took beta's billing's token");
+            }
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+
+            foreach (var node in new[] { alphaNode, betaNode })
+            {
+                try
+                {
+                    _ = await node;
+                }
+                catch (Exception ex) when (ex is OperationCanceledException
+                                           || ex is RpcException { StatusCode: StatusCode.Cancelled })
+                {
+                }
+            }
+
+            foreach (var resident in residents.Values)
+            {
+                await resident.DisposeAsync();
+            }
+        }
+    }
+
     private static async Task<bool> OpenOutsideAsync(LoopbackOperator broker, AgentName name) =>
         (await new BrokerClient(broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == name).OpenOutside;
 

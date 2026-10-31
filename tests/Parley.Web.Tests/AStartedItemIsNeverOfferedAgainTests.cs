@@ -34,6 +34,11 @@ public sealed class AStartedItemIsNeverOfferedAgainTests
 
         console.Broker.Details[1] = detail;
 
+        // The agent the item names is registered, so the page draws a box for it that could be ticked (lens 3 run 122:
+        // with none drawn, the second assertion below could never fail).
+        console.Broker.Registry.Add(
+            new Wire.RegistryRow { Name = "billing@test", Adapter = "claude-code", Tier = Wire.AgentTier.Full, Status = Wire.AgentStatus.Active });
+
         // What the broker exports once retention removed the messages: the exchange stays, closed complete.
         console.Broker.ExportExchanges.Add(new Wire.ExchangeSnapshot
         {
@@ -51,6 +56,7 @@ public sealed class AStartedItemIsNeverOfferedAgainTests
             TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(">Add CSV export</textarea>", page, StringComparison.Ordinal);
+        Assert.Contains("name=\"Targets\" value=\"billing@test\"", page, StringComparison.Ordinal);
         Assert.DoesNotMatch("name=\"Targets\" value=\"billing@test\" checked=\"checked\"", page);
     }
 }

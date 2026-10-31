@@ -56,8 +56,10 @@ public sealed class ATurnIsReportedUnderTheAskingProjectsNameTests : IAsyncDispo
         }
     }
 
-    [Fact]
-    public async Task A_turn_another_project_asked_for_is_reported_under_that_projects_name()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_turn_another_project_asked_for_is_reported_under_that_projects_name(bool attachedHere)
     {
         var identity = AgentIdentity.Mint();
         var workspace = Path.Combine(_root, "checkout");
@@ -102,7 +104,10 @@ public sealed class ATurnIsReportedUnderTheAskingProjectsNameTests : IAsyncDispo
 
         try
         {
-            // This project's adapter in that process, attached under this project's name, once its node has rejoined.
+            // This project's adapter in that process, attached under this project's name, once its node has rejoined:
+            // the broker asks for a turn. With none attached here it asks for a start, which finds the process already
+            // running and gives it a turn there (lens 3 run 120).
+            using var detach = CancellationTokenSource.CreateLinkedTokenSource(Ct);
             using var attached = new Wire.Agents.AgentsClient(channel).Attach(
                 new Wire.AttachRequest
                 {
@@ -113,8 +118,21 @@ public sealed class ATurnIsReportedUnderTheAskingProjectsNameTests : IAsyncDispo
                     LaunchToken = Token,
                     ProtocolVersion = ProtocolVersion.Current,
                 },
-                cancellationToken: Ct);
+                cancellationToken: detach.Token);
             Assert.True(await attached.ResponseStream.MoveNext(Ct));
+
+            if (!attachedHere)
+            {
+                // Registered here, and gone: a start is asked for.
+                await detach.CancelAsync();
+
+                for (var tries = 0; tries < 50 && _broker.Runtime.Attached.Contains(AskedAs.Value); tries++)
+                {
+                    await Task.Delay(100, Ct);
+                }
+
+                Assert.DoesNotContain(AskedAs.Value, _broker.Runtime.Attached);
+            }
 
             var asked = false;
 
