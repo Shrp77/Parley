@@ -244,7 +244,9 @@ public sealed class FilesCommand(
 
     private async Task<int> PlaceAsync(Options options, CancellationToken cancellationToken)
     {
-        var path = options.Names[0];
+        // Trimmed once, here, so the path checked and the path read are one string (lens 1 run 119: a link named with a
+        // leading or trailing blank was checked as the name without it and read as itself).
+        var path = Parley.Configuration.PlaceableFile.Typed(options.Names[0]);
         var name = options.Name ?? Path.GetFileName(path);
 
         // Before the path is looked up: a path to another machine signs in to it, and a link reads what it points at

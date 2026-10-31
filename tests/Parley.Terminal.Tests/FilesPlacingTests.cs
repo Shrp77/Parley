@@ -161,7 +161,8 @@ public sealed class FilesPlacingTests : IAsyncDisposable
         var form = (FormDialog)driving.Find(FilesPlacing.Title + " in pricing");
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
-        driving.Type(@"\\192.0.2.171\share\notes.md");
+        // A host no other test dials (lens 3 run 132), so one that answers at once has not merely failed lately.
+        driving.Type(@"\\192.0.2.172\share\notes.md");
 
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up as it was typed: {watch.Elapsed}");
 

@@ -97,9 +97,9 @@ internal static class FilesPlacing
     /// <param name="typed">What was typed.</param>
     /// <returns>The problem.</returns>
     /// <remarks>
-    /// Asked before the path is looked up, as it is typed: a path to another machine signs in to it, and a link reads what
-    /// it points at (lens 2 run 122). <see cref="Parley.Configuration.PlaceableFile"/> reads only the path's text and this
-    /// machine's own drive names until it has decided neither.
+    /// Asked as it is typed, before the path is looked up: a path to another machine signs in to it, and a link reads what
+    /// it points at (lens 2 run 122). <see cref="Parley.Configuration.PlaceableFile"/> decides from the path's text and this
+    /// machine's own drive names whether it leaves this machine before it reads anything on a disk.
     /// </remarks>
     private static string? PathProblem(string typed) =>
         Parley.Configuration.PlaceableFile.Problem(Unquoted(typed)) is { } unplaceable
@@ -120,14 +120,19 @@ internal static class FilesPlacing
                 ? SharedFileName.Describe(problem)
                 : null;
 
-    /// <summary>A path without the quotes a file browser's "copy as path" puts round it.</summary>
+    /// <summary>A path without the quotes a file browser's "copy as path" puts round it, as it is checked and read.</summary>
     /// <param name="typed">What was typed.</param>
     /// <returns>The path.</returns>
+    /// <remarks>
+    /// Trimmed again inside the quotes as the check trims, so the path checked and the path read are one string (lens 1
+    /// run 119: a link named with a leading or trailing blank was checked as the name without it and read as itself).
+    /// </remarks>
     private static string Unquoted(string typed)
     {
         var path = typed.Trim();
 
-        return path.Length >= 2 && path[0] == '"' && path[^1] == '"' ? path[1..^1] : path;
+        return Parley.Configuration.PlaceableFile.Typed(
+            path.Length >= 2 && path[0] == '"' && path[^1] == '"' ? path[1..^1] : path);
     }
 
     private static void Choose(

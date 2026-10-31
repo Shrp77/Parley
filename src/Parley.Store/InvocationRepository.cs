@@ -225,7 +225,7 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <param name="modelTurns">How many model turns went into it.</param>
     /// <param name="permissionDenials">How many tool calls were refused for want of permission.</param>
     /// <param name="cancellationToken">Cancels the write.</param>
-    /// <returns>Rows written.</returns>
+    /// <returns>Rows written: none when this turn is already recorded.</returns>
     /// <remarks>
     /// <para>
     /// Every turn is recorded, including the ones that failed and the ones that achieved nothing.
@@ -236,6 +236,11 @@ public sealed class InvocationRepository(SqliteConnection connection)
     /// <para>
     /// <paramref name="exitCode"/> is the turn's verdict — zero for a clean finish — since a
     /// resident agent has no process exit to report.
+    /// </para>
+    /// <para>
+    /// <b>Once per turn</b> (lens 1 run 119): a node sends a turn's end again when its deadline passes, and a deadline can
+    /// pass after the row is written, while the broker is held up by a rewrite of its store. A turn is one agent's from
+    /// one start, so a second report of it writes nothing and its cost is not counted twice.
     /// </para>
     /// </remarks>
     public async Task<int> RecordAsync(
@@ -257,8 +262,9 @@ public sealed class InvocationRepository(SqliteConnection connection)
             INSERT INTO invocations
                 (agent, waiting_before, waiting_after, started_utc, elapsed_ms, exit_code, timed_out,
                  cost_usd, model_turns, permission_denials)
-            VALUES (@Agent, @Before, @After, @Started, @Elapsed, @Exit, @TimedOut,
-                    @Cost, @Turns, @Denials);
+            SELECT @Agent, @Before, @After, @Started, @Elapsed, @Exit, @TimedOut,
+                   @Cost, @Turns, @Denials
+             WHERE NOT EXISTS (SELECT 1 FROM invocations WHERE agent = @Agent AND started_utc = @Started);
             """;
 
         command.Parameters.AddWithValue("@Agent", agent.Value);

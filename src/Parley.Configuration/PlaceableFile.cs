@@ -12,10 +12,10 @@ namespace Parley.Configuration;
 /// sign in to that host before anything was read.
 /// </para>
 /// <para>
-/// <b>A file that is itself a link is refused, and a folder above it is not</b>: some systems keep ordinary folders behind
-/// links (macOS's <c>/var</c>), and through a folder link the file reached still has the name the person typed, which a
-/// placement must end in <c>.md</c> or <c>.txt</c>. Every link along the path is still walked for one that leads off this
-/// machine (<see cref="OffMachineLinks"/>).
+/// <b>A file that is itself a link is refused, and a folder link above it or a hard link is not</b>: some systems keep
+/// ordinary folders behind links (macOS's <c>/var</c>), and the owner ruled (lens 2 run 123) that a link an agent makes in
+/// its own repository gives it nothing it could not read and send itself. What stays refused is a lookup that leaves this
+/// machine: every link along the path is walked for one that does (<see cref="OffMachineLinks"/>).
 /// </para>
 /// </remarks>
 public static class PlaceableFile
@@ -30,7 +30,7 @@ public static class PlaceableFile
             return null;
         }
 
-        var typed = OffMachineLinks.Typed(path);
+        var typed = Typed(path);
 
         if (LocalPath.IsOffThisMachine(typed) || OffMachineLinks.LeadsOffThisMachine(typed))
         {
@@ -52,5 +52,20 @@ public static class PlaceableFile
         return file.Exists && file.Attributes.HasFlag(FileAttributes.ReparsePoint)
             ? $"{typed} is a link to another file. Place the file itself, not a link to it."
             : null;
+    }
+
+    /// <summary>A path as a person typed it, with only the blanks typing adds taken off its ends: what is checked.</summary>
+    /// <param name="path">The path as written.</param>
+    /// <returns>The path to check and then read.</returns>
+    /// <remarks>
+    /// <b>The caller reads this string, not the one it was given</b> (lens 1 run 119): checked trimmed and read untrimmed,
+    /// a link named with a leading or trailing blank beside a file without one was checked as the one and read as the
+    /// other.
+    /// </remarks>
+    public static string Typed(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        return OffMachineLinks.Typed(path);
     }
 }

@@ -53,6 +53,26 @@ public sealed class LatestTurnTests
     }
 
     [Fact]
+    public async Task A_turn_reported_twice_is_recorded_once_and_another_turn_still_is()
+    {
+        // Lens 1 run 119: a node sends a turn's end again when its deadline passes, and the deadline can pass after the
+        // row is written, while a rewrite holds the broker up. Recorded twice, the turn's cost was counted twice.
+        var ct = TestContext.Current.CancellationToken;
+
+        using var connection = ParleyDatabase.OpenInMemory();
+        await new AgentRepository(connection).UpsertAsync(
+            new AgentRecord(Orders, "mcp", AgentTier.Headless, null, null, null, false, AgentStatus.Active), ct);
+
+        var turns = new InvocationRepository(connection);
+
+        Assert.Equal(1, await turns.RecordAsync(Orders, 1, 0, T0, TimeSpan.FromSeconds(30), 0, true, costUsd: 0.5, cancellationToken: ct));
+        Assert.Equal(0, await turns.RecordAsync(Orders, 1, 0, T0, TimeSpan.FromSeconds(30), 0, true, costUsd: 0.5, cancellationToken: ct));
+        Assert.Equal(1, await turns.RecordAsync(Orders, 1, 0, T0.AddMinutes(1), TimeSpan.FromSeconds(30), 0, false, cancellationToken: ct));
+
+        Assert.Equal(2, Dapper.SqlMapper.ExecuteScalar<long>(connection, "SELECT COUNT(*) FROM invocations;"));
+    }
+
+    [Fact]
     public async Task A_turn_recorded_as_ending_past_the_calendar_is_still_read()
     {
         // Such a row must not make this read throw, and the registry with it, for the whole broker. The

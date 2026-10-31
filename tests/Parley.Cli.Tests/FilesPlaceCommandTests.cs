@@ -150,12 +150,65 @@ public sealed class FilesPlaceCommandTests : IAsyncDisposable
         await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
+        // A host no other test dials (lens 3 run 132): Windows answers a host that failed lately at once, so a shared one
+        // could not tell a lookup from none.
         var (code, _, error) = await _files.RunAsync("place", @"\\192.0.2.171\share\notes.md", "--conversation", "pricing");
 
         Assert.Equal(1, code);
         Assert.Contains("is on another machine", error, StringComparison.Ordinal);
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
         Assert.Equal(1, await _files.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_folder_link_to_another_machine_is_not_looked_up_and_nothing_is_placed()
+    {
+        // Lens 3 run 132: the walk for a link that leads off this machine was held by nothing, because both share cases
+        // type the share and the text alone refuses that. Through a link it took the 21 s sign-in.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
+        await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
+        var link = Path.Combine(_directory.FullName, "peer");
+
+        try
+        {
+            _ = Directory.CreateSymbolicLink(link, @"\\192.0.2.183\share");
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let this user make a symbolic link (Windows without Developer Mode).");
+        }
+
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+
+            var (code, _, error) = await _files.RunAsync("place", Path.Combine(link, "notes.md"), "--conversation", "pricing");
+
+            Assert.Equal(1, code);
+            Assert.Contains("is on another machine", error, StringComparison.Ordinal);
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
+            Assert.Equal(1, await _files.CountAsync());
+        }
+        finally
+        {
+            // The link, never what it reaches.
+            Directory.Delete(link);
+        }
+    }
+
+    [Fact]
+    public async Task The_path_checked_is_the_path_read()
+    {
+        // Lens 1 run 119: the check trimmed the blanks typing adds and the read did not, so a link named with a blank at
+        // its end beside a plain file was checked as the plain file and read as the link. A path typed with a trailing
+        // tab shows the two strings apart without a link: it is read as the file the check judged.
+        await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
+        var plain = Write("handoff.md", "the plain file");
+
+        var (code, _, error) = await _files.RunAsync("place", plain + "	", "--conversation", "pricing");
+
+        Assert.True(code == 0, error);
+        Assert.Equal(ContentHash.Of("the plain file"u8), (await PlacedAsync("handoff.md")).Sha256);
     }
 
     [Fact]
