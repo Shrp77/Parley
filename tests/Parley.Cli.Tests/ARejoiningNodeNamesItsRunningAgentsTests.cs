@@ -37,6 +37,9 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
 
     private static readonly AgentName Billing = AgentName.Create("billing@" + NodeCatalogue.Machine);
 
+    /// <summary>What a person renamed it to since its node launched it (lens 1 run 105).</summary>
+    private static readonly AgentName Sales = AgentName.Create("sales@" + NodeCatalogue.Machine);
+
     private readonly SqliteConnection _store = ParleyDatabase.OpenInMemory();
     private readonly LoopbackOperator _broker;
     private readonly string _root = Path.Combine(Path.GetTempPath(), "parley-rejoin-" + Path.GetRandomFileName());
@@ -65,9 +68,10 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task A_process_started_before_the_broker_restarted_is_Parleys_once_its_node_rejoins(bool nodeRejoins)
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task A_process_started_before_the_broker_restarted_is_Parleys_once_its_node_rejoins(bool nodeRejoins, bool renamed)
     {
         // Two identities, ordered as the shared table lists them: the other project's goes last, so that reporting it
         // here would leave its token in place of this project's whatever order a table keeps.
@@ -115,6 +119,12 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
         Assert.True(resident.IsAlive && other.IsAlive, "the agents never started, so this probe measured nothing");
 
         using var channel = GrpcChannel.ForAddress(_broker.Address);
+
+        // Registered with its identity; when renamed since its launch, the broker knows it as sales and the node still as
+        // billing.
+        var name = renamed ? Sales : Billing;
+        (await AttachAsync(channel, name, identity.ToString(), null)).Dispose();
+
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct);
 
         var node = nodeRejoins
@@ -128,7 +138,7 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
 
             for (var tries = 0; tries < 50 && outside; tries++)
             {
-                outside = await ReattachReadsOutsideAsync(channel, Ours);
+                outside = await ReattachReadsOutsideAsync(channel, name, Ours, identity.ToString());
 
                 if (outside)
                 {
@@ -139,7 +149,9 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             Assert.Equal(!nodeRejoins, outside);
 
             // And the other project's token is not this project's.
-            Assert.True(await ReattachReadsOutsideAsync(channel, Theirs), "another project's process passed for this one's");
+            Assert.True(
+                await ReattachReadsOutsideAsync(channel, name, Theirs, identity.ToString()),
+                "another project's process passed for this one's");
         }
         finally
         {
@@ -164,20 +176,29 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             TimeProvider.System,
             new Dictionary<string, string> { [LaunchToken.Variable] = token });
 
-    private async Task<bool> ReattachReadsOutsideAsync(GrpcChannel channel, string token)
+    private async Task<bool> ReattachReadsOutsideAsync(GrpcChannel channel, AgentName name, string token, string identity)
     {
-        using var attached = new Wire.Agents.AgentsClient(channel).Attach(
+        using var attached = await AttachAsync(channel, name, identity, token);
+
+        return (await new BrokerClient(_broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == name).OpenOutside;
+    }
+
+    private static async Task<AsyncServerStreamingCall<Wire.Event>> AttachAsync(
+        GrpcChannel channel, AgentName name, string identity, string? token)
+    {
+        var attached = new Wire.Agents.AgentsClient(channel).Attach(
             new Wire.AttachRequest
             {
-                Agent = Billing.Value,
+                Agent = name.Value,
                 Adapter = "test",
                 Tier = Wire.AgentTier.Pull,
-                LaunchToken = token,
+                Identity = identity,
+                LaunchToken = token ?? string.Empty,
                 ProtocolVersion = ProtocolVersion.Current,
             },
             cancellationToken: Ct);
         Assert.True(await attached.ResponseStream.MoveNext(Ct));
 
-        return (await new BrokerClient(_broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == Billing).OpenOutside;
+        return attached;
     }
 }

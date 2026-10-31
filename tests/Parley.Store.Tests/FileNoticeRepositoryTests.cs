@@ -150,6 +150,93 @@ public sealed class FileNoticeRepositoryTests : IDisposable
         Assert.Equal(0, await _notices.CountWaitingAsync(Orders, cancellationToken: Ct));
     }
 
+    // **A retired agent is told on no route** (SPEC.md §9.5; lens 3 run 116): each way a notice is raised has its own
+    // guard, and only a removal's was held. Orders fetched the file and Billing placed it; both are retired.
+
+    [Fact]
+    public async Task A_retired_placer_is_not_told_its_file_went_missing()
+    {
+        await Place("v1");
+        Retire(Billing);
+
+        using (var scope = WriteScope.Begin(_connection, null))
+        {
+            await _notices.RaiseGoneAsync(
+                "pricing", Name.Key, Name.Value, Now, forgetFetches: true, scope.Transaction, Ct,
+                placer: Billing, placed: ContentHash.Of("v1"u8));
+            scope.Complete();
+        }
+
+        Assert.Equal(0, await _notices.CountWaitingAsync(Billing, cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task A_retired_agent_is_not_told_of_a_prune()
+    {
+        await Place("v1");
+        await Fetch(Orders, "v1");
+        Retire(Orders);
+
+        using (var scope = WriteScope.Begin(_connection, null))
+        {
+            await _notices.RaiseGoneForAllAsync(Now, scope.Transaction, Ct);
+            scope.Complete();
+        }
+
+        Assert.Equal(0, await _notices.CountWaitingAsync(Orders, cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task A_retired_agent_is_not_told_of_a_destroy()
+    {
+        await Place("v1");
+        await Fetch(Orders, "v1");
+        Retire(Orders);
+
+        _ = await new ConversationRepository(_connection).DestroyAsync("pricing", Now, cancellationToken: Ct);
+
+        Assert.Equal(0, await _notices.CountWaitingAsync(Orders, cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task A_retired_agent_is_not_told_of_a_purge()
+    {
+        await Place("v1");
+        await Fetch(Orders, "v1");
+        Retire(Orders);
+
+        // Billing's conversation, so the purge takes it and its files.
+        Execute("INSERT INTO conversation_participants (conversation_id, agent, joined_utc) VALUES ('pricing', 'billing@test', '2026-09-14T09:00:00.0000000Z');");
+
+        _ = await new AgentRepository(_connection).PurgeAsync(Billing, Now, cancellationToken: Ct);
+
+        Assert.Equal(0, await _notices.CountWaitingAsync(Orders, cancellationToken: Ct));
+    }
+
+    [Fact]
+    public async Task Retired_fetchers_and_a_retired_placer_are_not_told_of_tampering()
+    {
+        await Place("v1");
+        await Fetch(Orders, "v1");
+        Retire(Orders);
+        Retire(Billing);
+
+        using (var scope = WriteScope.Begin(_connection, null))
+        {
+            await _notices.RaiseTamperedAsync(
+                "pricing", Name.Key, Name.Value, ContentHash.Of("v1"u8), Billing, ContentHash.Of("v2"u8), 2, Now,
+                scope.Transaction, Ct);
+            scope.Complete();
+        }
+
+        Assert.Equal(0, await _notices.CountWaitingAsync(Orders, cancellationToken: Ct));
+        Assert.Equal(0, await _notices.CountWaitingAsync(Billing, cancellationToken: Ct));
+    }
+
+    private static SharedFileName Name => SharedFileName.Create("price-snapshot.md");
+
+    private void Retire(AgentName agent) => Execute($"UPDATE agents SET status = 'retired' WHERE name = '{agent.Value}';");
+
     [Fact]
     public async Task A_collection_takes_at_most_two_hundred_oldest_first_and_says_how_many_are_left()
     {

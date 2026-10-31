@@ -45,7 +45,7 @@ public sealed class NodesService : Wire.Nodes.NodesBase
     }
 
     /// <inheritdoc/>
-    public override Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
+    public override async Task<Wire.Empty> ReportLaunch(Wire.LaunchReport request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
@@ -54,10 +54,20 @@ public sealed class NodesService : Wire.Nodes.NodesBase
         // report, so a refusal would tell it nothing it could act on (SPEC.md §11.7).
         if (AgentName.TryCreate(request.Agent, out var agent))
         {
-            _ = _runtime.LaunchReported(Machine(request.Machine), agent, request.Token);
+            var machine = Machine(request.Machine);
+
+            // **Filed under the name the repository is registered as now** (lens 1 run 105): an agent renamed since its
+            // node launched it is still known to the node by the old name, and a token filed there after a broker
+            // restart left the renamed process open outside Parley.
+            if (AgentIdentity.TryRead(request.Identity, out var identity))
+            {
+                agent = await _runtime.NameOfAsync(identity, machine, agent, context.CancellationToken).ConfigureAwait(false);
+            }
+
+            _ = _runtime.LaunchReported(machine, agent, request.Token);
         }
 
-        return Task.FromResult(new Wire.Empty());
+        return new Wire.Empty();
     }
 
     /// <inheritdoc/>

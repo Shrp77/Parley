@@ -85,8 +85,9 @@ A request to an agent that has no session open waits. If the agent's machine has
 listed as startable, the node starts it, and the message is there when it arrives. Starting is
 always a response to something waiting. An idle agent is never started to invent work.
 
-An agent that was started by a node carries a one-time launch token. One that connects without it
-was opened some other way, such as by you in an editor. Parley does not start a second copy beside
+An agent that was started by a node carries a launch token, good until the node starts it again, so
+it is still known as Parley's when it reconnects. One that connects without it, or with one from an
+earlier launch, was opened some other way, such as by you in an editor. Parley does not start a second copy beside
 it. A message to it waits until somebody there takes a turn.
 
 ## What an agent can do

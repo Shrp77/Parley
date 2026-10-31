@@ -95,8 +95,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <remarks>
     /// <b>Reported before the process starts</b>, so the broker knows the token when the adapter presents it; and, like a
     /// turn report, never allowed to stop the launch — a broker that did not hear it reads the agent as open outside
-    /// Parley, which is honest about what it knows. A fresh token each launch, so a process that outlived a restart, or
-    /// an editor started from a shell that inherited one, cannot pass for the new one.
+    /// Parley, which is honest about what it knows. A fresh token each launch, so a process left from an earlier launch of
+    /// the agent cannot pass for the new one.
     /// </remarks>
     internal async Task<IReadOnlyDictionary<string, string>> LaunchAsync(Parley.Core.AgentName agent)
     {
@@ -132,9 +132,10 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// process the node started before the restart read as open outside Parley on reattaching, and could be neither woken
     /// nor started (lens 1 run 104). Like a launch report, a failed one stops nothing.
     /// </remarks>
-    internal async Task ReannounceAsync(IEnumerable<Parley.Headless.ResidentAgent> residents)
+    internal async Task ReannounceAsync(
+        IEnumerable<KeyValuePair<Parley.Core.AgentIdentity, Parley.Headless.ResidentAgent>> residents)
     {
-        foreach (var resident in residents)
+        foreach (var (identity, resident) in residents)
         {
             if (!resident.IsAlive
                 || resident.IssuedToken is not { Length: > 0 } token
@@ -147,7 +148,10 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
             try
             {
                 _ = await nodes.ReportLaunchAsync(
-                        new Wire.LaunchReport { Machine = machine, Agent = resident.Name.Value, Token = token },
+                        new Wire.LaunchReport
+                        {
+                            Machine = machine, Agent = resident.Name.Value, Token = token, Identity = identity.ToString(),
+                        },
                         deadline: DateTime.UtcNow.Add(Patience))
                     .ConfigureAwait(false);
             }

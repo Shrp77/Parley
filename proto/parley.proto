@@ -616,6 +616,7 @@ message LaunchReport {
   string machine = 1;
   string agent = 2;
   string token = 3;     // chosen by the node for this one launch
+  string identity = 4;  // the repository's identifier when the node knows it, so a rename since the launch still finds the agent; empty when not
 }
 
 message JoinRequest {

@@ -1109,6 +1109,18 @@ public sealed class BrokerRuntime : IAsyncDisposable
         return true;
     }
 
+    /// <summary>The name a repository is registered as on a machine now, or <paramref name="fallback"/> when none is.</summary>
+    /// <param name="identity">The repository's identifier.</param>
+    /// <param name="machine">The machine.</param>
+    /// <param name="fallback">The name the node knows it by.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The registered name, which a rename may have changed since the node launched it.</returns>
+    internal async Task<AgentName> NameOfAsync(
+        AgentIdentity identity, string machine, AgentName fallback, CancellationToken cancellationToken) =>
+        (await UseConnectionAsync(
+            (connection, _, ct) => new AgentRepository(connection).HolderOfIdentityAsync(identity, machine, ct),
+            cancellationToken).ConfigureAwait(false))?.Name ?? fallback;
+
     /// <summary>Whether a token is the one an agent's node reported for its latest launch (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>
     /// <param name="token">The token an attachment presented, or <see langword="null"/>.</param>

@@ -78,6 +78,33 @@ public sealed class StartedByParleyTests
         Assert.False((await RowAsync(broker)).OpenOutside);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_reported_under_a_name_since_renamed_finds_the_agent_by_its_identity(bool withIdentity)
+    {
+        // Lens 1 run 105: the node knows a process by the name it launched it under, and a person renamed the agent
+        // since. Re-reported after a broker restart under the old name, the token left the renamed process outside.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        var identity = Parley.Core.AgentIdentity.Mint().ToString();
+
+        // Registered under its new name, as the rename left it.
+        await (await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, identity: identity)).DisposeAsync();
+
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport
+            {
+                Machine = Here, Agent = "orders@m1", Token = "t-1", Identity = withIdentity ? identity : string.Empty,
+            },
+            cancellationToken: Ct);
+
+        await using var again = await AttachedClient.AttachAsync(
+            broker, Agent, cancellationToken: Ct, launchToken: "t-1", identity: identity);
+
+        Assert.Equal(!withIdentity, (await RowAsync(broker)).OpenOutside);
+    }
+
     [Fact]
     public async Task A_token_from_a_launch_the_node_has_since_replaced_is_outside()
     {

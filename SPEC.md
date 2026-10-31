@@ -1028,7 +1028,8 @@ naming it and a participant that said it is finished, and the broker wakes it to
 both, a participant that finished its part and never voted would leave the conversation closing
 with nobody told. Each silent participant is woken at most once for each poll, whatever the votes do
 afterwards: a participant repeating or alternating its own vote cannot spend another's turns. A new
-poll — which only a new Request can bring about — may ask again.
+poll — which only a new Request can bring about — may ask again, and so may a turn of the silent participant's own
+that runs out of time with the vote still owed (§11.1), as for mail it has not collected.
 
 The thresholds are fixed — fifteen minutes uncollected, four hours collected with no Result — and
 stamped on the exchange when it is admitted (§7.1), so a later build that changes them does not
@@ -3502,7 +3503,10 @@ for this one launch, and starts the process with that token in its environment; 
 when it attaches. An attachment presenting the token the broker was told of for that agent, by the node on that
 agent's machine, is **started by Parley**. The token stays good until that node starts the agent again with a new
 one, so the same process reattaching after its stream dropped is still Parley's; and since a broker holds launches
-only in memory, a node joining a broker tells it again the token of every agent it is still running. Any other
+only in memory, a node joining a broker tells it again the token of every agent of that project it is still running,
+with the repository's identity, so an agent renamed since its launch is found under its new name. A process started
+from a shell that inherited the token before the node launched the agent again passes for Parley's too; the broker
+cannot tell processes apart, only launches. Any other
 attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**. A launch the
 broker was never told of, because the report did not arrive, reads the same way; a failed report never stops the
 launch.

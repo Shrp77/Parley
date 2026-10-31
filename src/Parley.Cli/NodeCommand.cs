@@ -200,7 +200,7 @@ public static class NodeCommand
                                 var startable = catalogue.StartableIn(project).ToHashSet();
 
                                 await new TurnReporter(nodes, request.Machine, output)
-                                    .ReannounceAsync(residents.Where(pair => startable.Contains(pair.Key)).Select(pair => pair.Value))
+                                    .ReannounceAsync(residents.Where(pair => startable.Contains(pair.Key)))
                                     .ConfigureAwait(false);
                                 break;
 

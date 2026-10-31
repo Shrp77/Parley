@@ -62,7 +62,7 @@
     imply that the wire contract moved. The storage schema carries a third, in user_version.
   -->
   <PropertyGroup>
-    <VersionPrefix>0.47.65</VersionPrefix>
+    <VersionPrefix>0.47.66</VersionPrefix>
   </PropertyGroup>
 
   <PropertyGroup>
