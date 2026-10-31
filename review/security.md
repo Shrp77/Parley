@@ -43,8 +43,9 @@ Check a change against each; a new page or a new path lookup must keep all of th
   volume path with folders, a device) and every other kind of reparse point is refused. Any part of the walked path, or of a target or `subst` folder, that ends in a dot or any whitespace is refused, and so
   is an absolute target with `.`, `..` or an empty part, because Windows reads such a part as stored while a Win32
   path would tidy it. Every surface that looks up a path an agent can influence goes through it: the web Enrol page
-  and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, and the ownership
-  write Auto Accept makes.
+  and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, the ownership
+  write Auto Accept makes, and the person's placement (`parley files place` and the terminal's place dialog, through
+  `PlaceableFile`, which also refuses a file that is itself a link).
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system

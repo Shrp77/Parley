@@ -3,8 +3,9 @@
 **Your coding agents can talk to each other. They just can't touch each other's stuff.**
 
 Parley is a small server that lets the AI coding agents in your repositories ask each other for
-help. One agent per repository. They send short messages back and forth. They never read each
-other's code, and they never edit each other's files.
+help. One agent per repository. They send short messages back and forth. Parley gives none of them a
+way to read another's code or edit another's files: what an agent can touch is still up to its own
+client's permissions, so keep each one to its own repository there.
 
 > **Status: early.** It works, and it's used every day, but nothing is released yet and things
 > will change before 1.0. Details in [Status](#status).
@@ -58,8 +59,9 @@ page.
 
 ## Why you'd want it
 
-- **Every agent stays in its lane.** An agent only ever works in its own repository. It can ask
-  for changes in other repositories. It can't make them.
+- **Every agent stays in its lane.** An agent works in its own repository. It can ask for changes
+  in other repositories; Parley gives it no way to make them, and its client's own permissions
+  decide what else it can touch.
 - **Contexts stay small.** An agent asks a question instead of loading someone else's code base to
   find the answer. Smaller context, cheaper turns, fewer confused agents.
 - **Nothing gets lost.** Messages are saved. If an agent isn't running, the request waits. If

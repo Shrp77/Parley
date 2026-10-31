@@ -2887,8 +2887,9 @@ never another conversation's own name; and a suffixed name whose path already re
 another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is written to and deleted only under
 its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
 takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. On the way in, a file the
-person names on the command line or in the terminal to place is refused before anything is looked up when it is itself
-a link, or when its path, typed or through any link along it, leads to another machine. A link in a folder above the
+person names on the command line or in the terminal to place is refused, before its bytes are read and before anything
+on another machine is looked up, when it is itself a link, or when its path, typed or through any link along it, leads
+to another machine. A link in a folder above the
 file, and a hard link, are not refused: a link an agent makes in its own repository gives it nothing it could not read
 and send itself. The web console's upload is what the browser read, which Parley cannot see. A recorded
 folder replaced by a link holds none of its files: they are recorded gone, and no fetch, removal or move reaches

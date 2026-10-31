@@ -205,7 +205,7 @@ public sealed class FilesPlaceCommandTests : IAsyncDisposable
         await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
         var plain = Write("handoff.md", "the plain file");
 
-        var (code, _, error) = await _files.RunAsync("place", plain + "	", "--conversation", "pricing");
+        var (code, _, error) = await _files.RunAsync("place", plain + "\t", "--conversation", "pricing");
 
         Assert.True(code == 0, error);
         Assert.Equal(ContentHash.Of("the plain file"u8), (await PlacedAsync("handoff.md")).Sha256);
