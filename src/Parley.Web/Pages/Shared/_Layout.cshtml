@@ -33,9 +33,12 @@
         ? Task.FromResult<IReadOnlyList<(string Project, int Waiting)>>([])
         : Parley.Web.FileProblemBanner.CountAsync(Directory, problemsAbout, Context.RequestAborted);
 
-    // **Read before anything that asks a broker** (SPEC.md §9.1): a rewrite holds every call, and the seat's stream has
-    // already said one is running. Not on an embedded page, which drops the project's name.
-    var tidying = Parley.Web.ConsoleHost.Embedded(Context)
+    // **Drawn as it stands, then kept true by the page itself** (SPEC.md §9.1): a page that asks a broker is drawn only
+    // after a rewrite has let it, so what is read here can be over by the time it shows. The script below asks the seats
+    // every two seconds and shows or hides it, including while the next page or a send waits. Not on an embedded page,
+    // which drops the project's name.
+    var embedded = Parley.Web.ConsoleHost.Embedded(Context);
+    var tidying = embedded
         ? []
         : Seats.Seats().Where(hold => hold.Tidying).Select(hold => hold.Project).Distinct(StringComparer.Ordinal).ToList();
 
@@ -1808,9 +1811,9 @@
 
         @* Said until the person dismisses each one, because only the person decides what becomes of a quarantined file.
            The project's name is somebody's text and Razor encodes it like everything else. *@
-        @foreach (var tidied in tidying)
+        @if (!embedded)
         {
-            <p class="file-problems-banner" role="status">@PersonSeats.TidyingSays(tidied)</p>
+            <p class="file-problems-banner" role="status" data-tidying hidden="@(tidying.Count == 0)">@string.Join(" ", tidying.Select(PersonSeats.TidyingSays))</p>
         }
 
         @foreach (var (problemProject, problemCount) in problems)
@@ -1938,6 +1941,25 @@
                     }
                 });
             });
+        })();
+    </script>
+    <script>
+        // Whether a project's broker is rewriting its store, asked of the seats and never of a broker, so the answer comes
+        // while a rewrite holds everything else up (SPEC.md §9.1). Every two seconds while the page is open.
+        (function () {
+            var shown = document.querySelector('[data-tidying]');
+
+            if (!shown) { return; }
+
+            setInterval(function () {
+                fetch('/?handler=Tidying', { cache: 'no-store', credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(function (said) {
+                        shown.textContent = said.join(' ');
+                        shown.hidden = said.length === 0;
+                    })
+                    .catch(function () { });
+            }, 2000);
         })();
     </script>
     <script>

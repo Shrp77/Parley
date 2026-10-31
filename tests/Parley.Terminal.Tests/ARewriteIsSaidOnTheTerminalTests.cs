@@ -19,6 +19,21 @@ public sealed class ARewriteIsSaidOnTheTerminalTests
 
         _ = await seated.AsksAsync(Seated.Orders, Seated.Billing, "Is the total gross or net?", "pricing", ct);
 
+        // What the line said while the rewrite ran (lens 3 run 128: only the end was held). Read from a handler added
+        // after the shell's own, so it runs once the shell has said its piece, while the seat still says underway.
+        var whileItRan = new List<string>();
+        var seat = seated.Shell.Held!;
+        seat.TidyingChanged += (_, _) =>
+        {
+            if (seat.Tidying)
+            {
+                lock (whileItRan)
+                {
+                    whileItRan.Add(seated.Shell.Said);
+                }
+            }
+        };
+
         // Destroyed from somewhere else, as another surface would: the seat's stream is what tells this one.
         _ = await seated.Operators.DestroyAsync("pricing", ct);
 
@@ -29,6 +44,11 @@ public sealed class ARewriteIsSaidOnTheTerminalTests
 
         Assert.Equal(Shell.TidiedSaid, seated.Shell.Said);
         Assert.False(seated.Shell.Held!.Tidying);
+
+        lock (whileItRan)
+        {
+            Assert.Equal([Shell.TidyingSaid], whileItRan);
+        }
     }
 
     [Fact]

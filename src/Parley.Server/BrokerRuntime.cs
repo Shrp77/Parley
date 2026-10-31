@@ -307,12 +307,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <summary>Gets the agents currently attached, by name.</summary>
     public IReadOnlyCollection<string> Attached => (IReadOnlyCollection<string>)_attached.Keys;
 
-    /// <summary>Gets whether the store is being rewritten now, so everything sent waits for it.</summary>
-    public bool Tidying => Volatile.Read(ref _tidying) == 1;
-
-    private int _tidying;
-
-    /// <summary>Records that a rewrite started or finished, and tells every open session.</summary>
+    /// <summary>Tells every open session that a rewrite started or finished.</summary>
     /// <param name="underway">Whether it started.</param>
     /// <remarks>
     /// <b>Nothing is refused while it runs</b> (owner's decision, lens 1 run 115): what an agent or a person sends waits on
@@ -322,8 +317,6 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private void TellTidying(bool underway)
     {
-        Volatile.Write(ref _tidying, underway ? 1 : 0);
-
         foreach (var sessions in _attached.Values)
         {
             foreach (var session in sessions)

@@ -241,7 +241,8 @@ public static class ParleyDatabase
     /// The broker's one connection serves every operation, so a rewrite holds everything else up for as long as it runs,
     /// which on a large store is seconds (lens 1 run 115). The broker tells whoever is attached that what they send waits
     /// and goes through when it finishes, rather than leaving them to read silence as a failure. Kept beside the
-    /// connection rather than passed through every repository, so the store knows nothing of who is told.
+    /// connection rather than passed through every repository, so the store knows nothing of who is told. One observer
+    /// per connection: a second replaces the first, and the broker that owns the connection is the only caller.
     /// </remarks>
     public static void ObserveTidying(SqliteConnection connection, Action<bool> tidying)
     {

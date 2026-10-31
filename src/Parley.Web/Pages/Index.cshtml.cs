@@ -254,6 +254,22 @@ public sealed class IndexModel(BrokerDirectory directory, SeatBook seats) : Page
         return new JsonResult(new { waiting, certain });
     }
 
+    /// <summary>Says which projects' brokers are rewriting their stores, for every page to show while it is open.</summary>
+    /// <returns>A sentence for each, or none.</returns>
+    /// <remarks>
+    /// <b>Read from the seats' streams and never from a broker</b> (lens 3 run 128): a rewrite holds every call a broker
+    /// takes, so a page asking one would wait the rewrite out and say it only once it was over. The page already on the
+    /// screen asks this while the next page or a send waits, which is when saying it helps. Not a touch: asking is not the
+    /// person doing anything.
+    /// </remarks>
+    public IActionResult OnGetTidying() =>
+        new JsonResult(seats.Seats()
+            .Where(hold => hold.Tidying)
+            .Select(hold => hold.Project)
+            .Distinct(StringComparer.Ordinal)
+            .Select(PersonSeats.TidyingSays)
+            .ToList());
+
     /// <summary>Lists the folders in one directory of this machine, for the folder browser on the register form.</summary>
     /// <param name="path">The directory; empty for the drives, or the root on a machine without them.</param>
     /// <returns>The directory, the one above it, and the folders in it with whether each is a repository.</returns>
