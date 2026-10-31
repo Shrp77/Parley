@@ -133,13 +133,14 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// nor started (lens 1 run 104). Like a launch report, a failed one stops nothing.
     /// </remarks>
     internal async Task ReannounceAsync(
-        IEnumerable<KeyValuePair<Parley.Core.AgentIdentity, Parley.Headless.ResidentAgent>> residents)
+        IEnumerable<(Parley.Core.AgentIdentity Identity, Parley.Headless.ResidentAgent Resident, string Role)> residents)
     {
-        foreach (var (identity, resident) in residents)
+        foreach (var (identity, resident, role) in residents)
         {
             if (!resident.IsAlive
                 || resident.IssuedToken is not { Length: > 0 } token
-                || !string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
+                || !string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal)
+                || !Parley.Core.AgentName.TryJoin(role, machine, out var named))
             {
                 continue;
             }
@@ -150,7 +151,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 _ = await nodes.ReportLaunchAsync(
                         new Wire.LaunchReport
                         {
-                            Machine = machine, Agent = resident.Name.Value, Token = token, Identity = identity.ToString(),
+                            Machine = machine, Agent = named.Value, Token = token, Identity = identity.ToString(),
                         },
                         deadline: DateTime.UtcNow.Add(Patience))
                     .ConfigureAwait(false);
@@ -158,7 +159,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
             catch (Exception failure)
             {
                 await output.WriteLineAsync(
-                        $"  {resident.Name.Value}: could not tell the broker it is still running it — {failure.Message}")
+                        $"  {named.Value}: could not tell the broker it is still running it — {failure.Message}")
                     .ConfigureAwait(false);
             }
 #pragma warning restore CA1031
@@ -196,12 +197,12 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 
     /// <summary>Runs a turn through a reporter when there is one, and plainly when there is not.</summary>
     /// <param name="reporter">The reporter, or null.</param>
-    /// <param name="resident">The agent, whose name is reported.</param>
+    /// <param name="asked">The name the asking project gave the agent, which the turn is reported under.</param>
     /// <param name="turn">The turn, handed what to call once it actually begins.</param>
     /// <returns>What the turn came to.</returns>
     internal static Task<TurnOutcome> Run(
-        TurnReporter? reporter, ResidentAgent resident, Func<Func<Task>, Task<TurnOutcome>> turn) =>
-        reporter is null ? turn(static () => Task.CompletedTask) : reporter.RunAsync(resident.Name, turn);
+        TurnReporter? reporter, Parley.Core.AgentName asked, Func<Func<Task>, Task<TurnOutcome>> turn) =>
+        reporter is null ? turn(static () => Task.CompletedTask) : reporter.RunAsync(asked, turn);
 
     private static string Stamp(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

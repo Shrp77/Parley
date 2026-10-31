@@ -197,10 +197,16 @@ public static class NodeCommand
                                 // reattach (SPEC.md §11.7). Only what this project's catalogue starts: the table is the
                                 // machine's, shared by every project this process hosts, and another project's agent
                                 // under the same name would put its token here in place of this one's (lens 2 run 107).
-                                var startable = catalogue.StartableIn(project).ToHashSet();
+                                //
+                                // **Under the name this project gives it** (lens 2 run 108): one checkout is one process
+                                // in every project that enrols it, under a name in each, and the process carries the
+                                // name of whichever started it.
+                                var named = catalogue.NamesIn(project);
 
                                 await new TurnReporter(nodes, request.Machine, output)
-                                    .ReannounceAsync(residents.Where(pair => startable.Contains(pair.Key)))
+                                    .ReannounceAsync(residents
+                                        .Where(pair => named.ContainsKey(pair.Key))
+                                        .Select(pair => (pair.Key, pair.Value, named[pair.Key])))
                                     .ConfigureAwait(false);
                                 break;
 
@@ -609,7 +615,7 @@ public static class NodeCommand
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
                     // one checkout stays one process when a second project asks for it under another name.
-                    DispatchTurn(existing, output, cancellationToken, reporter);
+                    DispatchTurn(existing, agent, output, cancellationToken, reporter);
                     return;
                 }
 
@@ -667,7 +673,7 @@ public static class NodeCommand
                         ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
                         : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
 
-                DispatchTurn(resident, output, cancellationToken, reporter);
+                DispatchTurn(resident, agent, output, cancellationToken, reporter);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -1078,11 +1084,15 @@ public static class NodeCommand
 
         // Reported like any other turn once it is actually given. Only the "not mine" case is
         // silent; a turn that fails is a turn the operator needs to hear about.
-        DispatchTurn(resident, output, cancellationToken, reporter);
+        DispatchTurn(resident, agent, output, cancellationToken, reporter);
     }
 
     /// <summary>Starts a turn without holding up the command stream.</summary>
     /// <param name="resident">The agent to give a turn.</param>
+    /// <param name="asked">
+    /// The name the asking project gave it, which the turn is reported under: one checkout is one process however many
+    /// projects ask for it, under a name in each (lens 2 run 108).
+    /// </param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
@@ -1108,9 +1118,13 @@ public static class NodeCommand
     /// </para>
     /// </remarks>
     private static void DispatchTurn(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
-        _ = Observe(GiveTurnAsync(resident, output, cancellationToken, reporter));
+        _ = Observe(GiveTurnAsync(resident, asked, output, cancellationToken, reporter));
 
 #pragma warning disable CA1031 // Do not catch general exception types
         static async Task Observe(Task turn)
@@ -1138,12 +1152,17 @@ public static class NodeCommand
 
     /// <summary>Gives a resident agent a turn.</summary>
     /// <param name="resident">The agent.</param>
+    /// <param name="asked">The name the asking project gave it, which the turn is reported under.</param>
     /// <param name="output">Where to report.</param>
     /// <param name="cancellationToken">Stops the turn.</param>
     /// <param name="reporter">Tells the broker when the turn begins and ends (SPEC.md §11.6), or null to report nothing.</param>
     /// <returns>A task that completes when the turn ends.</returns>
     private static async Task GiveTurnAsync(
-        ResidentAgent resident, TextWriter output, CancellationToken cancellationToken, TurnReporter? reporter = null)
+        ResidentAgent resident,
+        AgentName asked,
+        TextWriter output,
+        CancellationToken cancellationToken,
+        TurnReporter? reporter = null)
     {
         try
         {
@@ -1151,7 +1170,7 @@ public static class NodeCommand
             // it having ended — and see what it was refused.
             var outcome = await TurnReporter.Run(
                     reporter,
-                    resident,
+                    asked,
                     began => resident.TakeTurnAsync(InvocationCommand.Prompt, TurnTimeout, began, cancellationToken))
                 .ConfigureAwait(false);
 
@@ -1323,7 +1342,7 @@ public static class NodeCommand
             // **And given a turn, as a fresh start is** (StartAsync). A turn asked for while the old process was stopping
             // queued on it and came back died, and the broker's wake stays claimed until a drain — so without this the
             // restarted agent would sit on mail nothing asks it to read.
-            DispatchTurn(restarted, output, cancellationToken, reporter);
+            DispatchTurn(restarted, agent, output, cancellationToken, reporter);
         }
         finally
         {

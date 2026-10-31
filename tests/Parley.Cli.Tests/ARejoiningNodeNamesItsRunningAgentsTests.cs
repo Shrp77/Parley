@@ -37,6 +37,9 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
 
     private static readonly AgentName Billing = AgentName.Create("billing@" + NodeCatalogue.Machine);
 
+    /// <summary>What this project calls the other checkout, which the project that started it calls billing.</summary>
+    private static readonly AgentName Orders = AgentName.Create("orders@" + NodeCatalogue.Machine);
+
     /// <summary>What a person renamed it to since its node launched it (lens 1 run 105).</summary>
     private static readonly AgentName Sales = AgentName.Create("sales@" + NodeCatalogue.Machine);
 
@@ -68,10 +71,12 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
     }
 
     [Theory]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    [InlineData(false, false)]
-    public async Task A_process_started_before_the_broker_restarted_is_Parleys_once_its_node_rejoins(bool nodeRejoins, bool renamed)
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, false, false)]
+    public async Task A_process_started_before_the_broker_restarted_is_Parleys_once_its_node_rejoins(
+        bool nodeRejoins, bool renamed, bool otherAlsoHere)
     {
         // Two identities, ordered as the shared table lists them: the other project's goes last, so that reporting it
         // here would leave its token in place of this project's whatever order a table keeps.
@@ -94,6 +99,30 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             """,
             Ct);
 
+        // The other checkout. When it is enrolled here too, it is billing in the project that started it and orders in
+        // this one (lens 2 run 108): reported under the name it was started with, it took this project's billing's place.
+        var elsewhereWorkspace = Path.Combine(_root, "other-checkout");
+        _ = Directory.CreateDirectory(elsewhereWorkspace);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(elsewhereWorkspace, ".mcp.json"),
+            $$"""
+            {
+              "mcpServers": {
+                "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "billing", "PARLEY_PROJECT": "alpha" } },
+                "parley-{{Project}}": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "orders", "PARLEY_PROJECT": "{{Project}}" } }
+              },
+              "parleyAgentId": "{{elsewhere}}"
+            }
+            """,
+            Ct);
+
+        var command = System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command);
+        var alsoHere = otherAlsoHere
+            ? ", \"" + elsewhere + "\": { \"command\": " + command + ", \"workspace\": "
+              + System.Text.Json.JsonSerializer.Serialize(elsewhereWorkspace) + " }"
+            : string.Empty;
+
         var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
         await File.WriteAllTextAsync(
             cataloguePath,
@@ -101,9 +130,9 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             {
               "agents": {
                 "{{identity}}": {
-                  "command": {{System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command)}},
+                  "command": {{command}},
                   "workspace": {{System.Text.Json.JsonSerializer.Serialize(workspace)}}
-                }
+                }{{alsoHere}}
               }
             }
             """,
@@ -112,7 +141,7 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
         // The machine's table: this project's process, and another project's under the same name from another checkout,
         // each with the token it was started with.
         await using var resident = Start(workspace, Ours);
-        await using var other = Start(workspace, Theirs);
+        await using var other = Start(elsewhereWorkspace, Theirs);
         residents[identity] = resident;
         residents[elsewhere] = other;
         Assert.Equal(elsewhere, residents.Keys.Last());
@@ -152,6 +181,14 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
             Assert.True(
                 await ReattachReadsOutsideAsync(channel, name, Theirs, identity.ToString()),
                 "another project's process passed for this one's");
+
+            // Enrolled here too, the other checkout is known here under this project's name for it.
+            if (nodeRejoins && otherAlsoHere)
+            {
+                Assert.False(
+                    await ReattachReadsOutsideAsync(channel, Orders, Theirs, elsewhere.ToString()),
+                    "the checkout this project calls orders was not known as Parley's under that name");
+            }
         }
         finally
         {
