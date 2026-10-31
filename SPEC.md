@@ -1286,9 +1286,12 @@ The factory also restricts the database file to the owning user on Unix. It hold
 text of every request and result exchanged between participants, which is a running record of
 the work a project has done across its repositories.
 
-Every connection overwrites what a delete removes, and destroy, purge and a retention pass each empty the write-ahead
-log into the store before they return, so text they remove is in neither file for a copy taken afterwards to give
-back (§14). A store upgraded from a schema before 4 is rewritten once, before its migrations, to clear what earlier builds
+Every connection overwrites what a delete removes, and destroy, purge and a retention pass that removed anything each
+rewrite the store and empty the write-ahead log into it before they return, so text they remove is in neither file for
+a copy taken afterwards to give back (§14). The overwrite alone is not enough: a row SQLite moved when it split a page
+leaves an older copy in the page's free space, which only a rewrite reaches. A rewrite that cannot run, as on a disk
+without room for a second copy of the store, leaves the removal done, and the next act that rewrites clears what it
+left. A store upgraded from a schema before 4 is rewritten once, before its migrations, to clear what earlier builds
 left behind. A rewrite that fails, as on a disk without room for a second copy of the store, leaves the store as it
 was, at its old schema, and the next start tries again.
 

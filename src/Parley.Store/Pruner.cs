@@ -255,9 +255,11 @@ public sealed class Pruner(SqliteConnection connection)
             contended += batch.Count - went - surviving;
         }
 
+        int decided;
+
         using (var proposals = WriteScope.Begin(_connection, ambient: null))
         {
-            await _connection.ExecuteAsync(
+            decided = await _connection.ExecuteAsync(
                 new CommandDefinition(
                     DeleteDecidedProposals,
                     parameters,
@@ -267,7 +269,11 @@ public sealed class Pruner(SqliteConnection connection)
             proposals.Complete();
         }
 
-        ParleyDatabase.Flush(_connection);
+        // A pass that removed nothing has nothing to wipe, and the rewrite is the whole store.
+        if (removed > 0 || decided > 0)
+        {
+            ParleyDatabase.Flush(_connection);
+        }
 
         return new PruneResult(removed, held, contended, capped, policy);
     }

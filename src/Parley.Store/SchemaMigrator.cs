@@ -152,8 +152,13 @@ public static class SchemaMigrator
         return applied;
     }
 
-    /// <summary>The statement that wipes a store of text deleted before deletes were secure.</summary>
-    private const string Wipe = "VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
+    /// <summary>The statement that wipes a store of deleted text: a rewrite, then the log copied in and emptied.</summary>
+    /// <remarks>
+    /// Run once on upgrade for text deleted before deletes were secure, and after every act that removes text
+    /// (<see cref="ParleyDatabase.Flush"/>), because secure deletion zeroes a row only where it lives now: a page split
+    /// leaves an old copy in the page's free gap, which only a rewrite reaches (lens 2 run 116).
+    /// </remarks>
+    internal const string Wipe = "VACUUM; PRAGMA wal_checkpoint(TRUNCATE);";
 
     /// <summary>The first schema whose stores have only ever deleted securely, so older ones are wiped once on upgrade.</summary>
     private const int SecureDeleteSince = 4;

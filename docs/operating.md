@@ -358,6 +358,11 @@ conversations that were destroyed, purged or pruned but still sat in the file. I
 more copies of the store: the copy above, and the rewrite's temporary copy and log. Without it the start fails and the store is left as it
 was.
 
+Destroying a conversation, purging an agent and a retention pass that removes anything rewrite the store the same
+way, so the removed text is gone from the file, and need free space for about two more copies of it while they run.
+On a disk without that room the removal still happens; what it left in the file is cleared by the next one that can
+rewrite.
+
 The copy is there for the minutes between the old build stopping and the new one serving. A copy
 still there means the upgraded store has not been served since it was taken. A start that fails
 after taking one names it, and says which of these happened:

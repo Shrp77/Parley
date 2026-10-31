@@ -200,20 +200,60 @@ public static class ParleyDatabase
         return copy;
     }
 
-    /// <summary>Copies the write-ahead log into the store and empties it, so what a delete overwrote is gone from both.</summary>
+    /// <summary>Rewrites the store, then copies the write-ahead log into it and empties it, so deleted text is in neither.</summary>
     /// <param name="connection">An open connection to the store, outside any transaction.</param>
     /// <remarks>
-    /// <b>Called after destroy, purge and a retention pass</b> (lens 2 run 97). An overwrite lands in the log first; the
-    /// store keeps the old page, and the log the frames that wrote the text, until a checkpoint, which SQLite runs by
-    /// itself only after about a thousand pages. On a quiet project that is days, and a copy of the store taken right
-    /// after a person removed something gave it back. A checkpoint another connection holds back finishes later, as
-    /// SQLite's own would; the broker has one.
+    /// <para>
+    /// <b>Called after destroy, purge and a retention pass that removed anything</b> (lens 2 run 97). An overwrite lands
+    /// in the log first; the store keeps the old page, and the log the frames that wrote the text, until a checkpoint,
+    /// which SQLite runs by itself only after about a thousand pages. On a quiet project that is days, and a copy of the
+    /// store taken right after a person removed something gave it back. A checkpoint another connection holds back
+    /// finishes later, as SQLite's own would; the broker has one.
+    /// </para>
+    /// <para>
+    /// <b>A rewrite, not only a checkpoint</b> (lens 2 run 116): secure deletion zeroes a row where it lives now, and a
+    /// page split had left an older copy of it in the page's free gap, about one message in a few thousand. The rewrite
+    /// costs time and free space in proportion to the store, as the upgrade's does (docs/operating.md); the acts that
+    /// call it are a person's, or a retention pass, and rare.
+    /// </para>
     /// </remarks>
     internal static void Flush(SqliteConnection connection)
     {
+        // **The removal stands without it** (SPEC.md §9.1): a disk without room for the rewrite's copy, or a statement
+        // still reading, must not turn a destroy the store has committed into an error the person reads as not done.
+        // Then at least the log is emptied if it can be, and the next act that rewrites clears what this one left.
+        if (!TryTidy(connection, rewrite: true))
+        {
+            _ = TryTidy(connection, rewrite: false);
+        }
+    }
+
+    /// <summary>Rewrites the store and empties the log, or only empties the log, saying whether it ran rather than failing.</summary>
+    /// <param name="connection">The store.</param>
+    /// <param name="rewrite">Whether to rewrite the store first.</param>
+    /// <returns>Whether it ran.</returns>
+    private static bool TryTidy(SqliteConnection connection, bool rewrite)
+    {
         using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-        command.ExecuteNonQuery();
+        if (rewrite)
+        {
+            command.CommandText = SchemaMigrator.Wipe;
+        }
+        else
+        {
+            command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        }
+
+        try
+        {
+            command.ExecuteNonQuery();
+
+            return true;
+        }
+        catch (SqliteException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
