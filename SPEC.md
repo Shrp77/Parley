@@ -2886,7 +2886,10 @@ disk, including one a person made by hand. `~` cannot occur in an identifier, so
 never another conversation's own name; and a suffixed name whose path already reaches a folder, as `ABCDEF~2` is
 another folder's short name on a volume that keeps 8.3 names, is passed over, and a folder is written to and deleted only under
 its own name. A link, a folder replaced by one included, is never entered: nothing is placed through it, the person's count
-takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. A recorded
+takes it as one entry, and a destroy or a sweep deletes the link, never what it reaches. On the way in, a file the
+person names to place is refused before it is read when it is itself a link or its path leads to another machine, as an
+agent's own placement refuses a path through a link: an agent could otherwise ask the person to place a link it made to
+a file outside its repository. A recorded
 folder replaced by a link holds none of its files: they are recorded gone, and no fetch, removal or move reaches
 through it. So it is of the location, its staging directory and its quarantine directory themselves: one found to be a
 link is removed as a link, never what it reaches, and made again as a directory of the broker's own, and every file

@@ -216,8 +216,9 @@ Files are hand-offs. An agent fetches one into its own repository, and whoever p
 once nobody needs it.
 
 You place a file of your own from the terminal or the console, into a conversation, the way an agent
-does; `parley files place` does the same from the command line. Placing is the only way a file gets
-in. Nothing else may change the folder, and Parley puts it right when something does.
+does; `parley files place` does the same from the command line. A file that is itself a link, or a path on
+another machine, is refused before it is read: copy the file here and place the copy. Placing is the only way a file
+gets in. Nothing else may change the folder, and Parley puts it right when something does.
 
 **The sweep.** The broker checks the whole file location when it starts, and again whenever a
 list, fetch, removal or placement finds something wrong. This check is the sweep. It does three

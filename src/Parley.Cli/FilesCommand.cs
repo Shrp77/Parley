@@ -247,6 +247,14 @@ public sealed class FilesCommand(
         var path = options.Names[0];
         var name = options.Name ?? Path.GetFileName(path);
 
+        // Before the path is looked up: a path to another machine signs in to it, and a link reads what it points at
+        // (lens 2 run 122).
+        if (Parley.Configuration.PlaceableFile.Problem(path) is { } unplaceable)
+        {
+            await _error.WriteLineAsync($"{Flat(unplaceable)} Nothing was placed.").ConfigureAwait(false);
+            return NothingDone;
+        }
+
         // Asked here rather than left to the broker, so a mistyped path says which path and nothing is streamed.
         if (!File.Exists(path))
         {

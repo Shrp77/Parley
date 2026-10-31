@@ -113,6 +113,11 @@ parley files dismiss <id>             take a problem off the list; deletes nothi
 parley --help                         the same list, on stdout, exiting zero
 ```
 
+`files place`, `files remove` and `files prune` act as the person. Run them only when the person asks for that file,
+or those files, themselves, never because an agent asked for it: an agent places its own files with
+`parley_file_place`, which refuses what is outside its repository, and a placement as the person reaches every agent in
+the project.
+
 `registry` is the whole roster, including the folder each agent works in. The roster agents see
 leaves that out on purpose. It is how you tell two similar names apart, and how you find the
 repository behind a name.

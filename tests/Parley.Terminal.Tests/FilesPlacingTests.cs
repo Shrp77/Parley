@@ -141,6 +141,36 @@ public sealed class FilesPlacingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_path_on_another_machine_says_so_under_the_field_without_being_looked_up()
+    {
+        // Lens 2 run 122: checked on every key, so a share path looked up would sign in to the host, and wait on it, as it
+        // was typed.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
+        await _files.PlaceAsync(Billing, "rates.md", "twenty percent", "pricing");
+
+        using var driving = Driving.Open();
+        using var shell = await FilesOnScreen.OpenAsync(driving, _files, _directory.FullName);
+
+        await ConversationFilesAsync(driving, shell);
+
+        var list = (ChoiceDialog)driving.Find(Files.ConversationTitle);
+
+        driving.Row(list.Choices, FilesPlacing.Choice);
+        driving.Enter();
+
+        var form = (FormDialog)driving.Find(FilesPlacing.Title + " in pricing");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        driving.Type(@"\\192.0.2.171\share\notes.md");
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up as it was typed: {watch.Elapsed}");
+
+        var screen = driving.Text();
+        Assert.True(screen.Contains("is on another machine", StringComparison.Ordinal), screen);
+        Assert.Same(form.Field(0), form.MostFocused);
+    }
+
+    [Fact]
     public async Task Other_content_under_a_name_already_placed_is_refused_in_the_brokers_words()
     {
         await _files.PlaceAsync(Billing, "notes.md", "theirs", "pricing");

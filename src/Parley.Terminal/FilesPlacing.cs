@@ -96,8 +96,15 @@ internal static class FilesPlacing
     /// <summary>What is wrong with a typed path, or <see langword="null"/>.</summary>
     /// <param name="typed">What was typed.</param>
     /// <returns>The problem.</returns>
+    /// <remarks>
+    /// Asked before the path is looked up, as it is typed: a path to another machine signs in to it, and a link reads what
+    /// it points at (lens 2 run 122). <see cref="Parley.Configuration.PlaceableFile"/> reads only the path's text and this
+    /// machine's own drive names until it has decided neither.
+    /// </remarks>
     private static string? PathProblem(string typed) =>
-        File.Exists(Unquoted(typed)) ? null : NoFile;
+        Parley.Configuration.PlaceableFile.Problem(Unquoted(typed)) is { } unplaceable
+            ? Safe.Text(unplaceable)
+            : File.Exists(Unquoted(typed)) ? null : NoFile;
 
     /// <summary>What is wrong with a typed name, or <see langword="null"/>.</summary>
     /// <param name="typed">What was typed; empty takes the file's own name.</param>

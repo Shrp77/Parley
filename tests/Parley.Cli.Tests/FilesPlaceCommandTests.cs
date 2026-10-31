@@ -118,6 +118,47 @@ public sealed class FilesPlaceCommandTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_link_is_not_followed_and_nothing_is_placed()
+    {
+        // Lens 2 run 122: an agent's own tool refuses a link, so an agent could make one in its repository, pointing at a
+        // key or another repository's file, and ask the person to place it. Placed, the target went to every agent.
+        await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
+        var secret = Write("secret", "SECRET-TOKEN");
+        var link = Path.Combine(_directory.FullName, "handoff.md");
+
+        try
+        {
+            _ = File.CreateSymbolicLink(link, secret);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            Assert.Skip("This machine does not let this user make a symbolic link (Windows without Developer Mode).");
+        }
+
+        var (code, _, error) = await _files.RunAsync("place", link, "--conversation", "pricing");
+
+        Assert.Equal(1, code);
+        Assert.Contains("is a link to another file", error, StringComparison.Ordinal);
+        Assert.Equal(1, await _files.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_path_on_another_machine_is_not_looked_up_and_nothing_is_placed()
+    {
+        // Lens 2 run 122: looking it up made Windows sign in to that host, about 21 seconds against one that was not there.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
+        await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        var (code, _, error) = await _files.RunAsync("place", @"\\192.0.2.171\share\notes.md", "--conversation", "pricing");
+
+        Assert.Equal(1, code);
+        Assert.Contains("is on another machine", error, StringComparison.Ordinal);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
+        Assert.Equal(1, await _files.CountAsync());
+    }
+
+    [Fact]
     public async Task A_file_that_is_not_md_or_txt_is_refused()
     {
         await _files.PlaceAsync(Billing, "rates.md", "x", "pricing");
