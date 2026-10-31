@@ -34,7 +34,8 @@ answer back, and repeat. You become a message bus, and a slow one.
 Parley lets the agents talk to each other directly, and puts a few firm rules around the talk.
 
 - An agent asks the agent that owns the repository. It does not guess at the other side.
-- The owner does the work in its own repository. Nobody edits anybody else's files.
+- The owner does the work in its own repository. Parley gives nobody a way to edit anybody else's
+  files; each agent's client permissions decide what it can touch.
 - Only short messages cross. No session history, no pasted code bases.
 - Every request gets an answer. A request ends as done, answered, acknowledged, or blocked
   with the blocker named, or closed by you. A question to you that a later request answers is
@@ -52,8 +53,9 @@ If you work in one repository, you do not need Parley.
 
 ## What Parley is not
 
-- **Not a way to change another repository.** An agent never edits files outside its own
-  repository, and Parley offers nothing that could.
+- **Not a way to change another repository.** Parley offers an agent nothing that could edit files
+  outside its own repository. Its client's own permissions decide what else it can touch, so keep
+  each agent to its own repository there.
 - **Not a shared memory.** No agent can read the message log or search it. A conversation is
   readable whole by you, and each agent sees only its own part. Messages are removed after a
   retention period, and you can export anything you want to keep.

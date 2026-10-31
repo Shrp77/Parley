@@ -30,8 +30,9 @@ context. Session history never crosses.
 
 ## Can an agent edit another agent's repository?
 
-No. Each agent changes only its own repository. Work crosses as a request, and the agent that
-owns the repository decides how to do it.
+Not through Parley. Parley gives an agent no way to change another repository: work crosses as a
+request, and the agent that owns the repository decides how to do it. What an agent can touch on
+disk is still up to its own client's permissions, so keep each one to its own repository there.
 
 ## Is there a lead agent?
 
