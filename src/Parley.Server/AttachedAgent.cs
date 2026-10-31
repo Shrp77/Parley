@@ -29,6 +29,10 @@ public sealed class AttachedAgent : IAsyncDisposable
     private readonly BrokerRuntime _runtime;
     private readonly Channel<Wire.Notice> _notices;
 
+    // One slot, newest wins, as for notices: only whether the store is being rewritten now matters.
+    private readonly Channel<bool> _tidying = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+
     private int _closed;
 
     internal AttachedAgent(
@@ -101,7 +105,19 @@ public sealed class AttachedAgent : IAsyncDisposable
     /// comes back, and it reconciles them at startup rather than racing to tidy up on the way
     /// out.
     /// </remarks>
-    internal void Close() => _ = _notices.Writer.TryComplete();
+    internal void Close()
+    {
+        _ = _notices.Writer.TryComplete();
+        _ = _tidying.Writer.TryComplete();
+    }
+
+    /// <summary>Gets whether the store is being rewritten, each time that changes.</summary>
+    /// <value>Completes when the attachment closes.</value>
+    internal ChannelReader<bool> Tidying => _tidying.Reader;
+
+    /// <summary>Queues whether the store is being rewritten, discarding a change the reader has not taken.</summary>
+    /// <param name="underway">Whether a rewrite has started or finished.</param>
+    internal void Tidy(bool underway) => _ = _tidying.Writer.TryWrite(underway);
 
     /// <summary>Ends the stream and tells the registry the agent has gone.</summary>
     /// <returns>A task that completes when the registry has been told.</returns>

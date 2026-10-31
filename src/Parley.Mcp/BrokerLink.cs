@@ -100,6 +100,16 @@ public sealed class BrokerLink : IAsyncDisposable
     /// </value>
     public Wire.Notice Waiting { get; private set; } = new();
 
+    /// <summary>Whether the broker is rewriting its store now (SPEC.md §9.1), as its stream last said.</summary>
+    public bool Tidying => Volatile.Read(ref _tidying) == 1;
+
+    /// <summary>How many rewrites the broker has started while this link was attached.</summary>
+    /// <remarks>Compared before and after a call, so a call that waited on a rewrite it did not see begin is still told.</remarks>
+    public long Tidyings => Interlocked.Read(ref _tidyings);
+
+    private int _tidying;
+    private long _tidyings;
+
     /// <summary>Raised on the pump's thread each time the broker sends a notice, after <see cref="Waiting"/> is updated.</summary>
     /// <remarks>
     /// A signal and nothing more: a handler reads <see cref="Waiting"/> for the counts. It must return quickly, because
@@ -250,6 +260,15 @@ public sealed class BrokerLink : IAsyncDisposable
                         Waiting = received.Notice;
                         NoticeReceived?.Invoke(this, EventArgs.Empty);
                     }
+                    else if (received.EventCase == Wire.Event.EventOneofCase.Tidying)
+                    {
+                        if (received.Tidying.Underway)
+                        {
+                            _ = Interlocked.Increment(ref _tidyings);
+                        }
+
+                        Volatile.Write(ref _tidying, received.Tidying.Underway ? 1 : 0);
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -261,6 +280,9 @@ public sealed class BrokerLink : IAsyncDisposable
             {
                 // The broker went away, which is what the loop below is for.
             }
+
+            // A broker that went away is rewriting nothing this link will wait on.
+            Volatile.Write(ref _tidying, 0);
 
             if (!await ReattachAsync().ConfigureAwait(false))
             {

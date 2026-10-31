@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Data.Sqlite;
 
 namespace Parley.Store;
@@ -213,11 +214,49 @@ public static class ParleyDatabase
     /// <para>
     /// <b>A rewrite, not only a checkpoint</b> (lens 2 run 116): secure deletion zeroes a row where it lives now, and a
     /// page split had left an older copy of it in the page's free gap, about one message in a few thousand. The rewrite
-    /// costs time and free space in proportion to the store, as the upgrade's does (docs/operating.md); the acts that
-    /// call it are a person's, or a retention pass, and rare.
+    /// costs time and free space in proportion to the store, as the upgrade's does (docs/operating.md): the acts that
+    /// call it are a person's, or a retention pass that removed something, at most hourly. While it runs, whoever is
+    /// attached is told that what they send waits for it (<see cref="ObserveTidying"/>).
     /// </para>
     /// </remarks>
     internal static void Flush(SqliteConnection connection)
+    {
+        var told = Tidiers.TryGetValue(connection, out var tell) ? tell : null;
+        told?.Invoke(true);
+
+        try
+        {
+            Tidy(connection);
+        }
+        finally
+        {
+            told?.Invoke(false);
+        }
+    }
+
+    /// <summary>Tells an observer when the store behind a connection starts and finishes rewriting itself.</summary>
+    /// <param name="connection">The connection the rewrites run on.</param>
+    /// <param name="tidying">Called with <see langword="true"/> before a rewrite and <see langword="false"/> after it.</param>
+    /// <remarks>
+    /// The broker's one connection serves every operation, so a rewrite holds everything else up for as long as it runs,
+    /// which on a large store is seconds (lens 1 run 115). The broker tells whoever is attached that what they send waits
+    /// and goes through when it finishes, rather than leaving them to read silence as a failure. Kept beside the
+    /// connection rather than passed through every repository, so the store knows nothing of who is told.
+    /// </remarks>
+    public static void ObserveTidying(SqliteConnection connection, Action<bool> tidying)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(tidying);
+
+        Tidiers.AddOrUpdate(connection, tidying);
+    }
+
+    /// <summary>Who is told of each connection's rewrites.</summary>
+    private static readonly ConditionalWeakTable<SqliteConnection, Action<bool>> Tidiers = new();
+
+    /// <summary>Rewrites the store and empties the log, or as much of that as can run.</summary>
+    /// <param name="connection">The store.</param>
+    private static void Tidy(SqliteConnection connection)
     {
         // **The removal stands without it** (SPEC.md §9.1): a disk without room for the rewrite's copy, or a statement
         // still reading, must not turn a destroy the store has committed into an error the person reads as not done.

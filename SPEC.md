@@ -271,6 +271,10 @@ envelope is applied on the way out of a drain — so a notice carrying the words
 path for the same text with no envelope on it, and the more attractive path, because it arrives
 sooner.
 
+**The stream also says when the store is being rewritten** (§9.1), and again when that has finished. Nothing is refused
+meanwhile: what is sent waits and goes through when the rewrite finishes, and a surface or an adapter says so rather than
+leaving a wait to read as a broker that stopped answering.
+
 ### 4.1 Projects are a deployment concept
 
 Independent projects do not share a broker. Each gets its own database file and its own
@@ -1291,7 +1295,9 @@ rewrite the store and empty the write-ahead log into it before they return, so t
 a copy taken afterwards to give back (§14). The overwrite alone is not enough: a row SQLite moved when it split a page
 leaves an older copy in the page's free space, which only a rewrite reaches. A rewrite that cannot run, as on a disk
 without room for a second copy of the store, leaves the removal done, and the next act that rewrites clears what it
-left. A store upgraded from a schema before 4 is rewritten once, before its migrations, to clear what earlier builds
+left. A rewrite holds every other operation until it finishes, seconds on a large store: every attached participant
+and surface is told when it starts and finishes (§4.0), and a node's report whose deadline passes meanwhile is sent
+again for up to a minute rather than dropped (§11.6). A store upgraded from a schema before 4 is rewritten once, before its migrations, to clear what earlier builds
 left behind. A rewrite that fails, as on a disk without room for a second copy of the store, leaves the store as it
 was, at its old schema, and the next start tries again.
 
@@ -3465,7 +3471,10 @@ The broker records each ended turn in `invocations` (§9.2), counting itself how
 waiting before and after — that is its inbox, which the node cannot see. A turn that has begun and not
 ended is held as running for as long as the node that reported it stays joined; when that node's stream
 ends, nothing it reported is claimed to be running any more. A broker that restarts forgets every
-running turn, and an end whose beginning it never heard is still recorded.
+running turn, and an end whose beginning it never heard is still recorded. A report whose deadline passes is sent
+again for up to a minute, because a broker rewriting its store (§9.1) answers nothing until it finishes, and a turn's
+end lost then is a wake that never comes; one a broker refuses, or that a broker gone cannot take, is noted in the
+node's output and dropped.
 
 A node declares when it joins that it reports turns. **An agent whose turns nobody reports is not
 stopped; it is unknown**, and no surface may say otherwise. Its turns are reported only while it runs as a

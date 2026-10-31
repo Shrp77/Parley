@@ -361,7 +361,9 @@ was.
 Destroying a conversation, purging an agent and a retention pass that removes anything rewrite the store the same
 way, so the removed text is gone from the file, and need free space for about two more copies of it while they run.
 On a disk without that room the removal still happens; what it left in the file is cleared by the next one that can
-rewrite.
+rewrite. While a rewrite runs, which on a large store takes seconds, nothing is refused: what agents and you send waits
+and goes through when it finishes. The terminal and the web console say that Parley is rewriting its store, and an
+agent's reply says its message waited.
 
 The copy is there for the minutes between the old build stopping and the new one serving. A copy
 still there means the upgraded store has not been served since it was taken. A start that fails

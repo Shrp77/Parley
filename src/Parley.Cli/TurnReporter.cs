@@ -17,13 +17,50 @@ namespace Parley.Cli;
 /// </para>
 /// <para>
 /// <b>A report never fails the turn it describes.</b> Each is sent with a short deadline and any failure is noted and
-/// dropped: a broker that is slow or gone must not hold up an agent's work or make a finished turn look like a failed one.
+/// dropped: a broker that is gone must not hold up an agent's work or make a finished turn look like a failed one.
 /// The end is reported even when the turn throws, so the broker is not left holding a turn that will never end.
+/// </para>
+/// <para>
+/// <b>A deadline that passed is tried again</b> (lens 1 run 115), for up to <see cref="Persistence"/>: a broker that
+/// answers nothing for seconds is rewriting its store (SPEC.md §9.1), and holds every call until it finishes. A turn's
+/// end or a launch dropped then was a wake that never came, or an agent read as open outside Parley. A broker that is
+/// gone refuses at once, and is not retried.
 /// </para>
 /// </remarks>
 internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine, TextWriter output)
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a report whose deadline passed goes on being tried.</summary>
+    /// <remarks>
+    /// Several times the longest rewrite measured (19 s, a 445 MB store on a busy disk; lens 1 run 115), and short enough
+    /// that a broker which takes a report and never answers holds this node's next start for a minute, not for good:
+    /// reports to other projects run under the start's gate (NodeCommand's TellJoinedAsync).
+    /// </remarks>
+    internal static readonly TimeSpan Persistence = TimeSpan.FromMinutes(1);
+
+    /// <summary>Sends a report, again while its deadline passes and <see cref="Persistence"/> lasts.</summary>
+    /// <typeparam name="T">The reply.</typeparam>
+    /// <param name="send">The call, given its deadline.</param>
+    /// <returns>The reply.</returns>
+    /// <exception cref="RpcException">The broker refused it, or it timed out for the whole of <see cref="Persistence"/>.</exception>
+    private static async Task<T> PatientlyAsync<T>(Func<DateTime, Task<T>> send)
+    {
+        var until = DateTime.UtcNow.Add(Persistence);
+
+        while (true)
+        {
+            try
+            {
+                return await send(DateTime.UtcNow.Add(Patience)).ConfigureAwait(false);
+            }
+            catch (RpcException timedOut) when (timedOut.StatusCode == StatusCode.DeadlineExceeded
+                                                 && DateTime.UtcNow < until)
+            {
+                // Held up, not gone: round again.
+            }
+        }
+    }
 
     /// <summary>Runs a turn, reporting its start and its end.</summary>
     /// <param name="agent">The agent whose turn it is.</param>
@@ -105,9 +142,9 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 #pragma warning disable CA1031 // A report must never stop a launch, whatever went wrong sending it.
         try
         {
-            _ = await nodes.ReportLaunchAsync(
+            _ = await PatientlyAsync(async deadline => await nodes.ReportLaunchAsync(
                     new Wire.LaunchReport { Machine = machine, Agent = agent.Value, Token = token },
-                    deadline: DateTime.UtcNow.Add(Patience))
+                    deadline: deadline))
                 .ConfigureAwait(false);
         }
         catch (Exception failure)
@@ -167,7 +204,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 #pragma warning disable CA1031 // A report must never stop the node, whatever went wrong sending it.
         try
         {
-            _ = await nodes.ReportLaunchAsync(
+            _ = await PatientlyAsync(async deadline => await nodes.ReportLaunchAsync(
                     new Wire.LaunchReport
                     {
                         Machine = machine,
@@ -176,7 +213,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                         Identity = identity.ToString(),
                         Workspace = workspace,
                     },
-                    deadline: DateTime.UtcNow.Add(Patience))
+                    deadline: deadline))
                 .ConfigureAwait(false);
         }
         catch (Exception failure)
@@ -196,9 +233,9 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
 #pragma warning disable CA1031 // A report that cannot be sent is noted, as every report from a node is.
         try
         {
-            var reply = await nodes.ReportWorkspaceGoneAsync(
+            var reply = await PatientlyAsync(async deadline => await nodes.ReportWorkspaceGoneAsync(
                     new Wire.WorkspaceGoneReport { Machine = machine, Agent = agent.Value },
-                    deadline: DateTime.UtcNow.Add(Patience))
+                    deadline: deadline))
                 .ConfigureAwait(false);
 
             return reply.Retired;
@@ -234,7 +271,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     {
         try
         {
-            _ = await nodes.ReportTurnAsync(report, deadline: DateTime.UtcNow.Add(Patience)).ConfigureAwait(false);
+            _ = await PatientlyAsync(async deadline => await nodes.ReportTurnAsync(report, deadline: deadline))
+                .ConfigureAwait(false);
         }
         catch (Exception failure)
         {

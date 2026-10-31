@@ -127,14 +127,46 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             // after a Request arrived hears about it now rather than at the next one.
             await _runtime.NudgeAsync(name, context.CancellationToken).ConfigureAwait(false);
 
-            try
+            // Two kinds of event share the one stream, and a stream takes one write at a time.
+            using var writing = new SemaphoreSlim(1, 1);
+
+            async Task WriteAsync(Wire.Event written)
+            {
+                await writing.WaitAsync(context.CancellationToken).ConfigureAwait(false);
+
+                try
+                {
+                    await responseStream.WriteAsync(written, context.CancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ = writing.Release();
+                }
+            }
+
+            async Task NoticesAsync()
             {
                 await foreach (var notice in attached.Notices.ReadAllAsync(context.CancellationToken)
                                    .ConfigureAwait(false))
                 {
-                    await responseStream.WriteAsync(new Wire.Event { Notice = notice }, context.CancellationToken)
+                    await WriteAsync(new Wire.Event { Notice = notice }).ConfigureAwait(false);
+                }
+            }
+
+            async Task TidyingAsync()
+            {
+                await foreach (var underway in attached.Tidying.ReadAllAsync(context.CancellationToken)
+                                   .ConfigureAwait(false))
+                {
+                    await WriteAsync(new Wire.Event { Tidying = new Wire.Tidying { Underway = underway } })
                         .ConfigureAwait(false);
                 }
+            }
+
+            try
+            {
+                // Both end together: the attachment closing completes both channels.
+                await Task.WhenAll(NoticesAsync(), TidyingAsync()).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

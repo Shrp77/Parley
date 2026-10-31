@@ -33,6 +33,12 @@
         ? Task.FromResult<IReadOnlyList<(string Project, int Waiting)>>([])
         : Parley.Web.FileProblemBanner.CountAsync(Directory, problemsAbout, Context.RequestAborted);
 
+    // **Read before anything that asks a broker** (SPEC.md §9.1): a rewrite holds every call, and the seat's stream has
+    // already said one is running. Not on an embedded page, which drops the project's name.
+    var tidying = Parley.Web.ConsoleHost.Embedded(Context)
+        ? []
+        : Seats.Seats().Where(hold => hold.Tidying).Select(hold => hold.Project).Distinct(StringComparer.Ordinal).ToList();
+
     (int Waiting, bool Certain) waiting = deferred
         ? (0, false)
         : await PersonSeats.PresenceAsync(
@@ -1802,6 +1808,11 @@
 
         @* Said until the person dismisses each one, because only the person decides what becomes of a quarantined file.
            The project's name is somebody's text and Razor encodes it like everything else. *@
+        @foreach (var tidied in tidying)
+        {
+            <p class="file-problems-banner" role="status">@PersonSeats.TidyingSays(tidied)</p>
+        }
+
         @foreach (var (problemProject, problemCount) in problems)
         {
             <p class="file-problems-banner">

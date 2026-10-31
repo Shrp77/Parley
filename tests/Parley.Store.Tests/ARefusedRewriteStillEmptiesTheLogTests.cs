@@ -65,6 +65,13 @@ public sealed class ARefusedRewriteStillEmptiesTheLogTests : IDisposable
             Run(connection, $"PRAGMA temp_store_directory = '{temporary}';");
             Directory.Delete(temporary);
 
+            // Unix SQLite skips a temporary folder that is gone and uses /var/tmp or /tmp instead (lens 3 run 127), so
+            // the rewrite would run and this would prove nothing about the fallback there.
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.Skip("SQLite on this platform does not refuse a rewrite whose temporary folder is gone.");
+            }
+
             ParleyDatabase.Flush(connection);
         }
         finally

@@ -2817,7 +2817,18 @@ internal sealed class Shell : Window
 
         private set
         {
+            if (field is { } previous)
+            {
+                previous.TidyingChanged -= SayTidying;
+            }
+
             field = value;
+
+            // Told on the seat's stream when the broker rewrites its store, which holds everything up meanwhile.
+            if (field is { } held)
+            {
+                held.TidyingChanged += SayTidying;
+            }
 
             // **The draft is kept.** It is who a line goes to in this conversation, and the seat it is drafted
             // as is the broker's and outlives a dropped stream (`SendAfterIdleTests`).
@@ -3271,6 +3282,28 @@ internal sealed class Shell : Window
 
     /// <summary>What hiding them again is called.</summary>
     internal const string HideArchivedTitle = "Hide archived conversations";
+
+    /// <summary>What is said while the broker rewrites its store (SPEC.md §9.1).</summary>
+    internal const string TidyingSaid =
+        "Parley is rewriting its store to clear removed text. Anything sent waits and goes through when it finishes.";
+
+    /// <summary>What is said when it has finished.</summary>
+    internal const string TidiedSaid = "Parley has finished rewriting its store.";
+
+    /// <summary>Says that the broker started or finished rewriting its store.</summary>
+    /// <param name="sender">The seat.</param>
+    /// <param name="e">Nothing.</param>
+    /// <remarks>
+    /// <b>So a wait reads as a wait</b> (owner's decision, lens 1 run 115): a rewrite of a large store holds every
+    /// operation for seconds, and a send that hung with nothing said would read as a broker that stopped answering.
+    /// </remarks>
+    private void SayTidying(object? sender, EventArgs e)
+    {
+        if (sender is SeatHold seat)
+        {
+            Said = seat.Tidying ? TidyingSaid : TidiedSaid;
+        }
+    }
 
     /// <summary>What the last action said, for the person and for a test.</summary>
     /// <remarks>

@@ -189,6 +189,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         _house = new Parley.Broker.Broker(connection, options);
         _house.ServeFrom(clock.GetUtcNow());
 
+        // Told when a destroy, a purge or a retention pass rewrites the store, which holds every operation behind the
+        // gate for as long as it runs (SPEC.md §9.1).
+        ParleyDatabase.ObserveTidying(connection, TellTidying);
+
         // A connection is evidence (SPEC.md §4.0), and a broker that has just started holds
         // none -- so every `connected` in the database is a claim left over from the process
         // that died. Cleared here rather than on the way out, because the shutdown this most
@@ -302,6 +306,32 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
     /// <summary>Gets the agents currently attached, by name.</summary>
     public IReadOnlyCollection<string> Attached => (IReadOnlyCollection<string>)_attached.Keys;
+
+    /// <summary>Gets whether the store is being rewritten now, so everything sent waits for it.</summary>
+    public bool Tidying => Volatile.Read(ref _tidying) == 1;
+
+    private int _tidying;
+
+    /// <summary>Records that a rewrite started or finished, and tells every open session.</summary>
+    /// <param name="underway">Whether it started.</param>
+    /// <remarks>
+    /// <b>Nothing is refused while it runs</b> (owner's decision, lens 1 run 115): what an agent or a person sends waits on
+    /// the gate and goes through when the rewrite finishes. Telling them is what keeps a wait of seconds on a large store
+    /// from reading as a broker that stopped answering. Called on the thread running the rewrite, under the gate, so it
+    /// only queues.
+    /// </remarks>
+    private void TellTidying(bool underway)
+    {
+        Volatile.Write(ref _tidying, underway ? 1 : 0);
+
+        foreach (var sessions in _attached.Values)
+        {
+            foreach (var session in sessions)
+            {
+                session.Tidy(underway);
+            }
+        }
+    }
 
     /// <summary>Gets how many sessions are open for an agent.</summary>
     /// <param name="agent">The agent.</param>

@@ -66,7 +66,17 @@ public sealed class ItemFrameStaysFramedTests
 
         Assert.NotEmpty(antiforgery);
 
-        using var post = FromTheFrame(HttpMethod.Post, Framed);
+        // **Posted where the frame's own form posts** (lens 3 run 127): a form with no action posts back to the page's
+        // address, embed included, and one given an action that drops embed would be answered with a page the frame
+        // refuses. The address a browser would use, not one the test chose.
+        var form = Regex.Match(html, """<form method="post" id="composer"[^>]*>""", RegexOptions.None, TimeSpan.FromSeconds(2)).Value;
+        Assert.NotEmpty(form);
+        var action = Regex.Match(form, "\\baction=\"([^\"]*)\"", RegexOptions.None, TimeSpan.FromSeconds(2));
+        var target = action.Success
+            ? new Uri(System.Net.WebUtility.HtmlDecode(action.Groups[1].Value), UriKind.Relative)
+            : Framed;
+
+        using var post = FromTheFrame(HttpMethod.Post, target);
         post.Content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["__RequestVerificationToken"] = antiforgery, ["Says"] = "Add CSV export", ["Targets"] = "billing@test",

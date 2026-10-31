@@ -274,6 +274,9 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <summary>Gets every notice received, in order.</summary>
     public List<Wire.Notice> Notices { get; } = [];
 
+    /// <summary>Gets every rewrite the broker said started (true) or finished (false), in order.</summary>
+    public List<bool> Tidyings { get; } = [];
+
     /// <summary>Attaches an agent and waits for its first event.</summary>
     /// <param name="broker">The broker.</param>
     /// <param name="name">The agent name.</param>
@@ -415,6 +418,16 @@ internal sealed class AttachedClient : IAsyncDisposable
             await foreach (var received in _stream.ResponseStream
                 .ReadAllAsync(_cancellation.Token).ConfigureAwait(false))
             {
+                if (received.EventCase == Wire.Event.EventOneofCase.Tidying)
+                {
+                    lock (Tidyings)
+                    {
+                        Tidyings.Add(received.Tidying.Underway);
+                    }
+
+                    continue;
+                }
+
                 if (received.EventCase != Wire.Event.EventOneofCase.Notice)
                 {
                     continue;

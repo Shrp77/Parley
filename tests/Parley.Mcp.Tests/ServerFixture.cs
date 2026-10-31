@@ -84,6 +84,9 @@ internal sealed class ServerFixture : IAsyncDisposable
     /// </remarks>
     public SqliteConnection Connection => _connection;
 
+    /// <summary>The broker itself, for a test that has to hold its gate or run a store act through it.</summary>
+    public BrokerRuntime Runtime => _server.Runtime;
+
     /// <summary>Builds the launch configuration for one agent.</summary>
     /// <param name="agent">The agent the server speaks for.</param>
     /// <param name="responder">What to attribute its messages to.</param>

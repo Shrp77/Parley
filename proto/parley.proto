@@ -112,7 +112,14 @@ message Event {
   oneof event {
     Attached attached = 1;
     Notice notice = 2;
+    Tidying tidying = 3;
   }
+}
+
+// The broker is rewriting its store after a destroy, a purge or a retention pass (section 9.1), and then has finished.
+// Nothing is refused meanwhile: what is sent waits and goes through when it finishes. Told so a surface can say so.
+message Tidying {
+  bool underway = 1;
 }
 
 message Attached {

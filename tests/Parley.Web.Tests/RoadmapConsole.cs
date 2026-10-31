@@ -97,6 +97,9 @@ public sealed class RoadmapBroker : HttpMessageHandler
     /// </summary>
     public bool Seats { get; set; }
 
+    /// <summary>When set with <see cref="Seats"/>, the seat's stream says, after the attach, that the store is being rewritten.</summary>
+    public bool Tidying { get; set; }
+
     /// <summary>Every Request the seat sent.</summary>
     public List<Wire.OpenRequest> Requested { get; } = [];
 
@@ -140,7 +143,17 @@ public sealed class RoadmapBroker : HttpMessageHandler
         // The seat: the broker's first event, and then a stream that stays open as long as the seat is held.
         if (Seats && request.RequestUri!.AbsolutePath == "/parley.v1.Agents/Attach")
         {
+            lock (_lock)
+            {
+                Calls++;
+            }
+
             var attached = Frame(new Wire.Event { Attached = new Wire.Attached() });
+
+            if (Tidying)
+            {
+                attached = [.. attached, .. Frame(new Wire.Event { Tidying = new Wire.Tidying { Underway = true } })];
+            }
             var held = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Version = HttpVersion.Version20,
