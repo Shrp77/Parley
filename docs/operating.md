@@ -193,7 +193,7 @@ where each item stands, worked out from its conversation: not started, in progre
 agent, waiting on you, blocked (and why), done, or closed. It also says which item is next. Nobody
 sets a state by hand. To change what an item says, edit the roadmap. To resolve a blocked item,
 send the agent a further request in its conversation. While that request is open the item reads
-as in progress and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
+as waiting on that agent until it collects the request, then in progress, and still names the blocker; the blocker goes when that agent answers with anything but `blocked`:
 `done`, `answered` or `acknowledged`.
 **Only you close an item's conversation.** The agents in it cannot agree to close it, so a blocked
 item waits for you: answer the blocker with a new request, or close the conversation. An item whose

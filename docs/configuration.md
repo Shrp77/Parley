@@ -165,7 +165,8 @@ not, once. That costs the agent one turn, the first time only.
 **Auto Accept** is a project setting and is on by default. With it on, the answer becomes the
 line. Parley writes it into the launch configuration, records it as accepted automatically, and
 restarts the agent once it is idle so its peers see it. Nothing is restarted mid-turn. An answer
-that cannot be a line as written, or that comes from an agent on another machine, waits for you.
+that cannot be a line as written, that the agent said was blocked, or that comes from an agent on
+another machine, waits for you.
 Turn Auto Accept off, in **Configuration** (`F3`) or the Project menu, and every answer waits for
 you.
 

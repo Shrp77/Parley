@@ -3212,7 +3212,7 @@ person chooses to spend its turn.
 
 **Auto Accept is per project, held in the project's store, and on by default.** A store that has
 never been set reads as on. With it on, an answer whose collapsed whitespace leaves a valid ownership
-line, from an agent on the broker's own machine, becomes that agent's line with the source
+line, from an agent on the broker's own machine that did not say it was blocked, becomes that agent's line with the source
 `automatic`: the launch configuration is written first and the record second, as for every other
 route, so a record never claims a line the agent will not carry. Otherwise the answer waits, with its
 reason, for a person to accept, edit or discard it from `facilitation()`. An agent on another machine
@@ -3343,7 +3343,8 @@ agent has learned, and discarding that because a single turn ran long is a far w
 waiting: the turn is recorded as timed out, the exchange is unharmed — still owed, still open — and
 the reply that eventually arrives is discarded rather than read as the answer to the next turn. Until it
 arrives nothing more is said to the agent, so a later turn that runs out of time waiting for it has delivered
-nothing; if mail is still uncollected when such a turn ends, the broker asks for another turn.
+nothing. So whenever a turn ends timed out with mail still uncollected, or a closure poll still waiting on
+the agent's vote (§6), the broker asks for another turn.
 
 **Starting is the node's business, and the broker never learns how.** A launch command is local
 configuration on the machine it applies to, and it stays there. The broker asks a node to start one
@@ -4409,8 +4410,8 @@ decided is removed and its number is not reused, so the list has gaps.
     - **Every line can be reviewed and corrected at any time**, from every surface (§10.2
       `facilitation`).
     - **The words are the agent's own.** Only whitespace is collapsed, an answer that breaks the
-      character class waits for a person whatever the switch says, and an agent on another machine
-      always waits, because nothing here may write a file there.
+      character class waits for a person whatever the switch says, an answer the agent said was blocked
+      waits too, and an agent on another machine always waits, because nothing here may write a file there.
     - **A line never names an environment variable.** It is written into the agent's launch
       configuration, where `${NAME}` is replaced by the value of `NAME` when the agent starts, and the
       result is what every agent reads. So a line holding `${` is refused on every route, a person's

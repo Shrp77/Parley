@@ -5,7 +5,7 @@ using Wire = Parley.Transport;
 namespace Parley.Server.Tests;
 
 /// <summary>
-/// That a turn which ran out of time while mail was still uncollected asks for another turn (SPEC.md §11.6).
+/// That a turn which ran out of time while mail was still uncollected asks for another turn (SPEC.md §11.1).
 /// </summary>
 /// <remarks>
 /// Found by review, lens 1 run 103. A node says nothing to an agent while a reply is still owed to a turn that gave up, so
