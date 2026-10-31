@@ -79,6 +79,16 @@ public sealed record LaunchConfiguration
 
         var path = Path.Combine(workspace, FileName);
 
+        // **Walked before it is looked up** (lens 2 run 125): the node reads every catalogued repository's file on each
+        // join and each start, and one replaced by a link to a share made it sign in to that host, as the person, every
+        // time. Refused as unreadable, which a node reports, rather than read as saying nothing.
+        if (OffMachineLinks.LeadsOffThisMachine(path))
+        {
+            problem = $"{path} leads to another machine, and Parley does not look up a path there.";
+
+            return false;
+        }
+
         if (!File.Exists(path))
         {
             return true;
