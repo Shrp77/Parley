@@ -49,8 +49,10 @@ public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
         }
     }
 
-    [Fact]
-    public async Task A_launch_reported_while_the_broker_is_held_past_the_deadline_is_filed_once_it_is_free()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_launch_reported_while_the_broker_is_held_past_the_deadline_is_filed_once_it_is_free(bool restarted)
     {
         var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
         await File.WriteAllTextAsync(cataloguePath, "{ \"agents\": {} }", Ct);
@@ -81,20 +83,39 @@ public sealed class ANodeReportOutlastsARewriteTests : IAsyncDisposable
                 await Task.Delay(100, Ct);
             }
 
-            // Held for longer than a report's deadline, as a rewrite of a large store holds it.
+            // Held for longer than a report's deadline, as a rewrite of a large store holds it: twice as long when the
+            // process is restarted meanwhile, so the first report has been tried again by then.
             var holding = new TaskCompletionSource();
             var hold = _broker.Runtime.UseConnectionAsync(
                 async (_, _, ct) =>
                 {
                     holding.SetResult();
-                    await Task.Delay(TimeSpan.FromSeconds(7), ct);
+                    await Task.Delay(TimeSpan.FromSeconds(restarted ? 12 : 7), ct);
                     return 0;
                 },
                 Ct);
             await holding.Task;
 
-            await new TurnReporter(new Wire.Nodes.NodesClient(channel), NodeCatalogue.Machine, TextWriter.Null)
-                .ReportRunningAsync(identity, "billing", "launched-during-the-hold", workspace);
+            var reporter = new TurnReporter(new Wire.Nodes.NodesClient(channel), NodeCatalogue.Machine, TextWriter.Null);
+
+            if (restarted)
+            {
+                // Lens 2 run 119: the process a rejoin re-announced is replaced while the report waits, and the new one
+                // is reported too. Tried again after that, the old token was filed last and the new process read as
+                // open outside Parley.
+                var replaced = false;
+                var old = reporter.ReportRunningAsync(identity, "billing", "before-the-restart", workspace, () => !replaced);
+
+                await Task.Delay(TimeSpan.FromSeconds(3), Ct);
+                replaced = true;
+                await reporter.ReportRunningAsync(identity, "billing", "launched-during-the-hold", workspace, () => true);
+                await old;
+            }
+            else
+            {
+                await reporter.ReportRunningAsync(identity, "billing", "launched-during-the-hold", workspace, () => true);
+            }
+
             _ = await hold;
 
             using var again = AttachAsync(channel, identity, workspace, "launched-during-the-hold");

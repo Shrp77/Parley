@@ -3474,7 +3474,8 @@ ends, nothing it reported is claimed to be running any more. A broker that resta
 running turn, and an end whose beginning it never heard is still recorded. A report whose deadline passes is sent
 again for up to a minute, because a broker rewriting its store (§9.1) answers nothing until it finishes, and a turn's
 end lost then is a wake that never comes; one a broker refuses, or that a broker gone cannot take, is noted in the
-node's output and dropped.
+node's output and dropped. A report that a process is running is not sent again once that process has been replaced,
+or its token would land after the new one's.
 
 A node declares when it joins that it reports turns. **An agent whose turns nobody reports is not
 stopped; it is unknown**, and no surface may say otherwise. Its turns are reported only while it runs as a

@@ -42,9 +42,14 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <summary>Sends a report, again while its deadline passes and <see cref="Persistence"/> lasts.</summary>
     /// <typeparam name="T">The reply.</typeparam>
     /// <param name="send">The call, given its deadline.</param>
+    /// <param name="stillTrue">
+    /// Whether what it reports is still so, asked before each retry; <see langword="null"/> when it cannot stop being so.
+    /// </param>
     /// <returns>The reply.</returns>
-    /// <exception cref="RpcException">The broker refused it, or it timed out for the whole of <see cref="Persistence"/>.</exception>
-    private static async Task<T> PatientlyAsync<T>(Func<DateTime, Task<T>> send)
+    /// <exception cref="RpcException">
+    /// The broker refused it, it timed out for the whole of <see cref="Persistence"/>, or it stopped being true.
+    /// </exception>
+    private static async Task<T> PatientlyAsync<T>(Func<DateTime, Task<T>> send, Func<bool>? stillTrue = null)
     {
         var until = DateTime.UtcNow.Add(Persistence);
 
@@ -55,7 +60,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 return await send(DateTime.UtcNow.Add(Patience)).ConfigureAwait(false);
             }
             catch (RpcException timedOut) when (timedOut.StatusCode == StatusCode.DeadlineExceeded
-                                                 && DateTime.UtcNow < until)
+                                                 && DateTime.UtcNow < until
+                                                 && (stillTrue?.Invoke() ?? true))
             {
                 // Held up, not gone: round again.
             }
@@ -178,7 +184,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 && resident.IssuedToken is { Length: > 0 } token
                 && string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
             {
-                await ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
+                await ReportRunningAsync(identity, role, token, resident.Workspace, () => Current(resident, token))
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -188,13 +195,21 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <param name="role">What this project calls it.</param>
     /// <param name="token">The token the process was started with.</param>
     /// <param name="workspace">The checkout's folder, which the broker holds the name to (lens 2 run 111).</param>
+    /// <param name="stillRunning">Whether the process started with <paramref name="token"/> is still the one running.</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
     /// <remarks>
+    /// <para>
     /// One checkout is one process in every project that enrols it, and the project that started it is not the only one
     /// that must know it is Parley's (lens 1 run 107). Like a launch report, a failed one stops nothing.
+    /// </para>
+    /// <para>
+    /// <b>Not tried again once the process it names has been replaced</b> (lens 2 run 119): a report held up by a rewrite
+    /// and sent again after a restart had reported the new token would file the old one last, and the process running
+    /// would read as open outside Parley.
+    /// </para>
     /// </remarks>
     internal async Task ReportRunningAsync(
-        Parley.Core.AgentIdentity identity, string role, string token, string workspace)
+        Parley.Core.AgentIdentity identity, string role, string token, string workspace, Func<bool> stillRunning)
     {
         if (!Parley.Core.AgentName.TryJoin(role, machine, out var named))
         {
@@ -213,7 +228,8 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                         Identity = identity.ToString(),
                         Workspace = workspace,
                     },
-                    deadline: deadline))
+                    deadline: deadline),
+                    stillRunning)
                 .ConfigureAwait(false);
         }
         catch (Exception failure)
@@ -224,6 +240,13 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         }
 #pragma warning restore CA1031
     }
+
+    /// <summary>Whether a process is still running and is the one started with a token.</summary>
+    /// <param name="resident">The process.</param>
+    /// <param name="token">The token.</param>
+    /// <returns>Whether a report of that token is still true.</returns>
+    internal static bool Current(Parley.Headless.ResidentAgent resident, string token) =>
+        resident.IsAlive && string.Equals(resident.IssuedToken, token, StringComparison.Ordinal);
 
     /// <summary>Tells the broker an agent's workspace is gone, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (SPEC.md §14).</summary>
     /// <param name="agent">The agent it was asked to start.</param>

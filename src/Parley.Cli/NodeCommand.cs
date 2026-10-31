@@ -1468,7 +1468,9 @@ public static class NodeCommand
 
         foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
         {
-            await reporter.ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
+            await reporter.ReportRunningAsync(
+                    identity, role, token, resident.Workspace, () => TurnReporter.Current(resident, token))
+                .ConfigureAwait(false);
         }
     }
 
