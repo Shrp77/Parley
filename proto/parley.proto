@@ -595,8 +595,8 @@ service Nodes {
   // This node is about to start an agent, with this token in its environment, or is still running one it started
   // (on joining, and when another project this node hosts starts it) (section 11.7). The adapter presents the token on
   // attach, which is how the broker tells a process Parley started from one opened outside it. Ignored unless the
-  // agent is on this node's machine and the node is joined, and when the name it is filed under is registered from
-  // another folder. A failure here never stops the launch.
+  // agent is on this node's machine and the node is joined, and when it carries a folder and an identity no name
+  // holds, under a name registered from another folder. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
 
   // An agent this node was asked to start has no workspace, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (section 14).

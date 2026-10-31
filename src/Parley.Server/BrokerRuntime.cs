@@ -1110,8 +1110,8 @@ public sealed class BrokerRuntime : IAsyncDisposable
     }
 
     /// <summary>
-    /// The name a repository is registered as on a machine now, or <paramref name="fallback"/> when none is; or
-    /// <see langword="null"/> when that name is registered from another folder.
+    /// The name a repository is registered as on a machine now; or, when none is, <paramref name="fallback"/>, unless
+    /// that name is registered from another folder.
     /// </summary>
     /// <param name="identity">The repository's identifier.</param>
     /// <param name="machine">The machine.</param>
@@ -1120,11 +1120,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="cancellationToken">Cancels the read.</param>
     /// <returns>
     /// The registered name, which a rename may have changed since the node launched it; or <see langword="null"/> when
-    /// <paramref name="fallback"/> is registered from another folder.
+    /// no name holds the identity and <paramref name="fallback"/> is registered from another folder.
     /// </returns>
     /// <remarks>
-    /// The folder is the comparison an attach makes (§4.1.1), so a token is filed only where an attach from that
-    /// repository could be accepted.
+    /// <para>
+    /// <b>A name the identity holds is trusted wherever the report comes from.</b> A checkout moved and enrolled again
+    /// in one project keeps its old folder in the others' launch keys, so the folder its agent attaches from there and
+    /// the one its node reports differ, and comparing them left it open outside Parley in every project but one (lens 2
+    /// run 114). Until enrolment is one registry for every project, the identity is the better witness.
+    /// </para>
+    /// <para>
+    /// <b>A name it does not hold is compared by folder</b>, the comparison an attach makes (§4.1.1): a second checkout
+    /// whose launch key claims another agent's name would otherwise take its token (lens 2 run 111).
+    /// </para>
     /// </remarks>
     internal async Task<AgentName?> NameOfAsync(
         AgentIdentity identity,
@@ -1137,19 +1145,16 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 var agents = new AgentRepository(connection);
 
-                // The name the identity is registered as, which a rename may have changed, or the one the node knows;
-                // either way checked against its folder (lens 3 run 122: a moved checkout or an edited catalogue gives
-                // one identity two folders).
-                var (name, held) = await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false)
-                    is { } holder
-                    ? (holder.Name, holder.Workspace)
-                    : (fallback, await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false));
+                if (await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false) is { } holder)
+                {
+                    return holder.Name;
+                }
 
                 return workspace is { Length: > 0 }
-                    && held is { Length: > 0 }
+                    && await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false) is { Length: > 0 } held
                     && !WorkspacePath.SameRepository(workspace, held)
                         ? null
-                        : name;
+                        : fallback;
             },
             cancellationToken).ConfigureAwait(false);
 

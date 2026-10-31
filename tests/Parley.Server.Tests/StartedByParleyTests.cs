@@ -106,24 +106,20 @@ public sealed class StartedByParleyTests
     }
 
     [Theory]
-    [InlineData(true, false)]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    [InlineData(false, true)]
-    public async Task A_launch_reported_from_another_folder_takes_no_name_held_from_this_one(bool elsewhere, bool sameIdentity)
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_reported_from_another_folder_takes_no_name_held_from_this_one(bool elsewhere)
     {
         // Lens 2 run 111: a second checkout whose launch key claims this agent's name, started by another project's
         // node, was reported here under the name and took its token, leaving the real agent open outside Parley. The
-        // same folder under a new identity is a repository enrolled again, and does take it. The identity the agent holds
-        // reported from another folder is a moved checkout or an edited catalogue (lens 3 run 122), and takes it no more.
+        // same folder under a new identity is a repository enrolled again, and does take it.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
         var folder = Path.Combine(Path.GetTempPath(), "checkout-billing");
-        var held = Parley.Core.AgentIdentity.Mint().ToString();
 
         await LaunchAsync(node, "t-1");
         await using var agent = await AttachedClient.AttachAsync(
-            broker, Agent, folder, Ct, launchToken: "t-1", identity: held);
+            broker, Agent, folder, Ct, launchToken: "t-1", identity: Parley.Core.AgentIdentity.Mint().ToString());
 
         _ = await node.Nodes.ReportLaunchAsync(
             new Wire.LaunchReport
@@ -131,7 +127,7 @@ public sealed class StartedByParleyTests
                 Machine = Here,
                 Agent = Agent,
                 Token = "t-2",
-                Identity = sameIdentity ? held : Parley.Core.AgentIdentity.Mint().ToString(),
+                Identity = Parley.Core.AgentIdentity.Mint().ToString(),
                 Workspace = elsewhere ? Path.Combine(Path.GetTempPath(), "checkout-copy") : folder,
             },
             cancellationToken: Ct);
@@ -140,41 +136,39 @@ public sealed class StartedByParleyTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task A_launch_found_by_identity_is_checked_against_the_holders_folder(bool fromTheHoldersFolder)
+    [InlineData(Agent, false)]
+    [InlineData(Agent, true)]
+    [InlineData("orders@m1", false)]
+    [InlineData("orders@m1", true)]
+    public async Task A_launch_whose_identity_an_agent_holds_reaches_it_from_any_folder(string reportedAs, bool moved)
     {
-        // Lens 3 run 123: the cases above report under the holder's own name, so they could not tell the holder's folder
-        // from the reported name's. Here the node knows the agent by the name it launched it under, orders, since renamed
-        // billing. From another folder (a moved checkout), the token must not reach billing although orders holds no row.
-        // From billing's own folder it must, although orders is now another agent's, registered from elsewhere.
+        // Lens 2 run 114: a checkout moved and enrolled again in one project keeps its old folder in another's launch
+        // key, so its agent attaches there from the old folder while its node reports the new one. Compared by folder,
+        // the token was dropped and the agent read as open outside Parley in that project. The identity decides, under
+        // the name the node launched it as or the one it was renamed to since.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing", "orders"], Ct, reportsTurns: true);
         var folder = Path.Combine(Path.GetTempPath(), "checkout-billing");
         var held = Parley.Core.AgentIdentity.Mint().ToString();
 
-        await LaunchAsync(node, "t-1");
-        await using var agent = await AttachedClient.AttachAsync(
-            broker, Agent, folder, Ct, launchToken: "t-1", identity: held);
-
-        await using var orders = fromTheHoldersFolder
-            ? await AttachedClient.AttachAsync(
-                broker, "orders@m1", Path.Combine(Path.GetTempPath(), "checkout-orders"), Ct,
-                identity: Parley.Core.AgentIdentity.Mint().ToString())
-            : null;
+        // Registered from the old folder, as the other project's launch key still says.
+        await (await AttachedClient.AttachAsync(broker, Agent, folder, Ct, identity: held)).DisposeAsync();
 
         _ = await node.Nodes.ReportLaunchAsync(
             new Wire.LaunchReport
             {
                 Machine = Here,
-                Agent = "orders@m1",
-                Token = "t-2",
+                Agent = reportedAs,
+                Token = "t-1",
                 Identity = held,
-                Workspace = fromTheHoldersFolder ? folder : Path.Combine(Path.GetTempPath(), "checkout-moved"),
+                Workspace = moved ? Path.Combine(Path.GetTempPath(), "checkout-moved") : folder,
             },
             cancellationToken: Ct);
 
-        Assert.Equal(fromTheHoldersFolder, (await RowAsync(broker)).OpenOutside);
+        await using var again = await AttachedClient.AttachAsync(
+            broker, Agent, folder, Ct, launchToken: "t-1", identity: held);
+
+        Assert.False((await RowAsync(broker)).OpenOutside);
     }
 
     [Fact]
