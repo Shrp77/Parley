@@ -1109,7 +1109,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
         return true;
     }
 
-    /// <summary>The name a repository is registered as on a machine now, or <paramref name="fallback"/> when none is.</summary>
+    /// <summary>
+    /// The name a repository is registered as on a machine now, or <paramref name="fallback"/> when none is; or
+    /// <see langword="null"/> when that name is registered from another folder.
+    /// </summary>
     /// <param name="identity">The repository's identifier.</param>
     /// <param name="machine">The machine.</param>
     /// <param name="fallback">The name the node knows it by.</param>
@@ -1134,16 +1137,19 @@ public sealed class BrokerRuntime : IAsyncDisposable
             {
                 var agents = new AgentRepository(connection);
 
-                if (await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false) is { } holder)
-                {
-                    return holder.Name;
-                }
+                // The name the identity is registered as, which a rename may have changed, or the one the node knows;
+                // either way checked against its folder (lens 3 run 122: a moved checkout or an edited catalogue gives
+                // one identity two folders).
+                var (name, held) = await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false)
+                    is { } holder
+                    ? (holder.Name, holder.Workspace)
+                    : (fallback, await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false));
 
                 return workspace is { Length: > 0 }
-                    && await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false) is { Length: > 0 } held
+                    && held is { Length: > 0 }
                     && !WorkspacePath.SameRepository(workspace, held)
                         ? null
-                        : fallback;
+                        : name;
             },
             cancellationToken).ConfigureAwait(false);
 

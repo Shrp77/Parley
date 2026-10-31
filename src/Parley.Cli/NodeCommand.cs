@@ -628,7 +628,8 @@ public static class NodeCommand
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
                     // one checkout stays one process when a second project asks for it under another name; that
-                    // project already knows its token, from the launch or from joining since (TellJoinedAsync).
+                    // project already knows its token, told at the launch (TellJoinedAsync) or on joining since
+                    // (ReannounceAsync).
                     DispatchTurn(existing, agent, output, cancellationToken, reporter);
                     return;
                 }
@@ -678,7 +679,8 @@ public static class NodeCommand
                 var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
                 residents[identity] = resident;
 
-                // Every other project joined here that starts this checkout knows it as Parley's too.
+                // Every project joined here that starts this checkout knows it as Parley's too (this one again, with
+                // the same token).
                 await TellJoinedAsync(residents, identity, resident).ConfigureAwait(false);
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
@@ -1352,8 +1354,8 @@ public static class NodeCommand
 
             residents[identity] = restarted;
 
-            // As at a start, and after it is in the table, as there (lens 1 run 109): every other project joined here that
-            // starts this checkout learns its new token, and one joining meanwhile finds it in the table.
+            // As at a start, and after it is in the table, as there (lens 1 run 109): every project joined here that starts
+            // this checkout learns its new token, and one joining meanwhile finds it in the table.
             await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
 
             await output.WriteLineAsync(
@@ -1448,7 +1450,10 @@ public static class NodeCommand
     private static readonly ConditionalWeakTable<
         ConcurrentDictionary<AgentIdentity, ResidentAgent>, LaunchBoard> Boards = new();
 
-    /// <summary>Tells every project joined from this table that starts a checkout that its process is running.</summary>
+    /// <summary>
+    /// Tells every project joined from this table that starts a checkout that its process is running, the launching
+    /// project's own seat included (a second report of the same token).
+    /// </summary>
     /// <param name="residents">The table.</param>
     /// <param name="identity">The checkout.</param>
     /// <param name="resident">Its process.</param>

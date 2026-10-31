@@ -592,9 +592,11 @@ service Nodes {
   // node's machine and the node is joined. A failure here never fails the turn.
   rpc ReportTurn(TurnReport) returns (Empty);
 
-  // This node is about to start an agent, with this token in its environment (section 11.7). The adapter presents
-  // the token on attach, which is how the broker tells a process Parley started from one opened outside it. Ignored
-  // unless the agent is on this node's machine and the node is joined. A failure here never stops the launch.
+  // This node is about to start an agent, with this token in its environment, or is still running one it started
+  // (on joining, and when another project this node hosts starts it) (section 11.7). The adapter presents the token on
+  // attach, which is how the broker tells a process Parley started from one opened outside it. Ignored unless the
+  // agent is on this node's machine and the node is joined, and when the name it is filed under is registered from
+  // another folder. A failure here never stops the launch.
   rpc ReportLaunch(LaunchReport) returns (Empty);
 
   // An agent this node was asked to start has no workspace, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (section 14).
@@ -616,7 +618,7 @@ message LaunchReport {
   string machine = 1;
   string agent = 2;
   string token = 3;     // chosen by the node for this one launch
-  string identity = 4;  // the repository's identifier when the node knows it, so a rename since the launch still finds the agent; empty when not
+  string identity = 4;  // the repository's identifier, so a rename since the launch still finds the agent; empty at a fresh launch, filed under the name just asked for
   string workspace = 5; // the checkout's folder when the node knows it, so a name registered from another is not given its token; empty when not
 }
 
