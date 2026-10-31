@@ -207,15 +207,18 @@ public static class NodeCommand
                                 var named = catalogue.NamesIn(project);
                                 var joined = new TurnReporter(nodes, request.Machine, output);
 
+                                // And from now on told of every launch any loop sharing the table makes of what this
+                                // project starts (lens 1 run 107). **Seated before the table is read** (lens 1 run 109):
+                                // a launch puts its process in the table and then reads the board, so a launch between
+                                // this read and a later seat would reach neither. Both orders at once only report twice.
+                                Boards.GetOrCreateValue(residents).Join(seat, joined, named);
+
                                 await joined
                                     .ReannounceAsync(residents
                                         .Where(pair => named.ContainsKey(pair.Key))
-                                        .Select(pair => (pair.Key, pair.Value, named[pair.Key])))
+                                        .Select(pair => (pair.Key, pair.Value, named[pair.Key]))
+                                        .ToList())
                                     .ConfigureAwait(false);
-
-                                // And from now on told of every launch any loop sharing the table makes of what this
-                                // project starts (lens 1 run 107).
-                                Boards.GetOrCreateValue(residents).Join(seat, joined, named);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Start:
@@ -1347,10 +1350,11 @@ public static class NodeCommand
                 TimeProvider.System,
                 launched);
 
-            // As at a start: every other project joined here that starts this checkout learns its new token.
-            await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
-
             residents[identity] = restarted;
+
+            // As at a start, and after it is in the table, as there (lens 1 run 109): every other project joined here that
+            // starts this checkout learns its new token, and one joining meanwhile finds it in the table.
+            await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
 
             await output.WriteLineAsync(
                 $"  {agent.Value}: restarted once its turn was over, so it reads its new ownership line.")
