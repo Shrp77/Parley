@@ -95,6 +95,32 @@ public sealed class DeletedTextLeavesTheFileTests : IDisposable
     }
 
     [Fact]
+    public async Task A_declined_proposals_text_is_gone_when_a_pass_that_removed_only_it_returns()
+    {
+        // Lens 3 run 126: a pass that removes no message but a decided proposal must still wipe, and only the half of
+        // the Pruner's condition that counts proposals says so. The item's words are the marker: declining writes a
+        // notice carrying the title, which rightly stays while it is undelivered.
+        using var connection = ParleyDatabase.OpenAndMigrate(_path);
+        Work.Register(connection, Orders, Billing);
+        var roadmaps = new RoadmapRepository(connection);
+
+        var (id, problem) = await roadmaps.ProposeAsync(
+            Orders, null, null,
+            new RoadmapContent("Billing export", [new RoadmapItemDraft(null, "add " + Marker + " to the export", Billing, [])]),
+            T0, cancellationToken: Ct);
+        Assert.Null(problem);
+        _ = await roadmaps.DeclineAsync(id!.Value, T0.AddMinutes(1), cancellationToken: Ct);
+
+        Checkpoint(connection);
+        Assert.True(Holds(_path), "the marker never reached the file, so this test proves nothing");
+
+        var pruned = await new Pruner(connection).PruneAsync(new RetentionPolicy(TimeSpan.FromDays(1), TimeSpan.FromDays(2)), T0.AddDays(30), Ct);
+        Assert.Equal(0, pruned.Removed);
+
+        AssertGone();
+    }
+
+    [Fact]
     public void Upgrading_a_store_wipes_text_deleted_before_deletes_were_secure()
     {
         using (var connection = new SqliteConnection($"Data Source={_path};Pooling=False"))

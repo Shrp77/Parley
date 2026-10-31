@@ -102,10 +102,11 @@ public sealed class TextASplitMovedIsWipedTests : IDisposable
     }
 
     [Fact]
-    public async Task A_rewrite_that_cannot_run_leaves_the_destroy_done_rather_than_failed()
+    public async Task A_rewrite_that_cannot_run_does_not_fail_the_act_that_called_it()
     {
         // A disk without room for the rewrite's copy is what this stands for; a statement still reading on the
-        // connection refuses the rewrite the same way, and is the one a test can arrange.
+        // connection refuses the rewrite and the checkpoint alike, and is the one a test can arrange. The act before
+        // the flush has committed, so the flush must not turn it into an error.
         using (var store = ParleyDatabase.OpenAndMigrate(_path))
         {
             Work.Register(store, AgentName.Create("orders@test"), AgentName.Create("billing@test"));
