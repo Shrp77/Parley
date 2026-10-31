@@ -137,33 +137,49 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     {
         foreach (var (identity, resident, role) in residents)
         {
-            if (!resident.IsAlive
-                || resident.IssuedToken is not { Length: > 0 } token
-                || !string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal)
-                || !Parley.Core.AgentName.TryJoin(role, machine, out var named))
+            if (resident.IsAlive
+                && resident.IssuedToken is { Length: > 0 } token
+                && string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
             {
-                continue;
+                await ReportRunningAsync(identity, role, token).ConfigureAwait(false);
             }
+        }
+    }
+
+    /// <summary>Tells this node's broker that a process it can start is running, under the name this project gives it.</summary>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="role">What this project calls it.</param>
+    /// <param name="token">The token the process was started with.</param>
+    /// <returns>A task that completes when it has been reported, or could not be.</returns>
+    /// <remarks>
+    /// One checkout is one process in every project that enrols it, and the project that started it is not the only one
+    /// that must know it is Parley's (lens 1 run 107). Like a launch report, a failed one stops nothing.
+    /// </remarks>
+    internal async Task ReportRunningAsync(Parley.Core.AgentIdentity identity, string role, string token)
+    {
+        if (!Parley.Core.AgentName.TryJoin(role, machine, out var named))
+        {
+            return;
+        }
 
 #pragma warning disable CA1031 // A report must never stop the node, whatever went wrong sending it.
-            try
-            {
-                _ = await nodes.ReportLaunchAsync(
-                        new Wire.LaunchReport
-                        {
-                            Machine = machine, Agent = named.Value, Token = token, Identity = identity.ToString(),
-                        },
-                        deadline: DateTime.UtcNow.Add(Patience))
-                    .ConfigureAwait(false);
-            }
-            catch (Exception failure)
-            {
-                await output.WriteLineAsync(
-                        $"  {named.Value}: could not tell the broker it is still running it — {failure.Message}")
-                    .ConfigureAwait(false);
-            }
-#pragma warning restore CA1031
+        try
+        {
+            _ = await nodes.ReportLaunchAsync(
+                    new Wire.LaunchReport
+                    {
+                        Machine = machine, Agent = named.Value, Token = token, Identity = identity.ToString(),
+                    },
+                    deadline: DateTime.UtcNow.Add(Patience))
+                .ConfigureAwait(false);
         }
+        catch (Exception failure)
+        {
+            await output.WriteLineAsync(
+                    $"  {named.Value}: could not tell the broker it is running it — {failure.Message}")
+                .ConfigureAwait(false);
+        }
+#pragma warning restore CA1031
     }
 
     /// <summary>Tells the broker an agent's workspace is gone, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (SPEC.md §14).</summary>

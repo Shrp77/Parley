@@ -178,6 +178,9 @@ public static class NodeCommand
                     catalogueFile, project, announceable.Names, output, rejoining, watching.Token);
                 var refused = false;
 
+                // This attempt's place on the board every node loop sharing the table can read (TellJoinedAsync).
+                var seat = new object();
+
                 try
                 {
                     using var stream = nodes.Join(request, cancellationToken: rejoining.Token);
@@ -202,12 +205,17 @@ public static class NodeCommand
                                 // in every project that enrols it, under a name in each, and the process carries the
                                 // name of whichever started it.
                                 var named = catalogue.NamesIn(project);
+                                var joined = new TurnReporter(nodes, request.Machine, output);
 
-                                await new TurnReporter(nodes, request.Machine, output)
+                                await joined
                                     .ReannounceAsync(residents
                                         .Where(pair => named.ContainsKey(pair.Key))
                                         .Select(pair => (pair.Key, pair.Value, named[pair.Key])))
                                     .ConfigureAwait(false);
+
+                                // And from now on told of every launch any loop sharing the table makes of what this
+                                // project starts (lens 1 run 107).
+                                Boards.GetOrCreateValue(residents).Join(seat, joined, named);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Start:
@@ -260,6 +268,8 @@ public static class NodeCommand
                 }
                 finally
                 {
+                    Boards.GetOrCreateValue(residents).Leave(seat);
+
                     await watching.CancelAsync().ConfigureAwait(false);
                 }
 
@@ -614,7 +624,8 @@ public static class NodeCommand
                 if (existing.IsAlive)
                 {
                     // Already here, and "here" is machine-wide rather than this node's own. This is also how
-                    // one checkout stays one process when a second project asks for it under another name.
+                    // one checkout stays one process when a second project asks for it under another name; that
+                    // project already knows its token, from the launch or from joining since (TellJoinedAsync).
                     DispatchTurn(existing, agent, output, cancellationToken, reporter);
                     return;
                 }
@@ -663,6 +674,9 @@ public static class NodeCommand
                 var launched = reporter is null ? null : await reporter.LaunchAsync(agent).ConfigureAwait(false);
                 var resident = ResidentAgent.Start(agent, invocation, workspace, TimeProvider.System, launched);
                 residents[identity] = resident;
+
+                // Every other project joined here that starts this checkout knows it as Parley's too.
+                await TellJoinedAsync(residents, identity, resident.IssuedToken).ConfigureAwait(false);
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
                 // was running is an ordinary event; starting one because the process behind an attached
@@ -1333,6 +1347,9 @@ public static class NodeCommand
                 TimeProvider.System,
                 launched);
 
+            // As at a start: every other project joined here that starts this checkout learns its new token.
+            await TellJoinedAsync(residents, identity, restarted.IssuedToken).ConfigureAwait(false);
+
             residents[identity] = restarted;
 
             await output.WriteLineAsync(
@@ -1417,6 +1434,56 @@ public static class NodeCommand
     /// </remarks>
     private static readonly ConditionalWeakTable<
         ConcurrentDictionary<AgentIdentity, ResidentAgent>, object> Shut = new();
+
+    /// <summary>The projects joined from each shared table, so a launch one makes reaches every one that starts it.</summary>
+    /// <remarks>
+    /// Kept beside the table, as <see cref="Shut"/> is: <c>serve</c> hosts a node loop per project over one table, and a
+    /// checkout enrolled in two is one process for both. Told only to the project that started it, its token left the
+    /// other reading it as open outside Parley until that project's node joined again (lens 1 run 107).
+    /// </remarks>
+    private static readonly ConditionalWeakTable<
+        ConcurrentDictionary<AgentIdentity, ResidentAgent>, LaunchBoard> Boards = new();
+
+    /// <summary>Tells every project joined from this table that starts a checkout that its process is running.</summary>
+    /// <param name="residents">The table.</param>
+    /// <param name="identity">The checkout.</param>
+    /// <param name="token">The token its process was started with, or <see langword="null"/> for none.</param>
+    /// <returns>A task that completes when each has been told, or could not be.</returns>
+    private static async Task TellJoinedAsync(
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, string? token)
+    {
+        if (token is not { Length: > 0 })
+        {
+            return;
+        }
+
+        foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
+        {
+            await reporter.ReportRunningAsync(identity, role, token).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The node loops joined from one table, each with what its project calls the checkouts it starts.</summary>
+    private sealed class LaunchBoard
+    {
+        private readonly ConcurrentDictionary<object, (TurnReporter Reporter, IReadOnlyDictionary<AgentIdentity, string> Names)>
+            _joined = new();
+
+        /// <summary>Takes a seat for a joined loop, or brings its names up to date.</summary>
+        public void Join(object seat, TurnReporter reporter, IReadOnlyDictionary<AgentIdentity, string> names) =>
+            _joined[seat] = (reporter, names);
+
+        /// <summary>Gives a seat up, when its loop's stream ends.</summary>
+        public void Leave(object seat) => _ = _joined.TryRemove(seat, out _);
+
+        /// <summary>Every joined loop whose project starts a checkout, with that project's name for it.</summary>
+        public IReadOnlyList<(TurnReporter Reporter, string Role)> Starting(AgentIdentity identity) =>
+        [
+            .. _joined.Values
+                .Where(entry => entry.Names.ContainsKey(identity))
+                .Select(entry => (entry.Reporter, entry.Names[identity])),
+        ];
+    }
 
     /// <summary>What <see cref="Shut"/> records; its presence is the whole of the meaning.</summary>
     private static readonly object Sentinel = new();
