@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Xunit;
+using Wire = Parley.Transport;
 
 namespace Parley.Web.Tests;
 
@@ -8,11 +9,23 @@ namespace Parley.Web.Tests;
 [Integration]
 public sealed class FragmentLinksStayInTheFrameTests
 {
-    [Fact]
-    public async Task Every_in_page_link_of_the_framed_conversation_names_its_target_so_it_stays_in_the_frame()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Every_in_page_link_of_the_framed_conversation_names_its_target_so_it_stays_in_the_frame(bool askingThePerson)
     {
         using var console = new TranscriptConsole();
         console.Broker.Request(5, "orders@test", "billing@test", "Add CSV export");
+
+        // A question waiting on the person draws the "Waiting on you" list, whose links are in-page too (lens 3 run 124).
+        if (askingThePerson)
+        {
+            console.Broker.Request(6, "orders@test", "human-user@" + TranscriptConsole.Project, "Gross or net?");
+            console.Broker.Edges.Add(new Wire.WaitingEdge
+            {
+                Waiter = "orders@test", WaitedOn = "human-user@" + TranscriptConsole.Project, ExchangeId = 6,
+            });
+        }
         using var client = console.CreateClient();
         var token = TestContext.Current.CancellationToken;
 
@@ -24,6 +37,7 @@ public sealed class FragmentLinksStayInTheFrameTests
         var html = await page.Content.ReadAsStringAsync(token);
 
         Assert.Contains("data-embed-links", html, StringComparison.Ordinal);
+        Assert.Equal(askingThePerson, html.Contains("<section class=\"waiting-on-you\"", StringComparison.Ordinal));
 
         // The script's own predicate: an <a href> with no target, no download, whose origin is the page's. A fragment-only
         // href resolves against the frame's address, so its origin is the page's and the click navigates the top window to
