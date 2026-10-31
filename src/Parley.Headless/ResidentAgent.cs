@@ -80,6 +80,10 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <summary>Gets who this agent is, as the registry names it.</summary>
     public AgentName Name { get; }
 
+    /// <summary>The launch token this process was started with, or <see langword="null"/> for none (SPEC.md §11.7).</summary>
+    /// <remarks>Kept so a node rejoining a broker can tell it again which processes it started.</remarks>
+    public string? IssuedToken { get; private init; }
+
     /// <summary>Gets the directory the agent runs in.</summary>
     public string Workspace { get; }
 
@@ -193,7 +197,12 @@ public sealed class ResidentAgent : IAsyncDisposable
                 ex);
         }
 
-        return new ResidentAgent(name, workspace, process, clock);
+        return new ResidentAgent(name, workspace, process, clock)
+        {
+            IssuedToken = environment is not null && environment.TryGetValue(Parley.Core.LaunchToken.Variable, out var token)
+                ? token
+                : null,
+        };
     }
 
     /// <summary>

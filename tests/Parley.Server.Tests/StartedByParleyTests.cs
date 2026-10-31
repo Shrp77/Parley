@@ -62,9 +62,10 @@ public sealed class StartedByParleyTests
     }
 
     [Fact]
-    public async Task A_token_is_spent_by_the_first_process_to_present_it()
+    public async Task A_process_reattaching_with_its_token_is_still_Parleys()
     {
-        // An editor started from a shell that inherited the variable must not pass for the process the node started.
+        // Lens 1 run 104: a token spent on its first attach left the same process, reconnecting after its stream
+        // dropped, open outside Parley for good: never woken, and refused a person's start.
         await using var broker = await LoopbackBroker.StartAsync(Ct);
         await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
 
@@ -72,7 +73,23 @@ public sealed class StartedByParleyTests
         var first = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
         await first.DisposeAsync();
 
-        await using var second = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
+        await using var again = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
+
+        Assert.False((await RowAsync(broker)).OpenOutside);
+    }
+
+    [Fact]
+    public async Task A_token_from_a_launch_the_node_has_since_replaced_is_outside()
+    {
+        // A process that outlived its launch, or an editor started from a shell that inherited its token, must not pass
+        // for the process the node started since.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+
+        await LaunchAsync(node, "t-1");
+        await LaunchAsync(node, "t-2");
+
+        await using var old = await AttachedClient.AttachAsync(broker, Agent, cancellationToken: Ct, launchToken: "t-1");
 
         Assert.True((await RowAsync(broker)).OpenOutside);
     }

@@ -3499,9 +3499,12 @@ Every other fact the broker holds says only that the name is attached.
 **So a node names each launch.** Before it starts an agent it tells the broker the agent and a token it chose
 for this one launch, and starts the process with that token in its environment; the adapter presents the token
 when it attaches. An attachment presenting the token the broker was told of for that agent, by the node on that
-agent's machine, is **started by Parley**, and the token is spent. Any other attachment — no token, an old one,
-another agent's — is **open outside Parley**. A launch the broker was never told of, because the report did not
-arrive, reads the same way; a failed report never stops the launch.
+agent's machine, is **started by Parley**. The token stays good until that node starts the agent again with a new
+one, so the same process reattaching after its stream dropped is still Parley's; and since a broker holds launches
+only in memory, a node joining a broker tells it again the token of every agent it is still running. Any other
+attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**. A launch the
+broker was never told of, because the report did not arrive, reads the same way; a failed report never stops the
+launch.
 
 What follows from it:
 

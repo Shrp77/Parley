@@ -124,6 +124,43 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         return new Dictionary<string, string> { [Parley.Core.LaunchToken.Variable] = token };
     }
 
+    /// <summary>Tells a broker this node has joined the launch token of every agent it still runs on this machine.</summary>
+    /// <param name="residents">The agents running here.</param>
+    /// <returns>A task that completes when each has been reported.</returns>
+    /// <remarks>
+    /// <b>A broker that restarted knows no launch</b> (SPEC.md §11.7): its tokens are in memory. Without this, every
+    /// process the node started before the restart read as open outside Parley on reattaching, and could be neither woken
+    /// nor started (lens 1 run 104). Like a launch report, a failed one stops nothing.
+    /// </remarks>
+    internal async Task ReannounceAsync(IEnumerable<Parley.Headless.ResidentAgent> residents)
+    {
+        foreach (var resident in residents)
+        {
+            if (!resident.IsAlive
+                || resident.IssuedToken is not { Length: > 0 } token
+                || !string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+#pragma warning disable CA1031 // A report must never stop the node, whatever went wrong sending it.
+            try
+            {
+                _ = await nodes.ReportLaunchAsync(
+                        new Wire.LaunchReport { Machine = machine, Agent = resident.Name.Value, Token = token },
+                        deadline: DateTime.UtcNow.Add(Patience))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception failure)
+            {
+                await output.WriteLineAsync(
+                        $"  {resident.Name.Value}: could not tell the broker it is still running it — {failure.Message}")
+                    .ConfigureAwait(false);
+            }
+#pragma warning restore CA1031
+        }
+    }
+
     /// <summary>Tells the broker an agent's workspace is gone, it is on the disk holding the person's home folder, with the folder above it still there, in use, no mount folder and reached through no link (SPEC.md §14).</summary>
     /// <param name="agent">The agent it was asked to start.</param>
     /// <returns>Whether the broker retired it, or null when it could not be told.</returns>

@@ -192,6 +192,11 @@ public static class NodeCommand
                                 await ReportJoinedAsync(
                                     command.Joined, catalogue, project, catalogueFile, endpoint, output)
                                     .ConfigureAwait(false);
+
+                                // Before any command: a broker that restarted must know these are Parley's when they
+                                // reattach (SPEC.md §11.7).
+                                await new TurnReporter(nodes, request.Machine, output).ReannounceAsync(residents.Values)
+                                    .ConfigureAwait(false);
                                 break;
 
                             case Wire.NodeCommand.CommandOneofCase.Start:

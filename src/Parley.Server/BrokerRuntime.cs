@@ -666,14 +666,10 @@ public sealed class BrokerRuntime : IAsyncDisposable
                     "reinstates it from the agents pane in `parley`, or from its page in the web UI.");
             }
 
-            // **Started by Parley only by the token its node reported for this launch** (SPEC.md §11.7), and spent here, so
-            // a second process presenting it — an editor started from a shell that inherited it — reads as outside.
-            var byParley = launchToken is { Length: > 0 }
-                && _launches.TryGetValue(registration.Name, out var launched)
-                && string.Equals(launched, launchToken, StringComparison.Ordinal)
-                && _launches.TryRemove(new KeyValuePair<AgentName, string>(registration.Name, launched));
-
-            var attached = new AttachedAgent(this, registration.Name, broker, started, byParley);
+            // **Started by Parley only by the token its node reported for its latest launch** (SPEC.md §11.7), checked
+            // whenever it matters (AttachedAgent.StartedByParley) rather than spent here.
+            var attached = new AttachedAgent(
+                this, registration.Name, broker, started, launchToken is { Length: > 0 } ? launchToken : null);
 
             // Last, so that a failure above leaves nothing to find. Appended rather than
             // assigned: the name may already be here, and both sessions are real.
@@ -1034,9 +1030,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // while a reply is still owed to a turn that gave up, so such a turn spends the wake for the mail that arrived
         // meanwhile; once the agent finished, it sat idle with that mail and nothing coming. Mail only: work it already
         // collected is its own to finish, and a wedged agent costs one more turn per timeout, each shown timed out.
+        // A closure poll waiting only on its vote is asked once (SPEC.md §6) and is not a message, so it counts too
+        // (lens 1 run 104).
         if (ended.TimedOut
             && await UseConnectionAsync(
-                (connection, _, ct) => new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct),
+                async (connection, _, ct) =>
+                    await new MessageRepository(connection).CountPendingAsync(agent, cancellationToken: ct).ConfigureAwait(false)
+                    + await new ConversationRepository(connection).CountOutstandingPollsAsync(agent, ct).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false) > 0)
         {
             _ = RequestAttentionForMail(agent, "a turn ran out of time with mail still waiting");
@@ -1108,6 +1108,15 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         return true;
     }
+
+    /// <summary>Whether a token is the one an agent's node reported for its latest launch (SPEC.md §11.7).</summary>
+    /// <param name="agent">The agent.</param>
+    /// <param name="token">The token an attachment presented, or <see langword="null"/>.</param>
+    /// <returns>Whether that attachment is a process Parley started.</returns>
+    internal bool IsCurrentLaunch(AgentName agent, string? token) =>
+        token is { Length: > 0 }
+        && _launches.TryGetValue(agent, out var launched)
+        && string.Equals(launched, token, StringComparison.Ordinal);
 
     /// <summary>Whether an agent is running only as processes Parley did not start (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>
