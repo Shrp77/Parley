@@ -71,4 +71,9 @@ Check a change against each; a new page or a new path lookup must keep all of th
 - **Roadmap text has no bound**; the terminal's slowness on a huge item is recorded evidence.
 - **A GET that delivers on the person's own act** (reload, a restored tab, a prerender they started) is by design.
 - macOS `/net` autofs and a link the person made themselves are recorded lows.
+- **A link an agent makes in its own repository is low** (owner, 2026-10-31, lens 2 run 123): a junction, a hard link
+  or a symbolic link that leads a placement, the person's or the agent's own, to a file outside the repository gives
+  the agent nothing it lacks, because an agent that can make the link can read the target and send its words in a
+  message. What stays above low is a lookup that leaves this machine (a share path, typed or behind a link: a
+  credential offered to another host) and anything reached without the agent's own act.
 - The lows triaged in the ledger's 2026-10-29 entry as moot or by design stay that way.
