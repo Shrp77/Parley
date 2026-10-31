@@ -46,8 +46,10 @@ Check a change against each; a new page or a new path lookup must keep all of th
   and folder browser, the terminal's Add-an-agent browser and workspace check, the enrolment scan, the ownership
   write Auto Accept makes, the person's placement (`parley files place` and the terminal's place dialog, through
   `PlaceableFile`, which also refuses a file that is itself a link), and every read of a repository's launch
-  configuration (`LaunchConfiguration.TryRead`: the node's catalogue on each join and start, the terminal's agents list,
-  enrolment's look at the other catalogued repositories).
+  configuration or instructions file (`LaunchConfiguration.TryRead`: the node's catalogue on each join and start, the
+  terminal's agents list, enrolment's look at the other catalogued repositories; `RepositoryProjects.Read`, which every
+  `parley` command typed in a repository runs; enrolment's read of a declined instructions file; the bulk enrolment's
+  copy check and its described plan). The adapter's own read of its `.mcp.json` runs in the agent's own process.
 - Enrolment treats any reparse point as a link, whatever its target reads as, and never writes through one.
 - **Only local storage** (the owner's rule): a repository, a deployment's root and an agent's workspace are refused on a
   synced cloud folder (OneDrive, Google Drive, Dropbox, iCloud Drive, Box), a network drive or a virtual file system

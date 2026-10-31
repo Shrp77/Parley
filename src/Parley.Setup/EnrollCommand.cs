@@ -866,7 +866,17 @@ public static class EnrollCommand
                 else
                 {
                     // `plan` writes nothing, so both files are read plainly here. Holding them would
-                    // be a lock taken to describe a file and released before anything acted on it.
+                    // be a lock taken to describe a file and released before anything acted on it. Walked
+                    // first, as every read of a repository's files is (lens 2 run 126).
+                    foreach (var read in new[] { launchPath, instructionsPath })
+                    {
+                        if (OffMachineLinks.LeadsOffThisMachine(read))
+                        {
+                            throw new InvalidDataException(
+                                $"{read} leads to another machine, and Parley does not look up a path there");
+                        }
+                    }
+
                     plan = Decide(
                         File.Exists(launchPath)
                             ? await File.ReadAllTextAsync(launchPath, cancellationToken).ConfigureAwait(false)

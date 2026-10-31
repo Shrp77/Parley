@@ -196,7 +196,9 @@ public static class Enrolment
         string path,
         CancellationToken cancellationToken)
     {
-        if (declined is null || !File.Exists(path))
+        // Walked before it is read (lens 2 run 126): a repository can ship its instructions file as a link, and the plan's
+        // read of a declined one followed a link to a share, signing in to that host as the person.
+        if (declined is null || OffMachineLinks.LeadsOffThisMachine(path) || !File.Exists(path))
         {
             return null;
         }
@@ -628,7 +630,8 @@ public static class Enrolment
 
         try
         {
-            return File.Exists(path) ? File.ReadAllText(path) : null;
+            // Walked before it is read, as every launch configuration is (lens 2 run 126).
+            return !OffMachineLinks.LeadsOffThisMachine(path) && File.Exists(path) ? File.ReadAllText(path) : null;
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
