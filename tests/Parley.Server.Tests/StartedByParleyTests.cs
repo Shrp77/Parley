@@ -105,6 +105,36 @@ public sealed class StartedByParleyTests
         Assert.Equal(!withIdentity, (await RowAsync(broker)).OpenOutside);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_launch_reported_from_another_folder_takes_no_name_held_from_this_one(bool elsewhere)
+    {
+        // Lens 2 run 111: a second checkout whose launch key claims this agent's name, started by another project's
+        // node, was reported here under the name and took its token, leaving the real agent open outside Parley. The
+        // same folder under a new identity is a repository enrolled again, and does take it.
+        await using var broker = await LoopbackBroker.StartAsync(Ct);
+        await using var node = await JoinedNodeClient.JoinAsync(broker, Here, ["billing"], Ct, reportsTurns: true);
+        var folder = Path.Combine(Path.GetTempPath(), "checkout-billing");
+
+        await LaunchAsync(node, "t-1");
+        await using var agent = await AttachedClient.AttachAsync(
+            broker, Agent, folder, Ct, launchToken: "t-1", identity: Parley.Core.AgentIdentity.Mint().ToString());
+
+        _ = await node.Nodes.ReportLaunchAsync(
+            new Wire.LaunchReport
+            {
+                Machine = Here,
+                Agent = Agent,
+                Token = "t-2",
+                Identity = Parley.Core.AgentIdentity.Mint().ToString(),
+                Workspace = elsewhere ? Path.Combine(Path.GetTempPath(), "checkout-copy") : folder,
+            },
+            cancellationToken: Ct);
+
+        Assert.Equal(!elsewhere, (await RowAsync(broker)).OpenOutside);
+    }
+
     [Fact]
     public async Task A_token_from_a_launch_the_node_has_since_replaced_is_outside()
     {

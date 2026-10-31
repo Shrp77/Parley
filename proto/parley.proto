@@ -617,6 +617,7 @@ message LaunchReport {
   string agent = 2;
   string token = 3;     // chosen by the node for this one launch
   string identity = 4;  // the repository's identifier when the node knows it, so a rename since the launch still finds the agent; empty when not
+  string workspace = 5; // the checkout's folder when the node knows it, so a name registered from another is not given its token; empty when not
 }
 
 message JoinRequest {

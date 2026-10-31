@@ -59,12 +59,19 @@ public sealed class NodesService : Wire.Nodes.NodesBase
             // **Filed under the name the repository is registered as now** (lens 1 run 105): an agent renamed since its
             // node launched it is still known to the node by the old name, and a token filed there after a broker
             // restart left the renamed process open outside Parley.
-            if (AgentIdentity.TryRead(request.Identity, out var identity))
-            {
-                agent = await _runtime.NameOfAsync(identity, machine, agent, context.CancellationToken).ConfigureAwait(false);
-            }
+            //
+            // **And never under a name another checkout holds** (lens 2 run 111): one claiming another's name in this
+            // project, by an edited or copied launch key, would otherwise leave the agent the name belongs to open
+            // outside Parley.
+            var named = AgentIdentity.TryRead(request.Identity, out var identity)
+                ? await _runtime.NameOfAsync(identity, machine, agent, request.Workspace, context.CancellationToken)
+                    .ConfigureAwait(false)
+                : agent;
 
-            _ = _runtime.LaunchReported(machine, agent, request.Token);
+            if (named is { } filed)
+            {
+                _ = _runtime.LaunchReported(machine, filed, request.Token);
+            }
         }
 
         return new Wire.Empty();

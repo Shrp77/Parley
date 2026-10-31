@@ -141,7 +141,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 && resident.IssuedToken is { Length: > 0 } token
                 && string.Equals(resident.Name.Machine, machine, StringComparison.Ordinal))
             {
-                await ReportRunningAsync(identity, role, token).ConfigureAwait(false);
+                await ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
             }
         }
     }
@@ -150,12 +150,14 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
     /// <param name="identity">The checkout.</param>
     /// <param name="role">What this project calls it.</param>
     /// <param name="token">The token the process was started with.</param>
+    /// <param name="workspace">The checkout's folder, which the broker holds the name to (lens 2 run 111).</param>
     /// <returns>A task that completes when it has been reported, or could not be.</returns>
     /// <remarks>
     /// One checkout is one process in every project that enrols it, and the project that started it is not the only one
     /// that must know it is Parley's (lens 1 run 107). Like a launch report, a failed one stops nothing.
     /// </remarks>
-    internal async Task ReportRunningAsync(Parley.Core.AgentIdentity identity, string role, string token)
+    internal async Task ReportRunningAsync(
+        Parley.Core.AgentIdentity identity, string role, string token, string workspace)
     {
         if (!Parley.Core.AgentName.TryJoin(role, machine, out var named))
         {
@@ -168,7 +170,11 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
             _ = await nodes.ReportLaunchAsync(
                     new Wire.LaunchReport
                     {
-                        Machine = machine, Agent = named.Value, Token = token, Identity = identity.ToString(),
+                        Machine = machine,
+                        Agent = named.Value,
+                        Token = token,
+                        Identity = identity.ToString(),
+                        Workspace = workspace,
                     },
                     deadline: DateTime.UtcNow.Add(Patience))
                 .ConfigureAwait(false);

@@ -173,6 +173,116 @@ public sealed class ACheckoutInTwoProjectsIsParleysInBothTests : IAsyncDisposabl
         }
     }
 
+    [Fact]
+    public async Task A_checkout_claiming_another_agents_name_does_not_take_its_token()
+    {
+        // Lens 2 run 111: a second checkout whose launch key claims beta's invoices, started by alpha, was reported to
+        // beta under that name and took the token of the checkout beta's invoices is, which then read as open outside
+        // Parley and was woken by nobody.
+        var claimed = Path.Combine(_root, "invoices");
+        var claimant = Path.Combine(_root, "claimant");
+        _ = Directory.CreateDirectory(claimed);
+        _ = Directory.CreateDirectory(claimant);
+        var identity = AgentIdentity.Mint();
+
+        await File.WriteAllTextAsync(
+            Path.Combine(claimant, ".mcp.json"),
+            $$"""
+            {
+              "mcpServers": {
+                "parley-alpha": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "billing", "PARLEY_PROJECT": "alpha" } },
+                "parley-beta": { "command": "parley-mcp", "env": { "PARLEY_AGENT": "invoices", "PARLEY_PROJECT": "beta" } }
+              },
+              "parleyAgentId": "{{identity}}"
+            }
+            """,
+            Ct);
+
+        var cataloguePath = Path.Combine(_root, NodeCatalogue.DefaultFileName);
+        await File.WriteAllTextAsync(
+            cataloguePath,
+            "{ \"agents\": { \"" + identity + "\": { \"command\": "
+            + System.Text.Json.JsonSerializer.Serialize(StandingAgent.Command) + ", \"workspace\": "
+            + System.Text.Json.JsonSerializer.Serialize(claimant) + " } } }",
+            Ct);
+
+        var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
+
+        using var alphaChannel = GrpcChannel.ForAddress(_alpha.Address);
+        using var betaChannel = GrpcChannel.ForAddress(_beta.Address);
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+
+        var alphaNode = NodeCommand.RunAsync(alphaChannel, _alpha.Address, cataloguePath, TextWriter.Null, "alpha", residents, stopping.Token);
+        var betaNode = NodeCommand.RunAsync(betaChannel, _beta.Address, cataloguePath, TextWriter.Null, "beta", residents, stopping.Token);
+
+        try
+        {
+            for (var tries = 0; tries < 50 && !(_alpha.Runtime.Nodes.Contains(NodeCatalogue.Machine) && _beta.Runtime.Nodes.Contains(NodeCatalogue.Machine)); tries++)
+            {
+                await Task.Delay(100, Ct);
+            }
+
+            // Beta's invoices, a checkout of its own, attached as the process beta's node started.
+            Assert.True(_beta.Runtime.LaunchReported(NodeCatalogue.Machine, InBeta, "beta-started-it"));
+            using var invoices = new Wire.Agents.AgentsClient(betaChannel).Attach(
+                new Wire.AttachRequest
+                {
+                    Agent = InBeta.Value,
+                    Adapter = "test",
+                    Tier = Wire.AgentTier.Pull,
+                    Workspace = claimed,
+                    Identity = AgentIdentity.Mint().ToString(),
+                    LaunchToken = "beta-started-it",
+                    ProtocolVersion = ProtocolVersion.Current,
+                },
+                cancellationToken: Ct);
+            Assert.True(await invoices.ResponseStream.MoveNext(Ct));
+            Assert.False(await OpenOutsideAsync(_beta, InBeta));
+
+            ResidentAgent? started = null;
+
+            for (var tries = 0; tries < 50 && started is null; tries++)
+            {
+                _ = _alpha.Runtime.RequestAttention(InAlpha, "a test asks alpha to start it");
+                await Task.Delay(200, Ct);
+                started = residents.Values.FirstOrDefault(resident => resident.IsAlive);
+            }
+
+            Assert.NotNull(started);
+
+            // The report reaches beta just after the start; long enough for it to have landed.
+            for (var tries = 0; tries < 10; tries++)
+            {
+                await Task.Delay(200, Ct);
+                Assert.False(await OpenOutsideAsync(_beta, InBeta), "the claimant took beta's invoices' token");
+            }
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+
+            foreach (var node in new[] { alphaNode, betaNode })
+            {
+                try
+                {
+                    _ = await node;
+                }
+                catch (Exception ex) when (ex is OperationCanceledException
+                                           || ex is RpcException { StatusCode: StatusCode.Cancelled })
+                {
+                }
+            }
+
+            foreach (var resident in residents.Values)
+            {
+                await resident.DisposeAsync();
+            }
+        }
+    }
+
+    private static async Task<bool> OpenOutsideAsync(LoopbackOperator broker, AgentName name) =>
+        (await new BrokerClient(broker.Operators).RegistryAsync(Ct)).Single(agent => agent.Name == name).OpenOutside;
+
     private static async Task<bool> AttachReadsOutsideAsync(
         GrpcChannel channel, LoopbackOperator broker, AgentName name, AgentIdentity identity, string token)
     {

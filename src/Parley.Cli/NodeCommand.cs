@@ -676,7 +676,7 @@ public static class NodeCommand
                 residents[identity] = resident;
 
                 // Every other project joined here that starts this checkout knows it as Parley's too.
-                await TellJoinedAsync(residents, identity, resident.IssuedToken).ConfigureAwait(false);
+                await TellJoinedAsync(residents, identity, resident).ConfigureAwait(false);
 
                 // **A replacement says so, and that is not decoration.** Starting an agent because nothing
                 // was running is an ordinary event; starting one because the process behind an attached
@@ -1348,7 +1348,7 @@ public static class NodeCommand
                 launched);
 
             // As at a start: every other project joined here that starts this checkout learns its new token.
-            await TellJoinedAsync(residents, identity, restarted.IssuedToken).ConfigureAwait(false);
+            await TellJoinedAsync(residents, identity, restarted).ConfigureAwait(false);
 
             residents[identity] = restarted;
 
@@ -1447,19 +1447,19 @@ public static class NodeCommand
     /// <summary>Tells every project joined from this table that starts a checkout that its process is running.</summary>
     /// <param name="residents">The table.</param>
     /// <param name="identity">The checkout.</param>
-    /// <param name="token">The token its process was started with, or <see langword="null"/> for none.</param>
+    /// <param name="resident">Its process.</param>
     /// <returns>A task that completes when each has been told, or could not be.</returns>
     private static async Task TellJoinedAsync(
-        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, string? token)
+        ConcurrentDictionary<AgentIdentity, ResidentAgent> residents, AgentIdentity identity, ResidentAgent resident)
     {
-        if (token is not { Length: > 0 })
+        if (resident.IssuedToken is not { Length: > 0 } token)
         {
             return;
         }
 
         foreach (var (reporter, role) in Boards.GetOrCreateValue(residents).Starting(identity))
         {
-            await reporter.ReportRunningAsync(identity, role, token).ConfigureAwait(false);
+            await reporter.ReportRunningAsync(identity, role, token, resident.Workspace).ConfigureAwait(false);
         }
     }
 

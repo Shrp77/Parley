@@ -1113,13 +1113,39 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// <param name="identity">The repository's identifier.</param>
     /// <param name="machine">The machine.</param>
     /// <param name="fallback">The name the node knows it by.</param>
+    /// <param name="workspace">The repository's folder, or empty when the node did not say.</param>
     /// <param name="cancellationToken">Cancels the read.</param>
-    /// <returns>The registered name, which a rename may have changed since the node launched it.</returns>
-    internal async Task<AgentName> NameOfAsync(
-        AgentIdentity identity, string machine, AgentName fallback, CancellationToken cancellationToken) =>
-        (await UseConnectionAsync(
-            (connection, _, ct) => new AgentRepository(connection).HolderOfIdentityAsync(identity, machine, ct),
-            cancellationToken).ConfigureAwait(false))?.Name ?? fallback;
+    /// <returns>
+    /// The registered name, which a rename may have changed since the node launched it; or <see langword="null"/> when
+    /// <paramref name="fallback"/> is registered from another folder.
+    /// </returns>
+    /// <remarks>
+    /// The folder is the comparison an attach makes (§4.1.1), so a token is filed only where an attach from that
+    /// repository could be accepted.
+    /// </remarks>
+    internal async Task<AgentName?> NameOfAsync(
+        AgentIdentity identity,
+        string machine,
+        AgentName fallback,
+        string workspace,
+        CancellationToken cancellationToken) =>
+        await UseConnectionAsync<AgentName?>(
+            async (connection, _, ct) =>
+            {
+                var agents = new AgentRepository(connection);
+
+                if (await agents.HolderOfIdentityAsync(identity, machine, ct).ConfigureAwait(false) is { } holder)
+                {
+                    return holder.Name;
+                }
+
+                return workspace is { Length: > 0 }
+                    && await agents.WorkspaceOfAsync(fallback, ct).ConfigureAwait(false) is { Length: > 0 } held
+                    && !WorkspacePath.SameRepository(workspace, held)
+                        ? null
+                        : fallback;
+            },
+            cancellationToken).ConfigureAwait(false);
 
     /// <summary>Whether a token is the one an agent's node reported for its latest launch (SPEC.md §11.7).</summary>
     /// <param name="agent">The agent.</param>

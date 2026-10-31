@@ -3506,7 +3506,9 @@ one, so the same process reattaching after its stream dropped is still Parley's;
 only in memory, a node joining a broker tells it again the token of every agent of that project it is still running,
 with the repository's identity, so an agent renamed since its launch is found under its new name. A checkout enrolled in
 several projects is one process for all of them, so a node hosting several tells each that starts it of a launch
-any of them makes, under that project's name for it. A process started
+any of them makes, under that project's name for it, with the checkout's folder. A token reported with a folder is
+never filed under a name registered from another folder, as an attach from it would be refused: a second checkout
+whose launch key claims another agent's name cannot leave that agent open outside Parley. A process started
 from a shell that inherited the token before the node launched the agent again passes for Parley's too; the broker
 cannot tell processes apart, only launches. Any other
 attachment — no token, one from an earlier launch, another agent's — is **open outside Parley**. A launch the
