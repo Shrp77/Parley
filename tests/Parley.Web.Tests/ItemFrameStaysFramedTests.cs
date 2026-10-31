@@ -47,7 +47,15 @@ public sealed class ItemFrameStaysFramedTests
     [Fact]
     public async Task A_send_from_inside_the_frame_returns_a_page_the_frame_may_show_without_the_consoles_chrome()
     {
+        // The person's seat held and the Request accepted, so the send reaches its successful end (lens 3 run 125:
+        // without a seat it stopped at the refusal, and the page a sent message returns was never drawn).
         using var console = Confirmed(started: false);
+        console.Broker.Seats = true;
+        console.Broker.Registry.Add(new Wire.RegistryRow
+        {
+            Name = "human-user@" + RoadmapConsole.Project, Adapter = "parley-console", Tier = Wire.AgentTier.Pull,
+            Status = Wire.AgentStatus.Active,
+        });
         using var client = console.CreateClient();
         var token = TestContext.Current.CancellationToken;
 
@@ -66,6 +74,8 @@ public sealed class ItemFrameStaysFramedTests
         using var sent = await client.SendAsync(post, token);
         var after = await sent.Content.ReadAsStringAsync(token);
 
+        Assert.Equal("billing@test", Assert.Single(console.Broker.Requested).To);
+        Assert.Contains("Sent.", after, StringComparison.Ordinal);
         Assert.Contains("frame-ancestors 'self'", sent.Headers.GetValues("Content-Security-Policy").Single(), StringComparison.Ordinal);
         Assert.Equal("SAMEORIGIN", sent.Headers.GetValues("X-Frame-Options").Single());
         Assert.Matches("<body class=\"[^\"]* embed", after);
