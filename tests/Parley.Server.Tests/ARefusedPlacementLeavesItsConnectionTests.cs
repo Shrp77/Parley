@@ -28,7 +28,9 @@ public sealed class ARefusedPlacementLeavesItsConnectionTests
 {
     private const string Orders = "orders@alpha";
     private const string Billing = "billing@alpha";
-    private const int Rounds = 20;
+    // Forty rounds of a megabyte: on the old broker the drop came most often at a few hundred kilobytes and least at four
+    // megabytes, and twenty rounds could miss it.
+    private const int Rounds = 40;
 
     private static readonly string Person = PersonSeat.On(ProjectName.Create("test")).Value;
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
@@ -53,7 +55,7 @@ public sealed class ARefusedPlacementLeavesItsConnectionTests
         await RequestAsync(orders, Billing, "pricing");
         await FileWire.PlaceAsync(orders.Client, Orders, "notes.md", "orders' notes"u8.ToArray(), "pricing", Ct);
 
-        var big = Megabytes(4);
+        var big = Megabytes(1);
 
         await using var alongside = Alongside(() => billing.Client.ListFilesAsync(
             new Wire.ListFilesRequest { Agent = Billing }, cancellationToken: Ct).ResponseAsync);
@@ -94,7 +96,7 @@ public sealed class ARefusedPlacementLeavesItsConnectionTests
         await RequestAsync(orders, Billing, "pricing");
         await FileWire.PlaceAsync(orders.Client, Orders, "notes.md", "orders' notes"u8.ToArray(), "pricing", Ct);
 
-        var big = Megabytes(4);
+        var big = Megabytes(1);
 
         await using var alongside = Alongside(() => billing.Client.ListFilesAsync(
             new Wire.ListFilesRequest { Agent = Billing }, cancellationToken: Ct).ResponseAsync);
@@ -127,7 +129,7 @@ public sealed class ARefusedPlacementLeavesItsConnectionTests
         await using var seat = await AttachedClient.AttachAsync(broker, Person, cancellationToken: Ct, adapter: PersonSeat.Adapter, over: channel);
         var operators = new Wire.Operators.OperatorsClient(channel);
 
-        var big = Megabytes(4);
+        var big = Megabytes(1);
 
         await using var alongside = Alongside(() => operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct).ResponseAsync);
 
@@ -156,7 +158,7 @@ public sealed class ARefusedPlacementLeavesItsConnectionTests
 
         await RequestAsync(orders, Billing, "pricing");
 
-        var big = Megabytes(4);
+        var big = Megabytes(1);
         var header = new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Agent = Billing, Name = "twice.md", ConversationId = "pricing" } };
 
         await using var alongside = Alongside(() => billing.Client.ListFilesAsync(
