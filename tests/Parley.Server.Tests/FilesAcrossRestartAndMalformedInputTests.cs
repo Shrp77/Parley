@@ -279,7 +279,7 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
             using var c = billing.Client.PlaceFile(cancellationToken: Ct);
             await c.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(Text("x")) }, Ct);
             await c.RequestStream.CompleteAsync();
-            return (await c.ResponseAsync).Rejection.ToString();
+            return (await c.ReplyAsync()).Rejection.ToString();
         });
 
         await Probe("oversized piece", async () =>
@@ -288,7 +288,7 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
             await c.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Agent = Billing, Name = "big.md", ConversationId = "pricing" } }, Ct);
             await c.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(new byte[FileLimits.ChunkBytes + 1]) }, Ct);
             await c.RequestStream.CompleteAsync();
-            return (await c.ResponseAsync).Rejection.ToString();
+            return (await c.ReplyAsync()).Rejection.ToString();
         });
 
         await Probe("second header", async () =>
@@ -299,7 +299,7 @@ public sealed class FilesAcrossRestartAndMalformedInputTests
             await c.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(Text("x")) }, Ct);
             await c.RequestStream.WriteAsync(header, Ct);
             await c.RequestStream.CompleteAsync();
-            return (await c.ResponseAsync).Rejection.ToString();
+            return (await c.ReplyAsync()).Rejection.ToString();
         });
 
         await Probe("empty name", async () => (await FileWire.PlaceAsync(billing.Client, Billing, string.Empty, Text("x"), "pricing", Ct)).Rejection.ToString());

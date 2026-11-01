@@ -486,14 +486,16 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     /// Placing sends nothing and wakes nobody (SPEC.md §5): the Request or Result that needs the file names it, and
     /// that message does the waking.
     /// </remarks>
-    public override Task<Wire.PlaceFileReply> PlaceFile(
+    public override Task PlaceFile(
         IAsyncStreamReader<Wire.PlaceFileFrame> requestStream,
+        IServerStreamWriter<Wire.PlaceFileAnswer> responseStream,
         ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(requestStream);
+        ArgumentNullException.ThrowIfNull(responseStream);
         ArgumentNullException.ThrowIfNull(context);
 
-        return new FileWork(_runtime).PlaceAsync(requestStream, context.CancellationToken);
+        return new FileWork(_runtime).PlaceAsync(requestStream, responseStream, context.CancellationToken);
     }
 
     /// <inheritdoc/>

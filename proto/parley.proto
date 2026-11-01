@@ -65,10 +65,14 @@ service Agents {
   rpc RecordRefusal(RecordRefusalRequest) returns (Empty);
 
   // Places a file from the agent's own repository in a conversation's folder of the file location (section 9.5).
-  // The first frame is a header naming the conversation and the file; every later frame carries bytes. The
+  // The first frame is a header naming the conversation and the file, and the client then waits: the broker answers
+  // with a go-ahead, or with the reply when it refuses before any bytes. After a go-ahead every later frame carries
+  // bytes, and the broker's reply comes once the client has ended its stream. The broker never ends the call while the
+  // client may still be sending: a refusal that comes while the bytes arrive reads and discards the rest first, since
+  // bytes sent on a call already ended are a fault in the connection they share with every other call. The
   // conversation is assigned as a Request's is (section 5.0), and placing makes the placer a participant. A placed
   // file is never changed: a name already holding other content is refused, and a new version takes a new name.
-  rpc PlaceFile(stream PlaceFileFrame) returns (PlaceFileReply);
+  rpc PlaceFile(stream PlaceFileFrame) returns (stream PlaceFileAnswer);
 
   // Streams one whole file: a header and then bytes, or a refusal instead of the header. A refusal can also follow the
   // bytes, when what was streamed does not hash to what was placed (FILE_REJECTION_TAMPERED); the adapter then writes
@@ -327,6 +331,15 @@ message PlaceFileHeader {
   string agent = 1;                   // the adapter's launch identity, as every Agents call carries
   string conversation_id = 2;         // empty: assigned by the broker (section 5.0)
   string name = 3;                    // section 9.5's rules; only .md and .txt
+}
+
+// What the broker sends on a placement: a go-ahead once, after the header, and then the reply; or the reply alone, when
+// it refuses before any bytes. The reply is always the last.
+message PlaceFileAnswer {
+  oneof answer {
+    Empty go_ahead = 1;               // send the bytes, then end the stream
+    PlaceFileReply reply = 2;
+  }
 }
 
 message PlaceFileReply {
@@ -809,9 +822,10 @@ service Operators {
 
   // The file location (section 9.5). Placing as the person, removing any file and pruning them all are the person's:
   // no agent places as somebody else or removes another's files. Describing where a file is lets a surface on that
-  // machine open it to read. The person's placement streams as an agent's does, its header naming no agent and
-  // naming a conversation that exists. Named apart from Agents.PlaceFile, as section 10.2 names it apart.
-  rpc PlacePersonsFile(stream PlaceFileFrame) returns (PlaceFileReply);
+  // machine open it to read. The person's placement streams as an agent's does, header, go-ahead, bytes and reply, its
+  // header naming no agent and naming a conversation that exists. Named apart from Agents.PlaceFile, as section 10.2
+  // names it apart.
+  rpc PlacePersonsFile(stream PlaceFileFrame) returns (stream PlaceFileAnswer);
   rpc ListSharedFiles(ListFilesRequest) returns (FilesReply);
   rpc RemoveFiles(RemoveFilesRequest) returns (RemoveFilesReply);
   rpc PruneFiles(Empty) returns (PruneFilesReply);

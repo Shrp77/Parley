@@ -153,7 +153,7 @@ public sealed class AChangeWaitsForADownloadStillMovingTests
         var reading = ReadSteadilyAsync(call, 200);
 
         await placing.RequestStream.CompleteAsync();
-        var placed = await placing.ResponseAsync;
+        var placed = await placing.ReplyAsync();
 
         var (status, detail, bytes) = await reading;
 
@@ -200,7 +200,7 @@ public sealed class AChangeWaitsForADownloadStillMovingTests
         var reading = ReadSteadilyAsync(call, 200);
 
         await placing.RequestStream.CompleteAsync();
-        var placed = await placing.ResponseAsync;
+        var placed = await placing.ReplyAsync();
 
         var (status, detail, bytes) = await reading;
 

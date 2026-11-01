@@ -25,7 +25,7 @@ public sealed class AFileIsGoneOnlyWhenItIsMissingTests
 
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
-    private static async Task<AsyncClientStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileReply>> BeginAsync(
+    private static async Task<AsyncDuplexStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileAnswer>> BeginAsync(
         AttachedClient agent, string name, string words, string conversation)
     {
         var place = agent.Client.PlaceFile(cancellationToken: Ct);
@@ -60,7 +60,7 @@ public sealed class AFileIsGoneOnlyWhenItIsMissingTests
         release.SetResult();
         await occupied;
 
-        var placed = await place.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var placed = await place.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
         _ = await listing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var after = await ops.ListSharedFilesAsync(new Wire.ListFilesRequest { PageSize = 200 }, cancellationToken: Ct);
 

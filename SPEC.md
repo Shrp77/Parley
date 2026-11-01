@@ -2876,7 +2876,10 @@ disk and the facts about them are in §9.2's tables: a file of a hundred megabyt
 the log and every backup, and the person running the deployment opens the folder in their own file
 browser. A placement in progress is written to a staging directory beside the location, never inside
 it, and a file appears in its folder only once it has been received whole — so an interrupted upload
-leaves the name free. On Unix the location, its staging directory and its quarantine directory are the owning user's
+leaves the name free. A placement names the file first and sends its bytes only once the broker has said to go
+ahead, so a placement refused at once sends none; and the broker ends a placement it refuses while the bytes arrive
+only once it has read them to the end, because a call ended under bytes still arriving takes every other call on its
+connection down with it, an agent's attachment and the person's seat among them (§4.0). On Unix the location, its staging directory and its quarantine directory are the owning user's
 alone, as the store is (§9.1), and so is every file placed or quarantined in them: the files are the same agents'
 hand-offs.
 

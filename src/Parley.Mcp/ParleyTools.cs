@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using Google.Protobuf;
 using Grpc.Core;
 using ModelContextProtocol.Server;
 using Parley.Core;
@@ -895,50 +894,42 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     SharedFileName.Describe(problem));
             }
 
-            using var call = _link.Agents.PlaceFile(cancellationToken: cancellationToken);
+            Wire.PlaceFileReply reply;
 
             try
             {
-                await call.RequestStream.WriteAsync(
-                    new Wire.PlaceFileFrame
-                    {
-                        Header = new Wire.PlaceFileHeader
-                        {
-                            Agent = _options.Agent.Value,
-                            Name = placedName,
-                            ConversationId = conversationId ?? string.Empty
-                        }
-                    },
-                    cancellationToken).ConfigureAwait(false);
-
                 var stream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, FileLimits.ChunkBytes, useAsync: true);
 
                 await using (stream.ConfigureAwait(false))
                 {
-                    var buffer = new byte[FileLimits.ChunkBytes];
-                    int read;
+                    using var call = _link.Agents.PlaceFile(cancellationToken: cancellationToken);
 
-                    while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
-                    {
-                        await call.RequestStream.WriteAsync(
-                            new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(buffer, 0, read) },
-                            cancellationToken).ConfigureAwait(false);
-                    }
+                    reply = await call.PlaceAsync(
+                        new Wire.PlaceFileHeader
+                        {
+                            Agent = _options.Agent.Value,
+                            Name = placedName,
+                            ConversationId = conversationId ?? string.Empty
+                        },
+                        stream,
+                        cancellationToken).ConfigureAwait(false);
                 }
-
-                await call.RequestStream.CompleteAsync().ConfigureAwait(false);
             }
-            catch (RpcException) when (!cancellationToken.IsCancellationRequested)
+            catch (FilePlacement.DroppedException dropped)
             {
-                // The broker answered before reading every piece — a refusal that did not need the bytes. The
-                // answer is in the response, read below.
+                // Said as what happened, never as the file being unreadable or the broker being down from the start.
+                return FileRefused(
+                    "connectiondropped",
+                    dropped.SentWhole
+                        ? "The connection to Parley's broker was lost after the whole file was sent, so it may or may not "
+                          + "have been placed. Call parley_file_list to see whether it is there before placing it again."
+                        : "The connection to Parley's broker was lost before the whole file was sent, so nothing was "
+                          + "placed. Place it again; if the connection keeps dropping, tell the person you work for.");
             }
             catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
             {
                 return FileRefused("unreadable", $"'{path}' could not be read: {unreadable.Message}");
             }
-
-            var reply = await call.ResponseAsync.ConfigureAwait(false);
 
             if (reply.Rejection != Wire.FileRejection.None)
             {

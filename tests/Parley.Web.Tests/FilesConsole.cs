@@ -142,6 +142,11 @@ public sealed class ScriptedOperators : HttpMessageHandler
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (request.RequestUri!.AbsolutePath == "/parley.v1.Operators/PlacePersonsFile")
+        {
+            return PlaceStreaming(request, cancellationToken);
+        }
+
         var body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var message = body.Length >= 5 ? body[5..] : [];
 
@@ -156,7 +161,6 @@ public sealed class ScriptedOperators : HttpMessageHandler
                 "/parley.v1.Operators/PruneFiles" => Prune(),
                 "/parley.v1.Operators/DescribeFileLocation" => Describe(Wire.FileLocationRequest.Parser.ParseFrom(message)),
                 "/parley.v1.Operators/ListConversations" => ListConversations(),
-                "/parley.v1.Operators/PlacePersonsFile" => Place(body),
                 "/parley.v1.Operators/ListFileProblems" => ListProblems(Wire.ListFileProblemsRequest.Parser.ParseFrom(message)),
                 "/parley.v1.Operators/DismissFileProblem" => Dismiss(Wire.DismissFileProblemRequest.Parser.ParseFrom(message)),
                 _ => null
@@ -164,6 +168,64 @@ public sealed class ScriptedOperators : HttpMessageHandler
         }
 
         return Respond(request, reply);
+    }
+
+    // A placement waits for the go-ahead before it sends its bytes, so the response starts before the request has been
+    // read: the go-ahead at once, and the reply once the client has ended its stream.
+    private HttpResponseMessage PlaceStreaming(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var pipe = new System.IO.Pipelines.Pipe();
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Version = HttpVersion.Version20,
+            RequestMessage = request,
+            Content = new StreamContent(pipe.Reader.AsStream())
+        };
+
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/grpc");
+
+        _ = Task.Run(
+            async () =>
+            {
+                var answers = pipe.Writer.AsStream();
+
+                try
+                {
+                    await WriteFrameAsync(answers, new Wire.PlaceFileAnswer { GoAhead = new Wire.Empty() }, cancellationToken);
+
+                    var body = await request.Content!.ReadAsByteArrayAsync(cancellationToken);
+                    Wire.PlaceFileReply reply;
+
+                    lock (_lock)
+                    {
+                        reply = Place(body);
+                    }
+
+                    await WriteFrameAsync(answers, new Wire.PlaceFileAnswer { Reply = reply }, cancellationToken);
+                    response.TrailingHeaders.Add("grpc-status", "0");
+                    await pipe.Writer.CompleteAsync();
+                }
+                catch (Exception failed)
+                {
+                    await pipe.Writer.CompleteAsync(failed);
+                }
+            },
+            cancellationToken);
+
+        return response;
+    }
+
+    private static async Task WriteFrameAsync(Stream to, IMessage message, CancellationToken cancellationToken)
+    {
+        var bytes = message.ToByteArray();
+        var framed = new byte[5 + bytes.Length];
+
+        BinaryPrimitives.WriteUInt32BigEndian(framed.AsSpan(1, 4), (uint)bytes.Length);
+        bytes.CopyTo(framed, 5);
+
+        await to.WriteAsync(framed, cancellationToken);
+        await to.FlushAsync(cancellationToken);
     }
 
     private static HttpResponseMessage Respond(HttpRequestMessage request, IMessage? reply)

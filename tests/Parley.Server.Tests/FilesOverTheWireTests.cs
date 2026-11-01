@@ -1,4 +1,3 @@
-using Google.Protobuf;
 using Grpc.Core;
 using Parley.Core;
 using Xunit;
@@ -688,39 +687,9 @@ public sealed class FilesOverTheWireTests
         Assert.Equal(StatusCode.FailedPrecondition, refused.StatusCode);
     }
 
-    private static async Task<Wire.PlaceFileReply> PlaceAsync(
-        AttachedClient agent, string name, byte[] content, string? conversation = null)
-    {
-        using var call = agent.Client.PlaceFile(cancellationToken: Ct);
-
-        try
-        {
-            await call.RequestStream.WriteAsync(
-                new Wire.PlaceFileFrame
-                {
-                    Header = new Wire.PlaceFileHeader { Agent = agent.Name, Name = name, ConversationId = conversation ?? string.Empty }
-                },
-                Ct);
-
-            for (var offset = 0; offset < content.Length; offset += FileLimits.ChunkBytes)
-            {
-                await call.RequestStream.WriteAsync(
-                    new Wire.PlaceFileFrame
-                    {
-                        Chunk = ByteString.CopyFrom(content, offset, Math.Min(FileLimits.ChunkBytes, content.Length - offset))
-                    },
-                    Ct);
-            }
-
-            await call.RequestStream.CompleteAsync();
-        }
-        catch (Exception closed) when (closed is RpcException or InvalidOperationException)
-        {
-            // The broker answered before reading every piece: a refusal that did not need the bytes.
-        }
-
-        return await call.ResponseAsync;
-    }
+    private static Task<Wire.PlaceFileReply> PlaceAsync(
+        AttachedClient agent, string name, byte[] content, string? conversation = null) =>
+        FileWire.PlaceAsync(agent.Client, agent.Name, name, content, conversation, Ct);
 
     private static async Task<(Wire.SharedFileView? Header, byte[] Bytes, Wire.FileRefusal? Refusal)> FetchAsync(
         AttachedClient agent, string name, string? conversation = null, string? expect = null)

@@ -282,6 +282,12 @@ public sealed class FilesCommand(
                 .ConfigureAwait(false);
             return NothingDone;
         }
+        catch (Grpc.Core.RpcException dropped) when (Parley.Client.Files.PlacementSaid.IsDropped(dropped))
+        {
+            // Not "no broker is listening", which is what an unavailable call says at the top: this one answered.
+            await _error.WriteLineAsync(Flat(dropped.Status.Detail)).ConfigureAwait(false);
+            return NothingDone;
+        }
 
         var said = Flat(PlacementSaid.Of(placed, name, Size));
 

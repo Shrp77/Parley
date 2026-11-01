@@ -38,6 +38,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)..\..\src\InboxCollection.cs" Link="InboxCollection.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\..\src\FilePlacement.cs" Link="FilePlacement.cs" />
   </ItemGroup>
 
   <!-- Every test class says whether it is a unit or an integration test (TestCategories.cs, scripts/test.ps1). -->

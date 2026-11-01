@@ -419,31 +419,22 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
 
         using var call = _operators.PlacePersonsFile(cancellationToken: cancellationToken);
 
+        Wire.PlaceFileReply reply;
+
         try
         {
-            await call.RequestStream.WriteAsync(
-                new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name } },
+            reply = await call.PlaceAsync(
+                new Wire.PlaceFileHeader { ConversationId = conversationId, Name = name },
+                content,
                 cancellationToken).ConfigureAwait(false);
-
-            var buffer = new byte[FileLimits.ChunkBytes];
-            int read;
-
-            while ((read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
-            {
-                await call.RequestStream.WriteAsync(
-                    new Wire.PlaceFileFrame { Chunk = Google.Protobuf.ByteString.CopyFrom(buffer, 0, read) },
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            await call.RequestStream.CompleteAsync().ConfigureAwait(false);
         }
-        catch (Grpc.Core.RpcException) when (!cancellationToken.IsCancellationRequested)
+        catch (FilePlacement.DroppedException dropped)
         {
-            // The broker answered before reading every piece: a refusal that did not need the bytes, for a conversation
-            // that does not exist, a name another placed, or a name against the rules. The answer is in the response.
+            // Never an IOException, which every surface says as the person's file being unreadable.
+            throw new Grpc.Core.RpcException(
+                new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, Files.PlacementSaid.Dropped(dropped.SentWhole)),
+                dropped.Message);
         }
-
-        var reply = await call.ResponseAsync.ConfigureAwait(false);
 
         return new PersonPlacement(
             reply.Outcome switch

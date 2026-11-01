@@ -108,7 +108,7 @@ public sealed class PurgeAgainstLiveTrafficTests
                 Ct);
             await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFromUtf8("hello") }, Ct);
             await call.RequestStream.CompleteAsync();
-            placed = await call.ResponseAsync;
+            placed = await call.ReplyAsync();
             placing = $"place outcome={placed.Outcome} rejection={placed.Rejection}";
         }
         catch (RpcException refused)

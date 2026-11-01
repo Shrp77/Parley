@@ -406,6 +406,12 @@ public sealed class BrokerDirectory : IDisposable
             // An endpoint gRPC cannot dial as written: said as what it is, since no broker behind it will ever answer.
             return ProjectRead<T>.Unreachable(failure.Status.Detail);
         }
+        catch (RpcException failure) when (Files.PlacementSaid.IsDropped(failure))
+        {
+            // A placement that lost its connection after the broker answered it, which may have placed the file: said as
+            // that, never as a broker that is not answering.
+            return ProjectRead<T>.Unreachable(failure.Status.Detail);
+        }
         catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
         {
             return ProjectRead<T>.Unreachable(

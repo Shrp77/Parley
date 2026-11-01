@@ -1,6 +1,6 @@
-using Google.Protobuf;
 using Grpc.Core;
 using Parley.Core;
+using Xunit;
 using Wire = Parley.Transport;
 
 namespace Parley.Server.Tests;
@@ -14,7 +14,7 @@ namespace Parley.Server.Tests;
 /// </remarks>
 internal static class FileWire
 {
-    /// <summary>Places a file, as an adapter does: a header, then pieces.</summary>
+    /// <summary>Places a file, as an adapter does: a header, the go-ahead, then pieces.</summary>
     /// <param name="client">The agent's client.</param>
     /// <param name="agent">The agent's name.</param>
     /// <param name="name">The file's name.</param>
@@ -31,34 +31,37 @@ internal static class FileWire
         CancellationToken cancellationToken)
     {
         using var call = client.PlaceFile(cancellationToken: cancellationToken);
+        using var bytes = new MemoryStream(content, writable: false);
 
-        try
+        // The adapter's own way, so what the tests place travels exactly as an agent's does.
+        return await call.PlaceAsync(
+            new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation ?? string.Empty },
+            bytes,
+            cancellationToken);
+    }
+
+    /// <summary>The reply a placement ends with, passing over the go-ahead before it.</summary>
+    /// <param name="call">A placement whose frames the test wrote itself.</param>
+    /// <returns>The reply.</returns>
+    /// <exception cref="InvalidOperationException">The call ended without one.</exception>
+    /// <remarks>
+    /// For a test that writes the header and pieces without waiting, as no client of Parley's does: the broker takes
+    /// pieces that arrive early, and reads and discards them after a refusal.
+    /// </remarks>
+    public static async Task<Wire.PlaceFileReply> ReplyAsync(
+        this AsyncDuplexStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileAnswer> call)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+
+        while (await call.ResponseStream.MoveNext(TestContext.Current.CancellationToken))
         {
-            await call.RequestStream.WriteAsync(
-                new Wire.PlaceFileFrame
-                {
-                    Header = new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation ?? string.Empty }
-                },
-                cancellationToken);
-
-            for (var offset = 0; offset < content.Length; offset += FileLimits.ChunkBytes)
+            if (call.ResponseStream.Current.AnswerCase == Wire.PlaceFileAnswer.AnswerOneofCase.Reply)
             {
-                await call.RequestStream.WriteAsync(
-                    new Wire.PlaceFileFrame
-                    {
-                        Chunk = ByteString.CopyFrom(content, offset, Math.Min(FileLimits.ChunkBytes, content.Length - offset))
-                    },
-                    cancellationToken);
+                return call.ResponseStream.Current.Reply;
             }
-
-            await call.RequestStream.CompleteAsync();
-        }
-        catch (Exception closed) when (closed is RpcException or InvalidOperationException)
-        {
-            // The broker answered before reading every piece.
         }
 
-        return await call.ResponseAsync;
+        throw new InvalidOperationException("The placement ended without a reply.");
     }
 
     /// <summary>Places a file as the person, through the operator surface, in one piece.</summary>
@@ -76,21 +79,9 @@ internal static class FileWire
         CancellationToken cancellationToken)
     {
         using var call = operators.PlacePersonsFile(cancellationToken: cancellationToken);
+        using var bytes = new MemoryStream(content, writable: false);
 
-        try
-        {
-            await call.RequestStream.WriteAsync(
-                new Wire.PlaceFileFrame { Header = new Wire.PlaceFileHeader { Name = name, ConversationId = conversation } },
-                cancellationToken);
-            await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(content) }, cancellationToken);
-            await call.RequestStream.CompleteAsync();
-        }
-        catch (Exception closed) when (closed is RpcException or InvalidOperationException)
-        {
-            // The broker answered before reading every piece, as it does for the agent's placement above.
-        }
-
-        return await call.ResponseAsync;
+        return await call.PlaceAsync(new Wire.PlaceFileHeader { Name = name, ConversationId = conversation }, bytes, cancellationToken);
     }
 
     /// <summary>Fetches a file and reports it, as an adapter does once it has written and verified the bytes.</summary>

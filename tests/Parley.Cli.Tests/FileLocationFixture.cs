@@ -1,5 +1,4 @@
 using System.Globalization;
-using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Microsoft.Data.Sqlite;
@@ -74,21 +73,11 @@ internal sealed class FileLocationFixture : IAsyncDisposable
     {
         await AttachAsync(agent);
 
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-
+        using var bytes = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content), writable: false);
         using var call = Broker.Agents.PlaceFile(cancellationToken: Ct);
 
-        await call.RequestStream.WriteAsync(
-            new Wire.PlaceFileFrame
-            {
-                Header = new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation }
-            },
-            Ct);
-
-        await call.RequestStream.WriteAsync(new Wire.PlaceFileFrame { Chunk = ByteString.CopyFrom(bytes) }, Ct);
-        await call.RequestStream.CompleteAsync();
-
-        var reply = await call.ResponseAsync;
+        var reply = await call.PlaceAsync(
+            new Wire.PlaceFileHeader { Agent = agent, Name = name, ConversationId = conversation }, bytes, Ct);
 
         Assert.True(
             reply.Outcome is Wire.PlaceOutcome.Placed,

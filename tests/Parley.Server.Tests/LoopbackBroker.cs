@@ -211,6 +211,10 @@ internal sealed class LoopbackBroker : IAsyncDisposable
     public Wire.Nodes.NodesClient ConnectAsNode() =>
         new(Channel());
 
+    /// <summary>Opens a channel for several clients to share, as a surface's agents and operators clients do.</summary>
+    /// <returns>The channel, closed with the broker.</returns>
+    public GrpcChannel OpenChannel() => Channel();
+
     private GrpcChannel Channel()
     {
         var channel = GrpcChannel.ForAddress(_server.Addresses[0]);
@@ -277,6 +281,9 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// <summary>Gets every rewrite the broker said started (true) or finished (false), in order.</summary>
     public List<bool> Tidyings { get; } = [];
 
+    /// <summary>Gets a value indicating whether the attach stream is still open: its reader has not seen it end.</summary>
+    public bool StillAttached => !_pump.IsCompleted;
+
     /// <summary>Attaches an agent and waits for its first event.</summary>
     /// <param name="broker">The broker.</param>
     /// <param name="name">The agent name.</param>
@@ -293,6 +300,7 @@ internal sealed class AttachedClient : IAsyncDisposable
     /// a node runs attaches. Without one it is an agent somebody opened outside Parley, which no node gives a turn.
     /// </param>
     /// <param name="identity">The repository's identifier, when its launch configuration carries one (SPEC.md §4.1.1).</param>
+    /// <param name="over">A channel to attach over, shared with other calls; a new one when <see langword="null"/>.</param>
     /// <returns>The attached client.</returns>
     public static async Task<AttachedClient> AttachAsync(
         LoopbackBroker broker,
@@ -303,7 +311,8 @@ internal sealed class AttachedClient : IAsyncDisposable
         string adapter = "test",
         string? launchToken = null,
         JoinedNodeClient? startedBy = null,
-        string? identity = null)
+        string? identity = null,
+        GrpcChannel? over = null)
     {
         if (startedBy is not null)
         {
@@ -314,7 +323,7 @@ internal sealed class AttachedClient : IAsyncDisposable
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        var client = broker.Connect();
+        var client = over is null ? broker.Connect() : new Wire.Agents.AgentsClient(over);
 
         var stream = client.Attach(
             new Wire.AttachRequest

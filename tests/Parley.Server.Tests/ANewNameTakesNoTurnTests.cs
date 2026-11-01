@@ -23,7 +23,7 @@ public sealed class ANewNameTakesNoTurnTests
 
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
-    private static async Task<AsyncClientStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileReply>> BeginAsync(
+    private static async Task<AsyncDuplexStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileAnswer>> BeginAsync(
         AttachedClient agent, string name, string words, string conversation)
     {
         var place = agent.Client.PlaceFile(cancellationToken: Ct);
@@ -62,8 +62,8 @@ public sealed class ANewNameTakesNoTurnTests
         release.SetResult();
         await occupied;
 
-        var a = await first.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        var b = await second.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var a = await first.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var b = await second.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         var listed = await broker.ConnectAsOperator().ListSharedFilesAsync(
             new Wire.ListFilesRequest { PageSize = FileLimits.MaximumPageSize }, cancellationToken: Ct);
@@ -101,7 +101,7 @@ public sealed class ANewNameTakesNoTurnTests
         release.SetResult();
         await occupied;
 
-        var placed = await place.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var placed = await place.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var destroyed = await destroying.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var left = OnDisk(broker, "pricing");
 

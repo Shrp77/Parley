@@ -46,6 +46,27 @@ public static class PlacementSaid
         };
     }
 
+    /// <summary>The sentence for a placement whose connection to the broker was lost after the broker answered it.</summary>
+    /// <param name="sentWhole">Whether the whole file had been sent, so the broker may have placed it.</param>
+    /// <returns>The sentence.</returns>
+    /// <remarks>
+    /// The broker commits nothing until the whole file has arrived, so a loss before then placed nothing, and one after
+    /// may have placed it. Said apart from a broker that is not answering, which never got the file at all.
+    /// </remarks>
+    public static string Dropped(bool sentWhole) => sentWhole
+        ? DroppedSaid + " after the whole file was sent, so it may or may not have been placed. List the conversation's "
+          + "files to see whether it is there before placing it again."
+        : DroppedSaid + " before the whole file was sent, so nothing was placed. Place it again.";
+
+    /// <summary>Whether a failed call is a placement whose connection was lost, carrying <see cref="Dropped"/>'s words.</summary>
+    /// <param name="failure">What the call threw.</param>
+    /// <returns><see langword="true"/> when its detail is that sentence, to be shown as it is.</returns>
+    public static bool IsDropped(Grpc.Core.RpcException failure) =>
+        failure is { StatusCode: Grpc.Core.StatusCode.Unavailable }
+        && failure.Status.Detail.StartsWith(DroppedSaid, StringComparison.Ordinal);
+
+    private const string DroppedSaid = "The connection to this project's broker was lost";
+
     /// <summary>A refusal the broker gave no words for.</summary>
     /// <param name="rejection">The reason.</param>
     /// <returns>The words.</returns>

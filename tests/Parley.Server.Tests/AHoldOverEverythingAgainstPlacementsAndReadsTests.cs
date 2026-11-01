@@ -126,7 +126,7 @@ public sealed class AHoldOverEverythingAgainstPlacementsAndReadsTests
         release.SetResult();
         await occupied;
 
-        var placed = await place.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var placed = await place.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var destroyed = await destroying.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         var folder = broker.Runtime.Files.FolderPath("pricing");

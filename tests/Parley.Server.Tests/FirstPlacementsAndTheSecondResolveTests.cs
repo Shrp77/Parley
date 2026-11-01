@@ -41,7 +41,7 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
 
     private static string Sha(string text) => Convert.ToHexStringLower(SHA256.HashData(Text(text)));
 
-    private static async Task<AsyncClientStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileReply>> StreamAsync(
+    private static async Task<AsyncDuplexStreamingCall<Wire.PlaceFileFrame, Wire.PlaceFileAnswer>> StreamAsync(
         AttachedClient agent, string name, string words, string conversation)
     {
         var place = agent.Client.PlaceFile(cancellationToken: Ct);
@@ -73,8 +73,8 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
         release.SetResult();
         await occupied;
 
-        var a = await one.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        var b = await two.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var a = await one.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var b = await two.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         var folders = Directory.GetDirectories(broker.Runtime.Files.Root).Select(Path.GetFileName).ToArray();
         Assert.True(folders.Length == 1, $"{a.Outcome}/{b.Outcome}; folders: {string.Join(", ", folders)}");
@@ -122,8 +122,8 @@ public sealed class FirstPlacementsAndTheSecondResolveTests : IDisposable
         release.SetResult();
         await occupied;
 
-        var a = await x.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
-        var b = await y.ResponseAsync.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var a = await x.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var b = await y.ReplyAsync().WaitAsync(TimeSpan.FromSeconds(10), Ct);
         Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.None);
         Assert.Single(new[] { a, b }, r => r.Rejection == Wire.FileRejection.NameHoldsOtherContent);
 

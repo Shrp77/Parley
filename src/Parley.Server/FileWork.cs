@@ -32,6 +32,14 @@ namespace Parley.Server;
 /// run again inside the transaction that commits.
 /// </para>
 /// <para>
+/// <b>Refused early means refused before the bytes are sent, not while they are.</b> The client sends the header and
+/// waits for a go-ahead, so a refusal before it ends nothing the client is still writing. Once the bytes are coming,
+/// the call is never ended until the client has ended its stream: a refusal then, or a frame against the rules, reads
+/// and discards the rest first. The connection is shared by every call the client makes, the adapter's attachment and
+/// the person's seat among them, and bytes that arrive on a call the broker has already ended make the server end the
+/// whole connection.
+/// </para>
+/// <para>
 /// Every operation is on behalf of an attached agent or of the person, and never takes a sender: the placer and the
 /// fetcher are the name the stream attached under (§16).
 /// </para>
@@ -40,32 +48,38 @@ internal sealed class FileWork(BrokerRuntime runtime)
 {
     private readonly BrokerRuntime _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 
-    /// <summary>Places a file for the attached agent the header names, streamed as a header and then pieces.</summary>
+    /// <summary>Places a file for the attached agent the header names: header, go-ahead, pieces, reply.</summary>
     /// <param name="frames">The client's stream.</param>
+    /// <param name="answers">The go-ahead and the reply, or the reply alone.</param>
     /// <param name="cancellationToken">Cancels the placement; nothing is left behind.</param>
-    /// <returns>What the placement came to.</returns>
-    public async Task<Wire.PlaceFileReply> PlaceAsync(
+    /// <returns>A task that completes when the reply has been sent and the client's stream has ended.</returns>
+    public async Task PlaceAsync(
         IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        IServerStreamWriter<Wire.PlaceFileAnswer> answers,
         CancellationToken cancellationToken)
     {
         var header = await HeaderAsync(frames, cancellationToken).ConfigureAwait(false);
+
+        // Thrown with nothing read past the header, which the client sent alone and is waiting on.
         var agent = Name(header.Agent);
 
         RequireAttached(agent);
 
-        return await PlaceAsync(header, frames, agent, cancellationToken).ConfigureAwait(false);
+        await PlaceAsync(header, frames, answers, agent, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Places a file as the person, into a conversation that exists (SPEC.md §10.2 <c>place_persons_file</c>).</summary>
     /// <param name="frames">The surface's stream; the header names no agent.</param>
+    /// <param name="answers">The go-ahead and the reply, or the reply alone.</param>
     /// <param name="cancellationToken">Cancels the placement; nothing is left behind.</param>
-    /// <returns>What the placement came to.</returns>
+    /// <returns>A task that completes when the reply has been sent and the client's stream has ended.</returns>
     /// <remarks>
     /// The person's file is recorded with no placer, which is what "the person's" is in the store, and is counted
     /// against nobody. It joins nobody to the conversation: the person reads every conversation already.
     /// </remarks>
-    public async Task<Wire.PlaceFileReply> PlaceAsPersonAsync(
+    public async Task PlaceAsPersonAsync(
         IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        IServerStreamWriter<Wire.PlaceFileAnswer> answers,
         CancellationToken cancellationToken)
     {
         var header = await HeaderAsync(frames, cancellationToken).ConfigureAwait(false);
@@ -75,25 +89,62 @@ internal sealed class FileWork(BrokerRuntime runtime)
             throw Invalid("A placement by the person names the conversation it goes in.");
         }
 
-        return await PlaceAsync(header, frames, placer: null, cancellationToken).ConfigureAwait(false);
+        await PlaceAsync(header, frames, answers, placer: null, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<Wire.PlaceFileHeader> HeaderAsync(
         IAsyncStreamReader<Wire.PlaceFileFrame> frames,
         CancellationToken cancellationToken)
     {
-        if (!await frames.MoveNext(cancellationToken).ConfigureAwait(false)
-            || frames.Current.FrameCase != Wire.PlaceFileFrame.FrameOneofCase.Header)
+        if (!await frames.MoveNext(cancellationToken).ConfigureAwait(false))
         {
+            throw Invalid("A placement begins with a header naming the file.");
+        }
+
+        if (frames.Current.FrameCase != Wire.PlaceFileFrame.FrameOneofCase.Header)
+        {
+            // Bytes before any header: a client that did not wait, and may be sending still.
+            await DrainAsync(frames, cancellationToken).ConfigureAwait(false);
             throw Invalid("A placement begins with a header naming the file.");
         }
 
         return frames.Current.Header;
     }
 
-    private async Task<Wire.PlaceFileReply> PlaceAsync(
+    // **Read to the end, whatever it holds.** What the client sent after a refusal is discarded unread, so the call is
+    // never ended while the client may still be sending. A client that went away has nothing more to send.
+    private static async Task DrainAsync(IAsyncStreamReader<Wire.PlaceFileFrame> frames, CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await frames.MoveNext(cancellationToken).ConfigureAwait(false))
+            {
+            }
+        }
+        catch (Exception gone) when (gone is IOException or OperationCanceledException)
+        {
+        }
+    }
+
+    // The reply is the last answer, and the call ends only once the client's stream has. A refusal before the go-ahead
+    // waits for that end too, which the client sends as soon as it reads the refusal, having sent nothing more.
+    private async Task PlaceAsync(
         Wire.PlaceFileHeader header,
         IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        IServerStreamWriter<Wire.PlaceFileAnswer> answers,
+        AgentName? placer,
+        CancellationToken cancellationToken)
+    {
+        var reply = await PlaceOrRefuseAsync(header, frames, answers, placer, cancellationToken).ConfigureAwait(false);
+
+        await answers.WriteAsync(new Wire.PlaceFileAnswer { Reply = reply }, cancellationToken).ConfigureAwait(false);
+        await DrainAsync(frames, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<Wire.PlaceFileReply> PlaceOrRefuseAsync(
+        Wire.PlaceFileHeader header,
+        IAsyncStreamReader<Wire.PlaceFileFrame> frames,
+        IServerStreamWriter<Wire.PlaceFileAnswer> answers,
         AgentName? placer,
         CancellationToken cancellationToken)
     {
@@ -165,6 +216,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
         await using (staged.ConfigureAwait(false))
         {
+            await answers.WriteAsync(new Wire.PlaceFileAnswer { GoAhead = new Wire.Empty() }, cancellationToken)
+                .ConfigureAwait(false);
+
             try
             {
                 while (await frames.MoveNext(cancellationToken).ConfigureAwait(false))
@@ -186,7 +240,15 @@ internal sealed class FileWork(BrokerRuntime runtime)
             }
             catch (IOException full) when (FileLocationStore.IsNoSpace(full))
             {
+                // The caller sends it, then reads and discards the rest of the stream before the call ends.
                 return NoSpace(conversation, name);
+            }
+            catch (Exception failure) when (failure is not OperationCanceledException)
+            {
+                // A frame against the rules, or a fault writing the staged copy, ends the call only once the client has
+                // stopped sending.
+                await DrainAsync(frames, cancellationToken).ConfigureAwait(false);
+                throw;
             }
 
             var sha256 = await staged.FinishAsync(cancellationToken).ConfigureAwait(false);
