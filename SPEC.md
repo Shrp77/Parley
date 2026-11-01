@@ -1293,7 +1293,10 @@ the work a project has done across its repositories.
 
 Every connection overwrites what a delete removes, and destroy, purge and a retention pass that removed anything each
 rewrite the store and empty the write-ahead log into it before they return, so text they remove is in neither file for
-a copy taken afterwards to give back (§14). The overwrite alone is not enough: a row SQLite moved when it split a page
+a copy taken afterwards to give back (§14). Two things are kept on purpose. A file problem outlives the conversation
+it is about, so when another program held one of its files and the delete could not finish (§9.5), the folder and the
+file names the problem gives stay in the store after a person dismisses it. A file the broker quarantined keeps its
+bytes until the store itself is removed. The overwrite alone is not enough: a row SQLite moved when it split a page
 leaves an older copy in the page's free space, which only a rewrite reaches. A rewrite that cannot run, as on a disk
 without room for a second copy of the store, leaves the removal done, and the next act that rewrites clears what it
 left. A rewrite holds every other operation until it finishes, seconds on a large store: every attached participant
