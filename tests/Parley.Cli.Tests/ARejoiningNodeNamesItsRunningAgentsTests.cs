@@ -81,9 +81,17 @@ public sealed class ARejoiningNodeNamesItsRunningAgentsTests : IAsyncDisposable
         // Two identities, ordered as the shared table lists them: the other project's goes last, so that reporting it
         // here would leave its token in place of this project's whatever order a table keeps.
         var residents = new ConcurrentDictionary<AgentIdentity, ResidentAgent>();
-        var order = new ConcurrentDictionary<AgentIdentity, int> { [AgentIdentity.Mint()] = 0, [AgentIdentity.Mint()] = 0 };
-        var identity = order.Keys.First();
-        var elsewhere = order.Keys.Last();
+        // Two identities the table lists in the order they are put in, this project's first. Asked of a table filled in that
+        // same order: two keys in one of its buckets list the other way round, which made the order check below fail about
+        // one run in thirty (lens 3 run 120; the nightly of 3c9848e).
+        AgentIdentity identity, elsewhere;
+
+        do
+        {
+            identity = AgentIdentity.Mint();
+            elsewhere = AgentIdentity.Mint();
+        }
+        while (!new ConcurrentDictionary<AgentIdentity, int> { [identity] = 0, [elsewhere] = 0 }.Keys.Last().Equals(elsewhere));
         var workspace = Path.Combine(_root, "checkout");
         _ = Directory.CreateDirectory(workspace);
 

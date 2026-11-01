@@ -37,12 +37,23 @@ public sealed class ARewriteIsSaidOnTheTerminalTests
         // Destroyed from somewhere else, as another surface would: the seat's stream is what tells this one.
         _ = await seated.Operators.DestroyAsync("pricing", ct);
 
-        for (var tries = 0; tries < 50 && seated.Shell.Said != Shell.TidiedSaid; tries++)
+        // Up to fifteen seconds: a hosted runner can be slow to deliver the stream's two events.
+        for (var tries = 0; tries < 150 && seated.Shell.Said != Shell.TidiedSaid; tries++)
         {
             await Task.Delay(100, ct);
         }
 
-        Assert.Equal(Shell.TidiedSaid, seated.Shell.Said);
+        string heard;
+
+        lock (whileItRan)
+        {
+            heard = string.Join(" | ", whileItRan);
+        }
+
+        Assert.True(
+            seated.Shell.Said == Shell.TidiedSaid,
+            $"said '{seated.Shell.Said}'; the seat is {(seat.Lost ? "lost" : "held")}, tidying {seat.Tidying}, the shell holds "
+            + $"{(ReferenceEquals(seated.Shell.Held, seat) ? "the same seat" : "another seat")}; said while it ran: '{heard}'");
         Assert.False(seated.Shell.Held!.Tidying);
 
         lock (whileItRan)

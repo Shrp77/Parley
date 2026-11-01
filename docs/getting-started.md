@@ -82,8 +82,10 @@ role, or a folder that holds several repositories and tick the ones you want.
 
 **From the command line,** `parley enroll <folder>` does the same.
 
-Whichever you use, it shows everything it is about to do before it does it, and writes nothing
-until you confirm. For each repository it:
+The terminal and the web console show everything they are about to do and write nothing until you
+confirm. On the command line, `parley enroll <folder> --describe` shows the same and writes
+nothing; without it, pressing Enter in the list enrols the repositories you ticked. For each
+repository, enrolling:
 
 - writes a launch configuration (see below),
 - adds a **Peers** section to the repository's `CLAUDE.md`, which tells the agent that other agents

@@ -126,6 +126,28 @@ public sealed class ALaunchConfigurationIsNotReadOffThisMachineTests : IDisposab
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
     }
 
+    [Fact]
+    public async Task Describing_an_enrolment_does_not_look_up_a_launch_configuration_linked_to_a_share()
+    {
+        // Lens 3 run 137: the plan walks both files, and only the instructions half was held.
+        _ = _workspace.CreateSubdirectory(".git");
+        LinkOrSkip(LaunchConfiguration.FileName, @"\\192.0.2.161\s\m.json");
+        var said = new StringWriter();
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        _ = await EnrollCommand.EnrolAsync(
+            [new EnrollmentEntry(_workspace.FullName, "orders", null, Unattended: true) { Enroll = true }],
+            describe: true,
+            new Resolved(Path.Combine(_elsewhere.FullName, "node.json"), ValueSource.Argument),
+            TextWriter.Null,
+            said,
+            cancellationToken: Ct);
+
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
+        Assert.Contains("another machine", said.ToString(), StringComparison.Ordinal);
+    }
+
     private void LinkOrSkip(string name, string target)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "A share path is a Windows path.");
