@@ -852,7 +852,6 @@ public sealed class FileLocationStore : IDisposable
 
         var left = new List<(string Path, Exception Error)>();
         var pending = new Stack<(string Path, bool Emptied)>();
-        var deleted = 0;
         pending.Push((root, false));
 
         while (pending.TryPop(out var top))
@@ -864,7 +863,7 @@ public sealed class FileLocationStore : IDisposable
                 if (!left.Exists(l => l.Path == top.Path
                                       || l.Path.StartsWith(top.Path + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
                 {
-                    Try(top.Path, () => { Directory.Delete(top.Path, recursive: false); deleted++; });
+                    Try(top.Path, () => Directory.Delete(top.Path, recursive: false));
                 }
 
                 continue;
@@ -883,7 +882,6 @@ public sealed class FileLocationStore : IDisposable
                 {
                     link = true;
                     DeleteLink(top.Path);
-                    deleted++;
                 }
             });
 
@@ -907,12 +905,10 @@ public sealed class FileLocationStore : IDisposable
                     if ((attributes & FileAttributes.Directory) == 0)
                     {
                         File.Delete(entry);
-                        deleted++;
                     }
                     else if ((attributes & FileAttributes.ReparsePoint) != 0)
                     {
                         DeleteLink(entry);
-                        deleted++;
                     }
                     else
                     {
@@ -927,10 +923,10 @@ public sealed class FileLocationStore : IDisposable
             var named = left.Take(5).Select(l => l.Path == root ? "the folder itself" : Path.GetRelativePath(root, l.Path));
             var more = left.Count > 5 ? $" and {left.Count - 5} more" : string.Empty;
 
-            // "The rest deleted" only when something was: a folder that could not be read at all had nothing deleted.
+            // Only what failed, never "the rest deleted": a folder that could not be read had nothing deleted, and what a
+            // writer added after a folder was listed is neither deleted nor named, so nothing here could check that claim.
             throw new IOException(
-                $"{left.Count} {(left.Count == 1 ? "entry was" : "entries were")} left, "
-                + (deleted > 0 ? "the rest deleted: " : "and nothing was deleted: ")
+                $"{left.Count} {(left.Count == 1 ? "entry" : "entries")} could not be deleted: "
                 + string.Join(", ", named) + more + ". " + left[0].Error.Message,
                 left[0].Error);
         }

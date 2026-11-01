@@ -13,7 +13,7 @@ namespace Parley.Server.Tests;
 /// Lens 2 run 131: the delete behind a destroy, a purge and the sweep stopped at the first file it could not delete, so
 /// one file held open left every other file of the folder on disk, and the problem raised named only the held one.
 /// Lens 2 run 132: a folder swapped for a link after it was stacked was followed, a folder that could not be read was
-/// named twice, and a folder whose own listing failed was said to have had "the rest deleted".
+/// named twice, and "the rest deleted" was claimed when it was not checked.
 /// Integration rather than unit, because it writes a folder: the unit bar touches no file.
 /// </remarks>
 [Integration]
@@ -84,12 +84,12 @@ public sealed class ADeleteLeavesOnlyWhatIsHeldTests : IDisposable
         var refused = Assert.Throws<IOException>(() => FileLocationStore.DeleteTree(_folder));
 
         // Named for the read that failed, and not again for the delete of the folder it left full.
-        Assert.StartsWith("1 entry was left, the rest deleted: locked.", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith("1 entry could not be deleted: locked.", refused.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(_folder, "a.md")));
     }
 
     [Fact]
-    public void A_folder_whose_own_listing_fails_says_nothing_was_deleted()
+    public void A_folder_whose_own_listing_fails_names_only_itself()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "takes the right to list a folder away with a Windows access rule");
 
@@ -104,7 +104,7 @@ public sealed class ADeleteLeavesOnlyWhatIsHeldTests : IDisposable
 
         var refused = Assert.Throws<IOException>(() => FileLocationStore.DeleteTree(_folder));
 
-        Assert.StartsWith("1 entry was left, and nothing was deleted: the folder itself.", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith("1 entry could not be deleted: the folder itself.", refused.Message, StringComparison.Ordinal);
 
         Deny(_folder, undo: true);
         Assert.True(File.Exists(Path.Combine(_folder, "a.md")));
@@ -176,7 +176,7 @@ public sealed class ADeleteLeavesOnlyWhatIsHeldTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_folder, "b.md")));
 
         // What is left, and only that: the folder that holds it is not a second thing reported.
-        Assert.StartsWith("1 entry was left, the rest deleted: b.md.", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith("1 entry could not be deleted: b.md.", refused.Message, StringComparison.Ordinal);
 
         // Once nothing holds it, the same delete finishes.
         FileLocationStore.DeleteTree(_folder);
