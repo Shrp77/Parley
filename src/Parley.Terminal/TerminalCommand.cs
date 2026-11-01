@@ -42,6 +42,14 @@ public static class TerminalCommand
         string? fallbackEndpoint,
         CancellationToken cancellationToken = default)
     {
+        // **Every command table, before the toolkit takes the console.** A clash refused from the surface's own
+        // constructor came after `Init` had cleared the screen, as an unhandled exception and its stack trace; here it is
+        // the clash, said plainly, and an exit code, with a console nothing has touched yet.
+        if (CommandTables.Refused(Console.Error) is { } refused)
+        {
+            return refused;
+        }
+
         if (!Interactive)
         {
             await Console.Error.WriteLineAsync(Redirected).ConfigureAwait(false);

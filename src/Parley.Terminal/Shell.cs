@@ -592,10 +592,11 @@ internal sealed partial class Shell : Window
 
     /// <summary>Every command, checked for clashes when the surface is built.</summary>
     /// <remarks>
-    /// <b>A field initialiser, so a clash stops the constructor</b> and the terminal does not start with a key that
-    /// is named on screen and runs something else.
+    /// <b>A field initialiser, so a clash stops the constructor</b> and the surface is never built with a key that
+    /// is named on screen and runs something else. The tool builds every table before it takes the console
+    /// (<see cref="CommandTables"/>), so this is the second time this table is checked, never the first.
     /// </remarks>
-    private readonly CommandManager _commands = new(Places, Registered, Reserved);
+    private readonly CommandManager<Shell> _commands = new(Places, Registered, Reserved);
 
     private readonly BrokerDirectory _directory;
     // One row by design, and fixed at one: its text is set from pool threads (a count read off the loop redraws it),
@@ -1434,7 +1435,7 @@ internal sealed partial class Shell : Window
     /// surface and it is occupying the surface's rows. Offered only while there is something to
     /// act on, so the status line never names a key that would do nothing.
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Messaging() => _commands.Live(KeyContext.MessageLine, this);
+    internal IReadOnlyList<RegionAction> Messaging() => From(KeyContext.MessageLine);
 
     /// <summary>The first of several status lines that fits, or the shortest when none does.</summary>
     /// <param name="room">How many columns there are.</param>
@@ -2180,8 +2181,29 @@ internal sealed partial class Shell : Window
     /// projects region. That is User Story 2's rule, and having the region answer for its own
     /// actions is what keeps the status line and the keys from drifting apart.
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Actions() =>
-        [.. _commands.Live(Context, this).Select(action => action with { Category = action.Category ?? Belongs() })];
+    internal IReadOnlyList<RegionAction> Actions() => From(Context);
+
+    /// <summary>What the focused place offers that was declared in one place or layer.</summary>
+    /// <param name="from">The place itself, or one of its layers.</param>
+    /// <returns>The actions, empty for a layer the focused place does not list.</returns>
+    /// <remarks>
+    /// <b>Read from <see cref="CommandManager{TTarget}.Offered"/>, which the key handler reads too</b>, so the status
+    /// line, the menus and the keys see the same layers in every place. Asking for a layer by name instead named its keys
+    /// in a place whose keys it did not answer.
+    /// </remarks>
+    private IReadOnlyList<RegionAction> From(KeyContext from) =>
+        [.. Offered().Where(offered => offered.From == from).Select(offered => offered.Action)];
+
+    /// <summary>Everything the focused place offers, its own commands filed under what the place is about.</summary>
+    /// <returns>The actions, each with where it was declared.</returns>
+    private IReadOnlyList<OfferedAction> Offered()
+    {
+        var context = Context;
+
+        return [.. _commands.Offered(context, this).Select(offered => offered.From == context && offered.Action.Category is null
+            ? offered with { Action = offered.Action with { Category = Belongs() } }
+            : offered)];
+    }
 
     /// <summary>The menus the bar offers, left to right.</summary>
     /// <returns>The categories that have anything under them.</returns>
@@ -2202,10 +2224,10 @@ internal sealed partial class Shell : Window
     /// <returns>The actions, in no particular order — <c>MenuRow</c> decides the order.</returns>
     /// <remarks>
     /// One list assembled in one place, so the bar and the keys that open its menus cannot disagree
-    /// about what is on it. The three are the focused place and the two layers live on it in the command table;
-    /// a new layer is declared there and read here.
+    /// about what is on it. It is the focused place and whatever layers the command table lists for it, read in one
+    /// call, so a new layer is declared there and appears here with nothing else changed.
     /// </remarks>
-    private IReadOnlyList<RegionAction> Bar() => [.. Actions(), .. Messaging(), .. Global()];
+    private IReadOnlyList<RegionAction> Bar() => [.. Offered().Select(offered => offered.Action)];
 
     /// <summary>Runs what a menu line names, as the bar offers it now.</summary>
     /// <param name="stroke">The line's key.</param>
@@ -2240,7 +2262,7 @@ internal sealed partial class Shell : Window
     /// Here they are <em>named</em> where somebody looking for them would look.
     /// </para>
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Global() => _commands.Live(KeyContext.Everywhere, this);
+    internal IReadOnlyList<RegionAction> Global() => From(KeyContext.Everywhere);
 
     /// <summary>Where the cursor is, as the command table names places.</summary>
     /// <remarks>
@@ -2262,7 +2284,7 @@ internal sealed partial class Shell : Window
     };
 
     /// <summary>The command table this surface was built with.</summary>
-    internal CommandManager CommandTable => _commands;
+    internal CommandManager<Shell> CommandTable => _commands;
 
     /// <summary>What the focused region's actions are about, unless one says otherwise.</summary>
     /// <returns>The category.</returns>
@@ -4067,7 +4089,12 @@ internal sealed partial class Shell : Window
         // makes the key route and the mouse route one code path -- so intercepting Enter for every
         // view would take the key before that fires and break opening a conversation by pointer.
         // The projects list has no such handler, so there is nothing here to preempt.
-        if (key == Key.Enter && _place.Viewing == Viewing.Projects)
+        //
+        // **Every arm that belongs to one pane says so as `Context == KeyContext.X`**, the place the command table
+        // reserves its key in, or as `Line.Editing`, which is the box having focus. `KeysTakenBeforeTheTableTests`
+        // reads each arm's place from that and fails when the place does not claim the key; an arm that names no place
+        // is held to claiming its key in every place.
+        if (key == Key.Enter && Context == KeyContext.Projects)
         {
             _ = OpenAsync();
 
@@ -4082,7 +4109,7 @@ internal sealed partial class Shell : Window
         // the active control read at the level of a fold: a folded header is a message somebody is asking to
         // see. Unfolded it does nothing and is left alone, rather than swallowed to no effect.
         if (key == Key.Enter
-            && Panes[FocusedRegion] is TranscriptRegion
+            && Context == KeyContext.Transcript
             && Transcript.Under is { } message
             && Transcript.Expand(message))
         {
@@ -4091,7 +4118,7 @@ internal sealed partial class Shell : Window
 
 
         // Enter on a setting changes it, which is the one thing a row in that list is for.
-        if (key == Key.Enter && Panes[FocusedRegion] is ConfigurationRegion && Configuration.Selected is not null)
+        if (key == Key.Enter && Context == KeyContext.Configuration && Configuration.Selected is not null)
         {
             _ = ChangeSetting();
 
@@ -4100,7 +4127,7 @@ internal sealed partial class Shell : Window
 
         // **Enter on an agents-list row opens what can be done with it.** The agents list raises no `Accepting`
         // of its own, so nothing is preempted.
-        if (key == Key.Enter && Panes[FocusedRegion] is AgentsRegion && Agents.Selected is not null)
+        if (key == Key.Enter && Context == KeyContext.Agents && Agents.Selected is not null)
         {
             _ = RowMenu();
 

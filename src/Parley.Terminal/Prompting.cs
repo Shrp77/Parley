@@ -224,6 +224,7 @@ internal static class Prompting
 /// <summary>A dialog asking for one line of text, checked as it is typed.</summary>
 internal sealed class TextDialog : Dialog
 {
+    private readonly CommandManager<TextDialog> _commands = new(Places, Registered, Reserved);
     private readonly Func<string, string?>? _problem;
     private readonly Func<string, string>? _correct;
     private readonly string _corrected;
@@ -331,14 +332,32 @@ internal sealed class TextDialog : Dialog
     /// <param name="taken">Whether they went ahead.</param>
     internal void Finish(bool taken) => Done?.Invoke(this, taken && !Wrong ? _field.Text : null);
 
+    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.TextDialog, [])];
+
+    /// <summary>What a key does here: Escape cancels, as everywhere.</summary>
+    internal static IReadOnlyList<KeyCommand<TextDialog>> Registered =>
+    [
+        new(KeyContext.TextDialog, default, Prompting.Cancel, KeyCommand.Doing<TextDialog>(dialog => dialog.Finish(taken: false)), KeyCommand.Always, Chord: Key.Esc),
+    ];
+
+    /// <summary>What the field and the buttons take before this dialog is offered a key.</summary>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Pressing(KeyContext.TextDialog, "OK, the default button"),
+        .. ReservedKey.Moving(KeyContext.TextDialog),
+        .. ReservedKey.TakenBy(KeyContext.TextDialog, () => new TextField(), "the field"),
+        .. ReservedKey.Typing(KeyContext.TextDialog, "the field"),
+    ];
+
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        if (key == Key.Esc)
+        if (_commands.Answering(KeyContext.TextDialog, this, key) is { } chosen)
         {
-            Finish(taken: false);
+            _ = chosen.Run();
 
             return true;
         }
@@ -391,6 +410,7 @@ internal sealed class TextDialog : Dialog
 /// <summary>A dialog offering a choice, with the safe answer first.</summary>
 internal sealed class ChoiceDialog : Dialog
 {
+    private readonly CommandManager<ChoiceDialog> _commands = new(Places, Registered, Reserved);
     private readonly ListView _choices;
     private readonly string _described;
 
@@ -498,14 +518,31 @@ internal sealed class ChoiceDialog : Dialog
     /// <summary>The list, so a test can pick a choice by its text.</summary>
     internal ListView Choices => _choices;
 
+    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.ChoiceDialog, [])];
+
+    /// <summary>What a key does here: Escape declines to choose, as everywhere.</summary>
+    internal static IReadOnlyList<KeyCommand<ChoiceDialog>> Registered =>
+    [
+        new(KeyContext.ChoiceDialog, default, Prompting.Cancel, KeyCommand.Doing<ChoiceDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+    ];
+
+    /// <summary>What the list takes before this dialog is offered a key; Enter on it is the choice.</summary>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        new(KeyContext.ChoiceDialog, Key.Enter, "choose the row"),
+        .. ReservedKey.Moving(KeyContext.ChoiceDialog),
+        .. ReservedKey.TakenBy(KeyContext.ChoiceDialog, () => new ListView { KeystrokeNavigator = null }, "the choices"),
+    ];
+
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        if (key == Key.Esc)
+        if (_commands.Answering(KeyContext.ChoiceDialog, this, key) is { } chosen)
         {
-            Done?.Invoke(this, null);
+            _ = chosen.Run();
 
             return true;
         }
@@ -577,6 +614,7 @@ internal sealed class FormDialog : Dialog
     /// </remarks>
     internal const int Opening = 3;
 
+    private readonly CommandManager<FormDialog> _commands = new(Places, Registered, Reserved);
     private readonly IReadOnlyList<FormField> _fields;
     private readonly List<Entry> _entries = [];
     private readonly List<Label> _asked = [];
@@ -839,14 +877,34 @@ internal sealed class FormDialog : Dialog
     internal void Finish(bool taken) =>
         Done?.Invoke(this, taken && _ok.Enabled ? Values : null);
 
+    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.FormDialog, [])];
+
+    /// <summary>What a key does here: Escape cancels, as everywhere.</summary>
+    internal static IReadOnlyList<KeyCommand<FormDialog>> Registered =>
+    [
+        new(KeyContext.FormDialog, default, Prompting.Cancel, KeyCommand.Doing<FormDialog>(dialog => dialog.Finish(taken: false)), KeyCommand.Always, Chord: Key.Esc),
+    ];
+
+    /// <summary>What the fields and the buttons take before this dialog is offered a key.</summary>
+    /// <remarks>A field is a line or, for a long answer, a paragraph that wraps; both are read.</remarks>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Pressing(KeyContext.FormDialog, "OK, the default button, or a line in a long field"),
+        .. ReservedKey.Moving(KeyContext.FormDialog),
+        .. ReservedKey.TakenBy(KeyContext.FormDialog, () => new TextField(), "a field"),
+        .. ReservedKey.TakenBy(KeyContext.FormDialog, () => Entry.Speaking().View, "a long field"),
+        .. ReservedKey.Typing(KeyContext.FormDialog, "a field"),
+    ];
+
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        if (key == Key.Esc)
+        if (_commands.Answering(KeyContext.FormDialog, this, key) is { } chosen)
         {
-            Finish(taken: false);
+            _ = chosen.Run();
 
             return true;
         }

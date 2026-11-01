@@ -54,6 +54,7 @@ internal sealed class PlanView : Dialog
         "An item that has not started opens an empty conversation with its text in the box, "
         + "and nothing is sent until you send it.";
 
+    private readonly CommandManager<PlanView> _commands = new(Places, Registered, Reserved);
     private readonly ListView _items;
     private readonly View _detail;
     private readonly RoadmapStanding _standing;
@@ -95,7 +96,7 @@ internal sealed class PlanView : Dialog
             X = 1,
             Y = Pos.Bottom(itemsLabel),
             Width = Dim.Fill(2),
-            Height = Dim.Fill(Reserved + DetailRows + 1),
+            Height = Dim.Fill(FooterRows + DetailRows + 1),
             KeystrokeNavigator = null,
         };
 
@@ -108,15 +109,15 @@ internal sealed class PlanView : Dialog
         };
         _items.ValueChanged += (_, _) => ShowDetail();
 
-        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.AnchorEnd(Reserved + DetailRows + 1), Width = Dim.Fill(2), Height = 1 };
+        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.AnchorEnd(FooterRows + DetailRows + 1), Width = Dim.Fill(2), Height = 1 };
 
         _detail = Entry.Reader(string.Empty, Choose);
         _detail.X = 1;
-        _detail.Y = Pos.AnchorEnd(Reserved + DetailRows);
+        _detail.Y = Pos.AnchorEnd(FooterRows + DetailRows);
         _detail.Width = Dim.Fill(2);
         _detail.Height = DetailRows;
 
-        var hint = new Plain { Text = Hint, X = 1, Y = Pos.AnchorEnd(Reserved - 1), Width = Dim.Fill(2), Height = 2 };
+        var hint = new Plain { Text = Hint, X = 1, Y = Pos.AnchorEnd(FooterRows - 1), Width = Dim.Fill(2), Height = 2 };
 
         hint.TextFormatter.WordWrap = true;
 
@@ -135,7 +136,7 @@ internal sealed class PlanView : Dialog
         ShowDetail();
     }
 
-    private const int Reserved = 5;
+    private const int FooterRows = 5;
 
     private const int DetailRows = 5;
 
@@ -202,6 +203,26 @@ internal sealed class PlanView : Dialog
         return Safe.Lines(string.Join('\n', lines));
     }
 
+    /// <summary>This view's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.RoadmapDialog, [])];
+
+    /// <summary>What a key does here: what each button is labelled with, and Escape.</summary>
+    internal static IReadOnlyList<KeyCommand<PlanView>> Registered =>
+    [
+        new(KeyContext.RoadmapDialog, NextKey, "Next item", KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
+        new(KeyContext.RoadmapDialog, EditKey, "Edit roadmap", KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
+        new(KeyContext.RoadmapDialog, default, "Close", KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
+    ];
+
+    /// <summary>What the items, the item's text and the buttons take before this view is offered a key.</summary>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Pressing(KeyContext.RoadmapDialog, "open the item, or the focused button"),
+        .. ReservedKey.Moving(KeyContext.RoadmapDialog),
+        .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { KeystrokeNavigator = null }, "the items"),
+        .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => Entry.Reader(string.Empty), "the item's text"),
+    ];
+
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
@@ -210,31 +231,23 @@ internal sealed class PlanView : Dialog
         return Choose(key) || base.OnKeyDown(key);
     }
 
+    /// <summary>Runs what a key does here, from the command table.</summary>
+    /// <param name="key">What arrived.</param>
+    /// <returns>Whether it ran anything.</returns>
     private bool Choose(Key key)
     {
-        if (Shell.Typed(key, NextKey))
-        {
-            GoToNext();
-
-            return true;
-        }
-
-        if (Shell.Typed(key, EditKey))
-        {
-            Edit();
-
-            return true;
-        }
-
-        if (key != Key.Esc)
+        if (_commands.Answering(KeyContext.RoadmapDialog, this, key) is not { } chosen)
         {
             return false;
         }
 
-        Closed?.Invoke(this, EventArgs.Empty);
+        _ = chosen.Run();
 
         return true;
     }
+
+    /// <summary>Leaves the view without choosing.</summary>
+    private void Close() => Closed?.Invoke(this, EventArgs.Empty);
 
     /// <summary>Where the cursor starts: the item asked for, else the next item, else the first.</summary>
     /// <param name="standing">The derived standing.</param>

@@ -4,7 +4,7 @@ using Xunit;
 namespace Parley.Terminal.Tests;
 
 /// <summary>
-/// That the terminal's command table refuses a key claimed twice in any place, and that the real table is not refused.
+/// That the terminal's command tables refuse a key claimed twice in any place, and that the real tables are not refused.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -14,29 +14,64 @@ namespace Parley.Terminal.Tests;
 /// ever looked at together.
 /// </para>
 /// <para>
-/// <b>A unit test of the real table</b>, so a push fails before anybody starts the tool: the surface builds the same
-/// table in its constructor and would refuse to start. The rest build a table with one claim added, the way a change
+/// <b>A unit test of the real tables</b>, so a push fails before anybody starts the tool: the tool builds the same tables
+/// before it takes the console and would refuse to start. The rest build a table with one claim added, the way a change
 /// next month would.
 /// </para>
 /// </remarks>
 [Unit]
 public sealed class CommandTableTests
 {
-    private static KeyCommand Extra(KeyContext context, char key, string name) =>
+    private static KeyCommand<Shell> Extra(KeyContext context, char key, string name) =>
         new(context, key, name, _ => Task.CompletedTask, KeyCommand.Always);
 
-    private static CommandManager With(params KeyCommand[] extra) =>
+    private static CommandManager<Shell> With(params KeyCommand<Shell>[] extra) =>
         new(Shell.Places, [.. Shell.Registered, .. extra], Shell.Reserved);
 
     [Fact]
     public void The_real_table_has_no_key_claimed_twice_in_any_place()
     {
-        var table = new CommandManager(Shell.Places, Shell.Registered, Shell.Reserved);
+        var table = new CommandManager<Shell>(Shell.Places, Shell.Registered, Shell.Reserved);
 
         // Non-vacuity: both halves of the clash that was found are in the table, in the places they were found in.
         Assert.Contains(table.Commands, c => c.Context == KeyContext.Plans && c.Key == PlanView.EditKey);
         Assert.Contains(table.Commands, c => c.Context == KeyContext.MessageLine && c.Key == Shell.WholeKey);
-        Assert.All(table.Places, place => Assert.Contains(KeyContext.MessageLine, place.Layers));
+
+        // Both layers on every place, as the status line and the menus have always shown them: they read the same
+        // layers the keys do now, so a place that dropped one would drop it from the screen as well.
+        Assert.All(table.Places, place => Assert.Equal([KeyContext.MessageLine, KeyContext.Everywhere], place.Layers));
+    }
+
+    [Fact]
+    public void Every_table_the_terminal_has_is_built_before_it_starts_and_every_place_is_in_one()
+    {
+        var places = CommandTables.BuildEvery();
+
+        // A place declared and left out of every table is one whose dialog would be checked only when it opened.
+        Assert.Equal(Enum.GetValues<KeyContext>().Except([KeyContext.MessageLine, KeyContext.Everywhere]).Order(), places.Order());
+    }
+
+    [Fact]
+    public void A_refused_table_is_said_plainly_with_its_clash_and_an_exit_code_and_no_stack_trace()
+    {
+        using var error = new StringWriter();
+
+        var code = CommandTables.Refused(error, () => With(Extra(KeyContext.Projects, Shell.ClearKey, "Clash")));
+
+        Assert.Equal(CommandTables.Refusal, code);
+        Assert.Contains("Clash", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains(Shell.ClearTitle, error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("   at ", error.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(InvalidOperationException), error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_real_tables_are_not_refused_and_say_nothing()
+    {
+        using var error = new StringWriter();
+
+        Assert.Null(CommandTables.Refused(error));
+        Assert.Empty(error.ToString());
     }
 
     [Fact]
@@ -46,7 +81,7 @@ public sealed class CommandTableTests
             .Select(c => c.Context == KeyContext.MessageLine && c.Key == Shell.WholeKey ? c with { Key = PlanView.EditKey } : c)
             .ToList();
 
-        var refused = Assert.Throws<InvalidOperationException>(() => new CommandManager(Shell.Places, table, Shell.Reserved));
+        var refused = Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(Shell.Places, table, Shell.Reserved));
 
         Assert.Contains(Shell.WholeTitle, refused.Message, StringComparison.Ordinal);
         Assert.Contains(Revising.Title, refused.Message, StringComparison.Ordinal);
@@ -67,6 +102,29 @@ public sealed class CommandTableTests
         Assert.Contains("Anywhere", refused.Message, StringComparison.Ordinal);
         Assert.Contains("Alt+y", refused.Message, StringComparison.Ordinal);
         Assert.Contains(nameof(KeyContext.Projects), refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_layer_a_place_does_not_list_is_neither_offered_nor_answered_there()
+    {
+        // The screen and the keys read one call, so they agree on which layers a place has: before, the status line read
+        // each layer by name whatever the place listed, and the keys read the place's list.
+        KeyCommand<string>[] commands =
+        [
+            new(KeyContext.Projects, 'a', "Own", _ => Task.CompletedTask, KeyCommand.Always),
+            new(KeyContext.MessageLine, 'w', "Layered", _ => Task.CompletedTask, KeyCommand.Always),
+        ];
+        var table = new CommandManager<string>(
+            [new(KeyContext.Projects, []), new(KeyContext.Agents, [KeyContext.MessageLine])], commands, []);
+
+        Assert.Equal(["Own"], table.Offered(KeyContext.Projects, "x").Select(o => o.Action.Label));
+        Assert.Null(table.Answering(KeyContext.Projects, "x", Key.W.WithAlt));
+        Assert.False(table.Claims(KeyContext.Projects, Key.W.WithAlt));
+
+        var agents = Assert.Single(table.Offered(KeyContext.Agents, "x"));
+        Assert.Equal((KeyContext.MessageLine, "Layered"), (agents.From, agents.Action.Label));
+        Assert.NotNull(table.Answering(KeyContext.Agents, "x", Key.W.WithAlt));
+        Assert.True(table.Claims(KeyContext.Agents, Key.W.WithAlt));
     }
 
     [Fact]
@@ -96,7 +154,7 @@ public sealed class CommandTableTests
     [Fact]
     public void A_chord_is_compared_with_the_letter_it_spells()
     {
-        var chord = new KeyCommand(
+        var chord = new KeyCommand<Shell>(
             KeyContext.Plans, default, "Chorded", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.E.WithAlt);
 
         Assert.Throws<InvalidOperationException>(() => With(chord));
@@ -105,7 +163,7 @@ public sealed class CommandTableTests
     [Fact]
     public void A_key_the_surface_keeps_for_itself_cannot_be_a_command()
     {
-        var tab = new KeyCommand(KeyContext.Agents, default, "Tabbed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Tab);
+        var tab = new KeyCommand<Shell>(KeyContext.Agents, default, "Tabbed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Tab);
 
         var refused = Assert.Throws<InvalidOperationException>(() => With(tab));
 
@@ -113,9 +171,82 @@ public sealed class CommandTableTests
     }
 
     [Fact]
+    public void A_command_on_a_key_a_pane_takes_first_is_refused_in_that_pane_only()
+    {
+        // Review's probe: a command on Enter in the room passed every check, was named on the screen and never ran,
+        // because the room's list takes Enter through its own accept. The same command in the agents pane is Enter's
+        // name there already; on the projects list it would be refused for the same reason as the room.
+        var room = new KeyCommand<Shell>(KeyContext.Room, default, "Roomed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Enter);
+        var refused = Assert.Throws<InvalidOperationException>(() => With(room));
+
+        Assert.Contains($"in {nameof(KeyContext.Room)}:", refused.Message, StringComparison.Ordinal);
+
+        // A list's own keys are the place's too: Home moves the cursor in every list, so a command there never runs.
+        var home = new KeyCommand<Shell>(KeyContext.Conversations, default, "Homed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Home);
+
+        Assert.Contains(Shell.ListName, Assert.Throws<InvalidOperationException>(() => With(home)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_views_that_take_one_key_are_not_a_clash_and_a_command_among_them_is()
+    {
+        // A dialog's list and its paragraph both move on the arrows; neither costs a command anything.
+        ReservedKey[] reserved = [new(KeyContext.Projects, Key.Home, "a list"), new(KeyContext.Projects, Key.Home, "a paragraph")];
+
+        _ = new CommandManager<string>([new(KeyContext.Projects, [])], [], reserved);
+
+        var command = new KeyCommand<string>(KeyContext.Projects, default, "Homed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Home);
+
+        Assert.Throws<InvalidOperationException>(() => new CommandManager<string>([new(KeyContext.Projects, [])], [command], reserved));
+    }
+
+    [Fact]
+    public void A_dialog_is_held_to_the_same_check()
+    {
+        // Confirm and edit on one letter in the proposal dialog: the second would never run.
+        var table = ProposalView.Registered.Select(c => c.Name == "Edit" ? c with { Key = 'c' } : c).ToList();
+
+        var refused = Assert.Throws<InvalidOperationException>(
+            () => new CommandManager<ProposalView>(ProposalView.Places, table, ProposalView.Reserved));
+
+        Assert.Contains($"in {nameof(KeyContext.ProposalDialog)}:", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("Confirm", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_dialog_goes_back_on_escape_from_its_table()
+    {
+        Assert.Contains(PlanView.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(ProposalView.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(TickDialog.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(ResponsibilityDialog.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(TextDialog.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(ChoiceDialog.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(FormDialog.Registered, c => Key.Esc.Equals(c.Chord));
+    }
+
+    [Fact]
+    public void A_dialogs_keys_run_from_its_table()
+    {
+        // Pressed at the dialog itself, in memory: Alt+a ticks every row, Alt+n none, and Escape gives up.
+        using var ticking = new TickDialog("Choose", "Which.", [new Tickable("orders", string.Empty, false), new Tickable("billing", string.Empty, false)]);
+        IReadOnlyList<Tickable>? done = [];
+        ticking.Done += (_, chosen) => done = chosen;
+
+        Assert.True(ticking.NewKeyDownEvent(Key.A.WithAlt));
+        Assert.StartsWith("2 of 2 chosen.", ticking.Counted, StringComparison.Ordinal);
+
+        Assert.True(ticking.NewKeyDownEvent(Key.N.WithAlt));
+        Assert.StartsWith("0 of 2 chosen.", ticking.Counted, StringComparison.Ordinal);
+
+        Assert.True(ticking.NewKeyDownEvent(Key.Esc));
+        Assert.Null(done);
+    }
+
+    [Fact]
     public void A_plain_character_is_never_a_command()
     {
-        var plain = new KeyCommand(KeyContext.Agents, default, "Plain", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J);
+        var plain = new KeyCommand<Shell>(KeyContext.Agents, default, "Plain", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J);
 
         Assert.Throws<InvalidOperationException>(() => With(plain));
     }
@@ -125,6 +256,6 @@ public sealed class CommandTableTests
     {
         var places = Shell.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
 
-        Assert.Throws<InvalidOperationException>(() => new CommandManager(places, Shell.Registered, Shell.Reserved));
+        Assert.Throws<InvalidOperationException>(() => new CommandManager<Shell>(places, Shell.Registered, Shell.Reserved));
     }
 }

@@ -164,8 +164,11 @@ public sealed class FilePlacementTests
     /// <summary>A placement call answered from a script, recording what the client did in order.</summary>
     private sealed class ScriptedPlacement : IClientStreamWriter<Wire.PlaceFileFrame>, IAsyncStreamReader<Wire.PlaceFileAnswer>
     {
-        private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _answerEarly = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        // **Completed inside the write or the end that answers it, never on the thread pool.** The scripted writes finish
+        // at once, so the client's loop never yields; an answer whose completion waited for a pool thread arrived only
+        // after all forty pieces whenever the machine was busy, and the test failed under load. A real call's writes
+        // wait on the socket, which is where the client looks for the answer between pieces.
+        private readonly TaskCompletionSource<bool> _answer = new();
         private int _answers;
         private int _pieces;
 
@@ -197,7 +200,7 @@ public sealed class FilePlacementTests
                 Log.Add("end");
             }
 
-            _ended.TrySetResult();
+            Answer();
             return Task.CompletedTask;
         }
 
@@ -219,13 +222,13 @@ public sealed class FilePlacementTests
 
             if (!header && ++_pieces == AnswerAfterPieces)
             {
-                _answerEarly.TrySetResult();
+                Answer();
             }
 
             return Task.CompletedTask;
         }
 
-        public async Task<bool> MoveNext(CancellationToken cancellationToken)
+        public Task<bool> MoveNext(CancellationToken cancellationToken)
         {
             if (_answers++ == 0)
             {
@@ -235,24 +238,28 @@ public sealed class FilePlacementTests
                 }
 
                 Current = First!;
-                return true;
+                return Task.FromResult(true);
             }
 
-            // As a broker answers: once the client has ended its stream, or partway when it refuses partway.
-            await Task.WhenAny(_ended.Task, _answerEarly.Task).ConfigureAwait(false);
+            return _answer.Task;
+        }
 
+        // As a broker answers: once the client has ended its stream, or partway when it refuses partway.
+        private void Answer()
+        {
             if (FailLast is { } failure)
             {
-                throw failure;
+                _answer.TrySetException(failure);
             }
-
-            if (Last is null)
+            else if (Last is null)
             {
-                return false;
+                _answer.TrySetResult(false);
             }
-
-            Current = Last;
-            return true;
+            else if (!_answer.Task.IsCompleted)
+            {
+                Current = Last;
+                _answer.TrySetResult(true);
+            }
         }
     }
 

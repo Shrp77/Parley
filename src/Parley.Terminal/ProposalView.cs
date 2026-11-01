@@ -66,6 +66,7 @@ internal sealed class ProposalView : Dialog
     /// <summary>The most rows the heading takes; the rest of it scrolls.</summary>
     private const int MostHeadingRows = 4;
 
+    private readonly CommandManager<ProposalView> _commands = new(Places, Registered, Reserved);
     private readonly string _header;
     private readonly View _items;
     private readonly View _agents;
@@ -105,7 +106,7 @@ internal sealed class ProposalView : Dialog
         _items.X = 1;
         _items.Y = Pos.Bottom(itemsHeading);
         _items.Width = Dim.Fill(AgentsWidth + 3);
-        _items.Height = Dim.Fill(Reserved);
+        _items.Height = Dim.Fill(FooterRows);
 
         // Who it names, on the side, for the same rows.
         var agentsHeading = new Plain { Text = "Who it names", X = Pos.Right(_items) + 1, Y = Pos.Bottom(heading), Width = Dim.Fill(1), Height = 1 };
@@ -114,13 +115,13 @@ internal sealed class ProposalView : Dialog
         _agents.X = Pos.Right(_items) + 1;
         _agents.Y = Pos.Bottom(agentsHeading);
         _agents.Width = Dim.Fill(1);
-        _agents.Height = Dim.Fill(Reserved);
+        _agents.Height = Dim.Fill(FooterRows);
 
         var hint = new Plain
         {
             Text = Hint,
             X = 1,
-            Y = Pos.AnchorEnd(Reserved - 1),
+            Y = Pos.AnchorEnd(FooterRows - 1),
             Width = Dim.Fill(2),
             Height = 3,
         };
@@ -141,7 +142,7 @@ internal sealed class ProposalView : Dialog
     }
 
     /// <summary>Rows kept for the hint and the buttons below the roadmap.</summary>
-    private const int Reserved = 6;
+    private const int FooterRows = 6;
 
     /// <summary>Raised once, with what the person chose.</summary>
     internal event EventHandler<ProposalChoice>? Done;
@@ -177,21 +178,42 @@ internal sealed class ProposalView : Dialog
     /// </remarks>
     private bool Choose(Key key)
     {
-        var chosen = key == Key.Esc ? ProposalChoice.Leave
-            : Shell.Typed(key, 'c') ? ProposalChoice.Confirm
-            : Shell.Typed(key, 'e') ? ProposalChoice.Edit
-            : Shell.Typed(key, 'd') ? ProposalChoice.Decline
-            : (ProposalChoice?)null;
-
-        if (chosen is not { } choice)
+        if (_commands.Answering(KeyContext.ProposalDialog, this, key) is not { } chosen)
         {
             return false;
         }
 
-        Finish(choice);
+        _ = chosen.Run();
 
         return true;
     }
+
+    /// <summary>This view's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.ProposalDialog, [])];
+
+    /// <summary>What a key does here: the letter each button is labelled with, and Escape.</summary>
+    internal static IReadOnlyList<KeyCommand<ProposalView>> Registered =>
+    [
+        new(KeyContext.ProposalDialog, 'c', "Confirm", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Confirm)), KeyCommand.Always),
+        new(KeyContext.ProposalDialog, 'e', "Edit", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Edit)), KeyCommand.Always),
+        new(KeyContext.ProposalDialog, 'd', "Decline", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Decline)), KeyCommand.Always),
+        new(
+            KeyContext.ProposalDialog,
+            default,
+            "Leave",
+            KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Leave)),
+            KeyCommand.Always,
+            Chord: Key.Esc),
+    ];
+
+    /// <summary>What the paragraphs and the buttons take before this view is offered a key.</summary>
+    /// <remarks>Enter is only a button's: there is no default, which the buttons below say why.</remarks>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Pressing(KeyContext.ProposalDialog),
+        .. ReservedKey.Moving(KeyContext.ProposalDialog),
+        .. ReservedKey.TakenBy(KeyContext.ProposalDialog, () => Entry.Reader(string.Empty), "the roadmap, or who it names"),
+    ];
 
     private Button Choice(string label, ProposalChoice choice)
     {

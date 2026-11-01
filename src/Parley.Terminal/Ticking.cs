@@ -64,6 +64,7 @@ internal sealed class TickDialog : Dialog
     /// <summary>What the tick column is as wide as, so the heading lines up with the names under it.</summary>
     private const string Box = "[ ] ";
 
+    private readonly CommandManager<TickDialog> _commands = new(Places, Registered, Reserved);
     private readonly ListView _rows;
     private readonly int _labelWidth;
     private readonly int _noteWidth;
@@ -289,72 +290,73 @@ internal sealed class TickDialog : Dialog
     /// <returns>Whether it meant anything; a key that did not is left to the list, which moves the cursor.</returns>
     private bool Handle(Key key)
     {
-        var at = _rows.SelectedItem ?? 0;
-
-        if (key == Key.Esc)
+        if (_commands.Answering(KeyContext.TickDialog, this, key) is not { } chosen)
         {
-            Done?.Invoke(this, null);
-
-            return true;
+            return false;
         }
 
-        if (key == Key.Enter)
-        {
-            Done?.Invoke(this, _items);
+        _ = chosen.Run();
 
-            return true;
-        }
-
-        if (key == Key.Space)
-        {
-            Toggle((_page * PageSize) + at);
-
-            return true;
-        }
-
-        if (key == Key.PageDown || key == Key.CursorRight)
-        {
-            return Turn(+1, at);
-        }
-
-        if (key == Key.PageUp || key == Key.CursorLeft)
-        {
-            return Turn(-1, at);
-        }
-
-        // Carrying on past the end of a page, so one key still walks the whole list.
-        if (key == Key.CursorDown && at == _drawn.Count - 1 && _page < Pages - 1)
-        {
-            ShowPage(_page + 1, 0);
-
-            return true;
-        }
-
-        if (key == Key.CursorUp && at == 0 && _page > 0)
-        {
-            ShowPage(_page - 1, PageSize - 1);
-
-            return true;
-        }
-
-        // Alt plus a letter, like every action on this surface, so a plain character is never an action and the
-        // list's own type-to-find is left alone.
-        if (Shell.Typed(key, 'a'))
-        {
-            SetAll(true);
-
-            return true;
-        }
-
-        if (Shell.Typed(key, 'n'))
-        {
-            SetAll(false);
-
-            return true;
-        }
-
-        return false;
+        return true;
     }
+
+    /// <summary>The row of the page the cursor is on.</summary>
+    private int At => _rows.SelectedItem ?? 0;
+
+    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.TickDialog, [])];
+
+    /// <summary>What a key does here, as the line along the bottom says.</summary>
+    /// <remarks>
+    /// The arrows down and up carry on past the end of a page only at its edge, so one key still walks the whole list;
+    /// anywhere else they are not live and the list moves its cursor, which is why the list's own binding of them is
+    /// passed in <see cref="Reserved"/>. Alt plus a letter, like every action on this surface, so a plain character is
+    /// never an action and the list's own type-to-find is left alone.
+    /// </remarks>
+    internal static IReadOnlyList<KeyCommand<TickDialog>> Registered =>
+    [
+        new(KeyContext.TickDialog, default, "Cancel", KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        new(KeyContext.TickDialog, default, "Go", KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, dialog._items)), KeyCommand.Always, Chord: Key.Enter),
+        new(KeyContext.TickDialog, default, "Tick", KeyCommand.Doing<TickDialog>(dialog => dialog.Toggle((dialog._page * PageSize) + dialog.At)), KeyCommand.Always, Chord: Key.Space),
+        new(KeyContext.TickDialog, default, "Next page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.PageDown),
+        new(KeyContext.TickDialog, default, "Next page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.CursorRight),
+        new(KeyContext.TickDialog, default, "Previous page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.PageUp),
+        new(KeyContext.TickDialog, default, "Previous page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.CursorLeft),
+        new(
+            KeyContext.TickDialog,
+            default,
+            "On to the next page",
+            KeyCommand.Doing<TickDialog>(dialog => dialog.ShowPage(dialog._page + 1, 0)),
+            dialog => dialog.At == dialog._drawn.Count - 1 && dialog._page < dialog.Pages - 1,
+            Chord: Key.CursorDown),
+        new(
+            KeyContext.TickDialog,
+            default,
+            "Back to the previous page",
+            KeyCommand.Doing<TickDialog>(dialog => dialog.ShowPage(dialog._page - 1, PageSize - 1)),
+            dialog => dialog.At == 0 && dialog._page > 0,
+            Chord: Key.CursorUp),
+        new(KeyContext.TickDialog, 'a', "All", KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(true)), KeyCommand.Always),
+        new(KeyContext.TickDialog, 'n', "None", KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(false)), KeyCommand.Always),
+    ];
+
+    /// <summary>What the list takes when no command here does.</summary>
+    /// <remarks>
+    /// The list is offered its own key handler's answer first, which is this dialog's commands, so the page keys and the
+    /// arrows it binds are passed: a command claims each, and the arrows reach the list whenever theirs is not live.
+    /// </remarks>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Moving(KeyContext.TickDialog),
+        .. ReservedKey.TakenBy(
+            KeyContext.TickDialog,
+            () => new ListView(),
+            "the rows",
+            Key.PageDown,
+            Key.PageUp,
+            Key.CursorDown,
+            Key.CursorUp),
+    ];
 
     /// <summary>Turns a page, keeping the cursor on the same row of the page where it can.</summary>
     /// <param name="by">Which way.</param>

@@ -2,7 +2,6 @@ using System.Text.RegularExpressions;
 using Grpc.Net.Client;
 using Parley.Client;
 using Parley.Core;
-using Terminal.Gui.Input;
 using Xunit;
 
 namespace Parley.Terminal.Tests;
@@ -127,40 +126,6 @@ public sealed class EveryKeyIsOfferedTests
     }
 
     [Fact]
-    public void Every_key_the_surface_takes_before_a_command_is_known_to_the_command_table()
-    {
-        // The table can only refuse a clash with a key it knows about. A key `OnKeyDown` takes for itself and the table
-        // does not hold is one a command could be bound to and named on screen, and never run.
-        var known = new Dictionary<string, Key>(StringComparer.Ordinal)
-        {
-            ["Key.Tab"] = Key.Tab,
-            ["Key.Tab.WithShift"] = Key.Tab.WithShift,
-            ["Key.CursorUp"] = Key.CursorUp,
-            ["Key.CursorDown"] = Key.CursorDown,
-            ["Key.Esc"] = Key.Esc,
-            ["Key.Enter"] = Key.Enter,
-            ["QuitKey"] = Shell.QuitKey,
-            ["BrowserKey"] = Shell.BrowserKey,
-            ["MenuKey"] = Shell.MenuKey,
-        };
-
-        var table = new CommandManager(Shell.Places, Shell.Registered, Shell.Reserved);
-        var taken = Bound(wholeMethod: true);
-
-        Assert.Contains("MenuKey", taken);
-
-        foreach (var name in taken)
-        {
-            Assert.True(known.TryGetValue(name, out var key), $"OnKeyDown compares {name}; say here which key it is");
-
-            Assert.True(
-                table.Reserved.Any(reserved => reserved.Key == key)
-                || table.Commands.Any(command => command.Chord is { } chord && chord == key),
-                $"OnKeyDown takes {name} and the command table neither reserves it nor binds a command to it");
-        }
-    }
-
-    [Fact]
     public void The_check_is_looking_at_something()
     {
         // Non-vacuity: the parse has to find the real bindings. A regex that matched nothing would
@@ -174,13 +139,13 @@ public sealed class EveryKeyIsOfferedTests
         Assert.Contains("BrowserKey", bound);
     }
 
-    /// <summary>Every key <c>Shell.OnKeyDown</c> compares against, read from its source.</summary>
-    /// <param name="wholeMethod">
-    /// Whether to read past the box's guard to the end of the method. The guard returns early for a printable key, so
-    /// what follows it is only ever a modified key; the naming check stops there and the table check does not.
-    /// </param>
+    /// <summary>Every key <c>Shell.OnKeyDown</c> compares against before the box's guard, read from its source.</summary>
     /// <returns>The keys, as written.</returns>
-    private static IReadOnlyList<string> Bound(bool wholeMethod = false)
+    /// <remarks>
+    /// The guard returns early for a printable key, so what follows it is only ever a modified key. Whether the command
+    /// table claims each key, in the place that takes it, is <c>KeysTakenBeforeTheTableTests</c>, a unit test.
+    /// </remarks>
+    private static IReadOnlyList<string> Bound()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -199,9 +164,7 @@ public sealed class EveryKeyIsOfferedTests
         Assert.True(from > 0, "OnKeyDown is not where this test expects it");
 
         var body = source[from..];
-        var ends = wholeMethod
-            ? body.IndexOf("\n    }", StringComparison.Ordinal)
-            : body.IndexOf("return base.OnKeyDown", StringComparison.Ordinal);
+        var ends = body.IndexOf("return base.OnKeyDown", StringComparison.Ordinal);
 
         Assert.True(ends > 0, "OnKeyDown no longer ends the way this test expects");
 

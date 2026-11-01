@@ -323,12 +323,14 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private void TellTidying(bool underway)
     {
+        // **The flag before the count**, and a send reads them the other way round: a send whose two reads fall either
+        // side of a start then sees the flag set or the count moved, never neither (6 in 20,000 missed it the other way).
+        Volatile.Write(ref _rewriting, underway ? 1 : 0);
+
         if (underway)
         {
             _ = Interlocked.Increment(ref _rewritesStarted);
         }
-
-        Volatile.Write(ref _rewriting, underway ? 1 : 0);
 
         foreach (var sessions in _attached.Values)
         {
@@ -1673,8 +1675,9 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // only in when each attached. The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
-        var rewriting = Volatile.Read(ref _rewriting) == 1;
+        // The count before the flag, the reverse of the order `TellTidying` writes them in; it says why.
         var started = Interlocked.Read(ref _rewritesStarted);
+        var rewriting = Volatile.Read(ref _rewriting) == 1;
 
         _ = Interlocked.Increment(ref _agentWorkWaiting);
 

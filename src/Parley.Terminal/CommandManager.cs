@@ -1,4 +1,5 @@
 using Terminal.Gui.Input;
+using Terminal.Gui.ViewBase;
 
 namespace Parley.Terminal;
 
@@ -12,6 +13,10 @@ namespace Parley.Terminal;
 /// <para>
 /// <b>Two of them are layers rather than places</b>: <see cref="MessageLine"/> and <see cref="Everywhere"/> belong to no
 /// pane and are live on top of every one, which is why a layer's key is checked against every place it is live in.
+/// </para>
+/// <para>
+/// <b>Each dialog is a place of its own</b>, with no layer: a dialog is a session on top of the surface and takes every
+/// key first, so nothing of the surface's is live in it.
 /// </para>
 /// </remarks>
 internal enum KeyContext
@@ -51,6 +56,27 @@ internal enum KeyContext
 
     /// <summary>A layer: what can be done wherever the cursor is.</summary>
     Everywhere,
+
+    /// <summary>A dialog: one confirmed roadmap and its items.</summary>
+    RoadmapDialog,
+
+    /// <summary>A dialog: one proposed roadmap, to confirm, edit or decline.</summary>
+    ProposalDialog,
+
+    /// <summary>A dialog: a list of things to tick.</summary>
+    TickDialog,
+
+    /// <summary>A dialog: what one agent is responsible for.</summary>
+    ResponsibilityDialog,
+
+    /// <summary>A dialog: one line to type.</summary>
+    TextDialog,
+
+    /// <summary>A dialog: one choice from a list.</summary>
+    ChoiceDialog,
+
+    /// <summary>A dialog: several fields to fill in.</summary>
+    FormDialog,
 }
 
 /// <summary>A place on the surface, and the layers that are live in it as well.</summary>
@@ -63,12 +89,104 @@ internal sealed record KeyPlace(KeyContext Context, IReadOnlyList<KeyContext> La
 /// <param name="Key">The key.</param>
 /// <param name="Name">What it does, for the message that names a clash.</param>
 /// <remarks>
-/// Tab, the quit chord and F10 move focus, leave or open the menus; they are not actions with a label, but a command
-/// bound to one would be named on screen and never run. Declaring them here is what lets the check see them.
+/// Tab, the quit chord and F10 move focus, leave or open the menus; a list moves its cursor; a box edits. None is an
+/// action with a label, but a command bound to one would be named on screen and never run. Declaring them here is what
+/// lets the check see them.
 /// </remarks>
-internal sealed record ReservedKey(KeyContext Context, Key Key, string Name);
+internal sealed record ReservedKey(KeyContext Context, Key Key, string Name)
+{
+    /// <summary>Every key a view takes through its own key bindings, as reservations in one place.</summary>
+    /// <param name="context">The place the view is in.</param>
+    /// <param name="build">Builds a view the way the place builds it; it is read and disposed of.</param>
+    /// <param name="name">What the view is, for the message that names a clash.</param>
+    /// <param name="passes">Keys the view binds and lets through here, each claimed by somebody else in the place.</param>
+    /// <returns>The reservations.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Read from the toolkit's own bindings rather than copied out of them</b>, so an upgrade that binds one more key
+    /// to a list claims it at once. A copy would be a second statement of the toolkit, right until it was not.
+    /// </para>
+    /// <para>
+    /// <b>A binding to accepting or activating alone is not a reservation.</b> Every view binds Enter and Space that way,
+    /// and the key is taken only where something answers the event; a place that has a handler reserves the key itself.
+    /// </para>
+    /// <para>
+    /// <b><paramref name="passes"/> is a decision written down</b>: the box binds Enter to a new line and takes it first
+    /// as sending, which a command names; a list in a dialog binds the page keys the dialog turns pages on first.
+    /// Listing a key there and claiming it nowhere else in the place fails the test that probes the views, so a pass
+    /// cannot quietly hide a key.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<ReservedKey> TakenBy(KeyContext context, Func<View> build, string name, params Key[] passes)
+    {
+        ArgumentNullException.ThrowIfNull(build);
 
-/// <summary>One thing a person can do from the terminal: where, whether now, on which key, and what it runs.</summary>
+        using var view = build();
+
+        return [.. view.KeyBindings.GetBindings()
+            .Where(binding => binding.Value.Commands.Any(command => command is not (Command.Accept or Command.Activate)))
+            .Select(binding => binding.Key)
+            .Where(key => !passes.Contains(key))
+            .Select(key => new ReservedKey(context, key, name))];
+    }
+
+    /// <summary>The keys that move between a dialog's fields and buttons, as reservations in its place.</summary>
+    /// <param name="context">The dialog's place.</param>
+    /// <returns>The reservations.</returns>
+    /// <remarks>
+    /// The toolkit moves focus on Tab once the dialog's views have let it through, so a dialog's own command on Tab would
+    /// run first and leave a person no way between fields without a mouse.
+    /// </remarks>
+    public static IReadOnlyList<ReservedKey> Moving(KeyContext context) =>
+        [new(context, Key.Tab, "the next field"), new(context, Key.Tab.WithShift, "the previous field")];
+
+    /// <summary>The keys that type a space, as reservations in a place somebody types in.</summary>
+    /// <param name="context">The place.</param>
+    /// <param name="into">What is typed into, for the message that names a clash.</param>
+    /// <returns>The reservations.</returns>
+    /// <remarks>
+    /// The one printable key a command may have as a chord: Space acts in the room and in a list of ticks, so the check
+    /// has to know where it is typing instead. No binding says so; a box takes it as text.
+    /// </remarks>
+    public static IReadOnlyList<ReservedKey> Typing(KeyContext context, string into) =>
+        [new(context, Key.Space, "a space in " + into), new(context, Key.Space.WithShift, "a space in " + into)];
+
+    /// <summary>The keys a focused button takes, as reservations in a dialog's place.</summary>
+    /// <param name="context">The dialog's place.</param>
+    /// <param name="enter">What Enter does there, which is more than the button when one is the default.</param>
+    /// <returns>The reservations.</returns>
+    /// <remarks>
+    /// A button binds Enter and Space to accepting, which <see cref="TakenBy"/> leaves to the place to say, and every
+    /// button here answers it.
+    /// </remarks>
+    public static IReadOnlyList<ReservedKey> Pressing(KeyContext context, string enter = "the focused button") =>
+        [new(context, Key.Enter, enter), new(context, Key.Space, "the focused button")];
+}
+
+/// <summary>Helpers for writing a command table.</summary>
+internal static class KeyCommand
+{
+    /// <summary>A condition that always holds, for a command live wherever its place is.</summary>
+    /// <typeparam name="TTarget">What the condition reads.</typeparam>
+    /// <param name="target">Unread.</param>
+    /// <returns><see langword="true"/>.</returns>
+    public static bool Always<TTarget>(TTarget target) => true;
+
+    /// <summary>A command's work, when it is done at once.</summary>
+    /// <typeparam name="TTarget">What it acts on.</typeparam>
+    /// <param name="act">The work.</param>
+    /// <returns>The work, as a command runs it.</returns>
+    public static Func<TTarget, Task> Doing<TTarget>(Action<TTarget> act) =>
+        target =>
+        {
+            act(target);
+
+            return Task.CompletedTask;
+        };
+}
+
+/// <summary>One thing a person can do: where, whether now, on which key, and what it runs.</summary>
+/// <typeparam name="TTarget">What it acts on: the surface, or the dialog it belongs to.</typeparam>
 /// <param name="Context">Where it can be live: a place, or a layer.</param>
 /// <param name="Key">Its letter, pressed with Alt; <see langword="default"/> when it has a chord.</param>
 /// <param name="Name">What it is called, and what a clash names it by.</param>
@@ -92,51 +210,58 @@ internal sealed record ReservedKey(KeyContext Context, Key Key, string Name);
 /// <b><see cref="When"/> has no default</b>, so a command is live only where somebody said it is.
 /// </para>
 /// </remarks>
-internal sealed record KeyCommand(
+internal sealed record KeyCommand<TTarget>(
     KeyContext Context,
     char Key,
     string Name,
-    Func<Shell, Task> Run,
-    Func<Shell, bool> When,
+    Func<TTarget, Task> Run,
+    Func<TTarget, bool> When,
     string? Costs = null,
     Key? Chord = null,
     ActionCategory? Category = null,
     ActionGroup? Group = null,
     int Order = 0,
-    Func<Shell, string>? Says = null)
+    Func<TTarget, string>? Says = null)
 {
-    /// <summary>A condition that always holds, for a command live wherever its place is.</summary>
-    public static Func<Shell, bool> Always { get; } = _ => true;
-
     /// <summary>How the key is written, wherever it is named.</summary>
     public string Stroke => Chord?.ToString() ?? Shell.Alt(Key);
 }
 
-/// <summary>Every command the terminal offers, checked once for clashes and then read by everything that names a key.</summary>
+/// <summary>A live command as one place offers it, and the place or layer it was declared in.</summary>
+/// <param name="From">Where it was declared: the place itself, or one of its layers.</param>
+/// <param name="Action">What it offers now.</param>
+internal sealed record OfferedAction(KeyContext From, RegionAction Action);
+
+/// <summary>
+/// Every command one surface offers, checked once for clashes and then read by everything that names or answers a key.
+/// </summary>
+/// <typeparam name="TTarget">What the commands act on: the surface, or one dialog.</typeparam>
 /// <remarks>
 /// <para>
-/// <b>One table that dispatch, the status line and the menus all read</b>, so none of them can disagree with what a
-/// key does. Before it there were three lists searched in order, and a pane's letter silently beat the message line's:
-/// the roadmaps pane and the message line both took Alt+e, the status line named both, and one never ran.
+/// <b>One table that dispatch, the status line and the menus all read</b>, through <see cref="Offered"/>, so none of
+/// them can disagree with what a key does. Before it there were three lists searched in order, and a pane's letter
+/// silently beat the message line's: the roadmaps pane and the message line both took Alt+e, the status line named
+/// both, and one never ran.
 /// </para>
 /// <para>
-/// <b>A clash refuses to construct</b>, naming both commands and the place, so the terminal does not start with one.
-/// <c>CommandTableTests</c> constructs the real table, so a push fails before anybody runs the tool.
+/// <b>A clash refuses to construct</b>, naming both claims and the place. <see cref="CommandTables"/> builds every
+/// table before the terminal takes the console, so it does not start with one, and <c>CommandTableTests</c> builds them
+/// too, so a push fails before anybody runs the tool.
 /// </para>
 /// </remarks>
-internal sealed class CommandManager
+internal sealed class CommandManager<TTarget>
 {
     private readonly IReadOnlyList<KeyPlace> _places;
-    private readonly IReadOnlyList<KeyCommand> _commands;
+    private readonly IReadOnlyList<KeyCommand<TTarget>> _commands;
     private readonly IReadOnlyList<ReservedKey> _reserved;
 
     /// <summary>Checks the table and keeps it.</summary>
     /// <param name="places">Every place and the layers live in it.</param>
     /// <param name="commands">Every command.</param>
-    /// <param name="reserved">The keys the surface takes before any command.</param>
+    /// <param name="reserved">The keys taken before any command.</param>
     /// <exception cref="InvalidOperationException">Two claims share a key in one place, or a command can never be live, or a key is not one a person can press as an action.</exception>
     public CommandManager(
-        IReadOnlyList<KeyPlace> places, IReadOnlyList<KeyCommand> commands, IReadOnlyList<ReservedKey> reserved)
+        IReadOnlyList<KeyPlace> places, IReadOnlyList<KeyCommand<TTarget>> commands, IReadOnlyList<ReservedKey> reserved)
     {
         ArgumentNullException.ThrowIfNull(places);
         ArgumentNullException.ThrowIfNull(commands);
@@ -153,35 +278,57 @@ internal sealed class CommandManager
     public IReadOnlyList<KeyPlace> Places => _places;
 
     /// <summary>Every command, as declared.</summary>
-    public IReadOnlyList<KeyCommand> Commands => _commands;
+    public IReadOnlyList<KeyCommand<TTarget>> Commands => _commands;
 
     /// <summary>Every reserved key, as declared.</summary>
     public IReadOnlyList<ReservedKey> Reserved => _reserved;
 
-    /// <summary>The commands declared in one place or layer that are live now, as the screen offers them.</summary>
-    /// <param name="context">The place or layer, alone.</param>
-    /// <param name="shell">What the conditions read.</param>
+    /// <summary>The commands declared in one place or layer that are live now, alone.</summary>
+    /// <param name="context">The place or layer.</param>
+    /// <param name="target">What the conditions read.</param>
     /// <returns>The actions, in the order they were declared.</returns>
-    public IReadOnlyList<RegionAction> Live(KeyContext context, Shell shell) =>
-        [.. _commands.Where(command => command.Context == context && command.When(shell)).Select(command => Offer(command, shell))];
+    /// <remarks>For a list of one place's own commands, such as a row's menu. What a place offers is <see cref="Offered"/>.</remarks>
+    public IReadOnlyList<RegionAction> Live(KeyContext context, TTarget target) =>
+        [.. _commands.Where(command => command.Context == context && command.When(target)).Select(command => Offer(command, target))];
+
+    /// <summary>Everything live in a place: its own commands, then each layer's, in the order the place lists them.</summary>
+    /// <param name="context">The place the cursor is in.</param>
+    /// <param name="target">What the conditions read.</param>
+    /// <returns>The actions, each with where it was declared.</returns>
+    /// <remarks>
+    /// <b>The one read behind a key, the status line and the menus</b>, so a layer a place does not list is neither
+    /// named nor answered there. Reading the layers one by one is how the screen came to name what a key did not run.
+    /// </remarks>
+    public IReadOnlyList<OfferedAction> Offered(KeyContext context, TTarget target) =>
+        [.. Layered(context).SelectMany(from => _commands
+            .Where(command => command.Context == from && command.When(target))
+            .Select(command => new OfferedAction(from, Offer(command, target))))];
 
     /// <summary>The live command a key runs in a place, looking in the place and every layer live in it.</summary>
     /// <param name="context">The place the cursor is in.</param>
-    /// <param name="shell">What the conditions read.</param>
+    /// <param name="target">What the conditions read.</param>
     /// <param name="key">What arrived.</param>
     /// <returns>The action, or <see langword="null"/> when the key runs nothing here.</returns>
     /// <remarks>
     /// Order does not matter, and that is what the check bought: at most one command in a place and its layers claims
     /// any key, so there is no precedence for a reader to know.
     /// </remarks>
-    public RegionAction? Answering(KeyContext context, Shell shell, Key key)
-    {
-        var where = Layered(context);
+    public RegionAction? Answering(KeyContext context, TTarget target, Key key) =>
+        Offered(context, target).Select(offered => offered.Action).FirstOrDefault(action => action.Answers(key));
 
-        return _commands
-            .Where(command => where.Contains(command.Context) && command.When(shell))
-            .Select(command => Offer(command, shell))
-            .FirstOrDefault(action => action.Answers(key));
+    /// <summary>Whether a key is claimed in a place, by a command or a reservation there or in a layer live there.</summary>
+    /// <param name="context">The place.</param>
+    /// <param name="key">The key.</param>
+    /// <returns><see langword="true"/> when something in the table holds it there.</returns>
+    public bool Claims(KeyContext context, Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        var where = Layered(context);
+        var identity = Identity(key);
+
+        return _commands.Any(command => where.Contains(command.Context) && Identity(command) == identity)
+               || _reserved.Any(reserved => where.Contains(reserved.Context) && Identity(reserved.Key) == identity);
     }
 
     /// <summary>How a key is compared, so Alt+E and Alt+e, or a letter and its Alt chord, are one key.</summary>
@@ -197,15 +344,21 @@ internal sealed class CommandManager
     /// <returns>Its identity.</returns>
     private static string Identity(char letter) => Shell.Alt(char.ToLowerInvariant(letter));
 
+    /// <summary>How a command's key is compared.</summary>
+    /// <param name="command">The command.</param>
+    /// <returns>Its identity.</returns>
+    private static string Identity(KeyCommand<TTarget> command) =>
+        command.Chord is { } chord ? Identity(chord) : Identity(command.Key);
+
     /// <summary>The live action a command offers.</summary>
     /// <param name="command">The command.</param>
-    /// <param name="shell">What it acts on.</param>
+    /// <param name="target">What it acts on.</param>
     /// <returns>The action.</returns>
-    private static RegionAction Offer(KeyCommand command, Shell shell) =>
+    private static RegionAction Offer(KeyCommand<TTarget> command, TTarget target) =>
         new(
             command.Key,
-            command.Says?.Invoke(shell) ?? command.Name,
-            () => command.Run(shell),
+            command.Says?.Invoke(target) ?? command.Name,
+            () => command.Run(target),
             command.Costs,
             command.Chord,
             command.Category,
@@ -259,17 +412,21 @@ internal sealed class CommandManager
             var claims = _commands
                 .Where(command => where.Contains(command.Context))
                 .Select(command => (
-                    Key: command.Chord is { } chord ? Identity(chord) : Identity(command.Key),
+                    Key: Identity(command),
+                    Reserved: false,
                     Said: $"'{command.Name}' ({command.Stroke}, {command.Context})"))
                 .Concat(_reserved
                     .Where(reserved => where.Contains(reserved.Context))
                     .Select(reserved => (
                         Key: Identity(reserved.Key),
+                        Reserved: true,
                         Said: $"'{reserved.Name}' ({reserved.Key}, reserved in {reserved.Context})")));
 
+            // **A clash needs a command in it.** Two reservations on one key are two views that each take it when they
+            // have focus, which costs nobody a command: a dialog's list and its paragraph both move on the arrows.
             clashes.AddRange(claims
                 .GroupBy(claim => claim.Key, StringComparer.Ordinal)
-                .Where(group => group.Count() > 1)
+                .Where(group => group.Count() > 1 && group.Any(claim => !claim.Reserved))
                 .Select(clash => $"{clash.Key} is claimed more than once in {place.Context}: "
                     + string.Join(" and ", clash.Select(claim => claim.Said)) + "."));
         }
@@ -278,6 +435,66 @@ internal sealed class CommandManager
         {
             throw new InvalidOperationException(
                 string.Join(Environment.NewLine, clashes) + Environment.NewLine + "Give each command its own key in every place it can be live.");
+        }
+    }
+}
+
+/// <summary>Every command table the terminal has, built together so a clash in any of them is found before it starts.</summary>
+/// <remarks>
+/// <para>
+/// <b>Built before the toolkit takes the console</b>, from <c>TerminalCommand.RunAsync</c>, so a refusal is a plain
+/// message on standard error and a non-zero exit, never a stack trace over a screen the toolkit had already cleared.
+/// The surface and each dialog build their own table again when they are made; by then this has proved they can.
+/// </para>
+/// <para>
+/// A table added and left out of <see cref="BuildEvery"/> is still checked whenever its dialog opens, but only then;
+/// <c>CommandTableTests</c> counts the places to catch that.
+/// </para>
+/// </remarks>
+internal static class CommandTables
+{
+    /// <summary>What the terminal exits with when a table refuses: a fault in this build, not in how it was run.</summary>
+    internal const int Refusal = 70;
+
+    /// <summary>Builds every table, throwing the first refusal.</summary>
+    /// <returns>The places every table declares, for a test to count.</returns>
+    internal static IReadOnlyList<KeyContext> BuildEvery() =>
+    [
+        .. new CommandManager<Shell>(Shell.Places, Shell.Registered, Shell.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<PlanView>(PlanView.Places, PlanView.Registered, PlanView.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<ProposalView>(ProposalView.Places, ProposalView.Registered, ProposalView.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<TickDialog>(TickDialog.Places, TickDialog.Registered, TickDialog.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<ResponsibilityDialog>(ResponsibilityDialog.Places, ResponsibilityDialog.Registered, ResponsibilityDialog.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<TextDialog>(TextDialog.Places, TextDialog.Registered, TextDialog.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<ChoiceDialog>(ChoiceDialog.Places, ChoiceDialog.Registered, ChoiceDialog.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<FormDialog>(FormDialog.Places, FormDialog.Registered, FormDialog.Reserved).Places.Select(place => place.Context),
+    ];
+
+    /// <summary>Builds every table, and says plainly why the terminal cannot start when one refuses.</summary>
+    /// <param name="error">Where to say it.</param>
+    /// <param name="build">What to build; every table unless a test says otherwise.</param>
+    /// <returns><see langword="null"/> when every table was built, or the exit code.</returns>
+    /// <remarks>
+    /// The refusal names every clash and how to fix it, which is all a person can act on; a stack trace would bury that
+    /// under frames of the toolkit's. Only <see cref="InvalidOperationException"/> is caught, which is what a table
+    /// throws; anything else is a different fault and is left to be one.
+    /// </remarks>
+    internal static int? Refused(TextWriter error, Func<object>? build = null)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+
+        try
+        {
+            _ = (build ?? BuildEvery)();
+
+            return null;
+        }
+        catch (InvalidOperationException refused)
+        {
+            error.WriteLine("parley-terminal cannot start: two of its commands share a key.");
+            error.WriteLine(refused.Message);
+
+            return Refusal;
         }
     }
 }

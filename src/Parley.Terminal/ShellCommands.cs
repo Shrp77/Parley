@@ -8,7 +8,7 @@ namespace Parley.Terminal;
 /// <summary>Every command the surface offers, where each is live, and the keys the surface keeps for itself.</summary>
 /// <remarks>
 /// <para>
-/// <b>Declared here rather than built per keystroke</b>, so <see cref="CommandManager"/> can refuse a clash when the
+/// <b>Declared here rather than built per keystroke</b>, so <see cref="CommandManager{TTarget}"/> can refuse a clash when the
 /// surface is constructed. A command belongs to the place that shows the thing it acts on: a seat is taken from the
 /// agents pane, a question is answered from a transcript, a project is created or removed from the projects list.
 /// </para>
@@ -33,10 +33,31 @@ internal sealed partial class Shell
         }.Select(context => new KeyPlace(context, [KeyContext.MessageLine, KeyContext.Everywhere])),
     ];
 
-    /// <summary>The keys <c>OnKeyDown</c> takes before any command is asked.</summary>
+    /// <summary>What a list's own keys are called when a clash names one.</summary>
+    internal const string ListName = "the list's cursor";
+
+    /// <summary>The panes that are a list, and so take a list's keys.</summary>
+    private static readonly KeyContext[] ListPlaces =
+    [
+        KeyContext.Projects, KeyContext.Agents, KeyContext.Conversations, KeyContext.Transcript, KeyContext.Room,
+        KeyContext.Plans, KeyContext.Roadmaps, KeyContext.Configuration,
+    ];
+
+    /// <summary>Every key taken before a command is asked: by <c>OnKeyDown</c>, or by the view that has focus in a pane.</summary>
     /// <remarks>
+    /// <para>
+    /// <b>A focused view is offered a key before the surface is</b>, so a key a pane's list or the box takes never
+    /// reaches a command. Each place therefore reserves what its own views take: every pane but the box is a list, which
+    /// moves its cursor on the arrows, the page keys and their chords; the box edits on Ctrl and the editing keys.
+    /// <c>KeysTakenBeforeTheTableTests</c> builds each pane and presses every key at it, so a view that takes a key its
+    /// place does not claim fails a unit test.
+    /// </para>
+    /// <para>
     /// Escape is not here: going back is a command, in <see cref="KeyContext.Everywhere"/>, and that is what claims it.
-    /// Enter on the agents list is a command too. The Enters here are the ones a pane takes with no label of its own.
+    /// Enter on the agents list and on the roadmap lists is a command too. The Enters here are the ones a pane takes with
+    /// no label of its own: the conversations and the room take it through their list's own accept, which is why it was
+    /// missed when only <c>OnKeyDown</c> was read.
+    /// </para>
     /// </remarks>
     internal static IReadOnlyList<ReservedKey> Reserved =>
     [
@@ -46,14 +67,27 @@ internal sealed partial class Shell
         new(KeyContext.Everywhere, BrowserKey, OpenConsoleTitle),
         new(KeyContext.Everywhere, MenuKey, "the menu bar"),
         new(KeyContext.Projects, Key.Enter, "open the project"),
+        new(KeyContext.Conversations, Key.Enter, "open the conversation"),
         new(KeyContext.Transcript, Key.Enter, "open the folded message"),
+        new(KeyContext.Room, Key.Enter, "start, write to or read the row"),
         new(KeyContext.Configuration, Key.Enter, ConfigurationRegion.ChangeTitle),
-        new(KeyContext.Line, Key.CursorUp, "the completion list"),
-        new(KeyContext.Line, Key.CursorDown, "the completion list"),
+
+        // The box binds the arrows too; while a completion list is offered the surface moves its selection instead.
+        new(KeyContext.Line, Key.CursorUp, "the box's cursor, or the completion list"),
+        new(KeyContext.Line, Key.CursorDown, "the box's cursor, or the completion list"),
+
+        // The box takes Ctrl+Enter itself, as the line break Shift+Enter is: several terminals cannot send the one.
+        new(KeyContext.Line, Key.Enter.WithCtrl, BreakTitle),
+
+        .. ListPlaces.SelectMany(place => ReservedKey.TakenBy(place, () => Lists.Filling(), ListName)),
+
+        // Enter is sending, which the box takes on its own key handler and the command names.
+        .. ReservedKey.TakenBy(KeyContext.Line, () => Entry.Speaking().View, "the box", Key.Enter),
+        .. ReservedKey.Typing(KeyContext.Line, "the box"),
     ];
 
     /// <summary>Every command, in every place and layer.</summary>
-    internal static IReadOnlyList<KeyCommand> Registered =>
+    internal static IReadOnlyList<KeyCommand<Shell>> Registered =>
     [
         // **The projects list.** Auto Accept lives in the configuration view, reached from Everywhere, which says what
         // it decides before anybody changes it.
