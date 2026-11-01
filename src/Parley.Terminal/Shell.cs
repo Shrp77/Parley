@@ -1844,6 +1844,14 @@ internal sealed partial class Shell : Window
 
             await SelectAsync(project, token).ConfigureAwait(false);
 
+            // **Only while the project asked about is still in view.** The person can move to another while the read is
+            // out; `SelectAsync` then draws nothing, and the pane below would be the other project's, focused or said to
+            // have nothing waiting in its name.
+            if (Current is not { } shown || !string.Equals(shown.Name.Value, project.Name.Value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
             if (Roadmaps.Proposals.Count == 0)
             {
                 Said = Proposing.NoneWaiting;

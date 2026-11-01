@@ -827,7 +827,10 @@ public sealed class FileLocationStore : IDisposable
     // A tree deleted from a stack of its own, deepest first, rather than one call a level as Directory.Delete makes on
     // Windows: a tree made by hand can be deeper than the stack, and an overflow ends the process. A link is deleted and
     // never entered, since it may lead out of the location.
-    private static void DeleteTree(string folder)
+    //
+    // **Everything that can go goes, and what is left is said at the end.** Stopping at the first file another program
+    // held left every other file of a destroyed conversation on disk, and the problem raised named only the one.
+    internal static void DeleteTree(string folder)
     {
         var root = AsWritten(folder);
 
@@ -838,6 +841,7 @@ public sealed class FileLocationStore : IDisposable
             return;
         }
 
+        var left = new List<(string Path, Exception Error)>();
         var pending = new Stack<(string Path, bool Emptied)>();
         pending.Push((root, false));
 
@@ -845,28 +849,67 @@ public sealed class FileLocationStore : IDisposable
         {
             if (top.Emptied)
             {
-                Directory.Delete(top.Path, recursive: false);
+                // A folder something inside was left in cannot go, and is not a second thing to report.
+                if (!left.Exists(l => l.Path.StartsWith(top.Path + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+                {
+                    Try(top.Path, () => Directory.Delete(top.Path, recursive: false));
+                }
+
                 continue;
             }
 
             pending.Push((top.Path, true));
 
-            foreach (var entry in Directory.EnumerateFileSystemEntries(top.Path).ToList())
-            {
-                var attributes = File.GetAttributes(entry);
+            List<string> entries = [];
 
-                if ((attributes & FileAttributes.Directory) == 0)
+            Try(top.Path, () => entries = [.. Directory.EnumerateFileSystemEntries(top.Path)]);
+
+            foreach (var entry in entries)
+            {
+                Try(entry, () =>
                 {
-                    File.Delete(entry);
-                }
-                else if ((attributes & FileAttributes.ReparsePoint) != 0)
-                {
-                    DeleteLink(entry);
-                }
-                else
-                {
-                    pending.Push((entry, false));
-                }
+                    var attributes = File.GetAttributes(entry);
+
+                    if ((attributes & FileAttributes.Directory) == 0)
+                    {
+                        File.Delete(entry);
+                    }
+                    else if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        DeleteLink(entry);
+                    }
+                    else
+                    {
+                        pending.Push((entry, false));
+                    }
+                });
+            }
+        }
+
+        if (left.Count > 0)
+        {
+            var named = left.Take(5).Select(l => l.Path == root ? "the folder itself" : Path.GetRelativePath(root, l.Path));
+            var more = left.Count > 5 ? $" and {left.Count - 5} more" : string.Empty;
+
+            throw new IOException(
+                $"{left.Count} {(left.Count == 1 ? "entry was" : "entries were")} left, the rest deleted: "
+                + string.Join(", ", named) + more + ". " + left[0].Error.Message,
+                left[0].Error);
+        }
+
+        void Try(string path, Action act)
+        {
+            try
+            {
+                act();
+            }
+            catch (Exception gone) when (gone is FileNotFoundException or DirectoryNotFoundException)
+            {
+                // Gone since its folder was read: nothing left.
+            }
+            catch (Exception held) when (held is IOException or UnauthorizedAccessException)
+            {
+                left.Add((path, held));
             }
         }
     }
