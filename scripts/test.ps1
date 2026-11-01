@@ -35,6 +35,12 @@
 .PARAMETER AllResults
     Record every test's result in tests.jsonl, not only the ones that did not pass. CI runs pass it.
 
+.PARAMETER DumpStalls
+    When a test process says it is waiting for foreground threads after its last test, write a dump of it with
+    dotnet-dump into dumps/ under the metrics folder before the runner gives up on it. The nightly passes it: the
+    Windows runner has shown a process that would not exit, which no local run reproduces, and only its threads can
+    say why (`dotnet-dump analyze`, then `clrthreads` and `clrstack -all`).
+
 .EXAMPLE
     pwsh scripts/test.ps1
     pwsh scripts/test.ps1 -Category All -Build
@@ -50,7 +56,8 @@ param(
     [ValidateSet('local', 'ci')]
     [string] $Source = 'local',
     [string] $MetricsDirectory,
-    [switch] $AllResults
+    [switch] $AllResults,
+    [switch] $DumpStalls
 )
 
 $ErrorActionPreference = 'Stop'
@@ -115,7 +122,17 @@ foreach ($directory in $projects) {
 
     $xml = Join-Path $xmlDirectory "$name.xml"
     $clock = [Diagnostics.Stopwatch]::StartNew()
-    & $binary @filter -result-xml $xml -noLogo | Out-Host
+    & $binary @filter -result-xml $xml -noLogo | ForEach-Object {
+        $_ | Out-Host
+        # The runner waits ten seconds before it forces the exit, which is long enough for a dump of the heap.
+        if ($DumpStalls -and $_ -match 'Waiting \d+ seconds for foreground threads') {
+            $dumps = Join-Path $MetricsDirectory 'dumps'
+            New-Item -ItemType Directory -Force $dumps | Out-Null
+            foreach ($stalled in Get-Process -Name $name -ErrorAction SilentlyContinue) {
+                dotnet-dump collect -p $stalled.Id --type Heap -o (Join-Path $dumps "$name-$($stalled.Id).dmp") | Out-Host
+            }
+        }
+    }
     $exit = $LASTEXITCODE
     $clock.Stop()
 
