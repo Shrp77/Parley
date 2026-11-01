@@ -36,7 +36,7 @@ namespace Parley.Terminal;
 /// than by position.
 /// </para>
 /// </remarks>
-internal sealed class Shell : Window
+internal sealed partial class Shell : Window
 {
     /// <summary>The width at which the four regions stop fitting side by side.</summary>
     /// <remarks>
@@ -584,10 +584,18 @@ internal sealed class Shell : Window
 
     /// <summary>The key that shows a message the line could not hold.</summary>
     /// <remarks>
-    /// <c>e</c>, for expand. It appears only when the message line has been cut off, so the copy key
-    /// <c>m</c> is the one that is used often.
+    /// <c>w</c>, for whole. It appears only when the message line has been cut off, so the copy key
+    /// <c>m</c> is the one that is used often. Not <c>e</c>: that is edit on the roadmaps pane, in a roadmap's view
+    /// and on a proposal, and this layer is live on every pane.
     /// </remarks>
-    internal const char WholeKey = 'e';
+    internal const char WholeKey = 'w';
+
+    /// <summary>Every command, checked for clashes when the surface is built.</summary>
+    /// <remarks>
+    /// <b>A field initialiser, so a clash stops the constructor</b> and the terminal does not start with a key that
+    /// is named on screen and runs something else.
+    /// </remarks>
+    private readonly CommandManager _commands = new(Places, Registered, Reserved);
 
     private readonly BrokerDirectory _directory;
     // One row by design, and fixed at one: its text is set from pool threads (a count read off the loop redraws it),
@@ -1426,17 +1434,7 @@ internal sealed class Shell : Window
     /// surface and it is occupying the surface's rows. Offered only while there is something to
     /// act on, so the status line never names a key that would do nothing.
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Messaging() =>
-    [
-        // **The view's, because the message line is the surface's own rows.** Neither of these
-        // touches the deployment: one shows what was said in full and the other gives the rows back.
-        .. SaidMore
-            ? new[] { new RegionAction(WholeKey, WholeTitle, Whole, Category: ActionCategory.View) }
-            : [],
-        .. Said.Length > 0
-            ? new[] { new RegionAction(ClearKey, ClearTitle, Clear, Category: ActionCategory.View) }
-            : [],
-    ];
+    internal IReadOnlyList<RegionAction> Messaging() => _commands.Live(KeyContext.MessageLine, this);
 
     /// <summary>The first of several status lines that fits, or the shortest when none does.</summary>
     /// <param name="room">How many columns there are.</param>
@@ -2183,7 +2181,7 @@ internal sealed class Shell : Window
     /// actions is what keeps the status line and the keys from drifting apart.
     /// </remarks>
     internal IReadOnlyList<RegionAction> Actions() =>
-        [.. Offered().Select(action => action with { Category = action.Category ?? Belongs() })];
+        [.. _commands.Live(Context, this).Select(action => action with { Category = action.Category ?? Belongs() })];
 
     /// <summary>The menus the bar offers, left to right.</summary>
     /// <returns>The categories that have anything under them.</returns>
@@ -2204,7 +2202,8 @@ internal sealed class Shell : Window
     /// <returns>The actions, in no particular order — <c>MenuRow</c> decides the order.</returns>
     /// <remarks>
     /// One list assembled in one place, so the bar and the keys that open its menus cannot disagree
-    /// about what is on it. The three sources are the three that exist; a fourth would be added here.
+    /// about what is on it. The three are the focused place and the two layers live on it in the command table;
+    /// a new layer is declared there and read here.
     /// </remarks>
     private IReadOnlyList<RegionAction> Bar() => [.. Actions(), .. Messaging(), .. Global()];
 
@@ -2241,80 +2240,29 @@ internal sealed class Shell : Window
     /// Here they are <em>named</em> where somebody looking for them would look.
     /// </para>
     /// </remarks>
-    internal IReadOnlyList<RegionAction> Global() =>
-    [
-        // **Back is on the bar** under View, so it is never only a key. Escape is answered further up; this
-        // entry only *names* it, and runs the same delegate so the two cannot drift.
-        .. _place.CanGoBack
-            ? new[]
-            {
-                new RegionAction(
-                    default,
-                    BackLabel ?? BackStroke,
-                    BackAsync,
-                    Category: ActionCategory.View,
-                    Chord: Key.Esc,
-                    Order: 1),
-            }
-            : Array.Empty<RegionAction>(),
+    internal IReadOnlyList<RegionAction> Global() => _commands.Live(KeyContext.Everywhere, this);
 
-        // **The way into a project's settings, from wherever a project is in view.** Global rather than a region's,
-        // because inside a project the focused pane is the agents or the conversations, and a setting of the project
-        // is neither. A chord rather than a letter, because a global letter is shadowed by whichever pane already
-        // uses it -- named on the menu and dead under the cursor.
-        .. _place.Viewing is not Viewing.Configuration and not Viewing.Conversation
-           && (Current ?? Projects.Selected) is not null
-            ? new[]
-            {
-                new RegionAction(
-                    default,
-                    ConfigurationTitle,
-                    OpenConfiguration,
-                    Category: ActionCategory.Project,
-                    Chord: ConfigurationKey,
-                    Order: 100),
-            }
-            : Array.Empty<RegionAction>(),
+    /// <summary>Where the cursor is, as the command table names places.</summary>
+    /// <remarks>
+    /// Read from the focused pane, so a pane that is on screen only once a roadmap exists is a place like any other:
+    /// the table was checked for it before it was ever shown.
+    /// </remarks>
+    internal KeyContext Context => Panes[FocusedRegion] switch
+    {
+        ProjectsRegion => KeyContext.Projects,
+        AgentsRegion => KeyContext.Agents,
+        ConversationsRegion => KeyContext.Conversations,
+        TranscriptRegion => KeyContext.Transcript,
+        RoomRegion => KeyContext.Room,
+        LineRegion => KeyContext.Line,
+        PlansRegion => KeyContext.Plans,
+        RoadmapsRegion => KeyContext.Roadmaps,
+        ConfigurationRegion => KeyContext.Configuration,
+        _ => KeyContext.Elsewhere,
+    };
 
-        // **What agents have put forward, from wherever a project is in view** -- a conversation included, which
-        // is where a roadmap is most often agreed, so a person never has to leave one to decide it. Beside the configuration for the same reason: it is about the project and not about the pane the
-        // cursor is in. A chord rather than a letter, because a global letter is shadowed by whichever pane already uses it.
-        .. _place.Viewing is not Viewing.Configuration
-           && (Current ?? Projects.Selected) is not null
-            ? new[]
-            {
-                new RegionAction(
-                    default,
-                    Proposing.Title,
-                    OpenProposals,
-                    Category: ActionCategory.Project,
-                    Chord: ProposalsKey,
-                    Order: 90),
-            }
-            : Array.Empty<RegionAction>(),
-
-        // **What sweeps of the file location found, from wherever a project is in view**, beside the proposals for the
-        // same reason, and offered whether or not any are waiting so the dismissed ones can be read again.
-        .. _place.Viewing is not Viewing.Configuration
-           && (Current ?? Projects.Selected) is not null
-            ? new[]
-            {
-                new RegionAction(
-                    default,
-                    FilesProblems.Title,
-                    OpenFileProblems,
-                    Category: ActionCategory.Project,
-                    Chord: FileProblemsKey,
-                    Order: 95),
-            }
-            : Array.Empty<RegionAction>(),
-
-        new RegionAction(
-            ActionsKey, KeysTitle, Offer, Category: ActionCategory.Help, Order: 1),
-
-        new RegionAction(
-            default, AboutTitle, About, Category: ActionCategory.Help, Chord: Key.F1, Order: 2),
-    ];
+    /// <summary>The command table this surface was built with.</summary>
+    internal CommandManager CommandTable => _commands;
 
     /// <summary>What the focused region's actions are about, unless one says otherwise.</summary>
     /// <returns>The category.</returns>
@@ -2340,244 +2288,6 @@ internal sealed class Shell : Window
         LineRegion => ActionCategory.Conversation,
         ConfigurationRegion => ActionCategory.Project,
         _ => ActionCategory.View,
-    };
-
-    /// <summary>What the focused region offers, before a category is settled on any of it.</summary>
-    /// <returns>The actions, in the order the status line lists them.</returns>
-    private IReadOnlyList<RegionAction> Offered() => Panes[FocusedRegion] switch
-    {
-        ProjectsRegion =>
-        [
-            new RegionAction('c', Naming.CreateTitle, Create),
-
-            new RegionAction('r', Removing.Title, Remove),
-
-            // **Three of these belong to the deployment however they are reached**: health is read across
-            // every project, the log is the broker's, and the web UI is another way into the whole thing. They are offered from this region because
-            // this is where somebody is standing, and that is not the same as what they are about.
-            new RegionAction('y', HealthTitle, ShowHealth, Category: ActionCategory.Deployment),
-            new RegionAction('l', Files.ProjectTitle, ShowFiles),
-            new RegionAction('p', Pruning.Title, PruneSelected),
-            new RegionAction('g', FollowLogTitle, FollowLog, Category: ActionCategory.Deployment),
-
-            new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
-
-            // Auto Accept lives in the configuration view, reached from `Global()`, which says what it decides
-            // before anybody changes it.
-        ],
-
-        AgentsRegion =>
-        [
-            // Enter's meaning here, named where the others are: a key the surface takes and does not
-            // name is one nobody finds. Offered only on a row, since that is what it acts on.
-            .. Agents.Selected is not null
-                ? new[] { new RegionAction(default, RowMenuTitle, RowMenu, Chord: Key.Enter) }
-                : Array.Empty<RegionAction>(),
-
-            new RegionAction('a', Adding.Title, Add),
-
-            // Beside adding one, because it is the same act for many: the two ways a project gains agents
-            // belong on one menu. `f` for the folder it asks for.
-            new RegionAction('f', Onboarding.Title, Enrol),
-
-            // Offered only while there is something to start, so the line never names a key that
-            // would do nothing — and, on a deployment where every agent has registered, never
-            // appears at all.
-            .. NeverRegistered() is { Count: > 0 } waiting
-                ? new[]
-                {
-                    new RegionAction('u', StartEveryTitle(waiting.Count), StartEvery),
-                }
-                : Array.Empty<RegionAction>(),
-
-            // Never for a seat, whoever holds it: a person leaves a seat, they are not retired
-            // (research R7). Withdrawing refuses one reached by any other route as well.
-            .. Agents.Selected is { Seat: false } chosen
-                ? chosen.State.Contains("retired", StringComparison.Ordinal)
-                    ? [new RegionAction('i', Withdrawing.ReinstateTitle, Reinstate)]
-                    : new[] { new RegionAction('r', Withdrawing.Title, Withdraw) }
-                : Array.Empty<RegionAction>(),
-
-            // Never for a seat: a seat is a person.
-            .. Agents.Selected is { Seat: false } told
-                ? new[]
-                {
-                    // **One page for what an agent is responsible for**: what it has said, the line in a field to
-                    // change, and asking it to refresh. Never for a seat: an ownership line is how peers decide who
-                    // to send work to, and a person is not routed to by one.
-                    //
-                    // Needs no seat, because Parley asks and a person's line is recorded as theirs.
-                    new RegionAction('n', Responsibility.Title, ResponsibilityOfSelected, Owing.Requesting),
-                }
-                : Array.Empty<RegionAction>(),
-
-            // **Offered while there is anybody to ask, and named with the count**, because it launches
-            // one exchange per agent and a person deciding is deciding about that number. Offered
-            // without a seat for the reason the single ask is: an action nobody can find is
-            // indistinguishable from one that does not exist.
-            .. Agents.Registry.Count > 0
-                ? new[]
-                {
-                    new RegionAction(
-                        'e',
-                        Ownership.AskEveryTitle,
-                        AskEveryoneWhatTheyOwn,
-                        Owing.Requesting),
-
-                    // **The review is what makes Auto Accept safe to leave on**: every line, where it
-                    // came from, and whatever Parley is waiting on, with the decisions about each. `v`, as in review;
-                    // offered whenever there is anybody to review and needing no seat, because nothing in it speaks as
-                    // the person.
-                    new RegionAction('v', OwnershipReview.Title, ReviewOwnership),
-                }
-                : Array.Empty<RegionAction>(),
-
-            // **No join and no leave**. The broker provides the person's seat in every project and this
-            // terminal takes it on its own; closing the terminal is how a person leaves.
-        ],
-
-        // **The room column.** No action on this surface exists only as a key.
-        RoomRegion =>
-        [
-            // Offered only on a row that is a participant, because that is the only row it would do anything
-            // to -- and a key named where it does nothing is the fault this surface keeps a rule about.
-            .. Held is not null && Room.SelectedPeer is not null
-                ? new[] { new RegionAction(default, IncludeTitle, ToggleOne, null, Key.Space) }
-                : Array.Empty<RegionAction>(),
-
-            // **On an agent that has never run, Space starts it.**
-            .. Room.SelectedUnstarted is not null
-                ? new[] { new RegionAction(default, StartFromRoomTitle, ToggleOne, null, Key.Space) }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        // Enter on a roadmap opens it. Named, since a key the surface takes and does not name is one nobody finds.
-        PlansRegion =>
-        [
-            .. Plans.Selected is not null
-                ? new[]
-                {
-                    new RegionAction(default, PlansRegion.OpenTitle, OpenSelectedPlan, Chord: Key.Enter),
-                    new RegionAction(PlanView.EditKey, Revising.Title, EditSelectedPlan, Category: ActionCategory.Project),
-                }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        RoadmapsRegion =>
-        [
-            .. Roadmaps.Selected is not null
-                ? new[] { new RegionAction(default, RoadmapsRegion.ReviewTitle, ReviewSelected, Chord: Key.Enter) }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        // Offered only on a row, so the key is never named where it would change nothing. Enter does the same, taken
-        // in `OnKeyDown`, because Enter on a setting is what somebody presses first.
-        ConfigurationRegion =>
-        [
-            .. Configuration.Selected is not null
-                ? new[] { new RegionAction('c', ConfigurationRegion.ChangeTitle, ChangeSetting) }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        LineRegion =>
-        [
-            .. Held is not null
-                ? new[]
-                {
-                    // Named by its chord, Enter. The box takes Enter itself and marks it handled, so the chord is a
-                    // name and never a second send.
-                    new RegionAction(default, SendTitle, SendLine, Owing.Requesting, Key.Enter),
-                    new RegionAction(default, BreakTitle, BreakLine, BreakAlso, Key.Enter.WithShift),
-                }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        // The conversations half of a project view. Sorting and the archived toggle are view
-        // state; archiving is reversible and asks nothing; destroying is behind the full door.
-        ConversationsRegion =>
-        [
-            new RegionAction('s', SortTitle, SortConversations),
-            new RegionAction('v', _showArchived ? HideArchivedTitle : ShowArchivedTitle, ToggleArchived),
-
-            // Starting one belongs here rather than in a transcript of a different one.
-            // **Offered whenever this terminal can speak as the person at all.**
-            .. Seats is not null
-                ? new[] { new RegionAction('k', Participation.StartTitle, Start, Owing.Requesting) }
-                : Array.Empty<RegionAction>(),
-
-            .. Conversations.Selected is { } chosen
-                ? new[]
-                {
-                    new RegionAction('h', chosen.Archived ? UnarchiveTitle : ArchiveTitle, ArchiveSelected),
-                    new RegionAction('l', Files.ConversationTitle, ShowConversationFiles),
-                    new RegionAction('f', Closing.Title, CloseSelected),
-                    new RegionAction('d', Destroying.Title, DestroySelected),
-                }
-                : Array.Empty<RegionAction>(),
-
-            // The deployment's, as on the projects region and for the same reason.
-            new RegionAction('y', HealthTitle, ShowHealth, Category: ActionCategory.Deployment),
-            new RegionAction('b', OpenConsoleTitle, OpenConsole, Category: ActionCategory.Deployment),
-        ],
-
-        // Taking part needs a seat, because every one of these speaks as somebody. Without one the
-        // region still shows a transcript; it simply has no voice to use in it.
-        //
-        // **Copying does not need one**: reading a conversation and taking a copy of what you read are the
-        // same act, and a person with no seat is the operator most likely to be quoting a transcript.
-        TranscriptRegion =>
-        [
-            .. Held is not null
-                ? new[]
-                {
-                    new RegionAction('a', Participation.ResultTitle, SendResult),
-                    new RegionAction('q', Participation.ClarifyTitle, Clarify),
-                    new RegionAction('k', Participation.RequestTitle, SendRequest, Owing.Requesting),
-                }
-                : Array.Empty<RegionAction>(),
-
-            .. Transcript.Open is not null
-                ? new[]
-                {
-                    // **What is on the screen rather than what is in the deployment.** Copying a
-                    // transcript and folding one change nothing anybody else can see, which is the
-                    // line the View category draws.
-                    new RegionAction(CopyKey, CopyTitle, Copy, Category: ActionCategory.View),
-                    new RegionAction(CopyMessageKey, CopyMessageTitle, CopyMessage, Category: ActionCategory.View),
-                    new RegionAction(
-                        FoldKey,
-                        Transcript.Folded ? UnfoldTitle : FoldTitle,
-                        Fold,
-                        Category: ActionCategory.View),
-                }
-                : Array.Empty<RegionAction>(),
-
-            // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
-            // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
-            .. Transcript.Item is { Removed: false }
-                ? new[] { new RegionAction(ItemRoadmapKey, ItemRoadmapTitle, OpenItemRoadmap) }
-                : Array.Empty<RegionAction>(),
-
-            // **Recognised by the conversation's identifier and never by anything in a payload.**
-            // §13 tells a receiver a payload is inert data, so an ownership discussion is known by
-            // the name it was opened under -- which is metadata the protocol already carries.
-            // `n` is what it is in the agents pane, because it is the same operation reached from
-            // the other end: there the row is the agent, here the conversation is.
-            //
-            // Needs no seat. Accepting is an operator operation and reading the transcript is how
-            // somebody decides to, which is the same reasoning that ungated copying.
-            .. OwnershipAsk.Recognises(Transcript.Open)
-                ? new[]
-                {
-                    // **The agent's**, though it is reached from a transcript: what it decides is what
-                    // one agent's peers will read, and the conversation is only where it was agreed.
-                    new RegionAction(
-                        'n', Ownership.AcceptTitle, AcceptProposed, Category: ActionCategory.Agent),
-                }
-                : Array.Empty<RegionAction>(),
-        ],
-
-        _ => [],
     };
 
     /// <summary>What Enter on an agents-list row is called, on the status line and in the menu.</summary>
@@ -2647,7 +2357,7 @@ internal sealed class Shell : Window
 
             // The agent's own actions as the table already offers them — what it is responsible for — and nothing
             // that withdraws it.
-            entries.AddRange(Offered()
+            entries.AddRange(_commands.Live(KeyContext.Agents, this)
                 .Where(action => action.Key is 'n')
                 .Select(action => (action.Label, action.Run)));
 
@@ -4409,16 +4119,6 @@ internal sealed class Shell : Window
             return base.OnKeyDown(key);
         }
 
-        // The letter shown beside an action in the status line takes it, when its region has focus.
-        // Every one of them is also a menu entry or a button the mouse reaches: contracts/surface.md
-        // is explicit that no action exists only as a key.
-        if (Typed(key, ActionsKey))
-        {
-            _ = Offer();
-
-            return true;
-        }
-
         // **F10 opens the bar, and Alt and a letter is an action**, so that a plain character is never one.
         // Left and Right walk from the first menu to the rest.
         if (key == MenuKey)
@@ -4428,42 +4128,16 @@ internal sealed class Shell : Window
             return true;
         }
 
-        foreach (var action in Actions())
+        // **The key named beside an action takes it**, from the one table the status line and the menus read, so
+        // nothing is named that a key does not run. The pane's commands, the message line's and those that belong
+        // to no pane are searched together: the table refused to be built if any two of them shared a key here, so
+        // there is no order for one to win by. Every one is also a menu entry the mouse reaches: contracts/surface.md
+        // is explicit that no action exists only as a key.
+        if (_commands.Answering(Context, this, key) is { } answering)
         {
-            if (action.Answers(key))
-            {
-                _ = action.Run();
+            _ = answering.Run();
 
-                return true;
-            }
-        }
-
-        // **After the region's, so a pane's own letter always wins.** These two are on every
-        // screen, and a global key that shadowed a region's would take an action away from
-        // wherever it was added later — silently, and only on the screens that had it.
-        foreach (var action in Messaging())
-        {
-            if (action.Answers(key))
-            {
-                _ = action.Run();
-
-                return true;
-            }
-        }
-
-        // **Last of the three, and dispatched here because otherwise it would be offered and not
-        // taken.** `Global()` reaches the menu bar, so its keys are named on screen — and a key this
-        // surface names and then ignores is the inverse of the defect the rule above guards, and the
-        // worse half: an action nothing offers can still be found, while a key that does nothing
-        // teaches somebody the surface is broken.
-        foreach (var action in Global())
-        {
-            if (action.Answers(key))
-            {
-                _ = action.Run();
-
-                return true;
-            }
+            return true;
         }
 
         return base.OnKeyDown(key);

@@ -358,7 +358,11 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   character is never an action. A focused view is offered a key before the surface's own
   handler, so Enter is taken on the box itself. Enter sends; Shift+Enter, Ctrl+Enter or
   backslash then Enter make a line break. A conversation is tailed only for a reader at its
-  end. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the key rules.
+  end. Every command is registered in one table (`CommandManager`, filled in `ShellCommands.cs`) with
+  the place it is live in and a condition for whether it is live now; dispatch, the status line and the
+  menus read only it, and it refuses to build, so the terminal refuses to start, when two commands could
+  claim one key in a place, its layers included. `CommandTableTests` holds that check;
+  `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the drawn surface to it.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
   so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one
   from the pool directly. What the loop has not started within five seconds is given up, never done late (a late
