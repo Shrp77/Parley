@@ -155,7 +155,33 @@ public sealed class FilesProblemsTests : IAsyncDisposable
         Assert.DoesNotContain((char)0x1B, row);
         Assert.DoesNotContain((char)0x0A, row);
         Assert.DoesNotContain((char)0x1B, driving.Text());
-        Assert.DoesNotContain(driving.Text().ReplaceLineEndings("\n").Split('\n'), l => l.TrimStart('│', '║', ' ').StartsWith("#99", StringComparison.Ordinal));
+        Assert.DoesNotContain(driving.Text().ReplaceLineEndings("\n").Split('\n'), l => l.TrimStart('│', '║', '┃', ' ').StartsWith("#99", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task The_same_path_opened_on_its_own_is_drawn_inert_too()
+    {
+        // Lens 3 run 139: the dialog for one problem draws each line through its own neutraliser, which no test held;
+        // without it the line break put "#99 forged.md" on a row of its own, where it passes for a heading.
+        await _files.RaiseHeldAsync("pricing/notes" + (char)0x1B + "[2Jwiped" + (char)0x0A + "#99 forged.md", "pricing");
+
+        using var driving = Driving.Open(width: 200, height: 50);
+        using var shell = await FilesOnScreen.OpenAsync(driving, _files, _directory.FullName);
+
+        await IntoProjectAsync(driving, shell);
+        await driving.PressThenSettleAsync(Shell.FileProblemsKey, () => shell.Settled);
+
+        var list = (ChoiceDialog)driving.Find(FilesProblems.Title);
+        driving.Row(list.Choices, "wiped");
+        driving.Enter();
+        _ = (ChoiceDialog)driving.Find(FilesProblems.OneTitle);
+
+        var screen = driving.Text();
+        Assert.Contains("wiped", screen, StringComparison.Ordinal);
+        Assert.DoesNotContain((char)0x1B, screen);
+        Assert.DoesNotContain(
+            screen.ReplaceLineEndings("\n").Split('\n'),
+            l => l.TrimStart('│', '║', '┃', ' ').StartsWith("#99", StringComparison.Ordinal));
     }
 
     [Fact]
