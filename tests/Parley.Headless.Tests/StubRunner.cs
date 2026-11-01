@@ -137,6 +137,48 @@ internal static class StubRunner
         return Write(directory, windows, unix);
     }
 
+    /// <summary>
+    /// Writes a stub that answers each prompt at once with a result whose cost is the number the prompt's text is, and
+    /// returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <returns>The template.</returns>
+    /// <remarks>
+    /// Unlike <see cref="Numbering"/>, the number is the asker's, so a turn can tell its own reply without knowing how
+    /// many prompts the stub has read: a test that cannot say whether a cancelled turn's prompt went still can.
+    /// </remarks>
+    internal static string Echoing(string directory)
+    {
+        const string Before = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":";
+        const string After = ",\"session_id\":\"stub-session\",\"permission_denials\":[]}";
+
+        var windows = new List<string>
+        {
+            Emit(Init),
+            "while ($null -ne ($line = [Console]::In.ReadLine())) {",
+            "  $n = [regex]::Match($line, '\"text\":\"(\\d+)\"').Groups[1].Value",
+            "  [Console]::Out.WriteLine('" + Before + "' + $n + '" + After + "'); [Console]::Out.Flush()",
+            "}",
+        };
+
+        var unix = new List<string>
+        {
+            Print(Init),
+            "while IFS= read -r line; do",
+            "  n=$(printf '%s' \"$line\" | sed -n 's/.*\"text\":\"\\([0-9]*\\)\".*/\\1/p')",
+            "  printf '%s%s%s\\n' '" + Before + "' \"$n\" '" + After + "'",
+            "done",
+        };
+
+        return Write(directory, windows, unix);
+    }
+
+    /// <summary>Writes a stub that never reads its input, and returns its command template.</summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <returns>The template.</returns>
+    internal static string NotReading(string directory) =>
+        Write(directory, [Emit(Init), "Start-Sleep -Seconds 600"], [Print(Init), "sleep 600"]);
+
     /// <summary>Writes a stub that reads one prompt, thinks, and exits without answering, and returns its template.</summary>
     /// <param name="directory">Where to put the script.</param>
     /// <param name="delaySeconds">How long it lives after reading the prompt.</param>

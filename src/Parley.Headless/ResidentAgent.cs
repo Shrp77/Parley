@@ -224,7 +224,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// the exchange is unharmed — still owed, still open, tried again — and the result that
     /// eventually arrives is discarded before the next turn rather than being read as its answer.
     /// Without that bookkeeping the stream desynchronises and every later turn reads the previous
-    /// turn's reply.
+    /// turn's reply. An agent that does not take its prompt within the timeout is another matter, and is ended.
     /// </para>
     /// </remarks>
     public Task<TurnOutcome> TakeTurnAsync(
@@ -289,17 +289,49 @@ public sealed class ResidentAgent : IAsyncDisposable
                 }
             };
 
+            // **The caller's cancel never interrupts the prompt half-way** (lens 1 run 129). Standard input flushes on
+            // every write, so a cancel seen by the flush, or by the write's own flush on Windows, came after the line had
+            // gone: the agent answered a prompt nobody was owed and every later turn stayed one reply behind. So the cancel
+            // is looked at before anything is said, when nothing is owed, and after the whole line is, when the reply is.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var sending = SendAsync(message.ToJsonString());
+
             try
             {
-                await _process.StandardInput
-                    .WriteLineAsync(message.ToJsonString().AsMemory(), cancellationToken)
-                    .ConfigureAwait(false);
-
-                await _process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
+                await sending.WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or ObjectDisposedException)
             {
                 return Died(started);
+            }
+            catch (TimeoutException)
+            {
+                // **An agent that will not take its prompt is ended, unlike one that runs long.** It is owed no reply, so
+                // it is not busy: it has stopped reading its input, for as long as a whole turn may take. And part of the
+                // line may already be in the pipe, so whatever is written next joins it as one broken line, and no turn
+                // could be put to it again. The context a timeout keeps alive is out of reach, so the process is killed and
+                // the turn is reported as its death, which is what the node replaces on the next wake. The kill is also
+                // what ends the write, which a cancel cannot reach on every platform.
+                Kill();
+
+                try
+                {
+                    // Bounded too: another child started at the same moment can inherit the pipe and keep it open.
+                    await Quietly(sending).WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                }
+
+                return Died(started);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                // The caller's, while the line went: it is said, so its reply is owed to nobody, as below.
+                Interlocked.Increment(ref _abandonedResults);
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -407,17 +439,35 @@ public sealed class ResidentAgent : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                _process.Kill(entireProcessTree: true);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
-            {
-                // It exited between the timeout and the kill.
-            }
+            Kill();
 
             return false;
         }
+    }
+
+    /// <summary>Kills the agent's process and everything it started.</summary>
+    private void Kill()
+    {
+        try
+        {
+            _process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
+        {
+            // It exited before the kill.
+        }
+    }
+
+    /// <summary>Writes one line to the agent's standard input, whole.</summary>
+    /// <param name="line">The line.</param>
+    /// <returns>A task that completes when the line has gone.</returns>
+    /// <remarks>
+    /// Given no token on purpose: a write stopped part-way leaves part of a line in the pipe. Its caller bounds the wait.
+    /// </remarks>
+    private async Task SendAsync(string line)
+    {
+        await _process.StandardInput.WriteLineAsync(line.AsMemory(), CancellationToken.None).ConfigureAwait(false);
+        await _process.StandardInput.FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>
