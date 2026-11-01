@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Parley.Client.Files;
 using Parley.Client.Rendering;
 using Parley.Core;
@@ -139,26 +138,6 @@ public sealed class FilesCommand(
         _ => string.Create(CultureInfo.InvariantCulture, $"{bytes / (1024.0 * 1024 * 1024):0.##} GiB")
     };
 
-    /// <summary>Makes somebody else's text safe to print as part of one line.</summary>
-    /// <param name="text">The text.</param>
-    /// <returns>The text with every control and formatting character replaced.</returns>
-    internal static string Flat(string text)
-    {
-        var flat = new StringBuilder(text.Length);
-
-        foreach (var rune in text.EnumerateRunes())
-        {
-            var category = Rune.GetUnicodeCategory(rune);
-
-            flat.Append(category is UnicodeCategory.Control or UnicodeCategory.Format
-                or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator
-                ? "?"
-                : rune.ToString());
-        }
-
-        return flat.ToString();
-    }
-
     private async Task<int> ListAsync(Options options, CancellationToken cancellationToken)
     {
         var files = new List<SharedFile>();
@@ -191,13 +170,13 @@ public sealed class FilesCommand(
 
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"{Flat(conversation.Key)}  ({conversation.Count()} file(s), {Size(bytes)})")).ConfigureAwait(false);
+                $"{Inert.Line(conversation.Key)}  ({conversation.Count()} file(s), {Size(bytes)})")).ConfigureAwait(false);
 
             foreach (var file in conversation)
             {
                 await _output.WriteLineAsync(string.Create(
                     CultureInfo.InvariantCulture,
-                    $"  {Flat(file.Name.Value),-40} {Size(file.SizeBytes),10}  " +
+                    $"  {Inert.Line(file.Name.Value),-40} {Size(file.SizeBytes),10}  " +
                     $"{(options.Full ? file.Sha256.Value : file.Sha256.Short)}  " +
                     $"{(file.PlacedBy is { } placer ? placer.Value : "the person"),-24} " +
                     $"{LocalTime.Write(file.PlacedUtc)}")).ConfigureAwait(false);
@@ -238,7 +217,7 @@ public sealed class FilesCommand(
         {
             await _output.WriteLineAsync(string.Create(
                 CultureInfo.InvariantCulture,
-                $"  {Flat(count.Agent),-24} {count.Placements} placement(s), {Size(count.Bytes)}")).ConfigureAwait(false);
+                $"  {Inert.Line(count.Agent),-24} {count.Placements} placement(s), {Size(count.Bytes)}")).ConfigureAwait(false);
         }
     }
 
@@ -253,14 +232,14 @@ public sealed class FilesCommand(
         // (lens 2 run 122).
         if (Parley.Configuration.PlaceableFile.Problem(path) is { } unplaceable)
         {
-            await _error.WriteLineAsync($"{Flat(unplaceable)} Nothing was placed.").ConfigureAwait(false);
+            await _error.WriteLineAsync($"{Inert.Line(unplaceable)} Nothing was placed.").ConfigureAwait(false);
             return NothingDone;
         }
 
         // Asked here rather than left to the broker, so a mistyped path says which path and nothing is streamed.
         if (!File.Exists(path))
         {
-            await _error.WriteLineAsync($"There is no file at {Flat(path)}. Nothing was placed.").ConfigureAwait(false);
+            await _error.WriteLineAsync($"There is no file at {Inert.Line(path)}. Nothing was placed.").ConfigureAwait(false);
             return NothingDone;
         }
 
@@ -278,18 +257,18 @@ public sealed class FilesCommand(
         }
         catch (Exception unreadable) when (unreadable is IOException or UnauthorizedAccessException)
         {
-            await _error.WriteLineAsync($"{Flat(path)} could not be read: {Flat(unreadable.Message)} Nothing was placed.")
+            await _error.WriteLineAsync($"{Inert.Line(path)} could not be read: {Inert.Line(unreadable.Message)} Nothing was placed.")
                 .ConfigureAwait(false);
             return NothingDone;
         }
         catch (Grpc.Core.RpcException dropped) when (Parley.Client.Files.PlacementSaid.IsDropped(dropped))
         {
             // Not "no broker is listening", which is what an unavailable call says at the top: this one answered.
-            await _error.WriteLineAsync(Flat(dropped.Status.Detail)).ConfigureAwait(false);
+            await _error.WriteLineAsync(Inert.Line(dropped.Status.Detail)).ConfigureAwait(false);
             return NothingDone;
         }
 
-        var said = Flat(PlacementSaid.Of(placed, name, Size));
+        var said = Inert.Line(PlacementSaid.Of(placed, name, Size));
 
         if (!placed.InPlace)
         {
@@ -325,8 +304,8 @@ public sealed class FilesCommand(
                     .ConfigureAwait(false);
 
                 await _output.WriteLineAsync(located.Location is { } location
-                    ? $"  {Flat(reference.Name)}  {Flat(location.Path)}"
-                    : $"  {Flat(reference.Name)}  ({Flat(located.Refusal?.Detail ?? "not in the location")})").ConfigureAwait(false);
+                    ? $"  {Inert.Line(reference.Name)}  {Inert.Line(location.Path)}"
+                    : $"  {Inert.Line(reference.Name)}  ({Inert.Line(located.Refusal?.Detail ?? "not in the location")})").ConfigureAwait(false);
             }
 
             await _output.WriteAsync("Type yes to remove them: ").ConfigureAwait(false);
@@ -342,13 +321,13 @@ public sealed class FilesCommand(
 
         foreach (var removed in outcome.Removed)
         {
-            await _output.WriteLineAsync($"Removed {Flat(removed.ConversationId ?? string.Empty)}/{Flat(removed.Name)}.").ConfigureAwait(false);
+            await _output.WriteLineAsync($"Removed {Inert.Line(removed.ConversationId ?? string.Empty)}/{Inert.Line(removed.Name)}.").ConfigureAwait(false);
         }
 
         foreach (var refused in outcome.Refused)
         {
             await _error.WriteLineAsync(
-                $"Not removed: {Flat(refused.File.Name)}. {Flat(refused.Detail ?? refused.Rejection.ToString())}").ConfigureAwait(false);
+                $"Not removed: {Inert.Line(refused.File.Name)}. {Inert.Line(refused.Detail ?? refused.Rejection.ToString())}").ConfigureAwait(false);
         }
 
         await _output.WriteLineAsync($"Freed {Size(outcome.BytesFreed)}.").ConfigureAwait(false);
@@ -407,14 +386,14 @@ public sealed class FilesCommand(
 
             if (located.Location is not { } location)
             {
-                await _error.WriteLineAsync($"{Flat(name)}: {Flat(located.Refusal?.Detail ?? "not in the location.")}").ConfigureAwait(false);
+                await _error.WriteLineAsync($"{Inert.Line(name)}: {Inert.Line(located.Refusal?.Detail ?? "not in the location.")}").ConfigureAwait(false);
                 code = NothingDone;
                 continue;
             }
 
             var launched = _launcher.OpenFile(location);
 
-            await _output.WriteLineAsync(Flat(launched.Said)).ConfigureAwait(false);
+            await _output.WriteLineAsync(Inert.Line(launched.Said)).ConfigureAwait(false);
         }
 
         return code;
@@ -427,11 +406,11 @@ public sealed class FilesCommand(
 
         if (located.Location is not { } location)
         {
-            await _error.WriteLineAsync(Flat(located.Refusal?.Detail ?? "That conversation has no files.")).ConfigureAwait(false);
+            await _error.WriteLineAsync(Inert.Line(located.Refusal?.Detail ?? "That conversation has no files.")).ConfigureAwait(false);
             return NothingDone;
         }
 
-        await _output.WriteLineAsync(Flat(_launcher.OpenFolder(location).Said)).ConfigureAwait(false);
+        await _output.WriteLineAsync(Inert.Line(_launcher.OpenFolder(location).Said)).ConfigureAwait(false);
 
         return 0;
     }
@@ -455,7 +434,7 @@ public sealed class FilesCommand(
 
             foreach (var line in FileProblemSaid.Lines(problem))
             {
-                await _output.WriteLineAsync("  " + Flat(line)).ConfigureAwait(false);
+                await _output.WriteLineAsync("  " + Inert.Line(line)).ConfigureAwait(false);
             }
         }
 
@@ -464,7 +443,7 @@ public sealed class FilesCommand(
             await _output.WriteLineAsync(LocalTime.Note()).ConfigureAwait(false);
         }
 
-        await _output.WriteLineAsync(Flat(FileProblemSaid.Quarantine(report.Quarantine))).ConfigureAwait(false);
+        await _output.WriteLineAsync(Inert.Line(FileProblemSaid.Quarantine(report.Quarantine))).ConfigureAwait(false);
 
         if (report.Waiting > 0)
         {
@@ -482,7 +461,7 @@ public sealed class FilesCommand(
         if (!long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number <= 0)
         {
             await _error.WriteLineAsync(
-                $"'{Flat(id)}' is not a problem's number. `parley files problems` lists them.").ConfigureAwait(false);
+                $"'{Inert.Line(id)}' is not a problem's number. `parley files problems` lists them.").ConfigureAwait(false);
             return Usage;
         }
 

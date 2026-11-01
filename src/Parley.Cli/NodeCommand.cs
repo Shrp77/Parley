@@ -381,7 +381,7 @@ public static class NodeCommand
                 if (!complained)
                 {
                     await output.WriteLineAsync(
-                        $"{catalogueFile} could not be read: {problem} " +
+                        $"{catalogueFile} could not be read: {Inert.Line(problem)} " +
                         "Keeping the roles already announced.").ConfigureAwait(false);
 
                     complained = true;
@@ -482,15 +482,15 @@ public static class NodeCommand
         foreach (var unread in announceable.Unread)
         {
             await output.WriteLineAsync(
-                $"  {unread.Workspace}: its launch configuration could not be read, so nothing it answers "
-                + $"to is offered. {unread.Problem}")
+                $"  {Inert.Line(unread.Workspace)}: its launch configuration could not be read, so nothing it answers "
+                + $"to is offered. {Inert.Line(unread.Problem)}")
                 .ConfigureAwait(false);
         }
 
         foreach (var strange in catalogue.Unreadable)
         {
             await output.WriteLineAsync(
-                $"  {strange}: not an agent identity, so this catalogue entry is ignored. Re-enrol that "
+                $"  {Inert.Line(strange)}: not an agent identity, so this catalogue entry is ignored. Re-enrol that "
                 + "repository to give it one.")
                 .ConfigureAwait(false);
         }
@@ -689,14 +689,14 @@ public static class NodeCommand
                 // where it meets it. Reading a node's log, the two are completely different pieces of news.
                 await output.WriteLineAsync(
                     replacing
-                        ? $"  {agent.Value}: restarted ({start.Because}) — the previous process had gone."
-                        : $"  {agent.Value}: started ({start.Because}).").ConfigureAwait(false);
+                        ? $"  {agent.Value}: restarted ({Inert.Line(start.Because)}) — the previous process had gone."
+                        : $"  {agent.Value}: started ({Inert.Line(start.Because)}).").ConfigureAwait(false);
 
                 DispatchTurn(resident, agent, output, cancellationToken, reporter);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                await output.WriteLineAsync($"  {agent.Value}: could not start — {exception.Message}")
+                await output.WriteLineAsync($"  {agent.Value}: could not start — {Inert.Line(exception.Message)}")
                     .ConfigureAwait(false);
             }
         }
@@ -723,7 +723,7 @@ public static class NodeCommand
         catch (Exception unreadable) when (unreadable is ArgumentException or NotSupportedException or PathTooLongException)
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace '{workspace}' is not a path this machine can read, so "
+                $"  {agent.Value}: not started — its workspace '{Inert.Line(workspace)}' is not a path this machine can read, so "
                 + "nothing is concluded.").ConfigureAwait(false);
 
             return;
@@ -734,7 +734,7 @@ public static class NodeCommand
         if (parent is null || !Directory.Exists(parent))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} and the folder above it are both missing, "
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}and the folder above it are both missing, "
                 + "so nothing is concluded (a drive may be unmounted); it is tried again when next asked for.")
                 .ConfigureAwait(false);
 
@@ -744,7 +744,7 @@ public static class NodeCommand
         if (ThroughALink(full))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} is missing, and its path runs through a link, "
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}is missing, and its path runs through a link, "
                 + "whose far side may be a drive not mounted, so nothing is concluded; it is tried again when next asked for.")
                 .ConfigureAwait(false);
 
@@ -759,7 +759,7 @@ public static class NodeCommand
         if (!MayRetireUnder(parent))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} is missing where a disk that is absent or replaced "
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}is missing where a disk that is absent or replaced "
                 + "cannot be told from a deletion (a disk other than your home folder's, a drive's root, a folder removable "
                 + "disks are mounted in, a mount table that cannot be read, or no home folder), so nothing is concluded; it is "
                 + "tried again when next asked for.")
@@ -774,7 +774,7 @@ public static class NodeCommand
         if (HoldsNothing(parent))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} is missing and the folder above it holds "
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}is missing and the folder above it holds "
                 + "nothing else, as a volume not mounted leaves it, so nothing is concluded; it is tried again when next "
                 + "asked for.")
                 .ConfigureAwait(false);
@@ -786,7 +786,7 @@ public static class NodeCommand
         if (Directory.Exists(full))
         {
             await output.WriteLineAsync(
-                $"  {agent.Value}: not started — its workspace {workspace} came back while it was being looked at; it is "
+                $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}came back while it was being looked at; it is "
                 + "started when next asked for.").ConfigureAwait(false);
 
             return;
@@ -796,9 +796,9 @@ public static class NodeCommand
 
         await output.WriteLineAsync(
             retired == true
-                ? $"  {agent.Value}: not started — its workspace {workspace} is gone, so the broker retired it. Reinstate "
+                ? $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}is gone, so the broker retired it. Reinstate "
                   + "it in the terminal once the repository is back."
-                : $"  {agent.Value}: not started — its workspace {workspace} is gone.")
+                : $"  {agent.Value}: not started — its workspace {Inert.Line(workspace)}is gone.")
             .ConfigureAwait(false);
     }
 
@@ -1199,7 +1199,7 @@ public static class NodeCommand
                 // agent's own words, which TurnOutcome keeps out of every record on purpose — and the broker's log
                 // is never pruned and a line break in them would forge a line of it.
                 await output.WriteLineAsync(
-                        $"  {resident.Name.Value}: turn ended without finishing — {outcome.Describe()} after " +
+                        $"  {resident.Name.Value}: turn ended without finishing — {Inert.Line(outcome.Describe())} after" +
                         $"{outcome.Elapsed.TotalSeconds:0}s, {outcome.PermissionDenials} permission(s) refused" +
                         WhyItFailed(outcome))
                     .ConfigureAwait(false);
@@ -1207,7 +1207,7 @@ public static class NodeCommand
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await output.WriteLineAsync($"  {resident.Name.Value}: turn failed — {exception.Message}")
+            await output.WriteLineAsync($"  {resident.Name.Value}: turn failed — {Inert.Line(exception.Message)}")
                 .ConfigureAwait(false);
         }
     }

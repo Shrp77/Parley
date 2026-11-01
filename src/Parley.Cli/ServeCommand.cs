@@ -882,7 +882,7 @@ public static class ServeCommand
         catch (Exception failure)
         {
             await output.WriteLineAsync(
-                $"{who} stopped: {failure.Message}. The broker is still serving; " +
+                $"{who} stopped: {Inert.Line(failure.Message)}. The broker is still serving; " +
                 "nothing on this machine will be started until `parley up` runs again.")
                 .ConfigureAwait(false);
 
@@ -924,7 +924,7 @@ public static class ServeCommand
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    await output.WriteLineAsync($"The tick failed: {exception.Message}")
+                    await output.WriteLineAsync($"The tick failed: {Inert.Line(exception.Message)}")
                         .ConfigureAwait(false);
                 }
             }
@@ -975,7 +975,7 @@ public static class ServeCommand
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    await output.WriteLineAsync($"{project}: Parley could not finish a pass: {exception.Message}")
+                    await output.WriteLineAsync($"{project}: Parley could not finish a pass: {Inert.Line(exception.Message)}")
                         .ConfigureAwait(false);
                 }
             }
@@ -1061,8 +1061,10 @@ public static class ServeCommand
 
             _ = await runtime.HoldAsync(answer, because, cancellationToken).ConfigureAwait(false);
 
+            // The reason is often OwnershipLine's refusal, which names the workspace the agent reported, and a failure's
+            // message may carry anything: both reach this console and its log, so they are printed inert.
             await output.WriteLineAsync(
-                $"{project}: {answer.Agent.Value} answered Parley; its answer waits for a person: {because}")
+                $"{project}: {answer.Agent.Value} answered Parley; its answer waits for a person: {Inert.Line(because)}")
                 .ConfigureAwait(false);
         }
 

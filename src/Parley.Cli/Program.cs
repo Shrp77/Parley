@@ -1254,7 +1254,7 @@ catch (RpcException failure) when (failure.StatusCode == StatusCode.Unavailable)
 }
 catch (RpcException failure)
 {
-    await Console.Error.WriteLineAsync($"The broker refused that: {failure.Status.Detail}")
+    await Console.Error.WriteLineAsync($"The broker refused that: {Inert.Line(failure.Status.Detail)}")
         .ConfigureAwait(false);
 
     return IoError;

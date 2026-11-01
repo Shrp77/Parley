@@ -763,10 +763,12 @@ public static class ProjectCommand
                 "These repositories were agents in it. Each still names it in its launch " +
                 "configuration (.mcp.json), which nothing here touches:").ConfigureAwait(false);
 
+            // The workspace is what the agent reported on attach, so it is quoted inert like any value read from a
+            // file somebody else edited (lens 2 run 135).
             foreach (var (agent, workspace) in agents.OrderBy(a => a.Agent, StringComparer.Ordinal))
             {
                 await output.WriteLineAsync(
-                    $"  {agent,-24} {(workspace.Length > 0 ? workspace : "(workspace not stated)")}")
+                    $"  {agent,-24} {(workspace.Length > 0 ? Quoting.Flat(workspace) : "(workspace not stated)")}")
                     .ConfigureAwait(false);
             }
         }

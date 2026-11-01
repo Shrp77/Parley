@@ -84,16 +84,8 @@ public static class OwnershipStatement
     /// entries around it — a second agent, or an instruction, where there was neither.
     /// </para>
     /// <para>
-    /// <b>Refused by Unicode category, because a control-character test is not the rule.</b>
-    /// <c>char.IsControl</c> covers C0 and C1 and nothing else, so
-    /// <c>U+2028 LINE SEPARATOR</c> and <c>U+2029 PARAGRAPH SEPARATOR</c> — which are line breaks
-    /// wherever this text is rendered — would go straight through it, as would
-    /// <c>U+202E RIGHT-TO-LEFT OVERRIDE</c>, which reverses the display of everything after it,
-    /// and <c>U+200B</c> and <c>U+FEFF</c>, which are invisible. So: no
-    /// <see cref="UnicodeCategory.Control"/>, no
-    /// <see cref="UnicodeCategory.Format"/>, and no line or paragraph
-    /// separator. Ordinary spaces stay, and so does every letter, accent, dash and emoji in
-    /// every script.
+    /// <b>The character rule is <see cref="PrintableLine"/>'s</b>, which is also what an attach is held to, and why it
+    /// is by Unicode category rather than a control-character test is written there.
     /// </para>
     /// <para>
     /// Refused rather than stripped. Silently removing the separator would admit the intent and
@@ -135,17 +127,8 @@ public static class OwnershipStatement
         // **Counted as it goes, so the refusal can say where.** An agent answers in two halves, and
         // "it contains U+2028" is not actionable advice about a paragraph. The position is in text
         // elements, like the length above, so the two numbers a person reads are counted the same way.
-        var at = 0;
-
-        foreach (var rune in statement.EnumerateRunes())
+        if (PrintableLine.TryFindBreak(statement, out var rune, out var at))
         {
-            at++;
-
-            if (!Forbidden(Rune.GetUnicodeCategory(rune)))
-            {
-                continue;
-            }
-
             error = string.Create(
                 CultureInfo.InvariantCulture,
                 $"it contains U+{rune.Value:X4} at position {at}, which is not printable text. A " +
@@ -241,30 +224,6 @@ public static class OwnershipStatement
 
         return line.ToString();
     }
-
-    /// <summary>Whether a category may not appear in a statement.</summary>
-    /// <param name="category">The category of one character.</param>
-    /// <returns><see langword="true"/> if it must be refused.</returns>
-    /// <remarks>
-    /// <para>
-    /// Matched to the constraint in the schema, which refuses the same code points by range
-    /// because SQLite has no notion of a category. The two must agree: the schema is the
-    /// enforcement, and a value this method accepts and the database rejects would produce a
-    /// server that starts and then fails its own registration.
-    /// </para>
-    /// <para>
-    /// Applied to a rune rather than to a <see cref="char"/>, which is not a detail. Testing
-    /// each UTF-16 unit puts both halves of a surrogate pair through this, and both are category
-    /// <c>Surrogate</c> — so a version of this that refused surrogates refused every emoji and
-    /// every character outside the basic plane. A well-formed rune is never a surrogate, so the
-    /// category is simply absent from the list below.
-    /// </para>
-    /// </remarks>
-    private static bool Forbidden(UnicodeCategory category) => category is
-        UnicodeCategory.Control or
-        UnicodeCategory.Format or
-        UnicodeCategory.LineSeparator or
-        UnicodeCategory.ParagraphSeparator;
 
     /// <summary>
     /// Reads a statement supplied by a launch, treating blank as absent.

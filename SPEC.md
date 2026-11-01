@@ -378,6 +378,13 @@ The same identifier from a different workspace is refused as the collision it is
 identifier on a different machine is a different agent, because the machine is part of the name. An
 attach that presents none registers by name alone.
 
+**What an attach reports about itself is one line of printable text.** The adapter, the workspace and
+the resume handle come from a launch environment the agent can edit, and the registry shows them to a
+person (§10.2). An attach carrying a control, format, line-separator or paragraph-separator character in
+any of them is refused whole, naming the field, the character and where it is — the rule an ownership
+line is held to, for the same reason: such a character can break the line, hide itself, or reorder what
+follows, and in a terminal it can move the cursor and rewrite what the person was reading.
+
 The broker sends the identifier with a start, so a rename never leaves a node unable to find the
 checkout it must launch.
 

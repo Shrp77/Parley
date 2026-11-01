@@ -74,6 +74,20 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         RequireTheSameProtocol(request.ProtocolVersion);
 
+        // What an attach says about itself is printed to the person (§4.1.1), and an adapter reads it from a launch
+        // environment the agent can edit, so an escape here reached `parley registry` raw (lens 2 run 135). The ownership
+        // line is held to the same rule by the adapter and by storage; these three by nothing else, so here.
+        foreach (var (field, value) in new[]
+                 {
+                     ("adapter", request.Adapter), ("workspace", request.Workspace), ("session reference", request.SessionRef),
+                 })
+        {
+            if (!PrintableLine.IsReportable(field, value, out var unprintable))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, unprintable!));
+            }
+        }
+
         // A label, not a credential (§4.1.1): one that is not an identifier is a malformed call, refused whole so a typo
         // cannot register an agent that will never be found by it.
         var identity = default(AgentIdentity);

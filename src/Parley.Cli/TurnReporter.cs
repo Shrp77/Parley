@@ -159,7 +159,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
                 : failure.Message;
 
-            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker it was starting it — {why}")
+            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker it was starting it — {Inert.Line(why)}")
                 .ConfigureAwait(false);
         }
 #pragma warning restore CA1031
@@ -235,7 +235,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
         catch (Exception failure)
         {
             await output.WriteLineAsync(
-                    $"  {named.Value}: could not tell the broker it is running it — {failure.Message}")
+                    $"  {named.Value}: could not tell the broker it is running it — {Inert.Line(failure.Message)}")
                 .ConfigureAwait(false);
         }
 #pragma warning restore CA1031
@@ -269,7 +269,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
                 : failure.Message;
 
-            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker its workspace is gone — {why}")
+            await output.WriteLineAsync($"  {agent.Value}: could not tell the broker its workspace is gone — {Inert.Line(why)}")
                 .ConfigureAwait(false);
 
             return null;
@@ -303,7 +303,7 @@ internal sealed class TurnReporter(Wire.Nodes.NodesClient nodes, string machine,
                 ? rpc.Status.Detail is { Length: > 0 } detail ? detail : rpc.StatusCode.ToString()
                 : failure.Message;
 
-            await output.WriteLineAsync($"  {report.Agent}: could not report its turn to the broker — {why}")
+            await output.WriteLineAsync($"  {report.Agent}: could not report its turn to the broker — {Inert.Line(why)}")
                 .ConfigureAwait(false);
         }
     }
