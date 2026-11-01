@@ -23,6 +23,11 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 
     private static byte[] Text(string text) => System.Text.Encoding.UTF8.GetBytes(text);
 
+    private static string Contents(string folder) =>
+        Directory.Exists(folder)
+            ? "holding: " + string.Join(", ", Directory.EnumerateFileSystemEntries(folder, "*", SearchOption.AllDirectories))
+            : "nothing left";
+
     private static (Task Holding, TaskCompletionSource Release, Task Entered) Hold(LoopbackBroker broker)
     {
         var entered = new TaskCompletionSource();
@@ -94,13 +99,16 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 
         await Task.Delay(500, Ct);
 
+        // A folder something held is swept again at once (FileWork.DeleteFolders); that sweep is part of the destroy.
+        await broker.Runtime.Sweeper.IdleAsync();
+
         var listed = await operators.ListConversationsAsync(
             new Wire.ListConversationsRequest { IncludeArchived = true }, cancellationToken: Ct);
         var survives = listed.Conversations.Any(c => c.ConversationId == "bait");
         var files = await operators.ListSharedFilesAsync(new Wire.ListFilesRequest(), cancellationToken: Ct);
 
         var said = $"destroy={outcome}; conversation survives={survives}; folder on disk={Directory.Exists(folder)}; "
-                   + $"listed={files.Files.Count}; not listed={files.FilesNotListed}";
+                   + $"listed={files.Files.Count}; not listed={files.FilesNotListed}; {Contents(folder)}";
         TestContext.Current.SendDiagnosticMessage(said);
 
         // The cancel must land after the commit, or the case is not the one held here.
@@ -156,8 +164,9 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         }
 
         await Task.Delay(500, Ct);
+        await broker.Runtime.Sweeper.IdleAsync();
 
-        var said = $"purge={outcome}; folder on disk={Directory.Exists(folder)}";
+        var said = $"purge={outcome}; folder on disk={Directory.Exists(folder)}; {Contents(folder)}";
         TestContext.Current.SendDiagnosticMessage(said);
 
         var stillRecorded = await broker.Runtime.UseConnectionAsync(

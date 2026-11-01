@@ -43,6 +43,12 @@ namespace Parley.Server;
 public sealed class BrokerRuntime : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    // Whether the store is being rewritten now, and how many rewrites have started, so a send can tell it waited on one.
+    private int _rewriting;
+    private long _rewritesStarted;
+    private int _agentWorkWaiting;
+
     // Every attachment for a name, not the latest. SPEC.md §14 treats two windows open on one
     // repository as two sessions for one agent -- `connected` counts them rather than flagging
     // one -- so a map holding only the newest would leave the older window connected, counted,
@@ -317,6 +323,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// </remarks>
     private void TellTidying(bool underway)
     {
+        if (underway)
+        {
+            _ = Interlocked.Increment(ref _rewritesStarted);
+        }
+
+        Volatile.Write(ref _rewriting, underway ? 1 : 0);
+
         foreach (var sessions in _attached.Values)
         {
             foreach (var session in sessions)
@@ -325,6 +338,13 @@ public sealed class BrokerRuntime : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>Gets how many calls on an agent's behalf are waiting for the gate now.</summary>
+    /// <remarks>
+    /// A test's seam: one that holds the gate has to know a send reached it before letting a rewrite run ahead of it,
+    /// and a delay only guesses at that on a loaded machine.
+    /// </remarks>
+    internal int AgentWorkWaiting => Volatile.Read(ref _agentWorkWaiting);
 
     /// <summary>Gets how many sessions are open for an agent.</summary>
     /// <param name="agent">The agent.</param>
@@ -1617,6 +1637,29 @@ public sealed class BrokerRuntime : IAsyncDisposable
     public async Task<T> RunAsync<T>(
         AgentName agent,
         Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default) =>
+        (await RunNotingRewriteAsync(agent, work, cancellationToken).ConfigureAwait(false)).Value;
+
+    /// <summary>
+    /// Runs one unit of work against an attached agent's broker, alone, and says whether it waited on a rewrite of the
+    /// store first.
+    /// </summary>
+    /// <typeparam name="T">What the work returns.</typeparam>
+    /// <param name="agent">The agent the work is on behalf of.</param>
+    /// <param name="work">The work, given the broker and the instant to stamp it with.</param>
+    /// <param name="cancellationToken">Cancels the wait for the gate and the work.</param>
+    /// <returns>Whatever the work returned, and whether a rewrite held it up (SPEC.md §4.0, §9.1).</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="work"/> is null.</exception>
+    /// <exception cref="NotAttachedException">The agent has no open stream.</exception>
+    /// <remarks>
+    /// <b>Decided here, at the gate, and not by the adapter watching its stream</b>: the stream's one slot let a finish
+    /// overwrite a start the adapter had not yet read, and the reply could arrive before either, so a send that waited
+    /// seconds said nothing. A rewrite runs under the gate, so one that was running when this began to wait, or that
+    /// started while it waited, is one this work waited on.
+    /// </remarks>
+    public async Task<(T Value, bool Waited)> RunNotingRewriteAsync<T>(
+        AgentName agent,
+        Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(work);
@@ -1630,12 +1673,25 @@ public sealed class BrokerRuntime : IAsyncDisposable
         // only in when each attached. The newest is taken because it needs no comparison.
         var attached = sessions[^1];
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var rewriting = Volatile.Read(ref _rewriting) == 1;
+        var started = Interlocked.Read(ref _rewritesStarted);
+
+        _ = Interlocked.Increment(ref _agentWorkWaiting);
 
         try
         {
-            return await work(attached.Broker, Clock.GetUtcNow(), cancellationToken)
-                .ConfigureAwait(false);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = Interlocked.Decrement(ref _agentWorkWaiting);
+        }
+
+        try
+        {
+            var waited = rewriting || Interlocked.Read(ref _rewritesStarted) != started;
+
+            return (await work(attached.Broker, Clock.GetUtcNow(), cancellationToken).ConfigureAwait(false), waited);
         }
         finally
         {

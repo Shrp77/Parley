@@ -186,19 +186,20 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         // A bare role reaches every participant registered under it (§5.5); a whole name reaches one.
         // Told apart by shape rather than guessed at.
-        IReadOnlyList<Parley.Broker.RequestOutcome> outcomes = AgentName.IsRole(request.To)
-            ? await Run(
+        var (outcomes, waited) = AgentName.IsRole(request.To)
+            ? await Send(
                 from,
                 (broker, now, ct) => broker.RequestRoleAsync(
                     from, request.To, request.ResponderModel, request.PayloadJson, now, conversation, ct),
                 context).ConfigureAwait(false)
-            : [await Run(
+            : await Send<IReadOnlyList<Parley.Broker.RequestOutcome>>(
                 from,
-                (broker, now, ct) => broker.RequestAsync(
-                    from, Name(request.To), request.ResponderModel, request.PayloadJson, now, conversation, ct),
-                context).ConfigureAwait(false)];
+                async (broker, now, ct) => [await broker.RequestAsync(
+                    from, Name(request.To), request.ResponderModel, request.PayloadJson, now, conversation, ct)
+                    .ConfigureAwait(false)],
+                context).ConfigureAwait(false);
 
-        var reply = new Wire.RequestReply();
+        var reply = new Wire.RequestReply { Waited = waited };
 
         foreach (var outcome in outcomes)
         {
@@ -220,7 +221,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var from = Caller(request.From);
 
-        var outcome = await Run(
+        var (outcome, waited) = await Send(
             from,
             (broker, now, ct) => broker.ClarifyAsync(
                 request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
@@ -228,7 +229,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         await WakeRecipientAsync(outcome, context).ConfigureAwait(false);
 
-        return Said(outcome);
+        return Said(outcome, waited);
     }
 
     /// <inheritdoc/>
@@ -239,7 +240,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
 
         var from = Caller(request.From);
 
-        var outcome = await Run(
+        var (outcome, waited) = await Send(
             from,
             (broker, now, ct) => broker.ResultAsync(
                 request.ExchangeId, from, request.ResponderModel, request.PayloadJson, now, ct, [.. request.Settles]),
@@ -253,7 +254,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
             await WakeSilentVotersAsync(result.ConversationId, context).ConfigureAwait(false);
         }
 
-        return Said(outcome);
+        return Said(outcome, waited);
     }
 
     /// <inheritdoc/>
@@ -544,11 +545,32 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
     {
         var token = cancellationToken ?? context.CancellationToken;
 
+        return await Refused(() => collecting
+            ? _runtime.CollectAsync(agent, work, token)
+            : _runtime.RunAsync(agent, work, token)).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs a send, saying whether it waited on a rewrite of the store (SPEC.md §4.0, §9.1).</summary>
+    /// <typeparam name="T">What the send returns.</typeparam>
+    /// <param name="agent">Who is sending.</param>
+    /// <param name="work">The send.</param>
+    /// <param name="context">The call.</param>
+    /// <returns>What the send returned, and whether it waited.</returns>
+    private Task<(T Value, bool Waited)> Send<T>(
+        AgentName agent,
+        Func<Parley.Broker.Broker, DateTimeOffset, CancellationToken, Task<T>> work,
+        ServerCallContext context) =>
+        Refused(() => _runtime.RunNotingRewriteAsync(agent, work, context.CancellationToken));
+
+    /// <summary>Runs a call on an agent's behalf, turning what the broker refused into the status that says why.</summary>
+    /// <typeparam name="T">What the call returns.</typeparam>
+    /// <param name="run">The call.</param>
+    /// <returns>What it returned.</returns>
+    private static async Task<T> Refused<T>(Func<Task<T>> run)
+    {
         try
         {
-            return collecting
-                ? await _runtime.CollectAsync(agent, work, token).ConfigureAwait(false)
-                : await _runtime.RunAsync(agent, work, token).ConfigureAwait(false);
+            return await run().ConfigureAwait(false);
         }
         catch (NotAttachedException exception)
         {
@@ -634,14 +656,15 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         }
     }
 
-    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome)
+    private static Wire.SayReply Said(Parley.Broker.SayOutcome outcome, bool waited)
     {
         var reply = new Wire.SayReply
         {
             Ok = outcome.Succeeded,
             Refusal = Conversions.Out(outcome.Error),
             Deduplicated = outcome.Succeeded && !outcome.Stored,
-            MessageId = outcome.Message?.Id ?? 0
+            MessageId = outcome.Message?.Id ?? 0,
+            Waited = waited
         };
 
         reply.CannotSettle.AddRange(outcome.CannotSettle.Select(c => new Wire.SettleRefusal

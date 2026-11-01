@@ -133,7 +133,6 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return refused;
             }
 
-            var watch = Watch();
             var reply = await _link.Agents.RequestAsync(
                 new Wire.OpenRequest
                 {
@@ -145,7 +144,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 },
                 cancellationToken: cancellationToken);
 
-            return Held(watch, group ? RequestedRole(to, reply.Outcomes) : Requested(reply.Outcomes.Single()));
+            return Held(reply.Waited, group ? RequestedRole(to, reply.Outcomes) : Requested(reply.Outcomes.Single()));
         }
         catch (RpcException failure)
         {
@@ -214,11 +213,10 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
             clarify.Settles.AddRange(settles ?? []);
 
-            var watch = Watch();
             var outcome = await _link.Agents.ClarifyAsync(clarify, cancellationToken: cancellationToken);
 
             return Held(
-                watch,
+                outcome.Waited,
                 outcome.Ok
                     ? WithSettled(new JsonObject { ["ok"] = true, ["turn_is_now_with"] = "the other party" }, outcome)
                     : Refusal(outcome));
@@ -305,12 +303,11 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badSources;
             }
 
-            var watch = Watch();
             var sent = await SendResultAsync([answer], exchangeId, responderModel, settles, cancellationToken)
                 .ConfigureAwait(false);
 
             return Held(
-                watch,
+                sent.Reply?.Waited == true,
                 sent.Refused
                 ?? (sent.Reply!.Ok
                     ? WithSettled(new JsonObject { ["ok"] = true, ["closed"] = true }, sent.Reply)
@@ -362,21 +359,18 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     internal const string WaitedNote =
         "Parley was rewriting its store to clear removed text, so this waited until it finished.";
 
-    /// <summary>Notes, before a send, whether the broker is rewriting and how many rewrites it has started.</summary>
-    /// <returns>What <see cref="Held"/> compares against.</returns>
-    private (bool Tidying, long Started) Watch() => (_link.Tidying, _link.Tidyings);
-
     /// <summary>Adds to a send's reply that it waited on a rewrite, when it did.</summary>
-    /// <param name="watch">What <see cref="Watch"/> noted before the send.</param>
+    /// <param name="waited">Whether the broker said the send waited on a rewrite.</param>
     /// <param name="reply">The reply.</param>
     /// <returns>The reply.</returns>
     /// <remarks>
     /// <b>So a wait reads as a wait</b> (owner's decision, lens 1 run 115): a rewrite of a large store holds every call for
-    /// seconds, and a send that took that long with nothing said reads as a broker in trouble.
+    /// seconds, and a send that took that long with nothing said reads as a broker in trouble. The broker says so in the
+    /// reply, because only it knows: the stream that tells of a rewrite is another stream, and its news can arrive late.
     /// </remarks>
-    private JsonNode Held((bool Tidying, long Started) watch, JsonNode reply)
+    private static JsonNode Held(bool waited, JsonNode reply)
     {
-        if ((watch.Tidying || _link.Tidyings != watch.Started) && reply is JsonObject said)
+        if (waited && reply is JsonObject said)
         {
             said["waited"] = WaitedNote;
         }

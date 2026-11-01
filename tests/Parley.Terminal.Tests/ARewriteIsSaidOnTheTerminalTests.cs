@@ -2,6 +2,10 @@ using Xunit;
 
 namespace Parley.Terminal.Tests;
 
+/// <summary>Runs alone: its test occupies every thread the pool has, which would slow every other test in the process.</summary>
+[CollectionDefinition(nameof(LoadsThePool), DisableParallelization = true)]
+public sealed class LoadsThePool;
+
 /// <summary>That the terminal says when its project's broker is rewriting its store, and when it has finished (SPEC.md §9.1).</summary>
 /// <remarks>
 /// Found by review, lens 1 run 115: a rewrite holds every call for seconds on a large store. The owner decided nothing is
@@ -9,6 +13,7 @@ namespace Parley.Terminal.Tests;
 /// terminal's message line shows it.
 /// </remarks>
 [Integration]
+[Collection(nameof(LoadsThePool))]
 public sealed class ARewriteIsSaidOnTheTerminalTests
 {
     [Fact]
@@ -34,8 +39,16 @@ public sealed class ARewriteIsSaidOnTheTerminalTests
             }
         };
 
+        // Every thread the pool has kept busy while the destroy rewrites, as on a loaded runner (the Windows nightlies of
+        // 2a55820): the broker's stream writer is then slow to take the start, and a queue of one let the finish overwrite
+        // it, so the seat heard only that a rewrite finished.
+        var busy = Enumerable.Range(0, Environment.ProcessorCount * 2)
+            .Select(_ => Task.Run(() => Thread.Sleep(1500), ct))
+            .ToList();
+
         // Destroyed from somewhere else, as another surface would: the seat's stream is what tells this one.
         _ = await seated.Operators.DestroyAsync("pricing", ct);
+        await Task.WhenAll(busy);
 
         // Up to fifteen seconds: a hosted runner can be slow to deliver the stream's two events.
         for (var tries = 0; tries < 150 && seated.Shell.Said != Shell.TidiedSaid; tries++)

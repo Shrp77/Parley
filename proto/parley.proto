@@ -154,6 +154,7 @@ message OpenRequest {
 // One outcome per exchange a Request opened, or a single refusal when none could be opened.
 message RequestReply {
   repeated RequestOutcome outcomes = 1;
+  bool waited = 2;               // the send waited for a rewrite of the store to finish (section 9.1)
 }
 
 message RequestOutcome {
@@ -220,6 +221,8 @@ message SayReply {
   // handed back to the agent.
   repeated int64 settled = 6;
   repeated int64 handed_back = 7;
+
+  bool waited = 8;               // the send waited for a rewrite of the store to finish (section 9.1)
 }
 
 message SettleRefusal {

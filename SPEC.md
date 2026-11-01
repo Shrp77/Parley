@@ -273,7 +273,8 @@ sooner.
 
 **The stream also says when the store is being rewritten** (§9.1), and again when that has finished. Nothing is refused
 meanwhile: what is sent waits and goes through when the rewrite finishes, and a surface or an adapter says so rather than
-leaving a wait to read as a broker that stopped answering.
+leaving a wait to read as a broker that stopped answering. Whether a Request, Clarify or Result waited is the broker's to
+say, in its reply, because the stream is a separate channel whose news can arrive after the reply does.
 
 ### 4.1 Projects are a deployment concept
 
@@ -2898,7 +2899,8 @@ link is removed as a link, never what it reaches, and made again as a directory 
 recorded in a location that was a link is gone. The choice is recorded in `conversation_folders` and kept until
 the conversation goes, so a folder keeps its name while it is empty. A folder no row names belongs to no conversation,
 and the next sweep deletes it, as it deletes everything else no row names (below): a folder a destroy or a purge could
-not delete when it ran (§14) among them. A destroy's or a purge's delete finishes once its rows have gone, whether or
+not delete when it ran (§14) among them, for which the act logs what it left and asks for that sweep at once.
+A destroy's or a purge's delete finishes once its rows have gone, whether or
 not the operator who asked is still there.
 
 **A name ends in `.md` or `.txt`.** Code travels as text — `PriceSnapshot.cs.txt` — so nothing placed

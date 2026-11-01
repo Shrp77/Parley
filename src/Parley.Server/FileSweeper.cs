@@ -53,6 +53,10 @@ public sealed class FileSweeper : IAsyncDisposable
     /// <remarks>Set by the server to its log. A failed sweep keeps what it finished, and the next one tries again.</remarks>
     public Action<Exception>? Failed { get; set; }
 
+    /// <summary>Gets or sets what is told about a folder or file whose rows went and which could not be deleted.</summary>
+    /// <remarks>Set by the server to its log. A sweep is asked for each time, and it tries again.</remarks>
+    public Action<string>? Left { get; set; }
+
     /// <summary>Asks for a sweep, without waiting for it.</summary>
     public void Ask()
     {

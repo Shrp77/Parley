@@ -123,6 +123,7 @@ public sealed partial class ParleyServer : IAsyncDisposable
         var lifetime = logs.CreateLogger(Category);
         var sweeps = logs.CreateLogger(Category + ".Files");
         runtime.Sweeper.Failed = failed => LogSweepFailed(sweeps, failed);
+        runtime.Sweeper.Left = entry => LogLeft(sweeps, entry);
 
         if (diagnostics is { Heartbeat: true })
         {
@@ -168,6 +169,11 @@ public sealed partial class ParleyServer : IAsyncDisposable
 
     [LoggerMessage(Level = LogLevel.Error, Message = "a sweep of the file location failed; the next one tries again")]
     private static partial void LogSweepFailed(ILogger logger, Exception failed);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "{Entry} in the file location was removed but could not be deleted, as something holds it; a sweep tries again")]
+    private static partial void LogLeft(ILogger logger, string entry);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "listening on {Addresses}, heartbeat {Heartbeat}")]
     private static partial void LogStarted(ILogger logger, string addresses, string heartbeat);

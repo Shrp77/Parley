@@ -690,9 +690,9 @@ internal sealed class FileWork(BrokerRuntime runtime)
                         var removed = await new SharedFileRepository(connection).RemoveAsync(stored, caller, now, cancellationToken: ct)
                             .ConfigureAwait(false);
 
-                        if (removed == FileRejection.None)
+                        if (removed == FileRejection.None && !_runtime.Files.Delete(file.Folder, file.Name))
                         {
-                            _runtime.Files.Delete(file.Folder, file.Name);
+                            Left(file.Folder + "/" + file.Name.Value);
                         }
 
                         return removed;
@@ -736,7 +736,10 @@ internal sealed class FileWork(BrokerRuntime runtime)
 
                     foreach (var stored in gone)
                     {
-                        _runtime.Files.Delete(stored.File.Folder, stored.File.Name);
+                        if (!_runtime.Files.Delete(stored.File.Folder, stored.File.Name))
+                        {
+                            Left(stored.File.Folder + "/" + stored.File.Name.Value);
+                        }
                     }
 
                     return gone;
@@ -802,14 +805,30 @@ internal sealed class FileWork(BrokerRuntime runtime)
     public Task<IDisposable> HoldEverythingAsync(CancellationToken cancellationToken) =>
         _runtime.Files.ChangeEverythingAsync(cancellationToken);
 
-    /// <summary>Deletes the folders of conversations whose rows are gone; what it cannot goes at the next sweep.</summary>
+    /// <summary>Deletes the folders of conversations whose rows are gone; what it cannot is said and swept again.</summary>
     /// <param name="folders">The folders, as they were recorded before the rows went.</param>
     public void DeleteFolders(IEnumerable<string> folders)
     {
         foreach (var folder in folders)
         {
-            _ = _runtime.Files.DeleteFolder(folder);
+            if (!_runtime.Files.DeleteFolder(folder))
+            {
+                Left(folder);
+            }
         }
+    }
+
+    /// <summary>Says that something on disk whose rows went could not be deleted, and asks for a sweep.</summary>
+    /// <param name="entry">The folder, or the folder and file, inside the location.</param>
+    /// <remarks>
+    /// <b>Never left silently</b> (the Windows nightly of 2a55820): another program holding a file kept a destroyed
+    /// conversation's folder on disk with no row naming it, and nothing was logged or tried again until the broker next
+    /// started. The sweep deletes it once it is let go, and raises what is still held as a problem for the person.
+    /// </remarks>
+    private void Left(string entry)
+    {
+        _runtime.Sweeper.Left?.Invoke(entry);
+        _runtime.Sweeper.Ask();
     }
 
     private static async Task<Look> LookAsync(

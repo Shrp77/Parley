@@ -29,9 +29,7 @@ public sealed class AttachedAgent : IAsyncDisposable
     private readonly BrokerRuntime _runtime;
     private readonly Channel<Wire.Notice> _notices;
 
-    // One slot, newest wins, as for notices: only whether the store is being rewritten now matters.
-    private readonly Channel<bool> _tidying = Channel.CreateBounded<bool>(
-        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+    private readonly Channel<bool> _tidying = TidyingQueue();
 
     private int _closed;
 
@@ -118,6 +116,17 @@ public sealed class AttachedAgent : IAsyncDisposable
     /// <summary>Queues whether the store is being rewritten, discarding a change the reader has not taken.</summary>
     /// <param name="underway">Whether a rewrite has started or finished.</param>
     internal void Tidy(bool underway) => _ = _tidying.Writer.TryWrite(underway);
+
+    /// <summary>Makes the queue of rewrites starting and finishing that one session's stream reads.</summary>
+    /// <returns>The queue.</returns>
+    /// <remarks>
+    /// <b>Two slots, newest wins.</b> A rewrite says it started and then that it finished, one rewrite at a time under
+    /// the gate, so the two newest always hold the latest start, and its finish once there is one. One slot let the
+    /// finish overwrite a start the stream had not yet written, and a surface told only that a rewrite finished never
+    /// said one was running.
+    /// </remarks>
+    internal static Channel<bool> TidyingQueue() => Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(2) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
     /// <summary>Ends the stream and tells the registry the agent has gone.</summary>
     /// <returns>A task that completes when the registry has been told.</returns>

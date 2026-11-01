@@ -27,20 +27,6 @@ public sealed class ASendThatWaitedOnARewriteSaysSoTests
         Assert.True((bool)first["ok"]!);
         Assert.Null(first["waited"]);
 
-        // Bulk enough that the rewrite takes a moment, as one that holds anybody up does: the broker says a rewrite has
-        // started on the agent's own stream and answers the send on another, so a rewrite of a few milliseconds let the
-        // answer arrive first on a slow runner (the nightly of e34fa95), where a real one is seconds long.
-        _ = await fixture.Runtime.UseConnectionAsync(
-            async (connection, _, ct) =>
-            {
-                using var bulk = connection.CreateCommand();
-                bulk.CommandText =
-                    "CREATE TABLE zz_bulk (b BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 4000) "
-                    + "INSERT INTO zz_bulk SELECT zeroblob(16384) FROM n;";
-                return await bulk.ExecuteNonQueryAsync(ct);
-            },
-            Ct);
-
         // The broker busy, a destroy queued behind it, and the agent's send behind that: the send runs once the destroy's
         // rewrite has finished.
         var holding = new TaskCompletionSource();
@@ -55,12 +41,20 @@ public sealed class ASendThatWaitedOnARewriteSaysSoTests
             Ct);
         await holding.Task;
 
+        // Queued on the gate before this returns. The send is let through only once it is waiting there too: the broker
+        // decides whether a send waited at the gate, and a delay only guessed that the send had arrived (the nightlies of
+        // 2a55820, where a slow runner answered the send on one stream before the rewrite's news on another).
         var destroying = fixture.Runtime.UseConnectionAsync(
             (connection, now, ct) => new ConversationRepository(connection).DestroyAsync("pricing", now, cancellationToken: ct),
             Ct);
-        await Task.Delay(200, Ct);
         var sending = billing.RequestAsync("orders@test", "Which currency?", cancellationToken: Ct);
-        await Task.Delay(200, Ct);
+
+        for (var tries = 0; tries < 300 && fixture.Runtime.AgentWorkWaiting == 0; tries++)
+        {
+            await Task.Delay(100, Ct);
+        }
+
+        Assert.Equal(1, fixture.Runtime.AgentWorkWaiting);
 
         release.SetResult();
         _ = await hold;

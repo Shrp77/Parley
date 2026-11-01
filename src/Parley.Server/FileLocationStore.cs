@@ -161,7 +161,7 @@ public sealed class FileLocationStore : IDisposable
         {
             foreach (var leftover in Directory.EnumerateFiles(Incoming))
             {
-                TryDelete(leftover);
+                _ = TryDelete(leftover);
             }
         }
 
@@ -728,15 +728,13 @@ public sealed class FileLocationStore : IDisposable
     /// <summary>Deletes one file from the location.</summary>
     /// <param name="folder">The conversation's folder name.</param>
     /// <param name="name">The file's name.</param>
+    /// <returns><see langword="true"/> when the file is gone, or its folder is a link and holds none of Parley's.</returns>
     /// <remarks>Call inside <see cref="ChangeAsync"/>. A file already gone is not an error.</remarks>
-    public void Delete(string folder, SharedFileName name)
+    public bool Delete(string folder, SharedFileName name)
     {
         // A recorded folder replaced by a link holds none of its files: what the link reaches is somebody else's, and the
         // sweep deletes the link itself.
-        if (!IsLinkedFolder(folder))
-        {
-            TryDelete(FilePath(folder, name));
-        }
+        return IsLinkedFolder(folder) || TryDelete(FilePath(folder, name));
     }
 
     /// <summary>Puts back a file <see cref="MoveToQuarantine"/> moved, when what it moved for could not be recorded.</summary>
@@ -1021,15 +1019,17 @@ public sealed class FileLocationStore : IDisposable
                    && (recorded.ModifiedTicks == 0 || info.LastWriteTimeUtc.Ticks == recorded.ModifiedTicks));
     }
 
-    private static void TryDelete(string path)
+    private static bool TryDelete(string path)
     {
         try
         {
             File.Delete(path);
+            return true;
         }
         catch (Exception held) when (held is IOException or UnauthorizedAccessException)
         {
             // Left for the next sweep, or already gone.
+            return !File.Exists(path);
         }
     }
 
@@ -1137,7 +1137,7 @@ public sealed class FileLocationStore : IDisposable
 
             if (!_committed)
             {
-                TryDelete(Path);
+                _ = TryDelete(Path);
             }
         }
     }
