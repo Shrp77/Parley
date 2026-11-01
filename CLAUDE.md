@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.48.1, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+- Version 0.48.2, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -361,14 +361,18 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   handler, so Enter is taken on the box itself. Enter sends; Shift+Enter, Ctrl+Enter or
   backslash then Enter make a line break. A conversation is tailed only for a reader at its
   end. Every command is registered in a table (`CommandManager<T>`: the surface's in `ShellCommands.cs`,
-  each dialog's in the dialog, each dialog a place of its own) with the place it is live in and a condition
-  for whether it is live now; dispatch, the status line and the menus read only it (`Offered`). Each place
-  also reserves the keys its views take first (a list's cursor keys, the box's editing keys, a pane's own
-  Enter). A table refuses to build when a command shares a key with another claim in a place, its layers
-  included, and the tool builds every table before it takes the console, so a clash is a plain message and
-  exit 70. `CommandTableTests` holds the check and `KeysTakenBeforeTheTableTests` (both unit) presses every
-  key at every pane and dialog and reads `OnKeyDown`'s arms, failing when a place does not claim a key
-  taken there; `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the drawn surface to it.
+  each dialog's in the dialog, every dialog a place of its own, read-only ones included) with the place it is
+  live in and a condition for whether it is live now; dispatch, the status line, the menus and a button label
+  that names a key read only it. Each place also reserves the keys its views take first (a list's cursor keys,
+  the box's editing keys, a pane's own Enter). A table refuses to build when a command shares a key with
+  another claim in a place, its layers included, or is unreachable, plain or has both a letter and a chord;
+  the tool builds every table (`CommandTables.BuildEvery`) before it takes the console, so a refusal is a
+  plain message saying which kind and exit 70. `CommandTableTests` holds the check. `KeysTakenBeforeTheTableTests`
+  (both unit) finds every view opened as a session by reflection and fails on one with no place, presses every
+  key at every pane and dialog, and reads every `OnKeyDown`: a surface arm's key must be claimed in the place
+  it names (in every place when it names none), any other read of the key fails, and a dialog's handler may
+  only ask its table. `NoTwoActionsShareAKeyTests` and `KeysNeedAModifierTests` hold the
+  drawn surface to it.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
   so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one
   from the pool directly. What the loop has not started within five seconds is given up, never done late (a late

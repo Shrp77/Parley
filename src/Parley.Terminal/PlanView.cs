@@ -34,20 +34,29 @@ internal sealed class PlanView : Dialog
     /// <summary>Said on the button that opens an item.</summary>
     private const string OpenLabel = "Open item (Enter)";
 
-    /// <summary>Said on the button that edits the roadmap; its key is Alt plus <see cref="EditKey"/>.</summary>
-    internal const string EditLabel = "Edit roadmap (Alt+e)";
-
     /// <summary>The letter, with Alt, that edits the roadmap.</summary>
     internal const char EditKey = 'e';
-
-    /// <summary>Said on the button that goes to the next item; its key is Alt plus <see cref="NextKey"/>.</summary>
-    private const string NextLabel = "Next item (Alt+n)";
 
     /// <summary>The letter, with Alt, that puts the cursor on the next item.</summary>
     internal const char NextKey = 'n';
 
-    /// <summary>Said on the button that leaves the view.</summary>
-    internal const string CloseLabel = "Close (Esc)";
+    /// <summary>What the command and the button that edit the roadmap are called.</summary>
+    private const string EditName = "Edit roadmap";
+
+    /// <summary>What the command and the button that go to the next item are called.</summary>
+    private const string NextName = "Next item";
+
+    /// <summary>What the command and the button that leave the view are called.</summary>
+    private const string CloseName = "Close";
+
+    /// <summary>Said on the button that edits the roadmap, with its key from the table.</summary>
+    internal static string EditLabel => Labelled(EditName);
+
+    /// <summary>Said on the button that goes to the next item, with its key from the table.</summary>
+    private static string NextLabel => Labelled(NextName);
+
+    /// <summary>Said on the button that leaves the view, with its key from the table.</summary>
+    internal static string CloseLabel => Labelled(CloseName);
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
@@ -209,10 +218,15 @@ internal sealed class PlanView : Dialog
     /// <summary>What a key does here: what each button is labelled with, and Escape.</summary>
     internal static IReadOnlyList<KeyCommand<PlanView>> Registered =>
     [
-        new(KeyContext.RoadmapDialog, NextKey, "Next item", KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
-        new(KeyContext.RoadmapDialog, EditKey, "Edit roadmap", KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
-        new(KeyContext.RoadmapDialog, default, "Close", KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
+        new(KeyContext.RoadmapDialog, NextKey, NextName, KeyCommand.Doing<PlanView>(view => view.GoToNext()), KeyCommand.Always),
+        new(KeyContext.RoadmapDialog, EditKey, EditName, KeyCommand.Doing<PlanView>(view => view.Edit()), KeyCommand.Always),
+        new(KeyContext.RoadmapDialog, default, CloseName, KeyCommand.Doing<PlanView>(view => view.Close()), KeyCommand.Always, Chord: Key.Esc),
     ];
+
+    /// <summary>A button's label: the command's name and the key the table gives it.</summary>
+    /// <param name="name">The command.</param>
+    /// <returns>The label.</returns>
+    private static string Labelled(string name) => $"{name} ({KeyCommand.Stroke(Registered, name)})";
 
     /// <summary>What the items, the item's text and the buttons take before this view is offered a key.</summary>
     internal static IReadOnlyList<ReservedKey> Reserved =>

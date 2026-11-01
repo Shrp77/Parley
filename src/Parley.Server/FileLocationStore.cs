@@ -830,7 +830,16 @@ public sealed class FileLocationStore : IDisposable
     //
     // **Everything that can go goes, and what is left is said at the end.** Stopping at the first file another program
     // held left every other file of a destroyed conversation on disk, and the problem raised named only the one.
-    internal static void DeleteTree(string folder)
+    internal static void DeleteTree(string folder) => DeleteTree(folder, null);
+
+    /// <summary>Deletes a folder and everything in it, with a look at each folder as it is about to be read.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <param name="reading">Told each folder's path as it comes off the stack, before it is looked at; a test's seam.</param>
+    /// <remarks>
+    /// The seam is where another program would act: between a folder being stacked and its being read, which is when a
+    /// test swaps it for a link.
+    /// </remarks>
+    internal static void DeleteTree(string folder, Action<string>? reading)
     {
         var root = AsWritten(folder);
 
@@ -843,18 +852,43 @@ public sealed class FileLocationStore : IDisposable
 
         var left = new List<(string Path, Exception Error)>();
         var pending = new Stack<(string Path, bool Emptied)>();
+        var deleted = 0;
         pending.Push((root, false));
 
         while (pending.TryPop(out var top))
         {
             if (top.Emptied)
             {
-                // A folder something inside was left in cannot go, and is not a second thing to report.
-                if (!left.Exists(l => l.Path.StartsWith(top.Path + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+                // A folder something inside was left in cannot go, and is not a second thing to report; nor is one that
+                // could not be read, which is reported already.
+                if (!left.Exists(l => l.Path == top.Path
+                                      || l.Path.StartsWith(top.Path + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
                 {
-                    Try(top.Path, () => Directory.Delete(top.Path, recursive: false));
+                    Try(top.Path, () => { Directory.Delete(top.Path, recursive: false); deleted++; });
                 }
 
+                continue;
+            }
+
+            reading?.Invoke(top.Path);
+
+            // **Looked at again as it comes off the stack**, because it was a folder when it was stacked and may have
+            // been swapped for a link since: entered then, the link would be followed and what it leads to deleted. This
+            // narrows the window to between this look and the read below; another program can still act inside it.
+            var link = false;
+
+            Try(top.Path, () =>
+            {
+                if (IsLink(top.Path))
+                {
+                    link = true;
+                    DeleteLink(top.Path);
+                    deleted++;
+                }
+            });
+
+            if (link)
+            {
                 continue;
             }
 
@@ -873,10 +907,12 @@ public sealed class FileLocationStore : IDisposable
                     if ((attributes & FileAttributes.Directory) == 0)
                     {
                         File.Delete(entry);
+                        deleted++;
                     }
                     else if ((attributes & FileAttributes.ReparsePoint) != 0)
                     {
                         DeleteLink(entry);
+                        deleted++;
                     }
                     else
                     {
@@ -891,8 +927,10 @@ public sealed class FileLocationStore : IDisposable
             var named = left.Take(5).Select(l => l.Path == root ? "the folder itself" : Path.GetRelativePath(root, l.Path));
             var more = left.Count > 5 ? $" and {left.Count - 5} more" : string.Empty;
 
+            // "The rest deleted" only when something was: a folder that could not be read at all had nothing deleted.
             throw new IOException(
-                $"{left.Count} {(left.Count == 1 ? "entry was" : "entries were")} left, the rest deleted: "
+                $"{left.Count} {(left.Count == 1 ? "entry was" : "entries were")} left, "
+                + (deleted > 0 ? "the rest deleted: " : "and nothing was deleted: ")
                 + string.Join(", ", named) + more + ". " + left[0].Error.Message,
                 left[0].Error);
         }

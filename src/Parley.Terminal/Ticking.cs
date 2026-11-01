@@ -165,9 +165,7 @@ internal sealed class TickDialog : Dialog
             X = 1,
             Y = Pos.AnchorEnd(1),
             Width = Dim.Fill(2),
-            Text = Pages > 1
-                ? "Space: tick   Alt+a: all   Alt+n: none   PgUp/PgDn: page   Enter: go   Esc: cancel"
-                : "Space: tick   Alt+a: all   Alt+n: none   Enter: go   Esc: cancel",
+            Text = KeysLine(paged: Pages > 1),
         };
 
         ShowPage(0, 0);
@@ -315,13 +313,13 @@ internal sealed class TickDialog : Dialog
     /// </remarks>
     internal static IReadOnlyList<KeyCommand<TickDialog>> Registered =>
     [
-        new(KeyContext.TickDialog, default, "Cancel", KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
-        new(KeyContext.TickDialog, default, "Go", KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, dialog._items)), KeyCommand.Always, Chord: Key.Enter),
-        new(KeyContext.TickDialog, default, "Tick", KeyCommand.Doing<TickDialog>(dialog => dialog.Toggle((dialog._page * PageSize) + dialog.At)), KeyCommand.Always, Chord: Key.Space),
-        new(KeyContext.TickDialog, default, "Next page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.PageDown),
-        new(KeyContext.TickDialog, default, "Next page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.CursorRight),
-        new(KeyContext.TickDialog, default, "Previous page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.PageUp),
-        new(KeyContext.TickDialog, default, "Previous page", KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.CursorLeft),
+        new(KeyContext.TickDialog, default, CancelName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, null)), KeyCommand.Always, Chord: Key.Esc),
+        new(KeyContext.TickDialog, default, GoName, KeyCommand.Doing<TickDialog>(dialog => dialog.Done?.Invoke(dialog, dialog._items)), KeyCommand.Always, Chord: Key.Enter),
+        new(KeyContext.TickDialog, default, TickName, KeyCommand.Doing<TickDialog>(dialog => dialog.Toggle((dialog._page * PageSize) + dialog.At)), KeyCommand.Always, Chord: Key.Space),
+        new(KeyContext.TickDialog, default, NextName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.PageDown),
+        new(KeyContext.TickDialog, default, NextName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(+1, dialog.At)), KeyCommand.Always, Chord: Key.CursorRight),
+        new(KeyContext.TickDialog, default, PreviousName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.PageUp),
+        new(KeyContext.TickDialog, default, PreviousName, KeyCommand.Doing<TickDialog>(dialog => dialog.Turn(-1, dialog.At)), KeyCommand.Always, Chord: Key.CursorLeft),
         new(
             KeyContext.TickDialog,
             default,
@@ -336,8 +334,8 @@ internal sealed class TickDialog : Dialog
             KeyCommand.Doing<TickDialog>(dialog => dialog.ShowPage(dialog._page - 1, PageSize - 1)),
             dialog => dialog.At == 0 && dialog._page > 0,
             Chord: Key.CursorUp),
-        new(KeyContext.TickDialog, 'a', "All", KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(true)), KeyCommand.Always),
-        new(KeyContext.TickDialog, 'n', "None", KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(false)), KeyCommand.Always),
+        new(KeyContext.TickDialog, 'a', AllName, KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(true)), KeyCommand.Always),
+        new(KeyContext.TickDialog, 'n', NoneName, KeyCommand.Doing<TickDialog>(dialog => dialog.SetAll(false)), KeyCommand.Always),
     ];
 
     /// <summary>What the list takes when no command here does.</summary>
@@ -358,11 +356,44 @@ internal sealed class TickDialog : Dialog
             Key.CursorUp),
     ];
 
+    /// <summary>The line along the bottom: each key and what it does, every key read from the table.</summary>
+    /// <param name="paged">Whether there is more than one page to turn.</param>
+    /// <returns>The line.</returns>
+    /// <remarks>Read from the table so a key moved there cannot leave this line naming the old one.</remarks>
+    internal static string KeysLine(bool paged)
+    {
+        string Says(string name, string what) => KeyCommand.Stroke(Registered, name) + ": " + what;
+
+        return string.Join("   ", (IEnumerable<string>)
+        [
+            Says(TickName, "tick"),
+            Says(AllName, "all"),
+            Says(NoneName, "none"),
+            .. paged ? [KeyCommand.Stroke(Registered, PreviousName) + "/" + Says(NextName, "page")] : Array.Empty<string>(),
+            Says(GoName, "go"),
+            Says(CancelName, "cancel"),
+        ]);
+    }
+
+    private const string CancelName = "Cancel";
+
+    private const string GoName = "Go";
+
+    private const string TickName = "Tick";
+
+    private const string NextName = "Next page";
+
+    private const string PreviousName = "Previous page";
+
+    private const string AllName = "All";
+
+    private const string NoneName = "None";
+
     /// <summary>Turns a page, keeping the cursor on the same row of the page where it can.</summary>
     /// <param name="by">Which way.</param>
     /// <param name="at">The row the cursor is on.</param>
-    /// <returns>Always <see langword="true"/>: at the first or last page the key is still this dialog's.</returns>
-    private bool Turn(int by, int at)
+    /// <remarks>At the first or last page nothing moves, and the key is still this dialog's.</remarks>
+    private void Turn(int by, int at)
     {
         var to = Math.Clamp(_page + by, 0, Pages - 1);
 
@@ -370,8 +401,6 @@ internal sealed class TickDialog : Dialog
         {
             ShowPage(to, at);
         }
-
-        return true;
     }
 
     /// <summary>Puts a page on screen.</summary>

@@ -29,6 +29,7 @@ internal sealed class LogView : Dialog
     /// <summary>What is said above the lines.</summary>
     internal const string Following = "Following ";
 
+    private readonly CommandManager<LogView> _commands = new(Places, Registered, Reserved);
     private readonly ObservableCollection<string> _lines = [];
     private readonly List<string> _pending = [];
     private readonly ListView _list;
@@ -130,14 +131,30 @@ internal sealed class LogView : Dialog
         }
     }
 
+    /// <summary>This dialog's place in the command tables, with nothing of the surface's layered on it.</summary>
+    internal static IReadOnlyList<KeyPlace> Places => [new(KeyContext.LogDialog, [])];
+
+    /// <summary>What a key does here: Escape closes it, as everywhere.</summary>
+    internal static IReadOnlyList<KeyCommand<LogView>> Registered =>
+    [
+        new(KeyContext.LogDialog, default, "Close", KeyCommand.Doing<LogView>(view => view.Closing?.Invoke(view, EventArgs.Empty)), KeyCommand.Always, Chord: Key.Esc),
+    ];
+
+    /// <summary>What the lines take before this dialog is offered a key.</summary>
+    internal static IReadOnlyList<ReservedKey> Reserved =>
+    [
+        .. ReservedKey.Moving(KeyContext.LogDialog),
+        .. ReservedKey.TakenBy(KeyContext.LogDialog, () => Lists.Filling(), "the lines"),
+    ];
+
     /// <inheritdoc/>
     protected override bool OnKeyDown(Key key)
     {
         ArgumentNullException.ThrowIfNull(key);
 
-        if (key == Key.Esc)
+        if (_commands.Answering(KeyContext.LogDialog, this, key) is { } chosen)
         {
-            Closing?.Invoke(this, EventArgs.Empty);
+            _ = chosen.Run();
 
             return true;
         }

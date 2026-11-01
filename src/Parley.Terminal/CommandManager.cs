@@ -18,6 +18,12 @@ namespace Parley.Terminal;
 /// <b>Each dialog is a place of its own</b>, with no layer: a dialog is a session on top of the surface and takes every
 /// key first, so nothing of the surface's is live in it.
 /// </para>
+/// <para>
+/// <b>Every view the terminal opens as a session has one</b>, read-only ones included: the surface's panes, and each
+/// dialog its own, declared by its <c>Places</c> and built in <see cref="CommandTables.BuildEvery"/>.
+/// <c>KeysTakenBeforeTheTableTests</c> finds the sessions by reflection over this assembly and fails on one with no
+/// place, or one it does not build and press, so a dialog added without a table fails a unit test.
+/// </para>
 /// </remarks>
 internal enum KeyContext
 {
@@ -77,6 +83,18 @@ internal enum KeyContext
 
     /// <summary>A dialog: several fields to fill in.</summary>
     FormDialog,
+
+    /// <summary>A dialog: walking the machine's folders to a repository, or to a folder of them.</summary>
+    BrowsingDialog,
+
+    /// <summary>A dialog: the broker's log, followed as it is written.</summary>
+    LogDialog,
+
+    /// <summary>A dialog: a project's health, read-only.</summary>
+    HealthDialog,
+
+    /// <summary>A dialog: the last thing the message line said, whole, read-only.</summary>
+    SayingDialog,
 }
 
 /// <summary>A place on the surface, and the layers that are live in it as well.</summary>
@@ -171,6 +189,23 @@ internal static class KeyCommand
     /// <param name="target">Unread.</param>
     /// <returns><see langword="true"/>.</returns>
     public static bool Always<TTarget>(TTarget target) => true;
+
+    /// <summary>How the key of a command in a table is written, for a label that names it.</summary>
+    /// <typeparam name="TTarget">What the table's commands act on.</typeparam>
+    /// <param name="commands">The table.</param>
+    /// <param name="name">The command's name; the first declared with it, where several share one.</param>
+    /// <returns>Its stroke.</returns>
+    /// <remarks>
+    /// Read from the table rather than written into a label beside it, so a letter moved in the table moves on the
+    /// button too. A name the table does not hold throws, which is the dialog failing to construct in every test that
+    /// builds it.
+    /// </remarks>
+    public static string Stroke<TTarget>(IReadOnlyList<KeyCommand<TTarget>> commands, string name)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+
+        return commands.First(command => string.Equals(command.Name, name, StringComparison.Ordinal)).Stroke;
+    }
 
     /// <summary>A command's work, when it is done at once.</summary>
     /// <typeparam name="TTarget">What it acts on.</typeparam>
@@ -382,13 +417,15 @@ internal sealed class CommandManager<TTarget>
         {
             if (!reachable.Contains(command.Context))
             {
-                throw new InvalidOperationException(
+                throw Refusal(
+                    "a command is registered in a place nothing declares",
                     $"'{command.Name}' is registered in {command.Context}, which no place on the terminal is or layers.");
             }
 
             if ((command.Key == default) == (command.Chord is null))
             {
-                throw new InvalidOperationException(
+                throw Refusal(
+                    "a command has both a letter and a chord, or neither",
                     $"'{command.Name}' needs exactly one of a letter, pressed with Alt, or a chord.");
             }
 
@@ -396,14 +433,15 @@ internal sealed class CommandManager<TTarget>
             if (command.Chord is { } chord && !chord.IsAlt && !chord.IsCtrl && chord.AsRune.Value is var typed
                 && typed < 128 && char.IsAsciiLetterOrDigit((char)typed))
             {
-                throw new InvalidOperationException(
+                throw Refusal(
+                    "a command is bound to a plain character",
                     $"'{command.Name}' is bound to {chord}, a plain character; an action takes a modifier.");
             }
         }
 
         // Every clash, not the first: one key moved can collide in several places, and a fix made one message at a
         // time is a fix that moves the clash to the next place.
-        var clashes = new List<string>();
+        var clashes = new List<(bool Reserved, string Said)>();
 
         foreach (var place in _places)
         {
@@ -427,16 +465,39 @@ internal sealed class CommandManager<TTarget>
             clashes.AddRange(claims
                 .GroupBy(claim => claim.Key, StringComparer.Ordinal)
                 .Where(group => group.Count() > 1 && group.Any(claim => !claim.Reserved))
-                .Select(clash => $"{clash.Key} is claimed more than once in {place.Context}: "
-                    + string.Join(" and ", clash.Select(claim => claim.Said)) + "."));
+                .Select(clash => (
+                    Reserved: clash.Any(claim => claim.Reserved),
+                    Said: $"{clash.Key} is claimed more than once in {place.Context}: "
+                        + string.Join(" and ", clash.Select(claim => claim.Said)) + ".")));
         }
 
         if (clashes.Count > 0)
         {
-            throw new InvalidOperationException(
-                string.Join(Environment.NewLine, clashes) + Environment.NewLine + "Give each command its own key in every place it can be live.");
+            // Said as what the clashes are: a command on a key a view takes first is not two commands on one key.
+            var summary = (clashes.Exists(clash => !clash.Reserved), clashes.Exists(clash => clash.Reserved)) switch
+            {
+                (true, true) => "two of its commands share a key, and a command is on a key taken before any command",
+                (true, false) => "two of its commands share a key",
+                _ => "a command is on a key taken before any command",
+            };
+
+            throw Refusal(
+                summary,
+                string.Join(Environment.NewLine, clashes.Select(clash => clash.Said)) + Environment.NewLine
+                + "Give each command its own key in every place it can be live.");
         }
     }
+
+    /// <summary>A refusal whose first line says what kind it is, and the rest which commands and where.</summary>
+    /// <param name="summary">What is wrong, in words that read after "cannot start:".</param>
+    /// <param name="detail">Every claim that is wrong.</param>
+    /// <returns>The exception.</returns>
+    /// <remarks>
+    /// The first line is what <see cref="CommandTables.Refused"/> leads with, so it has to be true of every refusal: it
+    /// once said two commands shared a key for a command bound to a plain character.
+    /// </remarks>
+    private static InvalidOperationException Refusal(string summary, string detail) =>
+        new(summary + "." + Environment.NewLine + detail);
 }
 
 /// <summary>Every command table the terminal has, built together so a clash in any of them is found before it starts.</summary>
@@ -448,7 +509,8 @@ internal sealed class CommandManager<TTarget>
 /// </para>
 /// <para>
 /// A table added and left out of <see cref="BuildEvery"/> is still checked whenever its dialog opens, but only then;
-/// <c>CommandTableTests</c> counts the places to catch that.
+/// <c>CommandTableTests</c> counts the places to catch that, and <c>KeysTakenBeforeTheTableTests</c> fails on a dialog
+/// whose place is not built here.
 /// </para>
 /// </remarks>
 internal static class CommandTables
@@ -468,6 +530,10 @@ internal static class CommandTables
         .. new CommandManager<TextDialog>(TextDialog.Places, TextDialog.Registered, TextDialog.Reserved).Places.Select(place => place.Context),
         .. new CommandManager<ChoiceDialog>(ChoiceDialog.Places, ChoiceDialog.Registered, ChoiceDialog.Reserved).Places.Select(place => place.Context),
         .. new CommandManager<FormDialog>(FormDialog.Places, FormDialog.Registered, FormDialog.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<Browsing>(Browsing.Places, Browsing.Registered, Browsing.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<LogView>(LogView.Places, LogView.Registered, LogView.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<Health>(Health.Places, Health.Registered, Health.Reserved).Places.Select(place => place.Context),
+        .. new CommandManager<Saying>(Saying.Places, Saying.Registered, Saying.Reserved).Places.Select(place => place.Context),
     ];
 
     /// <summary>Builds every table, and says plainly why the terminal cannot start when one refuses.</summary>
@@ -491,8 +557,15 @@ internal static class CommandTables
         }
         catch (InvalidOperationException refused)
         {
-            error.WriteLine("parley-terminal cannot start: two of its commands share a key.");
-            error.WriteLine(refused.Message);
+            // A table's refusal leads with what kind it is, which is how this line ends.
+            var lines = refused.Message.Split(Environment.NewLine, 2);
+
+            error.WriteLine("parley-terminal cannot start: " + lines[0]);
+
+            if (lines.Length > 1)
+            {
+                error.WriteLine(lines[1]);
+            }
 
             return Refusal;
         }

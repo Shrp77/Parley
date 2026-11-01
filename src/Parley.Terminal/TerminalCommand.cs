@@ -37,22 +37,46 @@ public static class TerminalCommand
     /// <param name="fallbackEndpoint">A broker to offer when the manifest names none.</param>
     /// <param name="cancellationToken">Stops the surface.</param>
     /// <returns>The process exit code.</returns>
-    public static async Task<int> RunAsync(
+    public static Task<int> RunAsync(
         string? manifestPath,
         string? fallbackEndpoint,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(manifestPath, fallbackEndpoint, Console.Error, CommandTables.BuildEvery, () => Interactive, cancellationToken);
+
+    /// <summary>Runs the terminal surface, with what it checks before the console handed in.</summary>
+    /// <param name="manifestPath">This machine's deployment root, where its projects and manifest live.</param>
+    /// <param name="fallbackEndpoint">A broker to offer when the manifest names none.</param>
+    /// <param name="error">Where a refusal is said.</param>
+    /// <param name="tables">Builds every command table.</param>
+    /// <param name="interactive">Whether there is a terminal to draw on: the first thing that asks the console anything.</param>
+    /// <param name="cancellationToken">Stops the surface.</param>
+    /// <returns>The process exit code.</returns>
+    /// <remarks>
+    /// A seam so a unit test can hold the order: a clashing table exits before <paramref name="interactive"/> is asked,
+    /// so the console has not been touched.
+    /// </remarks>
+    internal static async Task<int> RunAsync(
+        string? manifestPath,
+        string? fallbackEndpoint,
+        TextWriter error,
+        Func<object> tables,
+        Func<bool> interactive,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(error);
+        ArgumentNullException.ThrowIfNull(interactive);
+
         // **Every command table, before the toolkit takes the console.** A clash refused from the surface's own
         // constructor came after `Init` had cleared the screen, as an unhandled exception and its stack trace; here it is
         // the clash, said plainly, and an exit code, with a console nothing has touched yet.
-        if (CommandTables.Refused(Console.Error) is { } refused)
+        if (CommandTables.Refused(error, tables) is { } refused)
         {
             return refused;
         }
 
-        if (!Interactive)
+        if (!interactive())
         {
-            await Console.Error.WriteLineAsync(Redirected).ConfigureAwait(false);
+            await error.WriteLineAsync(Redirected).ConfigureAwait(false);
 
             return 1;
         }

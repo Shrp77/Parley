@@ -223,6 +223,81 @@ public sealed class CommandTableTests
         Assert.Contains(TextDialog.Registered, c => Key.Esc.Equals(c.Chord));
         Assert.Contains(ChoiceDialog.Registered, c => Key.Esc.Equals(c.Chord));
         Assert.Contains(FormDialog.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(Browsing.Registered, c => Key.Esc.Equals(c.Chord));
+        Assert.Contains(LogView.Registered, c => Key.Esc.Equals(c.Chord));
+    }
+
+    [Fact]
+    public void A_refusals_first_line_says_what_kind_of_refusal_it_is()
+    {
+        // The first line once said two commands shared a key whatever the table was refused for.
+        static string First(Func<object> build)
+        {
+            using var error = new StringWriter();
+
+            Assert.Equal(CommandTables.Refusal, CommandTables.Refused(error, build));
+
+            return error.ToString().Split(Environment.NewLine)[0];
+        }
+
+        const string Starts = "parley-terminal cannot start: ";
+        var plain = new KeyCommand<Shell>(KeyContext.Agents, default, "Plain", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J);
+        var both = new KeyCommand<Shell>(KeyContext.Agents, 'j', "Both", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.J.WithAlt);
+        var tab = new KeyCommand<Shell>(KeyContext.Agents, default, "Tabbed", _ => Task.CompletedTask, KeyCommand.Always, Chord: Key.Tab);
+        var places = Shell.Places.Where(place => place.Context != KeyContext.Roadmaps).ToList();
+
+        Assert.Equal(Starts + "a command is bound to a plain character.", First(() => With(plain)));
+        Assert.Equal(Starts + "a command has both a letter and a chord, or neither.", First(() => With(both)));
+        Assert.Equal(Starts + "a command is on a key taken before any command.", First(() => With(tab)));
+        Assert.Equal(Starts + "two of its commands share a key.", First(() => With(Extra(KeyContext.Projects, Shell.ClearKey, "Clash"))));
+        Assert.Equal(
+            Starts + "two of its commands share a key, and a command is on a key taken before any command.",
+            First(() => With(tab, Extra(KeyContext.Projects, Shell.ClearKey, "Clash"))));
+        Assert.Equal(
+            Starts + "a command is registered in a place nothing declares.",
+            First(() => new CommandManager<Shell>(places, Shell.Registered, Shell.Reserved)));
+    }
+
+    [Fact]
+    public async Task The_terminal_refuses_a_clashing_table_before_it_asks_anything_of_the_console()
+    {
+        // The seam `RunAsync` goes through: whether there is a terminal is the first thing it asks of the console, so a
+        // refusal that came after it would have been said on a console the toolkit could already have had.
+        using var error = new StringWriter();
+        var asked = false;
+
+        var code = await TerminalCommand.RunAsync(
+            null,
+            null,
+            error,
+            () => With(Extra(KeyContext.Projects, Shell.ClearKey, "Clash")),
+            // Answered "no terminal" so a build that asked first would stop there, not go on to take the console.
+            () =>
+            {
+                asked = true;
+
+                return false;
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommandTables.Refusal, code);
+        Assert.False(asked);
+        Assert.Contains("Clash", error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Every_label_that_names_a_key_reads_it_from_its_dialogs_table()
+    {
+        Assert.Equal("Edit roadmap (" + KeyCommand.Stroke(PlanView.Registered, "Edit roadmap") + ")", PlanView.EditLabel);
+        Assert.Equal("Edit roadmap (Alt+e)", PlanView.EditLabel);
+        Assert.Equal("Close (Esc)", PlanView.CloseLabel);
+        Assert.Equal("Confirm Alt+c", ProposalView.ConfirmLabel);
+        Assert.Equal("Edit Alt+e", ProposalView.EditLabel);
+        Assert.Equal("Decline Alt+d", ProposalView.DeclineLabel);
+        Assert.Equal("Leave Esc", ProposalView.LeaveLabel);
+        Assert.Equal("Space: tick   Alt+a: all   Alt+n: none   Enter: go   Esc: cancel", TickDialog.KeysLine(paged: false));
+        Assert.Equal(
+            "Space: tick   Alt+a: all   Alt+n: none   PageUp/PageDown: page   Enter: go   Esc: cancel", TickDialog.KeysLine(paged: true));
     }
 
     [Fact]

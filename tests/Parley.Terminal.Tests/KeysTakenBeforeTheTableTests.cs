@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Parley.Client.Roadmaps;
 using Parley.Core;
+using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
@@ -105,6 +106,84 @@ public sealed class KeysTakenBeforeTheTableTests
             KeyContext.FormDialog,
             new FormDialog("Fill", [new FormField("Short:"), new FormField("Long:", Long: true)]),
             key => form.Claims(KeyContext.FormDialog, key));
+
+        // Opened on the test's own build folder, which is small and always there: the walk reads the folder it opens.
+        var browsing = new CommandManager<Browsing>(Browsing.Places, Browsing.Registered, Browsing.Reserved);
+        yield return (KeyContext.BrowsingDialog, new Browsing(AppContext.BaseDirectory), key => browsing.Claims(KeyContext.BrowsingDialog, key));
+
+        var log = new CommandManager<LogView>(LogView.Places, LogView.Registered, LogView.Reserved);
+        yield return (KeyContext.LogDialog, new LogView("following nothing"), key => log.Claims(KeyContext.LogDialog, key));
+
+        var health = new CommandManager<Health>(Health.Places, Health.Registered, Health.Reserved);
+        yield return (KeyContext.HealthDialog, new Health("alpha", ["Work that needs you", "  Nothing is flagged."]), key => health.Claims(KeyContext.HealthDialog, key));
+
+        var saying = new CommandManager<Saying>(Saying.Places, Saying.Registered, Saying.Reserved);
+        yield return (KeyContext.SayingDialog, new Saying("Said, whole.", 40), key => saying.Claims(KeyContext.SayingDialog, key));
+    }
+
+    /// <summary>Every view the terminal can open as a session: each concrete runnable type in its assembly.</summary>
+    /// <returns>The types.</returns>
+    /// <remarks>
+    /// Found, not listed, so a dialog added next month is in it the day it is written. A session takes every key first,
+    /// so one with no place is a set of keys no table has ever seen.
+    /// </remarks>
+    private static IReadOnlyList<Type> Sessions() =>
+    [
+        .. typeof(Shell).Assembly.GetTypes()
+            .Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IRunnable).IsAssignableFrom(type))
+            .OrderBy(type => type.FullName, StringComparer.Ordinal),
+    ];
+
+    /// <summary>The places a session's type declares, by its static <c>Places</c>, or null when it declares none.</summary>
+    /// <param name="type">The session's type.</param>
+    /// <returns>The places, or null.</returns>
+    private static IReadOnlyList<KeyPlace>? Declared(Type type) =>
+        type.GetProperty("Places", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) as IReadOnlyList<KeyPlace>;
+
+    [Fact]
+    public void Every_view_opened_as_a_session_has_a_place_every_table_builds_and_the_probe_presses()
+    {
+        var built = CommandTables.BuildEvery();
+        var pressed = new HashSet<Type>();
+
+        foreach (var (_, root, _) in Everywhere())
+        {
+            using (root)
+            {
+                pressed.Add(root.GetType());
+            }
+        }
+
+        var problems = new List<string>();
+
+        foreach (var session in Sessions())
+        {
+            if (Declared(session) is not { Count: > 0 } places)
+            {
+                problems.Add($"{session.Name} is opened as a session and declares no Places: give it a KeyContext and a table");
+
+                continue;
+            }
+
+            problems.AddRange(places
+                .Where(place => !built.Contains(place.Context))
+                .Select(place => $"{session.Name}'s place {place.Context} is not built in CommandTables.BuildEvery"));
+
+            // The surface is pressed one pane at a time, as each pane's own view; every dialog is pressed whole.
+            if (session != typeof(Shell) && !pressed.Contains(session))
+            {
+                problems.Add($"{session.Name} is never built and pressed in {nameof(Everywhere)}");
+            }
+        }
+
+        // Non-vacuity: the surface and every dialog the review named were found as sessions.
+        Assert.Contains(typeof(Shell), Sessions());
+        Assert.Contains(typeof(Browsing), Sessions());
+        Assert.Contains(typeof(LogView), Sessions());
+        Assert.Contains(typeof(Health), Sessions());
+        Assert.Contains(typeof(Saying), Sessions());
+
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
     }
 
     [Fact]
@@ -126,8 +205,10 @@ public sealed class KeysTakenBeforeTheTableTests
             }
         }
 
-        // Non-vacuity: every place with a view was stood in, and the handlers this rests on are where it looks for them.
-        Assert.Equal(Enum.GetValues<KeyContext>().Except([KeyContext.Elsewhere, KeyContext.MessageLine, KeyContext.Everywhere]).Order(), visited.Order());
+        // Non-vacuity: every place a table builds was stood in, but the one for panes nothing belongs to, and the
+        // handlers this rests on are where it looks for them. Read from the tables rather than the enum, so a place a
+        // table builds is pressed whether or not anybody remembered to name it here.
+        Assert.Equal(CommandTables.BuildEvery().Except([KeyContext.Elsewhere]).Order(), visited.Order());
         Assert.NotNull(Accepting);
         Assert.NotNull(Activating);
 
@@ -156,7 +237,7 @@ public sealed class KeysTakenBeforeTheTableTests
     [Fact]
     public void Every_key_the_surfaces_own_handler_takes_is_claimed_in_the_place_its_arm_names()
     {
-        var arms = Arms();
+        var arms = Arms(Handlers().Single(handler => handler.File == "Shell.cs").Body);
         var missing = new List<string>();
 
         foreach (var (name, place) in arms)
@@ -176,6 +257,37 @@ public sealed class KeysTakenBeforeTheTableTests
         Assert.Contains(("MenuKey", (KeyContext?)null), arms);
 
         Assert.True(missing.Count == 0, "OnKeyDown takes these, and the place does not claim them: " + string.Join(", ", missing));
+    }
+
+    [Fact]
+    public void No_key_handler_reads_a_key_in_a_way_this_test_cannot_attribute_to_a_place()
+    {
+        // Review's probe: `if (Key.F12 == key)` added to the surface's handler passed, because only `key == X` was read.
+        // So every mention of the key is accounted for: an arm read above, or a use that only hands it on. The dialogs'
+        // handlers have no arms at all: every key there goes through the dialog's table.
+        var handlers = Handlers();
+        var problems = new List<string>();
+
+        foreach (var (file, body) in handlers)
+        {
+            problems.AddRange(Unattributed(body).Select(use => $"{file}: {use}"));
+
+            if (file != "Shell.cs")
+            {
+                problems.AddRange(Arms(body).Select(arm => $"{file}: compares {arm.Key} outside its table"));
+            }
+        }
+
+        // Non-vacuity: the surface's handler and every dialog's were read, and the reader sees what review's probe added.
+        Assert.Contains(handlers, handler => handler.File == "Shell.cs");
+        Assert.True(handlers.Count >= 12, $"read {handlers.Count} OnKeyDown overrides; expected the surface's and eleven dialogs'");
+        Assert.NotEmpty(Unattributed("if (Key.F12 == key)\n"));
+        Assert.NotEmpty(Unattributed("if (key.KeyCode == KeyCode.F12)\n"));
+        Assert.NotEmpty(Unattributed("if (key.Equals(Key.F12))\n"));
+        Assert.NotEmpty(Unattributed("switch (key)\n"));
+        Assert.Empty(Unattributed("if (key == Key.F12 && Context == KeyContext.Agents)\n"));
+
+        Assert.True(problems.Count == 0, "a key handler reads the key where no place can be read off it:\n" + string.Join("\n", problems));
     }
 
     /// <summary>Every key a view or anything inside it takes, and which view takes it.</summary>
@@ -277,9 +389,26 @@ public sealed class KeysTakenBeforeTheTableTests
         }
     }
 
-    /// <summary>Every key <c>Shell.OnKeyDown</c> compares against, with the place its arm names.</summary>
-    /// <returns>Each key as written, and its place, or null when the arm names none.</returns>
-    private static IReadOnlyList<(string Key, KeyContext? Place)> Arms()
+    /// <summary>An <c>if</c> and its whole condition, nested parentheses included.</summary>
+    private static readonly Regex Condition = new(
+        @"if \((?<c>(?>[^()]+|\((?<d>)|\)(?<-d>))*(?(d)(?!)))\)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
+
+    /// <summary>What a condition may say of the key: an arm's comparison, or the box's test for a typed character.</summary>
+    private static readonly Regex Attributed = new(
+        @"key == [A-Za-z][A-Za-z0-9.]*|key\.IsCtrl\b|key\.IsAlt\b|key\.AsRune\.Value", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
+
+    /// <summary>
+    /// What a handler may do with the key outside a condition: be declared, checked for null, handed to the base, to the
+    /// table or to the method that asks the table, or pick a direction inside an arm already read.
+    /// </summary>
+    private static readonly Regex HandedOn = new(
+        @"OnKeyDown\(Key key\)|ThrowIfNull\(key\)|base\.OnKeyDown\(key\)|Answering\([^()]*\bkey\)|\b(Choose|Handle)\(key\)|Move\(key == Key\.CursorDown \? 1 : -1\)",
+        RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(5));
+
+    /// <summary>Every <c>OnKeyDown</c> override in the terminal's source, its comments removed.</summary>
+    /// <returns>Each file's name and the override's body; a file with several has an entry for each.</returns>
+    private static IReadOnlyList<(string File, string Body)> Handlers()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -290,25 +419,37 @@ public sealed class KeysTakenBeforeTheTableTests
 
         Assert.NotNull(directory);
 
-        var source = File.ReadAllText(Path.Combine(directory!.FullName, "src", "Parley.Terminal", "Shell.cs"));
-        var from = source.IndexOf("protected override bool OnKeyDown", StringComparison.Ordinal);
+        var handlers = new List<(string, string)>();
 
-        Assert.True(from > 0, "OnKeyDown is not where this test expects it");
+        foreach (var path in Directory.GetFiles(Path.Combine(directory!.FullName, "src", "Parley.Terminal"), "*.cs"))
+        {
+            var source = File.ReadAllText(path);
 
-        var body = source[from..];
-        var ends = body.IndexOf("\n    }", StringComparison.Ordinal);
+            for (var from = source.IndexOf("protected override bool OnKeyDown", StringComparison.Ordinal);
+                 from >= 0;
+                 from = source.IndexOf("protected override bool OnKeyDown", from + 1, StringComparison.Ordinal))
+            {
+                var ends = source.IndexOf("\n    }", from, StringComparison.Ordinal);
 
-        Assert.True(ends > 0, "OnKeyDown no longer ends the way this test expects");
+                Assert.True(ends > from, $"an OnKeyDown in {Path.GetFileName(path)} no longer ends the way this test expects");
 
-        var conditions = Regex.Matches(
-            body[..ends],
-            @"if \((?<c>(?>[^()]+|\((?<d>)|\)(?<-d>))*(?(d)(?!)))\)",
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromSeconds(5));
+                var body = Regex.Replace(source[from..ends], @"//[^\n]*", string.Empty, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5));
 
+                handlers.Add((Path.GetFileName(path), body));
+            }
+        }
+
+        return handlers;
+    }
+
+    /// <summary>Every key a handler compares against in an <c>if</c>, with the place its arm names.</summary>
+    /// <param name="body">The handler.</param>
+    /// <returns>Each key as written, and its place, or null when the arm names none.</returns>
+    private static IReadOnlyList<(string Key, KeyContext? Place)> Arms(string body)
+    {
         var arms = new List<(string, KeyContext?)>();
 
-        foreach (Match condition in conditions)
+        foreach (Match condition in Condition.Matches(body))
         {
             var text = condition.Groups["c"].Value;
             var place = Regex.Match(text, @"Context == KeyContext\.(\w+)", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5)) is { Success: true } named
@@ -321,5 +462,22 @@ public sealed class KeysTakenBeforeTheTableTests
         }
 
         return arms;
+    }
+
+    /// <summary>Every mention of the key in a handler that is neither an arm <see cref="Arms"/> reads nor handed on.</summary>
+    /// <param name="body">The handler.</param>
+    /// <returns>Each such mention, with what is around it.</returns>
+    /// <remarks>
+    /// Whatever else reads the key (a reversed comparison, its code, <c>Equals</c>, a <c>switch</c>, a copy in another
+    /// variable) is a key taken where no place can be read off it, so it is reported rather than guessed at.
+    /// </remarks>
+    private static IReadOnlyList<string> Unattributed(string body)
+    {
+        var left = HandedOn.Replace(
+            Condition.Replace(body, condition => "if (" + Attributed.Replace(condition.Groups["c"].Value, string.Empty) + ")"),
+            string.Empty);
+
+        return [.. Regex.Matches(left, @"\bkey\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(5))
+            .Select(use => left.Substring(Math.Max(0, use.Index - 30), Math.Min(left.Length, use.Index + 30) - Math.Max(0, use.Index - 30)).Trim())];
     }
 }

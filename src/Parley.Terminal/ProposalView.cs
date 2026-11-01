@@ -43,17 +43,25 @@ internal enum ProposalChoice
 /// </remarks>
 internal sealed class ProposalView : Dialog
 {
-    /// <summary>The label of the button that confirms as proposed.</summary>
-    internal const string ConfirmLabel = "Confirm Alt+c";
+    /// <summary>The label of the button that confirms as proposed, with its key from the table.</summary>
+    internal static string ConfirmLabel => Labelled(ConfirmName);
 
-    /// <summary>The label of the button that edits first.</summary>
-    internal const string EditLabel = "Edit Alt+e";
+    /// <summary>The label of the button that edits first, with its key from the table.</summary>
+    internal static string EditLabel => Labelled(EditName);
 
-    /// <summary>The label of the button that declines.</summary>
-    internal const string DeclineLabel = "Decline Alt+d";
+    /// <summary>The label of the button that declines, with its key from the table.</summary>
+    internal static string DeclineLabel => Labelled(DeclineName);
 
-    /// <summary>The label of the button that leaves it.</summary>
-    internal const string LeaveLabel = "Leave Esc";
+    /// <summary>The label of the button that leaves it, with its key from the table.</summary>
+    internal static string LeaveLabel => Labelled(LeaveName);
+
+    private const string ConfirmName = "Confirm";
+
+    private const string EditName = "Edit";
+
+    private const string DeclineName = "Decline";
+
+    private const string LeaveName = "Leave";
 
     /// <summary>What is said above the buttons.</summary>
     internal const string Hint =
@@ -194,17 +202,22 @@ internal sealed class ProposalView : Dialog
     /// <summary>What a key does here: the letter each button is labelled with, and Escape.</summary>
     internal static IReadOnlyList<KeyCommand<ProposalView>> Registered =>
     [
-        new(KeyContext.ProposalDialog, 'c', "Confirm", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Confirm)), KeyCommand.Always),
-        new(KeyContext.ProposalDialog, 'e', "Edit", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Edit)), KeyCommand.Always),
-        new(KeyContext.ProposalDialog, 'd', "Decline", KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Decline)), KeyCommand.Always),
+        new(KeyContext.ProposalDialog, 'c', ConfirmName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Confirm)), KeyCommand.Always),
+        new(KeyContext.ProposalDialog, 'e', EditName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Edit)), KeyCommand.Always),
+        new(KeyContext.ProposalDialog, 'd', DeclineName, KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Decline)), KeyCommand.Always),
         new(
             KeyContext.ProposalDialog,
             default,
-            "Leave",
+            LeaveName,
             KeyCommand.Doing<ProposalView>(view => view.Finish(ProposalChoice.Leave)),
             KeyCommand.Always,
             Chord: Key.Esc),
     ];
+
+    /// <summary>A button's label: the command's name and the key the table gives it.</summary>
+    /// <param name="name">The command.</param>
+    /// <returns>The label.</returns>
+    private static string Labelled(string name) => $"{name} {KeyCommand.Stroke(Registered, name)}";
 
     /// <summary>What the paragraphs and the buttons take before this view is offered a key.</summary>
     /// <remarks>Enter is only a button's: there is no default, which the buttons below say why.</remarks>
