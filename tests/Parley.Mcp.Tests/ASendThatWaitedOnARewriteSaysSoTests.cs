@@ -27,6 +27,20 @@ public sealed class ASendThatWaitedOnARewriteSaysSoTests
         Assert.True((bool)first["ok"]!);
         Assert.Null(first["waited"]);
 
+        // Bulk enough that the rewrite takes a moment, as one that holds anybody up does: the broker says a rewrite has
+        // started on the agent's own stream and answers the send on another, so a rewrite of a few milliseconds let the
+        // answer arrive first on a slow runner (the nightly of e34fa95), where a real one is seconds long.
+        _ = await fixture.Runtime.UseConnectionAsync(
+            async (connection, _, ct) =>
+            {
+                using var bulk = connection.CreateCommand();
+                bulk.CommandText =
+                    "CREATE TABLE zz_bulk (b BLOB); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 4000) "
+                    + "INSERT INTO zz_bulk SELECT zeroblob(16384) FROM n;";
+                return await bulk.ExecuteNonQueryAsync(ct);
+            },
+            Ct);
+
         // The broker busy, a destroy queued behind it, and the agent's send behind that: the send runs once the destroy's
         // rewrite has finished.
         var holding = new TaskCompletionSource();
