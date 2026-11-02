@@ -42,3 +42,6 @@ Low: a wrong word that misleads nobody, a stale citation, a comment out of place
   event subscription, a key or hot-key binding on a view, a binding the surface adds to a view it owns, and an
   application-wide binding. A way past it that only a deliberate trick reaches, such as reflection or
   `AddEventHandler`, is low.
+- **A gap in the key check is medium only when shipped code shows it** (owner, 2026-11-02): a key in the code as
+  shipped that runs something other than what the surface names, or a plain character that acts. A route past the
+  check that no shipped code takes is low, recorded for later.
