@@ -66,7 +66,7 @@ public sealed class ToolSurfaceTests
 
         var operations = Regex.Matches(section, @"^\| `(\w+)\(([^)]*)\)`", RegexOptions.Multiline);
 
-        Assert.True(operations.Count >= Expected.Length - 1, $"Found {operations.Count} operations in section 10.1.");
+        Assert.Equal(Expected, operations.Select(o => "parley_" + o.Groups[1].Value).Order(StringComparer.Ordinal));
 
         var missing = new List<string>();
 
@@ -99,8 +99,7 @@ public sealed class ToolSurfaceTests
             .Where(signature =>
                 signature.Contains("from", StringComparison.OrdinalIgnoreCase) ||
                 signature.Contains("sender", StringComparison.OrdinalIgnoreCase) ||
-                signature.Contains("actingAgent", StringComparison.OrdinalIgnoreCase) ||
-                signature.Contains("asAgent", StringComparison.OrdinalIgnoreCase))
+                signature[signature.IndexOf('(', StringComparison.Ordinal)..].Contains("agent", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         Assert.Empty(offenders);
