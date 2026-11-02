@@ -105,8 +105,10 @@ public sealed class ADuplicatedMemberStopsNoSiblingTests : IDisposable
     {
         // The payload readers are the exception, by name: a payload is the broker's own record of what a tool call
         // carried, and the broker's reading (PayloadShape) and the surfaces' must stay one algorithm, which they are,
-        // so neither crashes and both answer the same copy of a repeated member.
-        string[] allowed = ["StrictJson.cs", "PayloadShape.cs", "Payload.cs", "Reading.cs"];
+        // so neither crashes and both answer the same copy of a repeated member. So is the resident agent's pump: it reads
+        // a runner's output, not a file, takes every field at the parse, and must never refuse a result line, or its turn
+        // and every turn after fall out of step (lens 1 run 132).
+        string[] allowed = ["StrictJson.cs", "PayloadShape.cs", "Payload.cs", "Reading.cs", "ResidentAgent.cs"];
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         var offenders = new List<string>();
         var separator = Path.DirectorySeparatorChar;

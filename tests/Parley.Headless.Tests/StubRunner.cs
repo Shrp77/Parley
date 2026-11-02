@@ -173,6 +173,36 @@ internal static class StubRunner
         return Write(directory, windows, unix);
     }
 
+    /// <summary>
+    /// Writes a stub that answers its nth prompt with the nth group of lines, verbatim, and returns its command template.
+    /// </summary>
+    /// <param name="directory">Where to put the script.</param>
+    /// <param name="turns">The lines to write for each prompt, in order. None may hold a single quote.</param>
+    /// <returns>The template.</returns>
+    internal static string Scripted(string directory, params string[][] turns)
+    {
+        var windows = new List<string> { Emit(Init), "$n = 0", "while ($null -ne ($line = [Console]::In.ReadLine())) {", "  $n++" };
+        var unix = new List<string> { Print(Init), "n=0", "while IFS= read -r line; do", "  n=$((n+1))" };
+
+        for (var turn = 0; turn < turns.Length; turn++)
+        {
+            var number = (turn + 1).ToString(CultureInfo.InvariantCulture);
+
+            windows.Add("  if ($n -eq " + number + ") {");
+            windows.AddRange(turns[turn].Select(line => "    " + Emit(line)));
+            windows.Add("  }");
+
+            unix.Add("  if [ \"$n\" -eq " + number + " ]; then");
+            unix.AddRange(turns[turn].Select(line => "    " + Print(line)));
+            unix.Add("  fi");
+        }
+
+        windows.Add("}");
+        unix.Add("done");
+
+        return Write(directory, windows, unix);
+    }
+
     /// <summary>Writes a stub that never reads its input, and returns its command template.</summary>
     /// <param name="directory">Where to put the script.</param>
     /// <returns>The template.</returns>

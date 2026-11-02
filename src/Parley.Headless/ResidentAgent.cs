@@ -51,7 +51,7 @@ public sealed class ResidentAgent : IAsyncDisposable
     private const int DiagnosticsLimit = 4000;
 
     private readonly Process _process;
-    private readonly Channel<JsonNode> _events;
+    private readonly Channel<RunnerEvent> _events;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
     private readonly StringBuilder _diagnostics = new();
     private readonly Lock _diagnosticsLock = new();
@@ -70,7 +70,7 @@ public sealed class ResidentAgent : IAsyncDisposable
         Workspace = workspace;
         _process = process;
         _clock = clock;
-        _events = Channel.CreateUnbounded<JsonNode>(
+        _events = Channel.CreateUnbounded<RunnerEvent>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
         _outputPump = Task.Run(PumpOutputAsync);
@@ -542,22 +542,11 @@ public sealed class ResidentAgent : IAsyncDisposable
                     continue;
                 }
 
-                JsonNode? node;
-
-                try
+                // A runner is free to write things that are not protocol events. Skipping is right:
+                // refusing would let one stray line end an otherwise healthy agent.
+                if (RunnerEvent.Read(line) is { } evt)
                 {
-                    node = Parley.Configuration.StrictJson.Parse(line);
-                }
-                catch (JsonException)
-                {
-                    // A runner is free to write things that are not protocol events. Skipping is
-                    // right: refusing would let one stray line end an otherwise healthy agent.
-                    continue;
-                }
-
-                if (node is not null)
-                {
-                    await _events.Writer.WriteAsync(node).ConfigureAwait(false);
+                    await _events.Writer.WriteAsync(evt).ConfigureAwait(false);
                 }
             }
         }
@@ -653,49 +642,33 @@ public sealed class ResidentAgent : IAsyncDisposable
 
     /// <summary>Notes anything from an event that is worth keeping.</summary>
     /// <param name="evt">The event.</param>
-    private void Observe(JsonNode evt)
+    private void Observe(RunnerEvent evt)
     {
-        if (TypeOf(evt) != "system")
-        {
-            return;
-        }
-
         // Matched on the subtype rather than the type. A runner emits several kinds of `system`
         // event -- hook notifications among them -- and only `init` carries the session.
-        if (evt["subtype"]?.GetValue<string>() is "init" &&
-            evt["session_id"]?.GetValue<string>() is { Length: > 0 } id)
+        if (evt is { Type: "system", Subtype: "init", SessionId: { Length: > 0 } id })
         {
             _sessionId = id;
         }
     }
 
-    private static string? TypeOf(JsonNode evt)
-    {
-        try
-        {
-            return evt["type"]?.GetValue<string>();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return null;
-        }
-    }
+    private static string? TypeOf(RunnerEvent evt) => evt.Type;
 
     /// <summary>Builds the outcome from a result event.</summary>
     /// <param name="evt">The result.</param>
     /// <param name="started">When the turn began.</param>
     /// <returns>What the turn cost.</returns>
-    private TurnOutcome Completed(JsonNode evt, long started) =>
+    private TurnOutcome Completed(RunnerEvent evt, long started) =>
         new(Completed: true,
-            IsError: Bool(evt, "is_error"),
-            StopReason: String(evt, "stop_reason") ?? String(evt, "subtype"),
+            evt.IsError,
+            StopReason: evt.StopReason ?? evt.Subtype,
             _clock.GetElapsedTime(started),
-            Number(evt, "total_cost_usd"),
-            (int)Number(evt, "num_turns"),
-            evt["permission_denials"] is JsonArray denials ? denials.Count : 0,
+            evt.CostUsd,
+            evt.ModelTurns,
+            evt.PermissionDenials,
             TimedOut: false,
             ProcessDied: false,
-            String(evt, "result"));
+            evt.Result);
 
     private TurnOutcome Died(long started) =>
         new(Completed: false, IsError: true,
@@ -703,40 +676,91 @@ public sealed class ResidentAgent : IAsyncDisposable
             _clock.GetElapsedTime(started), CostUsd: 0, ModelTurns: 0,
             PermissionDenials: 0, TimedOut: false, ProcessDied: true);
 
-    private static bool Bool(JsonNode evt, string name)
+    /// <summary>What a turn uses from one line of a runner's output, read out in full when the line arrives.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not read through <c>StrictJson</c>.</b> That refusal exists for files: so two readers of one file cannot
+    /// disagree on a member named twice, and so a lazily built node cannot throw when somebody first indexes it, after
+    /// the parse and outside its catch. Here the pump is a line's only reader and takes every field it will ever use at
+    /// the parse, under one catch, so neither can happen. Refusing costs a reply: a result line skipped leaves its turn
+    /// to time out, its reply is counted owed to nobody and never comes, and every later turn waits on it (lens 1 run
+    /// 132). So a member named twice reads as its last copy (<see cref="JsonElement.TryGetProperty(string, out JsonElement)"/>
+    /// documents that), a member whose name is not valid text is never looked up, a field that cannot be decoded reads
+    /// as absent, and only a line that is not JSON at all is skipped.
+    /// </para>
+    /// <para>
+    /// Nothing else is kept, so nothing in the line is decoded later: a lone surrogate escape in a nested object, which
+    /// the runtime throws <see cref="InvalidOperationException"/> for when it decodes the name, faulted the pump, and
+    /// every turn after read as a dead process while the process lived.
+    /// </para>
+    /// </remarks>
+    /// <param name="Type">The event's type, <c>result</c> for a turn's end.</param>
+    /// <param name="Subtype">The event's subtype.</param>
+    /// <param name="SessionId">The session an <c>init</c> event names.</param>
+    /// <param name="IsError">Whether the turn ended in error.</param>
+    /// <param name="StopReason">Why the turn stopped.</param>
+    /// <param name="CostUsd">What the turn cost.</param>
+    /// <param name="ModelTurns">How many model turns it took.</param>
+    /// <param name="PermissionDenials">How many tool calls were refused permission.</param>
+    /// <param name="Result">The reply.</param>
+    private sealed record RunnerEvent(
+        string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
+        int ModelTurns, int PermissionDenials, string? Result)
     {
-        try
+        /// <summary>Reads one line.</summary>
+        /// <param name="line">The line.</param>
+        /// <returns>The event, or null when the line is not a JSON object.</returns>
+        public static RunnerEvent? Read(string line)
         {
-            return evt[name]?.GetValue<bool>() ?? false;
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return false;
-        }
-    }
+            try
+            {
+                using var document = JsonDocument.Parse(line);
+                var root = document.RootElement;
 
-    private static string? String(JsonNode evt, string name)
-    {
-        try
-        {
-            return evt[name]?.GetValue<string>();
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
-        {
-            return null;
-        }
-    }
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
 
-    private static double Number(JsonNode evt, string name)
-    {
-        try
-        {
-            return evt[name]?.GetValue<double>() ?? 0;
+                return new RunnerEvent(
+                    String(root, "type"),
+                    String(root, "subtype"),
+                    String(root, "session_id"),
+                    root.TryGetProperty("is_error", out var error) && error.ValueKind == JsonValueKind.True,
+                    String(root, "stop_reason"),
+                    Number(root, "total_cost_usd"),
+                    (int)Number(root, "num_turns"),
+                    root.TryGetProperty("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array
+                        ? denials.GetArrayLength()
+                        : 0,
+                    String(root, "result"));
+            }
+            catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
+            {
+                return null;
+            }
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+
+        private static string? String(JsonElement root, string name)
         {
-            return 0;
+            try
+            {
+                return root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString()
+                    : null;
+            }
+            catch (InvalidOperationException)
+            {
+                // A lone surrogate escape in the value: absent, rather than the whole event lost.
+                return null;
+            }
         }
+
+        private static double Number(JsonElement root, string name) =>
+            root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+                && value.TryGetDouble(out var number)
+                ? number
+                : 0;
     }
 
     /// <summary>Awaits a pump, discarding any failure.</summary>
