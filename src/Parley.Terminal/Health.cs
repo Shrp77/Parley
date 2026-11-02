@@ -63,11 +63,12 @@ internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
             .. ReservedKey.TakenBy(KeyContext.HealthDialog, () => Lists.Filling(), "the lines"),
         ]);
 
-    /// <summary>Turns the five reports into lines, headings at column zero and nothing else.</summary>
+    /// <summary>Turns the six reports into lines, headings at column zero and nothing else.</summary>
     /// <param name="flags">Open work that needs the person.</param>
     /// <param name="waiting">Who is waiting on whom.</param>
     /// <param name="results">What Results reported.</param>
-    /// <param name="refusals">What the size cap refused.</param>
+    /// <param name="refusals">What the size limit refused.</param>
+    /// <param name="lengths">How long messages have been.</param>
     /// <param name="clarifications">What clarification cost.</param>
     /// <returns>The lines.</returns>
     /// <remarks>
@@ -79,8 +80,10 @@ internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
         IReadOnlyList<WaitingEdge> waiting,
         ResultsReport results,
         IReadOnlyList<SizeRefusal> refusals,
+        MessageLengthReport lengths,
         ClarifyReport clarifications)
     {
+        ArgumentNullException.ThrowIfNull(lengths);
         ArgumentNullException.ThrowIfNull(flags);
         ArgumentNullException.ThrowIfNull(waiting);
         ArgumentNullException.ThrowIfNull(results);
@@ -161,7 +164,41 @@ internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
         }
 
         lines.Add(string.Empty);
-        lines.Add("What the size cap refused");
+        lines.Add("How long messages have been");
+
+        if (lengths.Overall.Messages == 0)
+        {
+            lines.Add("  No message has been recorded.");
+        }
+        else
+        {
+            lines.Add("  " + Group("all messages", lengths.Overall));
+
+            foreach (var group in lengths.ByType)
+            {
+                lines.Add("  " + Group(group.Name, group));
+            }
+
+            lines.Add("  By position in the conversation:");
+
+            foreach (var group in lengths.ByPosition)
+            {
+                lines.Add("    " + Group("messages " + group.Name, group));
+            }
+
+            lines.Add("  By agent:");
+
+            foreach (var agent in lengths.ByAgent)
+            {
+                lines.Add("    " + Safe.Text(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{agent.Agent.Value}: sent {agent.Sent}, received {agent.Received}, longest {agent.Longest}, "
+                    + $"{agent.OverSoftLimit} past {MessageLimits.SoftPayloadCharacters}")));
+            }
+        }
+
+        lines.Add(string.Empty);
+        lines.Add("What the size limit refused");
 
         if (refusals.Count == 0)
         {
@@ -173,7 +210,7 @@ internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
             lines.Add("  " + Safe.Text(string.Create(
                 CultureInfo.InvariantCulture,
                 $"{refusal.Agent.Value}: {refusal.Refusals} {MessageIdentity.FormatType(refusal.Type)} refused, "
-                + $"largest {refusal.Worst} characters against a cap of {refusal.Cap}")));
+                + $"largest {refusal.Worst} characters against a limit of {refusal.Cap}")));
         }
 
         lines.Add(string.Empty);
@@ -189,6 +226,16 @@ internal sealed class Health : TableDialog<Health>, IKeyTable<Health>
 
         return lines;
     }
+
+    /// <summary>One group of message lengths.</summary>
+    /// <param name="name">What the group is.</param>
+    /// <param name="group">Its numbers.</param>
+    /// <returns>The sentence.</returns>
+    private static string Group(string name, MessageLengthGroup group) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{name}: {group.Messages}, median {group.Median} characters, longest {group.Longest}, "
+            + $"{group.OverSoftLimit} past {MessageLimits.SoftPayloadCharacters}");
 
     /// <summary>One flag, in the console's words.</summary>
     /// <param name="flag">The flag.</param>

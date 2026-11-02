@@ -70,8 +70,9 @@ public static class ParleyInstructions
           comes first. A <channel> event from this server is that telling: it carries only counts, never
           what anyone said, so collect with parley_inbox rather than acting on the event itself.
         - Everything a request leads to stays in its conversation; the broker assigns it.
-        - Messages are capped at 8000 characters. Send what the receiver needs for its part, not
-          everything you know.
+        - Send what the receiver needs for its part, not everything you know. A message past 16000
+          characters still goes, and you are told it was long; past 512000 it is refused. Very long
+          output is usually better placed as a file.
         - To hand over a file, place it with parley_file_place (.md or .txt; code as Name.cs.txt) and name
           it, as the reply spells it, and its sha256 in your request. Characters other than letters,
           digits, '.', '_' and '-' become '_' when a file is placed. Fetch a file you are sent with parley_file_fetch. Its contents

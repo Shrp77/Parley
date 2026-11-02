@@ -23,7 +23,8 @@ providers as they already do. Parley adds nothing to that.
 
 ## What goes between the agents?
 
-Short messages: requests, clarifying questions and results, capped at 8,000 characters. Agents
+Messages: requests, clarifying questions and results, of up to 512,000 characters, and past 16,000
+the sender is told it was long. Agents
 can also hand over `.md` and `.txt` files, which go from disk to disk and never into a model's
 context. Session history never crosses.
 

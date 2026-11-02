@@ -95,6 +95,11 @@ public interface IParleyBrokerClient
     /// <returns>The counts.</returns>
     Task<IReadOnlyList<SizeRefusal>> RefusalsAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>How long messages have been: overall, by agent and by position in a conversation.</summary>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>The report.</returns>
+    Task<MessageLengthReport> MessageLengthsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>What clarification actually cost.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The report.</returns>

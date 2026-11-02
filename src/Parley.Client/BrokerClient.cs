@@ -220,6 +220,22 @@ public sealed class BrokerClient(Wire.Operators.OperatorsClient operators) : IPa
     }
 
     /// <inheritdoc/>
+    public async Task<MessageLengthReport> MessageLengthsAsync(CancellationToken cancellationToken = default)
+    {
+        var reply = await _operators.DescribeMessageLengthsAsync(new Wire.Empty(), cancellationToken: cancellationToken);
+
+        static MessageLengthGroup Group(Wire.MessageLengthGroup group) =>
+            new(group.Name, group.Messages, group.Median, group.Longest, group.OverSoftLimit);
+
+        return new MessageLengthReport(
+            Group(reply.Overall),
+            [.. reply.ByType.Select(Group)],
+            [.. reply.ByPosition.Select(Group)],
+            [.. reply.ByAgent.Select(a => new AgentMessageLengths(
+                AgentName.Create(a.Agent), a.Sent, a.Received, a.Longest, a.OverSoftLimit))]);
+    }
+
+    /// <inheritdoc/>
     public async Task<ClarifyReport> ClarificationsAsync(CancellationToken cancellationToken = default)
     {
         var reply = await _operators.DescribeClarificationsAsync(new Wire.Empty(), cancellationToken: cancellationToken);

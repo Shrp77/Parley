@@ -56,7 +56,7 @@ public static class OwnershipStatement
     /// <para>
     /// <b>What holds is the character rule and the deployment's own bound.</b> Storage still holds a
     /// bound a deployment reinstates, so a number chosen from what agents actually propose can be put
-    /// back the way the message cap's 8,000 was put in.
+    /// back.
     /// </para>
     /// </remarks>
     public const int MaxCharacters = int.MaxValue;

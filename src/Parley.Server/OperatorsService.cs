@@ -447,6 +447,38 @@ public sealed class OperatorsService : Wire.Operators.OperatorsBase
     }
 
     /// <inheritdoc/>
+    public override async Task<Wire.MessageLengthsReply> DescribeMessageLengths(Wire.Empty request, ServerCallContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var report = await Console((console, _, ct) => console.DescribeMessageLengthsAsync(ct), context)
+            .ConfigureAwait(false);
+
+        static Wire.MessageLengthGroup Group(MessageLengthGroup group) => new()
+        {
+            Name = group.Name,
+            Messages = group.Messages,
+            Median = group.Median,
+            Longest = group.Longest,
+            OverSoftLimit = group.OverSoftLimit
+        };
+
+        var reply = new Wire.MessageLengthsReply { Overall = Group(report.Overall) };
+        reply.ByType.AddRange(report.ByType.Select(Group));
+        reply.ByPosition.AddRange(report.ByPosition.Select(Group));
+        reply.ByAgent.AddRange(report.ByAgent.Select(a => new Wire.AgentMessageLengths
+        {
+            Agent = a.Agent.Value,
+            Sent = a.Sent,
+            Received = a.Received,
+            Longest = a.Longest,
+            OverSoftLimit = a.OverSoftLimit
+        }));
+
+        return reply;
+    }
+
+    /// <inheritdoc/>
     public override async Task<Wire.ClarificationsReply> DescribeClarifications(Wire.Empty request, ServerCallContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

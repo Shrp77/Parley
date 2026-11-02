@@ -778,6 +778,7 @@ service Operators {
 
   rpc DescribeRegistry(Empty) returns (RegistryReply);
   rpc DescribeRefusals(Empty) returns (RefusalsReply);
+  rpc DescribeMessageLengths(Empty) returns (MessageLengthsReply);
   rpc DescribeClarifications(Empty) returns (ClarificationsReply);
 
   // What Results have said: outcomes by responder, blockers by kind, sources, closures (section 15).
@@ -934,6 +935,30 @@ message RegistryRow {
 
 message RefusalsReply {
   repeated SizeRefusal refusals = 1;
+}
+
+// How long messages have been. Lengths only: the record this is read from holds no words.
+message MessageLengthsReply {
+  MessageLengthGroup overall = 1;
+  repeated MessageLengthGroup by_type = 2;
+  repeated MessageLengthGroup by_position = 3;
+  repeated AgentMessageLengths by_agent = 4;
+}
+
+message MessageLengthGroup {
+  string name = 1;
+  int64 messages = 2;
+  int32 median = 3;
+  int32 longest = 4;
+  int64 over_soft_limit = 5;
+}
+
+message AgentMessageLengths {
+  string agent = 1;
+  int64 sent = 2;
+  int64 received = 3;
+  int32 longest = 4;
+  int64 over_soft_limit = 5;
 }
 
 message SizeRefusal {

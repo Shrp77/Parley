@@ -123,7 +123,7 @@
                 var payload = Payload.Read(item.Message.PayloadJson);
                 var owed = item.Items();
 
-                <details class="dgrid-row" role="row">
+                <details class="dgrid-row" role="row" open="@Model.Kept(item.Message.ExchangeId)">
                     <summary class="dgrid-line">
                         <span role="cell">
                             <span class="who slot-@Palette.SlotFor(item.Message.From)" aria-hidden="true" style="display:inline-grid;vertical-align:middle;margin-right:0.5rem;width:1.6rem;height:1.6rem;font-size:0.58rem;">@Palette.BadgeFor(item.Message.From)</span>
@@ -194,11 +194,11 @@
                                         <input type="hidden" name="Ids" value="@id" />
                                         <label for="t-@item.Message.ExchangeId-@id">@id — what was done, the answer, or what blocks it</label>
                                         <textarea id="t-@item.Message.ExchangeId-@id" name="Texts" rows="2"
-                                                  required></textarea>
+                                                  required>@Model.KeptText(item.Message.ExchangeId, id)</textarea>
                                         <select name="Verdicts" aria-label="Outcome for @id">
                                             @foreach (var (value, says) in SeatVoice.Outcomes)
                                             {
-                                                <option value="@value">@says</option>
+                                                <option value="@value" selected="@(Model.KeptVerdict(item.Message.ExchangeId, id) == value)">@says</option>
                                             }
                                         </select>
                                     }
@@ -220,7 +220,7 @@
                                     <input type="hidden" name="For" value="@projectName" />
                                     <input type="hidden" name="Exchange" value="@item.Message.ExchangeId" />
                                     <label for="c-@item.Message.ExchangeId">@(item.OwesReply ? "Your reply" : "Or ask them to clarify")</label>
-                                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required></textarea>
+                                    <textarea id="c-@item.Message.ExchangeId" name="Clarification" rows="2" required>@(Model.Kept(item.Message.ExchangeId) ? Model.Clarification : null)</textarea>
                                     <button type="submit">@(item.OwesReply ? "Reply" : "Ask")</button>
                                 </form>
                             }

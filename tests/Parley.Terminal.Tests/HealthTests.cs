@@ -22,13 +22,30 @@ public sealed class HealthTests
     private static IReadOnlyList<string> Lines(
         FlagReport? flags = null,
         IReadOnlyList<WaitingEdge>? waiting = null,
-        ResultsReport? results = null) =>
+        ResultsReport? results = null,
+        MessageLengthReport? lengths = null) =>
         Health.Lines(
             flags ?? new FlagReport([], []),
             waiting ?? [],
             results ?? new ResultsReport([], [], [], []),
             [],
+            lengths ?? new MessageLengthReport(new MessageLengthGroup("all", 0, 0, 0, 0), [], [], []),
             NoClarifications);
+
+    [Fact]
+    public void How_long_messages_have_been_is_drawn_overall_by_position_and_by_agent()
+    {
+        var lines = Lines(lengths: new MessageLengthReport(
+            new MessageLengthGroup("all", 40, 900, 70000, 3),
+            [new MessageLengthGroup("result", 12, 2000, 70000, 3)],
+            [new MessageLengthGroup("1 to 5", 30, 800, 1000, 0), new MessageLengthGroup("6 to 20", 10, 9000, 70000, 3)],
+            [new AgentMessageLengths(AgentName.Create("billing@test"), 12, 7, 70000, 3)]));
+
+        Assert.Contains("  all messages: 40, median 900 characters, longest 70000, 3 past 16000", lines);
+        Assert.Contains("  result: 12, median 2000 characters, longest 70000, 3 past 16000", lines);
+        Assert.Contains("    messages 6 to 20: 10, median 9000 characters, longest 70000, 3 past 16000", lines);
+        Assert.Contains("    billing@test: sent 12, received 7, longest 70000, 3 past 16000", lines);
+    }
 
     [Fact]
     public void An_empty_project_says_so_under_every_heading()
@@ -97,7 +114,8 @@ public sealed class HealthTests
             "Work that needs you",
             "Who is waiting on whom",
             "What results reported",
-            "What the size cap refused",
+            "How long messages have been",
+            "What the size limit refused",
             "What clarification cost",
         ];
 

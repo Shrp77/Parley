@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.9
+**Version:** 0.10
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -1236,15 +1236,17 @@ in part.
    Integration work needs real detail — "use package `Billing.Pricing` 3.2 and call
    `PriceSnapshot.From(order)`" is exactly the kind of thing to send — and withholding it in the
    name of isolation is how a request for work turns into a round of questions.
-4. **Hard size cap.** 8,000 characters per message, enforced by the broker. Truncation is a
-   protocol error, not a warning.
+4. **A soft limit and a hard limit.** A message of more than 16,000 characters is long: it is delivered
+   whole, and its sender is told. A message of more than 512,000 characters is refused, enforced by the
+   broker. Truncation is a protocol error, not a warning. Both count the message as stored.
 
-   **The number is set from evidence.** What the cap defends is how much of one
-   agent's context can be poured into another's in a single message; at eight thousand
-   characters that is roughly two thousand tokens, small beside any modern context and far too
-   small to paste a file into. Refusals are instrumented (§10.2, `refusals`) so the number moves
-   on what they show, and §17 question 16 carries the record. It does not move because one
-   message did not fit.
+   **The numbers are the owner's decision, and a recorded reduction in this rule's protection.** What
+   the hard limit defends is how much of one agent's context can be poured into another's in a single
+   message, and 512,000 characters is roughly 128,000 tokens. An 8,000-character limit was stopping
+   people and agents saying what they needed to, so this trades that protection for being able to
+   say it. Every message's length is recorded (§10.2, `message_lengths`) and refusals are counted
+   (§10.2, `refusals`), so the numbers can be judged from what happens; §17 question 16 carries the
+   record.
 
    **It bounds one message, not an exchange.** With clarification uncapped (§5.2), an exchange that
    goes back and forth fifty times can carry fifty messages of this size in each direction, and
@@ -1475,7 +1477,7 @@ CREATE TABLE agents (
   -- above -- a cap censors the evidence that would justify it -- and that precedent is weaker
   -- here, because both of those capped counts rather than text. What replaces the number is
   -- evidence: what agents propose and what people accept is recorded, so a bound can be chosen
-  -- the way rule 8.4's 8,000 was. Until then a roster may be the largest thing an agent reads.
+  -- the way rule 8.4's limits can be. Until then a roster may be the largest thing an agent reads.
   -- A deployment that wants a bound writes one here, and it is enforced in storage where no
   -- code path can route around it (§9.3).
   --
@@ -1546,8 +1548,8 @@ CREATE TABLE agent_ownership_accepted (
   -- person, 'composed' is a line written with no ask at all.
   source           TEXT    NOT NULL CHECK (source IN ('proposed', 'edited', 'composed', 'automatic')),
   -- The length of the AGENT'S OWN message, or NULL where there was no proposal. This is the
-  -- evidence a bound on agents.owns has to be chosen against, the way rule 8.4's 8,000 was
-  -- chosen from size_refusals.
+  -- evidence a bound on agents.owns has to be chosen against, the way rule 8.4's limits can be
+  -- judged from message_lengths and size_refusals.
   proposed_length  INTEGER          CHECK (proposed_length IS NULL OR proposed_length >= 0),
   -- The discussion, so how a line was arrived at is answerable from the agent rather than from
   -- somebody's memory.
@@ -1843,7 +1845,7 @@ CREATE TABLE messages (
   delivered_utc   TEXT,
 
   CHECK (from_agent <> to_agent),
-  CHECK (length(payload_json) <= 8000),
+  CHECK (length(payload_json) <= 512000),
   CHECK (json_valid(payload_json)),
   CHECK (length(responder_model) BETWEEN 1 AND 64
          AND responder_model NOT GLOB '*[^a-zA-Z0-9._:/-]*'),
@@ -1915,6 +1917,33 @@ CREATE TABLE size_refusals (
   CHECK (worst > cap),
   CHECK (total >= worst)
 ) STRICT;
+
+-- How long each message was, and never a word of it. One row per message, outside §9.4's retention for the
+-- same reason as size_refusals: a length record is what is left to measure once retention has taken the message.
+-- No key to messages or conversations, because a record outlives both. The agents are keyed, so a purge takes
+-- their records and a rename follows them. Written by a trigger, so that no route that stores a message can forget.
+CREATE TABLE message_lengths (
+  message_id      INTEGER PRIMARY KEY,
+  conversation_id TEXT    NOT NULL,
+  -- Its order in the conversation, counted from the records so that retention does not renumber it.
+  position        INTEGER NOT NULL CHECK (position > 0),
+  type            TEXT    NOT NULL CHECK (type IN ('request', 'clarify', 'result')),
+  from_agent      TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  to_agent        TEXT    NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  characters      INTEGER NOT NULL CHECK (characters >= 0),
+  created_utc     TEXT    NOT NULL
+) STRICT;
+
+CREATE INDEX ix_message_lengths_conversation ON message_lengths(conversation_id, position);
+
+CREATE TRIGGER tr_message_length_recorded AFTER INSERT ON messages
+BEGIN
+  INSERT INTO message_lengths
+      (message_id, conversation_id, position, type, from_agent, to_agent, characters, created_utc)
+  VALUES (NEW.id, NEW.conversation_id,
+          coalesce((SELECT max(position) FROM message_lengths WHERE conversation_id = NEW.conversation_id), 0) + 1,
+          NEW.type, NEW.from_agent, NEW.to_agent, length(NEW.payload_json), NEW.created_utc);
+END;
 
 -- The triggers below sit after the tables they guard rather than beside the rules they enforce.
 -- SQLite compiles a trigger against a table that must already exist, so the document's order is
@@ -2377,9 +2406,9 @@ CREATE TABLE ownership_questions (
   state            TEXT    NOT NULL
                    CHECK (state IN ('asked', 'asked_back', 'answered', 'waiting', 'accepted', 'discarded')),
   -- The agent's words as written, and with runs of whitespace collapsed (§10.2). Bounded by rule 8.4's
-  -- cap because they are copies of a message that already was.
-  answer           TEXT    CHECK (answer IS NULL OR length(answer) <= 8000),
-  flattened        TEXT    CHECK (flattened IS NULL OR length(flattened) <= 8000),
+  -- hard limit because they are copies of a message that already was.
+  answer           TEXT    CHECK (answer IS NULL OR length(answer) <= 512000),
+  flattened        TEXT    CHECK (flattened IS NULL OR length(flattened) <= 512000),
   -- Why an answer was not accepted automatically, for the person reviewing it.
   waiting_because  TEXT    CHECK (waiting_because IS NULL OR length(waiting_because) BETWEEN 1 AND 500),
   asked_utc        TEXT    NOT NULL,
@@ -2732,10 +2761,9 @@ that needed it; an enumeration written as prose has already decayed.
   insert — which `tr_closed_exchange_stays_closed` keeps true.
 - **`pair_key` is genuinely derived from its participants.** Every rule built on it would
   otherwise see two unrelated pairs as one.
-- **Message size cap.** Terseness is the context-poisoning defence (rule 8.4), so 8,000
-  characters is a constraint rather than a guideline. A refusal is counted (§10.2), because a
-  limit nobody measures is a limit that gets changed on the strength of whoever complains most
-  recently.
+- **Message size limit.** Terseness is the context-poisoning defence (rule 8.4), so 512,000
+  characters is a constraint rather than a guideline. A refusal is counted and every message's
+  length recorded (§10.2), because a limit nobody measures cannot be judged.
 - **Every message names its responder.** §11.3 is a MUST on every message, and the envelope in
   §13 renders responder identity on every delivery, so a nullable column would leave the envelope
   with a hole the schema permitted. The one message the broker writes itself, a `closed` Result,
@@ -3182,7 +3210,8 @@ other could.
 | `export(conversation_id)` | Emit every message in a conversation, and the state of every exchange those messages belong to. The one query that reads across agents, which is why it is here and not in §10.1. The states travel with the messages rather than in a second call, because a reader wants both at one instant and two calls can disagree. **For a conversation that was destroyed, it returns the record §14 left instead of nothing** — an empty answer cannot be told from a store that lost something, and that is the whole reason the record exists. **It also names the roadmap item the conversation belongs to**, by the broker's reservation and by nothing in any message (§5.7), so a surface holding only a conversation can offer its roadmap. |
 | `conversations(participant?, since?, until?, archived?, page)` | Which conversations this broker holds, most recent activity first: the identifier, the participants derived from their exchanges, how many messages each carries, when it was first and last active, whether anything in it is still open, whether it is archived, and the roadmap item it belongs to when it is a reserved item conversation (§5.7), marked as having belonged to one once the item was removed. Archived ones are omitted unless `archived` asks for them, and the count of those omitted is returned either way — an archived conversation may go on receiving messages, so a caller that could not tell it was there would be hiding traffic rather than filing it. Paged, and the broker bounds the page whatever is asked for. |
 | `prune()` | Apply the retention policy immediately rather than waiting for the next retention pass, and report what it removed, what the floor kept, and the idle period and age cap it applied. |
-| `refusals()` | Report what the size cap of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
+| `refusals()` | Report what the hard limit of rule 8.4 refused: how often, how far over, per agent and message type. Counts only; no refused text is kept. |
+| `message_lengths()` | Report how long messages have been: how many, the median, the longest and how many passed the soft limit of rule 8.4; overall, by message type, by agent, and by position in a conversation so that a drift shows. Lengths only, from a record retention does not touch. |
 | `clarifications()` | Report the clarify depth distribution of §5.2, how often a cap in force was reached, and the lowest and highest cap in force (the unbounded value while every exchange is stamped uncapped). The evidence §17 question 4 asks for. |
 | `results()` | Report what Results said (§15): item outcomes per receiver and responder, the blockers named and their kinds, which participants were relied on as sources, and how each participant's conversations ended — by consensus or by the person. Read from tables retention never touches, so it covers the whole life of the deployment. |
 | `waiting()` | Say who is waiting on whom: one edge per open exchange, naming the agent that owes the next move and the agent waiting for it. An operator operation because that is the only vantage it is visible from — inside a pair, a question nobody will answer looks exactly like one not yet answered, and telling them apart needs every open exchange at once. Derived from the open set rather than stored, so an exchange that closes is simply absent from the next read. |
@@ -4417,7 +4446,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
    **Two things a cap would do are done by nothing, and they are the open part.**
 
-   - It would bound a channel. A Clarify reaches the requester with up to 8,000 characters (rule 8.4)
+   - It would bound a channel. A Clarify reaches the requester with up to 512,000 characters (rule 8.4)
      and takes no request slot, so one exchange can put an unbounded amount in front of a requester.
      Question 1 is the same problem by the main door.
    - It would guard the Headless tier, where agents clarify with nobody watching and every turn costs
@@ -4560,13 +4589,20 @@ decided is removed and its number is not reused, so the list has gaps.
     already sends first, saying what it has just written about the caller and nothing about anybody
     else. Related to question 13: both are places where the registry holds something an agent is left
     to infer.
-16. Is 8,000 the right cap? §9.3 keeps a count of what the cap refuses "because a limit nobody
-    measures is a limit that gets changed on the strength of whoever complains most recently". This is
-    where that evidence accumulates. The number is provisional and moves on it, not because one message
-    did not fit.
+16. Are 16,000 and 512,000 the right limits? **The owner set them on 2026-11-02**: a soft limit that only
+    tells the sender, and a hard one that refuses. They had been unable to send at least three messages of
+    their own at 8,000, and agents reporting the output of commands run on remote systems kept reaching it.
+    Which is a recorded reduction in rule 8.4's protection, made so that lengths can be measured:
+    `message_lengths()` shows how long messages are, how often they run long, which agents are involved
+    and whether later messages in a conversation are longer. This is where that evidence accumulates, and
+    the numbers can move on it.
 
-    `refusals` on a nineteen-agent deployment running a 4,000-character cap, which is what 8,000 was set
-    from:
+    What agents do with a long message is the open part. Claude Code saves a tool result over 25,000 tokens
+    or 50,000 characters to a file and gives the model its path, so a long message need not all land in its
+    context. Another client may behave differently, and nothing here has been measured on one.
+
+    Earlier evidence: `refusals` on a nineteen-agent deployment running a 4,000-character cap, which is
+    what the 8,000 before this was set from:
 
     | Agent | Type | Refusals | Worst | Mean |
     |---|---|---|---|---|
@@ -4584,13 +4620,9 @@ decided is removed and its number is not reused, so the list has gaps.
     costs something: an asker that has already decided it needs an answer gets a worse one, or none,
     while a refused question can simply be asked again more briefly.
 
-    8,000 clears every refusal recorded, with the worst case at 77% of the limit. It is a doubling
-    rather than a fit to the data, because a cap set to the observed maximum would be refusing again on
-    the next long answer — and the number is still, deliberately, round.
-
-    A raised cap does not admit longer answers; it admits longer *everything*, and volume is bounded
-    separately and far more weakly, if at all — question 1 records what there is. Doubling the cap
-    doubles the worst case that §8's own arithmetic works through.
+    A raised limit does not admit longer answers; it admits longer *everything*, and volume is bounded
+    separately and far more weakly, if at all — question 1 records what there is. Raising the limit
+    raises the worst case that §8's own arithmetic works through.
 
     What the evidence does not settle is whether the text over the line was worth carrying. A refusal
     says a message was too long; it does not say whether it was better long. The refused agent is the
@@ -4605,7 +4637,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.9** and the storage schema version is **4**.
+The protocol version is **0.10** and the storage schema version is **5**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

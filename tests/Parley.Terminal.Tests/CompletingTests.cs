@@ -378,6 +378,41 @@ public sealed class CompletingTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task A_message_at_the_hard_limit_is_drawn_in_good_time()
+    {
+        // Lines are drawn by the toolkit's text view, and a message can now be 64 times what it was. One long line and many
+        // short ones are the two shapes a command's output takes.
+        var ct = TestContext.Current.CancellationToken;
+        var (shell, driving) = await SeatedAsync(ct);
+
+        using var held = shell;
+
+        var broker = new Broker.Broker(_connection, Parley.Broker.BrokerOptions.Default);
+
+        await broker.StartAsync(Orders, T0, ct);
+
+        foreach (var (minutes, text) in new[]
+        {
+            (2, new string('x', MessageLimits.MaxPayloadCharacters - 16)),
+            (3, string.Concat(Enumerable.Repeat("x\\n", (MessageLimits.MaxPayloadCharacters / 3) - 16))),
+        })
+        {
+            var sent = await broker.RequestAsync(
+                Orders, shell.Held!.Seat.Name, "model-a", $$"""{"ask":"{{text}}"}""", T0.AddMinutes(minutes), Conversation, ct);
+
+            Assert.True(sent.Exchange is not null, "the fixture's long request was refused");
+        }
+
+        var export = await new BrokerClient(_broker.Operators).ExportAsync(Conversation, ct);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        shell.Transcript.Show(Conversation, shell.Transcript.OpenIn!, export, null);
+        driving.App.LayoutAndDraw(true);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"Took {clock.Elapsed}.");
+    }
+
+    [Fact]
     public async Task Sending_is_offered_where_a_person_would_look_for_it()
     {
         // `contracts/views.md`: no action exists only as a key, and whatever a key does a pointer reaches too. This was

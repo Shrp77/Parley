@@ -270,9 +270,9 @@ public sealed class OwnershipRoutingTests
         var listing = (await orders.AgentsAsync(ct)).ToJsonString();
 
         Assert.True(
-            listing.Length > MessageLimits.MaxPayloadCharacters,
+            listing.Length > MessageLimits.SoftPayloadCharacters,
             $"a ten-agent roster of 2,000-character statements is {listing.Length} characters, " +
-            $"against a message cap of {MessageLimits.MaxPayloadCharacters}. If this is no longer " +
+            $"against a message's soft limit of {MessageLimits.SoftPayloadCharacters}. If this is no longer " +
             "true, a bound has been reinstated and this test has done its job and should go.");
     }
 }

@@ -86,10 +86,69 @@ else
     </section>
 
     <section>
-        <h2>What the size cap refused</h2>
-        @* The cap is 8,000 and provisional (SPEC.md §17 question 16). This is the evidence a change
-           should be argued from, and one refusal is the first row of a case rather than a case:
-           what makes it one is the same agents refused repeatedly at similar sizes. *@
+        <h2>How long messages have been</h2>
+        @* Lengths only. They outlive the messages, so this does not fall when a conversation is pruned. *@
+        @if (Model.Lengths is not { Overall.Messages: > 0 } lengths)
+        {
+            <p>No message has been recorded.</p>
+        }
+        else
+        {
+            <table>
+                <caption>Messages by type, and by position in the conversation</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Messages</th>
+                        <th scope="col">How many</th>
+                        <th scope="col">Median</th>
+                        <th scope="col">Longest</th>
+                        <th scope="col">Past @MessageLimits.SoftPayloadCharacters</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var group in new[] { lengths.Overall }.Concat(lengths.ByType).Concat(lengths.ByPosition))
+                {
+                    <tr>
+                        <td>@group.Name</td>
+                        <td>@group.Messages</td>
+                        <td>@group.Median characters</td>
+                        <td>@group.Longest characters</td>
+                        <td>@group.OverSoftLimit</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+            <table>
+                <caption>Messages by agent, the longest first</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Agent</th>
+                        <th scope="col">Sent</th>
+                        <th scope="col">Received</th>
+                        <th scope="col">Longest</th>
+                        <th scope="col">Past @MessageLimits.SoftPayloadCharacters</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var agent in lengths.ByAgent)
+                {
+                    <tr>
+                        <td>@agent.Agent.Value</td>
+                        <td>@agent.Sent</td>
+                        <td>@agent.Received</td>
+                        <td>@agent.Longest characters</td>
+                        <td>@agent.OverSoftLimit</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </section>
+
+    <section>
+        <h2>What the size limit refused</h2>
+        @* The limit is the owner's decision (SPEC.md §17 question 16). One refusal is the first row of a case rather than
+           a case: what makes it one is the same agents refused repeatedly at similar sizes. *@
         @if (Model.Refusals.Count == 0)
         {
             <p>Nothing has been refused for being too long.</p>
@@ -104,7 +163,7 @@ else
                         <th scope="col">Type</th>
                         <th scope="col">Refused</th>
                         <th scope="col">Largest attempt</th>
-                        <th scope="col">Cap in force</th>
+                        <th scope="col">Limit in force</th>
                         <th scope="col">Most recent</th>
                     </tr>
                 </thead>

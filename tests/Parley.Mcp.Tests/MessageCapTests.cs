@@ -92,6 +92,55 @@ public sealed class MessageCapTests
     }
 
     [Fact]
+    public async Task A_long_report_is_delivered_whole_and_only_its_sender_is_told()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", ct);
+
+        var asked = await RequestAsync(orders, "What did the migration print?", ct);
+        Assert.Null(asked["long_message"]);
+
+        var exchange = asked["exchange_id"]!.GetValue<long>();
+        Assert.Single((await billing.InboxAsync(cancellationToken: ct))["messages"]!.AsArray());
+
+        var report = Long(100_000);
+        var sent = await billing.ResultAsync(exchange, "answered", report, cancellationToken: ct);
+
+        Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
+        Assert.Contains("past the soft limit of 16000", sent["long_message"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Contains("delivered whole", sent["long_message"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var collected = (await orders.InboxAsync(cancellationToken: ct)).ToJsonString();
+
+        Assert.Contains(report, collected, StringComparison.Ordinal);
+        Assert.DoesNotContain("long_message", collected, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_message_at_the_soft_limit_says_nothing_and_one_past_it_says_so()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var fixture = new ServerFixture(T0);
+
+        var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
+        await fixture.LaunchAsync("billing@test", ct);
+
+        var framing = new JsonObject { ["ask"] = string.Empty }.ToJsonString().Length;
+
+        var atTheLimit = await orders.RequestAsync(
+            "billing@test", Long(MessageLimits.SoftPayloadCharacters - framing), cancellationToken: ct);
+        var past = await orders.RequestAsync(
+            "billing@test", "y" + Long(MessageLimits.SoftPayloadCharacters - framing), cancellationToken: ct);
+
+        Assert.True(atTheLimit["ok"]!.GetValue<bool>(), atTheLimit.ToJsonString());
+        Assert.Null(atTheLimit["long_message"]);
+        Assert.NotNull(past["long_message"]);
+    }
+
+    [Fact]
     public async Task The_guard_never_admits_what_the_database_would_refuse()
     {
         // The property that makes the guard worth having rather than merely present: it has to be
@@ -138,8 +187,8 @@ public sealed class MessageCapTests
     [Fact]
     public async Task Text_that_json_escapes_is_measured_after_escaping()
     {
-        // Nine hundred emoji is eighteen hundred UTF-16 units and looks comfortably inside the cap,
-        // but each one escapes to twelve characters in the stored payload. Measuring the caller's
+        // Forty-three thousand emoji is eighty-six thousand UTF-16 units and looks comfortably inside the
+        // limit, but each one escapes to twelve characters in the stored payload. Measuring the caller's
         // string rather than the JSON would wave this through and let the database refuse it.
         var ct = TestContext.Current.CancellationToken;
         await using var fixture = new ServerFixture(T0);
@@ -147,7 +196,7 @@ public sealed class MessageCapTests
         var (_, orders) = await fixture.LaunchAsync("orders@test", ct);
         await fixture.LaunchAsync("billing@test", ct);
 
-        var emoji = string.Concat(Enumerable.Repeat("😀", 900));
+        var emoji = string.Concat(Enumerable.Repeat("😀", 43_000));
         Assert.True(emoji.Length < MessageLimits.MaxPayloadCharacters);
 
         AssertRefusedForLength(await RequestAsync(orders, emoji, ct));
