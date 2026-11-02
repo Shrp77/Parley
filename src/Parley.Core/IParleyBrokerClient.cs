@@ -200,6 +200,14 @@ public interface IParleyBrokerClient
     Task<bool> ForceConcludeAsync(
         string conversationId, string? reason = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Close one open Request the person is a party to, without an answer.</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="reason">Why, if the person said. The other side is told it.</param>
+    /// <param name="cancellationToken">Cancels the call.</param>
+    /// <returns>Whether this call closed it. It may be closed already, or not the person's.</returns>
+    /// <remarks>Its conversation stays open. Both sides are sent the broker's <c>closed</c> Result in the same write.</remarks>
+    Task<bool> CloseRequestAsync(long exchangeId, string? reason = null, CancellationToken cancellationToken = default);
+
     /// <summary>Apply the retention policy now rather than waiting for the sweep.</summary>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What was removed, and what the floor held back.</returns>

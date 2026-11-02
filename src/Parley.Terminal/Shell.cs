@@ -4689,6 +4689,47 @@ internal sealed partial class Shell : Window
         return Task.CompletedTask;
     }
 
+    /// <summary>Closes a Request waiting on the person, without answering it.</summary>
+    /// <returns>When the dialog has been opened.</returns>
+    /// <remarks>
+    /// The same list <see cref="Clarify"/> offers, for the same reason: what is waiting on the person is more than what
+    /// this seat collected.
+    /// </remarks>
+    internal Task CloseRequest()
+    {
+        if (App is not { } app || Held is not { } hold || Current is not { } project)
+        {
+            return Task.CompletedTask;
+        }
+
+        var choices = hold.Delivered
+            .Where(one => one.Owes)
+            .Select(one => (Label: Participation.Label(one), Exchange: one.Message.ExchangeId))
+            .ToList();
+
+        foreach (var item in Room.Outstanding)
+        {
+            foreach (var question in item.Questions.Where(q => choices.All(c => c.Exchange != q.Exchange)))
+            {
+                choices.Add((Safe.Text($"{item.Peer.Value} (waiting): {Cut(question.Asked)}"), question.Exchange));
+            }
+        }
+
+        if (choices.Count == 0)
+        {
+            Said = "Nothing is waiting on you to close.";
+
+            return Task.CompletedTask;
+        }
+
+        return ClosingARequest.OpenAsync(app, new BrokerClient(_directory.ClientFor(project)), hold, choices, Queue, async said =>
+        {
+            Said = said;
+
+            await SelectAsync(project, _reading.Token).ConfigureAwait(false);
+        });
+    }
+
     /// <summary>Reads one conversation and draws it.</summary>
     /// <param name="project">The project it belongs to.</param>
     /// <param name="conversationId">Which conversation.</param>

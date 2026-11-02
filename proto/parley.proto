@@ -758,6 +758,7 @@ service Operators {
   // How the person closes a conversation (section 5.0). Every exchange still open in it ends closed,
   // and every participant holding one is sent the broker's closed Result in the same write.
   rpc ForceConclude(ForceConcludeRequest) returns (DidItReply);
+  rpc CloseRequest(CloseRequestRequest) returns (DidItReply);
   rpc Retire(AgentRequest) returns (DidItReply);
   rpc Reinstate(AgentRequest) returns (DidItReply);
   rpc Purge(AgentRequest) returns (PurgeReply);
@@ -846,6 +847,12 @@ message AgentRequest {
 
 message DidItReply {
   bool changed = 1;
+}
+
+message CloseRequestRequest {
+  int64 exchange_id = 1;
+  // Empty when the person gave none.
+  string reason = 2;
 }
 
 message ForceConcludeRequest {

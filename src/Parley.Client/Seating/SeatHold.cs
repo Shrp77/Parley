@@ -177,6 +177,10 @@ public sealed class SeatHold : IDisposable
         }
     }
 
+    /// <summary>Stops holding an exchange the person closed, so it is no longer shown as owed.</summary>
+    /// <param name="exchangeId">The exchange.</param>
+    public void Forget(long exchangeId) => Settled(exchangeId);
+
     /// <summary>Records that the person is still here.</summary>
     /// <param name="now">The current instant.</param>
     /// <remarks>

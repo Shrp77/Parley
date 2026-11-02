@@ -97,6 +97,7 @@ public sealed class SurfaceBoundaryTests
         string[] declared =
         [
             nameof(OperatorConsole.ForceConcludeAsync),
+            nameof(OperatorConsole.CloseRequestAsync),
             nameof(OperatorConsole.RetireAsync),
             nameof(OperatorConsole.ReinstateAsync),
 

@@ -1,6 +1,6 @@
 ﻿# Parley Protocol Specification
 
-**Version:** 0.10
+**Version:** 0.11
 **Status:** Unstable. Breaking changes expected before 1.0.
 **License:** Apache-2.0
 
@@ -479,8 +479,8 @@ collects it. An announcement is a Request like any other (§5.4), and nothing ti
 there is no notice that an answer will never come (§14).
 
 **The broker writes no message on anyone's behalf,** with one exception: when the person
-running the deployment closes a conversation, the broker records a `closed` result on every
-exchange still open in it, attributed to the broker and naming the person (§5.3). An outcome
+running the deployment closes a conversation or one Request, the broker records a `closed` result on every
+exchange that ends, attributed to the broker and naming the person (§5.3). An outcome
 is a participant's judgement about its own work, and only the participant can make it.
 
 **The facilitator's messages are not that exception, because the facilitator is a participant**
@@ -663,7 +663,7 @@ Closes the exchange. Carries **one outcome**, for the ask as a whole:
 | `answered` | What was asked for is given | the receiver |
 | `acknowledged` | Received and understood; nothing further to do or say | the receiver |
 | `blocked` | A concrete blocker remains after the receiver tried to resolve it | the receiver |
-| `closed` | The person running the deployment closed the conversation first | the broker, for the person |
+| `closed` | The person running the deployment closed the conversation first, or closed this Request without an answer (§10.2) | the broker, for the person |
 | `settled` | An agent's question to the person was settled by something the person said later, in the agent's judgement (§5.6) | the requester, in its reply to the person |
 
 The outcome is recorded against the item `request`, the one identifier a Request answered as a
@@ -3225,6 +3225,7 @@ other could.
 | `ask_again(agent)` | Have the facilitator ask an agent what it owns, as a new question. Needs no seat, because the facilitator sends it. Refused for the facilitator, a seat, a retired agent, or an agent whose question is asked, asked back, answered or waiting — asking again then would lose an answer nobody has decided on. |
 | `reply_to_asked_back(agent, text)` | Send a person's reply to an agent that asked the facilitator a question back instead of answering. Sent on the facilitator's exchange, attributed `parley:person` (§5), and held to rule 8.4's cap. Refused when that agent's question is not asked back. |
 | `discard_answer(agent)` | Discard an answer that is waiting. Nothing is written, and the agent keeps whatever line it had. The agent is not asked again unless a person asks. |
+| `close_request(exchange, reason?)` | Close one open Request the person is a party to, without an answer: the question has gone stale or been answered elsewhere. The exchange ends `closed` and its conversation stays open. Both sides are sent the broker's `closed` Result, with the reason when one is given. Any other exchange is refused: between agents a Request is closed by its receiver, or with its conversation. |
 | `force_conclude(conversation, reason?)` | Close a conversation now, regardless of its participants' votes. Every exchange still open in it ends `closed`, and every participant holding one is told, with the reason when one is given. |
 | `archive(conversation)` | Put a conversation out of the way. It stops appearing in `conversations()` unless the caller asks for archived ones, and nothing else about it changes: messages are still delivered, exchanges still open and close, and no agent is told. A view decision, made durable so every operator and every client sees the same one. |
 | `unarchive(conversation)` | Reverse it. |
@@ -4637,7 +4638,7 @@ decided is removed and its number is not reused, so the list has gaps.
 
 ## 18. Protocol version
 
-The protocol version is **0.10** and the storage schema version is **5**.
+The protocol version is **0.11** and the storage schema version is **5**.
 
 The version is `major.minor` and has no patch level, because a protocol change is either visible
 across the boundary or is not a protocol change at all. **While the major is zero, the minor

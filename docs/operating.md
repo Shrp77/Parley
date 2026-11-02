@@ -181,6 +181,9 @@ timezone, sortable either way.
 - **Export** writes a conversation whole to a file you own.
 - **Close** ends a conversation. You can do this when the participants have not agreed. You give
   a reason, and it is recorded.
+- **Close a request without answering** (`Alt+j` in a conversation, or the button on an Inbox item)
+  ends one question that is waiting on you, when it has gone stale or been answered elsewhere. The
+  conversation stays open. The agent is told it was closed, with your reason if you give one.
 
 ## Roadmaps
 

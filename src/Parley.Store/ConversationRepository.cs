@@ -471,6 +471,71 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     /// <summary>
+    /// Closes one open Request the person is a party to, without an answer, and leaves its conversation open.
+    /// </summary>
+    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="reason">The person's reason, if one was given.</param>
+    /// <param name="nowUtc">The instant of closure.</param>
+    /// <param name="transaction">A transaction to enlist in, or <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <returns>The exchange, if this call closed it, so the caller can tell its two sides.</returns>
+    /// <remarks>
+    /// §10.2's <c>close_request</c>. A question goes stale: it was answered somewhere else, or stopped mattering. Closing
+    /// its conversation would end everything else in it, and answering it would put words in the record the person does
+    /// not mean. It is the same <c>closed</c> Result a person's close of a conversation writes, so both sides are told.
+    /// <b>Only the person's own.</b> Between two agents a Request is closed by its receiver, or with its conversation:
+    /// closing one out from under them from here would also strand what a facilitator's question keeps beside it.
+    /// </remarks>
+    public async Task<Exchange?> CloseRequestAsync(
+        long exchangeId,
+        string? reason,
+        DateTimeOffset nowUtc,
+        SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var scope = WriteScope.Begin(_connection, transaction);
+
+        var exchanges = new ExchangeRepository(_connection);
+        var exchange = await exchanges.GetAsync(exchangeId, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        var persons = exchange is null
+            ? 0
+            : await _connection.ExecuteScalarAsync<long>(
+                new CommandDefinition(
+                    "SELECT count(*) FROM agents WHERE name IN (@Requester, @Receiver) AND adapter = 'parley-console';",
+                    new { Requester = exchange.Requester.Value, Receiver = exchange.Receiver.Value },
+                    scope.Transaction,
+                    cancellationToken: cancellationToken)).ConfigureAwait(false);
+
+        if (exchange is null || persons == 0 || exchange.State != ExchangeState.Open)
+        {
+            scope.Complete();
+            return null;
+        }
+
+        var payload = RenderClosed(
+            "The person closed this request without an answer.", ConversationCloser.Person, reason);
+        var messages = new MessageRepository(_connection);
+
+        await messages.AppendAsync(
+            exchange.Id, MessageType.Result, exchange.Receiver, exchange.Requester, Responder.Broker,
+            payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        await messages.AppendAsync(
+            exchange.Id, MessageType.Result, exchange.Requester, exchange.Receiver, Responder.Broker,
+            payload, nowUtc, scope.Transaction, cancellationToken).ConfigureAwait(false);
+
+        if (!exchange.CloseWithConversation(nowUtc).Succeeded
+            || !await exchanges.SaveAsync(exchange, scope.Transaction, cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"Exchange {exchange.Id} changed while it was being closed.");
+        }
+
+        scope.Complete();
+        return exchange;
+    }
+
+    /// <summary>
     /// Closes a conversation, and ends every exchange still open in it with the broker's <c>closed</c>
     /// Result to each participant holding it — in one write.
     /// </summary>
@@ -560,12 +625,16 @@ public sealed class ConversationRepository(SqliteConnection connection)
     }
 
     private static string ClosedResult(
-        string conversationId, ConversationCloser closer, string? reason)
-    {
-        var text = closer == ConversationCloser.Person
-            ? $"The person running the deployment closed conversation {conversationId} before this was finished."
-            : $"The participants agreed conversation {conversationId} was finished before this was.";
+        string conversationId, ConversationCloser closer, string? reason) =>
+        RenderClosed(
+            closer == ConversationCloser.Person
+                ? $"The person running the deployment closed conversation {conversationId} before this was finished."
+                : $"The participants agreed conversation {conversationId} was finished before this was.",
+            closer,
+            reason);
 
+    private static string RenderClosed(string text, ConversationCloser closer, string? reason)
+    {
         if (!string.IsNullOrWhiteSpace(reason))
         {
             var trimmed = reason.Trim();
