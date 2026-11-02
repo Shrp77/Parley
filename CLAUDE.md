@@ -101,9 +101,9 @@ in §10.2 (`force_conclude` is not `conclude`) is too thin alone.
 **Surfaces.** Every operator operation is available on the CLI, the terminal and the web UI,
 and `DriftTests` asserts both screens bind every `BrokerClient` operation. Everything a person
 does to a deployment is the terminal's, except that a project is also created in the web console;
-a project is removed only in the terminal. There is no rename: the web's Settings page describes the two steps by hand
-(remove, then name the new one), which leave the conversations in the old store and every enrolled repository naming the
-old project. The command line keeps `serve`, `up`, `autostart`,
+a project is removed or renamed only in the terminal. Renaming is two steps, removing it and naming the new one, which
+leave the conversations in the old store and every enrolled repository naming the old project until it is enrolled again.
+The command line keeps `serve`, `up`, `autostart`,
 `use`, `project list`, `enroll`, `registry`, `open`, `waiting`, `files`, `web-ui` and `terminal`
 (the last two start their own tools); every other operator verb exits 64 and names the terminal.
 

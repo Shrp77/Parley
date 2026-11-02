@@ -69,8 +69,8 @@ address and any warnings. Inside a project:
   whom, message sizes refused, clarifications, and what requests came to.
 - **Notifications**: a bell that tells you when something needs you.
 - **Settings**: choose which agents are ticked by default in a new conversation, and the other
-  project-level actions. There is no rename; Settings describes removing the project and naming a new one in the
-  terminal, which leaves its conversations behind and its repositories to enrol again.
+  project-level actions. Renaming a project is the terminal's, in two steps: remove it and name the new one. Its
+  conversations stay behind and its repositories must be enrolled again.
 
 It follows a conversation as it happens. If you are at the very end of the page when a message
 arrives, it follows. If you are reading earlier and a long message arrives, it leaves you where
