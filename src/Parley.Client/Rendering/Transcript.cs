@@ -38,6 +38,52 @@ public static class Transcript
     {
         ArgumentNullException.ThrowIfNull(messages);
 
+        return Write(conversationId, project, new ConversationExport(messages, exchanges ?? []));
+    }
+
+    /// <summary>Writes everything an export returned as readable text: the messages, and what else it says.</summary>
+    /// <param name="conversationId">The conversation's identifier.</param>
+    /// <param name="project">The project it was read from.</param>
+    /// <param name="export">What the broker exported.</param>
+    /// <returns>The transcript.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="export"/> is null.</exception>
+    /// <remarks>
+    /// Everything SPEC.md §10.2 says export returns, as the JSON file carries it. A destroyed conversation has no
+    /// messages, which is also what a store that lost something would give; without the destroyed record the file
+    /// read as a conversation that never had any. Times stay in UTC, as everywhere else in this file.
+    /// </remarks>
+    public static string Write(string? conversationId, string? project, ConversationExport export)
+    {
+        ArgumentNullException.ThrowIfNull(export);
+
+        var messages = export.Messages;
+        var exchanges = export.Exchanges;
+        var heading = new StringBuilder()
+            .Append(CultureInfo.InvariantCulture, $"Conversation {conversationId} in project {project}")
+            .AppendLine();
+
+        // The item's title is the person's text; flattened like a payload, so it cannot put a line of its own here.
+        if (export.Item is { } item)
+        {
+            heading.Append("Roadmap: ").AppendLine(OneLine(Parley.Client.Roadmaps.ItemWording.Belongs(item)));
+        }
+
+        if (export.Destroyed is { } gone)
+        {
+            var between = gone.Participants.Count == 0 ? "nobody" : string.Join(", ", gone.Participants.Select(p => p.Value));
+
+            return heading
+                .Append(
+                    CultureInfo.InvariantCulture,
+                    $"Destroyed on {gone.DestroyedUtc.ToString("u", CultureInfo.InvariantCulture)}. ")
+                .Append(
+                    CultureInfo.InvariantCulture,
+                    $"It held {gone.Messages} message{(gone.Messages == 1 ? string.Empty : "s")}, between {between}.")
+                .AppendLine()
+                .AppendLine("Nothing of what was said was kept, and it cannot be undone.")
+                .ToString();
+        }
+
         var participants = Visibility.Participants(messages);
 
         // Assigned rather than ToDictionary'd. A broker that returned the same exchange twice is
@@ -54,9 +100,7 @@ public static class Transcript
         // What each reply settled (SPEC.md §5.6) is read from the same record the screens read it from.
         var whole = new ConversationExport([.. messages], [.. states.Values], null);
 
-        var written = new StringBuilder()
-            .Append(CultureInfo.InvariantCulture, $"Conversation {conversationId} in project {project}")
-            .AppendLine()
+        var written = heading
             .Append(
                 CultureInfo.InvariantCulture,
                 $"Participants: {string.Join(", ", participants.Select(p => p.Value))}")

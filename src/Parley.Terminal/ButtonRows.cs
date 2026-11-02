@@ -48,7 +48,7 @@ internal sealed class ButtonRows
         }
     }
 
-    /// <summary>The rows the buttons take at the dialog's width now.</summary>
+    /// <summary>The lines the buttons take at the dialog's width now: their rows times the height of the tallest button.</summary>
     internal int Height => Rows * _rowHeight;
 
     /// <summary>How many rows the buttons take at the dialog's width now.</summary>

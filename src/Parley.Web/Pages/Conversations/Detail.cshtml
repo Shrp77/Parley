@@ -53,8 +53,8 @@
             </summary>
             <div class="export-list">
                 @* Built by the page's URL helper, so a value is encoded and cannot add a parameter of its own. *@
-                <a href="@Url.Page("/Conversations/Detail", "Transcript", new { project = Model.Project, id = Model.Id })" download title="The conversation as a text file, with who saw what noted on it">Export TXT</a>
-                <a href="@Url.Page("/Conversations/Detail", "Raw", new { project = Model.Project, id = Model.Id })" download title="The messages and exchanges as the broker holds them, as JSON for another program">Export JSON</a>
+                <a href="@Url.Page("/Conversations/Detail", "Transcript", new { project = Model.Project, id = Model.Id })" download title="The conversation as a text file, with who saw what noted on it, whether it was destroyed and the roadmap item it belongs to">Export TXT</a>
+                <a href="@Url.Page("/Conversations/Detail", "Raw", new { project = Model.Project, id = Model.Id })" download title="The messages and exchanges as the broker holds them, the destroyed record and the roadmap item, as JSON for another program">Export JSON</a>
             </div>
         </details>
     </div>

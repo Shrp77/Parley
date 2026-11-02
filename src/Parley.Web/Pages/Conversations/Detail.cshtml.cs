@@ -328,12 +328,20 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
             return Unavailable(read.Problem);
         }
 
-        return File(
-            System.Text.Encoding.UTF8.GetBytes(
-                Transcript.Write(Id, Project, export.Messages, export.Exchanges)),
-            "text/plain; charset=utf-8",
-            $"{Id}.txt");
+        return File(TextExport(Id, Project, export), "text/plain; charset=utf-8", $"{Id}.txt");
     }
+
+    /// <summary>The text file the Export TXT link downloads.</summary>
+    /// <param name="id">The conversation.</param>
+    /// <param name="project">The project it was read from.</param>
+    /// <param name="export">What the broker exported.</param>
+    /// <returns>The file's bytes.</returns>
+    /// <remarks>
+    /// The whole export, as <see cref="RawExport"/> writes it: a destroyed conversation's file says it was destroyed
+    /// rather than reading as one that never had a message, and an item's names the item (SPEC.md §10.2).
+    /// </remarks>
+    public static byte[] TextExport(string id, string? project, ConversationExport export) =>
+        System.Text.Encoding.UTF8.GetBytes(Transcript.Write(id, project, export));
 
     /// <summary>The messages as the operator surface returned them, for machine use.</summary>
     /// <returns>A file the operator can take away.</returns>

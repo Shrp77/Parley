@@ -108,17 +108,40 @@ public sealed class ADuplicatedMemberStopsNoSiblingTests : IDisposable
         // so neither crashes and both answer the same copy of a repeated member. So is the resident agent's pump: it reads
         // a runner's output, not a file, takes every field at the parse, and must never refuse a result line, or its turn
         // and every turn after fall out of step (lens 1 run 132).
-        string[] allowed = ["StrictJson.cs", "PayloadShape.cs", "Payload.cs", "Reading.cs", "ResidentAgent.cs"];
+        // Named by path from the repository root, so a file of the same name in another project is not exempt.
+        string[] allowed =
+        [
+            "src/Parley.Configuration/StrictJson.cs",
+            "src/Parley.Core/PayloadShape.cs",
+            "src/Parley.Client/Rendering/Payload.cs",
+            "src/Parley.Client/Rendering/Reading.cs",
+            "src/Parley.Headless/ResidentAgent.cs",
+        ];
+
+        // Every way the framework reads JSON text: the three documents' parses and their asynchronous and reader forms,
+        // the serializer, and the reader itself.
+        string[] parses =
+        [
+            "JsonNode.Parse(", "JsonDocument.Parse(", "JsonObject.Parse(", "ParseAsync(", "ParseValue(",
+            "JsonSerializer.Deserialize", "Utf8JsonReader",
+        ];
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
         var offenders = new List<string>();
         var separator = Path.DirectorySeparatorChar;
+        var exempt = 0;
 
         foreach (var file in Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories))
         {
             if (file.Contains($"{separator}bin{separator}", StringComparison.Ordinal)
-                || file.Contains($"{separator}obj{separator}", StringComparison.Ordinal)
-                || allowed.Contains(Path.GetFileName(file), StringComparer.Ordinal))
+                || file.Contains($"{separator}obj{separator}", StringComparison.Ordinal))
             {
+                continue;
+            }
+
+            if (allowed.Contains(Path.GetRelativePath(root, file).Replace(separator, '/'), StringComparer.Ordinal))
+            {
+                exempt++;
+
                 continue;
             }
 
@@ -129,15 +152,15 @@ public sealed class ADuplicatedMemberStopsNoSiblingTests : IDisposable
                 number++;
 
                 if (!line.TrimStart().StartsWith("//", StringComparison.Ordinal)
-                    && (line.Contains("JsonNode.Parse(", StringComparison.Ordinal)
-                        || line.Contains("JsonDocument.Parse(", StringComparison.Ordinal)
-                        || line.Contains("JsonObject.Parse(", StringComparison.Ordinal)))
+                    && parses.Any(parse => line.Contains(parse, StringComparison.Ordinal)))
                 {
                     offenders.Add($"{Path.GetRelativePath(root, file)}:{number}");
                 }
             }
         }
 
+        // Non-vacuity: every exemption still names a file that is there.
+        Assert.Equal(allowed.Length, exempt);
         Assert.True(offenders.Count == 0, "parses outside StrictJson: " + string.Join(", ", offenders));
     }
 }

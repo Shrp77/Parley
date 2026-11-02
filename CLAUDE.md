@@ -46,7 +46,9 @@ src/Parley.Configuration The project manifest (§4.1) and the node catalogue: wh
                          and what they hold. Read by both Parley.Cli and Parley.Mcp. Written
                          only through Parley.Setup's ProjectCommand. Also where a path may
                          be looked up: OffMachineLinks (no link off this machine) and
-                         LocalStorage (only this machine's own disks).
+                         LocalStorage (only this machine's own disks), and where JSON
+                         somebody else wrote is parsed: StrictJson, which refuses a member
+                         named twice.
 src/Parley.Setup         What a person does to a machine: enrolling a repository, naming
                          projects, resolving per-machine paths, the autostart entry. Shared
                          by `parley` and `parley-terminal`, which run the same commands in
@@ -381,9 +383,15 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   `TableDialog<T>` (the surface aside); the only key handler overrides are the dialog base's and the
   surface's, and each calls only what it names; the only key-event subscriptions are `KeyRouting`'s
   four; nothing reaches the application's keyboard or bindings; and a key or hot-key binding, a
-  command or a key set on a toolkit view is added only by a pane or dialog that is pressed (the
-  menu bar's lines are named, and checked to carry no key). It also presses every pane, as a real
-  `Shell` builds and wires it, and every dialog in memory, every list given rows, with every named
+  command, a key set on a toolkit view, or a handler for accepting, activating or a hot key is added
+  only while a pressed pane or dialog is built: in its constructor (field initialisers included) or
+  a non-virtual method of the same type that only that construction calls, never in a lambda, an
+  override such as `EndInit`, a method the surface calls such as a pane's `Show`, or the surface.
+  One call is excepted by name, the toolkit's `MenuItem` constructor in `MenuBarView.Views`, and
+  each line it makes is checked: no key, no hot-key binding in it or inside it, and no key binding
+  but those a toolkit line made with no key carries. It also presses every pane, as a real `Shell`
+  builds and wires it and after each pane's `Show` with a row, and every dialog in memory after
+  `BeginInit` and `EndInit`, every list given rows, with every named
   key and its chords, Alt and Ctrl with each letter, and plain letters, digits and a few marks: a
   key taken must be claimed in its place; one a command names must be handed to the table first or
   be listed in the test's `TakenAsNamed`; and a plain character taken by a view that does not type

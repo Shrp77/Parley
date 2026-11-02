@@ -17,7 +17,7 @@ namespace Parley.Terminal;
 /// second renderer, and the two would disagree about visibility on the day it mattered.
 /// </para>
 /// <para>
-/// <b>It does not draw <see cref="Transcript.Write"/></b>, which is the export: one flattened line of JSON
+/// <b>It does not draw <see cref="Transcript.Write(string, string, ConversationExport)"/></b>, which is the export: one flattened line of JSON
 /// per message.
 /// </para>
 /// <para>
