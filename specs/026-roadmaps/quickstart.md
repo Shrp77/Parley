@@ -5,8 +5,8 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 ## 1. Room lists everyone (story 5)
 
 1. A project with four agents attached. Two exchange messages in one conversation.
-2. Open the conversation in the terminal and on the web. **Expect** four agents, two under *In this conversation* with the participant mark, two under *Elsewhere in the project*, the legend present.
-3. Tick one of the two non-participants, type a line, send. **Expect** the line reaches them and they now sit under *In this conversation*.
+2. Open the conversation in the terminal and on the web. **Expect** four agents. In the terminal, two under *in this conversation* marked ◈ (the legend says *has taken part*) and two under *not in it yet (Space adds)*. On the web, the two participants counted in *Everyone in this conversation (2)*, with every agent listed by machine.
+3. Tick one of the two non-participants, type a line, send. **Expect** the line reaches them and they now count as in this conversation on both surfaces.
 4. Retire an agent that took part. **Expect** it stays listed, marked retired, and cannot be ticked. Retire one that did not. **Expect** it disappears.
 5. Narrow the terminal to 40 columns. **Expect** no row cut off; marks and names intact.
 
@@ -17,7 +17,7 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 3. Reword item 2, remove item 3, confirm. **Expect** a roadmap with two items, origin `edited`, the proposer named, the proposal no longer waiting, a notice in the proposer's inbox saying confirmed.
 4. Propose again and decline. **Expect** no roadmap, a *declined* notice, and no wake of the agent.
 5. As an agent, try anything that changes the roadmap. **Expect** there is nothing to call; the structural test is the proof.
-6. Two proposals against one roadmap; confirm one as a revision of it. **Expect** the other reads superseded.
+6. Two proposals against one roadmap; confirm one as a revision of it. **Expect** the other is gone from the proposals on both surfaces, and its proposer's next `parley_inbox` says it was superseded.
 
 ## 3. State and next (story 2)
 
@@ -33,5 +33,5 @@ Walked like 019 to 025 are: tools packed and installed into a scratch path, a br
 4. From that conversation ask for its roadmap. **Expect** the roadmap opens on item 3. Open an ordinary conversation. **Expect** it names no item and offers no way to a roadmap.
 5. As an agent, try to open `rm<n>-<m>` for an unstarted item, by a request and by placing a file. **Expect** both refused, saying the conversation is not one the agent can start.
 6. Edit the roadmap and remove item 3. **Expect** its conversation remains, marked as formerly belonging to it.
-7. Start an item whose text is over 8,000 characters. **Expect** refusal naming the cap and nothing sent.
+7. Start an item whose text is over 8,000 characters, then send it. **Expect** starting to fill the box and refuse nothing, and the send to be refused naming the cap, with nothing sent.
 8. Restart the broker. **Expect** roadmaps intact.
