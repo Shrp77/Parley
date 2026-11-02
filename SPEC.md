@@ -1300,7 +1300,8 @@ the work a project has done across its repositories.
 
 Every connection overwrites what a delete removes, and destroy, purge and a retention pass that removed anything each
 rewrite the store and empty the write-ahead log into it before they return, so text they remove is in neither file for
-a copy taken afterwards to give back (§14). Two things are kept on purpose. A file problem outlives the conversation
+a copy taken afterwards to give back (§14). Three things are kept on purpose. A notice that a fetched file is gone
+waits in `file_notices` with the file's name until its agent collects it (§9.2). A file problem outlives the conversation
 it is about, and its row stays in the store after a person dismisses it with the names it gives: when another program
 held one of the conversation's files and the delete could not finish (§9.5), the folder and the file names; for a file
 the broker quarantined, its path in the location and where in the quarantine directory it was moved (`moved_to`). A
