@@ -57,6 +57,23 @@ public sealed class ToolArgumentNameTests
     }
 
     [Fact]
+    public void A_field_inside_an_item_is_held_to_the_schema_too()
+    {
+        var schema = JsonDocument.Parse(
+            """{"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"text":{},"needs":{}}}}}}""").RootElement;
+
+        KeyValuePair<string, JsonElement> Items(string json) => new("items", JsonDocument.Parse(json).RootElement);
+
+        Assert.Null(UnknownArguments.RefusalFor("parley_propose_roadmap", schema, [Items("""[{"text":"a"},{"text":"b","needs":[1]}]""")]));
+
+        var why = UnknownArguments.RefusalFor(
+            "parley_propose_roadmap", schema, [Items("""[{"text":"a"},{"text":"b","after":[1]}]""")])!["why"]!.GetValue<string>();
+
+        Assert.Contains("In items[2], parley_propose_roadmap has no field named after", why, StringComparison.Ordinal);
+        Assert.Contains("only text, needs", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_tool_that_takes_nothing_says_so()
     {
         var empty = JsonDocument.Parse("""{"type":"object"}""").RootElement;

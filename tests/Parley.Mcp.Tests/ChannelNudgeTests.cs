@@ -55,7 +55,7 @@ public sealed class ChannelNudgeTests : IDisposable
         await using var fixture = new ServerFixture(T0);
         var events = Channel.CreateUnbounded<JsonRpcNotification>();
         await using var orders = await ConnectAsync(fixture, "orders", events.Writer);
-        await fixture.LaunchAsync("billing@test", Ct);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", Ct);
 
         var named = await orders.CallToolAsync(
             "parley_request",
@@ -74,6 +74,35 @@ public sealed class ChannelNudgeTests : IDisposable
 
         Assert.Equal("malformed", refused["refused"]!.GetValue<string>());
         Assert.Contains("conversationId", refused["why"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        // Refused means not sent: billing holds the first request and nothing from the second.
+        Assert.Single((await billing.InboxAsync(cancellationToken: Ct))["messages"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task A_misspelt_field_inside_a_roadmap_item_is_refused_through_the_real_server()
+    {
+        await using var fixture = new ServerFixture(T0);
+        var events = Channel.CreateUnbounded<JsonRpcNotification>();
+        await using var orders = await ConnectAsync(fixture, "orders", events.Writer);
+
+        async Task<JsonNode> Propose(string field) => JsonNode.Parse(((TextContentBlock)(await orders.CallToolAsync(
+            "parley_propose_roadmap",
+            new Dictionary<string, object?>
+            {
+                ["title"] = $"With {field}",
+                ["items"] = JsonNode.Parse($$"""[{"text":"Do a"},{"text":"Do b","{{field}}":[1]}]""")
+            },
+            cancellationToken: Ct)).Content[0]).Text)!;
+
+        var refused = await Propose("after");
+
+        Assert.Equal("malformed", refused["refused"]!.GetValue<string>());
+        Assert.Contains("items[2]", refused["why"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var taken = await Propose("needs");
+
+        Assert.True(taken["ok"]!.GetValue<bool>(), taken.ToJsonString());
     }
 
     [Fact]
