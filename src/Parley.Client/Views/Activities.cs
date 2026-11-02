@@ -39,6 +39,12 @@ public sealed record Activity(
     int PermissionDenials = 0,
     AgentName? WaitingOn = null);
 
+/// <summary>What a list of agents says about one.</summary>
+/// <param name="Words">What it is doing.</param>
+/// <param name="Rank">Where it sorts, lower first: working, then stopped, then the rest.</param>
+/// <param name="Working">Whether a turn is running for it.</param>
+public sealed record AgentNow(string Words, int Rank, bool Working = false);
+
 /// <summary>
 /// Derives what each participant in a conversation is doing, and how both surfaces say it.
 /// </summary>
@@ -183,6 +189,58 @@ public static class Activities
 
     private static string Refused(int count) =>
         count == 1 ? "1 permission refused" : count.ToString(CultureInfo.InvariantCulture) + " permissions refused";
+
+    /// <summary>What a list of agents says one is doing now, in no conversation in particular.</summary>
+    /// <param name="agent">The agent, as the registry described it.</param>
+    /// <param name="now">Now.</param>
+    /// <returns>Its words, and where it sorts: working first, then stopped, then the rest.</returns>
+    /// <remarks>
+    /// <para>
+    /// The answer to "which of my agents are working?", which a list saying <c>running</c> cannot give: that word covers a
+    /// busy agent and one attached with nothing to do.
+    /// </para>
+    /// <para>
+    /// <b>Nothing is claimed for an agent whose turns nobody reports</b> (SPEC.md §11.6). It reads by its presence, so
+    /// <c>running</c> still means "attached, and whether it is working is not known". A turn does not say which conversation
+    /// it is for, so neither does this.
+    /// </para>
+    /// </remarks>
+    public static AgentNow Now(AgentRecord agent, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(agent);
+
+        var presence = agent.Presence.ToString().ToLowerInvariant();
+        var turns = agent.Turns ?? TurnStanding.Unreported;
+
+        if (agent.Status == AgentStatus.Retired)
+        {
+            return new AgentNow("retired", 3);
+        }
+
+        if (agent.OpenOutside)
+        {
+            return new AgentNow("open outside Parley", 2);
+        }
+
+        if (!turns.Reported)
+        {
+            return new AgentNow(presence, agent.Presence == AgentPresence.Running ? 2 : 3);
+        }
+
+        if (turns.RunningSince is { } running)
+        {
+            return new AgentNow($"{WorkingMark} working {For(running, now)}", 0, Working: true);
+        }
+
+        if (turns.LastEnded is { } ended && turns.LastPermissionDenials > 0)
+        {
+            return new AgentNow($"{StoppedMark} stopped {For(ended, now)} — {Refused(turns.LastPermissionDenials)}", 1);
+        }
+
+        return agent.Presence == AgentPresence.Running
+            ? new AgentNow($"{RunningMark} idle", 2)
+            : new AgentNow(presence, 3);
+    }
 
     /// <summary>What an agent open outside Parley is said to be doing.</summary>
     /// <remarks>It names what follows from it, because that is what a person needs: Parley cannot hand it work.</remarks>

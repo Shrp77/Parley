@@ -3,7 +3,8 @@
 @using Parley.Core
 @using Parley.Web.Pages.Shared
 @{
-    ViewData["Refresh"] = "30";
+    // Sooner on the agents tab, which is where a person looks to see who is working.
+    ViewData["Refresh"] = Model.AgentsTab ? "10" : "30";
     ViewData["Title"] = Model.AgentsTab ? (Model.InProject is null ? "All Agents" : "Agents") : "Projects";
     ViewData["AsOf"] = Model.AsOf.ToString("HH:mm:ss");
 
