@@ -113,6 +113,83 @@ public sealed class AnOversizedFileIsRefusedUnreadTests : IDisposable
         Assert.Contains("Nothing has been written.", said, StringComparison.Ordinal);
     }
 
+    // Lens 3 run 147: the instructions file is prose, read whole, and a long one stopped the enrolment that only appends
+    // to it, with a refusal that blamed .mcp.json.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_instructions_file_of_any_size_enrols_as_before(bool describe)
+    {
+        var instructions = Path.Combine(_workspace, "CLAUDE.md");
+        var prose = "# Orders\n\n" + new string('x', StrictJson.MostBytes) + "\n";
+        File.WriteAllText(instructions, prose, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var (code, _, error) = await EnrolAsync(describe);
+
+        Assert.Equal(string.Empty, error);
+        Assert.Equal(0, code);
+
+        var after = File.ReadAllText(instructions);
+
+        Assert.StartsWith(prose, after, StringComparison.Ordinal);
+        Assert.Equal(describe, after.Length == prose.Length);
+    }
+
+    [Fact]
+    public async Task An_instructions_file_of_any_size_is_appended_to_by_the_terminal_s_enrolment()
+    {
+        var instructions = Path.Combine(_workspace, "CLAUDE.md");
+        var prose = "# Orders\n\n" + new string('x', StrictJson.MostBytes) + "\n";
+        File.WriteAllText(instructions, prose, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        var outcome = await Enrolment.AddAsync(
+            new EnrollmentEntry(_workspace, "orders", "Orders things.", Unattended: true) { Enroll = true },
+            "test",
+            Path.Combine(_workspace, "node.json"),
+            instructions,
+            Ct);
+
+        Assert.Contains(instructions, outcome.Written);
+        Assert.StartsWith(prose, File.ReadAllText(instructions), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task An_oversized_launch_configuration_is_named_in_one_sentence(bool describe)
+    {
+        File.WriteAllText(Path.Combine(_workspace, "CLAUDE.md"), "# Orders\n");
+        Sized(LaunchConfiguration.FileName, StrictJson.MostBytes + 1);
+
+        var (code, _, error) = await EnrolAsync(describe);
+
+        Assert.Equal(78, code);
+        Assert.Contains(
+            $"{Path.Combine(_workspace, LaunchConfiguration.FileName)} cannot be merged into",
+            error,
+            StringComparison.Ordinal);
+        Assert.Contains(StrictJson.TooLargeMessage + "\n", error.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.DoesNotContain("CLAUDE.md", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("..", error, StringComparison.Ordinal);
+    }
+
+    // The enrolment of this one repository, attended, as a surface hands it over.
+    private async Task<(int Code, string Out, string Error)> EnrolAsync(bool describe)
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var code = await EnrollCommand.EnrolAsync(
+            [new EnrollmentEntry(_workspace, "orders", "Orders things.", Unattended: false) { Enroll = true }],
+            describe,
+            new Resolved(Path.Combine(_workspace, "node.json"), ValueSource.Argument),
+            output,
+            error,
+            cancellationToken: Ct);
+
+        return (code, output.ToString(), error.ToString());
+    }
+
     // A JSON object padded with spaces to exactly the size asked for.
     private string Sized(string name, int bytes)
     {

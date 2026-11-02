@@ -112,6 +112,7 @@ public sealed class ALaunchConfigurationIsNotReadOffThisMachineTests : IDisposab
     {
         _ = _workspace.CreateSubdirectory(".git");
         LinkOrSkip("CLAUDE.md", @"\\192.0.2.219\s\c.md");
+        var said = new StringWriter();
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
 
@@ -120,10 +121,18 @@ public sealed class ALaunchConfigurationIsNotReadOffThisMachineTests : IDisposab
             describe: true,
             new Resolved(Path.Combine(_elsewhere.FullName, "node.json"), ValueSource.Argument),
             TextWriter.Null,
-            TextWriter.Null,
+            said,
             cancellationToken: Ct);
 
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), $"the path was looked up: {watch.Elapsed}");
+
+        // Lens 3 run 147: the refusal is about the instructions file, which is appended to, never merged into.
+        Assert.Contains(
+            $"{Path.Combine(_workspace.FullName, "CLAUDE.md")} cannot be read",
+            said.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(LaunchConfiguration.FileName, said.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("..", said.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]

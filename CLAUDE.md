@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.48.7, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+- Version 0.48.8, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -388,10 +388,14 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   reaches the application's keyboard or bindings, a shortcut's `BindKeyToApplication`, a static
   toolkit member over key bindings (`ListView.DefaultKeyBindings`, `View.ViewKeyBindings`,
   `Application.SetDefaultKeyBinding`) or a static toolkit key (`PopoverMenu.DefaultKey`), or hands out
-  hot keys (`AssignHotKeys`); no view reads a hot key from its title: the terminal makes no toolkit
-  view that reads one by default (it makes `PlainButton` and `Plain`, which turn it off) and sets
-  `HotKeySpecifier` to nothing but `Plain.NoHotKey`, so a title or text set anywhere binds nothing,
-  and every view the probe builds has no hot key; and a key or hot-key binding, a
+  hot keys (`AssignHotKeys`); no view the terminal makes reads a hot key from its title: a toolkit
+  view that reads one by default is made with `HotKeySpecifier = Plain.NoHotKey` set in its
+  initialiser (`new ListView { HotKeySpecifier = Plain.NoHotKey, ... }`) or is `PlainButton` or
+  `Plain`, which set it when made, and `HotKeySpecifier` is set to nothing else, so a title or text
+  set on one later binds nothing, and every view the probe builds has no hot key. The toolkit's own
+  `TextView` context menu (Shift+F10 or a right click in the box) is outside this: the toolkit makes
+  it, as a `PopoverMenu` whose items read hot keys from their titles (`_Select all`, `_Delete All`),
+  and it is older than the check, a recorded gap rather than something the check holds. And a key or hot-key binding, a
   command, a key set on a toolkit view, or a handler for accepting, activating or a hot key is added
   only while a pressed pane or dialog is built: in its constructor (field initialisers included) or
   a non-virtual method of the same type that only that construction calls, never in a lambda, an

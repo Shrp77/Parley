@@ -101,7 +101,7 @@ public static class Enrolment
                     notes is null
                         ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                             .ConfigureAwait(false)
-                        : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false));
+                        : await ReadHeldProseAsync(notes, cancellationToken).ConfigureAwait(false));
 
                 if (plan.LaunchConfiguration is { } launch)
                 {
@@ -205,9 +205,10 @@ public static class Enrolment
 
         try
         {
-            return await StrictJson.ReadFileAsync(path, cancellationToken).ConfigureAwait(false);
+            // Prose, so read whole as ReadHeldProseAsync reads a held one.
+            return await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -348,7 +349,7 @@ public static class Enrolment
         }
     }
 
-    /// <summary>Reads a held file from the start.</summary>
+    /// <summary>Reads a held JSON file from the start; <see cref="ReadHeldProseAsync"/> reads an instructions file.</summary>
     /// <param name="stream">The handle.</param>
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>Its text.</returns>
@@ -362,6 +363,24 @@ public static class Enrolment
         stream.Position = 0;
 
         return await Bounded(StrictJson.ReadAsync(stream, cancellationToken), stream.Name).ConfigureAwait(false);
+    }
+
+    /// <summary>Reads a held instructions file from the start, whole.</summary>
+    /// <param name="stream">The handle.</param>
+    /// <param name="cancellationToken">Stops the read.</param>
+    /// <returns>Its text.</returns>
+    /// <remarks>
+    /// Not bounded as <see cref="ReadHeldAsync"/> is. The bound is for JSON files nobody writes long, and an
+    /// instructions file is somebody's prose, of any length: bounded, a long one stopped the enrolment it is merely
+    /// appended to (lens 3 run 147).
+    /// </remarks>
+    private static async Task<string> ReadHeldProseAsync(FileStream stream, CancellationToken cancellationToken)
+    {
+        stream.Position = 0;
+
+        using var reader = new StreamReader(stream, leaveOpen: true);
+
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     // A file refused for its size, as the InvalidDataException every caller here already reports.
@@ -806,7 +825,7 @@ public static class Enrolment
                         notes is null
                             ? await DeclinedTextAsync(declined, instructionsPath, cancellationToken)
                                 .ConfigureAwait(false)
-                            : await ReadHeldAsync(notes, cancellationToken).ConfigureAwait(false),
+                            : await ReadHeldProseAsync(notes, cancellationToken).ConfigureAwait(false),
                         agents.ContainsKey(key),
                         project,
                         EndpointsOf(manifestPath),

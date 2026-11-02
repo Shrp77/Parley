@@ -47,12 +47,19 @@ public static class StrictJson
 
     /// <summary>The most bytes a file read through this class may hold.</summary>
     /// <remarks>
-    /// The largest file read this way is a node's catalogue, a few hundred bytes for each agent on one machine; a
-    /// repository's launch configuration is a few hundred bytes for each project it answers in. A mebibyte is thousands
-    /// of times either, so no file anybody wrote by hand or by a tool reaches it. Without a bound a repository's
-    /// <c>.mcp.json</c> past about a billion characters threw <see cref="OutOfMemoryException"/>, which no reader catches,
-    /// out of the node's catalogue scan, and ended the node with every resident agent on the machine (lens 2 run 139).
-    /// Anybody who can write in a repository can write that file, an agent working in it included.
+    /// <para>
+    /// Only JSON is read this way: a repository's launch configuration, a few hundred bytes for each project it answers
+    /// in; a node's catalogue, a few hundred bytes for each agent on one machine; the terminal's addressing file, a few
+    /// names for each conversation a person has written in; and Dropbox's account file, a few paths. A mebibyte is
+    /// thousands of times any of them, so no file anybody wrote by hand or by a tool reaches it. Without a bound a
+    /// repository's <c>.mcp.json</c> past about a billion characters threw <see cref="OutOfMemoryException"/>, which no
+    /// reader catches, out of the node's catalogue scan, and ended the node with every resident agent on the machine
+    /// (lens 2 run 139). Anybody who can write in a repository can write that file, an agent working in it included.
+    /// </para>
+    /// <para>
+    /// A repository's instructions file is not read this way. It is somebody's prose, of any length, and enrolment only
+    /// appends to it, so a bound refused a long one and stopped the enrolment (lens 3 run 147).
+    /// </para>
     /// </remarks>
     public const int MostBytes = 1 << 20;
 
@@ -118,6 +125,16 @@ public static class StrictJson
     /// <param name="cancellationToken">Stops the read.</param>
     /// <returns>Its text.</returns>
     /// <exception cref="JsonException">More than <see cref="MostBytes"/> remain.</exception>
+    /// <remarks>
+    /// <para>
+    /// The length is checked before anything is read, and the read stops at the bound too, so a file that grows after
+    /// the check is refused rather than read whole.
+    /// </para>
+    /// <para>
+    /// The loop is <see cref="Read"/>'s, written again because one is synchronous and the other is not: shared, one of
+    /// them would block on the other's task. What each step does is shared, so the bound is checked in one place.
+    /// </para>
+    /// </remarks>
     public static async Task<string> ReadAsync(Stream stream, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stream);

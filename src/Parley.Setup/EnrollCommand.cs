@@ -862,6 +862,10 @@ public static class EnrollCommand
                 project?.Name.Value,
                 nodeWorkspace: listed[entry.Agent]?["workspace"]?.GetValue<string>());
 
+            // The file a refusal below is about. Only the launch configuration is ever merged into; the instructions
+            // file can stop a plan only by leading off this machine.
+            var refusing = launchPath;
+
             try
             {
                 // Deciding and writing happen under one hold when this is going to write. Reporting
@@ -882,6 +886,8 @@ public static class EnrollCommand
                     {
                         if (OffMachineLinks.LeadsOffThisMachine(read))
                         {
+                            refusing = read;
+
                             throw new InvalidDataException(
                                 $"{read} leads to another machine, and Parley does not look up a path there");
                         }
@@ -891,8 +897,9 @@ public static class EnrollCommand
                         File.Exists(launchPath)
                             ? await StrictJson.ReadFileAsync(launchPath, cancellationToken).ConfigureAwait(false)
                             : null,
+                        // Prose of any length, so not bounded as the JSON beside it is (lens 3 run 147).
                         File.Exists(instructionsPath)
-                            ? await StrictJson.ReadFileAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
+                            ? await File.ReadAllTextAsync(instructionsPath, cancellationToken).ConfigureAwait(false)
                             : null);
                 }
             }
@@ -902,8 +909,11 @@ public static class EnrollCommand
                 // own file in a shape it does not understand, and the failure of the alternative
                 // is silent: the entries it could not read are simply not in what gets written.
                 await error.WriteLineAsync(
-                    $"{entry.Agent}: {launchPath} cannot be merged into — {ex.Message}.\n" +
-                    "Fix or move it first; enrolling would replace what is there.").ConfigureAwait(false);
+                    string.Equals(refusing, launchPath, StringComparison.Ordinal)
+                        ? $"{entry.Agent}: {launchPath} cannot be merged into — {OneSentence(ex.Message)}\n"
+                          + "Fix or move it first; enrolling would replace what is there."
+                        : $"{entry.Agent}: {refusing} cannot be read — {OneSentence(ex.Message)}\n"
+                          + "Replace it with a file on this machine first.").ConfigureAwait(false);
 
                 // Say where it stopped. Validation is hoisted ahead of every write so that a set is never
                 // half applied, but this refusal cannot be hoisted: knowing it means reading each
@@ -1171,4 +1181,8 @@ public static class EnrollCommand
 
         return Path.Combine(workspace, "CLAUDE.md");
     }
+
+    // A refusal's reason as one sentence. Some reasons end in a period and some do not, and a period added to every
+    // one printed two after half of them.
+    private static string OneSentence(string reason) => reason.TrimEnd().TrimEnd('.') + ".";
 }

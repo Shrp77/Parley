@@ -14,8 +14,9 @@ namespace Parley.Terminal;
 /// and it took d, D and Alt+D.
 /// </para>
 /// <para>
-/// So hot keys are turned off where they are read, as <see cref="Plain"/> does for labels, and the terminal makes no
-/// toolkit button. <c>KeysTakenBeforeTheTableTests</c> refuses one, and refuses turning a hot key back on.
+/// So hot keys are turned off where they are read, as <see cref="Plain"/> does for labels, and the terminal makes this
+/// rather than the toolkit's button. <c>KeysTakenBeforeTheTableTests</c> refuses a toolkit button made without
+/// <c>HotKeySpecifier = Plain.NoHotKey</c> in its initialiser, and refuses setting it to anything else.
 /// </para>
 /// </remarks>
 internal sealed class PlainButton : Button
