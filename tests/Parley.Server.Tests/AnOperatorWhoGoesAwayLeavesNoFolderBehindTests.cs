@@ -44,6 +44,23 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         return (holding, release, entered.Task);
     }
 
+    // Waits until exactly this many callers wait for the store's turn, so each call is known to have queued before the
+    // next hold queues behind it. A fixed delay guessed at that, and on a stalled runner a request arrived late and
+    // queued behind the wrong hold.
+    private static async Task WaitingAtTheGateAsync(LoopbackBroker broker, int expected, string what)
+    {
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (broker.Runtime.GateWaiting != expected)
+        {
+            if (waited.Elapsed > TimeSpan.FromSeconds(30))
+            {
+                Assert.Fail($"{what}: {expected} expected waiting for the store's turn after 30 seconds, {broker.Runtime.GateWaiting} waiting.");
+            }
+
+            await Task.Delay(10, Ct);
+        }
+    }
+
     [Fact]
     public async Task A_destroy_cancelled_after_its_rows_commit_leaves_no_folder_behind()
     {
@@ -63,23 +80,23 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
 
         var destroy = operators.DestroyAsync(
             new Wire.ConversationRequest { ConversationId = "bait" }, cancellationToken: cts.Token).ResponseAsync;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the destroy's folder read behind H1");
 
         // H2 queues behind the folder read, so the destroy's own transaction queues behind H2.
         var h2 = Hold(broker);
-        await Task.Delay(200, Ct);
+        await WaitingAtTheGateAsync(broker, 2, "H2 behind the folder read");
         h1.Release.SetResult();
         await h1.Holding;
         await h2.Entered;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the destroy's transaction behind H2");
 
         // H3 queues behind the destroy's transaction, so the check of which rows went queues behind H3.
         var h3 = Hold(broker);
-        await Task.Delay(200, Ct);
+        await WaitingAtTheGateAsync(broker, 2, "H3 behind the destroy's transaction");
         h2.Release.SetResult();
         await h2.Holding;
         await h3.Entered;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the check of which rows went behind H3");
 
         // The person's tool goes away now: after the rows went, before the folder is deleted.
         await cts.CancelAsync();
@@ -132,21 +149,21 @@ public sealed class AnOperatorWhoGoesAwayLeavesNoFolderBehindTests
         var h1 = Hold(broker);
         await h1.Entered;
         var purge = operators.PurgeAsync(new Wire.AgentRequest { Agent = Orders }, cancellationToken: cts.Token).ResponseAsync;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the purge's first folder read behind H1");
 
         var h2 = Hold(broker);
-        await Task.Delay(200, Ct);
+        await WaitingAtTheGateAsync(broker, 2, "H2 behind the first folder read");
         h1.Release.SetResult();
         await h1.Holding;
         await h2.Entered;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the purge behind H2");
 
         var h3 = Hold(broker);
-        await Task.Delay(200, Ct);
+        await WaitingAtTheGateAsync(broker, 2, "H3 behind the purge");
         h2.Release.SetResult();
         await h2.Holding;
         await h3.Entered;
-        await Task.Delay(400, Ct);
+        await WaitingAtTheGateAsync(broker, 1, "the second folder read behind H3");
 
         await cts.CancelAsync();
         await Task.Delay(400, Ct);

@@ -48,6 +48,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     private int _rewriting;
     private long _rewritesStarted;
     private int _agentWorkWaiting;
+    private int _gateWaiting;
 
     // Every attachment for a name, not the latest. SPEC.md §14 treats two windows open on one
     // repository as two sessions for one agent -- `connected` counts them rather than flagging
@@ -347,6 +348,31 @@ public sealed class BrokerRuntime : IAsyncDisposable
     /// and a delay only guesses at that on a loaded machine.
     /// </remarks>
     internal int AgentWorkWaiting => Volatile.Read(ref _agentWorkWaiting);
+
+    /// <summary>Gets how many callers of any kind are waiting for the gate now.</summary>
+    /// <remarks>
+    /// A test's seam, and only that: nothing in the broker reads it, so it changes no behaviour. A test that queues
+    /// calls behind holds on the gate has to know each call reached the gate before queueing the next hold, and a
+    /// delay only guesses at that: on a stalled runner a request arrived late, queued behind the wrong hold, and the
+    /// test cancelled it at the wrong step. <see cref="AgentWorkWaiting"/> is the part of this count that speaks for
+    /// an agent.
+    /// </remarks>
+    internal int GateWaiting => Volatile.Read(ref _gateWaiting);
+
+    // Every wait for the gate goes through here, so GateWaiting counts all of them.
+    private async Task EnterGateAsync(CancellationToken cancellationToken)
+    {
+        _ = Interlocked.Increment(ref _gateWaiting);
+
+        try
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ = Interlocked.Decrement(ref _gateWaiting);
+        }
+    }
 
     /// <summary>Gets how many sessions are open for an agent.</summary>
     /// <param name="agent">The agent.</param>
@@ -649,7 +675,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(registration);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -1683,7 +1709,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
 
         try
         {
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await EnterGateAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -1722,7 +1748,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(work);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -2045,7 +2071,7 @@ public sealed class BrokerRuntime : IAsyncDisposable
             // it would be dropped silently.
         }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
