@@ -33,7 +33,7 @@ public static class PrintableLine
     /// <summary>Finds the first character that may not appear in one line of printable text.</summary>
     /// <param name="text">The candidate, or <see langword="null"/> for none.</param>
     /// <param name="found">The character, when there is one.</param>
-    /// <param name="position">Where it is, counting from one in text elements; zero when there is none.</param>
+    /// <param name="position">Where it is, counting from one in runes; zero when there is none.</param>
     /// <returns><see langword="true"/> if the text holds such a character.</returns>
     /// <remarks>
     /// <para>
@@ -63,10 +63,7 @@ public static class PrintableLine
         {
             at++;
 
-            if (Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control
-                or UnicodeCategory.Format
-                or UnicodeCategory.LineSeparator
-                or UnicodeCategory.ParagraphSeparator)
+            if (Breaks(rune))
             {
                 found = rune;
                 position = at;
@@ -77,6 +74,19 @@ public static class PrintableLine
 
         return false;
     }
+
+    /// <summary>Whether one character may not appear in one line of printable text.</summary>
+    /// <param name="rune">The character.</param>
+    /// <returns><see langword="true"/> for a control, format, line-separator or paragraph-separator character.</returns>
+    /// <remarks>
+    /// The rule itself, typed once: what refuses a value here, and what the command line and setup neutralise before
+    /// they print somebody else's text, each in its own way (one replaces, one removes), all ask this.
+    /// </remarks>
+    public static bool Breaks(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) is UnicodeCategory.Control
+            or UnicodeCategory.Format
+            or UnicodeCategory.LineSeparator
+            or UnicodeCategory.ParagraphSeparator;
 
     /// <summary>Whether a value an attach reports may be recorded, and why not when it may not.</summary>
     /// <param name="field">What the value is, as a person reads it: <c>workspace</c>, <c>adapter</c>.</param>

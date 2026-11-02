@@ -272,7 +272,8 @@ internal sealed class MenuBarView(
     /// <summary>One menu's lines as toolkit views: an item per action, a rule per separator.</summary>
     /// <param name="items">The menu's lines.</param>
     /// <returns>The views.</returns>
-    private IEnumerable<View> Views(IReadOnlyList<MenuItem> items)
+    /// <remarks>Not private, so <c>KeysTakenBeforeTheTableTests</c> can hold that no line it makes carries a key.</remarks>
+    internal IEnumerable<View> Views(IReadOnlyList<MenuItem> items)
     {
         foreach (var item in items)
         {

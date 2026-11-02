@@ -79,7 +79,7 @@ public sealed class AgentsService : Wire.Agents.AgentsBase
         // line is held to the same rule by the adapter and by storage; these three by nothing else, so here.
         foreach (var (field, value) in new[]
                  {
-                     ("adapter", request.Adapter), ("workspace", request.Workspace), ("session reference", request.SessionRef),
+                     ("adapter", request.Adapter), ("workspace", request.Workspace), ("resume handle", request.SessionRef),
                  })
         {
             if (!PrintableLine.IsReportable(field, value, out var unprintable))

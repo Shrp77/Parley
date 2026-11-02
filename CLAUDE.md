@@ -10,7 +10,7 @@ Read `SPEC.md` before changing protocol behaviour. Open design questions live in
 
 ## State
 
-- Version 0.48.3, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
+- Version 0.48.4, protocol 0.9, schema 4. Nothing has been released, but **live stores hold work
   in flight and are kept**: schema 1 is fixed (`SchemaOneIsFrozenTests` pins what
   `001_initial.sql` creates), and every schema change is a new migration, `002_…` onwards, that
   upgrades a store in place and keeps its rows. A new build is installed with `install.ps1 -Force
@@ -357,8 +357,10 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   live in the broker's memory, not a table. An older node reads as *unknown*, never *stopped*.
   A permission-refused stop is flagged at once.
 - **Terminal keys.** Every action is Alt plus a letter, or a declared chord, and menus open with
-  F10. A plain character is never an action; the only unmodified keys a command may have are
-  Enter, Space and Escape, and Space only where nothing types. A focused view is offered a key
+  F10. A plain character is never an action: no command or key the surface takes may be a
+  printable character pressed without Alt or Ctrl, except Space, and Space only where nothing
+  types. Named keys may act unmodified where a place says so (Enter, Escape, the function keys,
+  the page and arrow keys in a list of ticks). A focused view is offered a key
   before the surface's own handler, so Enter is taken on the box itself. Enter sends; Shift+Enter,
   Ctrl+Enter or backslash then Enter make a line break. A conversation is tailed only for a reader
   at its end. Every key is declared in one table per type (`CommandManager<T>`, built by the type's
@@ -378,10 +380,15 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   reflection: every view opened as a session builds a table, is listed and derives from
   `TableDialog<T>` (the surface aside); the only key handler overrides are the dialog base's and the
   surface's, and each calls only what it names; the only key-event subscriptions are `KeyRouting`'s
-  four. It also presses every pane and dialog in memory with every named key and its chords, Alt and
-  Ctrl with each letter, and plain letters, digits and a few marks: a key taken must be claimed in its
-  place, and a plain character taken by a view that does not type fails whatever claims it. Tab is not
-  pressed, and a key a view binds is read from its bindings rather than pressed. `NoTwoActionsShareAKeyTests`
+  four; nothing reaches the application's keyboard or bindings; and a key or hot-key binding, a
+  command or a key set on a toolkit view is added only by a pane or dialog that is pressed (the
+  menu bar's lines are named, and checked to carry no key). It also presses every pane, as a real
+  `Shell` builds and wires it, and every dialog in memory, every list given rows, with every named
+  key and its chords, Alt and Ctrl with each letter, and plain letters, digits and a few marks: a
+  key taken must be claimed in its place; one a command names must be handed to the table first or
+  be listed in the test's `TakenAsNamed`; and a plain character taken by a view that does not type
+  fails whatever claims it. Tab is not pressed, and a key a view binds, as a key or a hot key, is
+  read from its bindings rather than pressed. `NoTwoActionsShareAKeyTests`
   and `KeysNeedAModifierTests` hold the drawn surface to it.
 - **Dialogs open on the thread that draws.** The work queue runs on the thread pool and most dialogs open after a read,
   so `Prompting.Open` hands the open to the loop (`Prompting.Marshal`, set by `TerminalCommand`). Never open one

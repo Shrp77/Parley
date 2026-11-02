@@ -446,6 +446,11 @@ public sealed class ResidentAgent : IAsyncDisposable
     }
 
     /// <summary>Kills the agent's process and everything it started.</summary>
+    /// <remarks>
+    /// Never throws for a kill that failed. Both callers have something still to settle after it, a bounded wait on the
+    /// write the kill was meant to end or the shutdown's answer, and a kill that escaped would leave the write pending and
+    /// the stop of every agent after this one abandoned.
+    /// </remarks>
     private void Kill()
     {
         try
@@ -455,6 +460,11 @@ public sealed class ResidentAgent : IAsyncDisposable
         catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException)
         {
             // It exited before the kill.
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or AggregateException)
+        {
+            // The system refused the kill, for the process or one it started. Nothing more can be done from here; what the
+            // caller waits on next is bounded.
         }
     }
 

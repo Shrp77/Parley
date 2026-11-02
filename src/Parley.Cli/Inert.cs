@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Text;
+using Parley.Core;
 
 namespace Parley.Cli;
 
@@ -25,7 +25,7 @@ internal static class Inert
 {
     /// <summary>Makes somebody else's text safe to print as part of one line.</summary>
     /// <param name="text">The text, or <see langword="null"/> for none.</param>
-    /// <returns>The text with every control, format, line-separator and paragraph-separator character replaced.</returns>
+    /// <returns>The text with every character that would break the line (<see cref="PrintableLine.Breaks"/>) replaced.</returns>
     internal static string Line(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -37,12 +37,7 @@ internal static class Inert
 
         foreach (var rune in text.EnumerateRunes())
         {
-            var category = Rune.GetUnicodeCategory(rune);
-
-            flat.Append(category is UnicodeCategory.Control or UnicodeCategory.Format
-                or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator
-                ? "?"
-                : rune.ToString());
+            flat.Append(PrintableLine.Breaks(rune) ? "?" : rune.ToString());
         }
 
         return flat.ToString();

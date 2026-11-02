@@ -18,7 +18,7 @@ public sealed class AnAttachReportsOnePrintableLineTests
     [Theory]
     [InlineData("workspace", "C:/repos/orders\u001b]52;c;aGk=\u0007", "U+001B")]
     [InlineData("adapter", "mcp\u2028orders@alpha  active", "U+2028")]
-    [InlineData("session reference", "resume\u202Eredro", "U+202E")]
+    [InlineData("resume handle", "resume\u202Eredro", "U+202E")]
     public async Task An_attach_carrying_an_unprintable_character_is_refused_and_nothing_is_registered(
         string field, string value, string named)
     {

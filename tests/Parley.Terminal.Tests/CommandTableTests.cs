@@ -349,10 +349,13 @@ public sealed class CommandTableTests
 
         Assert.StartsWith("a command is bound to a plain character.", refused.Message, StringComparison.Ordinal);
 
-        // Space, Enter and Escape are the chords a person presses unmodified, and are not refused for it.
+        // Space is the one printable key not refused, and the named keys type nothing, so none is plain.
         Assert.False(CommandManager<Shell>.Printable(Key.Space));
         Assert.False(CommandManager<Shell>.Printable(Key.Enter));
         Assert.False(CommandManager<Shell>.Printable(Key.Esc));
+        Assert.False(CommandManager<Shell>.Printable(Key.F1));
+        Assert.False(CommandManager<Shell>.Printable(Key.PageDown));
+        Assert.False(CommandManager<Shell>.Printable(Key.CursorLeft));
         Assert.True(CommandManager<Shell>.Printable(new Key('j')));
         Assert.True(CommandManager<Shell>.Printable(new Key('J')));
     }

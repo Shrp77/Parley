@@ -161,17 +161,36 @@ internal sealed class CommandManager<TTarget>
         var where = Layered(context);
         var identity = Identity(key);
 
-        return _commands.Any(command => where.Contains(command.Context) && Identity(command) == identity)
+        return Names(context, key)
                || _handlers.Any(handler => where.Contains(handler.Context) && Identity(handler.Key) == identity)
                || _reserved.Any(reserved => where.Contains(reserved.Context) && Identity(reserved.Key) == identity);
+    }
+
+    /// <summary>Whether a command is on a key in a place, there or in a layer live there, live now or not.</summary>
+    /// <param name="context">The place.</param>
+    /// <param name="key">The key.</param>
+    /// <returns><see langword="true"/> when the key is named on screen as a command somewhere it can be live in the place.</returns>
+    /// <remarks>
+    /// Apart from <see cref="Claims"/> because a key a view takes before any command is claimed by a command only on
+    /// purpose: the command never runs from the key, so the view has to do what the command says.
+    /// </remarks>
+    public bool Names(KeyContext context, Key key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        var where = Layered(context);
+        var identity = Identity(key);
+
+        return _commands.Any(command => where.Contains(command.Context) && Identity(command) == identity);
     }
 
     /// <summary>Whether a key is a printable character other than a space, pressed with neither Alt nor Ctrl.</summary>
     /// <param name="key">The key.</param>
     /// <returns><see langword="true"/> when typing it would type a character.</returns>
     /// <remarks>
-    /// Space, Enter and Escape are the only unmodified keys that may be actions, and Space only where nothing types;
-    /// <see cref="ReservedKey.Typing"/> holds it there. Every other printable key typed would run whatever it was bound to.
+    /// No command or handler may be one: typing it would run whatever it was bound to. Space is the one printable key that
+    /// may be an action unmodified, and only where nothing types; <see cref="ReservedKey.Typing"/> holds it there. A named
+    /// key, such as Enter, Escape, a function key or a page key, types nothing and may be an action where a place says so.
     /// </remarks>
     internal static bool Printable(Key key) =>
         !key.IsAlt && !key.IsCtrl && key.AsRune is { Value: > 32 } rune && !Rune.IsControl(rune);

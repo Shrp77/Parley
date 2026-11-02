@@ -23,7 +23,8 @@ internal sealed record ReservedKey(KeyContext Context, Key Key, string Name)
     /// <remarks>
     /// <para>
     /// <b>Read from the toolkit's own bindings rather than copied out of them</b>, so an upgrade that binds one more key
-    /// to a list claims it at once. A copy would be a second statement of the toolkit, right until it was not.
+    /// to a list claims it at once. A copy would be a second statement of the toolkit, right until it was not. Hot keys
+    /// are read with the keys, because the toolkit offers a view its hot keys as well.
     /// </para>
     /// <para>
     /// <b>A binding to accepting or activating alone is not a reservation.</b> Every view binds Enter and Space that way,
@@ -42,7 +43,7 @@ internal sealed record ReservedKey(KeyContext Context, Key Key, string Name)
 
         using var view = build();
 
-        return [.. view.KeyBindings.GetBindings()
+        return [.. view.KeyBindings.GetBindings().Concat(view.HotKeyBindings.GetBindings())
             .Where(binding => binding.Value.Commands.Any(command => command is not (Command.Accept or Command.Activate)))
             .Select(binding => binding.Key)
             .Where(key => !passes.Contains(key))

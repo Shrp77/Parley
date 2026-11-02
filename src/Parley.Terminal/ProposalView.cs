@@ -33,8 +33,9 @@ internal enum ProposalChoice
 /// <para>
 /// <b>Three places, each doing one job.</b> The roadmap is on the left, an item at a time with the agent it is meant for
 /// beneath it. Who the proposal names is on the right, grouped by agent, so which agent is meant for what can be read
-/// from either side. What can be done is a row of buttons along the bottom with the key for each written on it, and a
-/// line above them that says how to scroll. Nothing here is a roadmap until the person confirms it, and the view says so.
+/// from either side. What can be done is a row of buttons along the bottom with the key for each written on it, wrapped
+/// onto a second row where the dialog is too narrow for one, and a line above them that says how to scroll. Nothing
+/// here is a roadmap until the person confirms it, and the view says so.
 /// </para>
 /// <para>
 /// <b>Read-only.</b> Editing is a form of its own (<see cref="Proposing"/>), because rewording a roadmap is a different
@@ -90,6 +91,15 @@ internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<Propos
         Width = Dim.Percent(92);
         Height = Dim.Percent(92);
 
+        var confirm = Choice(ConfirmLabel, ProposalChoice.Confirm);
+        var edit = Choice(EditLabel, ProposalChoice.Edit);
+        var decline = Choice(DeclineLabel, ProposalChoice.Decline);
+        var leave = Choice(LeaveLabel, ProposalChoice.Leave);
+        var buttons = new ButtonRows(this, confirm, edit, decline, leave);
+
+        // What is kept below the roadmap: a blank row, the hint, and the buttons in as many rows as the width needs.
+        var footer = Dim.Func(_ => 1 + HintRows + buttons.Height);
+
         _header = Safe.Lines(ProposalText.Header(proposal, sameTitle));
 
         // **At most a few rows, and it scrolls.** A title has no bound, and a heading as tall as its title pushed who
@@ -113,7 +123,7 @@ internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<Propos
         _items.X = 1;
         _items.Y = Pos.Bottom(itemsHeading);
         _items.Width = Dim.Fill(AgentsWidth + 3);
-        _items.Height = Dim.Fill(FooterRows);
+        _items.Height = Dim.Fill(footer);
 
         // Who it names, on the side, for the same rows.
         var agentsHeading = new Plain { Text = "Who it names", X = Pos.Right(_items) + 1, Y = Pos.Bottom(heading), Width = Dim.Fill(1), Height = 1 };
@@ -122,34 +132,24 @@ internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<Propos
         _agents.X = Pos.Right(_items) + 1;
         _agents.Y = Pos.Bottom(agentsHeading);
         _agents.Width = Dim.Fill(1);
-        _agents.Height = Dim.Fill(FooterRows);
+        _agents.Height = Dim.Fill(footer);
 
         var hint = new Plain
         {
             Text = Hint,
             X = 1,
-            Y = Pos.AnchorEnd(FooterRows - 1),
+            Y = Pos.Func(_ => Viewport.Height - buttons.Height - HintRows),
             Width = Dim.Fill(2),
-            Height = 3,
+            Height = HintRows,
         };
 
         hint.TextFormatter.WordWrap = true;
 
-        var confirm = Choice(ConfirmLabel, ProposalChoice.Confirm);
-        var edit = Choice(EditLabel, ProposalChoice.Edit);
-        var decline = Choice(DeclineLabel, ProposalChoice.Decline);
-        var leave = Choice(LeaveLabel, ProposalChoice.Leave);
-
-        confirm.X = 1;
-        edit.X = Pos.Right(confirm) + 1;
-        decline.X = Pos.Right(edit) + 1;
-        leave.X = Pos.Right(decline) + 1;
-
         Add(heading, itemsHeading, _items, agentsHeading, _agents, hint, confirm, edit, decline, leave);
     }
 
-    /// <summary>Rows kept for the hint and the buttons below the roadmap.</summary>
-    private const int FooterRows = 6;
+    /// <summary>Rows kept for the hint above the buttons.</summary>
+    private const int HintRows = 3;
 
     /// <summary>Raised once, with what the person chose.</summary>
     internal event EventHandler<ProposalChoice>? Done;
@@ -206,7 +206,6 @@ internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<Propos
         var button = new Button
         {
             Title = label,
-            Y = Pos.AnchorEnd(2),
 
             // **No default button.** The roadmap does not take Enter, so a default would confirm on a key meant for
             // something else. A decision that is hard to take back is chosen by its key or by Enter on its own button.

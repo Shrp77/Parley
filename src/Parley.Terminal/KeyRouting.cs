@@ -10,13 +10,15 @@ namespace Parley.Terminal;
 /// <b>One file, and nothing else in the assembly subscribes to a key.</b> A focused view is offered a key before the
 /// dialog or the surface around it, so a few keys have to be met on the view. Each way of doing that is a method here,
 /// and <c>KeysTakenBeforeTheTableTests</c> reads the whole assembly's code by reflection and fails on a key event
-/// subscribed to anywhere else, or on a method here it does not name.
+/// subscribed to anywhere else, or on a method here it does not name. Bindings are held the same way: none is added to
+/// the application, and one is added to a view only by a pane or dialog the test presses.
 /// </para>
 /// <para>
-/// <b>Two hand a key to a table</b> (<see cref="TableFirst"/>) or take none (<see cref="Touching"/>). <b>Two compare keys
-/// themselves</b>, because what they do is the editor's or the menu's own and belongs to no place: what Enter means
-/// inside the box (<see cref="Box"/>) and Left and Right across the menus (<see cref="Walking"/>). The probe presses
-/// the box as it presses every pane, so a key added to it that no place claims fails a unit test too.
+/// <b>Two take no key of their own.</b> <see cref="TableFirst"/> hands a view's keys to its dialog's table, and
+/// <see cref="Touching"/> notes that a key arrived without reading it. <b>Two compare keys themselves</b>, because what
+/// they do belongs to the editor or the menu and to no place: what Enter means inside the box (<see cref="Box"/>), and
+/// Left and Right across the menus (<see cref="Walking"/>). The box is pressed with its pane like every other view, so
+/// a key added there that its place does not claim fails a unit test too.
 /// </para>
 /// </remarks>
 internal static class KeyRouting
