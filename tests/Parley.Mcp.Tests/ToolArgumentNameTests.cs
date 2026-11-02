@@ -74,6 +74,20 @@ public sealed class ToolArgumentNameTests
     }
 
     [Fact]
+    public void A_field_inside_a_declared_object_is_held_to_the_schema_too()
+    {
+        var schema = JsonDocument.Parse(
+            """{"type":"object","properties":{"outer":{"type":"object","properties":{"inner":{"type":"object","properties":{"kept":{}}}}}}}""").RootElement;
+
+        var outer = new KeyValuePair<string, JsonElement>(
+            "outer", JsonDocument.Parse("""{"inner":{"kept":1,"lost":2}}""").RootElement);
+
+        var why = UnknownArguments.RefusalFor("parley_x", schema, [outer])!["why"]!.GetValue<string>();
+
+        Assert.Contains("In outer.inner, parley_x has no field named lost", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_tool_that_takes_nothing_says_so()
     {
         var empty = JsonDocument.Parse("""{"type":"object"}""").RootElement;
