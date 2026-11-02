@@ -124,8 +124,8 @@ inventory  Stock levels and reservations. Does not decide whether an order may b
 
 The line says what an agent owns and what it does not. The exclusion is what stops a peer asking
 the wrong agent. No tool an agent has writes the line directly. Parley asks the agent once it
-attaches, and its answer becomes the line: automatically while Auto Accept is on (the default), or
-once you accept it. You can review, edit or replace any line. See
+attaches, and its answer becomes the line: automatically while Auto Accept is on (the default) and
+the answer can be taken as it stands, otherwise once you accept it. You can review, edit or replace any line. See
 [Configuration](configuration.md#the-ownership-line).
 
 ## Files

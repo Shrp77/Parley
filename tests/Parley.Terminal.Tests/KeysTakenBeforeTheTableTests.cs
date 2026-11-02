@@ -35,8 +35,11 @@ namespace Parley.Terminal.Tests;
 /// view hands to the table, or a decision in <see cref="TakenAsNamed"/>; and a plain character taken by a view that does
 /// not type is a failure whatever claims it.
 /// </para>
+/// <para>
+/// <b>Integration, not unit</b>: the folder picker reads the folder it is built with (lens 3 run 150).
+/// </para>
 /// </remarks>
-[Unit]
+[Integration]
 public sealed class KeysTakenBeforeTheTableTests
 {
     private static readonly AgentName Orders = AgentName.Create("orders@test");

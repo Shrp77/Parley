@@ -13,8 +13,7 @@ between them.
 ## Which agents does it work with?
 
 Claude Code today, and any other client that can run an MCP server. Parley is a protocol with a
-reference implementation. The agents can be built on any vendor's models. A responder does not
-have to be an agent at all. A script or a plain model call can answer a bounded request.
+reference implementation. The agents can be built on any vendor's models.
 
 ## Does it send my code anywhere?
 
@@ -69,7 +68,8 @@ list of agents. See [Claude Code](claude-code.md#standing-instructions).
 
 No tool an agent has writes the line. Parley asks each agent once what it owns, and its answer
 becomes the line only when it is accepted: automatically by default (Auto Accept), or by you when
-that is off. Either way the line is recorded with who accepted it, and you can review every line
+that is off or when the answer cannot be taken as it stands (it came from another machine, the agent
+said it was blocked, or it is not a valid line). Either way the line is recorded with who accepted it, and you can review every line
 and change it. See
 [Configuration](configuration.md#the-ownership-line).
 
