@@ -21,7 +21,9 @@ process serves every project the machine names, each on its own store and port.
   It stops the broker, deletes the store and everything beside it, and lists the repositories that
   were agents in it. It asks you to type the project's own name first.
 - **Projects are created in the terminal or the web console, and removed only in the terminal.**
-  Nothing renames a project. The command line has one project command, `parley project list`, and it changes
+  There is no rename. To use a new name, remove the project and name a new one in the terminal: the
+  conversations stay in the old store, and every enrolled repository still names the old project until
+  it is enrolled in the new one. The command line has one project command, `parley project list`, and it changes
   nothing.
 
 ### Which project does a command act on?

@@ -202,8 +202,11 @@ watching the check fail.
 
 **Review is three consecutive clean runs per lens.** Three lenses — correctness and
 concurrency; security and data integrity; API surface and maintainability — run after the last
-edit rather than alongside it. A finding above low severity resets that lens to zero; the lenses
-are independent and all three must reach three. Each run must probe something the previous runs
+edit rather than alongside it, all on one version of shipped code, and the full test run must be
+green on the commit that merges. A finding above low severity in the pull request's own changes
+resets that lens to zero; one only in code the pull request did not change is recorded for later. A
+change only to tests, CI or docs keeps the counts. The lenses are independent and all three must
+reach three; `review/` holds the rules. Each run must probe something the previous runs
 did not, or it is one run repeated. The running count belongs in `REVIEW-LEDGER.md`, which is
 untracked because it is the state of one checkout's review rather than a fact about the
 protocol, and which logs clean runs as well as findings — a ledger of findings alone cannot
