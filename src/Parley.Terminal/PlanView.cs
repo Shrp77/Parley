@@ -85,6 +85,15 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
         Width = Dim.Percent(92);
         Height = Dim.Percent(92);
 
+        var open = new Button { Title = OpenLabel };
+        var next = new Button { Title = NextLabel };
+        var edit = new Button { Title = EditLabel };
+        var close = new Button { Title = CloseLabel };
+        var buttons = new ButtonRows(this, open, next, edit, close);
+
+        // What is kept below the item's text: a blank row, the hint, and the buttons in as many rows as the width needs.
+        int Footer() => 1 + HintRows + buttons.Height;
+
         var heading = new Plain
         {
             Text = Safe.Text(string.Create(CultureInfo.InvariantCulture, $"#{roadmap.Number} {roadmap.Title}")) + "\n" + ItemWording.Next(standing),
@@ -104,7 +113,7 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
             X = 1,
             Y = Pos.Bottom(itemsLabel),
             Width = Dim.Fill(2),
-            Height = Dim.Fill(FooterRows + DetailRows + 1),
+            Height = Dim.Fill(Dim.Func(_ => Footer() + DetailRows + 1)),
             KeystrokeNavigator = null,
         };
 
@@ -117,22 +126,17 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
         };
         _items.ValueChanged += (_, _) => ShowDetail();
 
-        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.AnchorEnd(FooterRows + DetailRows + 1), Width = Dim.Fill(2), Height = 1 };
+        var detailHeading = new Plain { Text = "The item", X = 1, Y = Pos.Func(_ => Viewport.Height - Footer() - DetailRows - 1), Width = Dim.Fill(2), Height = 1 };
 
         _detail = Entry.Reader(string.Empty, this);
         _detail.X = 1;
-        _detail.Y = Pos.AnchorEnd(FooterRows + DetailRows);
+        _detail.Y = Pos.Func(_ => Viewport.Height - Footer() - DetailRows);
         _detail.Width = Dim.Fill(2);
         _detail.Height = DetailRows;
 
-        var hint = new Plain { Text = Hint, X = 1, Y = Pos.AnchorEnd(FooterRows - 1), Width = Dim.Fill(2), Height = 2 };
+        var hint = new Plain { Text = Hint, X = 1, Y = Pos.Func(_ => Viewport.Height - buttons.Height - HintRows), Width = Dim.Fill(2), Height = HintRows };
 
         hint.TextFormatter.WordWrap = true;
-
-        var open = new Button { Title = OpenLabel, X = 1, Y = Pos.AnchorEnd(2) };
-        var next = new Button { Title = NextLabel, X = Pos.Right(open) + 1, Y = Pos.AnchorEnd(2) };
-        var edit = new Button { Title = EditLabel, X = Pos.Right(next) + 1, Y = Pos.AnchorEnd(2) };
-        var close = new Button { Title = CloseLabel, X = Pos.Right(edit) + 1, Y = Pos.AnchorEnd(2) };
 
         open.Accepting += (_, args) => { args.Handled = true; OpenSelected(); };
         next.Accepting += (_, args) => { args.Handled = true; GoToNext(); };
@@ -144,7 +148,8 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
         ShowDetail();
     }
 
-    private const int FooterRows = 5;
+    /// <summary>Rows kept for the hint above the buttons.</summary>
+    private const int HintRows = 2;
 
     private const int DetailRows = 5;
 
