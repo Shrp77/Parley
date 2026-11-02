@@ -20,8 +20,8 @@ process serves every project the machine names, each on its own store and port.
   `.mcp.json`. The screen says so every time. Destroying one is the deliberate version.
   It stops the broker, deletes the store and everything beside it, and lists the repositories that
   were agents in it. It asks you to type the project's own name first.
-- **Projects are created in the terminal or the web console, and removed or renamed only in the
-  terminal.** The command line has one project command, `parley project list`, and it changes
+- **Projects are created in the terminal or the web console, and removed only in the terminal.**
+  Nothing renames a project. The command line has one project command, `parley project list`, and it changes
   nothing.
 
 ### Which project does a command act on?
