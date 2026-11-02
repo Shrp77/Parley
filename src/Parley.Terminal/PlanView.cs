@@ -85,10 +85,10 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
         Width = Dim.Percent(92);
         Height = Dim.Percent(92);
 
-        var open = new Button { Title = OpenLabel };
-        var next = new Button { Title = NextLabel };
-        var edit = new Button { Title = EditLabel };
-        var close = new Button { Title = CloseLabel };
+        var open = new PlainButton { Title = OpenLabel };
+        var next = new PlainButton { Title = NextLabel };
+        var edit = new PlainButton { Title = EditLabel };
+        var close = new PlainButton { Title = CloseLabel };
         var buttons = new ButtonRows(this, open, next, edit, close);
 
         // What is kept below the item's text: a blank row, the hint, and the buttons in as many rows as the width needs.
@@ -110,6 +110,7 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
 
         _items = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(itemsLabel),
             Width = Dim.Fill(2),
@@ -231,7 +232,7 @@ internal sealed class PlanView : TableDialog<PlanView>, IKeyTable<PlanView>
         [
             .. ReservedKey.Pressing(KeyContext.RoadmapDialog, "open the item, or the focused button"),
             .. ReservedKey.Moving(KeyContext.RoadmapDialog),
-            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { KeystrokeNavigator = null }, "the items"),
+            .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => new ListView { HotKeySpecifier = Plain.NoHotKey, KeystrokeNavigator = null }, "the items"),
             .. ReservedKey.TakenBy(KeyContext.RoadmapDialog, () => Entry.Reader(string.Empty), "the item's text"),
         ]);
 

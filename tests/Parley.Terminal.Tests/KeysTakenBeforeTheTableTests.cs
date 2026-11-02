@@ -53,6 +53,9 @@ public sealed class KeysTakenBeforeTheTableTests
     private const BindingFlags Declared =
         BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
+    /// <summary>A type's own instance constructors, so a type initialiser is never called as one.</summary>
+    private const BindingFlags Made = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
     /// <summary>Every pane and dialog, built as the terminal builds it, and what its place claims.</summary>
     /// <returns>Each place, a view standing in it, whether the place claims a key, and whether a command there names it.</returns>
     /// <remarks>
@@ -60,6 +63,10 @@ public sealed class KeysTakenBeforeTheTableTests
     /// <b>The panes are a real surface's</b>, built by <see cref="Parley.Terminal.Shell"/> and wired by it, so a binding or
     /// an accept handler the surface adds to a pane's view is pressed with the pane. Review found the panes built alone,
     /// as each region builds itself, and a binding the surface added to the agents list passed every test.
+    /// </para>
+    /// <para>
+    /// <b>The surface's queued work is waited for</b> after every key pressed at a pane, so a read a key queued has
+    /// landed, and done whatever it does, before the next key is pressed.
     /// </para>
     /// <para>
     /// <b>Every list is given rows</b>, so a command bound to a list can act when it is pressed: an empty list answers
@@ -78,6 +85,7 @@ public sealed class KeysTakenBeforeTheTableTests
         using (var shell = new Shell(directory))
         {
             Shown(shell);
+            Settle(shell);
 
             (KeyContext, View)[] panes =
             [
@@ -103,6 +111,11 @@ public sealed class KeysTakenBeforeTheTableTests
         foreach (var (place, build, (claims, names)) in Dialogs())
         {
             using var dialog = build();
+
+            if (dialog is null)
+            {
+                continue;
+            }
 
             // Initialised as opening it initialises it, so what a dialog does when it opens is pressed too.
             dialog.BeginInit();
@@ -147,6 +160,26 @@ public sealed class KeysTakenBeforeTheTableTests
         shell.Configuration.Show([AutoAccepting.AsSetting(on: true)]);
     }
 
+    /// <summary>Waits for every read the surface has queued, so what it does when it lands is done before the next look.</summary>
+    /// <param name="shell">The surface.</param>
+    /// <remarks>
+    /// Nothing queued reaches a broker: the directory refuses to be asked, and the queue says a failure rather than
+    /// throwing it, so this only waits.
+    /// </remarks>
+    private static void Settle(Shell shell)
+    {
+        // Again until nothing new was queued while waiting: a read can queue another when it lands.
+        for (var work = shell.Settled; ; work = shell.Settled)
+        {
+            Assert.True(work.Wait(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken), "the surface's queued work never finished");
+
+            if (work == shell.Settled)
+            {
+                return;
+            }
+        }
+    }
+
     /// <summary>Gives every empty list in a view rows, so a key bound to one has something to act on.</summary>
     /// <param name="root">The pane or dialog.</param>
     /// <returns>The same view.</returns>
@@ -158,60 +191,167 @@ public sealed class KeysTakenBeforeTheTableTests
         }
 
         // A surface focuses its first pane when it is built, and nothing pressed here may have focus: a key pressed at a
-        // view would be passed on to it.
-        foreach (var view in Inside(root).Where(view => view.HasFocus))
+        // view would be passed on to it. **Cleared from the top**, the surface included: a view that still has focus with
+        // nothing focused inside it hands focus back to the view it last gave it to, the next time anything asks. Clearing
+        // only the pane left the surface holding focus, and on Linux and macOS, one run in several, the projects pane
+        // had it back before the first key, or after Shift+Enter, while Windows passed.
+        var top = root;
+
+        while (top.SuperView is { } above)
+        {
+            top = above;
+        }
+
+        foreach (var view in Inside(top).Where(view => view.HasFocus).ToList())
         {
             view.HasFocus = false;
         }
 
+        Assert.DoesNotContain(Inside(top), view => view.HasFocus);
+
         return root;
     }
 
-    /// <summary>Every dialog, and how to build it as the terminal does.</summary>
-    /// <returns>Each dialog's place, how to build one, and whether the place claims a key and whether a command names it.</returns>
-    private static IEnumerable<(KeyContext Place, Func<View> Build, (Func<Key, bool> Claims, Func<Key, bool> Names) Table)> Dialogs()
+    /// <summary>Every dialog in every shape, and how to build it as the terminal does.</summary>
+    /// <returns>
+    /// Each dialog's place, how to build it in one shape (null when its constructor refuses that shape), and whether the
+    /// place claims a key and whether a command names it.
+    /// </returns>
+    private static IEnumerable<(KeyContext Place, Func<View?> Build, (Func<Key, bool> Claims, Func<Key, bool> Names) Table)> Dialogs()
     {
-        (Func<Key, bool>, Func<Key, bool>) Dialog<TDialog>(KeyContext place)
+        foreach (var (place, type, table) in DialogPlaces())
+        {
+            foreach (var (constructor, arguments) in Shapes(type))
+            {
+                yield return (place, () => Built(constructor, arguments), table);
+            }
+        }
+    }
+
+    /// <summary>Every dialog's type, its place, and what its table claims and names there.</summary>
+    /// <returns>The dialogs.</returns>
+    private static (KeyContext Place, Type Dialog, (Func<Key, bool> Claims, Func<Key, bool> Names) Table)[] DialogPlaces()
+    {
+        (KeyContext, Type, (Func<Key, bool>, Func<Key, bool>)) Dialog<TDialog>(KeyContext place)
             where TDialog : IKeyTable<TDialog>
         {
             var table = CommandTables.Of<TDialog>();
 
-            return (key => table.Claims(place, key), key => table.Names(place, key));
+            return (place, typeof(TDialog), (key => table.Claims(place, key), key => table.Names(place, key)));
         }
 
-        yield return (
-            KeyContext.RoadmapDialog,
-            () => new PlanView(new Roadmap(1, 1, "Ship it", default, null, 1, []), new RoadmapStanding([], NextKind.Complete, null, 0)),
-            Dialog<PlanView>(KeyContext.RoadmapDialog));
+        return
+        [
+            Dialog<PlanView>(KeyContext.RoadmapDialog),
+            Dialog<ProposalView>(KeyContext.ProposalDialog),
+            Dialog<TickDialog>(KeyContext.TickDialog),
+            Dialog<ResponsibilityDialog>(KeyContext.ResponsibilityDialog),
+            Dialog<TextDialog>(KeyContext.TextDialog),
+            Dialog<ChoiceDialog>(KeyContext.ChoiceDialog),
+            Dialog<FormDialog>(KeyContext.FormDialog),
+            Dialog<Browsing>(KeyContext.BrowsingDialog),
+            Dialog<LogView>(KeyContext.LogDialog),
+            Dialog<Health>(KeyContext.HealthDialog),
+            Dialog<Saying>(KeyContext.SayingDialog),
+        ];
+    }
 
+    /// <summary>Every shape a dialog can be built in: each of its constructors, with each value its own arguments can take.</summary>
+    /// <param name="dialog">The dialog's type.</param>
+    /// <returns>Each constructor, with one set of arguments.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Found from the constructors, not chosen.</b> Review bound a key behind <c>if (!canSave)</c> in a dialog the
+    /// probe built only able to save, though the terminal opens it unable to whenever the agent is on another machine.
+    /// So every constructor, private ones included, is built with both values of each flag, every value of each choice,
+    /// and both null and a value for each argument that may be null, in every combination.
+    /// </para>
+    /// <para>
+    /// An argument's contents are not varied: a list's rows, a roadmap's items. A binding construction chose by them
+    /// would have to be under a branch or a loop, which the walk refuses.
+    /// </para>
+    /// </remarks>
+    private static IEnumerable<(ConstructorInfo Constructor, object?[] Arguments)> Shapes(Type dialog)
+    {
+        var nullability = new NullabilityInfoContext();
+
+        foreach (var constructor in dialog.GetConstructors(Made))
+        {
+            IEnumerable<object?[]> shapes = [[]];
+
+            foreach (var parameter in constructor.GetParameters())
+            {
+                var type = Nullable.GetUnderlyingType(parameter.ParameterType) ?? parameter.ParameterType;
+                var mayBeNull = type != parameter.ParameterType || nullability.Create(parameter).WriteState == NullabilityState.Nullable;
+
+                object?[] values = type == typeof(bool) ? [false, true]
+                    : type.IsEnum ? [.. Enum.GetValues(type).Cast<object>()]
+                    : [Sample(constructor, parameter, type)];
+
+                if (mayBeNull)
+                {
+                    values = [null, .. values];
+                }
+
+                shapes = [.. shapes.SelectMany(shape => values.Select(value => (object?[])[.. shape, value]))];
+            }
+
+            foreach (var shape in shapes)
+            {
+                yield return (constructor, shape);
+            }
+        }
+    }
+
+    /// <summary>A value for a dialog's argument that is neither a flag nor a choice.</summary>
+    /// <param name="constructor">The constructor.</param>
+    /// <param name="parameter">The argument.</param>
+    /// <param name="type">Its type, not nullable.</param>
+    /// <returns>The value.</returns>
+    /// <remarks>
+    /// Every string is the test's own build folder, which is small and always there: the folder picker reads the folder
+    /// it opens, and to every other dialog a path is words. A dialog with an argument of a type not here fails, so a new
+    /// one is pressed the day it is written.
+    /// </remarks>
+    private static object Sample(ConstructorInfo constructor, ParameterInfo parameter, Type type)
+    {
+        var at = DateTimeOffset.UnixEpoch;
         var content = new RoadmapContent("Ship it", [new RoadmapItemDraft(null, "Write the notes", Orders, [])]);
-        yield return (
-            KeyContext.ProposalDialog,
-            () => new ProposalView(new RoadmapProposal(1, Orders, null, "Ship it", content, 10, ProposalState.Waiting, DateTimeOffset.UnixEpoch, null)),
-            Dialog<ProposalView>(KeyContext.ProposalDialog));
 
-        yield return (
-            KeyContext.TickDialog,
-            () => new TickDialog("Choose", "Which.", [new Tickable("orders", string.Empty, false)]),
-            Dialog<TickDialog>(KeyContext.TickDialog));
+        return (parameter.Name, type) switch
+        {
+            ("width", _) => 40,
+            (_, var t) when t == typeof(int) => 1,
+            (_, var t) when t == typeof(string) => AppContext.BaseDirectory,
+            (_, var t) when t == typeof(Roadmap) => new Roadmap(1, 1, "Ship it", default, null, 1, []),
+            (_, var t) when t == typeof(RoadmapStanding) => new RoadmapStanding([], NextKind.Complete, null, 0),
+            (_, var t) when t == typeof(RoadmapProposal) => new RoadmapProposal(1, Orders, null, "Ship it", content, 10, ProposalState.Waiting, at, null),
+            (_, var t) when t == typeof(IReadOnlyList<Tickable>) => (IReadOnlyList<Tickable>)[new Tickable("orders", string.Empty, false)],
+            (_, var t) when t == typeof(IReadOnlyList<string>) => (IReadOnlyList<string>)["Work that needs you", "  Nothing is flagged."],
+            (_, var t) when t == typeof(IReadOnlyList<FormField>) => (IReadOnlyList<FormField>)[new FormField("Short:"), new FormField("Long:", Long: true)],
 
-        yield return (
-            KeyContext.ResponsibilityDialog,
-            () => new ResponsibilityDialog("What it owns.", "orders", canSave: true),
-            Dialog<ResponsibilityDialog>(KeyContext.ResponsibilityDialog));
+            // A correction and a check on what is typed are the same type once compiled, so they are told apart by name.
+            ("correct", var t) when t == typeof(Func<string, string>) => (Func<string, string>)(text => text),
+            (_, var t) when t == typeof(Func<string, string?>) => (Func<string, string?>)(_ => null),
+            _ => throw new InvalidOperationException(
+                $"{constructor.DeclaringType!.Name}'s argument {parameter.Name} is a {type.Name}, which {nameof(Sample)} has no value for: add one, so the dialog is pressed"),
+        };
+    }
 
-        yield return (KeyContext.TextDialog, () => new TextDialog("Name", "Which?", "alpha", null), Dialog<TextDialog>(KeyContext.TextDialog));
-        yield return (KeyContext.ChoiceDialog, () => new ChoiceDialog("Pick", "Which?", ["one", "two"]), Dialog<ChoiceDialog>(KeyContext.ChoiceDialog));
-        yield return (
-            KeyContext.FormDialog,
-            () => new FormDialog("Fill", [new FormField("Short:"), new FormField("Long:", Long: true)]),
-            Dialog<FormDialog>(KeyContext.FormDialog));
-
-        // Opened on the test's own build folder, which is small and always there: the walk reads the folder it opens.
-        yield return (KeyContext.BrowsingDialog, () => new Browsing(AppContext.BaseDirectory), Dialog<Browsing>(KeyContext.BrowsingDialog));
-        yield return (KeyContext.LogDialog, () => new LogView("following nothing"), Dialog<LogView>(KeyContext.LogDialog));
-        yield return (KeyContext.HealthDialog, () => new Health("alpha", ["Work that needs you", "  Nothing is flagged."]), Dialog<Health>(KeyContext.HealthDialog));
-        yield return (KeyContext.SayingDialog, () => new Saying("Said, whole.", 40), Dialog<Saying>(KeyContext.SayingDialog));
+    /// <summary>Builds a dialog in one shape.</summary>
+    /// <param name="constructor">The constructor.</param>
+    /// <param name="arguments">Its arguments.</param>
+    /// <returns>The dialog, or null when the constructor refuses the arguments, so the terminal could never open that shape.</returns>
+    private static View? Built(ConstructorInfo constructor, object?[] arguments)
+    {
+        try
+        {
+            return (View)constructor.Invoke(arguments);
+        }
+        catch (TargetInvocationException refused) when (refused.InnerException is ArgumentException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Every view the terminal can open as a session: each concrete runnable type in its assembly.</summary>
@@ -264,6 +404,26 @@ public sealed class KeysTakenBeforeTheTableTests
                 if (!pressed.Contains(session))
                 {
                     problems.Add($"{session.Name} is never built and pressed in {nameof(Everywhere)}");
+                }
+            }
+        }
+
+        // Every constructor of every dialog builds in some shape, so none is skipped because each shape it was given was
+        // refused.
+        foreach (var (_, dialog, _) in DialogPlaces())
+        {
+            foreach (var constructor in dialog.GetConstructors(Made))
+            {
+                var made = Shapes(dialog).Where(shape => shape.Constructor == constructor).Count(shape =>
+                {
+                    using var view = Built(shape.Constructor, shape.Arguments);
+
+                    return view is not null;
+                });
+
+                if (made == 0)
+                {
+                    problems.Add($"{dialog.Name}({string.Join(", ", constructor.GetParameters().Select(parameter => parameter.Name))}) is built in no shape");
                 }
             }
         }
@@ -324,6 +484,124 @@ public sealed class KeysTakenBeforeTheTableTests
     }
 
     [Fact]
+    public void Nothing_overrides_what_a_view_does_with_a_command()
+    {
+        // A view answers a command, such as accepting on Enter, through a handler or through an override of the toolkit's
+        // hook for it. Review overrode the agents list's accepting hook, the list took Enter, which a command names, and
+        // every test passed: the probe looked only for handlers. So no hook a command reaches is overridden in the
+        // terminal unless it is decided here, and the probe counts an override as answering.
+        var overrides = TheTerminal.GetTypes()
+            .SelectMany(type => type.GetMethods(Declared))
+            .Where(method => method.GetBaseDefinition() is var root && root != method && root.DeclaringType!.Assembly == typeof(View).Assembly && HandlesACommand(root))
+            .Select(Name)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(OverridesOfCommands.Select(decided => decided.Method).Order(StringComparer.Ordinal), overrides);
+
+        // Non-vacuity: the hooks review's probe overrode, and the others a key can reach, are seen as such.
+        foreach (var hook in new[] { "OnAccepting", "OnActivating", "OnHandlingHotKey", "OnCommandNotBound", "OnAccepted", "OnActivated", "OnHotKeyCommand" })
+        {
+            Assert.True(HandlesACommand(typeof(View).GetMethod(hook, Declared)!), hook);
+        }
+
+        Assert.False(HandlesACommand(typeof(View).GetMethods(Declared).First(method => method.Name == "OnDrawingContent")));
+
+        using var answering = new OverridingAccept();
+
+        Assert.True(Answers(answering, Accepting));
+        Assert.False(Answers(answering, Activating));
+    }
+
+    /// <summary>The overrides of a toolkit hook a command reaches, each with why it does what its command says.</summary>
+    /// <remarks>None yet. The probe counts each as answering its command, so a key bound to it is pressed as taken.</remarks>
+    private static readonly (string Method, string Why)[] OverridesOfCommands = [];
+
+    /// <summary>Whether a toolkit hook is reached by a command, which a key can be bound to.</summary>
+    /// <param name="hook">The hook as the toolkit declares it.</param>
+    /// <returns>
+    /// <see langword="true"/> for one handed a command or what a command carries, or named for a command, accepting,
+    /// activating or a hot key.
+    /// </returns>
+    private static bool HandlesACommand(MethodInfo hook) =>
+        hook.GetParameters().Any(parameter =>
+            typeof(CommandEventArgs).IsAssignableFrom(parameter.ParameterType)
+            || typeof(ICommandContext).IsAssignableFrom(parameter.ParameterType)
+            || parameter.ParameterType == typeof(Command)
+            || (parameter.ParameterType != typeof(Key) && parameter.ParameterType.GetProperties().Any(property => property.PropertyType == typeof(Key))))
+        || new[] { "Command", "HotKey", "Accept", "Activat" }.Any(word => hook.Name.Contains(word, StringComparison.Ordinal));
+
+    /// <summary>The toolkit's type a terminal view is made from.</summary>
+    /// <param name="type">The terminal's type.</param>
+    /// <returns>Its nearest base in the toolkit.</returns>
+    private static Type Toolkits(Type type)
+    {
+        while (type.Assembly != typeof(View).Assembly)
+        {
+            type = type.BaseType!;
+        }
+
+        return type;
+    }
+
+    /// <summary>A view that answers accepting with an override and no handler, as review's probe made the agents list.</summary>
+    private sealed class OverridingAccept : View
+    {
+        /// <inheritdoc/>
+        protected override bool OnAccepting(CommandEventArgs args) => true;
+    }
+
+    [Fact]
+    public void No_view_in_a_place_has_a_hot_key_or_reads_one_from_its_title()
+    {
+        // Every view each place builds, in every shape, as the probe presses it: no hot key, and none read from a title
+        // set later. Review set a button's title to `_Done` in a handler, and the button took d, D and Alt+D.
+        var found = new List<string>();
+
+        foreach (var (place, root, _, _) in Everywhere())
+        {
+            // A view of a type the terminal cannot name, such as a text field's own pop-up, is the toolkit's part of a view
+            // the terminal made, and nothing in the terminal gives it a title.
+            foreach (var view in Inside(root).Where(view => view.GetType() is { IsPublic: true } or { IsNestedPublic: true } || view.GetType().Assembly != typeof(View).Assembly)
+                .Where(view => view.HotKey != Key.Empty || view.HotKeySpecifier != Plain.NoHotKey))
+            {
+                found.Add($"{place}: {view.GetType().Name} \"{view.Title}\" has hot key {view.HotKey}, read after {view.HotKeySpecifier}");
+            }
+        }
+
+        Assert.True(found.Count == 0, string.Join("\n", found.Distinct(StringComparer.Ordinal)));
+
+        // The terminal's own views made from a toolkit view that reads one turn it off as they are made, so a title set
+        // later is drawn as it is spelled and binds nothing.
+        var own = TheTerminal.GetTypes()
+            .Where(type => typeof(View).IsAssignableFrom(type) && !type.IsAbstract && type.GetConstructor(Made, Type.EmptyTypes) is not null)
+            .Where(type => ReadsHotKeys(Toolkits(type)))
+            .ToList();
+
+        Assert.Contains(typeof(PlainButton), own);
+        Assert.Contains(typeof(Plain), own);
+        Assert.Contains(typeof(GuardedList), own);
+
+        foreach (var type in own)
+        {
+            using var view = (View)Activator.CreateInstance(type, nonPublic: true)!;
+
+            view.Title = "_Done";
+            view.Text = "_Done";
+
+            Assert.Equal(Key.Empty, view.HotKey);
+            Assert.Empty(view.HotKeyBindings.GetBindings());
+        }
+
+        // Non-vacuity: the toolkit's own button, titled the same way, does take the key.
+        using var toolkit = new Button { Title = "_Done" };
+
+        Assert.True(ReadsHotKeys(typeof(Button)));
+        Assert.NotEqual(Key.Empty, toolkit.HotKey);
+        Assert.NotEmpty(toolkit.HotKeyBindings.GetBindings());
+    }
+
+    [Fact]
     public void Nothing_subscribes_to_a_key_but_the_few_ways_in_key_routing()
     {
         // Found in the compiled code, so a subscription written in any spelling, in a lambda, a local function or a
@@ -349,15 +627,19 @@ public sealed class KeysTakenBeforeTheTableTests
         // The application's own bindings answer a key before any view or table sees it, and nothing presses them, so
         // nothing reaches them. The hook that marks the person here subscribes to the keyboard, which the test on
         // subscriptions holds, and does nothing else with it.
+        // The same goes for the bindings every view of a kind starts with, a shortcut's key bound for the application, a
+        // key every view answers, and hot keys: handed out by a view to what is inside it, or read from a title, which
+        // a button's label set later would turn into keys nothing pressed.
         var application = TheTerminal.GetTypes()
             .SelectMany(Bodies)
-            .Where(body => Calls(body).Any(BindsForTheApplication))
-            .Select(Name)
+            .SelectMany(body => Instructions(body)
+                .Where(instruction => BindsBeyondAPlace(instruction.Method, instruction.After, instruction.Bare))
+                .Select(instruction => $"{Where(body)}: {instruction.Method.DeclaringType!.Name}.{instruction.Method.Name}"))
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal)
             .ToList();
 
-        Assert.True(application.Count == 0, "the application's keyboard or bindings reached:\n" + string.Join("\n", application));
+        Assert.True(application.Count == 0, "a key bound beyond any place, or a hot key read from a title:\n" + string.Join("\n", application));
 
         // **A binding, or a handler for what a key does, is added only while a pressed pane or dialog is built.** The
         // probe presses each place as building it, showing it a row and opening it leave it, and nothing else: a binding
@@ -367,11 +649,27 @@ public sealed class KeysTakenBeforeTheTableTests
         // same type that only that construction calls.
         var pressed = Everywhere().Select(place => place.View.GetType()).ToHashSet();
         var construction = Construction(pressed);
+        var binding = Binding(construction);
         var outside = new List<string>();
+        var conditional = new List<string>();
         var menuLines = 0;
 
         foreach (var body in TheTerminal.GetTypes().SelectMany(Bodies))
         {
+            // **And unconditionally.** The probe builds each dialog in the shapes its constructor's own arguments can
+            // take, but not every value an argument's contents could have, so a binding inside construction may not be
+            // skipped, repeated or chosen by a branch. Review bound a key behind `if (!canSave)`, and the probe built the
+            // dialog only able to save.
+            if (construction.Contains(body))
+            {
+                var guarded = Conditional(body);
+
+                conditional.AddRange(Instructions(body)
+                    .Where(instruction => instruction.Invoked && (Binds(instruction.Method) || TakesAKey(instruction.Method) || binding.Contains(Definition(instruction.Method))))
+                    .Where(instruction => guarded.Any(span => span.From <= instruction.At && instruction.At < span.To))
+                    .Select(instruction => $"{Where(body)}: {instruction.Method.DeclaringType!.Name}.{instruction.Method.Name}"));
+            }
+
             foreach (var called in Calls(body).Where(called => Binds(called) || TakesAKey(called)))
             {
                 if (construction.Contains(body))
@@ -389,12 +687,13 @@ public sealed class KeysTakenBeforeTheTableTests
                     continue;
                 }
 
-                outside.Add($"{Name(body)}: {called.DeclaringType!.Name}.{called.Name}");
+                outside.Add($"{Where(body)}: {called.DeclaringType!.Name}.{called.Name}");
             }
         }
 
         Assert.True(menuLines > 0, "the menu's lines are no longer built by a call the walk sees; drop the exception");
         Assert.True(outside.Count == 0, "a key bound, or what a key does handled, outside the construction of a place the probe presses:\n" + string.Join("\n", outside.Distinct().Order(StringComparer.Ordinal)));
+        Assert.True(conditional.Count == 0, "a key bound, or what a key does handled, on only some paths through construction:\n" + string.Join("\n", conditional.Distinct().Order(StringComparer.Ordinal)));
 
         // And the lines the bar builds carry no key: no key, no key binding and no hot-key binding beyond what a line the
         // toolkit builds with no key carries, in the line or anything inside it.
@@ -416,11 +715,21 @@ public sealed class KeysTakenBeforeTheTableTests
 
         // Non-vacuity: the calls review's probes made are seen as what they are, construction is where it is meant to be
         // and nowhere else, and the panes are among the places.
-        var probes = Calls(typeof(KeysTakenBeforeTheTableTests).GetMethod(nameof(BindingAsReviewDid), Declared)!);
+        var review = typeof(KeysTakenBeforeTheTableTests).GetMethod(nameof(BindingAsReviewDid), Declared)!;
+        var probes = Calls(review);
+        var beyond = Instructions(review).Where(instruction => BindsBeyondAPlace(instruction.Method, instruction.After, instruction.Bare)).Select(instruction => instruction.Method.Name).ToList();
+        var spans = Conditional(review);
 
         Assert.Contains(probes, Binds);
-        Assert.Contains(probes, BindsForTheApplication);
         Assert.Contains(probes, TakesAKey);
+        Assert.Equal(
+            [".ctor", ".ctor", "get_DefaultKeyBindings", "get_KeyBindings", "set_AssignHotKeys", "set_BindKeyToApplication", "set_DefaultKey", "set_HotKeySpecifier"],
+            beyond.Order(StringComparer.Ordinal));
+        // Two makings are bare, the shortcut and the first button; the second button turns its hot keys off first.
+        Assert.Equal(3, Calls(review).Count(called => called.Name == "set_HotKeySpecifier"));
+        Assert.Equal(3, Calls(review).Count(called => called is ConstructorInfo { DeclaringType: var made } && typeof(View).IsAssignableFrom(made)));
+        Assert.Contains(Instructions(review), instruction => instruction.Method.Name == "Add" && spans.Any(span => span.From <= instruction.At && instruction.At < span.To));
+        Assert.Contains(Instructions(review), instruction => instruction.Method.Name == "Add" && !spans.Any(span => span.From <= instruction.At && instruction.At < span.To));
         Assert.Contains(construction, body => body is ConstructorInfo && body.DeclaringType == typeof(AgentsRegion));
         Assert.DoesNotContain(typeof(AgentsRegion).GetMethod(nameof(AgentsRegion.Show), Declared)!, construction);
         Assert.DoesNotContain(construction, body => body.DeclaringType == typeof(Shell));
@@ -452,6 +761,12 @@ public sealed class KeysTakenBeforeTheTableTests
     /// An override such as <c>EndInit</c> is virtual and so never counts, and a method the surface calls, such as a
     /// pane's <c>Show</c>, has a call from outside. Review put a binding in each and every test passed.
     /// </para>
+    /// <para>
+    /// <b>Construction is pressed in every shape its constructor's own arguments give it</b> (<see cref="Shapes"/>), and
+    /// a binding in it, or a call to a method of construction that binds, may not sit on only some paths through it
+    /// (<see cref="Conditional"/>): a branch on an argument's contents chooses a shape the probe never built. Review
+    /// bound a key behind <c>if (!canSave)</c>, and the probe built the dialog only able to save.
+    /// </para>
     /// </remarks>
     private static HashSet<MethodBase> Construction(IReadOnlySet<Type> pressed)
     {
@@ -460,7 +775,7 @@ public sealed class KeysTakenBeforeTheTableTests
 
         foreach (var body in TheTerminal.GetTypes().SelectMany(Bodies))
         {
-            foreach (var (called, invoked) in Instructions(body))
+            foreach (var (called, invoked, _, _, _) in Instructions(body))
             {
                 var key = Definition(called);
 
@@ -502,6 +817,30 @@ public sealed class KeysTakenBeforeTheTableTests
         return construction;
     }
 
+    /// <summary>The methods of construction that bind a key, or call one that does.</summary>
+    /// <param name="construction">Every method of construction.</param>
+    /// <returns>Those that bind, directly or through another.</returns>
+    private static HashSet<MethodBase> Binding(HashSet<MethodBase> construction)
+    {
+        var binding = new HashSet<MethodBase>();
+
+        for (var grew = true; grew;)
+        {
+            grew = false;
+
+            foreach (var method in construction.Where(method => !binding.Contains(method)))
+            {
+                if (Calls(method).Any(called => Binds(called) || TakesAKey(called) || binding.Contains(Definition(called))))
+                {
+                    binding.Add(method);
+                    grew = true;
+                }
+            }
+        }
+
+        return binding;
+    }
+
     /// <summary>A method as it is declared, so a call to a generic one is matched to its definition.</summary>
     /// <param name="method">The method called.</param>
     /// <returns>Its definition.</returns>
@@ -532,28 +871,107 @@ public sealed class KeysTakenBeforeTheTableTests
         return [.. bar.Views(items).OfType<global::Terminal.Gui.Views.MenuItem>()];
     }
 
-    /// <summary>The bindings lens 3's runs 144 and 145 added and no test saw, compiled here so the walk can be shown to see them.</summary>
+    /// <summary>
+    /// The bindings lens 3's runs 144 to 146 added and no test saw, compiled here so the walk can be shown to see them.
+    /// </summary>
     /// <param name="view">A view.</param>
     /// <param name="keyboard">The application's keyboard.</param>
+    /// <param name="button">A button.</param>
+    /// <param name="canSave">An argument construction could branch on.</param>
     /// <remarks>Never called.</remarks>
-    private static void BindingAsReviewDid(View view, IKeyboard keyboard)
+    private static void BindingAsReviewDid(View view, IKeyboard keyboard, Button button, bool canSave)
     {
         view.HotKeyBindings.Add(Key.Z.WithCtrl, Command.Down);
         keyboard.KeyBindings.Add(Key.F2, Command.Quit);
         view.Accepting += (_, args) => args.Handled = true;
+        view.Add(new Shortcut(Key.F11, "x", () => { }) { BindKeyToApplication = true });
+        ListView.DefaultKeyBindings![Command.Down] = new PlatformKeyBinding { All = [Key.J] };
+        PopoverMenu.DefaultKey = Key.J;
+        view.AssignHotKeys = true;
+        button.HotKeySpecifier = (System.Text.Rune)'_';
+        button.HotKeySpecifier = Plain.NoHotKey;
+        view.Add(new Button());
+        view.Add(new Button { HotKeySpecifier = Plain.NoHotKey, Title = "Done" });
+
+        if (!canSave)
+        {
+            view.KeyBindings.Add(Key.F5, Command.Accept);
+        }
     }
 
-    /// <summary>Whether a call reaches the application's keyboard or its bindings.</summary>
+    /// <summary>Whether a call binds a key beyond any one place, or lets a title become a hot key.</summary>
     /// <param name="called">The method called.</param>
+    /// <param name="after">The static field the instruction before the call loads, if it loads one.</param>
+    /// <param name="bare">
+    /// Whether the call makes a new object and does not turn its hot keys off first, rather than being a constructor's
+    /// call to its base.
+    /// </param>
     /// <returns>
-    /// <see langword="true"/> for anything on the keyboard but subscribing to its events, the static application's
-    /// keyboard or bindings, or an application binding added through a view's.
+    /// <see langword="true"/> for anything on the keyboard but subscribing to its events; the static application's
+    /// keyboard or bindings; an application binding added through a view's or a shortcut's; any static toolkit member
+    /// over key bindings (the defaults every view of a kind starts with, the application's); a static toolkit key (the
+    /// one that opens every menu); a view handing out hot keys to what is inside it; setting where a hot key is read
+    /// from a title to anything but <see cref="Plain.NoHotKey"/>; and making a toolkit view that reads one by default.
     /// </returns>
-    private static bool BindsForTheApplication(MethodBase called) =>
+    /// <remarks>
+    /// <para>
+    /// Refused anywhere, construction included, because the probe presses one place at a time and none of these stays in
+    /// one: a default binding is every list's, and a shortcut bound for the application answers before any view.
+    /// </para>
+    /// <para>
+    /// <b>No view reads a hot key from its title</b>, so setting a title or text later can make no key. Review set a
+    /// button's title to <c>_Done</c> in a handler and it took d, D and Alt+D; a title can be set from anywhere, and
+    /// which view a setter is called on is not in the call, so the hot key is turned off where it is read instead. The
+    /// terminal makes its own buttons and labels, <see cref="PlainButton"/> and <see cref="Plain"/>, which turn it off
+    /// when they are made.
+    /// </para>
+    /// </remarks>
+    private static bool BindsBeyondAPlace(MethodBase called, FieldInfo? after, bool bare) =>
         called.DeclaringType is { } type
         && ((typeof(IKeyboard).IsAssignableFrom(type) && !called.Name.StartsWith("add_", StringComparison.Ordinal) && !called.Name.StartsWith("remove_", StringComparison.Ordinal))
             || (type == typeof(Application) && called.Name is "get_Keyboard" or "get_KeyBindings")
-            || (BindingsOfKeys(type) && called.Name == "AddApp"));
+            || (BindingsOfKeys(type) && called.Name == "AddApp")
+            || (typeof(Shortcut).IsAssignableFrom(type) && called.Name == "set_BindKeyToApplication")
+            || (type.Assembly == typeof(View).Assembly && called.IsStatic && called.Name.Contains("KeyBinding", StringComparison.Ordinal))
+            || (type.Assembly == typeof(View).Assembly && called.IsStatic && called.Name.StartsWith("set_", StringComparison.Ordinal) && called.GetParameters() is [{ ParameterType: var key }] && key == typeof(Key))
+            || (typeof(View).IsAssignableFrom(type) && called.Name is "set_AssignHotKeys" or "AssignHotKeysToSubViews" or "AssignHotKeyToView")
+            || (type.Assembly == typeof(View).Assembly && called.Name == "set_HotKeySpecifier" && after != NoHotKey)
+            || (bare && type.Assembly == typeof(View).Assembly && typeof(View).IsAssignableFrom(type) && ReadsHotKeys(type)));
+
+    private static readonly FieldInfo NoHotKey = typeof(Plain).GetField(nameof(Plain.NoHotKey), BindingFlags.Static | BindingFlags.NonPublic)!;
+
+    /// <summary>Whether a view reads a hot key from its title unless it is told not to.</summary>
+    /// <param name="type">The view's type.</param>
+    /// <returns>
+    /// <see langword="true"/> when one made with no arguments reads one, or, for a type that cannot be made so, when a
+    /// type between it and <see cref="View"/> declares where one is read from.
+    /// </returns>
+    /// <remarks>
+    /// Asked of a view rather than read from the toolkit's documentation, which says a view reads none by default: its
+    /// lists and text fields do, and their titles could be keys.
+    /// </remarks>
+    private static bool ReadsHotKeys(Type type) =>
+        HotKeyReaders.GetOrAdd(type, static type =>
+        {
+            if (!type.IsAbstract && !type.ContainsGenericParameters && type.GetConstructor(Type.EmptyTypes) is { } made)
+            {
+                using var view = (View)made.Invoke(null);
+
+                return view.HotKeySpecifier != Plain.NoHotKey;
+            }
+
+            for (var at = type; at is not null && at != typeof(View); at = at.BaseType)
+            {
+                if (at.GetProperty(nameof(View.HotKeySpecifier), Declared) is not null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, bool> HotKeyReaders = new();
 
     /// <summary>Whether a call adds a key to a view, or changes what a key or a command bound to a view does.</summary>
     /// <param name="called">The method called.</param>
@@ -751,10 +1169,10 @@ public sealed class KeysTakenBeforeTheTableTests
             {
                 var commands = binding.Commands;
 
-                // Accepting or activating alone is taken only where something answers it, and Enter by a default button
-                // wherever it is pressed in the dialog.
+                // Accepting or activating alone is taken only where something answers it, and accepting by a default
+                // button wherever it is pressed in the dialog: what nothing answers goes on up to it, whatever the key.
                 var answered = commands.All(command => command is Command.Accept or Command.Activate)
-                    ? (commands.Contains(Command.Accept) && (Answers(view, Accepting) || (defaults && key == Key.Enter)))
+                    ? (commands.Contains(Command.Accept) && (Answers(view, Accepting) || defaults))
                       || (commands.Contains(Command.Activate) && Answers(view, Activating))
                     : true;
 
@@ -787,6 +1205,11 @@ public sealed class KeysTakenBeforeTheTableTests
                     taken.Add((key, view));
                 }
 
+                if (root.SuperView is Shell shell)
+                {
+                    Settle(shell);
+                }
+
                 // Still nothing focused, or a later press would go somewhere other than the view it was pressed at.
                 Assert.False(Inside(root).Any(inside => inside.HasFocus), $"{key} at {view.GetType().Name} gave a view focus");
             }
@@ -795,7 +1218,33 @@ public sealed class KeysTakenBeforeTheTableTests
         return taken;
     }
 
-    private static bool Answers(View view, FieldInfo handler) => handler.GetValue(view) is not null;
+    /// <summary>Whether a view answers accepting or activating: a handler is subscribed, or the terminal overrode the hook.</summary>
+    /// <param name="view">The view.</param>
+    /// <param name="handler">The event, <see cref="Accepting"/> or <see cref="Activating"/>.</param>
+    /// <returns><see langword="true"/> when something answers it.</returns>
+    /// <remarks>
+    /// An override counts because review answered accepting with one and the probe, reading only handlers, saw nothing.
+    /// The toolkit's own overrides are what its views do with a key, which the bindings already say.
+    /// </remarks>
+    private static bool Answers(View view, FieldInfo handler)
+    {
+        if (handler.GetValue(view) is not null)
+        {
+            return true;
+        }
+
+        var hook = handler == Accepting ? "OnAccepting" : "OnActivating";
+
+        for (var type = view.GetType(); type is not null && type.Assembly != typeof(View).Assembly; type = type.BaseType)
+        {
+            if (type.GetMethod(hook, Declared) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>What a view binds: its hot keys, and its keys when it can be offered one.</summary>
     /// <param name="view">The view.</param>
@@ -871,6 +1320,25 @@ public sealed class KeysTakenBeforeTheTableTests
         return type.Name + "." + (WrittenIn(method.Name) ?? within ?? method.Name);
     }
 
+    /// <summary>Where a call is written, as a failure names it.</summary>
+    /// <param name="method">The method the call is in.</param>
+    /// <returns>Its <see cref="Name"/>, said to be a lambda or a local function when it is one.</returns>
+    /// <remarks>
+    /// A lambda written in a constructor is named for the constructor, and "AgentsRegion..ctor" alone read as though
+    /// construction were refused: it is the lambda, which runs when its event does, that is.
+    /// </remarks>
+    private static string Where(MethodBase method)
+    {
+        var name = Name(method);
+
+        // An async lambda's code is in a state machine named for it, so the types it is nested in are read too.
+        var written = string.Concat(method.Name, method.DeclaringType!.FullName);
+
+        return written.Contains(">b__", StringComparison.Ordinal) ? $"a lambda in {name}"
+            : written.Contains(">g__", StringComparison.Ordinal) ? $"a local function in {name}"
+            : name;
+    }
+
     /// <summary>The method a compiler-made name was made for.</summary>
     /// <param name="name">A type's or a method's name.</param>
     /// <returns>The method's name, or <see langword="null"/> when the name was not made for one.</returns>
@@ -914,24 +1382,76 @@ public sealed class KeysTakenBeforeTheTableTests
 
     /// <summary>Every method a method's compiled code calls or takes the address of, and which it does.</summary>
     /// <param name="method">The method.</param>
-    /// <returns>Each method, with <see langword="true"/> for a call and <see langword="false"/> for taking its address.</returns>
-    private static IReadOnlyList<(MethodBase Method, bool Invoked)> Instructions(MethodBase method)
+    /// <returns>
+    /// Each method, with <see langword="true"/> for a call and <see langword="false"/> for taking its address, where in
+    /// the code it is, the static field the instruction just before it loads, if it loads one, and whether it makes a
+    /// new object and does not turn its hot keys off first (<c>new T { HotKeySpecifier = Plain.NoHotKey, ... }</c>,
+    /// whose next instructions are a copy of the new object, a load of <see cref="Plain.NoHotKey"/> and the setter).
+    /// </returns>
+    private static IReadOnlyList<(MethodBase Method, bool Invoked, int At, FieldInfo? After, bool Bare)> Instructions(MethodBase method)
+    {
+        var (typeArguments, methodArguments) = Arguments(method);
+        var calls = new List<(MethodBase, bool, int, FieldInfo?, bool)>();
+        var decoded = Decoded(method).ToList();
+
+        FieldInfo? Loads(int index) =>
+            index < decoded.Count && decoded[index] is { Code: var code, Operand: var operand, Bytes: var bytes } && code == OpCodes.Ldsfld
+                ? method.Module.ResolveField(BitConverter.ToInt32(bytes, operand), typeArguments, methodArguments)
+                : null;
+
+        MethodBase? Invokes(int index) =>
+            index < decoded.Count && decoded[index] is { Code: var code, Operand: var operand, Bytes: var bytes } && (code == OpCodes.Call || code == OpCodes.Callvirt)
+                ? method.Module.ResolveMethod(BitConverter.ToInt32(bytes, operand), typeArguments, methodArguments)
+                : null;
+
+        for (var index = 0; index < decoded.Count; index++)
+        {
+            var (at, instruction, operand, code) = decoded[index];
+
+            if (instruction.OperandType == OperandType.InlineMethod)
+            {
+                var turnedOff = index + 3 < decoded.Count
+                    && decoded[index + 1].Code == OpCodes.Dup
+                    && Loads(index + 2) == NoHotKey
+                    && Invokes(index + 3) is { Name: "set_HotKeySpecifier" };
+
+                calls.Add((
+                    method.Module.ResolveMethod(BitConverter.ToInt32(code, operand), typeArguments, methodArguments)!,
+                    instruction != OpCodes.Ldftn && instruction != OpCodes.Ldvirtftn,
+                    at,
+                    index > 0 ? Loads(index - 1) : null,
+                    instruction == OpCodes.Newobj && !turnedOff));
+            }
+        }
+
+        return calls;
+    }
+
+    /// <summary>The generic arguments a method's tokens resolve against.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>Its type's and its own, or null for each that has none.</returns>
+    private static (Type[]? Type, Type[]? Method) Arguments(MethodBase method) => (
+        method.DeclaringType is { IsGenericType: true } generic ? generic.GetGenericArguments() : null,
+        method.IsGenericMethod ? method.GetGenericArguments() : null);
+
+    /// <summary>A method's compiled code, one instruction at a time.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>Each instruction's offset, its opcode, where its operand starts, and the code it is in.</returns>
+    /// <remarks>
+    /// Walks the instructions rather than looking for a byte, so an operand is never read as an instruction.
+    /// </remarks>
+    private static IEnumerable<(int At, OpCode Code, int Operand, byte[] Bytes)> Decoded(MethodBase method)
     {
         if (method.GetMethodBody()?.GetILAsByteArray() is not { } code)
         {
-            return [];
+            yield break;
         }
-
-        var typeArguments = method.DeclaringType is { IsGenericType: true } generic ? generic.GetGenericArguments() : null;
-        var methodArguments = method.IsGenericMethod ? method.GetGenericArguments() : null;
-        var calls = new List<(MethodBase, bool)>();
 
         for (var at = 0; at < code.Length;)
         {
             var value = code[at] == 0xFE ? unchecked((short)(0xFE00 | code[at + 1])) : code[at];
             var instruction = Codes[value];
-
-            at += instruction.Size;
+            var start = at + instruction.Size;
 
             var operand = instruction.OperandType switch
             {
@@ -939,20 +1459,69 @@ public sealed class KeysTakenBeforeTheTableTests
                 OperandType.ShortInlineBrTarget or OperandType.ShortInlineI or OperandType.ShortInlineVar => 1,
                 OperandType.InlineVar => 2,
                 OperandType.InlineI8 or OperandType.InlineR => 8,
-                OperandType.InlineSwitch => 4 + (4 * BitConverter.ToInt32(code, at)),
+                OperandType.InlineSwitch => 4 + (4 * BitConverter.ToInt32(code, start)),
                 _ => 4,
             };
 
-            if (instruction.OperandType == OperandType.InlineMethod)
-            {
-                calls.Add((
-                    method.Module.ResolveMethod(BitConverter.ToInt32(code, at), typeArguments, methodArguments)!,
-                    instruction != OpCodes.Ldftn && instruction != OpCodes.Ldvirtftn));
-            }
+            yield return (at, instruction, start, code);
 
-            at += operand;
+            at = start + operand;
+        }
+    }
+
+    /// <summary>The stretches of a method's code that run only on some paths through it, or more than once.</summary>
+    /// <param name="method">The method.</param>
+    /// <returns>Each stretch, from its first offset to the offset after its last.</returns>
+    /// <remarks>
+    /// <para>
+    /// Every branch, forwards or backwards, conditional or not, makes the code it jumps over conditional: an <c>if</c>
+    /// jumps over what it guards, an <c>else</c> is jumped over by the end of what came before it, and a loop jumps back
+    /// over its body. A <c>catch</c> runs only when something throws. The instruction a branch lands on is not inside,
+    /// so the call a cached lambda is handed to is not conditional, though making the lambda is.
+    /// </para>
+    /// <para>
+    /// It is stricter than what depends on a constructor's arguments, because it cannot follow where a value came from.
+    /// Strict is the safe side: a binding nothing could have skipped is what the probe sees.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<(int From, int To)> Conditional(MethodBase method)
+    {
+        var spans = new List<(int, int)>();
+
+        foreach (var (at, instruction, operand, code) in Decoded(method))
+        {
+            var after = operand + instruction.OperandType switch
+            {
+                OperandType.ShortInlineBrTarget => 1,
+                OperandType.InlineBrTarget => 4,
+                OperandType.InlineSwitch => 4 + (4 * BitConverter.ToInt32(code, operand)),
+                _ => 0,
+            };
+
+            var targets = instruction.OperandType switch
+            {
+                OperandType.ShortInlineBrTarget => [after + (sbyte)code[operand]],
+                OperandType.InlineBrTarget => [after + BitConverter.ToInt32(code, operand)],
+                OperandType.InlineSwitch => Enumerable.Range(0, BitConverter.ToInt32(code, operand))
+                    .Select(index => after + BitConverter.ToInt32(code, operand + 4 + (4 * index)))
+                    .ToArray(),
+                _ => Array.Empty<int>(),
+            };
+
+            foreach (var target in targets)
+            {
+                spans.Add(target > at ? (after, target) : (target, after));
+            }
         }
 
-        return calls;
+        foreach (var clause in method.GetMethodBody()?.ExceptionHandlingClauses ?? [])
+        {
+            if (clause.Flags is ExceptionHandlingClauseOptions.Clause or ExceptionHandlingClauseOptions.Filter)
+            {
+                spans.Add((clause.HandlerOffset, clause.HandlerOffset + clause.HandlerLength));
+            }
+        }
+
+        return spans;
     }
 }

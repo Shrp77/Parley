@@ -279,7 +279,7 @@ internal sealed class MenuBarView(
         {
             if (item.Divides)
             {
-                yield return new Line();
+                yield return new Line { HotKeySpecifier = Plain.NoHotKey };
 
                 continue;
             }
@@ -289,7 +289,7 @@ internal sealed class MenuBarView(
             // The key goes in the help column rather than being bound. A bound key would be answered by a
             // menu nobody has opened -- the toolkit offers keys to registered popovers -- and the region's
             // own handler answers it too, so one press would run the action twice.
-            var line = new ToolkitItem(label, stroke, () => run(stroke, label));
+            var line = new ToolkitItem(label, stroke, () => run(stroke, label)) { HotKeySpecifier = Plain.NoHotKey };
 
             if (line.CommandView is { } command)
             {

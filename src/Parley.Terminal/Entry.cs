@@ -72,7 +72,7 @@ internal sealed class Entry
 
         if (!field.Long)
         {
-            return new Entry(new TextField { X = 1, Width = Dim.Fill(2), Text = opening });
+            return new Entry(new TextField { HotKeySpecifier = Plain.NoHotKey, X = 1, Width = Dim.Fill(2), Text = opening });
         }
 
         var paragraph = new TextView

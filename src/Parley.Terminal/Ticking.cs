@@ -135,6 +135,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
 
         _rows = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(heading),
             Width = Dim.Fill(2),
@@ -318,7 +319,7 @@ internal sealed class TickDialog : TableDialog<TickDialog>, IKeyTable<TickDialog
         .. ReservedKey.Moving(KeyContext.TickDialog),
         .. ReservedKey.TakenBy(
             KeyContext.TickDialog,
-            () => new ListView(),
+            () => new ListView { HotKeySpecifier = Plain.NoHotKey },
             "the rows",
             Key.PageDown,
             Key.PageUp,

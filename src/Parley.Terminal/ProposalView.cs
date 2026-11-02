@@ -203,7 +203,7 @@ internal sealed class ProposalView : TableDialog<ProposalView>, IKeyTable<Propos
 
     private Button Choice(string label, ProposalChoice choice)
     {
-        var button = new Button
+        var button = new PlainButton
         {
             Title = label,
 

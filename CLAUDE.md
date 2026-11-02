@@ -46,9 +46,9 @@ src/Parley.Configuration The project manifest (§4.1) and the node catalogue: wh
                          and what they hold. Read by both Parley.Cli and Parley.Mcp. Written
                          only through Parley.Setup's ProjectCommand. Also where a path may
                          be looked up: OffMachineLinks (no link off this machine) and
-                         LocalStorage (only this machine's own disks), and where JSON
-                         somebody else wrote is parsed: StrictJson, which refuses a member
-                         named twice.
+                         LocalStorage (only this machine's own disks), and where a JSON
+                         file somebody else wrote is parsed: StrictJson, which refuses a
+                         member named twice and text that is not valid Unicode.
 src/Parley.Setup         What a person does to a machine: enrolling a repository, naming
                          projects, resolving per-machine paths, the autostart entry. Shared
                          by `parley` and `parley-terminal`, which run the same commands in
@@ -381,17 +381,30 @@ Decided and built. The reasoning is in `SPEC.md`, the feature's `research.md` an
   `CommandTableTests` holds the check. `KeysTakenBeforeTheTableTests` (both unit) holds the rest by
   reflection: every view opened as a session builds a table, is listed and derives from
   `TableDialog<T>` (the surface aside); the only key handler overrides are the dialog base's and the
-  surface's, and each calls only what it names; the only key-event subscriptions are `KeyRouting`'s
-  four; nothing reaches the application's keyboard or bindings; and a key or hot-key binding, a
+  surface's, and each calls only what it names; no toolkit hook a command reaches (`OnAccepting`,
+  `OnActivating`, `OnHandlingHotKey`, `OnCommandNotBound` and the like) is overridden unless the
+  test's `OverridesOfCommands` names it with a reason (none does), and the probe counts such an
+  override as answering; the only key-event subscriptions are `KeyRouting`'s four; nothing, anywhere,
+  reaches the application's keyboard or bindings, a shortcut's `BindKeyToApplication`, a static
+  toolkit member over key bindings (`ListView.DefaultKeyBindings`, `View.ViewKeyBindings`,
+  `Application.SetDefaultKeyBinding`) or a static toolkit key (`PopoverMenu.DefaultKey`), or hands out
+  hot keys (`AssignHotKeys`); no view reads a hot key from its title: the terminal makes no toolkit
+  view that reads one by default (it makes `PlainButton` and `Plain`, which turn it off) and sets
+  `HotKeySpecifier` to nothing but `Plain.NoHotKey`, so a title or text set anywhere binds nothing,
+  and every view the probe builds has no hot key; and a key or hot-key binding, a
   command, a key set on a toolkit view, or a handler for accepting, activating or a hot key is added
   only while a pressed pane or dialog is built: in its constructor (field initialisers included) or
   a non-virtual method of the same type that only that construction calls, never in a lambda, an
-  override such as `EndInit`, a method the surface calls such as a pane's `Show`, or the surface.
-  One call is excepted by name, the toolkit's `MenuItem` constructor in `MenuBarView.Views`, and
+  override such as `EndInit`, a method the surface calls such as a pane's `Show`, or the surface;
+  and there unconditionally: no branch, loop or `catch` may skip, repeat or choose it, nor a call to
+  a construction method that binds. One call is excepted by name, the toolkit's `MenuItem` constructor in `MenuBarView.Views`, and
   each line it makes is checked: no key, no hot-key binding in it or inside it, and no key binding
   but those a toolkit line made with no key carries. It also presses every pane, as a real `Shell`
   builds and wires it and after each pane's `Show` with a row, and every dialog in memory after
-  `BeginInit` and `EndInit`, every list given rows, with every named
+  `BeginInit` and `EndInit`, built through every constructor, private ones included, in every shape
+  its own arguments can take (each flag both ways, every value of a choice, null and a value for
+  what may be null; an argument's contents are not varied, which is why construction may not
+  branch), every list given rows, with every named
   key and its chords, Alt and Ctrl with each letter, and plain letters, digits and a few marks: a
   key taken must be claimed in its place; one a command names must be handed to the table first or
   be listed in the test's `TakenAsNamed`; and a plain character taken by a view that does not type

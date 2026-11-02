@@ -283,6 +283,7 @@ internal sealed class TextDialog : TableDialog<TextDialog>, IKeyTable<TextDialog
         // tall the dialog ends up.
         _field = new TextField
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.AnchorEnd(4),
             Width = Dim.Fill(2),
@@ -292,9 +293,9 @@ internal sealed class TextDialog : TableDialog<TextDialog>, IKeyTable<TextDialog
             Text = correct is not null ? correct(proposal) : proposal,
         };
         _why = new Plain { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
-        _ok = new Button { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
+        _ok = new PlainButton { Title = Prompting.Confirm, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true };
 
-        var cancel = new Button
+        var cancel = new PlainButton
         {
             Title = Prompting.Cancel,
             X = Pos.Right(_ok) + 1,
@@ -345,7 +346,7 @@ internal sealed class TextDialog : TableDialog<TextDialog>, IKeyTable<TextDialog
         [
             .. ReservedKey.Pressing(KeyContext.TextDialog, "OK, the default button"),
             .. ReservedKey.Moving(KeyContext.TextDialog),
-            .. ReservedKey.TakenBy(KeyContext.TextDialog, () => new TextField(), "the field"),
+            .. ReservedKey.TakenBy(KeyContext.TextDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "the field"),
             .. ReservedKey.Typing(KeyContext.TextDialog, "the field"),
         ]);
 
@@ -439,6 +440,7 @@ internal sealed class ChoiceDialog : TableDialog<ChoiceDialog>, IKeyTable<Choice
 
         _choices = new ListView
         {
+            HotKeySpecifier = Plain.NoHotKey,
             X = 1,
             Y = Pos.Bottom(said),
             Width = Dim.Fill(2),
@@ -511,7 +513,7 @@ internal sealed class ChoiceDialog : TableDialog<ChoiceDialog>, IKeyTable<Choice
         [
             new(KeyContext.ChoiceDialog, Key.Enter, "choose the row"),
             .. ReservedKey.Moving(KeyContext.ChoiceDialog),
-            .. ReservedKey.TakenBy(KeyContext.ChoiceDialog, () => new ListView { KeystrokeNavigator = null }, "the choices"),
+            .. ReservedKey.TakenBy(KeyContext.ChoiceDialog, () => new ListView { HotKeySpecifier = Plain.NoHotKey, KeystrokeNavigator = null }, "the choices"),
         ]);
 }
 
@@ -635,8 +637,8 @@ internal sealed class FormDialog : TableDialog<FormDialog>, IKeyTable<FormDialog
             Add(asked, entry.View, why);
         }
 
-        _ok = new Button { Title = Prompting.Confirm, X = 1, IsDefault = true };
-        _cancel = new Button { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1 };
+        _ok = new PlainButton { Title = Prompting.Confirm, X = 1, IsDefault = true };
+        _cancel = new PlainButton { Title = Prompting.Cancel, X = Pos.Right(_ok) + 1 };
 
         _ok.Accepting += (_, args) => { args.Handled = true; Finish(taken: true); };
         _cancel.Accepting += (_, args) => { args.Handled = true; Finish(taken: false); };
@@ -853,7 +855,7 @@ internal sealed class FormDialog : TableDialog<FormDialog>, IKeyTable<FormDialog
         [
             .. ReservedKey.Pressing(KeyContext.FormDialog, "OK, the default button, or a line in a long field"),
             .. ReservedKey.Moving(KeyContext.FormDialog),
-            .. ReservedKey.TakenBy(KeyContext.FormDialog, () => new TextField(), "a field"),
+            .. ReservedKey.TakenBy(KeyContext.FormDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "a field"),
             .. ReservedKey.TakenBy(KeyContext.FormDialog, () => Entry.Speaking().View, "a long field"),
             .. ReservedKey.Typing(KeyContext.FormDialog, "a field"),
         ]);

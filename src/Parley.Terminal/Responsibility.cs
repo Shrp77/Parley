@@ -358,12 +358,12 @@ internal sealed class ResponsibilityDialog : TableDialog<ResponsibilityDialog>, 
         shown.TextFormatter.WordWrap = true;
 
         // The footer sits against the bottom, so the description keeps everything above it however tall the page is.
-        _field = new TextField { X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = line };
+        _field = new TextField { HotKeySpecifier = Plain.NoHotKey, X = 1, Y = Pos.AnchorEnd(4), Width = Dim.Fill(2), Text = line };
         _why = new Plain { X = 1, Y = Pos.AnchorEnd(3), Width = Dim.Fill(2), Text = string.Empty };
-        _save = new Button { Title = Responsibility.Save, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true, Enabled = canSave };
+        _save = new PlainButton { Title = Responsibility.Save, X = 1, Y = Pos.AnchorEnd(2), IsDefault = true, Enabled = canSave };
 
-        var refresh = new Button { Title = Responsibility.Refresh, X = Pos.Right(_save) + 1, Y = Pos.AnchorEnd(2) };
-        var close = new Button { Title = Responsibility.Close, X = Pos.Right(refresh) + 1, Y = Pos.AnchorEnd(2) };
+        var refresh = new PlainButton { Title = Responsibility.Refresh, X = Pos.Right(_save) + 1, Y = Pos.AnchorEnd(2) };
+        var close = new PlainButton { Title = Responsibility.Close, X = Pos.Right(refresh) + 1, Y = Pos.AnchorEnd(2) };
 
         _field.TextChanged += (_, _) => Check(canSave);
         _save.Accepting += (_, args) => { args.Handled = true; Finish(ResponsibilityChoice.Save); };
@@ -407,7 +407,7 @@ internal sealed class ResponsibilityDialog : TableDialog<ResponsibilityDialog>, 
         [
             .. ReservedKey.Pressing(KeyContext.ResponsibilityDialog, "save, the default button"),
             .. ReservedKey.Moving(KeyContext.ResponsibilityDialog),
-            .. ReservedKey.TakenBy(KeyContext.ResponsibilityDialog, () => new TextField(), "the line"),
+            .. ReservedKey.TakenBy(KeyContext.ResponsibilityDialog, () => new TextField { HotKeySpecifier = Plain.NoHotKey }, "the line"),
             .. ReservedKey.Typing(KeyContext.ResponsibilityDialog, "the line"),
         ]);
 
