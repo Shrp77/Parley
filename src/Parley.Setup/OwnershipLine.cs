@@ -139,7 +139,7 @@ public static class OwnershipLine
 
             try
             {
-                root = JsonNode.Parse(text) as JsonObject
+                root = StrictJson.Parse(text) as JsonObject
                        ?? throw new InvalidDataException("the file is not a JSON object.");
             }
             catch (Exception unreadable) when (unreadable is System.Text.Json.JsonException or InvalidDataException)

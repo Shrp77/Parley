@@ -938,7 +938,7 @@ public static class Enrolment
 
                 try
                 {
-                    parsed = JsonNode.Parse(text);
+                    parsed = StrictJson.Parse(text);
                 }
                 catch (System.Text.Json.JsonException)
                 {
@@ -1174,7 +1174,7 @@ public static class Enrolment
 
         try
         {
-            if (JsonNode.Parse(text) is JsonObject catalogue)
+            if (StrictJson.Parse(text) is JsonObject catalogue)
             {
                 return catalogue;
             }

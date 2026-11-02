@@ -367,7 +367,7 @@ public static class EnrollmentPlan
         // Merged into whatever is there rather than replacing it. A repository may already run
         // other MCP servers, and a setup step that quietly removed them would be discovered as
         // tooling that stopped working for a reason nobody would connect to Parley.
-        var parsed = launchConfiguration is null ? null : JsonNode.Parse(launchConfiguration);
+        var parsed = launchConfiguration is null ? null : StrictJson.Parse(launchConfiguration);
 
         if (parsed is not null and not JsonObject)
         {
@@ -645,7 +645,7 @@ public static class EnrollmentPlan
 
         try
         {
-            return JsonNode.Parse(launchConfiguration) is JsonObject root ? Declared(root) : default;
+            return StrictJson.Parse(launchConfiguration) is JsonObject root ? Declared(root) : default;
         }
         catch (JsonException)
         {

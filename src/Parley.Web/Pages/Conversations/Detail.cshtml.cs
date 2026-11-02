@@ -362,16 +362,40 @@ public sealed class DetailModel(BrokerDirectory directory, SeatBook seats, Parle
         }
 
         // A file and not a page: a JSON body answered to a link replaced the console in the tab, with no way back.
-        return File(
-            System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-                new { conversation = Id, messages = export.Messages, exchanges = export.Exchanges },
-                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
-                {
-                    WriteIndented = true
-                }),
-            "application/json",
-            $"{Id}.json");
+        return File(RawExport(Id, export), "application/json", $"{Id}.json");
     }
+
+    /// <summary>The JSON file the Export JSON link downloads.</summary>
+    /// <param name="id">The conversation.</param>
+    /// <param name="export">What the broker exported.</param>
+    /// <returns>The file's bytes.</returns>
+    /// <remarks>
+    /// Everything SPEC.md §10.2 says export returns, not only the messages and exchanges. For a destroyed
+    /// conversation those are two empty arrays, which is the answer a store that lost something would give;
+    /// the destroyed record is what tells the two apart, so leaving it out made the file say the wrong thing.
+    /// </remarks>
+    public static byte[] RawExport(string id, ConversationExport export) =>
+        System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new
+            {
+                conversation = id,
+                messages = export.Messages,
+                exchanges = export.Exchanges,
+                destroyed = export.Destroyed is { } gone
+                    ? new
+                    {
+                        id = gone.Id,
+                        destroyedUtc = gone.DestroyedUtc,
+                        messages = gone.Messages,
+                        participants = gone.Participants.Select(p => p.Value).ToArray()
+                    }
+                    : null,
+                item = export.Item
+            },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+            {
+                WriteIndented = true
+            });
 
     /// <summary>Keys exchange snapshots by their identifier, tolerating a repeated one.</summary>
     /// <param name="exchanges">What the export returned.</param>

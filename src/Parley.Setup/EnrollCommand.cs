@@ -427,7 +427,7 @@ public static class EnrollCommand
             }
 
             return File.Exists(path)
-                ? LaunchEntries.Read(JsonNode.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
+                ? LaunchEntries.Read(StrictJson.Parse(File.ReadAllText(path))?["mcpServers"] as JsonObject)
                 : [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException
@@ -1102,7 +1102,7 @@ public static class EnrollCommand
 
         try
         {
-            return JsonNode.Parse(text)?.AsObject() ?? [];
+            return StrictJson.Parse(text)?.AsObject() ?? [];
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -1129,7 +1129,7 @@ public static class EnrollCommand
 
         try
         {
-            return JsonNode.Parse(File.ReadAllText(path))?.AsObject() ?? [];
+            return StrictJson.Parse(File.ReadAllText(path))?.AsObject() ?? [];
         }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidOperationException)
         {

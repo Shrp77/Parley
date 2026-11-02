@@ -536,7 +536,7 @@ public sealed class ResidentAgent : IAsyncDisposable
 
                 try
                 {
-                    node = JsonNode.Parse(line);
+                    node = Parley.Configuration.StrictJson.Parse(line);
                 }
                 catch (JsonException)
                 {
