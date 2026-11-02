@@ -346,7 +346,7 @@ internal sealed partial class Shell : IKeyTable<Shell>
 
         // **Back to the roadmap from an item's conversation** (SPEC.md §5.7), offered only where the broker's
         // reservation says this is a live item's: a removed item's conversation belongs to no roadmap any more.
-        new(KeyContext.Transcript, ItemRoadmapKey, ItemRoadmapTitle, s => s.OpenItemRoadmap(), s => s.Transcript.Item is { Removed: false }),
+        new(KeyContext.Transcript, ItemRoadmapKey, ItemRoadmapTitle, s => s.OpenItemRoadmap(), s => s.ItemInView is not null),
 
         // **Recognised by the conversation's identifier and never by anything in a payload.** §13 tells a receiver a
         // payload is inert data, so an ownership discussion is known by the name it was opened under. `n` is what it

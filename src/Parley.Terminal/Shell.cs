@@ -2110,13 +2110,27 @@ internal sealed partial class Shell : Window
     /// <remarks>By the reservation the export carried, never by the conversation's name (SPEC.md §5.7).</remarks>
     private Task OpenItemRoadmap()
     {
-        if (Transcript.Item is { Removed: false } item)
+        if (ItemInView is { } item)
         {
             OpenPlan(item.RoadmapId, item.ItemNumber);
         }
 
         return Task.CompletedTask;
     }
+
+    /// <summary>The live roadmap item of the transcript on screen, when that transcript is the conversation in view.</summary>
+    /// <remarks>
+    /// Arriving at a conversation relays the transcript before its read lands, so for that while it still holds the
+    /// conversation left, and that conversation's item. A roadmap's id is unique only within its project, so offering
+    /// the key then opened the roadmap of the same id in the project now in view (lens 1 run 137).
+    /// </remarks>
+    internal RoadmapItemRef? ItemInView =>
+        Transcript.Item is { Removed: false } item
+        && Current is { } place
+        && _place.Title is { } conversation
+        && StillReading(place, conversation)
+            ? item
+            : null;
 
     /// <summary>Opens the proposal under the cursor in the roadmaps pane.</summary>
     /// <returns>When the view is open.</returns>
