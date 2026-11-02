@@ -27,6 +27,10 @@ it, and what the owner has already settled.
 - **A clean run** finds nothing above low. Three clean runs in a row per lens, all three lenses, on one version of
   `src`.
 - **A finding above low resets that lens to zero.** After fixing it, run the same lens again before moving on.
+- **A finding only in code the pull request did not change is recorded, not blocking** (owner, 2026-11-02). It goes
+  in the ledger's follow-up list marked *older than this PR* and does not reset the lens. A finding in the pull
+  request's own changes, or one its changes made reachable or worse, still blocks. Say which, with the commit that
+  brought the code in.
 - **A change to `src` restarts every lens**, because it is a new commit of shipped code. A change only to tests, CI,
   docs or plugin prose keeps the counts: the code the clean runs read is unchanged.
 - **Each run must probe something the earlier runs did not.** Re-reading the same code is one run repeated.
