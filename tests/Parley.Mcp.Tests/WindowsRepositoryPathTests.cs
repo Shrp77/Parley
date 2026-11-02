@@ -57,7 +57,7 @@ public sealed class WindowsRepositoryPathTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", Orders, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(Billing, "notes.md"), "net", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var drive = Path.GetPathRoot(Outside)!.TrimEnd('\\');
         var outsideTarget = Path.Combine(Outside, "planted.md");
@@ -73,7 +73,7 @@ public sealed class WindowsRepositoryPathTests : IDisposable
                      "notes.md:hidden",
                  })
         {
-            var result = await orders.FileFetchAsync("notes.md", to, conversationId: "pricing", replace: true, cancellationToken: Ct);
+            var result = await orders.FileFetchAsync("notes.md", to, conversation_id: "pricing", replace: true, cancellationToken: Ct);
 
             if (result["ok"]?.GetValue<bool>() == true)
             {
@@ -85,7 +85,7 @@ public sealed class WindowsRepositoryPathTests : IDisposable
         {
             await File.WriteAllTextAsync(Path.Combine(Outside, "secret.md"), "not billing's", Ct);
 
-            var result = await billing.FilePlaceAsync(from, conversationId: "pricing", cancellationToken: Ct);
+            var result = await billing.FilePlaceAsync(from, conversation_id: "pricing", cancellationToken: Ct);
 
             if (result["ok"]?.GetValue<bool>() == true)
             {

@@ -3083,6 +3083,11 @@ asks how much is waiting without taking any of it, for a caller that holds no st
 hook saying work is waiting before a turn), and marks nothing delivered. And it records that it
 refused to send something for being over the size cap: the length only, never the payload (§8).
 
+An adapter refuses a call naming an argument its tool does not declare, or a field inside one, says
+which names it takes, and does nothing. Dropping the name would do the call without what its caller
+asked, and for an optional name nothing would show it: a Request would land in a conversation it did
+not name, and a roadmap item would lose what it needs.
+
 `conclude` is one operation rather than two because proposing and answering are the same
 statement. A participant that says it is finished has proposed closure if nobody had yet, and has
 answered the poll if somebody had; nothing distinguishes those from its side, and splitting them

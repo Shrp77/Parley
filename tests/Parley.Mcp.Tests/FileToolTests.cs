@@ -63,13 +63,13 @@ public sealed class FileToolTests : IDisposable
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
 
-        var placed = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var placed = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.True(placed["ok"]!.GetValue<bool>(), placed.ToJsonString());
         Assert.Equal("placed", placed["outcome"]!.GetValue<string>());
         Assert.Equal(Hash(PeerWords), placed["sha256"]!.GetValue<string>());
 
-        var fetched = await orders.FileFetchAsync("notes.md", "docs/notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var fetched = await orders.FileFetchAsync("notes.md", "docs/notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.True(fetched["ok"]!.GetValue<bool>(), fetched.ToJsonString());
         Assert.Equal("written", fetched["outcome"]!.GetValue<string>());
@@ -91,16 +91,16 @@ public sealed class FileToolTests : IDisposable
 
         foreach (var outside in new[] { Path.Combine("..", "orders", "private.md"), Path.Combine(OrdersRepository, "private.md") })
         {
-            var refused = await billing.FilePlaceAsync(outside, conversationId: "pricing", cancellationToken: Ct);
+            var refused = await billing.FilePlaceAsync(outside, conversation_id: "pricing", cancellationToken: Ct);
 
             Assert.Equal("outsiderepository", refused["refused"]!.GetValue<string>());
         }
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var escaping = await orders.FileFetchAsync(
-            "notes.md", Path.Combine("..", "billing", "planted.md"), conversationId: "pricing", cancellationToken: Ct);
+            "notes.md", Path.Combine("..", "billing", "planted.md"), conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("outsiderepository", escaping["refused"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(BillingRepository, "planted.md")));
@@ -144,9 +144,9 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
-        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
-        var refused = await orders.FileFetchAsync("notes.md", destination, conversationId: "pricing", replace: true, cancellationToken: Ct);
+        var refused = await orders.FileFetchAsync("notes.md", destination, conversation_id: "pricing", replace: true, cancellationToken: Ct);
 
         Assert.Equal("notadestination", refused["refused"]!.GetValue<string>());
         Assert.False(File.Exists(Path.Combine(OrdersRepository, destination)));
@@ -161,9 +161,9 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
-        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
-        var fetched = await orders.FileFetchAsync("notes.md", ".", conversationId: "pricing", cancellationToken: Ct);
+        var fetched = await orders.FileFetchAsync("notes.md", ".", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("written", fetched["outcome"]?.GetValue<string>());
         Assert.Equal(PeerWords, await File.ReadAllTextAsync(Path.Combine(OrdersRepository, "notes.md"), Ct));
@@ -178,9 +178,9 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), PeerWords, Ct);
-        _ = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
-        var refused = await orders.FileFetchAsync("notes.md", "missing/", conversationId: "pricing", cancellationToken: Ct);
+        var refused = await orders.FileFetchAsync("notes.md", "missing/", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("nosuchfolder", refused["refused"]!.GetValue<string>());
         Assert.False(Directory.Exists(Path.Combine(OrdersRepository, "missing")));
@@ -197,10 +197,10 @@ public sealed class FileToolTests : IDisposable
 
         var source = Path.Combine(BillingRepository, "big.md");
         await File.WriteAllTextAsync(source, new string('x', 40_000_000), Ct);
-        _ = await billing.FilePlaceAsync("big.md", conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync("big.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var target = Path.Combine(OrdersRepository, "x.md");
-        var fetching = orders.FileFetchAsync("big.md", "x.md", conversationId: "pricing", cancellationToken: Ct);
+        var fetching = orders.FileFetchAsync("big.md", "x.md", conversation_id: "pricing", cancellationToken: Ct);
 
         while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".parley-*.fetching").Length == 0)
         {
@@ -227,10 +227,10 @@ public sealed class FileToolTests : IDisposable
         var name = new string('n', 230) + ".md";
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, name), PeerWords, Ct);
-        _ = await billing.FilePlaceAsync(name, conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync(name, conversation_id: "pricing", cancellationToken: Ct);
         Directory.CreateDirectory(Path.Combine(OrdersRepository, "docs"));
 
-        var fetched = await orders.FileFetchAsync(name, "docs", conversationId: "pricing", cancellationToken: Ct);
+        var fetched = await orders.FileFetchAsync(name, "docs", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("written", fetched["outcome"]?.GetValue<string>());
         Assert.Equal(PeerWords, await File.ReadAllTextAsync(Path.Combine(OrdersRepository, "docs", name), Ct));
@@ -246,10 +246,10 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "big.md"), new string('x', 40_000_000), Ct);
-        _ = await billing.FilePlaceAsync("big.md", conversationId: "pricing", cancellationToken: Ct);
+        _ = await billing.FilePlaceAsync("big.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var target = Path.Combine(OrdersRepository, "x.md");
-        var fetching = orders.FileFetchAsync("big.md", "x.md", conversationId: "pricing", cancellationToken: Ct);
+        var fetching = orders.FileFetchAsync("big.md", "x.md", conversation_id: "pricing", cancellationToken: Ct);
 
         while (!fetching.IsCompleted && Directory.GetFiles(OrdersRepository, ".parley-*.fetching").Length == 0)
         {
@@ -283,7 +283,7 @@ public sealed class FileToolTests : IDisposable
             Assert.Skip($"this machine will not create a symbolic link for a test ({refused.GetType().Name}); the path checks still ran.");
         }
 
-        var placed = await billing.FilePlaceAsync(Path.Combine("elsewhere", "private.md"), conversationId: "pricing", cancellationToken: Ct);
+        var placed = await billing.FilePlaceAsync(Path.Combine("elsewhere", "private.md"), conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("outsiderepository", placed["refused"]!.GetValue<string>());
     }
@@ -296,17 +296,17 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var target = Path.Combine(OrdersRepository, "notes.md");
         await File.WriteAllTextAsync(target, "orders' own notes", Ct);
 
-        var refused = await orders.FileFetchAsync("notes.md", "notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var refused = await orders.FileFetchAsync("notes.md", "notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("exists", refused["refused"]!.GetValue<string>());
         Assert.Equal("orders' own notes", await File.ReadAllTextAsync(target, Ct));
 
-        var replaced = await orders.FileFetchAsync("notes.md", "notes.md", conversationId: "pricing", replace: true, cancellationToken: Ct);
+        var replaced = await orders.FileFetchAsync("notes.md", "notes.md", conversation_id: "pricing", replace: true, cancellationToken: Ct);
 
         Assert.True(replaced["ok"]!.GetValue<bool>(), replaced.ToJsonString());
         Assert.Equal("net of tax", await File.ReadAllTextAsync(target, Ct));
@@ -320,7 +320,7 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var target = Path.Combine(OrdersRepository, "notes.md");
         await File.WriteAllTextAsync(target, "net of tax", Ct);
@@ -328,7 +328,7 @@ public sealed class FileToolTests : IDisposable
         var written = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         File.SetLastWriteTimeUtc(target, written);
 
-        var fetched = await orders.FileFetchAsync("notes.md", "notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var fetched = await orders.FileFetchAsync("notes.md", "notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("already_current", fetched["outcome"]!.GetValue<string>());
         Assert.Equal(written, File.GetLastWriteTimeUtc(target));
@@ -342,10 +342,10 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         var refused = await orders.FileFetchAsync(
-            "notes.md", "notes.md", conversationId: "pricing", expectSha256: new string('0', 64), cancellationToken: Ct);
+            "notes.md", "notes.md", conversation_id: "pricing", expect_sha256: new string('0', 64), cancellationToken: Ct);
 
         Assert.False(refused["ok"]!.GetValue<bool>());
         Assert.Equal("changed", refused["refused"]!.GetValue<string>());
@@ -362,16 +362,16 @@ public sealed class FileToolTests : IDisposable
         var source = Path.Combine(BillingRepository, "notes.md");
 
         await File.WriteAllTextAsync(source, "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         await File.WriteAllTextAsync(source, "gross of tax", Ct);
-        var refused = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var refused = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("nameholdsothercontent", refused["refused"]!.GetValue<string>());
         Assert.Contains("new name", refused.ToJsonString(), StringComparison.Ordinal);
 
         await File.WriteAllTextAsync(source, "net of tax", Ct);
-        var again = await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        var again = await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         Assert.Equal("already_current", again["outcome"]!.GetValue<string>());
     }
@@ -386,8 +386,8 @@ public sealed class FileToolTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
         await File.WriteAllTextAsync(Path.Combine(OrdersRepository, "theirs.md"), "orders placed this", Ct);
 
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
-        Assert.True((await orders.FilePlaceAsync("theirs.md", conversationId: "returns", cancellationToken: Ct))["ok"]!.GetValue<bool>());
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
+        Assert.True((await orders.FilePlaceAsync("theirs.md", conversation_id: "returns", cancellationToken: Ct))["ok"]!.GetValue<bool>());
 
         var removed = await billing.FileRemoveAsync(["notes.md", "theirs.md"], cancellationToken: Ct);
 
@@ -409,7 +409,7 @@ public sealed class FileToolTests : IDisposable
         var (_, billing) = await fixture.LaunchInAsync("billing@test", BillingRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "notes.md"), "net of tax", Ct);
-        await billing.FilePlaceAsync("notes.md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("notes.md", conversation_id: "pricing", cancellationToken: Ct);
 
         string[] names = ["notes.md", .. Enumerable.Range(0, 200).Select(i => "other" + i + ".md")];
 
@@ -431,7 +431,7 @@ public sealed class FileToolTests : IDisposable
         var (_, orders) = await fixture.LaunchInAsync("orders@test", OrdersRepository, Ct);
 
         await File.WriteAllTextAsync(Path.Combine(BillingRepository, "plain.md"), "net", Ct);
-        await billing.FilePlaceAsync("plain.md", name: PeerWords + ".md", conversationId: "pricing", cancellationToken: Ct);
+        await billing.FilePlaceAsync("plain.md", name: PeerWords + ".md", conversation_id: "pricing", cancellationToken: Ct);
 
         var listed = (await orders.FileListAsync(cancellationToken: Ct)).ToJsonString();
 

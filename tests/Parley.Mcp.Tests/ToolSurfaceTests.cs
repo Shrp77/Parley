@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using Xunit;
 
@@ -54,6 +55,41 @@ public sealed class ToolSurfaceTests
     }
 
     [Fact]
+    public void Every_argument_section_10_1_names_is_one_its_tool_takes()
+    {
+        // The schema takes its names from these parameters, and an agent reads them next to prose written from the
+        // specification, so the two being spelled differently loses the argument. file_remove is excepted by name: the
+        // specification says files and the tool takes names, which is with the owner.
+        var spec = RepositoryFile.Read("SPEC.md");
+        var start = spec.IndexOf("### 10.1 ", StringComparison.Ordinal);
+        var section = spec[start..spec.IndexOf("### 10.2 ", start, StringComparison.Ordinal)];
+
+        var operations = Regex.Matches(section, @"^\| `(\w+)\(([^)]*)\)`", RegexOptions.Multiline);
+
+        Assert.Equal(Expected, operations.Select(o => "parley_" + o.Groups[1].Value).Order(StringComparer.Ordinal));
+
+        var missing = new List<string>();
+
+        foreach (Match operation in operations)
+        {
+            var tool = "parley_" + operation.Groups[1].Value;
+            var taken = ToolMethods()
+                .Single(m => m.GetCustomAttribute<McpServerToolAttribute>()!.Name == tool)
+                .GetParameters()
+                .Select(p => p.Name)
+                .ToArray();
+
+            missing.AddRange(operation.Groups[2].Value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(argument => argument.TrimEnd('?'))
+                .Where(argument => tool != "parley_file_remove" && !taken.Contains(argument))
+                .Select(argument => $"{tool}({argument})"));
+        }
+
+        Assert.Empty(missing);
+    }
+
+    [Fact]
     public void No_tool_takes_the_acting_agent_as_a_parameter()
     {
         // §13's guarantee, checked structurally rather than trusted. Identity comes from the launch environment,
@@ -63,8 +99,7 @@ public sealed class ToolSurfaceTests
             .Where(signature =>
                 signature.Contains("from", StringComparison.OrdinalIgnoreCase) ||
                 signature.Contains("sender", StringComparison.OrdinalIgnoreCase) ||
-                signature.Contains("actingAgent", StringComparison.OrdinalIgnoreCase) ||
-                signature.Contains("asAgent", StringComparison.OrdinalIgnoreCase))
+                signature[signature.IndexOf('(', StringComparison.Ordinal)..].Contains("agent", StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         Assert.Empty(offenders);

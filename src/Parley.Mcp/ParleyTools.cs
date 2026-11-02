@@ -44,8 +44,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <summary>Sends a Request.</summary>
     /// <param name="to">A whole agent name, or a role.</param>
     /// <param name="ask">What is wanted, in the sender's own words (SPEC.md section 5.1).</param>
-    /// <param name="conversationId">The conversation, where the sender must or may name one.</param>
-    /// <param name="responderModel">What produced the Request, if the caller says.</param>
+    /// <param name="conversation_id">The conversation, where the sender must or may name one.</param>
+    /// <param name="responder_model">What produced the Request, if the caller says.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The exchange and conversation, or the refusal with what to do about it.</returns>
     /// <remarks>
@@ -88,8 +88,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. The conversation this belongs to. Leave it out while you hold requests from one " +
             "conversation — the broker assigns that one. Letters, digits, '.', '_' and '-'.")]
-        string? conversationId = null,
-        [Description("Optional. The model that produced this request.")] string? responderModel = null,
+        string? conversation_id = null,
+        [Description("Optional. The model that produced this request.")] string? responder_model = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -108,12 +108,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                     "You cannot send a request to yourself. If the work is in your own repository, do it.");
             }
 
-            if (BadResponder(responderModel) is { } badResponder)
+            if (BadResponder(responder_model) is { } badResponder)
             {
                 return badResponder;
             }
 
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
@@ -137,9 +137,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 {
                     From = _options.Agent.Value,
                     To = to,
-                    ResponderModel = Responder(responderModel),
+                    ResponderModel = Responder(responder_model),
                     PayloadJson = json,
-                    ConversationId = conversationId ?? string.Empty
+                    ConversationId = conversation_id ?? string.Empty
                 },
                 cancellationToken: cancellationToken);
 
@@ -152,9 +152,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     }
 
     /// <summary>Asks the requester for something, or answers what it asked.</summary>
-    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="exchange_id">The exchange.</param>
     /// <param name="text">What is needed, or what was asked for.</param>
-    /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="responder_model">What produced this, if the caller says.</param>
     /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
@@ -171,9 +171,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         see settles.
         """)]
     public async Task<JsonNode> ClarifyAsync(
-        [Description("The exchange id, from your inbox.")] long exchangeId,
+        [Description("The exchange id, from your inbox.")] long exchange_id,
         [Description("What you need, or what you were asked for.")] string text,
-        [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description("Optional. The model that produced this.")] string? responder_model = null,
         [Description(
             "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
             "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
@@ -185,7 +185,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     {
         try
         {
-            if (BadResponder(responderModel) is { } badResponder)
+            if (BadResponder(responder_model) is { } badResponder)
             {
                 return badResponder;
             }
@@ -205,8 +205,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
             var clarify = new Wire.ClarifyRequest
             {
                 From = _options.Agent.Value,
-                ExchangeId = exchangeId,
-                ResponderModel = Responder(responderModel),
+                ExchangeId = exchange_id,
+                ResponderModel = Responder(responder_model),
                 PayloadJson = json
             };
 
@@ -227,12 +227,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     }
 
     /// <summary>Reports what a Request came to, closing its exchange.</summary>
-    /// <param name="exchangeId">The exchange.</param>
+    /// <param name="exchange_id">The exchange.</param>
     /// <param name="outcome">How the request came out.</param>
     /// <param name="text">What was done, the answer, or what blocks it.</param>
     /// <param name="blocker">The kind of blocker, when blocked.</param>
     /// <param name="sources">The agents whose Results were relied on.</param>
-    /// <param name="responderModel">What produced this, if the caller says.</param>
+    /// <param name="responder_model">What produced this, if the caller says.</param>
     /// <param name="settles">On a reply to the person, the agent's own questions to them that this settles.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Confirmation, or the refusal.</returns>
@@ -268,12 +268,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         rest open. A person asking you to explain a question has not answered it.
         """)]
     public async Task<JsonNode> ResultAsync(
-        [Description("The exchange id, from your inbox.")] long exchangeId,
+        [Description("The exchange id, from your inbox.")] long exchange_id,
         [Description("One of: done, answered, acknowledged, blocked.")] string outcome,
         [Description("What was done, the answer, or exactly what blocks it and what you tried.")] string text,
         [Description("Only when blocked: missing_information, conflict, or permission.")] string? blocker = null,
         [Description("Optional. The agents whose Results you relied on.")] string[]? sources = null,
-        [Description("Optional. The model that produced this.")] string? responderModel = null,
+        [Description("Optional. The model that produced this.")] string? responder_model = null,
         [Description(
             "Optional. Only when replying to a request from the person (human-user): the exchange ids of your own " +
             "questions to them that their words answered or made moot, from your_open_questions_to_them in your " +
@@ -285,7 +285,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     {
         try
         {
-            if (BadResponder(responderModel) is { } badResponder)
+            if (BadResponder(responder_model) is { } badResponder)
             {
                 return badResponder;
             }
@@ -302,7 +302,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 return badSources;
             }
 
-            var sent = await SendResultAsync([answer], exchangeId, responderModel, settles, cancellationToken)
+            var sent = await SendResultAsync([answer], exchange_id, responder_model, settles, cancellationToken)
                 .ConfigureAwait(false);
 
             return Held(
@@ -641,7 +641,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <summary>Puts a roadmap forward for the person to confirm.</summary>
     /// <param name="title">A few words.</param>
     /// <param name="items">The items, in order.</param>
-    /// <param name="conversationId">Where the list was arrived at, if it was in a conversation.</param>
+    /// <param name="conversation_id">Where the list was arrived at, if it was in a conversation.</param>
     /// <param name="revises">The title of a roadmap this would change, if it would.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The proposal's identifier, or the refusal with what to do about it.</returns>
@@ -679,13 +679,13 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     public async Task<JsonNode> ProposeRoadmapAsync(
         [Description("A few words naming the roadmap.")] string title,
         [Description("The items, in order. Each is one line with optional 'for' and 'needs'.")] RoadmapItemInput[] items,
-        [Description("Optional. The conversation the list was arrived at; one you took part in.")] string? conversationId = null,
+        [Description("Optional. The conversation the list was arrived at; one you took part in.")] string? conversation_id = null,
         [Description("Optional. The title of an existing roadmap this would change, if you know one.")] string? revises = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
@@ -709,7 +709,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 {
                     Agent = _options.Agent.Value,
                     Content = content,
-                    ConversationId = conversationId ?? string.Empty,
+                    ConversationId = conversation_id ?? string.Empty,
                     Revises = revises ?? string.Empty
                 },
                 cancellationToken: cancellationToken);
@@ -819,7 +819,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <summary>Places a file from the caller's repository in the file location.</summary>
     /// <param name="path">The file, inside the repository.</param>
     /// <param name="name">The name to place it under, or the file's own name.</param>
-    /// <param name="conversationId">The conversation, where the caller must or may name one.</param>
+    /// <param name="conversation_id">The conversation, where the caller must or may name one.</param>
     /// <param name="cancellationToken">Cancels the placement; nothing partial is kept.</param>
     /// <returns>The conversation, name, size and hash, or the refusal with what to do about it.</returns>
     /// <remarks>
@@ -859,12 +859,12 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. The conversation it belongs to. Leave it out while you hold requests from one " +
             "conversation. Letters, digits, '.', '_' and '-'.")]
-        string? conversationId = null,
+        string? conversation_id = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
@@ -909,7 +909,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                         {
                             Agent = _options.Agent.Value,
                             Name = placedName,
-                            ConversationId = conversationId ?? string.Empty
+                            ConversationId = conversation_id ?? string.Empty
                         },
                         stream,
                         cancellationToken).ConfigureAwait(false);
@@ -1038,8 +1038,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     /// <summary>Fetches a file into the caller's repository, verified against its hash.</summary>
     /// <param name="name">The file's name.</param>
     /// <param name="to">Where to write it, inside the repository.</param>
-    /// <param name="conversationId">The file's conversation, or none to look across the location.</param>
-    /// <param name="expectSha256">The hash the caller was told, if any.</param>
+    /// <param name="conversation_id">The file's conversation, or none to look across the location.</param>
+    /// <param name="expect_sha256">The hash the caller was told, if any.</param>
     /// <param name="replace">Whether a different file already at the path may be replaced.</param>
     /// <param name="cancellationToken">Cancels the fetch; nothing is left at the path.</param>
     /// <returns>Where it was written, its size and hash, or the refusal.</returns>
@@ -1080,9 +1080,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. The conversation holding the file; leave it out to look across every conversation. " +
             "Letters, digits, '.', '_' and '-'.")]
-        string? conversationId = null,
+        string? conversation_id = null,
         [Description("Optional. The sha256 you were told; nothing is written if the file no longer has it.")]
-        string? expectSha256 = null,
+        string? expect_sha256 = null,
         [Description("Optional. Replace a different file already at that path. Defaults to false.")]
         bool replace = false,
         CancellationToken cancellationToken = default)
@@ -1091,7 +1091,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
         try
         {
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
@@ -1140,8 +1140,8 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 {
                     Agent = _options.Agent.Value,
                     Name = name,
-                    ConversationId = conversationId ?? string.Empty,
-                    ExpectSha256 = expectSha256 ?? string.Empty
+                    ConversationId = conversation_id ?? string.Empty,
+                    ExpectSha256 = expect_sha256 ?? string.Empty
                 },
                 cancellationToken: cancellationToken);
 
@@ -1310,9 +1310,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     }
 
     /// <summary>Lists a page of the files in the location.</summary>
-    /// <param name="conversationId">One conversation, or every one.</param>
-    /// <param name="pageSize">How many files to a page.</param>
-    /// <param name="pageToken">The token a previous page returned.</param>
+    /// <param name="conversation_id">One conversation, or every one.</param>
+    /// <param name="page_size">How many files to a page.</param>
+    /// <param name="page_token">The token a previous page returned.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>The files, their totals, and the token for the next page.</returns>
     [McpServerTool(Name = "parley_file_list")]
@@ -1327,14 +1327,14 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         """)]
     public async Task<JsonNode> FileListAsync(
         [Description("Optional. List only this conversation's files. Letters, digits, '.', '_' and '-'.")]
-        string? conversationId = null,
-        [Description("Optional. Files per page: 50 by default, at most 200.")] int? pageSize = null,
-        [Description("Optional. The next_page_token a previous page returned.")] string? pageToken = null,
+        string? conversation_id = null,
+        [Description("Optional. Files per page: 50 by default, at most 200.")] int? page_size = null,
+        [Description("Optional. The next_page_token a previous page returned.")] string? page_token = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
@@ -1343,9 +1343,9 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 new Wire.ListFilesRequest
                 {
                     Agent = _options.Agent.Value,
-                    ConversationId = conversationId ?? string.Empty,
-                    PageSize = pageSize ?? 0,
-                    PageToken = pageToken ?? string.Empty
+                    ConversationId = conversation_id ?? string.Empty,
+                    PageSize = page_size ?? 0,
+                    PageToken = page_token ?? string.Empty
                 },
                 cancellationToken: cancellationToken);
 
@@ -1385,7 +1385,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
 
     /// <summary>Removes files the caller placed.</summary>
     /// <param name="names">The files' names.</param>
-    /// <param name="conversationId">Their conversation, or none to look for each across the location.</param>
+    /// <param name="conversation_id">Their conversation, or none to look for each across the location.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>What was removed and what was refused.</returns>
     [McpServerTool(Name = "parley_file_remove")]
@@ -1403,18 +1403,18 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         [Description(
             "Optional. The conversation holding them; leave it out to look for each name across every " +
             "conversation. Letters, digits, '.', '_' and '-'.")]
-        string? conversationId = null,
+        string? conversation_id = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            if (BadConversation(conversationId) is { } badConversation)
+            if (BadConversation(conversation_id) is { } badConversation)
             {
                 return badConversation;
             }
 
             var request = new Wire.RemoveFilesRequest { Agent = _options.Agent.Value };
-            request.Files.AddRange((names ?? []).Select(n => new Wire.FileRef { Name = n, ConversationId = conversationId ?? string.Empty }));
+            request.Files.AddRange((names ?? []).Select(n => new Wire.FileRef { Name = n, ConversationId = conversation_id ?? string.Empty }));
 
             var reply = await _link.Agents.RemoveOwnFilesAsync(request, cancellationToken: cancellationToken);
 
@@ -1444,7 +1444,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
     }
 
     /// <summary>Says whether the caller is finished with a conversation.</summary>
-    /// <param name="conversationId">The conversation.</param>
+    /// <param name="conversation_id">The conversation.</param>
     /// <param name="finished">Whether the caller is finished.</param>
     /// <param name="cancellationToken">Cancels the call.</param>
     /// <returns>Whether the conversation is now closed, or the refusal.</returns>
@@ -1463,7 +1463,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
         so saying finished=true there is refused.
         """)]
     public async Task<JsonNode> ConcludeAsync(
-        [Description("The conversation id.")] string conversationId,
+        [Description("The conversation id.")] string conversation_id,
         [Description("True if you have nothing left to do or say in it.")] bool finished,
         CancellationToken cancellationToken = default)
     {
@@ -1473,7 +1473,7 @@ public sealed class ParleyTools(BrokerLink link, ServerOptions options)
                 new Wire.ConcludeRequest
                 {
                     From = _options.Agent.Value,
-                    ConversationId = conversationId,
+                    ConversationId = conversation_id,
                     Vote = finished ? Wire.Vote.Done : Wire.Vote.NotDone
                 },
                 cancellationToken: cancellationToken);

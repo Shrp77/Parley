@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -44,6 +45,64 @@ public sealed class ChannelNudgeTests : IDisposable
         catch (IOException)
         {
         }
+    }
+
+    [Fact]
+    public async Task A_request_naming_a_conversation_lands_in_it_and_a_misspelt_name_is_refused()
+    {
+        // Through the real server and schema: the tools called as C# methods could not see this. Here because this
+        // class holds the one real client these tests have.
+        await using var fixture = new ServerFixture(T0);
+        var events = Channel.CreateUnbounded<JsonRpcNotification>();
+        await using var orders = await ConnectAsync(fixture, "orders", events.Writer);
+        var (_, billing) = await fixture.LaunchAsync("billing@test", Ct);
+
+        var named = await orders.CallToolAsync(
+            "parley_request",
+            new Dictionary<string, object?> { ["to"] = "billing@test", ["ask"] = "One ask.", ["conversation_id"] = "tax-rate" },
+            cancellationToken: Ct);
+        var sent = JsonNode.Parse(((TextContentBlock)named.Content[0]).Text)!;
+
+        Assert.True(sent["ok"]!.GetValue<bool>(), sent.ToJsonString());
+        Assert.Equal("tax-rate", sent["conversation_id"]!.GetValue<string>());
+
+        var misspelt = await orders.CallToolAsync(
+            "parley_request",
+            new Dictionary<string, object?> { ["to"] = "billing@test", ["ask"] = "Another ask.", ["conversationId"] = "tax-rate" },
+            cancellationToken: Ct);
+        var refused = JsonNode.Parse(((TextContentBlock)misspelt.Content[0]).Text)!;
+
+        Assert.Equal("malformed", refused["refused"]!.GetValue<string>());
+        Assert.Contains("conversationId", refused["why"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        // Refused means not sent: billing holds the first request and nothing from the second.
+        Assert.Single((await billing.InboxAsync(cancellationToken: Ct))["messages"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task A_misspelt_field_inside_a_roadmap_item_is_refused_through_the_real_server()
+    {
+        await using var fixture = new ServerFixture(T0);
+        var events = Channel.CreateUnbounded<JsonRpcNotification>();
+        await using var orders = await ConnectAsync(fixture, "orders", events.Writer);
+
+        async Task<JsonNode> Propose(string field) => JsonNode.Parse(((TextContentBlock)(await orders.CallToolAsync(
+            "parley_propose_roadmap",
+            new Dictionary<string, object?>
+            {
+                ["title"] = $"With {field}",
+                ["items"] = JsonNode.Parse($$"""[{"text":"Do a"},{"text":"Do b","{{field}}":[1]}]""")
+            },
+            cancellationToken: Ct)).Content[0]).Text)!;
+
+        var refused = await Propose("after");
+
+        Assert.Equal("malformed", refused["refused"]!.GetValue<string>());
+        Assert.Contains("items[2]", refused["why"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        var taken = await Propose("needs");
+
+        Assert.True(taken["ok"]!.GetValue<bool>(), taken.ToJsonString());
     }
 
     [Fact]
