@@ -48,7 +48,7 @@ public sealed class RoadmapToolTests
         // to name one by.
         Assert.Contains("revises", parameters);
         Assert.DoesNotContain(parameters, p => p.Contains("id", StringComparison.OrdinalIgnoreCase)
-            && !p.Equals("conversationId", StringComparison.Ordinal));
+            && !p.Equals("conversation_id", StringComparison.Ordinal));
     }
 
     [Fact]

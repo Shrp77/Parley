@@ -116,6 +116,7 @@ builder.Services
         };
     })
     .WithStdioServerTransport()
+    .WithRequestFilters(filters => filters.AddCallToolFilter(UnknownArguments.Refuse))
     .WithTools<ParleyTools>();
 
 builder.Services.AddHostedService<ChannelNudges>();

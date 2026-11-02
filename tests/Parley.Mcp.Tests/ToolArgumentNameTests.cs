@@ -1,0 +1,68 @@
+using System.Reflection;
+using System.Text.Json;
+using ModelContextProtocol.Server;
+using Xunit;
+
+namespace Parley.Mcp.Tests;
+
+/// <summary>
+/// A tool's arguments are spelled the way its replies, its prose and SPEC.md section 10.1 spell them, and a name it
+/// does not declare is refused.
+/// </summary>
+/// <remarks>
+/// These tests exist because every other test here calls <see cref="ParleyTools"/> as C# methods, so none of them could
+/// see that the names an agent was told to use were not the names the schema took.
+/// </remarks>
+[Unit]
+public sealed class ToolArgumentNameTests
+{
+    private static readonly JsonElement Schema = JsonDocument.Parse(
+        """{"type":"object","properties":{"to":{},"conversation_id":{}}}""").RootElement;
+
+    private static KeyValuePair<string, JsonElement> Named(string name) => new(name, default);
+
+    [Fact]
+    public void Every_argument_of_every_tool_is_spelled_in_snake_case()
+    {
+        var offenders = typeof(ParleyTools)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
+            .SelectMany(m => m.GetParameters()
+                .Where(p => p.ParameterType != typeof(CancellationToken) && p.Name!.Any(char.IsAsciiLetterUpper))
+                .Select(p => $"{m.Name}({p.Name})"))
+            .ToArray();
+
+        Assert.Empty(offenders);
+    }
+
+    [Fact]
+    public void A_declared_name_is_let_through()
+    {
+        Assert.Null(UnknownArguments.RefusalFor("parley_request", Schema, [Named("to"), Named("conversation_id")]));
+        Assert.Null(UnknownArguments.RefusalFor("parley_request", Schema, null));
+    }
+
+    [Fact]
+    public void An_undeclared_name_is_refused_saying_what_the_tool_takes()
+    {
+        var refusal = UnknownArguments.RefusalFor("parley_request", Schema, [Named("to"), Named("conversationId")])!;
+
+        Assert.False(refusal["ok"]!.GetValue<bool>());
+        Assert.Equal("malformed", refusal["refused"]!.GetValue<string>());
+
+        var why = refusal["why"]!.GetValue<string>();
+
+        Assert.Contains("parley_request has no argument named conversationId", why, StringComparison.Ordinal);
+        Assert.Contains("only to, conversation_id", why, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_tool_that_takes_nothing_says_so()
+    {
+        var empty = JsonDocument.Parse("""{"type":"object"}""").RootElement;
+
+        var why = UnknownArguments.RefusalFor("parley_agents", empty, [Named("role")])!["why"]!.GetValue<string>();
+
+        Assert.Contains("It takes no arguments", why, StringComparison.Ordinal);
+    }
+}
