@@ -492,4 +492,97 @@ public sealed class ProjectsDoNotMixTests : IAsyncDisposable
             reached.Count == 0,
             $"alpha's draft: {alphaDraft}; draft in beta/c-1: {draftInBeta}; beta's c-1 line reached: {string.Join(",", reached)}; said: {shell.Said}");
     }
+
+    private static async Task ConfirmedAsync(SqliteConnection connection, string title, string first, string second)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var repository = new RoadmapRepository(connection);
+        var (proposal, problem) = await repository.ProposeAsync(
+            Orders,
+            null,
+            null,
+            new RoadmapContent(title, [new RoadmapItemDraft(null, first, Billing, []), new RoadmapItemDraft(null, second, Orders, [1])]),
+            T0,
+            cancellationToken: ct);
+        Assert.Null(problem);
+        var waiting = await repository.GetProposalAsync(proposal!.Value, ct);
+        var confirmed = await repository.ConfirmAsync(waiting!.Id, waiting.Content, null, T0, cancellationToken: ct);
+        Assert.Null(confirmed.Problem);
+    }
+
+    [Fact]
+    public async Task The_key_to_an_items_roadmap_is_not_taken_from_the_conversation_left_while_another_projects_is_read()
+    {
+        // Lens 1 run 137. Arriving at a conversation relays the transcript before its read lands, so for that while it still
+        // holds alpha's rm1-2 and its item. Both first roadmaps are id 1, so the key read alpha's item and opened beta's
+        // roadmap on item 2. Must fail against offering the key, or running it, from the transcript of the conversation left.
+        var ct = TestContext.Current.CancellationToken;
+
+        await ConfirmedAsync(_alpha, "Alpha plan", "Ship alpha one", "Ship alpha two");
+        await ConfirmedAsync(_beta, "Beta plan", "Ship beta one", "Ship beta two");
+
+        var gate = new HoldOne("/Export");
+        using var hold = gate;
+        using var directory = new BrokerDirectory(
+            [
+                new ProjectSettings(AlphaName, "unused-a.db", _alphaBroker.Address, null),
+                new ProjectSettings(BetaName, "unused-b.db", _betaBroker.Address, null),
+            ],
+            address => string.Equals(address, _betaBroker.Address, StringComparison.Ordinal)
+                ? GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = gate })
+                : GrpcChannel.ForAddress(address));
+        using var seats = new SeatBook(directory.AgentsFor);
+        using var driving = Driving.Open(width: 160, height: 40);
+        using var shell = new Shell(directory) { Seats = seats, MailEvery = null, FollowEvery = null };
+
+        driving.Show(shell);
+        await shell.RefreshAsync(ct);
+        await shell.Settled;
+
+        await shell.GoAsync(ViewPlace.Into(AlphaName).Into("rm1-2"));
+        await shell.Settled;
+
+        // In alpha's item conversation the key is offered: what follows is only about the conversation left.
+        Assert.Contains(shell.Actions(), a => a.Label == Shell.ItemRoadmapTitle);
+
+        var key = CommandTables.Of<Shell>().Commands
+            .Single(c => c.Context == KeyContext.Transcript && c.Key == Shell.ItemRoadmapKey);
+
+        gate.Arm();
+        var going = shell.GoAsync(ViewPlace.Into(BetaName).Into("c-elsewhere"));
+
+        bool offered;
+        string? opened;
+
+        try
+        {
+            Assert.True(gate.Holding.Wait(TimeSpan.FromSeconds(10), ct), "beta's read never reached the broker");
+
+            // Beta's conversation is in view and its read is held, so the transcript is still alpha's rm1-2.
+            Assert.Equal("beta", shell.Place.Project?.Value);
+            Assert.Equal("alpha", shell.Transcript.OpenIn);
+
+            offered = shell.Actions().Any(a => a.Label == Shell.ItemRoadmapTitle);
+
+            // Run past its condition, as a key taken before the status line was redrawn would be.
+            await key.Run(shell);
+            await shell.Settled;
+
+            opened = driving.App.TopRunnableView is PlanView view
+                ? $"{string.Join(" | ", view.RowTexts)} with '{view.Selected?.Item.Text}' selected"
+                : null;
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.True(gate.Answered.Wait(TimeSpan.FromSeconds(10), ct), "the held read never came back");
+        await going;
+        await shell.Settled;
+
+        Assert.True(
+            !offered && opened is null,
+            $"while beta/c-elsewhere was read: key offered {offered}; running it opened {opened ?? "nothing"}");
+    }
 }
