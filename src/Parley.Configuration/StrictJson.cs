@@ -25,7 +25,10 @@ namespace Parley.Configuration;
 /// 132). The same text in a value throws the same exception later, when a caller reads it. It is refused rather than
 /// read leniently because that keeps one rule with the duplicate: what this returns can be read throughout without
 /// throwing, and a file that cannot be is unreadable, reported, and its siblings unaffected. Read leniently, every
-/// caller would have to guard every read, which is the latent crash this class exists to remove.
+/// caller would have to guard every read, which is the latent crash this class exists to remove. The readers rely on
+/// it: <see cref="LaunchConfiguration"/> walks server names and reads the agent's name with no guard of its own, and
+/// before this a lone surrogate in a value threw out of that read, through the node's catalogue scan, and ended the
+/// node with every resident agent on the machine (lens 2 run 138).
 /// </para>
 /// <para>
 /// <b>A refusal is a <see cref="JsonException"/> whose message names no key.</b> Every caller already
