@@ -38,3 +38,7 @@ Low: a wrong word that misleads nobody, a stale citation, a comment out of place
 - **A start failure is written to the node's own output**; the broker is not told and `agents()` does not show it.
 - The review rules live in this folder, not in CLAUDE.md.
 - The lows triaged in the ledger's 2026-10-29 entry as moot or by design stay that way.
+- **The terminal's key check guards against ordinary toolkit calls** (owner, 2026-11-02): a key-handling override, an
+  event subscription, a key or hot-key binding on a view, a binding the surface adds to a view it owns, and an
+  application-wide binding. A way past it that only a deliberate trick reaches, such as reflection or
+  `AddEventHandler`, is low.
