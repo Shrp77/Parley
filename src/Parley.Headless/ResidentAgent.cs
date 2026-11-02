@@ -702,45 +702,78 @@ public sealed class ResidentAgent : IAsyncDisposable
     /// <param name="ModelTurns">How many model turns it took.</param>
     /// <param name="PermissionDenials">How many tool calls were refused permission.</param>
     /// <param name="Result">The reply.</param>
-    private sealed record RunnerEvent(
+    internal sealed record RunnerEvent(
         string? Type, string? Subtype, string? SessionId, bool IsError, string? StopReason, double CostUsd,
         int ModelTurns, int PermissionDenials, string? Result)
     {
         /// <summary>Reads one line.</summary>
         /// <param name="line">The line.</param>
         /// <returns>The event, or null when the line is not a JSON object.</returns>
-        public static RunnerEvent? Read(string line)
+        /// <remarks>
+        /// <para>
+        /// <b>Read forward, once, taking only the top-level members a turn uses and passing over everything else.</b>
+        /// A document built of the line lost a result whose refused tool call carried an input nested past its default
+        /// depth of 64, which the model writes: the turn timed out, its reply was owed and never came, and the refusal
+        /// went unflagged (lens 2 run 139). Raising that depth to the line's length kept every line but made the build's
+        /// CPU time grow with the square of the depth, on this agent's pump: 200,000 deep took fifteen seconds and a
+        /// line of a megabyte nearly two minutes (lens 1 run 135). A forward reader passing over a value costs time in
+        /// proportion to its length whatever its depth, so no depth is refused and none is slow.
+        /// </para>
+        /// <para>
+        /// A member named twice reads as its last copy, a member whose name is not valid text is passed over (each name
+        /// is decoded on its own, so one cannot spoil another: lens 1 run 133), and a field that cannot be decoded reads
+        /// as absent. Passing over a value still checks it is JSON, as does the read past the end, so a line that is not
+        /// JSON at all is skipped as before.
+        /// </para>
+        /// </remarks>
+        internal static RunnerEvent? Read(string line)
         {
             try
             {
-                // The default depth of 64 lost a result whose refused tool call carried a deeply nested input, which the
-                // model writes: the turn timed out, its reply was owed and never came, and the refusal went unflagged
-                // (lens 2 run 139). 4096 keeps any input a model writes. It is a fixed number, not the line's length,
-                // because the parse's CPU time grows with the square of the depth: 64 thousand deep took two seconds and
-                // two million about forty minutes, all of it on this agent's pump (lens 2 run 140). A line deeper than
-                // this is not JSON here, as any other unreadable line is.
-                using var document = JsonDocument.Parse(line, new JsonDocumentOptions { MaxDepth = 4096 });
-                var root = document.RootElement;
+                // A line cannot nest deeper than it is long, so no bound short of every line's length is needed.
+                var reader = new Utf8JsonReader(
+                    Encoding.UTF8.GetBytes(line), new JsonReaderOptions { MaxDepth = int.MaxValue });
 
-                if (root.ValueKind != JsonValueKind.Object)
+                if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
                 {
                     return null;
                 }
 
-                var members = Members(root);
+                string? type = null, subtype = null, sessionId = null, stopReason = null, result = null;
+                var isError = false;
+                double cost = 0, turns = 0;
+                var denials = 0;
 
-                return new RunnerEvent(
-                    String(members, "type"),
-                    String(members, "subtype"),
-                    String(members, "session_id"),
-                    members.TryGetValue("is_error", out var error) && error.ValueKind == JsonValueKind.True,
-                    String(members, "stop_reason"),
-                    Number(members, "total_cost_usd"),
-                    (int)Number(members, "num_turns"),
-                    members.TryGetValue("permission_denials", out var denials) && denials.ValueKind == JsonValueKind.Array
-                        ? denials.GetArrayLength()
-                        : 0,
-                    String(members, "result"));
+                while (reader.Read() && reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    var name = Name(ref reader);
+
+                    reader.Read();
+
+                    switch (name)
+                    {
+                        case "type": type = String(ref reader); break;
+                        case "subtype": subtype = String(ref reader); break;
+                        case "session_id": sessionId = String(ref reader); break;
+                        case "is_error": isError = reader.TokenType == JsonTokenType.True; break;
+                        case "stop_reason": stopReason = String(ref reader); break;
+                        case "total_cost_usd": cost = Number(ref reader); break;
+                        case "num_turns": turns = Number(ref reader); break;
+                        case "permission_denials": denials = Count(ref reader); break;
+                        case "result": result = String(ref reader); break;
+                    }
+
+                    // Past whatever value is left; nothing for a value already read to its end.
+                    reader.Skip();
+                }
+
+                // Nothing but whitespace may follow the object.
+                if (reader.Read())
+                {
+                    return null;
+                }
+
+                return new RunnerEvent(type, subtype, sessionId, isError, stopReason, cost, (int)turns, denials, result);
             }
             catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
             {
@@ -748,40 +781,24 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
         }
 
-        // The top-level members by name, read forward once, so a later copy replaces an earlier one. Each name is decoded
-        // on its own and one that is not valid text is passed over: looking a name up decodes every name it compares
-        // against, so a lone surrogate escape beside the one sought threw for any sought name sharing its unescaped
-        // start, and the result line was lost (lens 1 run 133).
-        private static Dictionary<string, JsonElement> Members(JsonElement root)
-        {
-            var members = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-
-            foreach (var member in root.EnumerateObject())
-            {
-                string name;
-
-                try
-                {
-                    name = member.Name;
-                }
-                catch (InvalidOperationException)
-                {
-                    continue;
-                }
-
-                members[name] = member.Value;
-            }
-
-            return members;
-        }
-
-        private static string? String(Dictionary<string, JsonElement> members, string name)
+        private static string? Name(ref Utf8JsonReader reader)
         {
             try
             {
-                return members.TryGetValue(name, out var value) && value.ValueKind == JsonValueKind.String
-                    ? value.GetString()
-                    : null;
+                return reader.GetString();
+            }
+            catch (InvalidOperationException)
+            {
+                // A lone surrogate escape in the name: passed over, its value with it.
+                return null;
+            }
+        }
+
+        private static string? String(ref Utf8JsonReader reader)
+        {
+            try
+            {
+                return reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
             }
             catch (InvalidOperationException)
             {
@@ -790,11 +807,27 @@ public sealed class ResidentAgent : IAsyncDisposable
             }
         }
 
-        private static double Number(Dictionary<string, JsonElement> members, string name) =>
-            members.TryGetValue(name, out var value) && value.ValueKind == JsonValueKind.Number
-                && value.TryGetDouble(out var number)
-                ? number
-                : 0;
+        private static double Number(ref Utf8JsonReader reader) =>
+            reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var number) ? number : 0;
+
+        // The array's elements, each passed over; left on the array's end.
+        private static int Count(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                return 0;
+            }
+
+            var count = 0;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                count++;
+                reader.Skip();
+            }
+
+            return count;
+        }
     }
 
     /// <summary>Awaits a pump, discarding any failure.</summary>
